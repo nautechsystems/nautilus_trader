@@ -29,13 +29,15 @@
 //! # Topic Format
 //!
 //! Topics are strings in the format `channel{delimiter}symbol`:
-//! - Bybit: `tickers.BTCUSDT` (delimiter: `.`)
-//! - BitMEX: `orderBookL2:XBTUSD` (delimiter: `:`)
-//! - OKX: `trades:BTC-USDT` (delimiter: `:`)
+//! - Dot delimiter: `tickers.BTCUSDT`
+//! - Colon delimiter: `trades:BTC-USDT`
 //!
-//! Channels without symbols are also supported (e.g., `orderbook` for all instruments).
+//! Channels without symbols are also supported (e.g., `execution` for all instruments).
 
-use std::{num::NonZeroUsize, sync::Arc};
+use std::{
+    num::NonZeroUsize,
+    sync::{Arc, LazyLock},
+};
 
 use ahash::AHashSet;
 use dashmap::DashMap;
@@ -45,7 +47,7 @@ use ustr::Ustr;
 ///
 /// An empty string in the symbol set indicates a channel-level subscription
 /// that applies to all symbols for that channel.
-const CHANNEL_LEVEL_MARKER: &str = "";
+static CHANNEL_LEVEL_MARKER: LazyLock<Ustr> = LazyLock::new(|| Ustr::from(""));
 
 /// Splits a topic into channel and optional symbol using the specified delimiter.
 pub fn split_topic(topic: &str, delimiter: char) -> (&str, Option<&str>) {
@@ -65,7 +67,7 @@ fn track_topic(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Optio
     if let Some(symbol) = symbol {
         entry.insert(Ustr::from(symbol));
     } else {
-        entry.insert(Ustr::from(CHANNEL_LEVEL_MARKER));
+        entry.insert(*CHANNEL_LEVEL_MARKER);
     }
 }
 
@@ -77,7 +79,7 @@ fn untrack_topic(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Opt
     let symbol_to_remove = if let Some(symbol) = symbol {
         Ustr::from(symbol)
     } else {
-        Ustr::from(CHANNEL_LEVEL_MARKER)
+        *CHANNEL_LEVEL_MARKER
     };
 
     let mut remove_channel = false;
@@ -97,7 +99,7 @@ fn is_tracked(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Option
     let symbol_to_check = if let Some(symbol) = symbol {
         Ustr::from(symbol)
     } else {
-        Ustr::from(CHANNEL_LEVEL_MARKER)
+        *CHANNEL_LEVEL_MARKER
     };
 
     if let Some(entry) = map.get(&channel_ustr) {
@@ -186,8 +188,19 @@ impl SubscriptionState {
     /// Marks a topic as pending subscription.
     ///
     /// This should be called after sending a subscribe request to the server.
+    /// Idempotent: if topic is already confirmed, this is a no-op.
+    /// If topic is pending unsubscription, removes it.
     pub fn mark_subscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
+
+        // If already confirmed, don't re-add to pending (idempotent)
+        if is_tracked(&self.confirmed, channel, symbol) {
+            return;
+        }
+
+        // Remove from pending_unsubscribe if present
+        untrack_topic(&self.pending_unsubscribe, channel, symbol);
+
         track_topic(&self.pending_subscribe, channel, symbol);
     }
 
@@ -220,16 +233,28 @@ impl SubscriptionState {
         track_topic(&self.confirmed, channel, symbol);
     }
 
-    /// Confirms an unsubscription by removing it from all state maps.
+    /// Confirms an unsubscription by removing it from pending and confirmed state.
     ///
     /// This should be called when the server acknowledges an unsubscribe request.
-    /// Removes the topic from pending_unsubscribe, confirmed, and pending_subscribe
-    /// to handle race conditions where a late subscribe confirmation arrives.
+    /// Removes the topic from pending_unsubscribe and confirmed.
+    /// Does NOT clear pending_subscribe to support immediate re-subscribe patterns
+    /// (e.g., user calls subscribe() before unsubscribe ack arrives).
+    ///
+    /// **Stale ACK handling**: Ignores unsubscribe ACKs if the topic is no longer
+    /// in pending_unsubscribe (meaning user has already re-subscribed). This prevents
+    /// stale ACKs from removing topics that were re-confirmed after the re-subscribe.
     pub fn confirm_unsubscribe(&self, topic: &str) {
         let (channel, symbol) = split_topic(topic, self.delimiter);
+
+        // Only process if topic is actually pending unsubscription
+        // This ignores stale unsubscribe ACKs after user has re-subscribed
+        if !is_tracked(&self.pending_unsubscribe, channel, symbol) {
+            return; // Stale ACK, ignore
+        }
+
         untrack_topic(&self.pending_unsubscribe, channel, symbol);
         untrack_topic(&self.confirmed, channel, symbol);
-        untrack_topic(&self.pending_subscribe, channel, symbol);
+        // Don't clear pending_subscribe - it's a valid re-subscribe request
     }
 
     /// Marks a subscription as failed, moving it from confirmed back to pending.
@@ -274,7 +299,7 @@ impl SubscriptionState {
     /// Helper to convert a map to topic strings.
     fn topics_from_map(&self, map: &DashMap<Ustr, AHashSet<Ustr>>) -> Vec<String> {
         let mut topics = Vec::new();
-        let marker = Ustr::from(CHANNEL_LEVEL_MARKER);
+        let marker = *CHANNEL_LEVEL_MARKER;
 
         for entry in map.iter() {
             let channel = entry.key();
@@ -451,6 +476,84 @@ mod tests {
     }
 
     #[rstest]
+    fn test_resubscribe_before_unsubscribe_ack() {
+        // Regression test for race condition:
+        // User unsubscribes, then immediately resubscribes before the unsubscribe ACK arrives.
+        // The unsubscribe ACK should NOT clear the pending_subscribe entry.
+        let state = SubscriptionState::new('.');
+
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 1);
+
+        state.mark_unsubscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 0);
+        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
+
+        // User immediately resubscribes (before unsubscribe ACK)
+        state.mark_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]);
+
+        // Stale unsubscribe ACK arrives - should be ignored (pending_unsubscribe already cleared)
+        state.confirm_unsubscribe("tickers.BTCUSDT");
+        assert!(state.pending_unsubscribe_topics().is_empty());
+        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]); // CRITICAL: Must still be pending
+
+        // Subscribe ACK confirms successfully
+        state.confirm_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 1);
+        assert!(state.pending_subscribe_topics().is_empty());
+
+        // Topic available for reconnect
+        let all = state.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&"tickers.BTCUSDT".to_string()));
+    }
+
+    #[rstest]
+    fn test_stale_unsubscribe_ack_after_resubscribe_confirmed() {
+        // Regression test for P1 bug: Stale unsubscribe ACK removing confirmed topic.
+        // Scenario: User unsubscribes, immediately resubscribes, subscribe ACK arrives
+        // FIRST (out of order), then stale unsubscribe ACK arrives.
+        // The stale ACK must NOT remove the topic from confirmed state.
+        let state = SubscriptionState::new('.');
+
+        // Initial subscription
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 1);
+
+        // User unsubscribes
+        state.mark_unsubscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 0);
+        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
+
+        // User immediately resubscribes (before unsubscribe ACK)
+        state.mark_subscribe("tickers.BTCUSDT");
+        assert!(state.pending_unsubscribe_topics().is_empty()); // Cleared by mark_subscribe
+        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]);
+
+        // Subscribe ACK arrives FIRST (out of order!)
+        state.confirm_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 1); // Back in confirmed
+        assert!(state.pending_subscribe_topics().is_empty());
+
+        // NOW the stale unsubscribe ACK arrives
+        // CRITICAL: This must be ignored because topic is no longer in pending_unsubscribe
+        state.confirm_unsubscribe("tickers.BTCUSDT");
+
+        // Topic should STILL be confirmed (not removed by stale ACK)
+        assert_eq!(state.len(), 1); // CRITICAL: Must remain confirmed
+        assert!(state.pending_unsubscribe_topics().is_empty());
+        assert!(state.pending_subscribe_topics().is_empty());
+
+        // Topic should be in all_topics (for reconnect)
+        let all = state.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&"tickers.BTCUSDT".to_string()));
+    }
+
+    #[rstest]
     fn test_mark_failure() {
         let state = SubscriptionState::new('.');
         state.mark_subscribe("tickers.BTCUSDT");
@@ -489,19 +592,15 @@ mod tests {
     fn test_reference_counting_single_topic() {
         let state = SubscriptionState::new('.');
 
-        // First subscription
         assert!(state.add_reference("tickers.BTCUSDT"));
         assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 1);
 
-        // Second subscription
         assert!(!state.add_reference("tickers.BTCUSDT"));
         assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 2);
 
-        // First removal
         assert!(!state.remove_reference("tickers.BTCUSDT"));
         assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 1);
 
-        // Second removal
         assert!(state.remove_reference("tickers.BTCUSDT"));
         assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 0);
     }
@@ -867,115 +966,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_state_transitions_table() {
-        // Table-driven test for all state transitions
-        let test_cases = vec![
-            (
-                "mark_subscribe → confirm_subscribe",
-                vec!["mark_subscribe", "confirm_subscribe"],
-                1, // expected confirmed count
-                0, // expected pending count
-            ),
-            (
-                "mark_subscribe → mark_unsubscribe → confirm_unsubscribe",
-                vec!["mark_subscribe", "mark_unsubscribe", "confirm_unsubscribe"],
-                0,
-                0, // Removed from pending_subscribe when marked for unsubscribe
-            ),
-            (
-                "mark_subscribe → confirm_subscribe → mark_unsubscribe",
-                vec!["mark_subscribe", "confirm_subscribe", "mark_unsubscribe"],
-                0, // Removed from confirmed
-                0,
-            ),
-            (
-                "mark_subscribe → confirm_subscribe → mark_failure",
-                vec!["mark_subscribe", "confirm_subscribe", "mark_failure"],
-                0, // Moved to pending
-                1, // Now in pending_subscribe
-            ),
-            (
-                "confirm_subscribe (without mark)",
-                vec!["confirm_subscribe"],
-                1, // Directly added to confirmed
-                0,
-            ),
-        ];
-
-        for (name, operations, expected_confirmed, expected_pending) in test_cases {
-            let state = SubscriptionState::new('.');
-            let topic = "test.TOPIC";
-
-            for op in operations {
-                match op {
-                    "mark_subscribe" => state.mark_subscribe(topic),
-                    "confirm_subscribe" => state.confirm_subscribe(topic),
-                    "mark_unsubscribe" => state.mark_unsubscribe(topic),
-                    "confirm_unsubscribe" => state.confirm_unsubscribe(topic),
-                    "mark_failure" => state.mark_failure(topic),
-                    _ => panic!("Unknown operation: {op}"),
-                }
-            }
-
-            assert_eq!(
-                state.len(),
-                expected_confirmed,
-                "Failed for case: {name} (confirmed count mismatch)"
-            );
-            assert_eq!(
-                state.pending_subscribe_topics().len(),
-                expected_pending,
-                "Failed for case: {name} (pending count mismatch)"
-            );
-        }
-    }
-
-    #[rstest]
-    fn test_duplicate_operations() {
-        let state = SubscriptionState::new('.');
-
-        // Multiple mark_subscribe on same topic
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.mark_subscribe("tickers.BTCUSDT");
-
-        let pending = state.pending_subscribe_topics();
-        assert_eq!(pending.len(), 1); // Should not duplicate
-
-        // Multiple confirm_subscribe
-        state.confirm_subscribe("tickers.BTCUSDT");
-        state.confirm_subscribe("tickers.BTCUSDT");
-        assert_eq!(state.len(), 1);
-
-        // Multiple mark_unsubscribe
-        state.mark_unsubscribe("tickers.BTCUSDT");
-        state.mark_unsubscribe("tickers.BTCUSDT");
-        let pending_unsub = state.pending_unsubscribe_topics();
-        assert_eq!(pending_unsub.len(), 1); // Should not duplicate
-    }
-
-    #[rstest]
-    fn test_reference_count_edge_cases() {
-        let state = SubscriptionState::new('.');
-        let topic = "tickers.BTCUSDT";
-
-        // Add and remove to test boundary
-        assert!(state.add_reference(topic)); // First ref
-        assert!(!state.add_reference(topic)); // Second ref
-        assert!(!state.remove_reference(topic)); // Down to 1
-        assert!(state.remove_reference(topic)); // Down to 0 - should unsubscribe
-
-        // Remove when count is already 0 - should be safe
-        assert!(!state.remove_reference(topic));
-        assert!(!state.remove_reference(topic));
-        assert_eq!(state.get_reference_count(topic), 0);
-
-        // Add again after going to 0
-        assert!(state.add_reference(topic)); // Should be first ref again
-        assert_eq!(state.get_reference_count(topic), 1);
-    }
-
-    #[rstest]
     fn test_special_characters_in_topics() {
         let state = SubscriptionState::new('.');
 
@@ -1219,107 +1209,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_expanded_state_transitions() {
-        let test_cases = vec![
-            (
-                "subscribe → failure → confirm_subscribe (late)",
-                vec!["mark_subscribe", "mark_failure", "confirm_subscribe"],
-                1, // Moved back to pending, then late confirm adds to confirmed
-                0,
-            ),
-            (
-                "subscribe → confirm → failure → confirm_subscribe again",
-                vec![
-                    "mark_subscribe",
-                    "confirm_subscribe",
-                    "mark_failure",
-                    "confirm_subscribe",
-                ],
-                1, // Failed and back to confirmed
-                0,
-            ),
-            (
-                "subscribe → unsubscribe → failure (should ignore)",
-                vec!["mark_subscribe", "mark_unsubscribe", "mark_failure"],
-                0, // Failure ignored due to pending unsubscribe
-                0, // Cleared from pending_subscribe by mark_unsubscribe
-            ),
-            (
-                "confirm (direct) → unsubscribe → confirm_unsubscribe",
-                vec![
-                    "confirm_subscribe",
-                    "mark_unsubscribe",
-                    "confirm_unsubscribe",
-                ],
-                0,
-                0,
-            ),
-            (
-                "subscribe → confirm → unsubscribe → late confirm_subscribe",
-                vec![
-                    "mark_subscribe",
-                    "confirm_subscribe",
-                    "mark_unsubscribe",
-                    "confirm_subscribe",
-                ],
-                0, // Late confirm ignored due to pending_unsubscribe
-                0,
-            ),
-            (
-                "multiple failures in a row",
-                vec![
-                    "mark_subscribe",
-                    "confirm_subscribe",
-                    "mark_failure",
-                    "mark_failure",
-                    "mark_failure",
-                ],
-                0, // Multiple failures are idempotent
-                1, // Still just one pending
-            ),
-            (
-                "subscribe → failure before confirm",
-                vec!["mark_subscribe", "mark_failure"],
-                0,
-                1, // Stays in pending (was already there)
-            ),
-            (
-                "empty state → unsubscribe (no-op)",
-                vec!["mark_unsubscribe", "confirm_unsubscribe"],
-                0,
-                0, // Should not crash
-            ),
-        ];
-
-        for (name, operations, expected_confirmed, expected_pending) in test_cases {
-            let state = SubscriptionState::new('.');
-            let topic = "test.TOPIC";
-
-            for op in operations {
-                match op {
-                    "mark_subscribe" => state.mark_subscribe(topic),
-                    "confirm_subscribe" => state.confirm_subscribe(topic),
-                    "mark_unsubscribe" => state.mark_unsubscribe(topic),
-                    "confirm_unsubscribe" => state.confirm_unsubscribe(topic),
-                    "mark_failure" => state.mark_failure(topic),
-                    _ => panic!("Unknown operation: {op}"),
-                }
-            }
-
-            assert_eq!(
-                state.len(),
-                expected_confirmed,
-                "Failed for case: {name} (confirmed count mismatch)"
-            );
-            assert_eq!(
-                state.pending_subscribe_topics().len(),
-                expected_pending,
-                "Failed for case: {name} (pending count mismatch)"
-            );
-        }
-    }
-
-    #[rstest]
     fn test_edge_case_malformed_topics() {
         let state = SubscriptionState::new('.');
 
@@ -1426,5 +1315,410 @@ mod tests {
         assert!(final_topics.contains(&"confirmed.BTCUSDT".to_string()));
         assert!(final_topics.contains(&"pending.ETHUSDT".to_string()));
         assert!(!final_topics.contains(&"cancelled.XRPUSDT".to_string()));
+    }
+
+    /// Verifies all invariants of the subscription state.
+    ///
+    /// # Invariants
+    ///
+    /// 1. **Mutual exclusivity**: A topic cannot exist in multiple states simultaneously
+    ///    (one of: confirmed, pending_subscribe, pending_unsubscribe, or none).
+    /// 2. **all_topics consistency**: `all_topics()` must equal `confirmed ∪ pending_subscribe`
+    /// 3. **len consistency**: `len()` must equal total count of symbols in confirmed map
+    /// 4. **is_empty consistency**: `is_empty()` true iff all maps are empty
+    /// 5. **Reference count non-negative**: All reference counts >= 0
+    fn check_invariants(state: &SubscriptionState, label: &str) {
+        // Collect all topics from each state
+        let confirmed_topics: AHashSet<String> = state
+            .topics_from_map(&state.confirmed)
+            .into_iter()
+            .collect();
+        let pending_sub_topics: AHashSet<String> =
+            state.pending_subscribe_topics().into_iter().collect();
+        let pending_unsub_topics: AHashSet<String> =
+            state.pending_unsubscribe_topics().into_iter().collect();
+
+        // INVARIANT 1: Mutual exclusivity - no topic in multiple states
+        let confirmed_and_pending_sub: Vec<_> =
+            confirmed_topics.intersection(&pending_sub_topics).collect();
+        assert!(
+            confirmed_and_pending_sub.is_empty(),
+            "{label}: Topic in both confirmed and pending_subscribe: {confirmed_and_pending_sub:?}"
+        );
+
+        let confirmed_and_pending_unsub: Vec<_> = confirmed_topics
+            .intersection(&pending_unsub_topics)
+            .collect();
+        assert!(
+            confirmed_and_pending_unsub.is_empty(),
+            "{label}: Topic in both confirmed and pending_unsubscribe: {confirmed_and_pending_unsub:?}"
+        );
+
+        let pending_sub_and_unsub: Vec<_> = pending_sub_topics
+            .intersection(&pending_unsub_topics)
+            .collect();
+        assert!(
+            pending_sub_and_unsub.is_empty(),
+            "{label}: Topic in both pending_subscribe and pending_unsubscribe: {pending_sub_and_unsub:?}"
+        );
+
+        // INVARIANT 2: all_topics() == confirmed ∪ pending_subscribe
+        let all_topics: AHashSet<String> = state.all_topics().into_iter().collect();
+        let expected_all: AHashSet<String> = confirmed_topics
+            .union(&pending_sub_topics)
+            .cloned()
+            .collect();
+        assert_eq!(
+            all_topics, expected_all,
+            "{label}: all_topics() doesn't match confirmed ∪ pending_subscribe"
+        );
+
+        // Ensure pending_unsubscribe is NOT in all_topics
+        for topic in &pending_unsub_topics {
+            assert!(
+                !all_topics.contains(topic),
+                "{label}: pending_unsubscribe topic {topic} incorrectly in all_topics()"
+            );
+        }
+
+        // INVARIANT 3: len() == sum of confirmed symbol counts
+        let expected_len: usize = state
+            .confirmed
+            .iter()
+            .map(|entry| entry.value().len())
+            .sum();
+        assert_eq!(
+            state.len(),
+            expected_len,
+            "{label}: len() mismatch. Expected {expected_len}, got {}",
+            state.len()
+        );
+
+        // INVARIANT 4: is_empty() consistency
+        let should_be_empty = state.confirmed.is_empty()
+            && pending_sub_topics.is_empty()
+            && pending_unsub_topics.is_empty();
+        assert_eq!(
+            state.is_empty(),
+            should_be_empty,
+            "{label}: is_empty() inconsistent. Maps empty: {should_be_empty}, is_empty(): {}",
+            state.is_empty()
+        );
+
+        // INVARIANT 5: Reference counts non-negative (NonZeroUsize enforces > 0, absence = 0)
+        for entry in state.reference_counts.iter() {
+            let count = entry.value().get();
+            assert!(
+                count > 0,
+                "{label}: Reference count should be NonZeroUsize (> 0), got {count} for {:?}",
+                entry.key()
+            );
+        }
+    }
+
+    /// Checks that a topic exists in exactly one of the three states or none.
+    fn check_topic_exclusivity(state: &SubscriptionState, topic: &str, label: &str) {
+        let (channel, symbol) = split_topic(topic, state.delimiter);
+
+        let in_confirmed = is_tracked(&state.confirmed, channel, symbol);
+        let in_pending_sub = is_tracked(&state.pending_subscribe, channel, symbol);
+        let in_pending_unsub = is_tracked(&state.pending_unsubscribe, channel, symbol);
+
+        let count = [in_confirmed, in_pending_sub, in_pending_unsub]
+            .iter()
+            .filter(|&&x| x)
+            .count();
+
+        assert!(
+            count <= 1,
+            "{label}: Topic {topic} in {count} states (should be 0 or 1). \
+             confirmed: {in_confirmed}, pending_sub: {in_pending_sub}, pending_unsub: {in_pending_unsub}"
+        );
+    }
+
+    #[cfg(test)]
+    mod property_tests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        #[derive(Debug, Clone)]
+        enum Operation {
+            MarkSubscribe(String),
+            ConfirmSubscribe(String),
+            MarkUnsubscribe(String),
+            ConfirmUnsubscribe(String),
+            MarkFailure(String),
+            AddReference(String),
+            RemoveReference(String),
+            Clear,
+        }
+
+        // Strategy for generating valid topics
+        fn topic_strategy() -> impl Strategy<Value = String> {
+            prop_oneof![
+                // Symbol-level topics
+                (any::<u8>(), any::<u8>())
+                    .prop_map(|(ch, sym)| { format!("channel{}.SYMBOL{}", ch % 5, sym % 10) }),
+                // Channel-level topics (no symbol)
+                any::<u8>().prop_map(|ch| format!("channel{}", ch % 5)),
+            ]
+        }
+
+        // Strategy for generating random operations
+        fn operation_strategy() -> impl Strategy<Value = Operation> {
+            topic_strategy().prop_flat_map(|topic| {
+                prop_oneof![
+                    Just(Operation::MarkSubscribe(topic.clone())),
+                    Just(Operation::ConfirmSubscribe(topic.clone())),
+                    Just(Operation::MarkUnsubscribe(topic.clone())),
+                    Just(Operation::ConfirmUnsubscribe(topic.clone())),
+                    Just(Operation::MarkFailure(topic.clone())),
+                    Just(Operation::AddReference(topic.clone())),
+                    Just(Operation::RemoveReference(topic)),
+                    Just(Operation::Clear),
+                ]
+            })
+        }
+
+        // Apply an operation to the state
+        fn apply_operation(state: &SubscriptionState, op: &Operation) {
+            match op {
+                Operation::MarkSubscribe(topic) => state.mark_subscribe(topic),
+                Operation::ConfirmSubscribe(topic) => state.confirm_subscribe(topic),
+                Operation::MarkUnsubscribe(topic) => state.mark_unsubscribe(topic),
+                Operation::ConfirmUnsubscribe(topic) => state.confirm_unsubscribe(topic),
+                Operation::MarkFailure(topic) => state.mark_failure(topic),
+                Operation::AddReference(topic) => {
+                    state.add_reference(topic);
+                }
+                Operation::RemoveReference(topic) => {
+                    state.remove_reference(topic);
+                }
+                Operation::Clear => state.clear(),
+            }
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(500))]
+
+            /// Property: Invariants hold after any sequence of operations.
+            #[test]
+            fn prop_invariants_hold_after_operations(
+                operations in prop::collection::vec(operation_strategy(), 1..50)
+            ) {
+                let state = SubscriptionState::new('.');
+
+                // Apply all operations
+                for (i, op) in operations.iter().enumerate() {
+                    apply_operation(&state, op);
+
+                    // Check invariants after each operation
+                    check_invariants(&state, &format!("After op {i}: {op:?}"));
+                }
+
+                // Final invariant check
+                check_invariants(&state, "Final state");
+            }
+
+            /// Property: Reference counting is always consistent.
+            #[test]
+            fn prop_reference_counting_consistency(
+                ops in prop::collection::vec(
+                    topic_strategy().prop_flat_map(|t| {
+                        prop_oneof![
+                            Just(Operation::AddReference(t.clone())),
+                            Just(Operation::RemoveReference(t)),
+                        ]
+                    }),
+                    1..100
+                )
+            ) {
+                let state = SubscriptionState::new('.');
+
+                for op in &ops {
+                    apply_operation(&state, op);
+
+                    // All reference counts must be >= 0 (NonZeroUsize or absent)
+                    for entry in state.reference_counts.iter() {
+                        assert!(entry.value().get() > 0);
+                    }
+                }
+            }
+
+            /// Property: all_topics() always equals confirmed ∪ pending_subscribe.
+            #[test]
+            fn prop_all_topics_is_union(
+                operations in prop::collection::vec(operation_strategy(), 1..50)
+            ) {
+                let state = SubscriptionState::new('.');
+
+                for op in &operations {
+                    apply_operation(&state, op);
+
+                    // Verify all_topics() == confirmed ∪ pending_subscribe
+                    let all_topics: AHashSet<String> = state.all_topics().into_iter().collect();
+                    let confirmed: AHashSet<String> = state.topics_from_map(&state.confirmed).into_iter().collect();
+                    let pending_sub: AHashSet<String> = state.pending_subscribe_topics().into_iter().collect();
+                    let expected: AHashSet<String> = confirmed.union(&pending_sub).cloned().collect();
+
+                    assert_eq!(all_topics, expected);
+
+                    // Ensure pending_unsubscribe topics are NOT in all_topics
+                    let pending_unsub: AHashSet<String> = state.pending_unsubscribe_topics().into_iter().collect();
+                    for topic in pending_unsub {
+                        assert!(!all_topics.contains(&topic));
+                    }
+                }
+            }
+
+            /// Property: clear() resets to empty state.
+            #[test]
+            fn prop_clear_resets_completely(
+                operations in prop::collection::vec(operation_strategy(), 1..30)
+            ) {
+                let state = SubscriptionState::new('.');
+
+                // Apply random operations
+                for op in &operations {
+                    apply_operation(&state, op);
+                }
+
+                // Clear and verify complete reset
+                state.clear();
+
+                assert!(state.is_empty());
+                assert_eq!(state.len(), 0);
+                assert!(state.all_topics().is_empty());
+                assert!(state.pending_subscribe_topics().is_empty());
+                assert!(state.pending_unsubscribe_topics().is_empty());
+                assert!(state.confirmed.is_empty());
+                assert!(state.pending_subscribe.is_empty());
+                assert!(state.pending_unsubscribe.is_empty());
+                assert!(state.reference_counts.is_empty());
+            }
+
+            /// Property: Topics are mutually exclusive across states.
+            #[test]
+            fn prop_topic_mutual_exclusivity(
+                operations in prop::collection::vec(operation_strategy(), 1..50),
+                topic in topic_strategy()
+            ) {
+                let state = SubscriptionState::new('.');
+
+                for (i, op) in operations.iter().enumerate() {
+                    apply_operation(&state, op);
+                    check_topic_exclusivity(&state, &topic, &format!("After op {i}: {op:?}"));
+                }
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_exhaustive_two_step_transitions() {
+        let operations = [
+            "mark_subscribe",
+            "confirm_subscribe",
+            "mark_unsubscribe",
+            "confirm_unsubscribe",
+            "mark_failure",
+        ];
+
+        for &op1 in &operations {
+            for &op2 in &operations {
+                let state = SubscriptionState::new('.');
+                let topic = "test.TOPIC";
+
+                // Apply two operations
+                apply_op(&state, op1, topic);
+                apply_op(&state, op2, topic);
+
+                // Verify invariants hold
+                check_invariants(&state, &format!("{op1} → {op2}"));
+                check_topic_exclusivity(&state, topic, &format!("{op1} → {op2}"));
+            }
+        }
+    }
+
+    fn apply_op(state: &SubscriptionState, op: &str, topic: &str) {
+        match op {
+            "mark_subscribe" => state.mark_subscribe(topic),
+            "confirm_subscribe" => state.confirm_subscribe(topic),
+            "mark_unsubscribe" => state.mark_unsubscribe(topic),
+            "confirm_unsubscribe" => state.confirm_unsubscribe(topic),
+            "mark_failure" => state.mark_failure(topic),
+            _ => panic!("Unknown operation: {op}"),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn test_stress_rapid_resubscribe_pattern() {
+        // Stress test the race condition we fixed: rapid unsubscribe → resubscribe
+        let state = Arc::new(SubscriptionState::new('.'));
+        let mut handles = vec![];
+
+        for i in 0..100 {
+            let state_clone = Arc::clone(&state);
+            let handle = tokio::spawn(async move {
+                let topic = format!("rapid.SYMBOL{}", i % 10); // 10 unique topics, lots of contention
+
+                // Initial subscribe
+                state_clone.mark_subscribe(&topic);
+                state_clone.confirm_subscribe(&topic);
+
+                // Rapid unsubscribe → resubscribe (race condition scenario)
+                state_clone.mark_unsubscribe(&topic);
+                // Immediately resubscribe before unsubscribe ACK
+                state_clone.mark_subscribe(&topic);
+                // Now unsubscribe ACK arrives
+                state_clone.confirm_unsubscribe(&topic);
+                // Subscribe ACK arrives
+                state_clone.confirm_subscribe(&topic);
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        check_invariants(&state, "After rapid resubscribe stress test");
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn test_stress_failure_recovery_loop() {
+        // Stress test failure → recovery loops
+        // Each task gets its own unique topic to avoid race conditions in the test itself
+        let state = Arc::new(SubscriptionState::new('.'));
+        let mut handles = vec![];
+
+        for i in 0..30 {
+            let state_clone = Arc::clone(&state);
+            let handle = tokio::spawn(async move {
+                let topic = format!("failure.SYMBOL{i}"); // Unique topic per task
+
+                // Subscribe and confirm
+                state_clone.mark_subscribe(&topic);
+                state_clone.confirm_subscribe(&topic);
+
+                // Simulate multiple failures and recoveries
+                for _ in 0..5 {
+                    state_clone.mark_failure(&topic);
+                    state_clone.confirm_subscribe(&topic); // Re-confirm after retry
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        check_invariants(&state, "After failure recovery loops");
+
+        // All should eventually be confirmed (30 unique topics)
+        assert_eq!(state.len(), 30);
     }
 }

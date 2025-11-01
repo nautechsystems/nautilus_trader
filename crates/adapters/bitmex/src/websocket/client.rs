@@ -43,7 +43,9 @@ use nautilus_model::{
 };
 use nautilus_network::{
     RECONNECTED,
-    websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{
+        PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+    },
 };
 use reqwest::header::USER_AGENT;
 use tokio::{sync::RwLock, time::Duration};
@@ -66,14 +68,17 @@ use super::{
     },
 };
 use crate::{
-    common::{consts::BITMEX_WS_URL, credential::Credential, enums::BitmexExecType},
+    common::{
+        consts::{BITMEX_WS_TOPIC_DELIMITER, BITMEX_WS_URL},
+        credential::Credential,
+        enums::BitmexExecType,
+    },
     websocket::{
         auth::{AUTHENTICATION_TIMEOUT_SECS, AuthResultReceiver, AuthTracker},
         parse::{
             parse_execution_msg, parse_funding_msg, parse_instrument_msg, parse_order_msg,
             parse_position_msg,
         },
-        subscription::SubscriptionState,
     },
 };
 
@@ -136,7 +141,7 @@ impl BitmexWebSocketClient {
             task_handle: None,
             account_id,
             auth_tracker: AuthTracker::new(),
-            subscriptions: SubscriptionState::new(),
+            subscriptions: SubscriptionState::new(BITMEX_WS_TOPIC_DELIMITER),
             instruments_cache: Arc::new(AHashMap::new()),
             order_type_cache: Arc::new(DashMap::new()),
             order_symbol_cache: Arc::new(DashMap::new()),
@@ -271,21 +276,21 @@ impl BitmexWebSocketClient {
                         }
 
                         let confirmed = subscriptions.confirmed();
-                        let pending = subscriptions.pending();
+                        let pending = subscriptions.pending_subscribe();
                         let mut restore_set: HashSet<String> = HashSet::new();
 
-                        let mut collect_topics = |map: &DashMap<String, AHashSet<Ustr>>| {
+                        let mut collect_topics = |map: &DashMap<Ustr, AHashSet<Ustr>>| {
                             for entry in map.iter() {
                                 let (channel, symbols) = entry.pair();
 
-                                if channel == BitmexWsTopic::Instrument.as_ref() {
+                                if *channel == BitmexWsTopic::Instrument.as_ref() {
                                     continue;
                                 }
 
-                                if symbols.is_empty() {
-                                    restore_set.insert(channel.clone());
-                                } else {
-                                    for symbol in symbols.iter() {
+                                for symbol in symbols.iter() {
+                                    if symbol.is_empty() {
+                                        restore_set.insert(channel.to_string());
+                                    } else {
                                         restore_set.insert(format!("{channel}:{symbol}"));
                                     }
                                 }
@@ -745,12 +750,15 @@ impl BitmexWebSocketClient {
             if symbols.contains(&symbol) {
                 // Return the full topic string (e.g., "orderBookL2:XBTUSD")
                 channels.push(format!("{channel}:{symbol}"));
-            } else if symbols.is_empty()
-                && (channel == BitmexWsAuthChannel::Execution.as_ref()
-                    || channel == BitmexWsAuthChannel::Order.as_ref())
-            {
-                // These are account-level subscriptions without symbols
-                channels.push(channel.clone());
+            } else {
+                let has_channel_marker = symbols.iter().any(|s| s.is_empty());
+                if has_channel_marker
+                    && (*channel == BitmexWsAuthChannel::Execution.as_ref()
+                        || *channel == BitmexWsAuthChannel::Order.as_ref())
+                {
+                    // These are account-level subscriptions without symbols
+                    channels.push(channel.to_string());
+                }
             }
         }
 
@@ -791,7 +799,7 @@ impl BitmexWebSocketClient {
     /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
         let topic = BitmexWsTopic::OrderBookL2;
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -805,7 +813,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
         let topic = BitmexWsTopic::OrderBookL2_25;
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -819,7 +827,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
         let topic = BitmexWsTopic::OrderBook10;
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -897,7 +905,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
         let topic = BitmexWsTopic::Funding;
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -948,7 +956,7 @@ impl BitmexWebSocketClient {
     /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> Result<(), BitmexWsError> {
         let topic = BitmexWsTopic::OrderBookL2;
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -962,7 +970,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
         let topic = BitmexWsTopic::OrderBookL2_25;
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -976,7 +984,7 @@ impl BitmexWebSocketClient {
         instrument_id: InstrumentId,
     ) -> Result<(), BitmexWsError> {
         let topic = BitmexWsTopic::OrderBook10;
-        let symbol = instrument_id.symbol.as_str();
+        let symbol = instrument_id.symbol.inner();
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -1844,7 +1852,7 @@ impl BitmexWsMessageHandler {
 
         for topic in topics {
             if success {
-                self.subscriptions.confirm(topic);
+                self.subscriptions.confirm_subscribe(topic);
                 tracing::debug!(topic = topic, "Subscription confirmed");
             } else {
                 self.subscriptions.mark_failure(topic);
@@ -1871,11 +1879,18 @@ impl BitmexWsMessageHandler {
         for topic in topics {
             if success {
                 tracing::debug!(topic = topic, "Unsubscription confirmed");
-                self.subscriptions.clear_pending(topic);
+                self.subscriptions.confirm_unsubscribe(topic);
             } else {
                 let reason = error.unwrap_or("Unsubscription rejected");
-                tracing::error!(topic = topic, error = reason, "Unsubscription failed");
-                self.subscriptions.confirm(topic);
+                tracing::error!(
+                    topic = topic,
+                    error = reason,
+                    "Unsubscription failed - restoring subscription"
+                );
+                // Venue rejected unsubscribe, so we're still subscribed. Restore state:
+                self.subscriptions.confirm_unsubscribe(topic); // Clear pending_unsubscribe
+                self.subscriptions.mark_subscribe(topic); // Mark as subscribing
+                self.subscriptions.confirm_subscribe(topic); // Confirm subscription
             }
         }
     }
@@ -1936,37 +1951,39 @@ mod tests {
 
         // Populate subscriptions like they would be during normal operation
         let subs = client.subscriptions.confirmed();
-        subs.insert(BitmexWsTopic::Trade.as_ref().to_string(), {
+        subs.insert(Ustr::from(BitmexWsTopic::Trade.as_ref()), {
             let mut set = AHashSet::new();
             set.insert(Ustr::from("XBTUSD"));
             set.insert(Ustr::from("ETHUSD"));
             set
         });
 
-        subs.insert(BitmexWsTopic::OrderBookL2.as_ref().to_string(), {
+        subs.insert(Ustr::from(BitmexWsTopic::OrderBookL2.as_ref()), {
             let mut set = AHashSet::new();
             set.insert(Ustr::from("XBTUSD"));
             set
         });
 
         // Private channels (no symbols)
-        subs.insert(
-            BitmexWsAuthChannel::Order.as_ref().to_string(),
-            AHashSet::new(),
-        );
-        subs.insert(
-            BitmexWsAuthChannel::Position.as_ref().to_string(),
-            AHashSet::new(),
-        );
+        subs.insert(Ustr::from(BitmexWsAuthChannel::Order.as_ref()), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from(""));
+            set
+        });
+        subs.insert(Ustr::from(BitmexWsAuthChannel::Position.as_ref()), {
+            let mut set = AHashSet::new();
+            set.insert(Ustr::from(""));
+            set
+        });
 
-        // Test the actual reconnection topic building logic from lines 258-268
+        // Test the actual reconnection topic building logic
         let mut topics_to_restore = Vec::new();
         for entry in subs.iter() {
             let (channel, symbols) = entry.pair();
-            if symbols.is_empty() {
-                topics_to_restore.push(channel.clone());
-            } else {
-                for symbol in symbols.iter() {
+            for symbol in symbols.iter() {
+                if symbol.is_empty() {
+                    topics_to_restore.push(channel.to_string());
+                } else {
                     topics_to_restore.push(format!("{channel}:{symbol}"));
                 }
             }
@@ -2040,14 +2057,14 @@ mod tests {
 
         // Set up initial subscriptions
         let subs = client.subscriptions.confirmed();
-        subs.insert(BitmexWsTopic::Trade.as_ref().to_string(), {
+        subs.insert(Ustr::from(BitmexWsTopic::Trade.as_ref()), {
             let mut set = AHashSet::new();
             set.insert(Ustr::from("XBTUSD"));
             set.insert(Ustr::from("ETHUSD"));
             set
         });
 
-        subs.insert(BitmexWsTopic::OrderBookL2.as_ref().to_string(), {
+        subs.insert(Ustr::from(BitmexWsTopic::OrderBookL2.as_ref()), {
             let mut set = AHashSet::new();
             set.insert(Ustr::from("XBTUSD"));
             set
@@ -2056,12 +2073,12 @@ mod tests {
         // Simulate unsubscribe logic (like from unsubscribe() method lines 586-599)
         let topic = format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref());
         if let Some((channel, symbol)) = topic.split_once(':')
-            && let Some(mut entry) = subs.get_mut(channel)
+            && let Some(mut entry) = subs.get_mut(&Ustr::from(channel))
         {
             entry.remove(&Ustr::from(symbol));
             if entry.is_empty() {
                 drop(entry);
-                subs.remove(channel);
+                subs.remove(&Ustr::from(channel));
             }
         }
 
@@ -2069,10 +2086,10 @@ mod tests {
         let mut topics_to_restore = Vec::new();
         for entry in subs.iter() {
             let (channel, symbols) = entry.pair();
-            if symbols.is_empty() {
-                topics_to_restore.push(channel.clone());
-            } else {
-                for symbol in symbols.iter() {
+            for symbol in symbols.iter() {
+                if symbol.is_empty() {
+                    topics_to_restore.push(channel.to_string());
+                } else {
                     topics_to_restore.push(format!("{channel}:{symbol}"));
                 }
             }
@@ -2087,5 +2104,163 @@ mod tests {
         assert!(!topics_to_restore.contains(&trade_eth));
         assert!(topics_to_restore.contains(&book_xbt));
         assert_eq!(topics_to_restore.len(), 2);
+    }
+
+    #[rstest]
+    fn test_race_unsubscribe_failure_recovery() {
+        // Simulates the race condition where venue rejects an unsubscribe request.
+        // The adapter must perform the 3-step recovery:
+        // 1. confirm_unsubscribe() - clear pending_unsubscribe
+        // 2. mark_subscribe() - mark as subscribing again
+        // 3. confirm_subscribe() - restore to confirmed state
+        let client = BitmexWebSocketClient::new(
+            Some("ws://test.com".to_string()),
+            None,
+            None,
+            Some(AccountId::new("BITMEX-TEST")),
+            None,
+        )
+        .unwrap();
+
+        let topic = format!("{}:XBTUSD", BitmexWsTopic::Trade.as_ref());
+
+        // Initial subscribe flow
+        client.subscriptions.mark_subscribe(&topic);
+        client.subscriptions.confirm_subscribe(&topic);
+        assert_eq!(client.subscriptions.len(), 1);
+
+        // User unsubscribes
+        client.subscriptions.mark_unsubscribe(&topic);
+        assert_eq!(client.subscriptions.len(), 0);
+        assert_eq!(
+            client.subscriptions.pending_unsubscribe_topics(),
+            vec![topic.clone()]
+        );
+
+        // Venue REJECTS the unsubscribe (error message)
+        // Adapter must perform 3-step recovery (from lines 1884-1891)
+        client.subscriptions.confirm_unsubscribe(&topic); // Step 1: clear pending_unsubscribe
+        client.subscriptions.mark_subscribe(&topic); // Step 2: mark as subscribing
+        client.subscriptions.confirm_subscribe(&topic); // Step 3: confirm subscription
+
+        // Verify recovery: topic should be back in confirmed state
+        assert_eq!(client.subscriptions.len(), 1);
+        assert!(client.subscriptions.pending_unsubscribe_topics().is_empty());
+        assert!(client.subscriptions.pending_subscribe_topics().is_empty());
+
+        // Verify topic is in all_topics() for reconnect
+        let all = client.subscriptions.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic));
+    }
+
+    #[rstest]
+    fn test_race_resubscribe_before_unsubscribe_ack() {
+        // Simulates: User unsubscribes, then immediately resubscribes before
+        // the unsubscribe ACK arrives from the venue.
+        // This is the race condition fixed in the subscription tracker.
+        let client = BitmexWebSocketClient::new(
+            Some("ws://test.com".to_string()),
+            None,
+            None,
+            Some(AccountId::new("BITMEX-TEST")),
+            None,
+        )
+        .unwrap();
+
+        let topic = format!("{}:XBTUSD", BitmexWsTopic::OrderBookL2.as_ref());
+
+        // Initial subscribe
+        client.subscriptions.mark_subscribe(&topic);
+        client.subscriptions.confirm_subscribe(&topic);
+        assert_eq!(client.subscriptions.len(), 1);
+
+        // User unsubscribes
+        client.subscriptions.mark_unsubscribe(&topic);
+        assert_eq!(client.subscriptions.len(), 0);
+        assert_eq!(
+            client.subscriptions.pending_unsubscribe_topics(),
+            vec![topic.clone()]
+        );
+
+        // User immediately changes mind and resubscribes (before unsubscribe ACK)
+        client.subscriptions.mark_subscribe(&topic);
+        assert_eq!(
+            client.subscriptions.pending_subscribe_topics(),
+            vec![topic.clone()]
+        );
+
+        // NOW the unsubscribe ACK arrives - should NOT clear pending_subscribe
+        client.subscriptions.confirm_unsubscribe(&topic);
+        assert!(client.subscriptions.pending_unsubscribe_topics().is_empty());
+        assert_eq!(
+            client.subscriptions.pending_subscribe_topics(),
+            vec![topic.clone()]
+        ); // CRITICAL
+
+        // Subscribe ACK arrives
+        client.subscriptions.confirm_subscribe(&topic);
+        assert_eq!(client.subscriptions.len(), 1);
+        assert!(client.subscriptions.pending_subscribe_topics().is_empty());
+
+        // Verify final state is correct
+        let all = client.subscriptions.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic));
+    }
+
+    #[rstest]
+    fn test_race_channel_level_reconnection_with_pending_states() {
+        // Simulates reconnection with mixed pending states including channel-level subscriptions.
+        let client = BitmexWebSocketClient::new(
+            Some("ws://test.com".to_string()),
+            Some("test_key".to_string()),
+            Some("test_secret".to_string()),
+            Some(AccountId::new("BITMEX-TEST")),
+            None,
+        )
+        .unwrap();
+
+        // Set up mixed state before reconnection
+        // Confirmed: trade:XBTUSD
+        let trade_xbt = format!("{}:XBTUSD", BitmexWsTopic::Trade.as_ref());
+        client.subscriptions.mark_subscribe(&trade_xbt);
+        client.subscriptions.confirm_subscribe(&trade_xbt);
+
+        // Confirmed: order (channel-level, no symbol)
+        let order_channel = BitmexWsAuthChannel::Order.as_ref();
+        client.subscriptions.mark_subscribe(order_channel);
+        client.subscriptions.confirm_subscribe(order_channel);
+
+        // Pending subscribe: trade:ETHUSD
+        let trade_eth = format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref());
+        client.subscriptions.mark_subscribe(&trade_eth);
+
+        // Pending unsubscribe: orderBookL2:XBTUSD (user cancelled)
+        let book_xbt = format!("{}:XBTUSD", BitmexWsTopic::OrderBookL2.as_ref());
+        client.subscriptions.mark_subscribe(&book_xbt);
+        client.subscriptions.confirm_subscribe(&book_xbt);
+        client.subscriptions.mark_unsubscribe(&book_xbt);
+
+        // Get topics for reconnection
+        let topics_to_restore = client.subscriptions.all_topics();
+
+        // Should include: confirmed + pending_subscribe (NOT pending_unsubscribe)
+        assert_eq!(topics_to_restore.len(), 3);
+        assert!(topics_to_restore.contains(&trade_xbt));
+        assert!(topics_to_restore.contains(&order_channel.to_string()));
+        assert!(topics_to_restore.contains(&trade_eth));
+        assert!(!topics_to_restore.contains(&book_xbt)); // Excluded
+
+        // Verify channel-level marker is handled correctly
+        // order channel should not have ':' delimiter
+        for topic in &topics_to_restore {
+            if topic == order_channel {
+                assert!(
+                    !topic.contains(':'),
+                    "Channel-level topic should not have delimiter"
+                );
+            }
+        }
     }
 }

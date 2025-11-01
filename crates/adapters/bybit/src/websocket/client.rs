@@ -43,7 +43,9 @@ use nautilus_model::{
 use nautilus_network::{
     RECONNECTED,
     retry::{RetryManager, create_websocket_retry_manager},
-    websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{
+        PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+    },
 };
 use serde_json::{Value, json};
 use tokio::sync::RwLock;
@@ -53,7 +55,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_PONG},
+        consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_PONG, BYBIT_WS_TOPIC_DELIMITER},
         credential::Credential,
         enums::{
             BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
@@ -84,7 +86,6 @@ use crate::{
             parse_ws_kline_bar, parse_ws_order_status_report, parse_ws_position_status_report,
             parse_ws_trade_tick,
         },
-        subscription::SubscriptionState,
     },
 };
 
@@ -220,7 +221,7 @@ impl BybitWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
-            subscriptions: SubscriptionState::new(),
+            subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
@@ -257,7 +258,7 @@ impl BybitWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
-            subscriptions: SubscriptionState::new(),
+            subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
@@ -294,7 +295,7 @@ impl BybitWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
-            subscriptions: SubscriptionState::new(),
+            subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
@@ -2178,6 +2179,7 @@ impl BybitWebSocketClient {
                                     // Clear from pending_unsubscribe and restore to confirmed
                                     for topic in pending_topics {
                                         subscriptions.confirm_unsubscribe(&topic); // Clear from pending_unsubscribe
+                                        subscriptions.mark_subscribe(&topic); // Mark as subscribing
                                         subscriptions.confirm_subscribe(&topic); // Restore to confirmed
                                         tracing::warn!(
                                             topic = topic,
@@ -2483,5 +2485,171 @@ mod tests {
         let message =
             BybitWebSocketClient::classify_message(&json).expect("expected ticker message");
         assert!(matches!(message, BybitWebSocketMessage::TickerOption(_)));
+    }
+
+    #[rstest]
+    fn test_race_unsubscribe_failure_recovery() {
+        // Simulates the race condition where venue rejects an unsubscribe request.
+        // The adapter must perform the 3-step recovery:
+        // 1. confirm_unsubscribe() - clear pending_unsubscribe
+        // 2. mark_subscribe() - mark as subscribing again
+        // 3. confirm_subscribe() - restore to confirmed state
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        let topic = "publicTrade.BTCUSDT";
+
+        // Initial subscribe flow
+        subscriptions.mark_subscribe(topic);
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+
+        // User unsubscribes
+        subscriptions.mark_unsubscribe(topic);
+        assert_eq!(subscriptions.len(), 0);
+        assert_eq!(subscriptions.pending_unsubscribe_topics(), vec![topic]);
+
+        // Venue REJECTS the unsubscribe (error message)
+        // Adapter must perform 3-step recovery (from lines 2181-2183)
+        subscriptions.confirm_unsubscribe(topic); // Step 1: clear pending_unsubscribe
+        subscriptions.mark_subscribe(topic); // Step 2: mark as subscribing
+        subscriptions.confirm_subscribe(topic); // Step 3: confirm subscription
+
+        // Verify recovery: topic should be back in confirmed state
+        assert_eq!(subscriptions.len(), 1);
+        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+
+        // Verify topic is in all_topics() for reconnect
+        let all = subscriptions.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic.to_string()));
+    }
+
+    #[rstest]
+    fn test_race_resubscribe_before_unsubscribe_ack() {
+        // Simulates: User unsubscribes, then immediately resubscribes before
+        // the unsubscribe ACK arrives from the venue.
+        // This is the race condition fixed in the subscription tracker.
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        let topic = "orderbook.50.BTCUSDT";
+
+        // Initial subscribe
+        subscriptions.mark_subscribe(topic);
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+
+        // User unsubscribes
+        subscriptions.mark_unsubscribe(topic);
+        assert_eq!(subscriptions.len(), 0);
+        assert_eq!(subscriptions.pending_unsubscribe_topics(), vec![topic]);
+
+        // User immediately changes mind and resubscribes (before unsubscribe ACK)
+        subscriptions.mark_subscribe(topic);
+        assert_eq!(subscriptions.pending_subscribe_topics(), vec![topic]);
+
+        // NOW the unsubscribe ACK arrives - should NOT clear pending_subscribe
+        subscriptions.confirm_unsubscribe(topic);
+        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert_eq!(subscriptions.pending_subscribe_topics(), vec![topic]); // CRITICAL
+
+        // Subscribe ACK arrives
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+
+        // Verify final state is correct
+        let all = subscriptions.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic.to_string()));
+    }
+
+    #[rstest]
+    fn test_race_late_subscribe_confirmation_after_unsubscribe() {
+        // Simulates: User subscribes, then unsubscribes before subscribe ACK arrives.
+        // The late subscribe ACK should be ignored.
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        let topic = "tickers.ETHUSDT";
+
+        // User subscribes
+        subscriptions.mark_subscribe(topic);
+        assert_eq!(subscriptions.pending_subscribe_topics(), vec![topic]);
+
+        // User immediately unsubscribes (before subscribe ACK)
+        subscriptions.mark_unsubscribe(topic);
+        assert!(subscriptions.pending_subscribe_topics().is_empty()); // Cleared
+        assert_eq!(subscriptions.pending_unsubscribe_topics(), vec![topic]);
+
+        // Late subscribe confirmation arrives - should be IGNORED
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 0); // Not added to confirmed
+        assert_eq!(subscriptions.pending_unsubscribe_topics(), vec![topic]);
+
+        // Unsubscribe ACK arrives
+        subscriptions.confirm_unsubscribe(topic);
+
+        // Final state: completely empty
+        assert!(subscriptions.is_empty());
+        assert!(subscriptions.all_topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_race_reconnection_with_pending_states() {
+        // Simulates reconnection with mixed pending states.
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        // Set up mixed state before reconnection
+        // Confirmed: publicTrade.BTCUSDT
+        let trade_btc = "publicTrade.BTCUSDT";
+        subscriptions.mark_subscribe(trade_btc);
+        subscriptions.confirm_subscribe(trade_btc);
+
+        // Pending subscribe: publicTrade.ETHUSDT
+        let trade_eth = "publicTrade.ETHUSDT";
+        subscriptions.mark_subscribe(trade_eth);
+
+        // Pending unsubscribe: orderbook.50.BTCUSDT (user cancelled)
+        let book_btc = "orderbook.50.BTCUSDT";
+        subscriptions.mark_subscribe(book_btc);
+        subscriptions.confirm_subscribe(book_btc);
+        subscriptions.mark_unsubscribe(book_btc);
+
+        // Get topics for reconnection
+        let topics_to_restore = subscriptions.all_topics();
+
+        // Should include: confirmed + pending_subscribe (NOT pending_unsubscribe)
+        assert_eq!(topics_to_restore.len(), 2);
+        assert!(topics_to_restore.contains(&trade_btc.to_string()));
+        assert!(topics_to_restore.contains(&trade_eth.to_string()));
+        assert!(!topics_to_restore.contains(&book_btc.to_string())); // Excluded
+    }
+
+    #[rstest]
+    fn test_race_duplicate_subscribe_messages_idempotent() {
+        // Simulates duplicate subscribe requests (e.g., from reconnection logic).
+        // The subscription tracker should be idempotent and not create duplicate state.
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        let topic = "publicTrade.BTCUSDT";
+
+        // Subscribe and confirm
+        subscriptions.mark_subscribe(topic);
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+
+        // Duplicate mark_subscribe on already-confirmed topic (should be no-op)
+        subscriptions.mark_subscribe(topic);
+        assert!(subscriptions.pending_subscribe_topics().is_empty()); // Not re-added
+        assert_eq!(subscriptions.len(), 1); // Still just 1
+
+        // Duplicate confirm_subscribe (should be idempotent)
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+
+        // Verify final state
+        let all = subscriptions.all_topics();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0], topic);
     }
 }

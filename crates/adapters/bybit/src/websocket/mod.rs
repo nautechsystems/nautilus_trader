@@ -22,4 +22,3 @@ pub mod enums;
 pub mod error;
 pub mod messages;
 pub mod parse;
-pub(crate) mod subscription;

@@ -58,7 +58,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{
-        PingHandler, TEXT_PING, TEXT_PONG, WebSocketClient, WebSocketConfig,
+        PingHandler, SubscriptionState, TEXT_PING, TEXT_PONG, WebSocketClient, WebSocketConfig,
         channel_message_handler,
     },
 };
@@ -82,14 +82,14 @@ use super::{
         WsPostOrderParamsBuilder,
     },
     parse::{parse_book_msg_vec, parse_ws_message_data},
-    subscription::{SubscriptionState, topic_from_subscription_arg, topic_from_websocket_arg},
+    subscription::{topic_from_subscription_arg, topic_from_websocket_arg},
 };
 use crate::{
     common::{
         consts::{
             OKX_NAUTILUS_BROKER_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE,
             OKX_POST_ONLY_ERROR_CODE, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
-            OKX_WS_PUBLIC_URL, should_retry_error_code,
+            OKX_WS_PUBLIC_URL, OKX_WS_TOPIC_DELIMITER, should_retry_error_code,
         },
         credential::Credential,
         enums::{
@@ -294,7 +294,7 @@ impl OKXWebSocketClient {
         let subscriptions_inst_family = Arc::new(DashMap::new());
         let subscriptions_inst_id = Arc::new(DashMap::new());
         let subscriptions_bare = Arc::new(DashMap::new());
-        let subscriptions_state = SubscriptionState::new();
+        let subscriptions_state = SubscriptionState::new(OKX_WS_TOPIC_DELIMITER);
 
         Ok(Self {
             url,
@@ -700,7 +700,7 @@ impl OKXWebSocketClient {
                                 if confirmed_topic_count <= 10 {
                                     let topics: Vec<_> = confirmed_topics
                                         .iter()
-                                        .map(|entry| entry.key().clone())
+                                        .map(|entry| *entry.key())
                                         .collect();
                                     if !topics.is_empty() {
                                         tracing::trace!(topics = ?topics, "Confirmed topics before reconnect");
@@ -708,7 +708,7 @@ impl OKXWebSocketClient {
                                 }
                                 drop(confirmed_topics);
 
-                                let pending_topics = subscriptions_state_for_task.pending();
+                                let pending_topics = subscriptions_state_for_task.pending_subscribe();
                                 let pending_topic_count = pending_topics.len();
                                 if pending_topic_count > 0 {
                                     tracing::debug!(pending_topic_count, "Pending subscriptions awaiting replay after reconnect");
@@ -4429,7 +4429,7 @@ impl OKXWsMessageHandler {
                     match event {
                         OKXSubscriptionEvent::Subscribe => {
                             if success {
-                                self.subscriptions_state.confirm(&topic);
+                                self.subscriptions_state.confirm_subscribe(&topic);
                             } else {
                                 tracing::warn!(?topic, error = ?msg, code = ?code, "Subscription failed");
                                 self.subscriptions_state.mark_failure(&topic);
@@ -4437,10 +4437,13 @@ impl OKXWsMessageHandler {
                         }
                         OKXSubscriptionEvent::Unsubscribe => {
                             if success {
-                                self.subscriptions_state.clear_pending(&topic);
+                                self.subscriptions_state.confirm_unsubscribe(&topic);
                             } else {
-                                tracing::warn!(?topic, error = ?msg, code = ?code, "Unsubscription failed");
-                                self.subscriptions_state.mark_failure(&topic);
+                                tracing::warn!(?topic, error = ?msg, code = ?code, "Unsubscription failed - restoring subscription");
+                                // Venue rejected unsubscribe, so we're still subscribed. Restore state:
+                                self.subscriptions_state.confirm_unsubscribe(&topic); // Clear pending_unsubscribe
+                                self.subscriptions_state.mark_subscribe(&topic);       // Mark as subscribing
+                                self.subscriptions_state.confirm_subscribe(&topic);    // Confirm subscription
                             }
                         }
                     }
@@ -5105,5 +5108,262 @@ mod tests {
 
         // Should get an error because not connected
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_race_unsubscribe_failure_recovery() {
+        // Simulates the race condition where venue rejects an unsubscribe request.
+        // The adapter must perform the 3-step recovery:
+        // 1. confirm_unsubscribe() - clear pending_unsubscribe
+        // 2. mark_subscribe() - mark as subscribing again
+        // 3. confirm_subscribe() - restore to confirmed state
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let topic = "trades:BTC-USDT-SWAP";
+
+        // Initial subscribe flow
+        client.subscriptions_state.mark_subscribe(topic);
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+
+        // User unsubscribes
+        client.subscriptions_state.mark_unsubscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 0);
+        assert_eq!(
+            client.subscriptions_state.pending_unsubscribe_topics(),
+            vec![topic]
+        );
+
+        // Venue REJECTS the unsubscribe (error message)
+        // Adapter must perform 3-step recovery (from lines 4444-4446)
+        client.subscriptions_state.confirm_unsubscribe(topic); // Step 1: clear pending_unsubscribe
+        client.subscriptions_state.mark_subscribe(topic); // Step 2: mark as subscribing
+        client.subscriptions_state.confirm_subscribe(topic); // Step 3: confirm subscription
+
+        // Verify recovery: topic should be back in confirmed state
+        assert_eq!(client.subscriptions_state.len(), 1);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_unsubscribe_topics()
+                .is_empty()
+        );
+        assert!(
+            client
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+
+        // Verify topic is in all_topics() for reconnect
+        let all = client.subscriptions_state.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic.to_string()));
+    }
+
+    #[rstest]
+    fn test_race_resubscribe_before_unsubscribe_ack() {
+        // Simulates: User unsubscribes, then immediately resubscribes before
+        // the unsubscribe ACK arrives from the venue.
+        // This is the race condition fixed in the subscription tracker.
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let topic = "books:BTC-USDT";
+
+        // Initial subscribe
+        client.subscriptions_state.mark_subscribe(topic);
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+
+        // User unsubscribes
+        client.subscriptions_state.mark_unsubscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 0);
+        assert_eq!(
+            client.subscriptions_state.pending_unsubscribe_topics(),
+            vec![topic]
+        );
+
+        // User immediately changes mind and resubscribes (before unsubscribe ACK)
+        client.subscriptions_state.mark_subscribe(topic);
+        assert_eq!(
+            client.subscriptions_state.pending_subscribe_topics(),
+            vec![topic]
+        );
+
+        // NOW the unsubscribe ACK arrives - should NOT clear pending_subscribe
+        client.subscriptions_state.confirm_unsubscribe(topic);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_unsubscribe_topics()
+                .is_empty()
+        );
+        assert_eq!(
+            client.subscriptions_state.pending_subscribe_topics(),
+            vec![topic]
+        ); // CRITICAL
+
+        // Subscribe ACK arrives
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+
+        // Verify final state is correct
+        let all = client.subscriptions_state.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic.to_string()));
+    }
+
+    #[rstest]
+    fn test_race_late_subscribe_confirmation_after_unsubscribe() {
+        // Simulates: User subscribes, then unsubscribes before subscribe ACK arrives.
+        // The late subscribe ACK should be ignored.
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let topic = "tickers:ETH-USDT";
+
+        // User subscribes
+        client.subscriptions_state.mark_subscribe(topic);
+        assert_eq!(
+            client.subscriptions_state.pending_subscribe_topics(),
+            vec![topic]
+        );
+
+        // User immediately unsubscribes (before subscribe ACK)
+        client.subscriptions_state.mark_unsubscribe(topic);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        ); // Cleared
+        assert_eq!(
+            client.subscriptions_state.pending_unsubscribe_topics(),
+            vec![topic]
+        );
+
+        // Late subscribe confirmation arrives - should be IGNORED
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 0); // Not added to confirmed
+        assert_eq!(
+            client.subscriptions_state.pending_unsubscribe_topics(),
+            vec![topic]
+        );
+
+        // Unsubscribe ACK arrives
+        client.subscriptions_state.confirm_unsubscribe(topic);
+
+        // Final state: completely empty
+        assert!(client.subscriptions_state.is_empty());
+        assert!(client.subscriptions_state.all_topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_race_reconnection_with_pending_states() {
+        // Simulates reconnection with mixed pending states.
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            Some("test_key".to_string()),
+            Some("test_secret".to_string()),
+            Some("test_passphrase".to_string()),
+            Some(AccountId::new("OKX-TEST")),
+            None,
+        )
+        .expect("Failed to create client");
+
+        // Set up mixed state before reconnection
+        // Confirmed: trades:BTC-USDT-SWAP
+        let trade_btc = "trades:BTC-USDT-SWAP";
+        client.subscriptions_state.mark_subscribe(trade_btc);
+        client.subscriptions_state.confirm_subscribe(trade_btc);
+
+        // Pending subscribe: trades:ETH-USDT-SWAP
+        let trade_eth = "trades:ETH-USDT-SWAP";
+        client.subscriptions_state.mark_subscribe(trade_eth);
+
+        // Pending unsubscribe: books:BTC-USDT (user cancelled)
+        let book_btc = "books:BTC-USDT";
+        client.subscriptions_state.mark_subscribe(book_btc);
+        client.subscriptions_state.confirm_subscribe(book_btc);
+        client.subscriptions_state.mark_unsubscribe(book_btc);
+
+        // Get topics for reconnection
+        let topics_to_restore = client.subscriptions_state.all_topics();
+
+        // Should include: confirmed + pending_subscribe (NOT pending_unsubscribe)
+        assert_eq!(topics_to_restore.len(), 2);
+        assert!(topics_to_restore.contains(&trade_btc.to_string()));
+        assert!(topics_to_restore.contains(&trade_eth.to_string()));
+        assert!(!topics_to_restore.contains(&book_btc.to_string())); // Excluded
+    }
+
+    #[rstest]
+    fn test_race_duplicate_subscribe_messages_idempotent() {
+        // Simulates duplicate subscribe requests (e.g., from reconnection logic).
+        // The subscription tracker should be idempotent and not create duplicate state.
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let topic = "trades:BTC-USDT-SWAP";
+
+        // Subscribe and confirm
+        client.subscriptions_state.mark_subscribe(topic);
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+
+        // Duplicate mark_subscribe on already-confirmed topic (should be no-op)
+        client.subscriptions_state.mark_subscribe(topic);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        ); // Not re-added
+        assert_eq!(client.subscriptions_state.len(), 1); // Still just 1
+
+        // Duplicate confirm_subscribe (should be idempotent)
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+
+        // Verify final state
+        let all = client.subscriptions_state.all_topics();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0], topic);
     }
 }
