@@ -7,24 +7,32 @@ raw market dictionaries ready for further client-side filtering.
 References
 ----------
 - Gamma Get Markets docs: https://docs.polymarket.com/developers/gamma-markets-api/get-markets
+
 """
 
 from __future__ import annotations
+
 import os
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
+from typing import Dict
+from typing import Generator
+from typing import List
+
 import requests
+
 
 DEFAULT_GAMMA_BASE_URL = os.getenv("GAMMA_API_URL", "https://gamma-api.polymarket.com")
 from trader.common.logging import get_logger
 
+
 _logger = get_logger(__name__)
 
-def _normalize_base_url(base_url: Optional[str]) -> str:
+def _normalize_base_url(base_url: str | None) -> str:
     url = base_url or DEFAULT_GAMMA_BASE_URL
     return url[:-1] if url.endswith("/") else url
 
 
-def build_markets_query(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def build_markets_query(filters: Dict[str, Any] | None = None) -> Dict[str, Any]:
     """
     Build query params for Gamma Get Markets from a generic filter dict.
 
@@ -40,6 +48,7 @@ def build_markets_query(filters: Optional[Dict[str, Any]] = None) -> Dict[str, A
     Special handling:
     - is_active=True implies active=true, archived=false, closed=false
     - next_cursor: will be added separately by the fetch function
+
     """
     params: Dict[str, Any] = {}
     if not filters:
@@ -90,7 +99,9 @@ def _request_markets_page(
 ) -> List[Dict[str, Any]]:
     """
     Fetch a single page of markets using limit/offset pagination.
+
     Returns a list of market dicts.
+
     """
     url = f"{base_url}/markets"
     effective_params = dict(params)
@@ -112,8 +123,8 @@ def _request_markets_page(
 
 
 def iter_markets(
-    filters: Optional[Dict[str, Any]] = None,
-    base_url: Optional[str] = None,
+    filters: Dict[str, Any] | None = None,
+    base_url: str | None = None,
     timeout: float = 10.0,
 ) -> Generator[Dict[str, Any], None, None]:
     """
@@ -164,9 +175,10 @@ def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[
     -------
     Dict[str, Any]
         Market data normalized to CLOB API format with snake_case fields.
+
     """
     import json
-    
+
     # Handle rewards field
     rewards = gamma_market.get("clobRewards", [])
     rewards_dict = None
@@ -177,13 +189,13 @@ def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[
             "min_size": gamma_market.get("rewardsMinSize"),
             "max_spread": gamma_market.get("rewardsMaxSpread"),
         }
-    
+
     # Build tokens array from clobTokenIds and outcomes
     tokens = []
     clob_token_ids = gamma_market.get("clobTokenIds", [])
     outcomes = gamma_market.get("outcomes", [])
     outcome_prices = gamma_market.get("outcomePrices", [])
-    
+
     # Parse JSON strings if needed
     if isinstance(clob_token_ids, str):
         clob_token_ids = json.loads(clob_token_ids)
@@ -191,7 +203,7 @@ def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[
         outcomes = json.loads(outcomes)
     if isinstance(outcome_prices, str):
         outcome_prices = json.loads(outcome_prices)
-    
+
     # Create tokens array in CLOB format
     for i, (token_id, outcome) in enumerate(zip(clob_token_ids, outcomes)):
         token_entry = {
@@ -201,7 +213,7 @@ def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[
             "winner": False,  # Default value
         }
         tokens.append(token_entry)
-    
+
     normalized = {
         # Core identifiers
         "condition_id": gamma_market.get("conditionId"),
@@ -209,48 +221,48 @@ def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[
         "question": gamma_market.get("question"),
         "description": gamma_market.get("description"),
         "market_slug": gamma_market.get("slug"),
-        
+
         # Order book and trading settings
         "enable_order_book": gamma_market.get("enableOrderBook", True),
         "minimum_tick_size": gamma_market.get("orderPriceMinTickSize", 0.001),
-        "minimum_order_size": gamma_market.get("orderMinSize", ),
+        "minimum_order_size": gamma_market.get("orderMinSize"),
         "accepting_orders": gamma_market.get("acceptingOrders", True),
         "accepting_order_timestamp": gamma_market.get("acceptingOrdersTimestamp"),
         "seconds_delay": gamma_market.get("secondsDelay", 0),
-        
+
         # Market status flags
         "active": gamma_market.get("active", False),
         "closed": gamma_market.get("closed", False),
         "archived": gamma_market.get("archived", False),
-        
+
         # Dates
         "end_date_iso": gamma_market.get("endDateIso"),
         "game_start_time": gamma_market.get("startDateIso"),
-        
+
         # Fee structure
         "maker_base_fee": 0,  # Gamma API doesn't provide fees directly, use known defaults
         "taker_base_fee": 0,  # Gamma API doesn't provide fees directly, use known defaults
         "fpmm": gamma_market.get("marketMakerAddress", ""),
-        
+
         # Negative risk settings
         "neg_risk": gamma_market.get("negRisk", False),
         "neg_risk_market_id": gamma_market.get("negRiskMarketID"),
         "neg_risk_request_id": gamma_market.get("negRiskRequestID"),
-        
+
         # Media
         "icon": gamma_market.get("icon"),
         "image": gamma_market.get("image"),
-        
+
         # Rewards and notifications
         "rewards": rewards_dict,
         "notifications_enabled": True,  # Default value
-        
+
         # Outcome pricing flag
         # "is_50_50_outcome": False,  # Gamma API doesn't provide this flag
-        
+
         # Tokens array (CLOB API format)
         "tokens": tokens,
-        
+
         # Preserve original data for reference
         "_gamma_original": gamma_market,
     }
@@ -258,13 +270,16 @@ def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[
 
 
 def list_markets(
-    filters: Optional[Dict[str, Any]] = None,
-    base_url: Optional[str] = None,
+    filters: Dict[str, Any] | None = None,
+    base_url: str | None = None,
     timeout: float = 10.0,
-    max_results: Optional[int] = None,
+    max_results: int | None = None,
 ) -> List[Dict[str, Any]]:
     """
-    Collect markets into a list. Use `max_results` to cap total items fetched.
+    Collect markets into a list.
+
+    Use `max_results` to cap total items fetched.
+
     """
     results: List[Dict[str, Any]] = []
     count = 0
@@ -275,5 +290,3 @@ def list_markets(
             break
     _logger.info("Collected %s markets (max_results=%s)", count, max_results)
     return results
-
-

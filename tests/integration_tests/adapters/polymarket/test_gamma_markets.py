@@ -19,7 +19,9 @@ from nautilus_trader.adapters.polymarket.common.gamma_markets import normalize_g
 
 
 def test_normalize_gamma_market_to_clob_format() -> None:
-    """Test that Gamma API market format is correctly normalized to CLOB API format."""
+    """
+    Test that Gamma API market format is correctly normalized to CLOB API format.
+    """
     # Arrange - Sample market data from Gamma API (based on user's example)
     gamma_market = {
         "question": "Fed rate hike in 2025?",
@@ -31,7 +33,7 @@ def test_normalize_gamma_market_to_clob_format() -> None:
         "startDate": "2024-12-29T22:50:33.584839Z",
         "image": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-the-fed-raise-interest-rates-in-2025-PQTEYZMvmAGr.jpg",
         "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-the-fed-raise-interest-rates-in-2025-PQTEYZMvmAGr.jpg",
-        "description": "This market will resolve to \"Yes\" if the upper bound of the target federal funds rate is increased...",
+        "description": 'This market will resolve to "Yes" if the upper bound of the target federal funds rate is increased...',
         "outcomes": '["Yes", "No"]',
         "outcomePrices": '["0.014", "0.986"]',
         "volume": "660510.159796",
@@ -91,7 +93,9 @@ def test_normalize_gamma_market_to_clob_format() -> None:
 
 
 def test_normalize_gamma_market_with_defaults() -> None:
-    """Test normalization with missing optional fields uses defaults."""
+    """
+    Test normalization with missing optional fields uses defaults.
+    """
     # Arrange - Minimal market data
     gamma_market = {
         "conditionId": "0x1234567890abcdef",
@@ -114,7 +118,9 @@ def test_normalize_gamma_market_with_defaults() -> None:
 
 
 def test_parse_clob_token_ids_and_outcomes() -> None:
-    """Test parsing of clobTokenIds and outcomes from JSON strings."""
+    """
+    Test parsing of clobTokenIds and outcomes from JSON strings.
+    """
     # Arrange
     clob_token_ids_str = '["60487116984468020978247225474488676749601001829886755968952521846780452448915", "81104637750588840860328515305303028259865221573278091453716127842023614249200"]'
     outcomes_str = '["Yes", "No"]'
@@ -142,4 +148,3 @@ def test_parse_clob_token_ids_and_outcomes() -> None:
         "81104637750588840860328515305303028259865221573278091453716127842023614249200",
         "No",
     )
-

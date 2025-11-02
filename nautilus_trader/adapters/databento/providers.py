@@ -71,7 +71,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         super().__init__(config=config)
 
         self._clock = clock
-        self._config = config
+        self._config = config or InstrumentProviderConfig()
         self._live_api_key = live_api_key or http_client.key
         self._live_gateway = live_gateway
 
