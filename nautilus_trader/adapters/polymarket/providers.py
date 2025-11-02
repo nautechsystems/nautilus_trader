@@ -97,27 +97,13 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 if condition_ids and condition_id not in condition_ids:
                     continue
 
-                # Gamma API returns clobTokenIds and outcomes as parallel arrays
-                clob_token_ids = market.get("clobTokenIds", [])
-                outcomes = market.get("outcomes", [])
-
-                # Parse JSON strings if needed
-                if isinstance(clob_token_ids, str):
-                    clob_token_ids = json.loads(clob_token_ids)
-                if isinstance(outcomes, str):
-                    outcomes = json.loads(outcomes)
-
-                if len(clob_token_ids) != len(outcomes):
-                    self._log.warning(
-                        f"Market {condition_id} has mismatched token IDs and outcomes: "
-                        f"{len(clob_token_ids)} tokens vs {len(outcomes)} outcomes"
-                    )
-                    continue
-
                 # Normalize Gamma API format to CLOB API format
                 normalized_market = normalize_gamma_market_to_clob_format(market)
 
-                for token_id, outcome in zip(clob_token_ids, outcomes):
+                # Use the normalized tokens array
+                for token_info in normalized_market.get("tokens", []):
+                    token_id = token_info["token_id"]
+                    outcome = token_info["outcome"]
                     self._load_instrument(normalized_market, token_id, outcome)
         else:
             if len(instrument_ids) > 200:
