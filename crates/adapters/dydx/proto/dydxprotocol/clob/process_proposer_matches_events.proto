@@ -1,0 +1,37 @@
+syntax = "proto3";
+package dydxprotocol.clob;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/clob/order.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/clob/types";
+
+// ProcessProposerMatchesEvents is used for communicating which events occurred
+// in the last block that require updating the state of the memclob in the
+// Commit blocker. It contains information about the following state updates:
+// - Long term order IDs that were placed in the last block.
+// - Stateful order IDs that were expired in the last block.
+// - Order IDs that were filled in the last block.
+// - Stateful cancellations order IDs that were placed in the last block.
+// - Stateful order IDs forcefully removed in the last block.
+// - Conditional order IDs triggered in the last block.
+// - Conditional order IDs placed, but not triggered in the last block.
+// - The height of the block in which the events occurred.
+message ProcessProposerMatchesEvents {
+  repeated dydxprotocol.clob.OrderId placed_long_term_order_ids = 1
+      [ (gogoproto.nullable) = false, deprecated = true ];
+  repeated dydxprotocol.clob.OrderId expired_stateful_order_ids = 2
+      [ (gogoproto.nullable) = false ];
+  repeated dydxprotocol.clob.OrderId order_ids_filled_in_last_block = 3
+      [ (gogoproto.nullable) = false ];
+  repeated dydxprotocol.clob.OrderId placed_stateful_cancellation_order_ids = 4
+      [ (gogoproto.nullable) = false, deprecated = true ];
+  repeated dydxprotocol.clob.OrderId removed_stateful_order_ids = 5
+      [ (gogoproto.nullable) = false ];
+  repeated dydxprotocol.clob.OrderId
+      conditional_order_ids_triggered_in_last_block = 6
+      [ (gogoproto.nullable) = false ];
+  repeated dydxprotocol.clob.OrderId placed_conditional_order_ids = 7
+      [ (gogoproto.nullable) = false, deprecated = true ];
+  uint32 block_height = 8;
+}

@@ -1,0 +1,231 @@
+syntax = "proto3";
+package dydxprotocol.vault;
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+import "dydxprotocol/vault/params.proto";
+import "dydxprotocol/vault/share.proto";
+import "dydxprotocol/vault/vault.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/vault/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // DepositToMegavault deposits funds into megavault.
+  rpc DepositToMegavault(MsgDepositToMegavault)
+      returns (MsgDepositToMegavaultResponse);
+
+  // WithdrawFromMegavault withdraws shares from megavault.
+  rpc WithdrawFromMegavault(MsgWithdrawFromMegavault)
+      returns (MsgWithdrawFromMegavaultResponse);
+
+  // UpdateDefaultQuotingParams updates the default quoting params in state.
+  rpc UpdateDefaultQuotingParams(MsgUpdateDefaultQuotingParams)
+      returns (MsgUpdateDefaultQuotingParamsResponse);
+
+  // UpdateOperatorParams sets the parameters regarding megavault operator.
+  rpc UpdateOperatorParams(MsgUpdateOperatorParams)
+      returns (MsgUpdateOperatorParamsResponse);
+
+  // SetVaultParams sets the parameters of a specific vault.
+  rpc SetVaultParams(MsgSetVaultParams) returns (MsgSetVaultParamsResponse);
+
+  // UnlockShares unlocks an owner's shares that are due to unlock by the block
+  // height that this transaction is included in.
+  rpc UnlockShares(MsgUnlockShares) returns (MsgUnlockSharesResponse);
+
+  // AllocateToVault allocates funds from main vault to a vault.
+  rpc AllocateToVault(MsgAllocateToVault) returns (MsgAllocateToVaultResponse);
+
+  // RetrieveFromVault retrieves funds from a vault to main vault.
+  rpc RetrieveFromVault(MsgRetrieveFromVault)
+      returns (MsgRetrieveFromVaultResponse);
+}
+
+// MsgDepositToMegavault deposits the specified asset from the subaccount to
+// megavault.
+message MsgDepositToMegavault {
+  // This annotation enforces that the tx signer is the owner specified in
+  // subaccount_id. Therefore, this enforces that only the owner of the
+  // subaccount can deposit into the vault using that subaccount.
+  option (cosmos.msg.v1.signer) = "subaccount_id";
+
+  // The subaccount to deposit from.
+  dydxprotocol.subaccounts.SubaccountId subaccount_id = 1;
+
+  // Number of quote quantums to deposit.
+  bytes quote_quantums = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// MsgDepositToMegavaultResponse is the Msg/DepositToMegavault response type.
+message MsgDepositToMegavaultResponse {
+  // The number of shares minted from the deposit.
+  NumShares minted_shares = 1 [ (gogoproto.nullable) = false ];
+}
+
+// MsgWithdrawFromMegavault withdraws the specified shares from megavault to
+// a subaccount.
+message MsgWithdrawFromMegavault {
+  // This annotation enforces that the tx signer is the owner specified in
+  // `subaccount_id`.
+  option (cosmos.msg.v1.signer) = "subaccount_id";
+
+  // The subaccount to withdraw to.
+  dydxprotocol.subaccounts.SubaccountId subaccount_id = 1
+      [ (gogoproto.nullable) = false ];
+
+  // Number of shares to withdraw.
+  NumShares shares = 2 [ (gogoproto.nullable) = false ];
+
+  // The minimum number of quote quantums above shares should redeem, i.e.
+  // transaction fails if above shares redeem less than min_quote_quantums.
+  bytes min_quote_quantums = 3 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// MsgWithdrawFromMegavaultResponse is the Msg/WithdrawFromMegavault response
+// type.
+message MsgWithdrawFromMegavaultResponse {
+  // The number of quote quantums redeemed from the withdrawal.
+  bytes quote_quantums = 1 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// MsgUpdateDefaultQuotingParams is the Msg/UpdateDefaultQuotingParams request
+// type.
+message MsgUpdateDefaultQuotingParams {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The quoting parameters to update to. Every field must be set.
+  QuotingParams default_quoting_params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateDefaultQuotingParamsResponse is the Msg/UpdateDefaultQuotingParams
+// response type.
+message MsgUpdateDefaultQuotingParamsResponse {}
+
+// MsgSetVaultParams is the Msg/SetVaultParams request type.
+message MsgSetVaultParams {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The vault to set params of.
+  VaultId vault_id = 2 [ (gogoproto.nullable) = false ];
+
+  // The parameters to set.
+  VaultParams vault_params = 3 [ (gogoproto.nullable) = false ];
+}
+
+// MsgSetVaultParamsResponse is the Msg/SetVaultParams response type.
+message MsgSetVaultParamsResponse {}
+
+// MsgUnlockShares is the Msg/UnlockShares request type.
+message MsgUnlockShares {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Address of the owner to unlock shares of.
+  string owner_address = 2;
+}
+
+// MsgUnlockSharesResponse is the Msg/UnlockShares response type.
+message MsgUnlockSharesResponse {
+  // The number of shares unlocked.
+  NumShares unlocked_shares = 1 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateOperatorParams is the Msg/UpdateOperatorParams request type.
+message MsgUpdateOperatorParams {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Operator parameters to set.
+  OperatorParams params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateVaultParamsResponse is the Msg/UpdateOperatorParams response type.
+message MsgUpdateOperatorParamsResponse {}
+
+// MsgAllocateToVault is the Msg/AllocateToVault request type.
+message MsgAllocateToVault {
+  // The address that has the authority to allocate to a vault.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The vault to allocate to.
+  VaultId vault_id = 2 [ (gogoproto.nullable) = false ];
+
+  // Number of quote quantums to allocate.
+  bytes quote_quantums = 3 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// MsgAllocateToVaultResponse is the Msg/AllocateToVault response type.
+message MsgAllocateToVaultResponse {}
+
+// MsgRetrieveFromVault is the Msg/RetrieveFromVault request type.
+message MsgRetrieveFromVault {
+  // The address that has the authority to retrieve from a vault.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The vault to retrieve from.
+  VaultId vault_id = 2 [ (gogoproto.nullable) = false ];
+
+  // Number of quote quantums to retrieve.
+  bytes quote_quantums = 3 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// MsgRetrieveFromVaultResponse is the Msg/RetrieveFromVault response type.
+message MsgRetrieveFromVaultResponse {}
+
+// MsgUpdateParams is the Msg/UpdateParams request type.
+// Deprecated since v6.x as is replaced by MsgUpdateDefaultQuotingParams.
+message MsgUpdateParams {
+  option deprecated = true;
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The parameters to update. Each field must be set.
+  Params params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgSetVaultQuotingParams is the Msg/SetVaultQuotingParams request type.
+// Deprecated since v6.x as is replaced by MsgSetVaultParams.
+message MsgSetVaultQuotingParams {
+  option deprecated = true;
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The vault to set quoting params of.
+  VaultId vault_id = 2 [ (gogoproto.nullable) = false ];
+
+  // The quoting parameters to set. Each field must be set.
+  QuotingParams quoting_params = 3 [ (gogoproto.nullable) = false ];
+}

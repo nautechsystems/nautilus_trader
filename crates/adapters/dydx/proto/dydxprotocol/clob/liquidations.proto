@@ -1,0 +1,47 @@
+syntax = "proto3";
+package dydxprotocol.clob;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/clob/types";
+
+// PerpetualLiquidationInfo holds information about a liquidation that occurred
+// for a position held by a subaccount.
+// Note this proto is defined to make it easier to hash
+// the metadata of a liquidation, and is never written to state.
+message PerpetualLiquidationInfo {
+  // The id of the subaccount that got liquidated/deleveraged or was deleveraged
+  // onto.
+  dydxprotocol.subaccounts.SubaccountId subaccount_id = 1
+      [ (gogoproto.nullable) = false ];
+  // The id of the perpetual involved.
+  uint32 perpetual_id = 2;
+}
+
+// SubaccountLiquidationInfo holds liquidation information per-subaccount in the
+// current block.
+message SubaccountLiquidationInfo {
+  // An unsorted list of unique perpetual IDs that the subaccount has previously
+  // liquidated.
+  repeated uint32 perpetuals_liquidated = 1;
+  // The notional value (in quote quantums, determined by the oracle price) of
+  // all positions liquidated for this subaccount.
+  uint64 notional_liquidated = 2;
+  // The amount of funds that the insurance fund has lost
+  // covering this subaccount.
+  uint64 quantums_insurance_lost = 3;
+}
+
+// SubaccountOpenPositionInfo holds information about open positions for a
+// perpetual.
+message SubaccountOpenPositionInfo {
+  // The id of the perpetual.
+  uint32 perpetual_id = 1;
+  // The ids of the subaccounts with long positions.
+  repeated dydxprotocol.subaccounts.SubaccountId
+      subaccounts_with_long_position = 2 [ (gogoproto.nullable) = false ];
+  // The ids of the subaccounts with short positions.
+  repeated dydxprotocol.subaccounts.SubaccountId
+      subaccounts_with_short_position = 3 [ (gogoproto.nullable) = false ];
+}

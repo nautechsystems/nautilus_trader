@@ -1,0 +1,30 @@
+syntax = "proto3";
+package dydxprotocol.blocktime;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/blocktime/types";
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// BlockInfo stores information about a block
+message BlockInfo {
+  uint32 height = 1;
+  google.protobuf.Timestamp timestamp = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}
+
+// AllDowntimeInfo stores information for all downtime durations.
+message AllDowntimeInfo {
+  // Stores information about downtime. block_info corresponds to the most
+  // recent block at which a downtime occurred.
+  message DowntimeInfo {
+    google.protobuf.Duration duration = 1
+        [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+    BlockInfo block_info = 2 [ (gogoproto.nullable) = false ];
+  }
+
+  // The downtime information for each tracked duration. Sorted by duration,
+  // ascending. (i.e. the same order as they appear in DowntimeParams).
+  repeated DowntimeInfo infos = 1;
+}

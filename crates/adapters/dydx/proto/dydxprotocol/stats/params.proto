@@ -1,0 +1,14 @@
+syntax = "proto3";
+package dydxprotocol.stats;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/stats/types";
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
+
+// Params defines the parameters for x/stats module.
+message Params {
+  // The desired number of seconds in the look-back window.
+  google.protobuf.Duration window_duration = 1
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+}

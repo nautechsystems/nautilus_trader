@@ -1,0 +1,21 @@
+syntax = "proto3";
+package dydxprotocol.bridge;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/bridge/bridge_event_info.proto";
+import "dydxprotocol/bridge/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/bridge/types";
+
+// GenesisState defines the bridge module's genesis state.
+message GenesisState {
+  // The parameters of the module.
+  EventParams event_params = 1 [ (gogoproto.nullable) = false ];
+  ProposeParams propose_params = 2 [ (gogoproto.nullable) = false ];
+  SafetyParams safety_params = 3 [ (gogoproto.nullable) = false ];
+
+  // Acknowledged event info that stores:
+  // - the next event ID to be added to consensus.
+  // - Ethereum block height of the most recently acknowledged bridge event.
+  BridgeEventInfo acknowledged_event_info = 4 [ (gogoproto.nullable) = false ];
+}

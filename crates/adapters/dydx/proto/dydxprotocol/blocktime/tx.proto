@@ -1,0 +1,47 @@
+syntax = "proto3";
+package dydxprotocol.blocktime;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/blocktime/types";
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "dydxprotocol/blocktime/params.proto";
+import "gogoproto/gogo.proto";
+
+// Msg defines the Msg service.
+service Msg {
+  // UpdateDowntimeParams updates the DowntimeParams in state.
+  rpc UpdateDowntimeParams(MsgUpdateDowntimeParams)
+      returns (MsgUpdateDowntimeParamsResponse);
+  // UpdateSynchronyParams updates the SynchronyParams in state.
+  rpc UpdateSynchronyParams(MsgUpdateSynchronyParams)
+      returns (MsgUpdateSynchronyParamsResponse);
+}
+
+// MsgUpdateDowntimeParams is the Msg/UpdateDowntimeParams request type.
+message MsgUpdateDowntimeParams {
+  // The address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Defines the parameters to update. All parameters must be supplied.
+  DowntimeParams params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateDowntimeParamsResponse is the Msg/UpdateDowntimeParams response
+// type.
+message MsgUpdateDowntimeParamsResponse {}
+
+// MsgUpdateSynchronyParams is the Msg/UpdateSynchronyParams request type.
+message MsgUpdateSynchronyParams {
+  // The address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Defines the parameters to update. All parameters must be supplied.
+  SynchronyParams params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateSynchronyParamsResponse is the Msg/UpdateSynchronyParams response
+// type.
+message MsgUpdateSynchronyParamsResponse {}

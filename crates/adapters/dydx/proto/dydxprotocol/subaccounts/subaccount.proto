@@ -1,0 +1,33 @@
+syntax = "proto3";
+package dydxprotocol.subaccounts;
+
+import "cosmos_proto/cosmos.proto";
+import "dydxprotocol/subaccounts/asset_position.proto";
+import "dydxprotocol/subaccounts/perpetual_position.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types";
+
+// SubaccountId defines a unique identifier for a Subaccount.
+message SubaccountId {
+  // The address of the wallet that owns this subaccount.
+  string owner = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  // The unique number of this subaccount for the owner.
+  // Currently limited to 128*1000 subaccounts per owner.
+  uint32 number = 2;
+}
+
+// Subaccount defines a single sub-account for a given address.
+// Subaccounts are uniquely indexed by a subaccountNumber/owner pair.
+message Subaccount {
+  // The Id of the Subaccount
+  SubaccountId id = 1;
+  // All `AssetPosition`s associated with this subaccount.
+  // Always sorted ascending by `asset_id`.
+  repeated AssetPosition asset_positions = 2;
+  // All `PerpetualPosition`s associated with this subaccount.
+  // Always sorted ascending by `perpetual_id.
+  repeated PerpetualPosition perpetual_positions = 3;
+  // Set by the owner. If true, then margin trades can be made in this
+  // subaccount.
+  bool margin_enabled = 4;
+}

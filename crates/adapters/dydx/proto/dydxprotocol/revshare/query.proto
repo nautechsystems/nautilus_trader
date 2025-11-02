@@ -1,0 +1,78 @@
+syntax = "proto3";
+package dydxprotocol.revshare;
+
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+
+import "dydxprotocol/revshare/params.proto";
+import "dydxprotocol/revshare/revshare.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/revshare/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // MarketMapperRevenueShareParams queries the revenue share params for the
+  // market mapper
+  rpc MarketMapperRevenueShareParams(QueryMarketMapperRevenueShareParams)
+      returns (QueryMarketMapperRevenueShareParamsResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/revshare/market_mapper_rev_share_params";
+  }
+
+  // Queries market mapper revenue share details for a specific market
+  rpc MarketMapperRevShareDetails(QueryMarketMapperRevShareDetails)
+      returns (QueryMarketMapperRevShareDetailsResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/revshare/market_mapper_rev_share_details/{market_id}";
+  }
+
+  // Queries unconditional revenue share config
+  rpc UnconditionalRevShareConfig(QueryUnconditionalRevShareConfig)
+      returns (QueryUnconditionalRevShareConfigResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/revshare/unconditional_rev_share";
+  }
+
+  // Queries order router rev share
+  rpc OrderRouterRevShare(QueryOrderRouterRevShare)
+      returns (QueryOrderRouterRevShareResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/revshare/order_router_rev_share/{address}";
+  }
+}
+
+// Queries for the default market mapper revenue share params
+message QueryMarketMapperRevenueShareParams {}
+
+// Response type for QueryMarketMapperRevenueShareParams
+message QueryMarketMapperRevenueShareParamsResponse {
+  MarketMapperRevenueShareParams params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// Queries market mapper revenue share details for a specific market
+message QueryMarketMapperRevShareDetails { uint32 market_id = 1; }
+
+// Response type for QueryMarketMapperRevShareDetails
+message QueryMarketMapperRevShareDetailsResponse {
+  MarketMapperRevShareDetails details = 1 [ (gogoproto.nullable) = false ];
+}
+
+// Queries unconditional revenue share details
+message QueryUnconditionalRevShareConfig {}
+
+// Response type for QueryUnconditionalRevShareConfig
+message QueryUnconditionalRevShareConfigResponse {
+  UnconditionalRevShareConfig config = 1 [ (gogoproto.nullable) = false ];
+}
+
+// Queries order router rev shares
+message QueryOrderRouterRevShare {
+  string address = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}
+
+// Response type for QueryOrderRouterRevShare
+message QueryOrderRouterRevShareResponse {
+  OrderRouterRevShare order_router_rev_share = 1
+      [ (gogoproto.nullable) = false ];
+}

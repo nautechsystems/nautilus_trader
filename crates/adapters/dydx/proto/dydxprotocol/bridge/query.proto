@@ -1,0 +1,120 @@
+syntax = "proto3";
+package dydxprotocol.bridge;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "dydxprotocol/bridge/bridge_event_info.proto";
+import "dydxprotocol/bridge/params.proto";
+import "dydxprotocol/bridge/tx.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/bridge/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries the EventParams.
+  rpc EventParams(QueryEventParamsRequest) returns (QueryEventParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/bridge/event_params";
+  }
+
+  // Queries the ProposeParams.
+  rpc ProposeParams(QueryProposeParamsRequest)
+      returns (QueryProposeParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/bridge/propose_params";
+  }
+
+  // Queries the SafetyParams.
+  rpc SafetyParams(QuerySafetyParamsRequest)
+      returns (QuerySafetyParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/bridge/safety_params";
+  }
+
+  // Queries the AcknowledgedEventInfo.
+  // An "acknowledged" event is one that is in-consensus and has been stored
+  // in-state.
+  rpc AcknowledgedEventInfo(QueryAcknowledgedEventInfoRequest)
+      returns (QueryAcknowledgedEventInfoResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/bridge/acknowledged_event_info";
+  }
+
+  // Queries the RecognizedEventInfo.
+  // A "recognized" event is one that is finalized on the Ethereum blockchain
+  // and has been identified by the queried node. It is not yet in-consensus.
+  rpc RecognizedEventInfo(QueryRecognizedEventInfoRequest)
+      returns (QueryRecognizedEventInfoResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/bridge/recognized_event_info";
+  }
+
+  // Queries all `MsgCompleteBridge` messages that are delayed (not yet
+  // executed) and corresponding block heights at which they will execute.
+  rpc DelayedCompleteBridgeMessages(QueryDelayedCompleteBridgeMessagesRequest)
+      returns (QueryDelayedCompleteBridgeMessagesResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/bridge/delayed_complete_bridge_messages";
+  }
+}
+
+// QueryEventParamsRequest is a request type for the EventParams RPC method.
+message QueryEventParamsRequest {}
+
+// QueryEventParamsResponse is a response type for the EventParams RPC method.
+message QueryEventParamsResponse {
+  EventParams params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryProposeParamsRequest is a request type for the ProposeParams RPC method.
+message QueryProposeParamsRequest {}
+
+// QueryProposeParamsResponse is a response type for the ProposeParams RPC
+// method.
+message QueryProposeParamsResponse {
+  ProposeParams params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QuerySafetyParamsRequest is a request type for the SafetyParams RPC method.
+message QuerySafetyParamsRequest {}
+
+// QuerySafetyParamsResponse is a response type for the SafetyParams RPC method.
+message QuerySafetyParamsResponse {
+  SafetyParams params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryAcknowledgedEventInfoRequest is a request type for the
+// AcknowledgedEventInfo RPC method.
+message QueryAcknowledgedEventInfoRequest {}
+
+// QueryAcknowledgedEventInfoResponse is a response type for the
+// AcknowledgedEventInfo RPC method.
+message QueryAcknowledgedEventInfoResponse {
+  BridgeEventInfo info = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryRecognizedEventInfoRequest is a request type for the
+// RecognizedEventInfo RPC method.
+message QueryRecognizedEventInfoRequest {}
+
+// QueryRecognizedEventInfoResponse is a response type for the
+// RecognizedEventInfo RPC method.
+message QueryRecognizedEventInfoResponse {
+  BridgeEventInfo info = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryDelayedCompleteBridgeMessagesRequest is a request type for the
+// DelayedCompleteBridgeMessages RPC method.
+message QueryDelayedCompleteBridgeMessagesRequest { string address = 1; }
+
+// QueryDelayedCompleteBridgeMessagesResponse is a response type for the
+// DelayedCompleteBridgeMessages RPC method.
+message QueryDelayedCompleteBridgeMessagesResponse {
+  repeated DelayedCompleteBridgeMessage messages = 1
+      [ (gogoproto.nullable) = false ];
+}
+
+// DelayedCompleteBridgeMessage is a message type for the response of
+// DelayedCompleteBridgeMessages RPC method. It contains the message
+// and the block height at which it will execute.
+message DelayedCompleteBridgeMessage {
+  MsgCompleteBridge message = 1 [ (gogoproto.nullable) = false ];
+  uint32 block_height = 2;
+}

@@ -1,0 +1,55 @@
+syntax = "proto3";
+package dydxprotocol.bridge;
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/bridge/types";
+
+// EventParams stores parameters about which events to recognize and which
+// tokens to mint.
+message EventParams {
+  // The denom of the token to mint.
+  string denom = 1;
+
+  // The numerical chain ID of the Ethereum chain to query.
+  uint64 eth_chain_id = 2;
+
+  // The address of the Ethereum contract to monitor for logs.
+  string eth_address = 3;
+}
+
+// ProposeParams stores parameters for proposing to the module.
+message ProposeParams {
+  // The maximum number of bridge events to propose per block.
+  // Limits the number of events to propose in a single block
+  // in-order to smooth out the flow of events.
+  uint32 max_bridges_per_block = 1;
+
+  // The minimum duration to wait between a finalized bridge and
+  // proposing it. This allows other validators to have enough time to
+  // also recognize its occurence. Therefore the bridge daemon should
+  // pool for new finalized events at least as often as this parameter.
+  google.protobuf.Duration propose_delay_duration = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+
+  // Do not propose any events if a [0, 1_000_000) random number generator
+  // generates a number smaller than this number.
+  // Setting this parameter to 1_000_000 means always skipping proposing events.
+  uint32 skip_rate_ppm = 3;
+
+  // Do not propose any events if the timestamp of the proposal block is
+  // behind the proposers' wall-clock by at least this duration.
+  google.protobuf.Duration skip_if_block_delayed_by_duration = 4
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+}
+
+// SafetyParams stores safety parameters for the module.
+message SafetyParams {
+  // True if bridging is disabled.
+  bool is_disabled = 1;
+
+  // The number of blocks that bridges accepted in-consensus will be pending
+  // until the minted tokens are granted.
+  uint32 delay_blocks = 2;
+}

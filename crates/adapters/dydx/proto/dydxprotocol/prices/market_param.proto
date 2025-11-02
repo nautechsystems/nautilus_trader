@@ -1,0 +1,40 @@
+syntax = "proto3";
+package dydxprotocol.prices;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/prices/types";
+
+// MarketParam represents the x/prices configuration for markets, including
+// representing price values, resolving markets on individual exchanges, and
+// generating price updates. This configuration is specific to the quote
+// currency.
+message MarketParam {
+  // Unique, sequentially-generated value.
+  uint32 id = 1;
+
+  // The human-readable name of the market pair (e.g. `BTC-USD`).
+  string pair = 2;
+
+  // Static value. The exponent of the price.
+  // For example if `Exponent == -5` then a `Value` of `1,000,000,000`
+  // represents ``$10,000`. Therefore `10 ^ Exponent` represents the smallest
+  // price step (in dollars) that can be recorded.
+  //
+  // Deprecated since v8.x. This value is now determined from the marketmap.
+  sint32 exponent = 3 [ deprecated = true ];
+
+  // The minimum number of exchanges that should be reporting a live price for
+  // a price update to be considered valid.
+  //
+  // Deprecated since v8.x. This value is now determined from the marketmap.
+  uint32 min_exchanges = 4;
+
+  // The minimum allowable change in `price` value that would cause a price
+  // update on the network. Measured as `1e-6` (parts per million).
+  uint32 min_price_change_ppm = 5;
+
+  // A string of json that encodes the configuration for resolving the price
+  // of this market on various exchanges.
+  //
+  // Deprecated since v8.x. This is now determined from the marketmap.
+  string exchange_config_json = 6;
+}

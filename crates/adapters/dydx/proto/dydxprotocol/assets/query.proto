@@ -1,0 +1,39 @@
+syntax = "proto3";
+package dydxprotocol.assets;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "dydxprotocol/assets/asset.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/assets/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries a Asset by id.
+  rpc Asset(QueryAssetRequest) returns (QueryAssetResponse) {
+    option (google.api.http).get = "/dydxprotocol/assets/asset/{id}";
+  }
+
+  // Queries a list of Asset items.
+  rpc AllAssets(QueryAllAssetsRequest) returns (QueryAllAssetsResponse) {
+    option (google.api.http).get = "/dydxprotocol/assets/asset";
+  }
+}
+
+// Queries an Asset by id.
+message QueryAssetRequest { uint32 id = 1; }
+
+// QueryAssetResponse is response type for the Asset RPC method.
+message QueryAssetResponse { Asset asset = 1 [ (gogoproto.nullable) = false ]; }
+
+// Queries a list of Asset items.
+message QueryAllAssetsRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryAllAssetsResponse is response type for the AllAssets RPC method.
+message QueryAllAssetsResponse {
+  repeated Asset asset = 1 [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}

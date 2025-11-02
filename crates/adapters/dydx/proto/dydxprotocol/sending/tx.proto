@@ -1,0 +1,42 @@
+syntax = "proto3";
+package dydxprotocol.sending;
+
+import "dydxprotocol/sending/transfer.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/sending/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // CreateTransfer initiates a new transfer between subaccounts.
+  rpc CreateTransfer(MsgCreateTransfer) returns (MsgCreateTransferResponse);
+  // DepositToSubaccount initiates a new transfer from an `x/bank` account
+  // to an `x/subaccounts` subaccount.
+  rpc DepositToSubaccount(MsgDepositToSubaccount)
+      returns (MsgDepositToSubaccountResponse);
+  // WithdrawFromSubaccount initiates a new transfer from an `x/subaccounts`
+  // subaccount to an `x/bank` account.
+  rpc WithdrawFromSubaccount(MsgWithdrawFromSubaccount)
+      returns (MsgWithdrawFromSubaccountResponse);
+  // SendFromModuleToAccount initiates a new transfer from a module to an
+  // `x/bank` account (should only be executed by governance).
+  rpc SendFromModuleToAccount(MsgSendFromModuleToAccount)
+      returns (MsgSendFromModuleToAccountResponse);
+}
+
+// MsgCreateTransfer is a request type used for initiating new transfers.
+message MsgCreateTransfer { Transfer transfer = 1; }
+
+// MsgCreateTransferResponse is a response type used for new transfers.
+message MsgCreateTransferResponse {}
+
+// MsgDepositToSubaccountResponse is a response type used for new
+// account-to-subaccount transfers.
+message MsgDepositToSubaccountResponse {}
+
+// MsgWithdrawFromSubaccountResponse is a response type used for new
+// subaccount-to-account transfers.
+message MsgWithdrawFromSubaccountResponse {}
+
+// MsgSendFromModuleToAccountResponse is a response type used for new
+// module-to-account transfers.
+message MsgSendFromModuleToAccountResponse {}

@@ -1,0 +1,27 @@
+syntax = "proto3";
+package dydxprotocol.blocktime;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/blocktime/types";
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
+
+// DowntimeParams defines the parameters for downtime.
+message DowntimeParams {
+  // Durations tracked for downtime. The durations must be sorted from
+  // shortest to longest and must all be positive.
+  repeated google.protobuf.Duration durations = 1
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+}
+
+// SynchronyParams defines the parameters for block synchrony.
+message SynchronyParams {
+  // next_block_delay replaces the locally configured timeout_commit in
+  // CometBFT. It determines the amount of time the CometBFT waits after the
+  // `CommitTime` (subjective time when +2/3 precommits were received), before
+  // moving to next height.
+  // If the application sends next_block_delay = 0 to the consensus engine, the
+  // latter defaults back to using timeout_commit.
+  google.protobuf.Duration next_block_delay = 1
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+}

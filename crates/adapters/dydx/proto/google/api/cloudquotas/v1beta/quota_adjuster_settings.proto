@@ -1,0 +1,164 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.api.cloudquotas.v1beta;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Google.Cloud.CloudQuotas.V1Beta";
+option go_package = "cloud.google.com/go/cloudquotas/apiv1beta/cloudquotaspb;cloudquotaspb";
+option java_multiple_files = true;
+option java_outer_classname = "QuotaAdjusterSettingsProto";
+option java_package = "com.google.api.cloudquotas.v1beta";
+option php_namespace = "Google\\Cloud\\CloudQuotas\\V1beta";
+option ruby_package = "Google::Cloud::CloudQuotas::V1beta";
+
+// The Quotas Adjuster Settings API is an infrastructure service for Google
+//  Cloud that lets service consumers view and update their quota adjuster
+//  settings.
+//
+// - Update quota adjuster settings.
+// - Get the name of the configurations.
+service QuotaAdjusterSettingsManager {
+  option (google.api.default_host) = "cloudquotas.googleapis.com";
+  option (google.api.oauth_scopes) =
+      "https://www.googleapis.com/auth/cloud-platform";
+
+  // RPC Method for updating QuotaAdjusterSettings based on the request
+  rpc UpdateQuotaAdjusterSettings(UpdateQuotaAdjusterSettingsRequest)
+      returns (QuotaAdjusterSettings) {
+    option (google.api.http) = {
+      patch: "/v1beta/{quota_adjuster_settings.name=projects/*/locations/*/quotaAdjusterSettings}"
+      body: "quota_adjuster_settings"
+      additional_bindings {
+        patch: "/v1beta/{quota_adjuster_settings.name=folders/*/locations/*/quotaAdjusterSettings}"
+        body: "quota_adjuster_settings"
+      }
+      additional_bindings {
+        patch: "/v1beta/{quota_adjuster_settings.name=organizations/*/locations/*/quotaAdjusterSettings}"
+        body: "quota_adjuster_settings"
+      }
+    };
+    option (google.api.method_signature) =
+        "quota_adjuster_settings,update_mask";
+  }
+
+  // RPC Method for getting QuotaAdjusterSettings based on the request
+  rpc GetQuotaAdjusterSettings(GetQuotaAdjusterSettingsRequest)
+      returns (QuotaAdjusterSettings) {
+    option (google.api.http) = {
+      get: "/v1beta/{name=projects/*/locations/*/quotaAdjusterSettings}"
+      additional_bindings {
+        get: "/v1beta/{name=folders/*/locations/*/quotaAdjusterSettings}"
+      }
+      additional_bindings {
+        get: "/v1beta/{name=organizations/*/locations/*/quotaAdjusterSettings}"
+      }
+    };
+    option (google.api.method_signature) = "name";
+  }
+}
+
+// Request for getting QuotaAdjusterSettings
+message GetQuotaAdjusterSettingsRequest {
+  // Required. Name of the `quotaAdjusterSettings` configuration. Only a single
+  // setting per project is supported.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloudquotas.googleapis.com/QuotaAdjusterSettings"
+    }
+  ];
+}
+
+// Request for updating QuotaAdjusterSettings
+message UpdateQuotaAdjusterSettingsRequest {
+  // Required. The QuotaAdjusterSettings to update.
+  QuotaAdjusterSettings quota_adjuster_settings = 1
+      [(google.api.field_behavior) = REQUIRED];
+
+  // Optional. The list of fields to update.
+  google.protobuf.FieldMask update_mask = 2
+      [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. If set to true, checks the syntax of the request but doesn't
+  // update the quota adjuster settings value. Note that although a request can
+  // be valid, that doesn't guarantee that the request will be fulfilled.
+  bool validate_only = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// The QuotaAdjusterSettings resource defines the settings for the Quota
+// Adjuster.
+message QuotaAdjusterSettings {
+  option (google.api.resource) = {
+    type: "cloudquotas.googleapis.com/QuotaAdjusterSettings"
+    pattern: "projects/{project}/locations/{location}/quotaAdjusterSettings"
+    pattern: "organizations/{organization}/locations/{location}/quotaAdjusterSettings"
+    pattern: "folders/{folder}/locations/{location}/quotaAdjusterSettings"
+    plural: "quotaAdjusterSettings"
+    singular: "quotaAdjusterSettings"
+    style: DECLARATIVE_FRIENDLY
+  };
+
+  // The enablement status of the quota adjuster.
+  enum Enablement {
+    // The quota adjuster is in an unknown state.
+    ENABLEMENT_UNSPECIFIED = 0;
+
+    // The quota adjuster is enabled.
+    ENABLED = 2;
+
+    // The quota adjuster is disabled.
+    DISABLED = 3;
+  }
+
+  // Identifier. Name of the config would be of the format:
+  //   projects/PROJECT_NUMBER/locations/global/quotaAdjusterSettings
+  //   folders/FOLDER_NUMBER/locations/global/quotaAdjusterSettings
+  //   organizations/ORGANIZATION_NUMBER/locations/global/quotaAdjusterSettings
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Optional. The configured value of the enablement at the given resource.
+  Enablement enablement = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The timestamp when the QuotaAdjusterSettings resource was last
+  // updated.
+  google.protobuf.Timestamp update_time = 5
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Optional. The current ETag of the QuotaAdjusterSettings. If an ETag is
+  // provided on update and does not match the current server's ETag in the
+  // QuotaAdjusterSettings, the request is blocked and returns an ABORTED error.
+  // See https://google.aip.dev/134#etags for more details on ETags.
+  string etag = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Indicates whether the setting is inherited or explicitly
+  // specified.
+  bool inherited = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Output only. The resource container from which the setting is inherited.
+  // This refers to the  nearest ancestor with enablement set (either ENABLED or
+  // DISABLED). The value can be an organizations/{organization_id},
+  // folders/{folder_id}, or can be 'default' if no ancestor exists with
+  // enablement set. The value will be empty when enablement is directly set on
+  // this container.
+  string inherited_from = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}

@@ -1,0 +1,106 @@
+syntax = "proto3";
+package dydxprotocol.indexer.socks;
+
+import "dydxprotocol/indexer/protocol/v1/subaccount.proto";
+
+// Message to be sent through the 'to-websockets-orderbooks` kafka topic.
+message OrderbookMessage {
+  // Stringified JSON object of all events to be streamed.
+  string contents = 1;
+
+  // Clob pair id of the Orderbook message.
+  string clob_pair_id = 2;
+
+  // Version of the websocket message.
+  string version = 3;
+}
+
+// Message to be sent through the 'to-websockets-subaccounts` kafka topic.
+message SubaccountMessage {
+  // Block height where the contents occur.
+  string block_height = 1;
+
+  // Transaction index where the contents occur.
+  int32 transaction_index = 2;
+
+  // Event index where the contents occur.
+  uint32 event_index = 3;
+
+  // Stringified JSON object of all events to be streamed.
+  string contents = 4;
+
+  // Subaccount id that the content corresponds to.
+  dydxprotocol.indexer.protocol.v1.IndexerSubaccountId subaccount_id = 5;
+
+  // Version of the websocket message.
+  string version = 6;
+}
+
+// Message to be sent through the 'to-websockets-trades` kafka topic.
+message TradeMessage {
+  // Block height where the contents occur.
+  string block_height = 1;
+
+  // Stringified JSON object of all events to be streamed.
+  string contents = 4;
+
+  // Clob pair id of the Trade message.
+  string clob_pair_id = 5;
+
+  // Version of the websocket message.
+  string version = 6;
+}
+
+// Message to be sent through the 'to-websockets-markets` kafka topic.
+message MarketMessage {
+  // Stringified JSON object of all events to be streamed.
+  string contents = 1;
+
+  // Version of the websocket message.
+  string version = 2;
+}
+
+// Message to be sent through the 'to-websockets-candles` kafka topic.
+message CandleMessage {
+  // Stringified JSON object of all events to be streamed.
+  string contents = 1;
+
+  // Clob pair id of the Candle message.
+  string clob_pair_id = 2;
+
+  // TODO(IND-210): Make this proto conform and update downstream indexer logic
+  enum Resolution {
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    // buf:lint:ignore ENUM_ZERO_VALUE_SUFFIX
+    ONE_MINUTE = 0;
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    FIVE_MINUTES = 1;
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    FIFTEEN_MINUTES = 2;
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    THIRTY_MINUTES = 3;
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    ONE_HOUR = 4;
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    FOUR_HOURS = 5;
+    // buf:lint:ignore ENUM_VALUE_PREFIX
+    ONE_DAY = 6;
+  }
+  // Resolution of the candle update.
+  Resolution resolution = 3;
+
+  // Version of the websocket message.
+  string version = 4;
+}
+
+// Message to be sent through the 'to-websockets-block-height` kafka topic.
+message BlockHeightMessage {
+  // Block height where the contents occur.
+  string block_height = 1;
+
+  // ISO formatted time of the block height.
+  string time = 2;
+
+  // Version of the websocket message.
+  string version = 3;
+}

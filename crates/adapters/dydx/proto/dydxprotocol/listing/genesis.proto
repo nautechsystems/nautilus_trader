@@ -1,0 +1,18 @@
+syntax = "proto3";
+package dydxprotocol.listing;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/listing/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/listing/types";
+
+// GenesisState defines `x/listing`'s genesis state.
+message GenesisState {
+  // hard_cap_for_markets is the hard cap for the number of markets that can be
+  // listed
+  uint32 hard_cap_for_markets = 1;
+
+  // listing_vault_deposit_params is the params for PML megavault deposits
+  ListingVaultDepositParams listing_vault_deposit_params = 2
+      [ (gogoproto.nullable) = false ];
+}

@@ -1,0 +1,23 @@
+syntax = "proto3";
+package dydxprotocol.subaccounts;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types";
+
+// AssetPositions define an account’s positions of an `Asset`.
+// Therefore they hold any information needed to trade on Spot and Margin.
+message AssetPosition {
+  // The `Id` of the `Asset`.
+  uint32 asset_id = 1;
+  // The absolute size of the position in base quantums.
+  bytes quantums = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+  // The `Index` (either `LongIndex` or `ShortIndex`) of the `Asset` the last
+  // time this position was settled
+  // TODO(DEC-582): pending margin trading being added.
+  uint64 index = 3;
+}

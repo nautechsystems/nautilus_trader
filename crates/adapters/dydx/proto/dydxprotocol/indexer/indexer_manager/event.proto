@@ -1,0 +1,69 @@
+syntax = "proto3";
+package dydxprotocol.indexer.indexer_manager;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/indexer/indexer_manager";
+
+import "google/protobuf/timestamp.proto";
+import "gogoproto/gogo.proto";
+
+// IndexerTendermintEventWrapper is a wrapper around IndexerTendermintEvent,
+// with an additional txn_hash field.
+message IndexerTendermintEventWrapper {
+  IndexerTendermintEvent event = 1;
+  string txn_hash = 2;
+}
+
+// IndexerEventsStoreValue represents the type of the value of the
+// `IndexerEventsStore` in state.
+message IndexerEventsStoreValue {
+  repeated IndexerTendermintEventWrapper events = 1;
+}
+
+// IndexerTendermintEvent contains the base64 encoded event proto emitted from
+// the dYdX application as well as additional metadata to determine the ordering
+// of the event within the block and the subtype of the event.
+message IndexerTendermintEvent {
+  reserved 2;
+  // Subtype of the event e.g. "order_fill", "subaccount_update", etc.
+  string subtype = 1;
+  // enum to specify that the IndexerTendermintEvent is a block event.
+  enum BlockEvent {
+    // Default value. This value is invalid and unused.
+    BLOCK_EVENT_UNSPECIFIED = 0;
+    // BLOCK_EVENT_BEGIN_BLOCK indicates that the event was generated during
+    // BeginBlock.
+    BLOCK_EVENT_BEGIN_BLOCK = 1;
+    // BLOCK_EVENT_END_BLOCK indicates that the event was generated during
+    // EndBlock.
+    BLOCK_EVENT_END_BLOCK = 2;
+  }
+  // ordering_within_block is either the transaction index or a boolean
+  // indicating the event was generated during processing the block rather than
+  // any specific transaction e.g. during FinalizeBlock.
+  oneof ordering_within_block {
+    uint32 transaction_index = 3;
+    BlockEvent block_event = 4;
+  }
+  // Index of the event within the list of events that happened either during a
+  // transaction or during processing of a block.
+  // TODO(DEC-537): Deprecate this field because events are already ordered.
+  uint32 event_index = 5;
+
+  // Version of the event.
+  uint32 version = 6;
+
+  // Tendermint event bytes.
+  bytes data_bytes = 7;
+}
+
+// IndexerTendermintBlock contains all the events for the block along with
+// metadata for the block height, timestamp of the block and a list of all the
+// hashes of the transactions within the block. The transaction hashes follow
+// the ordering of the transactions as they appear within the block.
+message IndexerTendermintBlock {
+  uint32 height = 1;
+  google.protobuf.Timestamp time = 2
+      [ (gogoproto.stdtime) = true, (gogoproto.nullable) = false ];
+  repeated IndexerTendermintEvent events = 3;
+  repeated string tx_hashes = 4;
+}

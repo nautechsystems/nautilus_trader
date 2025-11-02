@@ -1,0 +1,101 @@
+syntax = "proto3";
+package dydxprotocol.vault;
+
+import "cosmos_proto/cosmos.proto";
+import "dydxprotocol/vault/vault.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/vault/types";
+
+// QuotingParams stores vault quoting parameters.
+message QuotingParams {
+  // The number of layers of orders a vault places. For example if
+  // `layers=2`, a vault places 2 asks and 2 bids.
+  uint32 layers = 1;
+
+  // The minimum base spread when a vault quotes around reservation price.
+  uint32 spread_min_ppm = 2;
+
+  // The buffer amount to add to min_price_change_ppm to arrive at `spread`
+  // according to formula:
+  // `spread = max(spread_min_ppm, min_price_change_ppm + spread_buffer_ppm)`.
+  uint32 spread_buffer_ppm = 3;
+
+  // The factor that determines how aggressive a vault skews its orders.
+  uint32 skew_factor_ppm = 4;
+
+  // The percentage of vault equity that each order is sized at.
+  uint32 order_size_pct_ppm = 5;
+
+  // The duration that a vault's orders are valid for.
+  uint32 order_expiration_seconds = 6;
+
+  // The number of quote quantums in quote asset that a vault with no perpetual
+  // positions must have to activate, i.e. if a vault has no perpetual positions
+  // and has strictly less than this amount of quote asset, it will not
+  // activate.
+  bytes activation_threshold_quote_quantums = 7 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// VaultParams stores vault parameters.
+message VaultParams {
+  // Status of the vault.
+  VaultStatus status = 1;
+  // Quoting parameters of the vault.
+  QuotingParams quoting_params = 2;
+}
+
+// OperatorParams stores parameters regarding megavault operator.
+message OperatorParams {
+  // Address of the operator.
+  string operator = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  // Metadata of the operator.
+  OperatorMetadata metadata = 2 [ (gogoproto.nullable) = false ];
+}
+
+// OperatorMetadata stores metadata regarding megavault operator.
+message OperatorMetadata {
+  // Name of the operator.
+  string name = 1;
+  // Description of the operator.
+  string description = 2;
+}
+
+// Deprecated: Params stores `x/vault` parameters.
+// Deprecated since v6.x as is replaced by QuotingParams.
+message Params {
+  // The number of layers of orders a vault places. For example if
+  // `layers=2`, a vault places 2 asks and 2 bids.
+  uint32 layers = 1;
+
+  // The minimum base spread when a vault quotes around reservation price.
+  uint32 spread_min_ppm = 2;
+
+  // The buffer amount to add to min_price_change_ppm to arrive at `spread`
+  // according to formula:
+  // `spread = max(spread_min_ppm, min_price_change_ppm + spread_buffer_ppm)`.
+  uint32 spread_buffer_ppm = 3;
+
+  // The factor that determines how aggressive a vault skews its orders.
+  uint32 skew_factor_ppm = 4;
+
+  // The percentage of vault equity that each order is sized at.
+  uint32 order_size_pct_ppm = 5;
+
+  // The duration that a vault's orders are valid for.
+  uint32 order_expiration_seconds = 6;
+
+  // The number of quote quantums in quote asset that a vault with no perpetual
+  // positions must have to activate, i.e. if a vault has no perpetual positions
+  // and has strictly less than this amount of quote asset, it will not
+  // activate.
+  bytes activation_threshold_quote_quantums = 7 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}

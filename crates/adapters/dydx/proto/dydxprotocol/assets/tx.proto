@@ -1,0 +1,13 @@
+syntax = "proto3";
+package dydxprotocol.assets;
+
+// this line is used by starport scaffolding # proto/tx/import
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/assets/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // this line is used by starport scaffolding # proto/tx/rpc
+}
+
+// this line is used by starport scaffolding # proto/tx/message

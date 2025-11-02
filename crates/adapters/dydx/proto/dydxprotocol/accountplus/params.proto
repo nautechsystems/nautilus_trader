@@ -1,0 +1,15 @@
+syntax = "proto3";
+package dydxprotocol.accountplus;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/accountplus/types";
+
+// Params defines the parameters for the module.
+message Params {
+  // IsSmartAccountActive defines the state of the authenticator.
+  // If set to false, the authenticator module will not be used
+  // and the classic cosmos sdk authentication will be used instead.
+  bool is_smart_account_active = 1
+      [ (gogoproto.moretags) = "yaml:\"is_smart_account_active\"" ];
+}

@@ -1,0 +1,13 @@
+syntax = "proto3";
+package dydxprotocol.ratelimit;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/ratelimit/limit_params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/ratelimit/types";
+
+// GenesisState defines the ratelimit module's genesis state.
+message GenesisState {
+  // limit_params_list defines the list of `LimitParams` at genesis.
+  repeated LimitParams limit_params_list = 1 [ (gogoproto.nullable) = false ];
+}

@@ -1,0 +1,38 @@
+syntax = "proto3";
+package cosmos.crypto.bls12_381;
+
+import "amino/amino.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/cosmos/cosmos-sdk/crypto/keys/bls12_381";
+
+// PubKey is an bls12_381 public key for handling CometBFT keys in SDK.
+// It's needed for Any serialization and SDK compatibility.
+// It must not be used in a non Tendermint key context because it doesn't implement
+// ADR-28. Nevertheless, you will like to use bls12_381 in app user level
+// then you must create a new proto message and follow ADR-28 for Address construction.
+message PubKey {
+  option (amino.name) = "cometbft/PubKeyBls12_381";
+  // The Amino encoding is simply the inner bytes field, and not the Amino
+  // encoding of the whole PubKey struct.
+  //
+  // Example (JSON):
+  // s := PubKey{Key: []byte{0x01}}
+  // out := AminoJSONEncoder(s)
+  //
+  // Then we have:
+  // out == `"MQ=="`
+  // out != `{"key":"MQ=="}`
+  option (amino.message_encoding)     = "key_field";
+  option (gogoproto.goproto_stringer) = false;
+
+  bytes key = 1;
+}
+
+// PrivKey defines a bls12_381 private key.
+message PrivKey {
+  option (amino.name)             = "cometbft/PrivKeyBls12_381";
+  option (amino.message_encoding) = "key_field";
+
+  bytes key = 1;
+}

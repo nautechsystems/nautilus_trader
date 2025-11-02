@@ -1,0 +1,760 @@
+syntax = "proto3";
+package dydxprotocol.indexer.events;
+
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+import "dydxprotocol/indexer/shared/removal_reason.proto";
+import "dydxprotocol/indexer/protocol/v1/clob.proto";
+import "dydxprotocol/indexer/protocol/v1/perpetual.proto";
+import "dydxprotocol/indexer/protocol/v1/subaccount.proto";
+import "dydxprotocol/indexer/protocol/v1/vault.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/indexer/events";
+
+// Do not make any breaking changes to these protos, a new version should be
+// created if a breaking change is needed.
+
+// FundingUpdate is used for funding update events and includes a funding
+// value and an optional funding index that correspond to a perpetual market.
+message FundingUpdateV1 {
+  // The id of the perpetual market.
+  uint32 perpetual_id = 1;
+  // funding value (in parts-per-million) can be premium vote, premium sample,
+  // or funding rate.
+  int32 funding_value_ppm = 2;
+  // funding index is required if and only if parent `FundingEvent` type is
+  // `TYPE_FUNDING_RATE_AND_INDEX`.
+  bytes funding_index = 3 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// FundingEvent message contains a list of per-market funding values. The
+// funding values in the list is of the same type and the types are: which can
+// have one of the following types:
+// 1. Premium vote: votes on the premium values injected by block proposers.
+// 2. Premium sample: combined value from all premium votes during a
+//    `funding-sample` epoch.
+// 3. Funding rate and index: final funding rate combining all premium samples
+//    during a `funding-tick` epoch and funding index accordingly updated with
+//    `funding rate * price`.
+message FundingEventV1 {
+  // updates is a list of per-market funding updates for all existing perpetual
+  // markets. The list is sorted by `perpetualId`s which are unique.
+  repeated FundingUpdateV1 updates = 1 [ (gogoproto.nullable) = false ];
+
+  // Type is the type for funding values.
+  enum Type {
+    // Unspecified type.
+    TYPE_UNSPECIFIED = 0;
+    // Premium sample is the combined value from all premium votes during a
+    // `funding-sample` epoch.
+    TYPE_PREMIUM_SAMPLE = 1;
+    // Funding rate is the final funding rate combining all premium samples
+    // during a `funding-tick` epoch.
+    TYPE_FUNDING_RATE_AND_INDEX = 2;
+    // TODO(DEC-1513): Investigate whether premium vote values need to be
+    // sent to indexer.
+    TYPE_PREMIUM_VOTE = 3;
+  }
+
+  // type stores the type of funding updates.
+  Type type = 2;
+}
+
+// MarketEvent message contains all the information about a market event on
+// the dYdX chain.
+message MarketEventV1 {
+  // market id.
+  uint32 market_id = 1;
+
+  // either an event for price update, market creation, or market modification.
+  oneof event {
+    MarketPriceUpdateEventV1 price_update = 2;
+    MarketCreateEventV1 market_create = 3;
+    MarketModifyEventV1 market_modify = 4;
+  }
+}
+
+// MarketPriceUpdateEvent message contains all the information about a price
+// update on the dYdX chain.
+message MarketPriceUpdateEventV1 {
+  // price_with_exponent. Multiply by 10 ^ Exponent to get the human readable
+  // price in dollars. For example if `Exponent == -5` then a `exponent_price`
+  // of `1,000,000,000` represents “$10,000`.
+  uint64 price_with_exponent = 1;
+}
+
+// shared fields between MarketCreateEvent and MarketModifyEvent
+message MarketBaseEventV1 {
+  // String representation of the market pair, e.g. `BTC-USD`
+  string pair = 1;
+  // The minimum allowable change in the Price value for a given update.
+  // Measured as 1e-6.
+  uint32 min_price_change_ppm = 2;
+}
+
+// MarketCreateEvent message contains all the information about a new market on
+// the dYdX chain.
+message MarketCreateEventV1 {
+  MarketBaseEventV1 base = 1;
+  // Static value. The exponent of the price.
+  // For example if Exponent == -5 then a `exponent_price` of 1,000,000,000
+  // represents $10,000. Therefore 10 ^ Exponent represents the smallest
+  // price step (in dollars) that can be recorded.
+  sint32 exponent = 2;
+}
+
+// MarketModifyEvent message contains all the information about a market update
+// on the dYdX chain
+message MarketModifyEventV1 { MarketBaseEventV1 base = 1; }
+
+// SourceOfFunds is the source of funds in a transfer event.
+message SourceOfFunds {
+  //  one of below
+  // - a subaccount ID
+  // - a wallet address
+  oneof source {
+    dydxprotocol.indexer.protocol.v1.IndexerSubaccountId subaccount_id = 1;
+    string address = 2 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  }
+}
+// TransferEvent message contains all the information about a transfer,
+// deposit-to-subaccount, or withdraw-from-subaccount on the dYdX chain.
+// When a subaccount is involved, a SubaccountUpdateEvent message will
+// be produced with the updated asset positions.
+message TransferEventV1 {
+  dydxprotocol.indexer.protocol.v1.IndexerSubaccountId sender_subaccount_id = 1;
+  dydxprotocol.indexer.protocol.v1.IndexerSubaccountId recipient_subaccount_id =
+      2;
+  // Id of the asset transfered.
+  uint32 asset_id = 3;
+  // The amount of asset in quantums to transfer.
+  uint64 amount = 4;
+  // The sender is one of below
+  // - a subaccount ID (in transfer and withdraw events).
+  // - a wallet address (in deposit events).
+  SourceOfFunds sender = 5;
+  // The recipient is one of below
+  // - a subaccount ID (in transfer and deposit events).
+  // - a wallet address (in withdraw events).
+  SourceOfFunds recipient = 6;
+}
+
+// OrderFillEvent message contains all the information from an order match in
+// the dYdX chain. This includes the maker/taker orders that matched and the
+// amount filled.
+message OrderFillEventV1 {
+  dydxprotocol.indexer.protocol.v1.IndexerOrder maker_order = 1
+      [ (gogoproto.nullable) = false ];
+  // The type of order fill this event represents.
+  oneof taker_order {
+    dydxprotocol.indexer.protocol.v1.IndexerOrder order = 2;
+    LiquidationOrderV1 liquidation_order = 4;
+  }
+  // Fill amount in base quantums.
+  uint64 fill_amount = 3;
+  // Maker fee in USDC quantums.
+  sint64 maker_fee = 5;
+  // Taker fee in USDC quantums. If the taker order is a liquidation, then this
+  // represents the special liquidation fee, not the standard taker fee.
+  sint64 taker_fee = 6;
+  // Total filled of the maker order in base quantums.
+  uint64 total_filled_maker = 7;
+  // Total filled of the taker order in base quantums.
+  uint64 total_filled_taker = 8;
+  // rev share for affiliates in USDC quantums.
+  uint64 affiliate_rev_share = 9;
+  // fee for maker builder in USDC quantums.
+  uint64 maker_builder_fee = 10;
+  // fee for taker builder in USDC quantums.
+  uint64 taker_builder_fee = 11;
+  // builder address for maker
+  string maker_builder_address = 12;
+  // builder address for taker
+  string taker_builder_address = 13;
+  // fee for maker order router in USDC quantums
+  uint64 maker_order_router_fee = 14;
+  // fee for taker order router in USDC quantums
+  uint64 taker_order_router_fee = 15;
+  // order router address for maker
+  string maker_order_router_address = 16;
+  // order router address for taker
+  string taker_order_router_address = 17;
+}
+
+// DeleveragingEvent message contains all the information for a deleveraging
+// on the dYdX chain. This includes the liquidated/offsetting subaccounts and
+// the amount filled.
+message DeleveragingEventV1 {
+  // ID of the subaccount that was liquidated.
+  dydxprotocol.indexer.protocol.v1.IndexerSubaccountId liquidated = 1
+      [ (gogoproto.nullable) = false ];
+  // ID of the subaccount that was used to offset the position.
+  dydxprotocol.indexer.protocol.v1.IndexerSubaccountId offsetting = 2
+      [ (gogoproto.nullable) = false ];
+  // The ID of the perpetual that was liquidated.
+  uint32 perpetual_id = 3;
+  // The amount filled between the liquidated and offsetting position, in
+  // base quantums.
+  uint64 fill_amount = 4;
+  // Total quote quantums filled.
+  uint64 total_quote_quantums = 5;
+  // `true` if liquidating a short position, `false` otherwise.
+  bool is_buy = 6;
+  // `true` if the deleveraging event is for final settlement, indicating
+  // the match occurred at the oracle price rather than bankruptcy price.
+  // When this flag is `false`, the fill price is the bankruptcy price
+  // of the liquidated subaccount.
+  bool is_final_settlement = 7;
+}
+
+// LiquidationOrder represents the liquidation taker order to be included in a
+// liquidation order fill event.
+message LiquidationOrderV1 {
+  // ID of the subaccount that was liquidated.
+  dydxprotocol.indexer.protocol.v1.IndexerSubaccountId liquidated = 1
+      [ (gogoproto.nullable) = false ];
+  // The ID of the clob pair involved in the liquidation.
+  uint32 clob_pair_id = 2;
+  // The ID of the perpetual involved in the liquidation.
+  uint32 perpetual_id = 3;
+  // The total size of the liquidation order including any unfilled size,
+  // in base quantums.
+  uint64 total_size = 4;
+  // `true` if liquidating a short position, `false` otherwise.
+  bool is_buy = 5;
+  // The fillable price in subticks.
+  // This represents the lower-price-bound for liquidating longs
+  // and the upper-price-bound for liquidating shorts.
+  // Must be a multiple of ClobPair.SubticksPerTick
+  // (where `ClobPair.Id = orderId.ClobPairId`).
+  uint64 subticks = 6;
+}
+
+// SubaccountUpdateEvent message contains information about an update to a
+// subaccount in the dYdX chain. This includes the list of updated perpetual
+// and asset positions for the subaccount.
+// Note: This event message will contain all the updates to a subaccount
+// at the end of a block which is why multiple asset/perpetual position
+// updates may exist.
+message SubaccountUpdateEventV1 {
+  dydxprotocol.indexer.protocol.v1.IndexerSubaccountId subaccount_id = 1;
+  // deprecated new_quote_balance field
+  reserved 2;
+  // updated_perpetual_positions will each be for unique perpetuals.
+  repeated dydxprotocol.indexer.protocol.v1.IndexerPerpetualPosition
+      updated_perpetual_positions = 3;
+  // updated_asset_positions will each be for unique assets.
+  repeated dydxprotocol.indexer.protocol.v1.IndexerAssetPosition
+      updated_asset_positions = 4;
+}
+
+// StatefulOrderEvent message contains information about a change to a stateful
+// order. Currently, this is either the placement of a long-term order, the
+// placement or triggering of a conditional order, or the removal of a
+// stateful order.
+message StatefulOrderEventV1 {
+  reserved 2, 3;
+
+  // The type of event that this StatefulOrderEvent contains.
+  oneof event {
+    StatefulOrderPlacementV1 order_place = 1
+        [ deprecated =
+              true ]; // Deprecated in favor of long_term_order_placement
+    StatefulOrderRemovalV1 order_removal = 4;
+    ConditionalOrderPlacementV1 conditional_order_placement = 5;
+    ConditionalOrderTriggeredV1 conditional_order_triggered = 6;
+    LongTermOrderPlacementV1 long_term_order_placement = 7;
+    LongTermOrderReplacementV1 order_replacement = 8;
+    TwapOrderPlacementV1 twap_order_placement = 9;
+  }
+
+  // A stateful order placement contains an order.
+  // Deprecated in favor of LongTermOrderPlacementV1.
+  message StatefulOrderPlacementV1 {
+    dydxprotocol.indexer.protocol.v1.IndexerOrder order = 1;
+  }
+
+  // A stateful order removal contains the id of an order that was already
+  // placed and is now removed and the reason for the removal.
+  message StatefulOrderRemovalV1 {
+    dydxprotocol.indexer.protocol.v1.IndexerOrderId removed_order_id = 1;
+    dydxprotocol.indexer.shared.OrderRemovalReason reason = 2;
+  }
+
+  // A conditional order placement contains an order. The order is newly-placed
+  // and untriggered when this event is emitted.
+  message ConditionalOrderPlacementV1 {
+    dydxprotocol.indexer.protocol.v1.IndexerOrder order = 1;
+  }
+
+  // A conditional order trigger event contains an order id and is emitted when
+  // an order is triggered.
+  message ConditionalOrderTriggeredV1 {
+    dydxprotocol.indexer.protocol.v1.IndexerOrderId triggered_order_id = 1;
+  }
+
+  // A long term order placement contains an order.
+  message LongTermOrderPlacementV1 {
+    dydxprotocol.indexer.protocol.v1.IndexerOrder order = 1;
+  }
+
+  // A long term order replacement contains an old order ID and the new order.
+  message LongTermOrderReplacementV1 {
+    dydxprotocol.indexer.protocol.v1.IndexerOrderId old_order_id =
+        1; // vault replaces orders with a different order ID
+    dydxprotocol.indexer.protocol.v1.IndexerOrder order = 2;
+  }
+
+  // A twap order placement contains an order.
+  message TwapOrderPlacementV1 {
+    dydxprotocol.indexer.protocol.v1.IndexerOrder order = 1;
+  }
+}
+
+// AssetCreateEventV1 message contains all the information about an new Asset on
+// the dYdX chain.
+message AssetCreateEventV1 {
+  // Unique, sequentially-generated.
+  uint32 id = 1;
+
+  // The human readable symbol of the `Asset` (e.g. `USDC`, `ATOM`).
+  // Must be uppercase, unique and correspond to the canonical symbol of the
+  // full coin.
+  string symbol = 2;
+
+  // `true` if this `Asset` has a valid `MarketId` value.
+  bool has_market = 3;
+
+  // The `Id` of the `Market` associated with this `Asset`. It acts as the
+  // oracle price for the purposes of calculating collateral
+  // and margin requirements.
+  uint32 market_id = 4;
+
+  // The exponent for converting an atomic amount (1 'quantum')
+  // to a full coin. For example, if `atomic_resolution = -8`
+  // then an `asset_position` with `base_quantums = 1e8` is equivalent to
+  // a position size of one full coin.
+  sint32 atomic_resolution = 5;
+}
+
+// PerpetualMarketCreateEventV1 message contains all the information about a
+// new Perpetual Market on the dYdX chain.
+// Deprecated. See PerpetualMarketCreateEventV2 for the most up to date message
+// for the event to create a new Perpetual Market.
+message PerpetualMarketCreateEventV1 {
+  option deprecated = true;
+  // Unique Perpetual id.
+  // Defined in perpetuals.perpetual
+  uint32 id = 1;
+
+  // Unique clob pair Id associated with this perpetual market
+  // Defined in clob.clob_pair
+  uint32 clob_pair_id = 2;
+
+  // The name of the `Perpetual` (e.g. `BTC-USD`).
+  // Defined in perpetuals.perpetual
+  string ticker = 3;
+
+  // Unique id of market param associated with this perpetual market.
+  // Defined in perpetuals.perpetual
+  uint32 market_id = 4;
+
+  // Status of the CLOB
+  dydxprotocol.indexer.protocol.v1.ClobPairStatus status = 5;
+
+  // `10^Exponent` gives the number of QuoteQuantums traded per BaseQuantum
+  // per Subtick.
+  // Defined in clob.clob_pair
+  sint32 quantum_conversion_exponent = 6;
+
+  // The exponent for converting an atomic amount (`size = 1`)
+  // to a full coin. For example, if `AtomicResolution = -8`
+  // then a `PerpetualPosition` with `size = 1e8` is equivalent to
+  // a position size of one full coin.
+  // Defined in perpetuals.perpetual
+  sint32 atomic_resolution = 7;
+
+  // Defines the tick size of the orderbook by defining how many subticks
+  // are in one tick. That is, the subticks of any valid order must be a
+  // multiple of this value. Generally this value should start `>= 100`to
+  // allow room for decreasing it.
+  // Defined in clob.clob_pair
+  uint32 subticks_per_tick = 8;
+
+  // Minimum increment in the size of orders on the CLOB, in base quantums.
+  // Defined in clob.clob_pair
+  uint64 step_base_quantums = 9;
+
+  // The liquidity_tier that this perpetual is associated with.
+  // Defined in perpetuals.perpetual
+  uint32 liquidity_tier = 10;
+}
+
+// PerpetualMarketCreateEventV2 message contains all the information about a
+// new Perpetual Market on the dYdX chain.
+// Deprecated. Use PerpetualMarketCreateEventV3 for the most up to date message
+message PerpetualMarketCreateEventV2 {
+  option deprecated = true;
+
+  // Unique Perpetual id.
+  // Defined in perpetuals.perpetual
+  uint32 id = 1;
+
+  // Unique clob pair Id associated with this perpetual market
+  // Defined in clob.clob_pair
+  uint32 clob_pair_id = 2;
+
+  // The name of the `Perpetual` (e.g. `BTC-USD`).
+  // Defined in perpetuals.perpetual
+  string ticker = 3;
+
+  // Unique id of market param associated with this perpetual market.
+  // Defined in perpetuals.perpetual
+  uint32 market_id = 4;
+
+  // Status of the CLOB
+  dydxprotocol.indexer.protocol.v1.ClobPairStatus status = 5;
+
+  // `10^Exponent` gives the number of QuoteQuantums traded per BaseQuantum
+  // per Subtick.
+  // Defined in clob.clob_pair
+  sint32 quantum_conversion_exponent = 6;
+
+  // The exponent for converting an atomic amount (`size = 1`)
+  // to a full coin. For example, if `AtomicResolution = -8`
+  // then a `PerpetualPosition` with `size = 1e8` is equivalent to
+  // a position size of one full coin.
+  // Defined in perpetuals.perpetual
+  sint32 atomic_resolution = 7;
+
+  // Defines the tick size of the orderbook by defining how many subticks
+  // are in one tick. That is, the subticks of any valid order must be a
+  // multiple of this value. Generally this value should start `>= 100`to
+  // allow room for decreasing it.
+  // Defined in clob.clob_pair
+  uint32 subticks_per_tick = 8;
+
+  // Minimum increment in the size of orders on the CLOB, in base quantums.
+  // Defined in clob.clob_pair
+  uint64 step_base_quantums = 9;
+
+  // The liquidity_tier that this perpetual is associated with.
+  // Defined in perpetuals.perpetual
+  uint32 liquidity_tier = 10;
+
+  // Market type of the perpetual.
+  dydxprotocol.indexer.protocol.v1.PerpetualMarketType market_type = 11;
+}
+
+// PerpetualMarketCreateEventV3 message contains all the information about a
+// new Perpetual Market on the dYdX chain.
+message PerpetualMarketCreateEventV3 {
+  // Unique Perpetual id.
+  // Defined in perpetuals.perpetual
+  uint32 id = 1;
+
+  // Unique clob pair Id associated with this perpetual market
+  // Defined in clob.clob_pair
+  uint32 clob_pair_id = 2;
+
+  // The name of the `Perpetual` (e.g. `BTC-USD`).
+  // Defined in perpetuals.perpetual
+  string ticker = 3;
+
+  // Unique id of market param associated with this perpetual market.
+  // Defined in perpetuals.perpetual
+  uint32 market_id = 4;
+
+  // Status of the CLOB
+  dydxprotocol.indexer.protocol.v1.ClobPairStatus status = 5;
+
+  // `10^Exponent` gives the number of QuoteQuantums traded per BaseQuantum
+  // per Subtick.
+  // Defined in clob.clob_pair
+  sint32 quantum_conversion_exponent = 6;
+
+  // The exponent for converting an atomic amount (`size = 1`)
+  // to a full coin. For example, if `AtomicResolution = -8`
+  // then a `PerpetualPosition` with `size = 1e8` is equivalent to
+  // a position size of one full coin.
+  // Defined in perpetuals.perpetual
+  sint32 atomic_resolution = 7;
+
+  // Defines the tick size of the orderbook by defining how many subticks
+  // are in one tick. That is, the subticks of any valid order must be a
+  // multiple of this value. Generally this value should start `>= 100`to
+  // allow room for decreasing it.
+  // Defined in clob.clob_pair
+  uint32 subticks_per_tick = 8;
+
+  // Minimum increment in the size of orders on the CLOB, in base quantums.
+  // Defined in clob.clob_pair
+  uint64 step_base_quantums = 9;
+
+  // The liquidity_tier that this perpetual is associated with.
+  // Defined in perpetuals.perpetual
+  uint32 liquidity_tier = 10;
+
+  // Market type of the perpetual.
+  dydxprotocol.indexer.protocol.v1.PerpetualMarketType market_type = 11;
+
+  // Default 8hr funding rate in parts-per-million.
+  int32 default_funding8hr_ppm = 12;
+}
+
+// LiquidityTierUpsertEventV1 message contains all the information to
+// create/update a Liquidity Tier on the dYdX chain.
+message LiquidityTierUpsertEventV1 {
+  // Unique id.
+  uint32 id = 1;
+
+  // The name of the tier purely for mnemonic purposes, e.g. "Gold".
+  string name = 2;
+
+  // The margin fraction needed to open a position.
+  // In parts-per-million.
+  uint32 initial_margin_ppm = 3;
+
+  // The fraction of the initial-margin that the maintenance-margin is,
+  // e.g. 50%. In parts-per-million.
+  uint32 maintenance_fraction_ppm = 4;
+
+  // The maximum position size at which the margin requirements are
+  // not increased over the default values. Above this position size,
+  // the margin requirements increase at a rate of sqrt(size).
+  //
+  // Deprecated since v3.x.
+  uint64 base_position_notional = 5 [ deprecated = true ];
+
+  // Previously existed in v1 for open interest caps. Removed and
+  // now in v2.
+  reserved 6, 7;
+
+  // reserved fields for open interest caps. Removed and now in v2.
+  reserved "open_interest_lower_cap", "open_interest_upper_cap";
+}
+
+// UpdateClobPairEventV1 message contains all the information about an update to
+// a clob pair on the dYdX chain.
+message UpdateClobPairEventV1 {
+  // Unique clob pair Id associated with this perpetual market
+  // Defined in clob.clob_pair
+  uint32 clob_pair_id = 1;
+
+  // Status of the CLOB
+  dydxprotocol.indexer.protocol.v1.ClobPairStatus status = 2;
+
+  // `10^Exponent` gives the number of QuoteQuantums traded per BaseQuantum
+  // per Subtick.
+  // Defined in clob.clob_pair
+  sint32 quantum_conversion_exponent = 3;
+
+  // Defines the tick size of the orderbook by defining how many subticks
+  // are in one tick. That is, the subticks of any valid order must be a
+  // multiple of this value. Generally this value should start `>= 100`to
+  // allow room for decreasing it.
+  // Defined in clob.clob_pair
+  uint32 subticks_per_tick = 4;
+
+  // Minimum increment in the size of orders on the CLOB, in base quantums.
+  // Defined in clob.clob_pair
+  uint64 step_base_quantums = 5;
+}
+
+// UpdatePerpetualEventV1 message contains all the information about an update
+// to a perpetual on the dYdX chain.
+// Deprecated. See UpdatePerpetualEventV2 for the most up to date message
+// for the event to update a perpetual.
+message UpdatePerpetualEventV1 {
+  option deprecated = true;
+
+  // Unique Perpetual id.
+  // Defined in perpetuals.perpetual
+  uint32 id = 1;
+
+  // The name of the `Perpetual` (e.g. `BTC-USD`).
+  // Defined in perpetuals.perpetual
+  string ticker = 2;
+
+  // Unique id of market param associated with this perpetual market.
+  // Defined in perpetuals.perpetual
+  uint32 market_id = 3;
+
+  // The exponent for converting an atomic amount (`size = 1`)
+  // to a full coin. For example, if `AtomicResolution = -8`
+  // then a `PerpetualPosition` with `size = 1e8` is equivalent to
+  // a position size of one full coin.
+  // Defined in perpetuals.perpetual
+  sint32 atomic_resolution = 4;
+
+  // The liquidity_tier that this perpetual is associated with.
+  // Defined in perpetuals.perpetual
+  uint32 liquidity_tier = 5;
+}
+
+// UpdatePerpetualEventV2 message contains all the information about an update
+// to a perpetual on the dYdX chain.
+// Deprecated. Use UpdatePerpetualEventV3.
+message UpdatePerpetualEventV2 {
+  option deprecated = true;
+
+  // Unique Perpetual id.
+  // Defined in perpetuals.perpetual
+  uint32 id = 1;
+
+  // The name of the `Perpetual` (e.g. `BTC-USD`).
+  // Defined in perpetuals.perpetual
+  string ticker = 2;
+
+  // Unique id of market param associated with this perpetual market.
+  // Defined in perpetuals.perpetual
+  uint32 market_id = 3;
+
+  // The exponent for converting an atomic amount (`size = 1`)
+  // to a full coin. For example, if `AtomicResolution = -8`
+  // then a `PerpetualPosition` with `size = 1e8` is equivalent to
+  // a position size of one full coin.
+  // Defined in perpetuals.perpetual
+  sint32 atomic_resolution = 4;
+
+  // The liquidity_tier that this perpetual is associated with.
+  // Defined in perpetuals.perpetual
+  uint32 liquidity_tier = 5;
+
+  // Market type of the perpetual.
+  dydxprotocol.indexer.protocol.v1.PerpetualMarketType market_type = 6;
+}
+
+// UpdatePerpetualEventV3 message contains all the information about an update
+// to a perpetual on the dYdX chain.
+message UpdatePerpetualEventV3 {
+  // Unique Perpetual id.
+  // Defined in perpetuals.perpetual
+  uint32 id = 1;
+
+  // The name of the `Perpetual` (e.g. `BTC-USD`).
+  // Defined in perpetuals.perpetual
+  string ticker = 2;
+
+  // Unique id of market param associated with this perpetual market.
+  // Defined in perpetuals.perpetual
+  uint32 market_id = 3;
+
+  // The exponent for converting an atomic amount (`size = 1`)
+  // to a full coin. For example, if `AtomicResolution = -8`
+  // then a `PerpetualPosition` with `size = 1e8` is equivalent to
+  // a position size of one full coin.
+  // Defined in perpetuals.perpetual
+  sint32 atomic_resolution = 4;
+
+  // The liquidity_tier that this perpetual is associated with.
+  // Defined in perpetuals.perpetual
+  uint32 liquidity_tier = 5;
+
+  // Market type of the perpetual.
+  dydxprotocol.indexer.protocol.v1.PerpetualMarketType market_type = 6;
+
+  // Default 8hr funding rate in parts-per-million.
+  int32 default_funding8hr_ppm = 7;
+}
+
+// TradingRewardsEventV1 is communicates all trading rewards for all accounts
+// that receive trade rewards in the block.
+message TradingRewardsEventV1 {
+  // The list of all trading rewards in the block.
+  repeated AddressTradingReward trading_rewards = 1;
+}
+
+// AddressTradingReward contains info on an instance of an address receiving a
+// reward
+message AddressTradingReward {
+  // The address of the wallet that will receive the trading reward.
+  string owner = 1;
+
+  // The amount of trading rewards earned by the address above in denoms. 1e18
+  // denoms is equivalent to a single coin.
+  bytes denom_amount = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// OpenInterestUpdateEventV1 is used for open interest update events
+// Deprecated.
+message OpenInterestUpdateEventV1 {
+  // The list of all open interest updates in the block.
+  option deprecated = true;
+  repeated OpenInterestUpdate open_interest_updates = 1;
+}
+
+// OpenInterestUpdate contains a single open interest update for a perpetual
+// Deprecated.
+message OpenInterestUpdate {
+  // The ID of the perpetual market.
+  option deprecated = true;
+  uint32 perpetual_id = 1;
+
+  // The new open interest value for the perpetual market.
+  bytes open_interest = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// LiquidationEventV2 message contains all the information needed to update
+// the liquidity tiers. It contains all the fields from V1 along with the
+// open interest caps.
+message LiquidityTierUpsertEventV2 {
+  // Unique id.
+  uint32 id = 1;
+
+  // The name of the tier purely for mnemonic purposes, e.g. "Gold".
+  string name = 2;
+
+  // The margin fraction needed to open a position.
+  // In parts-per-million.
+  uint32 initial_margin_ppm = 3;
+
+  // The fraction of the initial-margin that the maintenance-margin is,
+  // e.g. 50%. In parts-per-million.
+  uint32 maintenance_fraction_ppm = 4;
+
+  // The maximum position size at which the margin requirements are
+  // not increased over the default values. Above this position size,
+  // the margin requirements increase at a rate of sqrt(size).
+  //
+  // Deprecated since v3.x.
+  uint64 base_position_notional = 5 [ deprecated = true ];
+
+  // Lower cap of open interest in quote quantums. optional
+  uint64 open_interest_lower_cap = 6;
+
+  // Upper cap of open interest in quote quantums.
+  uint64 open_interest_upper_cap = 7;
+}
+
+// Event emitted when a referee is registered with an affiliate.
+message RegisterAffiliateEventV1 {
+  // Address of the referee being registered.
+  string referee = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  // Address of the affiliate associated with the referee.
+  string affiliate = 2 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}
+
+// Event emitted when a vault is created / updated.
+message UpsertVaultEventV1 {
+  // Address of the vault.
+  string address = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Clob pair Id associated with the vault.
+  uint32 clob_pair_id = 2;
+
+  // Status of the vault.
+  dydxprotocol.indexer.protocol.v1.VaultStatus status = 3;
+}

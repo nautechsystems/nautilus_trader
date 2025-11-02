@@ -1,0 +1,33 @@
+syntax = "proto3";
+package dydxprotocol.subaccounts;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types";
+
+// PerpetualPositions are an account’s positions of a `Perpetual`.
+// Therefore they hold any information needed to trade perpetuals.
+message PerpetualPosition {
+  // The `Id` of the `Perpetual`.
+  uint32 perpetual_id = 1;
+  // The size of the position in base quantums.
+  bytes quantums = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+  // The funding_index of the `Perpetual` the last time this position was
+  // settled.
+  bytes funding_index = 3 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+
+  // The quote_balance of the `Perpetual`.
+  bytes quote_balance = 4 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}

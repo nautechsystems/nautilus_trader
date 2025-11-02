@@ -1,0 +1,45 @@
+syntax = "proto3";
+package dydxprotocol.vest;
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "dydxprotocol/vest/vest_entry.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/vest/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // SetVestEntry sets a VestEntry in state.
+  rpc SetVestEntry(MsgSetVestEntry) returns (MsgSetVestEntryResponse);
+  // DeleteVestEntry deletes a VestEntry from state.
+  rpc DeleteVestEntry(MsgDeleteVestEntry) returns (MsgDeleteVestEntryResponse);
+}
+
+// MsgDeleteVestEntry is the Msg/DeleteVestEntry request type.
+message MsgDeleteVestEntry {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // authority is the address that controls the module.
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The vester account of the vest entry to delete.
+  string vester_account = 2;
+}
+
+// MsgDeleteVestEntryResponse is the Msg/DeleteVestEntry response type.
+message MsgDeleteVestEntryResponse {}
+
+// MsgSetVestEntry is the Msg/SetVestEntry request type.
+message MsgSetVestEntry {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // authority is the address that controls the module.
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The vest entry to set.
+  VestEntry entry = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgSetVestEntryResponse is the Msg/SetVestEntry response type.
+message MsgSetVestEntryResponse {}

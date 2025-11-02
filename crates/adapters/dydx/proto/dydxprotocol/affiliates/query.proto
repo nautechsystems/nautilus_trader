@@ -1,0 +1,134 @@
+syntax = "proto3";
+package dydxprotocol.affiliates;
+
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+import "dydxprotocol/affiliates/affiliates.proto";
+import "google/api/annotations.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/affiliates/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Query AffiliateInfo returns the affiliate info for a given address.
+  rpc AffiliateInfo(AffiliateInfoRequest) returns (AffiliateInfoResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/affiliates/affiliate_info/{address}";
+  };
+  // Query ReferredBy returns the affiliate that referred a given address.
+  rpc ReferredBy(ReferredByRequest) returns (ReferredByResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/affiliates/referred_by/{address}";
+  };
+  // Query AllAffiliateTiers returns all affiliate tiers.
+  rpc AllAffiliateTiers(AllAffiliateTiersRequest)
+      returns (AllAffiliateTiersResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/affiliates/all_affiliate_tiers";
+  };
+  // Query AffiliateWhitelist returns the affiliate whitelist.
+  rpc AffiliateWhitelist(AffiliateWhitelistRequest)
+      returns (AffiliateWhitelistResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/affiliates/affiliate_whitelist";
+  };
+  // Query AffiliateParameters returns the affiliate parameters.
+  rpc AffiliateParameters(AffiliateParametersRequest)
+      returns (AffiliateParametersResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/affiliates/affiliate_parameters";
+  };
+  // Query AffiliateOverrides returns the affiliate overrides.
+  rpc AffiliateOverrides(AffiliateOverridesRequest)
+      returns (AffiliateOverridesResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/affiliates/affiliate_overrides";
+  };
+}
+
+// AffiliateInfoRequest is the request type for the Query/AffiliateInfo RPC
+// method.
+message AffiliateInfoRequest {
+  string address = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}
+
+// AffiliateInfoResponse is the response type for the Query/AffiliateInfo RPC
+// method.
+message AffiliateInfoResponse {
+  // Whether the address is a whitelisted affiliate (VIP).
+  bool is_whitelisted = 1;
+  // If `is_whiteslisted == false`, the affiliate's tier qualified through
+  // regular affiliate program.
+  uint32 tier = 2;
+  // The affiliate's taker fee share in parts-per-million (for both VIP and
+  // regular affiliate).
+  uint32 fee_share_ppm = 3;
+  // The affiliate's all-time referred volume in quote quantums.
+  bytes referred_volume = 4 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false,
+    deprecated = true
+  ];
+  // The affiliate's currently staked native tokens (in whole coins).
+  bytes staked_amount = 5 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+  // The affiliate's 30d referred volume in quote quantums.
+  bytes referred_volume_30d_rolling = 6 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// ReferredByRequest is the request type for the Query/ReferredBy RPC method.
+message ReferredByRequest {
+  // The address to query.
+  string address = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}
+// ReferredByResponse is the response type for the Query/ReferredBy RPC method.
+message ReferredByResponse {
+  // The affiliate's address that referred the queried address.
+  string affiliate_address = 1
+      [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}
+
+// AllAffiliateTiersRequest is the request type for the Query/AllAffiliateTiers
+// RPC method.
+message AllAffiliateTiersRequest {}
+// AllAffiliateTiersResponse is the response type for the
+// Query/AllAffiliateTiers RPC method.
+message AllAffiliateTiersResponse {
+  // All affiliate tiers information.
+  AffiliateTiers tiers = 1 [ (gogoproto.nullable) = false ];
+}
+
+// AffiliateWhitelistRequest is the request type for the
+// Query/AffiliateWhitelist RPC method.
+message AffiliateWhitelistRequest {}
+// AffiliateWhitelistResponse is the response type for the
+// Query/AffiliateWhitelist RPC method.
+message AffiliateWhitelistResponse {
+  AffiliateWhitelist whitelist = 1 [ (gogoproto.nullable) = false ];
+}
+
+// AffiliateOverridesRequest is the request type for the
+// Query/AffiliateOverrides RPC method.
+message AffiliateOverridesRequest {}
+// AffiliateOverridesResponse is the response type for the
+// Query/AffiliateOverrides RPC method.
+message AffiliateOverridesResponse {
+  AffiliateOverrides overrides = 1 [ (gogoproto.nullable) = false ];
+}
+
+// AffiliateParametersRequest is the request type for the
+// Query/AffiliateParameters RPC method.
+message AffiliateParametersRequest {}
+// AffiliateParametersResponse is the response type for the
+// Query/AffiliateParameters RPC method.
+message AffiliateParametersResponse {
+  AffiliateParameters parameters = 1 [ (gogoproto.nullable) = false ];
+}

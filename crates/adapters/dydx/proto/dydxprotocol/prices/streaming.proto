@@ -1,0 +1,19 @@
+syntax = "proto3";
+package dydxprotocol.prices;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/prices/market_price.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/prices/types";
+
+// StreamPriceUpdate provides information on a price update.
+message StreamPriceUpdate {
+  // The `Id` of the `Market`.
+  uint32 market_id = 1;
+
+  // The updated price.
+  MarketPrice price = 2 [ (gogoproto.nullable) = false ];
+
+  // Snapshot indicates if the response is from a snapshot of the price.
+  bool snapshot = 3;
+}

@@ -26,6 +26,13 @@ pub struct DydxAdapterConfig {
     pub ws_url: String,
     /// Base URL for the gRPC API (Cosmos SDK transactions).
     pub grpc_url: String,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
     /// Chain ID (e.g., "dydx-mainnet-1" for mainnet, "dydx-testnet-4" for testnet).
     pub chain_id: String,
     /// Request timeout in seconds.
@@ -38,6 +45,8 @@ impl Default for DydxAdapterConfig {
             base_url: "https://api.dydx.exchange".to_string(),
             ws_url: "wss://api.dydx.exchange/v4/ws".to_string(),
             grpc_url: "https://dydx-grpc.publicnode.com:443".to_string(),
+            http_proxy_url: None,
+            ws_proxy_url: None,
             chain_id: "dydx-mainnet-1".to_string(),
             timeout_secs: 30,
         }

@@ -1,0 +1,52 @@
+syntax = "proto3";
+package dydxprotocol.delaymsg;
+
+import "google/api/annotations.proto";
+import "dydxprotocol/delaymsg/delayed_message.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/delaymsg/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries the next DelayedMessage's id.
+  rpc NextDelayedMessageId(QueryNextDelayedMessageIdRequest)
+      returns (QueryNextDelayedMessageIdResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/delaymsg/next_id";
+  }
+
+  // Queries the DelayedMessage by id.
+  rpc Message(QueryMessageRequest) returns (QueryMessageResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/delaymsg/message/{id}";
+  }
+
+  // Queries the DelayedMessages at a given block height.
+  rpc BlockMessageIds(QueryBlockMessageIdsRequest)
+      returns (QueryBlockMessageIdsResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/delaymsg/block/message_ids/{block_height}";
+  }
+}
+
+// QueryNextDelayedMessageIdRequest is the request type for the
+// NextDelayedMessageId RPC method.
+message QueryNextDelayedMessageIdRequest {}
+
+// QueryNextDelayedMessageIdResponse is the response type for the
+// NextDelayedMessageId RPC method.
+message QueryNextDelayedMessageIdResponse {
+  uint32 next_delayed_message_id = 1;
+}
+
+// QueryMessageRequest is the request type for the Message RPC method.
+message QueryMessageRequest { uint32 id = 1; }
+
+// QueryGetMessageResponse is the response type for the Message RPC method.
+message QueryMessageResponse { DelayedMessage message = 1; }
+
+// QueryBlockMessageIdsRequest is the request type for the BlockMessageIds
+// RPC method.
+message QueryBlockMessageIdsRequest { uint32 block_height = 1; }
+
+// QueryGetBlockMessageIdsResponse is the response type for the BlockMessageIds
+// RPC method.
+message QueryBlockMessageIdsResponse { repeated uint32 message_ids = 1; }

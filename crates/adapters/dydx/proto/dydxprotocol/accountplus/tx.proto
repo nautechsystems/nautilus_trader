@@ -1,0 +1,70 @@
+syntax = "proto3";
+package dydxprotocol.accountplus;
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "amino/amino.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/accountplus/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // AddAuthenticator adds an authenticator to an account.
+  rpc AddAuthenticator(MsgAddAuthenticator)
+      returns (MsgAddAuthenticatorResponse);
+  // RemoveAuthenticator removes an authenticator from an account.
+  rpc RemoveAuthenticator(MsgRemoveAuthenticator)
+      returns (MsgRemoveAuthenticatorResponse);
+
+  // SetActiveState sets the active state of the authenticator.
+  // Primarily used for circuit breaking.
+  rpc SetActiveState(MsgSetActiveState) returns (MsgSetActiveStateResponse);
+}
+
+// MsgAddAuthenticatorRequest defines the Msg/AddAuthenticator request type.
+message MsgAddAuthenticator {
+  option (amino.name) = "dydxprotocol/accountplus/add-authenticator";
+  option (cosmos.msg.v1.signer) = "sender";
+
+  string sender = 1;
+  string authenticator_type = 2;
+  bytes data = 3;
+}
+
+// MsgAddAuthenticatorResponse defines the Msg/AddAuthenticator response type.
+message MsgAddAuthenticatorResponse { bool success = 1; }
+
+// MsgRemoveAuthenticatorRequest defines the Msg/RemoveAuthenticator request
+// type.
+message MsgRemoveAuthenticator {
+  option (amino.name) = "dydxprotocol/accountplus/remove-authenticator";
+  option (cosmos.msg.v1.signer) = "sender";
+
+  string sender = 1;
+  uint64 id = 2;
+}
+
+// MsgRemoveAuthenticatorResponse defines the Msg/RemoveAuthenticator response
+// type.
+message MsgRemoveAuthenticatorResponse { bool success = 1; }
+
+// MsgSetActiveState sets the active state of the module.
+message MsgSetActiveState {
+  option (amino.name) = "dydxprotocol/accountplus/set-active-state";
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // Authority is the address that may send this message.
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  bool active = 2;
+}
+
+// MsgSetActiveStateResponse defines the Msg/SetActiveState response type.
+message MsgSetActiveStateResponse {}
+
+// TxExtension allows for additional authenticator-specific data in
+// transactions.
+message TxExtension {
+  // selected_authenticators holds the authenticator_id for the chosen
+  // authenticator per message.
+  repeated uint64 selected_authenticators = 1;
+}

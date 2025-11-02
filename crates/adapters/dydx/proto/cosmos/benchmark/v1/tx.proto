@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package cosmos.benchmark.v1;
+
+import "cosmos/benchmark/v1/benchmark.proto";
+import "cosmos/msg/v1/msg.proto";
+import "amino/amino.proto";
+
+option go_package = "cosmossdk.io/tools/benchmark";
+
+// MsgLoadTestOps defines a message containing a sequence of load test operations.
+message MsgLoadTest {
+  option (cosmos.msg.v1.signer) = "caller";
+  option (amino.name)           = "cosmos-sdk/tools/benchmark/v1/MsgLoadTest";
+
+  bytes caller = 1;
+
+  repeated Op ops = 2;
+}
+
+// MsgLoadTestResponse defines a message containing the results of a load test operation.
+message MsgLoadTestResponse {
+  uint64 total_time   = 1;
+  uint64 total_errors = 2;
+}
+
+// Msg defines the benchmark Msg service.
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  // LoadTest defines a method for executing a sequence of load test operations.
+  rpc LoadTest(MsgLoadTest) returns (MsgLoadTestResponse);
+}

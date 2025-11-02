@@ -1,0 +1,32 @@
+syntax = "proto3";
+package dydxprotocol.ratelimit;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/ratelimit/limit_params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/ratelimit/types";
+
+// DenomCapacity stores a list of rate limit capacity for a denom.
+message DenomCapacity {
+  // denom is the denomination of the token being rate limited.
+  // e.g. ibc/8E27BA2D5493AF5636760E354E46004562C46AB7EC0CC4C1CA14E9E20E2545B5
+  string denom = 1;
+  // capacity_list is a list of capacity amount tracked for each `Limiter`
+  // on the denom. This list has a 1:1 mapping to `limiter` list under
+  // `LimitParams`.
+  repeated bytes capacity_list = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// LimiterCapacity contains a pair of limiter and its corresponding capacity.
+message LimiterCapacity {
+  Limiter limiter = 1 [ (gogoproto.nullable) = false ];
+  bytes capacity = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}

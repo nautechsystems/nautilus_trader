@@ -1,0 +1,84 @@
+syntax = "proto3";
+package dydxprotocol.clob;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+import "dydxprotocol/clob/order.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/clob/types";
+
+// ClobMatch represents an operations queue entry around all different types
+// of matches, specifically regular matches, liquidation matches, and
+// deleveraging matches.
+message ClobMatch {
+  // The match type that this message includes.
+  oneof match {
+    MatchOrders match_orders = 1;
+    MatchPerpetualLiquidation match_perpetual_liquidation = 2;
+    MatchPerpetualDeleveraging match_perpetual_deleveraging = 3;
+  }
+}
+
+// MakerFill represents the filled amount of a matched maker order.
+message MakerFill {
+  // The filled amount of the matched maker order, in base quantums.
+  // TODO(CLOB-571): update to use SerializableInt.
+  uint64 fill_amount = 1;
+  // The `OrderId` of the matched maker order.
+  dydxprotocol.clob.OrderId maker_order_id = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MatchOrders is an injected message used for matching orders.
+message MatchOrders {
+  // The `OrderId` of the taker order.
+  dydxprotocol.clob.OrderId taker_order_id = 1 [ (gogoproto.nullable) = false ];
+  // An ordered list of fills created by this taker order.
+  repeated MakerFill fills = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MatchPerpetualLiquidation is an injected message used for liquidating a
+// subaccount.
+message MatchPerpetualLiquidation {
+  // ID of the subaccount that was liquidated.
+  dydxprotocol.subaccounts.SubaccountId liquidated = 1
+      [ (gogoproto.nullable) = false ];
+  // The ID of the clob pair involved in the liquidation.
+  uint32 clob_pair_id = 2;
+  // The ID of the perpetual involved in the liquidation.
+  uint32 perpetual_id = 3;
+  // The total size of the liquidation order including any unfilled size.
+  uint64 total_size = 4;
+  // `true` if liquidating a short position, `false` otherwise.
+  bool is_buy = 5;
+  // An ordered list of fills created by this liquidation.
+  repeated MakerFill fills = 6 [ (gogoproto.nullable) = false ];
+}
+
+// MatchPerpetualDeleveraging is an injected message used for deleveraging a
+// subaccount.
+message MatchPerpetualDeleveraging {
+  // ID of the subaccount that was liquidated.
+  dydxprotocol.subaccounts.SubaccountId liquidated = 1
+      [ (gogoproto.nullable) = false ];
+  // The ID of the perpetual that was liquidated.
+  uint32 perpetual_id = 2;
+  // Fill represents a fill between the liquidated and offsetting subaccount.
+  message Fill {
+    // ID of the subaccount that was used to offset the liquidated subaccount's
+    // position.
+    dydxprotocol.subaccounts.SubaccountId offsetting_subaccount_id = 1
+        [ (gogoproto.nullable) = false ];
+    // The amount filled between the liquidated and offsetting position, in
+    // base quantums.
+    // TODO(CLOB-571): update to use SerializableInt.
+    uint64 fill_amount = 2;
+  }
+  // An ordered list of fills created by this liquidation.
+  repeated Fill fills = 3 [ (gogoproto.nullable) = false ];
+
+  // Flag denoting whether the deleveraging operation was for the purpose
+  // of final settlement. Final settlement matches are at the oracle price,
+  // whereas deleveraging happens at the bankruptcy price of the deleveraged
+  // subaccount.
+  bool is_final_settlement = 4;
+}

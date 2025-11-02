@@ -18,25 +18,27 @@
 //! This module provides the main gRPC client for interacting with dYdX v4 validator nodes.
 //! It handles transaction signing, broadcasting, and querying account state.
 
-use dydx_proto::{
-    cosmos_sdk_proto::cosmos::{
-        auth::v1beta1::{
-            BaseAccount, QueryAccountRequest, query_client::QueryClient as AuthClient,
+use cosmos_sdk_proto::cosmos::{
+    auth::v1beta1::{BaseAccount, QueryAccountRequest, query_client::QueryClient as AuthClient},
+    bank::v1beta1::{QueryAllBalancesRequest, query_client::QueryClient as BankClient},
+    base::{
+        tendermint::v1beta1::{
+            Block, GetLatestBlockRequest, GetNodeInfoRequest, GetNodeInfoResponse,
+            service_client::ServiceClient as BaseClient,
         },
-        bank::v1beta1::{QueryAllBalancesRequest, query_client::QueryClient as BankClient},
-        base::{
-            tendermint::v1beta1::{
-                Block, GetLatestBlockRequest, GetNodeInfoRequest, GetNodeInfoResponse,
-                service_client::ServiceClient as BaseClient,
-            },
-            v1beta1::Coin,
-        },
-        tx::v1beta1::{
-            BroadcastMode, BroadcastTxRequest, GetTxRequest, SimulateRequest,
-            service_client::ServiceClient as TxClient,
-        },
+        v1beta1::Coin,
     },
-    dydxprotocol::{
+    tx::v1beta1::{
+        BroadcastMode, BroadcastTxRequest, GetTxRequest, SimulateRequest,
+        service_client::ServiceClient as TxClient,
+    },
+};
+use prost::Message as ProstMessage;
+use tonic::transport::Channel;
+
+use crate::{
+    error::DydxError,
+    proto::dydxprotocol::{
         clob::{ClobPair, QueryAllClobPairRequest, query_client::QueryClient as ClobClient},
         perpetuals::{
             Perpetual, QueryAllPerpetualsRequest, query_client::QueryClient as PerpetualsClient,
@@ -47,10 +49,6 @@ use dydx_proto::{
         },
     },
 };
-use prost::Message as ProstMessage;
-use tonic::transport::Channel;
-
-use crate::error::DydxError;
 
 /// Transaction hash type (internally uses tendermint::Hash).
 pub type TxHash = String;

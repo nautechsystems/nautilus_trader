@@ -1,0 +1,37 @@
+syntax = "proto3";
+package dydxprotocol.ratelimit;
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/ratelimit/types";
+
+// LimitParams defines rate limit params on a denom.
+message LimitParams {
+  // denom is the denomination of the token being rate limited.
+  // e.g. ibc/8E27BA2D5493AF5636760E354E46004562C46AB7EC0CC4C1CA14E9E20E2545B5
+  string denom = 1;
+  // limiters is a list of rate-limiters on this denom. All limiters
+  // must be satified for a withdrawal to proceed.
+  repeated Limiter limiters = 2 [ (gogoproto.nullable) = false ];
+}
+
+// Limiter defines one rate-limiter on a specfic denom.
+message Limiter {
+  // period is the rolling time period for which the limit applies
+  // e.g. 3600 (an hour)
+  google.protobuf.Duration period = 1
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+  // baseline_minimum is the minimum maximum withdrawal coin amount within the
+  // time period.
+  // e.g. 100_000_000_000 uusdc for 100k USDC; 5e22 adv4tnt for 50k DV4TNT
+  bytes baseline_minimum = 3 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+  // baseline_tvl_ppm is the maximum ratio of TVL withdrawable in
+  // the time period, in part-per-million.
+  // e.g. 100_000 (10%)
+  uint32 baseline_tvl_ppm = 4;
+}

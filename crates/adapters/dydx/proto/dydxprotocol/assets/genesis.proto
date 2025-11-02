@@ -1,0 +1,12 @@
+syntax = "proto3";
+package dydxprotocol.assets;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/assets/asset.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/assets/types";
+
+// GenesisState defines the assets module's genesis state.
+message GenesisState {
+  repeated Asset assets = 1 [ (gogoproto.nullable) = false ];
+}

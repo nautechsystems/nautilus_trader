@@ -1,0 +1,20 @@
+syntax = "proto3";
+package dydxprotocol.clob;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/clob/block_rate_limit_config.proto";
+import "dydxprotocol/clob/clob_pair.proto";
+import "dydxprotocol/clob/equity_tier_limit_config.proto";
+import "dydxprotocol/clob/liquidations_config.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/clob/types";
+
+// GenesisState defines the clob module's genesis state.
+message GenesisState {
+  repeated ClobPair clob_pairs = 1 [ (gogoproto.nullable) = false ];
+  LiquidationsConfig liquidations_config = 2 [ (gogoproto.nullable) = false ];
+  BlockRateLimitConfiguration block_rate_limit_config = 3
+      [ (gogoproto.nullable) = false ];
+  EquityTierLimitConfiguration equity_tier_limit_config = 4
+      [ (gogoproto.nullable) = false ];
+}

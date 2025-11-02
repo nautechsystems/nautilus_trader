@@ -1,0 +1,15 @@
+syntax = "proto3";
+package dydxprotocol.delaymsg;
+
+import "dydxprotocol/delaymsg/delayed_message.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/delaymsg/types";
+
+// GenesisState defines the delaymsg module's genesis state.
+message GenesisState {
+  // delayed_messages is a list of delayed messages.
+  repeated DelayedMessage delayed_messages = 1;
+
+  // next_delayed_message_id is the id to be assigned to next delayed message.
+  uint32 next_delayed_message_id = 2;
+}

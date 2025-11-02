@@ -1,0 +1,139 @@
+syntax = "proto3";
+package dydxprotocol.perpetuals;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types";
+
+// Perpetual represents a perpetual on the dYdX exchange.
+message Perpetual {
+  // PerpetualParams is the parameters of the perpetual.
+  PerpetualParams params = 1 [ (gogoproto.nullable) = false ];
+
+  // The current index determined by the cumulative all-time
+  // history of the funding mechanism. Starts at zero.
+  bytes funding_index = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+
+  // Total size of open long contracts, measured in base_quantums.
+  bytes open_interest = 3 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}
+
+enum PerpetualMarketType {
+  // Unspecified market type.
+  PERPETUAL_MARKET_TYPE_UNSPECIFIED = 0;
+  // Market type for cross margin perpetual markets.
+  PERPETUAL_MARKET_TYPE_CROSS = 1;
+  // Market type for isolated margin perpetual markets.
+  PERPETUAL_MARKET_TYPE_ISOLATED = 2;
+}
+
+// PerpetualParams represents the parameters of a perpetual on the dYdX
+// exchange.
+message PerpetualParams {
+  // Unique, sequentially-generated.
+  uint32 id = 1;
+
+  // The name of the `Perpetual` (e.g. `BTC-USD`).
+  string ticker = 2;
+
+  // The market associated with this `Perpetual`. It
+  // acts as the oracle price for the purposes of calculating
+  // collateral, margin requirements, and funding rates.
+  uint32 market_id = 3;
+
+  // The exponent for converting an atomic amount (`size = 1`)
+  // to a full coin. For example, if `AtomicResolution = -8`
+  // then a `PerpetualPosition` with `size = 1e8` is equivalent to
+  // a position size of one full coin.
+  sint32 atomic_resolution = 4;
+
+  // The default (8hr) funding payment if there is no price premium. In
+  // parts-per-million.
+  sint32 default_funding_ppm = 5;
+
+  // The liquidity_tier that this perpetual is associated with.
+  uint32 liquidity_tier = 6;
+
+  // The market type specifying if this perpetual is cross or isolated
+  PerpetualMarketType market_type = 7;
+}
+
+// MarketPremiums stores a list of premiums for a single perpetual market.
+message MarketPremiums {
+  // perpetual_id is the Id of the perpetual market.
+  uint32 perpetual_id = 1;
+  // premiums is a list of premium values for a perpetual market. Since most
+  // premiums are zeros under "stable" market conditions, only non-zero values
+  // are stored in this list.
+  repeated sint32 premiums = 2;
+}
+
+// PremiumStore is a struct to store a perpetual premiums for all
+// perpetual markets. It stores a list of `MarketPremiums`, each of which
+// corresponds to a perpetual market and stores a list of non-zero premium
+// values for that market.
+// This struct can either be used to store `PremiumVotes` or
+// `PremiumSamples`.
+message PremiumStore {
+  // all_market_premiums a list of `MarketPremiums`, each corresponding to
+  // a perpetual market.
+  repeated MarketPremiums all_market_premiums = 1
+      [ (gogoproto.nullable) = false ];
+  // number of rounds where premium values were added. This value indicates
+  // the total number of premiums (zeros and non-zeros) for each
+  // `MarketPremiums` struct. Note that in the edge case a perpetual market was
+  // added in the middle of a epoch, we don't keep a seperate count for that
+  // market. This means we treat this market as having zero premiums before it
+  // was added.
+  uint32 num_premiums = 2;
+}
+
+// LiquidityTier stores margin information.
+message LiquidityTier {
+  // Unique id.
+  uint32 id = 1;
+
+  // The name of the tier purely for mnemonic purposes, e.g. "Gold".
+  string name = 2;
+
+  // The margin fraction needed to open a position.
+  // In parts-per-million.
+  uint32 initial_margin_ppm = 3;
+
+  // The fraction of the initial-margin that the maintenance-margin is,
+  // e.g. 50%. In parts-per-million.
+  uint32 maintenance_fraction_ppm = 4;
+
+  // The maximum position size at which the margin requirements are
+  // not increased over the default values. Above this position size,
+  // the margin requirements increase at a rate of sqrt(size).
+  //
+  // Deprecated since v3.x.
+  uint64 base_position_notional = 5 [ deprecated = true ];
+
+  // The impact notional amount (in quote quantums) is used to determine impact
+  // bid/ask prices and its recommended value is 500 USDC / initial margin
+  // fraction.
+  // - Impact bid price = average execution price for a market sell of the
+  // impact notional value.
+  // - Impact ask price = average execution price for a market buy of the
+  // impact notional value.
+  uint64 impact_notional = 6;
+
+  // Lower cap for Open Interest Margin Fracton (OIMF), in quote quantums.
+  // IMF is not affected when OI <= open_interest_lower_cap.
+  uint64 open_interest_lower_cap = 7;
+
+  // Upper cap for Open Interest Margin Fracton (OIMF), in quote quantums.
+  // IMF scales linearly to 100% as OI approaches open_interest_upper_cap.
+  // If zero, then the IMF does not scale with OI.
+  uint64 open_interest_upper_cap = 8;
+}

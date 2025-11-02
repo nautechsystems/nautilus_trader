@@ -1,0 +1,37 @@
+syntax = "proto3";
+package dydxprotocol.clob;
+
+import "dydxprotocol/clob/matches.proto";
+import "dydxprotocol/clob/order.proto";
+import "dydxprotocol/clob/order_removals.proto";
+import "dydxprotocol/clob/tx.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/clob/types";
+
+// Operation represents an operation in the proposed operations. Operation is
+// used internally within the memclob only.
+message Operation {
+  // operation represents the operation that occurred, which can be a match,
+  // short term order placement, short term order cancellation, or the placement
+  // of a pre-existing stateful order.
+  oneof operation {
+    ClobMatch match = 1;
+    MsgPlaceOrder short_term_order_placement = 2;
+    MsgCancelOrder short_term_order_cancellation = 3;
+    OrderId preexisting_stateful_order = 4;
+  }
+}
+
+// InternalOperation represents an internal operation in the operations to
+// propose. InternalOperation is used internally within the memclob only.
+message InternalOperation {
+  // operation represents the operation that occurred, which can be a match,
+  // Short-Term order placement, or the placement of a pre-existing stateful
+  // order.
+  oneof operation {
+    ClobMatch match = 1;
+    MsgPlaceOrder short_term_order_placement = 2;
+    OrderId preexisting_stateful_order = 3;
+    OrderRemoval order_removal = 4;
+  }
+}

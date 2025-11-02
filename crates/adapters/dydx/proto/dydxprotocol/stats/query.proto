@@ -1,0 +1,59 @@
+syntax = "proto3";
+package dydxprotocol.stats;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "dydxprotocol/stats/params.proto";
+import "dydxprotocol/stats/stats.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/stats/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries the Params.
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/stats/params";
+  }
+
+  // Queries StatsMetadata.
+  rpc StatsMetadata(QueryStatsMetadataRequest)
+      returns (QueryStatsMetadataResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/stats/stats_metadata";
+  }
+
+  // Queries GlobalStats.
+  rpc GlobalStats(QueryGlobalStatsRequest) returns (QueryGlobalStatsResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/stats/global_stats";
+  }
+
+  // Queries UserStats.
+  rpc UserStats(QueryUserStatsRequest) returns (QueryUserStatsResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/stats/user_stats";
+  }
+}
+
+// QueryParamsRequest is a request type for the Params RPC method.
+message QueryParamsRequest {}
+
+// QueryParamsResponse is a response type for the Params RPC method.
+message QueryParamsResponse {
+  Params params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryStatsMetadataRequest is a request type for the StatsMetadata RPC method.
+message QueryStatsMetadataRequest {}
+
+// QueryStatsMetadataResponse is a response type for the StatsMetadata RPC
+// method.
+message QueryStatsMetadataResponse { StatsMetadata metadata = 1; }
+
+// QueryGlobalStatsRequest is a request type for the GlobalStats RPC method.
+message QueryGlobalStatsRequest {}
+
+// QueryGlobalStatsResponse is a response type for the GlobalStats RPC method.
+message QueryGlobalStatsResponse { GlobalStats stats = 1; }
+
+// QueryUserStatsRequest is a request type for the UserStats RPC method.
+message QueryUserStatsRequest { string user = 1; }
+// QueryUserStatsResponse is a request type for the UserStats RPC method.
+message QueryUserStatsResponse { UserStats stats = 1; }

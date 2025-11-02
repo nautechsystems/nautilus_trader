@@ -1,0 +1,93 @@
+syntax = "proto3";
+package dydxprotocol.affiliates;
+
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+import "dydxprotocol/affiliates/affiliates.proto";
+import "cosmos/msg/v1/msg.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/affiliates/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // RegisterAffiliate registers a referee-affiliate relationship
+  rpc RegisterAffiliate(MsgRegisterAffiliate)
+      returns (MsgRegisterAffiliateResponse);
+  // UpdateAffiliateTiers updates affiliate tiers
+  rpc UpdateAffiliateTiers(MsgUpdateAffiliateTiers)
+      returns (MsgUpdateAffiliateTiersResponse);
+  // UpdateAffiliateWhitelist updates affiliate whitelist
+  rpc UpdateAffiliateWhitelist(MsgUpdateAffiliateWhitelist)
+      returns (MsgUpdateAffiliateWhitelistResponse);
+  // UpdateAffiliateParameters updates affiliate program parameters
+  rpc UpdateAffiliateParameters(MsgUpdateAffiliateParameters)
+      returns (MsgUpdateAffiliateParametersResponse);
+  // UpdateAffiliateOverrides updates affiliate overrides
+  rpc UpdateAffiliateOverrides(MsgUpdateAffiliateOverrides)
+      returns (MsgUpdateAffiliateOverridesResponse);
+}
+
+// Message to register a referee-affiliate relationship
+message MsgRegisterAffiliate {
+  option (cosmos.msg.v1.signer) = "referee";
+
+  option (gogoproto.equal) = false;
+  option (gogoproto.goproto_getters) = false;
+  // Address of the referee
+  string referee = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  // Address of the affiliate
+  string affiliate = 2 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}
+
+// Response to MsgRegisterAffiliate
+message MsgRegisterAffiliateResponse {}
+
+// Message to update affiliate tiers
+message MsgUpdateAffiliateTiers {
+  option (cosmos.msg.v1.signer) = "authority";
+  // Authority sending this message. Will be sent by gov
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  // Updated affiliate tiers information
+  AffiliateTiers tiers = 2 [ (gogoproto.nullable) = false ];
+}
+
+// Response to MsgUpdateAffiliateTiers
+message MsgUpdateAffiliateTiersResponse {}
+
+// Message to update affiliate whitelist
+message MsgUpdateAffiliateWhitelist {
+  option (cosmos.msg.v1.signer) = "authority";
+  // Authority sending this message. Will be sent by gov
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  // Updated affiliate whitelist information
+  AffiliateWhitelist whitelist = 2 [ (gogoproto.nullable) = false ];
+}
+
+// Response to MsgUpdateAffiliateWhitelist
+message MsgUpdateAffiliateWhitelistResponse {}
+
+// Message to update affiliate program parameters
+message MsgUpdateAffiliateParameters {
+  option (cosmos.msg.v1.signer) = "authority";
+  // Authority sending this message. Will be sent by gov
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Affiliate program parameters
+  AffiliateParameters affiliate_parameters = 2 [ (gogoproto.nullable) = false ];
+}
+
+// Response to MsgUpdateAffiliateParameters
+message MsgUpdateAffiliateParametersResponse {}
+
+// Message to update affiliate overrides
+message MsgUpdateAffiliateOverrides {
+  option (cosmos.msg.v1.signer) = "authority";
+  // Authority sending this message. Will be sent by gov
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Addresses that automatically have the maximum affiliate tier
+  AffiliateOverrides affiliate_overrides = 2 [ (gogoproto.nullable) = false ];
+}
+
+// Response to MsgUpdateAffiliateOverrides
+message MsgUpdateAffiliateOverridesResponse {}

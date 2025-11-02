@@ -1,0 +1,22 @@
+syntax = "proto3";
+package dydxprotocol.accountplus;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/accountplus/types";
+
+// Account State
+message AccountState {
+  string address = 1;
+  TimestampNonceDetails timestamp_nonce_details = 2
+      [ (gogoproto.nullable) = false ];
+}
+
+// Timestamp nonce details
+message TimestampNonceDetails {
+  // unsorted list of n most recent timestamp nonces
+  repeated uint64 timestamp_nonces = 1;
+
+  // max timestamp nonce that was ejected from list above
+  uint64 max_ejected_nonce = 2;
+}

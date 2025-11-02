@@ -13,7 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Common functionality shared across the dYdX adapter.
+//!
+//! This module provides core utilities, constants, and data structures used throughout
+//! the dYdX v4 integration, including:
+//!
+//! - Common type definitions and data structures.
+//! - Constants for the dYdX protocol.
+//! - Enumerations mapping dYdX concepts to idiomatic Rust.
+//! - URL management for different endpoints (validators, indexers).
+//! - Testing utilities.
+
 pub mod consts;
+pub mod enums;
 pub mod types;
 pub mod urls;
 

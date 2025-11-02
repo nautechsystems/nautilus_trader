@@ -1,0 +1,23 @@
+syntax = "proto3";
+package dydxprotocol.accountplus;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/accountplus/types";
+
+// AccountAuthenticator represents a foundational model for all authenticators.
+// It provides extensibility by allowing concrete types to interpret and
+// validate transactions based on the encapsulated data.
+message AccountAuthenticator {
+  // ID uniquely identifies the authenticator instance.
+  uint64 id = 1;
+
+  // Type specifies the category of the AccountAuthenticator.
+  // This type information is essential for differentiating authenticators
+  // and ensuring precise data retrieval from the storage layer.
+  string type = 2;
+
+  // Config is a versatile field used in conjunction with the specific type of
+  // account authenticator to facilitate complex authentication processes.
+  // The interpretation of this field is overloaded, enabling multiple
+  // authenticators to utilize it for their respective purposes.
+  bytes config = 3;
+}

@@ -1,0 +1,21 @@
+syntax = "proto3";
+package dydxprotocol.revshare;
+
+import "cosmos_proto/cosmos.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/revshare/types";
+
+// MarketMappeRevenueShareParams represents params for the above message
+message MarketMapperRevenueShareParams {
+  // The address which will receive the revenue share payouts
+  string address = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The fraction of the fees which will go to the above mentioned address.
+  // In parts-per-million
+  uint32 revenue_share_ppm = 2;
+
+  // This parameter defines how many days post market initiation will the
+  // revenue share be applied for. After valid_days from market initiation
+  // the revenue share goes down to 0
+  uint32 valid_days = 3;
+}

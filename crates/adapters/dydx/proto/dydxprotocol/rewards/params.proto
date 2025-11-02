@@ -1,0 +1,26 @@
+syntax = "proto3";
+package dydxprotocol.rewards;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/rewards/types";
+
+// Params defines the parameters for x/rewards module.
+message Params {
+  // The module account to distribute rewards from.
+  string treasury_account = 1;
+
+  // The denom of the rewards token.
+  string denom = 2;
+
+  // The exponent of converting one unit of `denom` to a full coin.
+  // For example, `denom=uatom, denom_exponent=-6` defines that
+  // `1 uatom = 10^(-6) ATOM`. This conversion is needed since the
+  // `market_id` retrieves the price of a full coin of the reward token.
+  sint32 denom_exponent = 3;
+
+  // The id of the market that has the price of the rewards token.
+  uint32 market_id = 4;
+
+  // The amount (in ppm) that fees are multiplied by to get
+  // the maximum rewards amount.
+  uint32 fee_multiplier_ppm = 5;
+}

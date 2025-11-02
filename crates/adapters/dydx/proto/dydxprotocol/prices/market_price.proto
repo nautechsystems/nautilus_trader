@@ -1,0 +1,21 @@
+syntax = "proto3";
+package dydxprotocol.prices;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/prices/types";
+
+// MarketPrice is used by the application to store/retrieve oracle price.
+message MarketPrice {
+  // Unique, sequentially-generated value that matches `MarketParam`.
+  uint32 id = 1;
+
+  // Static value. The exponent of the price. See the comment on the duplicate
+  // MarketParam field for more information.
+  //
+  // As of v7.1.x, this value is determined from the marketmap instead of
+  // needing to match the MarketParam field.
+  sint32 exponent = 2;
+
+  // The variable value that is updated by oracle price updates. `0` if it has
+  // never been updated, `>0` otherwise.
+  uint64 price = 3;
+}

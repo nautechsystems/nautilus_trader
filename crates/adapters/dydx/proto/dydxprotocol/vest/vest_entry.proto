@@ -1,0 +1,30 @@
+syntax = "proto3";
+package dydxprotocol.vest;
+
+import "google/protobuf/timestamp.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/vest/types";
+
+// VestEntry specifies a Vester Account and the rate at which tokens are
+// dripped into the corresponding Treasury Account.
+message VestEntry {
+  // The module account to vest tokens from.
+  // This is also the key to this `VestEntry` in state.
+  string vester_account = 1;
+
+  // The module account to vest tokens to.
+  string treasury_account = 2;
+
+  // The denom of the token to vest.
+  string denom = 3;
+
+  // The start time of vest. Before this time, no vest will occur.
+  google.protobuf.Timestamp start_time = 4
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+
+  // The end time of vest. At this target date, all funds should be in the
+  // Treasury Account and none left in the Vester Account.
+  google.protobuf.Timestamp end_time = 5
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}

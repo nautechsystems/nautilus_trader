@@ -1,0 +1,19 @@
+syntax = "proto3";
+package cosmos.store.internal.kv.v1beta1;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "cosmossdk.io/store/internal/kv";
+
+// This is duplicated from the base kv directory to avoid a circular dependency with the cosmos-sdk
+
+// Pairs defines a repeated slice of Pair objects.
+message Pairs {
+  repeated Pair pairs = 1 [(gogoproto.nullable) = false];
+}
+
+// Pair defines a key/value bytes tuple.
+message Pair {
+  bytes key   = 1;
+  bytes value = 2;
+}

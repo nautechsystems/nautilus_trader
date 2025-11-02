@@ -1,0 +1,124 @@
+syntax = "proto3";
+package dydxprotocol.feetiers;
+
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "dydxprotocol/feetiers/params.proto";
+import "dydxprotocol/feetiers/per_market_fee_discount.proto";
+import "dydxprotocol/feetiers/staking_tier.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries the PerpetualFeeParams.
+  rpc PerpetualFeeParams(QueryPerpetualFeeParamsRequest)
+      returns (QueryPerpetualFeeParamsResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/feetiers/perpetual_fee_params";
+  }
+
+  // Queries a user's fee tier
+  rpc UserFeeTier(QueryUserFeeTierRequest) returns (QueryUserFeeTierResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/feetiers/user_fee_tier";
+  }
+
+  // PerMarketFeeDiscountParams queries fee discount parameters for a
+  // specific market/CLOB pair.
+  rpc PerMarketFeeDiscountParams(QueryPerMarketFeeDiscountParamsRequest)
+      returns (QueryPerMarketFeeDiscountParamsResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/feetiers/market_fee_discount_params/{clob_pair_id}";
+  }
+
+  // AllMarketFeeDiscountParams queries all per-market fee discount parameters.
+  rpc AllMarketFeeDiscountParams(QueryAllMarketFeeDiscountParamsRequest)
+      returns (QueryAllMarketFeeDiscountParamsResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/feetiers/market_fee_discount_params";
+  }
+
+  // Get all staking tiers
+  rpc StakingTiers(QueryStakingTiersRequest)
+      returns (QueryStakingTiersResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/feetiers/staking_tiers";
+  }
+
+  // Get user's current staked amount and staking tier
+  rpc UserStakingTier(QueryUserStakingTierRequest)
+      returns (QueryUserStakingTierResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/feetiers/user_staking_tier/{address}";
+  }
+}
+
+// QueryPerpetualFeeParamsRequest is a request type for the PerpetualFeeParams
+// RPC method.
+message QueryPerpetualFeeParamsRequest {}
+
+// QueryPerpetualFeeParamsResponse is a response type for the PerpetualFeeParams
+// RPC method.
+message QueryPerpetualFeeParamsResponse {
+  PerpetualFeeParams params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryUserFeeTierRequest is a request type for the UserFeeTier RPC method.
+message QueryUserFeeTierRequest {
+  string user = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}
+
+// QueryUserFeeTierResponse is a request type for the UserFeeTier RPC method.
+message QueryUserFeeTierResponse {
+  // Index of the fee tier in the list queried from PerpetualFeeParams.
+  uint32 index = 1;
+  PerpetualFeeTier tier = 2;
+}
+
+// QueryPerMarketFeeDiscountParamsRequest is the request type for the
+// Query/PerMarketFeeDiscountParams RPC method.
+message QueryPerMarketFeeDiscountParamsRequest { uint32 clob_pair_id = 1; }
+
+// QueryPerMarketFeeDiscountParamsResponse is the response type for the
+// Query/PerMarketFeeDiscountParams RPC method.
+message QueryPerMarketFeeDiscountParamsResponse {
+  PerMarketFeeDiscountParams params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryAllMarketFeeDiscountParamsRequest is the request type for the
+// Query/AllMarketFeeDiscountParams RPC method.
+message QueryAllMarketFeeDiscountParamsRequest {}
+
+// QueryAllMarketFeeDiscountParamsResponse is the response type for the
+// Query/AllMarketFeeDiscountParams RPC method.
+message QueryAllMarketFeeDiscountParamsResponse {
+  repeated PerMarketFeeDiscountParams params = 1
+      [ (gogoproto.nullable) = false ];
+}
+
+// QueryStakingTiersRequest is a request type for the StakingTiers RPC method.
+message QueryStakingTiersRequest {}
+
+// QueryStakingTiersResponse is a response type for the StakingTiers RPC method.
+message QueryStakingTiersResponse { repeated StakingTier staking_tiers = 1; }
+
+// QueryUserStakingTierRequest is a request type for the UserStakingTier RPC
+// method.
+message QueryUserStakingTierRequest {
+  string address = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}
+
+// QueryUserStakingTierResponse is a response type for the UserStakingTier RPC
+// method.
+message QueryUserStakingTierResponse {
+  // The user's current fee tier name
+  string fee_tier_name = 1;
+  // Amount of tokens staked by the user (in base units)
+  bytes staked_base_tokens = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+  // The discount percentage in ppm that user qualifies for
+  uint32 discount_ppm = 3;
+}

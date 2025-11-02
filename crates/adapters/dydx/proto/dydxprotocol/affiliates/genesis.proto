@@ -1,0 +1,15 @@
+syntax = "proto3";
+package dydxprotocol.affiliates;
+import "gogoproto/gogo.proto";
+import "dydxprotocol/affiliates/affiliates.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/affiliates/types";
+
+// GenesisState defines generis state of `x/affiliates`
+message GenesisState {
+  // The list of affiliate tiers
+  AffiliateTiers affiliate_tiers = 1 [ (gogoproto.nullable) = false ];
+
+  // The affiliate parameters
+  AffiliateParameters affiliate_parameters = 2 [ (gogoproto.nullable) = false ];
+}

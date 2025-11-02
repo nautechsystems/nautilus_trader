@@ -1,0 +1,44 @@
+syntax = "proto3";
+package dydxprotocol.assets;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/assets/types";
+
+// Asset defines a single exchangable asset.
+message Asset {
+
+  // Unique, sequentially-generated.
+  uint32 id = 1;
+
+  // The human readable symbol of the `Asset` (e.g. `USDC`, `ATOM`).
+  // Must be uppercase, unique and correspond to the canonical symbol of the
+  // full coin.
+  string symbol = 2;
+
+  // The name of base denomination unit of the `Asset` (e.g. `uatom`,
+  // 'ibc/xxxxx'). Must be unique and match the `denom` used in the `sdk.Coin`
+  // type in the `x/bank` module.
+  string denom = 3;
+
+  // The exponent of converting one unit of `denom` to a full coin.
+  // For example, `name=USDC, denom=uusdc, denom_exponent=-6` defines that
+  // `1 uusdc = 10^(-6) USDC`. Note that `uusdc` refers to a `Coin` type in
+  // `x/bank`, where the prefix `u` means `micro` by convetion. `uusdc` is
+  // a different concept from a "quantum" defined by `atomic_resolution` below.
+  // To convert from an amount of `denom` to quantums:
+  // `quantums = denom_amount * 10^(denom_exponent - atomic_resolution)`
+  sint32 denom_exponent = 4;
+
+  // `true` if this `Asset` has a valid `MarketId` value.
+  bool has_market = 5;
+
+  // The `Id` of the `Market` associated with this `Asset`. It acts as the
+  // oracle price for the purposes of calculating collateral
+  // and margin requirements.
+  uint32 market_id = 6;
+
+  // The exponent for converting an atomic amount (1 'quantum')
+  // to a full coin. For example, if `atomic_resolution = -8`
+  // then an `asset_position` with `base_quantums = 1e8` is equivalent to
+  // a position size of one full coin.
+  sint32 atomic_resolution = 7;
+}

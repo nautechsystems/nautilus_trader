@@ -1,0 +1,37 @@
+syntax = "proto3";
+package dydxprotocol.listing;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "dydxprotocol/listing/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/listing/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries for the hard cap number of listed markets
+  rpc MarketsHardCap(QueryMarketsHardCap)
+      returns (QueryMarketsHardCapResponse) {
+    option (google.api.http).get = "/dydxprotocol/listing/markets_hard_cap";
+  }
+
+  // Queries the listing vault deposit params
+  rpc ListingVaultDepositParams(QueryListingVaultDepositParams)
+      returns (QueryListingVaultDepositParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/listing/vault_deposit_params";
+  }
+}
+
+// Queries for the hard cap on listed markets
+message QueryMarketsHardCap {}
+
+// Response type indicating the hard cap on listed markets
+message QueryMarketsHardCapResponse { uint32 hard_cap = 1; }
+
+// Queries the listing vault deposit params
+message QueryListingVaultDepositParams {}
+
+// Response type for QueryListingVaultDepositParams
+message QueryListingVaultDepositParamsResponse {
+  ListingVaultDepositParams params = 1 [ (gogoproto.nullable) = false ];
+}

@@ -1,0 +1,23 @@
+syntax = "proto3";
+package dydxprotocol.daemons.bridge;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/bridge/bridge_event.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/daemons/bridge/api";
+
+// BridgeService defines the gRPC service used by bridge daemon.
+service BridgeService {
+  // Sends a list of newly recognized bridge events.
+  rpc AddBridgeEvents(AddBridgeEventsRequest) returns (AddBridgeEventsResponse);
+}
+
+// AddBridgeEventsRequest is a request message that contains a list of new
+// bridge events. The events should be contiguous and sorted by (unique) id.
+message AddBridgeEventsRequest {
+  repeated dydxprotocol.bridge.BridgeEvent bridge_events = 1
+      [ (gogoproto.nullable) = false ];
+}
+
+// AddBridgeEventsResponse is a response message for BridgeEventRequest.
+message AddBridgeEventsResponse {}

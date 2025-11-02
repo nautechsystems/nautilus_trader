@@ -1,0 +1,73 @@
+syntax = "proto3";
+package dydxprotocol.accountplus;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "dydxprotocol/accountplus/accountplus.proto";
+import "dydxprotocol/accountplus/models.proto";
+import "dydxprotocol/accountplus/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/accountplus/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Parameters queries the parameters of the module.
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/accountplus/params";
+  }
+
+  // Queries a single authenticator by account and authenticator ID.
+  rpc GetAuthenticator(GetAuthenticatorRequest)
+      returns (GetAuthenticatorResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/accountplus/authenticator/{account}/{authenticator_id}";
+  }
+
+  // Queries all authenticators for a given account.
+  rpc GetAuthenticators(GetAuthenticatorsRequest)
+      returns (GetAuthenticatorsResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/accountplus/authenticators/{account}";
+  }
+
+  // Queries for an account state (timestamp nonce).
+  rpc AccountState(AccountStateRequest) returns (AccountStateResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/accountplus/account_state/{address}";
+  }
+}
+
+// AccountStateRequest is request type for the Query/AccountState RPC method.
+message AccountStateRequest { string address = 1; }
+
+// AccountStateResponse is response type for the Query/GetAccountState RPC
+// method.
+message AccountStateResponse { AccountState account_state = 1; }
+
+// QueryParamsRequest is request type for the Query/Params RPC method.
+message QueryParamsRequest {}
+
+// QueryParamsResponse is response type for the Query/Params RPC method.
+message QueryParamsResponse {
+  // params holds all the parameters of this module.
+  Params params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// MsgGetAuthenticatorsRequest defines the Msg/GetAuthenticators request type.
+message GetAuthenticatorsRequest { string account = 1; }
+
+// MsgGetAuthenticatorsResponse defines the Msg/GetAuthenticators response type.
+message GetAuthenticatorsResponse {
+  repeated AccountAuthenticator account_authenticators = 1;
+}
+
+// MsgGetAuthenticatorRequest defines the Msg/GetAuthenticator request type.
+message GetAuthenticatorRequest {
+  string account = 1;
+  uint64 authenticator_id = 2;
+}
+
+// MsgGetAuthenticatorResponse defines the Msg/GetAuthenticator response type.
+message GetAuthenticatorResponse {
+  AccountAuthenticator account_authenticator = 1;
+}

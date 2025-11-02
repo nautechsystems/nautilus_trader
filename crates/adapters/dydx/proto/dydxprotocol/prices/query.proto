@@ -1,0 +1,94 @@
+syntax = "proto3";
+package dydxprotocol.prices;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "dydxprotocol/prices/market_param.proto";
+import "dydxprotocol/prices/market_price.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/prices/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries a MarketPrice by id.
+  rpc MarketPrice(QueryMarketPriceRequest) returns (QueryMarketPriceResponse) {
+    option (google.api.http).get = "/dydxprotocol/prices/market/{id}";
+  }
+
+  // Queries a list of MarketPrice items.
+  rpc AllMarketPrices(QueryAllMarketPricesRequest)
+      returns (QueryAllMarketPricesResponse) {
+    option (google.api.http).get = "/dydxprotocol/prices/market";
+  }
+
+  // Queries a MarketParam by id.
+  rpc MarketParam(QueryMarketParamRequest) returns (QueryMarketParamResponse) {
+    option (google.api.http).get = "/dydxprotocol/prices/params/market/{id}";
+  }
+
+  // Queries a list of MarketParam items.
+  rpc AllMarketParams(QueryAllMarketParamsRequest)
+      returns (QueryAllMarketParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/prices/params/market";
+  }
+
+  // Queries the next market id.
+  rpc NextMarketId(QueryNextMarketIdRequest)
+      returns (QueryNextMarketIdResponse) {
+    option (google.api.http).get = "/dydxprotocol/prices/next_market_id";
+  }
+}
+
+// QueryMarketPriceRequest is request type for the Query/Params `MarketPrice`
+// RPC method.
+message QueryMarketPriceRequest { uint32 id = 1; }
+
+// QueryMarketPriceResponse is response type for the Query/Params `MarketPrice`
+// RPC method.
+message QueryMarketPriceResponse {
+  MarketPrice market_price = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryAllMarketPricesRequest is request type for the Query/Params
+// `AllMarketPrices` RPC method.
+message QueryAllMarketPricesRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryAllMarketPricesResponse is response type for the Query/Params
+// `AllMarketPrices` RPC method.
+message QueryAllMarketPricesResponse {
+  repeated MarketPrice market_prices = 1 [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryMarketParamsRequest is request type for the Query/Params `MarketParams`
+// RPC method.
+message QueryMarketParamRequest { uint32 id = 1; }
+
+// QueryMarketParamResponse is response type for the Query/Params `MarketParams`
+// RPC method.
+message QueryMarketParamResponse {
+  MarketParam market_param = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryAllMarketParamsRequest is request type for the Query/Params
+// `AllMarketParams` RPC method.
+message QueryAllMarketParamsRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryAllMarketParamsResponse is response type for the Query/Params
+// `AllMarketParams` RPC method.
+message QueryAllMarketParamsResponse {
+  repeated MarketParam market_params = 1 [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryNextMarketIdRequest is request type for the Query/Params `NextMarketId`
+message QueryNextMarketIdRequest {}
+
+// QueryNextMarketIdResponse is response type for the Query/Params
+// `NextMarketId`
+message QueryNextMarketIdResponse { uint32 next_market_id = 1; }

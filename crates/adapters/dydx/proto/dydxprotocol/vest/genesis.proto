@@ -1,0 +1,13 @@
+syntax = "proto3";
+package dydxprotocol.vest;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/vest/vest_entry.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/vest/types";
+
+// GenesisState defines the vest module's genesis state.
+message GenesisState {
+  // The vest entries at genesis.
+  repeated VestEntry vest_entries = 1 [ (gogoproto.nullable) = false ];
+}

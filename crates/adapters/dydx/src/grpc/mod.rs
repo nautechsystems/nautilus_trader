@@ -45,9 +45,12 @@ pub mod wallet;
 // Re-exports
 pub use builder::TxBuilder;
 pub use client::{DydxGrpcClient, Height, TxHash};
-pub use order::{
-    DEFAULT_RUST_CLIENT_METADATA, OrderBuilder, OrderFlags, OrderGoodUntil, OrderMarketParams,
-    OrderType, SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
-};
+pub use order::{DEFAULT_RUST_CLIENT_METADATA, OrderBuilder, SHORT_TERM_ORDER_MAXIMUM_LIFETIME};
 pub use types::ChainId;
 pub use wallet::{Account, Subaccount, Wallet};
+
+// Re-export common enums used in gRPC operations
+pub use crate::common::enums::{
+    DydxOrderFlags as OrderFlags, DydxOrderGoodUntil as OrderGoodUntil,
+    DydxOrderMarketParams as OrderMarketParams, DydxOrderType as OrderType,
+};

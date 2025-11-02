@@ -1,0 +1,69 @@
+syntax = "proto3";
+package dydxprotocol.feetiers;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types";
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "dydxprotocol/feetiers/params.proto";
+import "dydxprotocol/feetiers/per_market_fee_discount.proto";
+import "dydxprotocol/feetiers/staking_tier.proto";
+import "gogoproto/gogo.proto";
+
+// Msg defines the Msg service.
+service Msg {
+  // UpdatePerpetualFeeParams updates the PerpetualFeeParams in state.
+  rpc UpdatePerpetualFeeParams(MsgUpdatePerpetualFeeParams)
+      returns (MsgUpdatePerpetualFeeParamsResponse);
+
+  // SetMarketFeeDiscountParams sets or updates PerMarketFeeDiscountParams for
+  // specific CLOB pairs.
+  rpc SetMarketFeeDiscountParams(MsgSetMarketFeeDiscountParams)
+      returns (MsgSetMarketFeeDiscountParamsResponse);
+
+  // SetStakingTiers sets the staking tiers in state.
+  rpc SetStakingTiers(MsgSetStakingTiers) returns (MsgSetStakingTiersResponse);
+}
+
+// MsgUpdatePerpetualFeeParams is the Msg/UpdatePerpetualFeeParams request type.
+message MsgUpdatePerpetualFeeParams {
+  // The address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Defines the parameters to update. All parameters must be supplied.
+  PerpetualFeeParams params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdatePerpetualFeeParamsResponse is the Msg/UpdatePerpetualFeeParams
+// response type.
+message MsgUpdatePerpetualFeeParamsResponse {}
+
+// MsgSetMarketFeeDiscountParams is the Msg/SetMarketFeeDiscountParams
+// request type.
+message MsgSetMarketFeeDiscountParams {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // authority is the address that controls the module
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The per-market fee discount parameters to create or update
+  repeated PerMarketFeeDiscountParams params = 2
+      [ (gogoproto.nullable) = false ];
+}
+
+// MsgSetMarketFeeDiscountParamsResponse is the
+// Msg/SetMarketFeeDiscountParams response type.
+message MsgSetMarketFeeDiscountParamsResponse {}
+// MsgSetStakingTiers is the Msg/SetStakingTiers request type.
+message MsgSetStakingTiers {
+  // The address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // List of Staking tiers
+  repeated StakingTier staking_tiers = 2;
+}
+
+// MsgSetStakingTiersResponse is the Msg/SetStakingTiers response type.
+message MsgSetStakingTiersResponse {}

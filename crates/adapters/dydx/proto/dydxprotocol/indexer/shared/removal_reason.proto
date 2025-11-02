@@ -1,0 +1,59 @@
+syntax = "proto3";
+package dydxprotocol.indexer.shared;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/indexer/shared/types";
+
+// TODO(DEC-869): Update reasons/statuses for Advanced Orders.
+
+// OrderRemovalReason is an enum of all the reasons an order was removed.
+enum OrderRemovalReason {
+  // Default value, this is invalid and unused.
+  ORDER_REMOVAL_REASON_UNSPECIFIED = 0;
+  // The order was removed due to being expired.
+  ORDER_REMOVAL_REASON_EXPIRED = 1;
+  // The order was removed due to being canceled by a user.
+  ORDER_REMOVAL_REASON_USER_CANCELED = 2;
+  // The order was removed due to being undercollateralized.
+  ORDER_REMOVAL_REASON_UNDERCOLLATERALIZED = 3;
+  // The order caused an internal error during order placement and was
+  // removed.
+  ORDER_REMOVAL_REASON_INTERNAL_ERROR = 4;
+  // The order would have matched against another order placed by the same
+  // subaccount and was removed.
+  ORDER_REMOVAL_REASON_SELF_TRADE_ERROR = 5;
+  // The order would have matched against maker orders on the orderbook
+  // despite being a post-only order and was removed.
+  ORDER_REMOVAL_REASON_POST_ONLY_WOULD_CROSS_MAKER_ORDER = 6;
+  // The order was an ICO order and would have been placed on the orderbook as
+  // resting liquidity and was removed.
+  ORDER_REMOVAL_REASON_IMMEDIATE_OR_CANCEL_WOULD_REST_ON_BOOK = 7;
+  // The order was a fill-or-kill order that could not be fully filled and was
+  // removed.
+  ORDER_REMOVAL_REASON_FOK_ORDER_COULD_NOT_BE_FULLY_FULLED = 8;
+  // The order was a reduce-only order that was removed due to either:
+  // - being a taker order and fully-filling the order would flip the side of
+  //    the subaccount's position, in this case the remaining size of the
+  //    order is removed
+  // - being a maker order resting on the book and being removed when either
+  //    the subaccount's position is closed or flipped sides
+  ORDER_REMOVAL_REASON_REDUCE_ONLY_RESIZE = 9;
+  // The order should be expired, according to the Indexer's cached data, but
+  // the Indexer has yet to receive a message to remove the order. In order to
+  // keep the data cached by the Indexer up-to-date and accurate, clear out
+  // the data if it's expired by sending an order removal with this reason.
+  // Protocol should never send this reason to Indexer.
+  ORDER_REMOVAL_REASON_INDEXER_EXPIRED = 10;
+  // The order has been replaced.
+  ORDER_REMOVAL_REASON_REPLACED = 11;
+  // The order has been fully-filled. Only sent by the Indexer for stateful
+  // orders.
+  ORDER_REMOVAL_REASON_FULLY_FILLED = 12;
+  // The order has been removed since the subaccount does not satisfy the
+  // equity tier requirements.
+  ORDER_REMOVAL_REASON_EQUITY_TIER = 13;
+  // The order has been removed since its ClobPair has entered final settlement.
+  ORDER_REMOVAL_REASON_FINAL_SETTLEMENT = 14;
+  // The order has been removed since filling it would lead to the subaccount
+  // violating isolated subaccount constraints.
+  ORDER_REMOVAL_REASON_VIOLATES_ISOLATED_SUBACCOUNT_CONSTRAINTS = 15;
+}

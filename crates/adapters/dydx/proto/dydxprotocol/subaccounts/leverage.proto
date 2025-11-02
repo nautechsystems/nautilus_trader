@@ -1,0 +1,19 @@
+syntax = "proto3";
+package dydxprotocol.subaccounts;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types";
+
+// PerpetualLeverageEntry represents a single perpetual leverage setting for
+// internal storage
+message PerpetualLeverageEntry {
+  // The perpetual ID (internal storage format)
+  uint32 perpetual_id = 1;
+  // The user selected IMF in parts per million
+  uint32 custom_imf_ppm = 2;
+}
+
+// LeverageData represents the leverage settings for a subaccount
+message LeverageData {
+  // List of leverage entries for this subaccount
+  repeated PerpetualLeverageEntry entries = 1;
+}

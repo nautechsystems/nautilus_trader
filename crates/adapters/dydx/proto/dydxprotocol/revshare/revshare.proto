@@ -1,0 +1,37 @@
+syntax = "proto3";
+package dydxprotocol.revshare;
+
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/revshare/types";
+
+// MarketMapperRevShareDetails specifies any details associated with the market
+// mapper revenue share
+message MarketMapperRevShareDetails {
+  // Unix timestamp recorded when the market revenue share expires
+  uint64 expiration_ts = 1;
+}
+
+// UnconditionalRevShareConfig stores recipients that
+// receive a share of net revenue unconditionally.
+message UnconditionalRevShareConfig {
+  // Describes the config of a recipient
+  message RecipientConfig {
+    // Address of the recepient.
+    string address = 1;
+    // Percentage of net revenue to share with recipient, in parts-per-million.
+    uint32 share_ppm = 2;
+  }
+  // Configs for each recipient.
+  repeated RecipientConfig configs = 1 [ (gogoproto.nullable) = false ];
+}
+
+// Message to set the order router revenue share
+message OrderRouterRevShare {
+  // The address of the order router.
+  string address = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The share of the revenue to be paid to the order router.
+  uint32 share_ppm = 2;
+}

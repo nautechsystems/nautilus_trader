@@ -1,0 +1,132 @@
+syntax = "proto3";
+package cosmos.protocolpool.v1;
+
+option go_package = "github.com/cosmos/cosmos-sdk/x/protocolpool/types";
+
+import "cosmos/protocolpool/v1/types.proto";
+import "gogoproto/gogo.proto";
+import "cosmos/base/v1beta1/coin.proto";
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "google/protobuf/timestamp.proto";
+
+// Msg defines the pool Msg service.
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  // FundCommunityPool defines a method to allow an account to directly
+  // fund the community pool.
+  rpc FundCommunityPool(MsgFundCommunityPool) returns (MsgFundCommunityPoolResponse);
+
+  // CommunityPoolSpend defines a governance operation for sending tokens from
+  // the community pool in the x/protocolpool module to another account, which
+  // could be the governance module itself. The authority is defined in the
+  // keeper.
+  rpc CommunityPoolSpend(MsgCommunityPoolSpend) returns (MsgCommunityPoolSpendResponse);
+
+  // CreateContinuousFund defines a method to distribute a percentage of funds to an address continuously.
+  // This ContinuousFund can be indefinite or run until a given expiry time.
+  // Funds come from validator block rewards from x/distribution, but may also come from
+  // any user who funds the ProtocolPoolEscrow module account directly through x/bank.
+  rpc CreateContinuousFund(MsgCreateContinuousFund) returns (MsgCreateContinuousFundResponse);
+
+  // CancelContinuousFund defines a method for cancelling continuous fund.
+  rpc CancelContinuousFund(MsgCancelContinuousFund) returns (MsgCancelContinuousFundResponse);
+
+  // UpdateParams defines a governance operation for updating the x/protocolpool module parameters.
+  // The authority is defined in the keeper.
+  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+}
+
+// MsgFundCommunityPool allows an account to directly
+// fund the community pool.
+message MsgFundCommunityPool {
+  option (cosmos.msg.v1.signer)      = "depositor";
+  option (gogoproto.equal)           = false;
+  option (gogoproto.goproto_getters) = false;
+
+  string depositor = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+
+  repeated cosmos.base.v1beta1.Coin amount = 2
+      [(gogoproto.nullable) = false, (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"];
+}
+
+// MsgFundCommunityPoolResponse defines the Msg/FundCommunityPool response type.
+message MsgFundCommunityPoolResponse {}
+
+// MsgCommunityPoolSpend defines a message for sending tokens from the community
+// pool to another account. This message is typically executed via a governance
+// proposal with the governance module being the executing authority.
+message MsgCommunityPoolSpend {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // Authority is the address that controls the module (defaults to x/gov unless overwritten).
+  string   authority                       = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string   recipient                       = 2;
+  repeated cosmos.base.v1beta1.Coin amount = 3
+      [(gogoproto.nullable) = false, (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"];
+}
+
+// MsgCommunityPoolSpendResponse defines the response to executing a
+// MsgCommunityPoolSpend message.
+message MsgCommunityPoolSpendResponse {}
+
+// MsgCreateContinuousFund defines a message for adding continuous funds.
+message MsgCreateContinuousFund {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // Authority is the address that controls the module (defaults to x/gov unless overwritten).
+  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  // Recipient address of the account receiving funds.
+  string recipient = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  // Percentage is the percentage of funds to be allocated from Community pool.
+  string percentage = 3 [
+    (cosmos_proto.scalar)  = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable)   = false
+  ];
+  // Optional, if expiry is set, removes the state object when expired.
+  google.protobuf.Timestamp expiry = 4 [(gogoproto.stdtime) = true];
+}
+
+// MsgCreateContinuousFundResponse defines the response to executing a
+// MsgCreateContinuousFund message.
+message MsgCreateContinuousFundResponse {}
+
+// MsgCancelContinuousFund defines a message to cancel continuous funds for a specific recipient.
+message MsgCancelContinuousFund {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // Authority is the account address of authority.
+  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  // Recipient is the account address string of the recipient whose funds are to be cancelled.
+  string recipient = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+}
+
+// MsgCancelContinuousFundResponse defines the response to executing a
+// MsgCancelContinuousFund message.
+message MsgCancelContinuousFundResponse {
+  // CanceledTime is the canceled time.
+  google.protobuf.Timestamp canceled_time = 1 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  // CanceledHeight defines the canceled block height.
+  uint64 canceled_height = 2;
+  // Recipient is the account address string of the recipient whose funds are cancelled.
+  string recipient = 3 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+}
+
+// MsgUpdateParams is the Msg/UpdateParams request type.
+message MsgUpdateParams {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // authority is the address that controls the module (defaults to x/gov unless overwritten).
+  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+
+  // params defines the x/protocolpool parameters to update.
+  //
+  // NOTE: All parameters must be supplied.
+  Params params = 2 [(gogoproto.nullable) = false];
+}
+
+// MsgUpdateParamsResponse defines the response structure for executing a
+// MsgUpdateParams message.
+message MsgUpdateParamsResponse {}

@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package cosmos.benchmark.module.v1;
+
+import "cosmos/app/v1alpha1/module.proto";
+
+// Module is the config object of the benchmark module.
+message Module {
+  option (cosmos.app.v1alpha1.module) = {
+    go_import: "cosmossdk.io/tools/benchmark"
+  };
+
+  GeneratorParams genesis_params = 1;
+}
+
+// GenesisParams defines the genesis parameters for the benchmark module.
+message GeneratorParams {
+  // seed is the seed for the random number generator.
+  uint64 seed = 1;
+  // bucket_count is the number of store keys to uniformly distribute genesis_count keys across.
+  uint64 bucket_count = 2;
+
+  // key_mean is the mean size (in normal distribution) of keys in each bucket.
+  uint64 key_mean = 3;
+  // key_std_dev is the standard deviation of key sizes in each bucket.
+  uint64 key_std_dev = 4;
+  // value_mean is the mean size (in normal distribution) of values in each bucket.
+  uint64 value_mean = 6;
+  // value_std_dev is the standard deviation of value sizes in each bucket.
+  uint64 value_std_dev = 7;
+
+  // genesis_count is the number of keys to insert in the store, distributed across all buckets.
+  uint64 genesis_count = 8;
+
+  // insert_weight is the weight of insert operations.
+  float insert_weight = 9;
+  // update_weight is the weight of update operations.
+  float update_weight = 10;
+  // get_weight is the weight of get operations.
+  float get_weight = 12;
+  // delete_weight is the weight of delete operations.
+  float delete_weight = 11;
+}

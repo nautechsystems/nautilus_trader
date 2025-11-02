@@ -1,0 +1,19 @@
+syntax = "proto3";
+package dydxprotocol.perpetuals;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types";
+
+// Params defines the parameters for x/perpetuals module.
+message Params {
+  // Funding rate clamp factor in parts-per-million, used for clamping 8-hour
+  // funding rates according to equation: |R| <= funding_rate_clamp_factor *
+  // (initial margin - maintenance margin).
+  uint32 funding_rate_clamp_factor_ppm = 1;
+  // Premium vote clamp factor in parts-per-million, used for clamping premium
+  // votes according to equation: |V| <= premium_vote_clamp_factor *
+  // (initial margin - maintenance margin).
+  uint32 premium_vote_clamp_factor_ppm = 2;
+  // Minimum number of premium votes per premium sample. If number of premium
+  // votes is smaller than this number, pad with zeros up to this number.
+  uint32 min_num_votes_per_sample = 3;
+}

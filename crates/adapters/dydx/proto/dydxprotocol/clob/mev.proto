@@ -1,0 +1,62 @@
+syntax = "proto3";
+package dydxprotocol.clob;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+import "dydxprotocol/clob/clob_pair.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/clob/types";
+
+// MEVMatch represents all necessary data to calculate MEV for a regular match.
+message MEVMatch {
+  dydxprotocol.subaccounts.SubaccountId taker_order_subaccount_id = 1;
+  int32 taker_fee_ppm = 2;
+
+  dydxprotocol.subaccounts.SubaccountId maker_order_subaccount_id = 3;
+  uint64 maker_order_subticks = 4;
+  bool maker_order_is_buy = 5;
+  int32 maker_fee_ppm = 6;
+
+  uint32 clob_pair_id = 7;
+  uint64 fill_amount = 8;
+}
+
+// MEVLiquidationMatch represents all necessary data to calculate MEV for a
+// liquidation.
+message MEVLiquidationMatch {
+  dydxprotocol.subaccounts.SubaccountId liquidated_subaccount_id = 1
+      [ (gogoproto.nullable) = false ];
+  int64 insurance_fund_delta_quote_quantums = 2;
+
+  dydxprotocol.subaccounts.SubaccountId maker_order_subaccount_id = 3
+      [ (gogoproto.nullable) = false ];
+  uint64 maker_order_subticks = 4;
+  bool maker_order_is_buy = 5;
+  int32 maker_fee_ppm = 6;
+
+  uint32 clob_pair_id = 7;
+  uint64 fill_amount = 8;
+}
+
+// ClobMidPrice contains the mid price of a CLOB pair, represented by it's ID.
+message ClobMidPrice {
+  dydxprotocol.clob.ClobPair clob_pair = 1 [ (gogoproto.nullable) = false ];
+  uint64 subticks = 2;
+}
+
+// ValidatorMevMatches contains all matches from the validator's local
+// operations queue.
+message ValidatorMevMatches {
+  repeated MEVMatch matches = 1 [ (gogoproto.nullable) = false ];
+  repeated MEVLiquidationMatch liquidation_matches = 2
+      [ (gogoproto.nullable) = false ];
+}
+
+// MevNodeToNodeMetrics is a data structure for encapsulating all MEV node <>
+// node metrics.
+message MevNodeToNodeMetrics {
+  ValidatorMevMatches validator_mev_matches = 1;
+  repeated ClobMidPrice clob_mid_prices = 2 [ (gogoproto.nullable) = false ];
+  ValidatorMevMatches bp_mev_matches = 3;
+  uint64 proposal_receive_time = 4;
+}

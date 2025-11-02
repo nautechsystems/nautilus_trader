@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package cosmos.benchmark.v1;
+
+option go_package = "cosmossdk.io/tools/benchmark";
+
+// Op is a message describing a benchmark operation.
+message Op {
+  uint64 seed  = 1;
+  string actor = 2;
+
+  uint64 key_length   = 3;
+  uint64 value_length = 4;
+  uint32 iterations   = 5;
+  bool delete         = 6;
+  bool exists         = 7;
+}

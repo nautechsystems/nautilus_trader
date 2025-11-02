@@ -1,0 +1,78 @@
+syntax = "proto3";
+package cosmos.protocolpool.v1;
+
+option go_package = "github.com/cosmos/cosmos-sdk/x/protocolpool/types";
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/v1beta1/coin.proto";
+import "cosmos_proto/cosmos.proto";
+import "cosmos/protocolpool/v1/types.proto";
+
+// Query defines the gRPC querier service for community pool module.
+service Query {
+  // CommunityPool queries the community pool coins.
+  rpc CommunityPool(QueryCommunityPoolRequest) returns (QueryCommunityPoolResponse) {
+    option (google.api.http).get = "/cosmos/protocolpool/v1/community_pool";
+  }
+
+  // ContinuousFund queries a continuous fund by the recipient is is associated with.
+  rpc ContinuousFund(QueryContinuousFundRequest) returns (QueryContinuousFundResponse) {
+    option (google.api.http).get = "/cosmos/protocolpool/v1/continuous_funds/{recipient}";
+  }
+
+  // ContinuousFunds queries all continuous funds in the store.
+  rpc ContinuousFunds(QueryContinuousFundsRequest) returns (QueryContinuousFundsResponse) {
+    option (google.api.http).get = "/cosmos/protocolpool/v1/continuous_funds";
+  }
+
+  // Params returns the total set of x/protocolpool parameters.
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/cosmos/protocolpool/v1/params";
+  }
+}
+
+// QueryCommunityPoolRequest is the request type for the Query/CommunityPool RPC
+// method.
+message QueryCommunityPoolRequest {}
+
+// QueryCommunityPoolResponse is the response type for the Query/CommunityPool
+// RPC method.
+message QueryCommunityPoolResponse {
+  // pool defines community pool's coins.
+  repeated cosmos.base.v1beta1.Coin pool = 1
+      [(gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins", (gogoproto.nullable) = false];
+}
+
+// QueryContinuousFundRequest is the request type for the Query/ContinuousFund
+// RPC method.
+message QueryContinuousFundRequest {
+  // recipient is the recipient address to query unclaimed budget amount for.
+  string recipient = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+}
+
+// QueryUnclaimedBudgetResponse is the response type for the Query/ContinuousFund
+// RPC method.
+message QueryContinuousFundResponse {
+  // ContinuousFunds is the given continuous fund returned in the query.
+  ContinuousFund continuous_fund = 1 [(gogoproto.nullable) = false];
+}
+
+// QueryContinuousFundRequest is the request type for the Query/ContinuousFunds
+// RPC method.
+message QueryContinuousFundsRequest {}
+
+// QueryUnclaimedBudgetResponse is the response type for the Query/ContinuousFunds
+// RPC method.
+message QueryContinuousFundsResponse {
+  // ContinuousFunds defines all continuous funds in state.
+  repeated ContinuousFund continuous_funds = 1 [(gogoproto.nullable) = false];
+}
+
+// QueryParamsRequest is the response type for the Query/Params RPC method.
+message QueryParamsRequest {}
+
+// QueryParamsResponse is the response type for the Query/Params RPC method.
+message QueryParamsResponse {
+  Params params = 1 [(gogoproto.nullable) = false];
+}

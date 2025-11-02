@@ -1,0 +1,91 @@
+syntax = "proto3";
+package dydxprotocol.revshare;
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "gogoproto/gogo.proto";
+import "dydxprotocol/revshare/params.proto";
+import "dydxprotocol/revshare/revshare.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/revshare/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // SetMarketMapperRevenueShare sets the revenue share for a market
+  // mapper.
+  rpc SetMarketMapperRevenueShare(MsgSetMarketMapperRevenueShare)
+      returns (MsgSetMarketMapperRevenueShareResponse);
+
+  // SetMarketMapperRevenueShareDetails sets the revenue share details for a
+  // market mapper.
+  rpc SetMarketMapperRevShareDetailsForMarket(
+      MsgSetMarketMapperRevShareDetailsForMarket)
+      returns (MsgSetMarketMapperRevShareDetailsForMarketResponse);
+  // UpdateUnconditionalRevShareConfig sets the unconditional revshare config
+  rpc UpdateUnconditionalRevShareConfig(MsgUpdateUnconditionalRevShareConfig)
+      returns (MsgUpdateUnconditionalRevShareConfigResponse);
+
+  // SetOrderRouterRevShare sets the revenue share for an order router.
+  rpc SetOrderRouterRevShare(MsgSetOrderRouterRevShare)
+      returns (MsgSetOrderRouterRevShareResponse);
+}
+
+// Message to set the market mapper revenue share
+message MsgSetMarketMapperRevenueShare {
+  // The address that controls the module (the gov module account).
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Parameters for the revenue share
+  MarketMapperRevenueShareParams params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// Response to a MsgSetMarketMapperRevenueShare
+message MsgSetMarketMapperRevenueShareResponse {}
+
+// Msg to set market mapper revenue share details (e.g. expiration timestamp)
+// for a specific market. To be used as an override for existing revenue share
+// settings set by the MsgSetMarketMapperRevenueShare msg
+message MsgSetMarketMapperRevShareDetailsForMarket {
+  // The address that controls the module (the gov module account).
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The market ID for which to set the revenue share details
+  uint32 market_id = 2;
+
+  // Parameters for the revenue share details
+  MarketMapperRevShareDetails params = 3 [ (gogoproto.nullable) = false ];
+}
+
+// Response to a MsgSetMarketMapperRevShareDetailsForMarket
+message MsgSetMarketMapperRevShareDetailsForMarketResponse {}
+
+// Message to update the unconditional revenue share config.
+message MsgUpdateUnconditionalRevShareConfig {
+  // The address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The config to update.
+  UnconditionalRevShareConfig config = 2 [ (gogoproto.nullable) = false ];
+}
+
+// Response to MsgUpdateUnconditionalRevShareConfig
+message MsgUpdateUnconditionalRevShareConfigResponse {}
+
+// Governance message to create or update the order router revenue share
+message MsgSetOrderRouterRevShare {
+  // The address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The order router rev share to create or update.
+  OrderRouterRevShare order_router_rev_share = 2
+      [ (gogoproto.nullable) = false ];
+}
+
+// Response to MsgSetOrderRouterRevShare
+message MsgSetOrderRouterRevShareResponse {}

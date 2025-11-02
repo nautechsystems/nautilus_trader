@@ -1,0 +1,33 @@
+syntax = "proto3";
+package cosmos.protocolpool.v1;
+
+option go_package = "github.com/cosmos/cosmos-sdk/x/protocolpool/types";
+
+import "gogoproto/gogo.proto";
+import "cosmos_proto/cosmos.proto";
+import "google/protobuf/timestamp.proto";
+
+// ContinuousFund defines the fields of continuous fund proposal.
+message ContinuousFund {
+  // Recipient is the address string of the account receiving funds.
+  string recipient = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  // Percentage is the percentage of funds to be allocated from Community pool.
+  string percentage = 2 [
+    (cosmos_proto.scalar)  = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable)   = false
+  ];
+  // Optional, if expiry is set, removes the state object when expired.
+  google.protobuf.Timestamp expiry = 3 [(gogoproto.stdtime) = true];
+}
+
+// Params defines the parameters for the protocolpool module.
+message Params {
+  // EnabledDistributionDenoms lists the denoms that are allowed to be distributed.
+  // This is to avoid spending time distributing undesired tokens to continuous funds and budgets.
+  repeated string enabled_distribution_denoms = 1;
+
+  // DistributionFrequency is the frequency (in terms of blocks) that funds are distributed out from the
+  // x/protocolpool module.
+  uint64 distribution_frequency = 2;
+}

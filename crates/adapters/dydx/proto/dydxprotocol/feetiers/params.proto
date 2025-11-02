@@ -1,0 +1,31 @@
+syntax = "proto3";
+package dydxprotocol.feetiers;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types";
+
+// PerpetualFeeParams defines the parameters for perpetual fees.
+message PerpetualFeeParams {
+  // Sorted fee tiers (lowest requirements first).
+  repeated PerpetualFeeTier tiers = 1;
+}
+
+// A fee tier for perpetuals
+message PerpetualFeeTier {
+  // Human-readable name of the tier, e.g. "Gold".
+  string name = 1;
+
+  // The trader's absolute volume requirement in quote quantums.
+  uint64 absolute_volume_requirement = 2;
+
+  // The total volume share requirement.
+  uint32 total_volume_share_requirement_ppm = 3;
+
+  // The maker volume share requirement.
+  uint32 maker_volume_share_requirement_ppm = 4;
+
+  // The maker fee once this tier is reached.
+  sint32 maker_fee_ppm = 5;
+
+  // The taker fee once this tier is reached.
+  sint32 taker_fee_ppm = 6;
+}

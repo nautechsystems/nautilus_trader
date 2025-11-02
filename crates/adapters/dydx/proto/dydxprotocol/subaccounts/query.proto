@@ -1,0 +1,92 @@
+syntax = "proto3";
+package dydxprotocol.subaccounts;
+
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries a Subaccount by id
+  rpc Subaccount(QueryGetSubaccountRequest) returns (QuerySubaccountResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/subaccounts/subaccount/{owner}/{number}";
+  }
+
+  // Queries a list of Subaccount items.
+  rpc SubaccountAll(QueryAllSubaccountRequest)
+      returns (QuerySubaccountAllResponse) {
+    option (google.api.http).get = "/dydxprotocol/subaccounts/subaccount";
+  }
+
+  // Queries information about whether withdrawal and transfers are blocked, and
+  // if so which block they are re-enabled on.
+  rpc GetWithdrawalAndTransfersBlockedInfo(
+      QueryGetWithdrawalAndTransfersBlockedInfoRequest)
+      returns (QueryGetWithdrawalAndTransfersBlockedInfoResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/subaccounts/withdrawals_and_transfers_blocked_info/"
+        "{perpetual_id}";
+  }
+
+  // Queries the collateral pool account address for a perpetual id.
+  rpc CollateralPoolAddress(QueryCollateralPoolAddressRequest)
+      returns (QueryCollateralPoolAddressResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/subaccounts/collateral_pool_address/{perpetual_id}";
+  }
+}
+
+// QueryGetSubaccountRequest is request type for the Query RPC method.
+message QueryGetSubaccountRequest {
+  string owner = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  uint32 number = 2;
+}
+
+// QuerySubaccountResponse is response type for the Query RPC method.
+message QuerySubaccountResponse {
+  Subaccount subaccount = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryAllSubaccountRequest is request type for the Query RPC method.
+message QueryAllSubaccountRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QuerySubaccountAllResponse is response type for the Query RPC method.
+message QuerySubaccountAllResponse {
+  repeated Subaccount subaccount = 1 [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryGetWithdrawalAndTransfersBlockedInfoRequest is a request type for
+// fetching information about whether withdrawals and transfers are blocked for
+// a collateral pool associated with the passed in perpetual id.
+message QueryGetWithdrawalAndTransfersBlockedInfoRequest {
+  uint32 perpetual_id = 1;
+}
+
+// QueryGetWithdrawalAndTransfersBlockedInfoRequest is a response type for
+// fetching information about whether withdrawals and transfers are blocked.
+message QueryGetWithdrawalAndTransfersBlockedInfoResponse {
+  uint32 negative_tnc_subaccount_seen_at_block = 1;
+  uint32 chain_outage_seen_at_block = 2;
+  uint32 withdrawals_and_transfers_unblocked_at_block = 3;
+}
+
+// QueryCollateralPoolAddressRequest is the request type for fetching the
+// account address of the collateral pool associated with the passed in
+// perpetual id.
+message QueryCollateralPoolAddressRequest { uint32 perpetual_id = 1; }
+
+// QueryCollateralPoolAddressResponse is a response type for fetching the
+// account address of the collateral pool associated with the passed in
+// perpetual id.
+message QueryCollateralPoolAddressResponse {
+  string collateral_pool_address = 1
+      [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}

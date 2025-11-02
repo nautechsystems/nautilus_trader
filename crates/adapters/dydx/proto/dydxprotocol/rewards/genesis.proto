@@ -1,0 +1,13 @@
+syntax = "proto3";
+package dydxprotocol.rewards;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/rewards/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/rewards/types";
+
+// GenesisState defines the rewards module's genesis state.
+message GenesisState {
+  // The parameters of the module.
+  Params params = 1 [ (gogoproto.nullable) = false ];
+}

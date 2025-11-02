@@ -1,0 +1,17 @@
+syntax = "proto3";
+package dydxprotocol.feetiers;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/feetiers/params.proto";
+import "dydxprotocol/feetiers/staking_tier.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types";
+
+// GenesisState defines the feetiers module's genesis state.
+message GenesisState {
+  // The parameters for perpetual fees.
+  PerpetualFeeParams params = 1 [ (gogoproto.nullable) = false ];
+
+  // The staking tiers.
+  repeated StakingTier staking_tiers = 2;
+}

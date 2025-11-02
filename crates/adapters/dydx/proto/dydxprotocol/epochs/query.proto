@@ -1,0 +1,47 @@
+syntax = "proto3";
+package dydxprotocol.epochs;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "dydxprotocol/epochs/epoch_info.proto";
+// this line is used by starport scaffolding # 1
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/epochs/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries a EpochInfo by name.
+  rpc EpochInfo(QueryGetEpochInfoRequest) returns (QueryEpochInfoResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/epochs/epoch_info/{name}";
+  }
+
+  // Queries a list of EpochInfo items.
+  rpc EpochInfoAll(QueryAllEpochInfoRequest)
+      returns (QueryEpochInfoAllResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/epochs/epoch_info";
+  }
+
+  // this line is used by starport scaffolding # 2
+}
+
+// QueryGetEpochInfoRequest is request type for the GetEpochInfo RPC method.
+message QueryGetEpochInfoRequest { string name = 1; }
+
+// QueryEpochInfoResponse is response type for the GetEpochInfo RPC method.
+message QueryEpochInfoResponse {
+  EpochInfo epoch_info = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryAllEpochInfoRequest is request type for the AllEpochInfo RPC method.
+message QueryAllEpochInfoRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryEpochInfoAllResponse is response type for the AllEpochInfo RPC method.
+message QueryEpochInfoAllResponse {
+  repeated EpochInfo epoch_info = 1 [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// this line is used by starport scaffolding # 3

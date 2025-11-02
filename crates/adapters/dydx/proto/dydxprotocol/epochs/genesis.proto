@@ -1,0 +1,14 @@
+syntax = "proto3";
+package dydxprotocol.epochs;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/epochs/epoch_info.proto";
+// this line is used by starport scaffolding # genesis/proto/import
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/epochs/types";
+
+// GenesisState defines the epochs module's genesis state.
+message GenesisState {
+  repeated EpochInfo epoch_info_list = 1 [ (gogoproto.nullable) = false ];
+  // this line is used by starport scaffolding # genesis/proto/state
+}

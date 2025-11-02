@@ -1,0 +1,12 @@
+syntax = "proto3";
+package dydxprotocol.blocktime;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/blocktime/types";
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/blocktime/params.proto";
+
+// GenesisState defines the blocktime module's genesis state.
+message GenesisState {
+  DowntimeParams params = 1 [ (gogoproto.nullable) = false ];
+}

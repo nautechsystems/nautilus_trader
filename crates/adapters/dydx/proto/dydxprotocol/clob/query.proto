@@ -1,0 +1,315 @@
+syntax = "proto3";
+package dydxprotocol.clob;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "dydxprotocol/clob/block_rate_limit_config.proto";
+import "dydxprotocol/clob/clob_pair.proto";
+import "dydxprotocol/clob/equity_tier_limit_config.proto";
+import "dydxprotocol/clob/order.proto";
+import "dydxprotocol/clob/matches.proto";
+import "dydxprotocol/clob/liquidations_config.proto";
+import "dydxprotocol/clob/mev.proto";
+import "dydxprotocol/indexer/off_chain_updates/off_chain_updates.proto";
+import "dydxprotocol/subaccounts/streaming.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+import "dydxprotocol/prices/streaming.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/clob/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries a ClobPair by id.
+  rpc ClobPair(QueryGetClobPairRequest) returns (QueryClobPairResponse) {
+    option (google.api.http).get = "/dydxprotocol/clob/clob_pair/{id}";
+  }
+
+  // Queries a list of ClobPair items.
+  rpc ClobPairAll(QueryAllClobPairRequest) returns (QueryClobPairAllResponse) {
+    option (google.api.http).get = "/dydxprotocol/clob/clob_pair";
+  }
+
+  // Runs the MEV node <> node calculation with the provided parameters.
+  rpc MevNodeToNodeCalculation(MevNodeToNodeCalculationRequest)
+      returns (MevNodeToNodeCalculationResponse) {
+    option (google.api.http) = {
+      post : "/dydxprotocol/clob/mev_node_to_node_calculation"
+      body : "*"
+    };
+  }
+
+  // Queries EquityTierLimitConfiguration.
+  rpc EquityTierLimitConfiguration(QueryEquityTierLimitConfigurationRequest)
+      returns (QueryEquityTierLimitConfigurationResponse) {
+    option (google.api.http).get = "/dydxprotocol/clob/equity_tier";
+  }
+
+  // Queries BlockRateLimitConfiguration.
+  rpc BlockRateLimitConfiguration(QueryBlockRateLimitConfigurationRequest)
+      returns (QueryBlockRateLimitConfigurationResponse) {
+    option (google.api.http).get = "/dydxprotocol/clob/block_rate";
+  }
+
+  // Queries LiquidationsConfiguration.
+  rpc LiquidationsConfiguration(QueryLiquidationsConfigurationRequest)
+      returns (QueryLiquidationsConfigurationResponse) {
+    option (google.api.http).get = "/dydxprotocol/clob/liquidations_config";
+  }
+
+  // Queries the stateful order for a given order id.
+  rpc StatefulOrder(QueryStatefulOrderRequest)
+      returns (QueryStatefulOrderResponse) {}
+
+  // Queries the next clob pair id.
+  rpc NextClobPairId(QueryNextClobPairIdRequest)
+      returns (QueryNextClobPairIdResponse) {
+    option (google.api.http).get = "/dydxprotocol/clob/next_clob_pair_id";
+  }
+
+  // Queries leverage for a subaccount.
+  rpc Leverage(QueryLeverageRequest) returns (QueryLeverageResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/clob/leverage/{owner}/{number}";
+  }
+
+  // GRPC Streams
+
+  // Streams orderbook updates. Updates contain orderbook data
+  // such as order placements, updates, and fills.
+  rpc StreamOrderbookUpdates(StreamOrderbookUpdatesRequest)
+      returns (stream StreamOrderbookUpdatesResponse);
+}
+
+// QueryGetClobPairRequest is request type for the ClobPair method.
+message QueryGetClobPairRequest { uint32 id = 1; }
+
+// QueryClobPairResponse is response type for the ClobPair method.
+message QueryClobPairResponse {
+  ClobPair clob_pair = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryAllClobPairRequest is request type for the ClobPairAll method.
+message QueryAllClobPairRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryClobPairAllResponse is response type for the ClobPairAll method.
+message QueryClobPairAllResponse {
+  repeated ClobPair clob_pair = 1 [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// MevNodeToNodeCalculationRequest is a request message used to run the
+// MEV node <> node calculation.
+message MevNodeToNodeCalculationRequest {
+  // Represents the matches on the "block proposer". Note that this field
+  // does not need to be the actual block proposer's matches for a block, since
+  // the MEV calculation logic is run with this nodes matches as the "block
+  // proposer" matches.
+  dydxprotocol.clob.ValidatorMevMatches block_proposer_matches = 1;
+  // Represents the matches and mid-prices on the validator.
+  dydxprotocol.clob.MevNodeToNodeMetrics validator_mev_metrics = 2;
+}
+
+// MevNodeToNodeCalculationResponse is a response message that contains the
+// MEV node <> node calculation result.
+message MevNodeToNodeCalculationResponse {
+  // MevAndVolumePerClob contains information about the MEV and volume per CLOB.
+  message MevAndVolumePerClob {
+    uint32 clob_pair_id = 1;
+    float mev = 2;
+    uint64 volume = 3;
+  }
+  repeated MevAndVolumePerClob results = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryEquityTierLimitConfigurationRequest is a request message for
+// EquityTierLimitConfiguration.
+message QueryEquityTierLimitConfigurationRequest {}
+
+// QueryEquityTierLimitConfigurationResponse is a response message that contains
+// the EquityTierLimitConfiguration.
+message QueryEquityTierLimitConfigurationResponse {
+  EquityTierLimitConfiguration equity_tier_limit_config = 1
+      [ (gogoproto.nullable) = false ];
+}
+
+// QueryBlockRateLimitConfigurationRequest is a request message for
+// BlockRateLimitConfiguration.
+message QueryBlockRateLimitConfigurationRequest {}
+
+// QueryBlockRateLimitConfigurationResponse is a response message that contains
+// the BlockRateLimitConfiguration.
+message QueryBlockRateLimitConfigurationResponse {
+  BlockRateLimitConfiguration block_rate_limit_config = 1
+      [ (gogoproto.nullable) = false ];
+}
+
+// QueryStatefulOrderRequest is a request message for StatefulOrder.
+message QueryStatefulOrderRequest {
+  // Order id to query.
+  OrderId order_id = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryStatefulOrderResponse is a response message that contains the stateful
+// order.
+message QueryStatefulOrderResponse {
+  // Stateful order placement.
+  LongTermOrderPlacement order_placement = 1 [ (gogoproto.nullable) = false ];
+
+  // Fill amounts.
+  uint64 fill_amount = 2;
+
+  // Triggered status.
+  bool triggered = 3;
+}
+
+// QueryLiquidationsConfigurationRequest is a request message for
+// LiquidationsConfiguration.
+message QueryLiquidationsConfigurationRequest {}
+
+// QueryLiquidationsConfigurationResponse is a response message that contains
+// the LiquidationsConfiguration.
+message QueryLiquidationsConfigurationResponse {
+  LiquidationsConfig liquidations_config = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryNextClobPairIdRequest is a request message for the next clob pair id
+message QueryNextClobPairIdRequest {}
+
+// QueryNextClobPairIdResponse is a response message for the next clob pair id
+message QueryNextClobPairIdResponse { uint32 next_clob_pair_id = 1; }
+
+// QueryLeverageRequest is a request message for Leverage.
+message QueryLeverageRequest {
+  // The address of the wallet that owns the subaccount.
+  string owner = 1;
+  // The unique number of the subaccount for the owner.
+  uint32 number = 2;
+}
+
+// QueryLeverageResponse is a response message that contains the leverage map.
+message QueryLeverageResponse {
+  // List of clob pair leverage settings.
+  repeated ClobPairLeverageInfo clob_pair_leverage = 1;
+}
+
+// ClobPairLeverageInfo represents the leverage setting for a single clob pair.
+message ClobPairLeverageInfo {
+  // The clob pair ID.
+  uint32 clob_pair_id = 1;
+  // The user selected imf.
+  uint32 custom_imf_ppm = 2;
+}
+
+// StreamOrderbookUpdatesRequest is a request message for the
+// StreamOrderbookUpdates method.
+message StreamOrderbookUpdatesRequest {
+  // Clob pair ids to stream orderbook updates for.
+  repeated uint32 clob_pair_id = 1;
+
+  // Subaccount ids to stream subaccount updates for.
+  repeated dydxprotocol.subaccounts.SubaccountId subaccount_ids = 2;
+
+  // Market ids for price updates.
+  repeated uint32 market_ids = 3;
+
+  // Filter order updates by subaccount IDs.
+  // If true, the orderbook updates only include orders from provided subaccount
+  // IDs.
+  bool filter_orders_by_subaccount_id = 4;
+}
+
+// StreamOrderbookUpdatesResponse is a response message for the
+// StreamOrderbookUpdates method.
+message StreamOrderbookUpdatesResponse {
+  // Batch of updates for the clob pair.
+  repeated StreamUpdate updates = 1 [ (gogoproto.nullable) = false ];
+}
+
+// StreamUpdate is an update that will be pushed through the
+// GRPC stream.
+message StreamUpdate {
+  // Block height of the update.
+  uint32 block_height = 1;
+
+  // Exec mode of the update.
+  uint32 exec_mode = 2;
+
+  // Contains one of an StreamOrderbookUpdate,
+  // StreamOrderbookFill, StreamTakerOrderStatus.
+  oneof update_message {
+    StreamOrderbookUpdate orderbook_update = 3;
+    StreamOrderbookFill order_fill = 4;
+    StreamTakerOrder taker_order = 5;
+    dydxprotocol.subaccounts.StreamSubaccountUpdate subaccount_update = 6;
+    dydxprotocol.prices.StreamPriceUpdate price_update = 7;
+  }
+}
+
+// StreamOrderbookUpdate provides information on an orderbook update. Used in
+// the full node GRPC stream.
+message StreamOrderbookUpdate {
+  // Snapshot indicates if the response is from a snapshot of the orderbook.
+  // All updates should be ignored until snapshot is recieved.
+  // If the snapshot is true, then all previous entries should be
+  // discarded and the orderbook should be resynced.
+  bool snapshot = 1;
+
+  // Orderbook updates for the clob pair. Can contain order place, removals,
+  // or updates.
+  repeated dydxprotocol.indexer.off_chain_updates.OffChainUpdateV1 updates = 2
+      [ (gogoproto.nullable) = false ];
+}
+
+// StreamOrderbookFill provides information on an orderbook fill. Used in
+// the full node GRPC stream.
+message StreamOrderbookFill {
+  // Clob match. Provides information on which orders were matched
+  // and the type of order.
+  ClobMatch clob_match = 1;
+
+  // All orders involved in the specified clob match. Used to look up
+  // price of a match through a given maker order id.
+  repeated Order orders = 2 [ (gogoproto.nullable) = false ];
+
+  // Resulting fill amounts for each order in the orders array.
+  repeated uint64 fill_amounts = 3;
+}
+
+// StreamTakerOrder provides information on a taker order that was attempted
+// to be matched on the orderbook.
+// It is intended to be used only in full node streaming.
+message StreamTakerOrder {
+  // The taker order that was matched on the orderbook. Can be a
+  // regular order or a liquidation order.
+  oneof taker_order {
+    Order order = 1;
+    StreamLiquidationOrder liquidation_order = 2;
+  }
+
+  // Information on the taker order after it is matched on the book,
+  // either successfully or unsuccessfully.
+  StreamTakerOrderStatus taker_order_status = 3;
+}
+
+// StreamTakerOrderStatus is a representation of a taker order
+// after it is attempted to be matched on the orderbook.
+// It is intended to be used only in full node streaming.
+message StreamTakerOrderStatus {
+  // The state of the taker order after attempting to match it against the
+  // orderbook. Possible enum values can be found here:
+  // https://github.com/dydxprotocol/v4-chain/blob/main/protocol/x/clob/types/orderbook.go#L105
+  uint32 order_status = 1;
+
+  // The amount of remaining (non-matched) base quantums of this taker order.
+  uint64 remaining_quantums = 2;
+
+  // The amount of base quantums that were *optimistically* filled for this
+  // taker order when the order is matched against the orderbook. Note that if
+  // any quantums of this order were optimistically filled or filled in state
+  // before this invocation of the matching loop, this value will not include
+  // them.
+  uint64 optimistically_filled_quantums = 3;
+}

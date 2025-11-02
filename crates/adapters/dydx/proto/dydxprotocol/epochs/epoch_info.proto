@@ -1,0 +1,43 @@
+syntax = "proto3";
+package dydxprotocol.epochs;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/epochs/types";
+
+// EpochInfo stores metadata of an epoch timer.
+message EpochInfo {
+  // name is the unique identifier.
+  string name = 1;
+
+  // next_tick indicates when the next epoch starts (in Unix Epoch seconds),
+  // if `EpochInfo` has been initialized.
+  // If `EpochInfo` is not initialized yet, `next_tick` indicates the earliest
+  // initialization time (see `is_initialized` below).
+  uint32 next_tick = 2;
+
+  // duration of the epoch in seconds.
+  uint32 duration = 3;
+
+  // current epoch is the number of the current epoch.
+  // 0 if `next_tick` has never been reached, positive otherwise.
+  uint32 current_epoch = 4;
+
+  // current_epoch_start_block indicates the block height when the current
+  // epoch started. 0 if `current_epoch` is 0.
+  uint32 current_epoch_start_block = 5;
+
+  // is_initialized indicates whether the `EpochInfo` has been initialized
+  // and started ticking.
+  // An `EpochInfo` is initialized when all below conditions are true:
+  // - Not yet initialized
+  // - `BlockHeight` >= 2
+  // - `BlockTime` >= `next_tick`
+  bool is_initialized = 6;
+
+  // fast_forward_next_tick specifies whether during initialization, `next_tick`
+  // should be fast-forwarded to be greater than the current block time.
+  // If `false`, the original `next_tick` value is
+  // unchanged during initialization.
+  // If `true`, `next_tick` will be set to the smallest value `x` greater than
+  // the current block time such that `(x - next_tick) % duration = 0`.
+  bool fast_forward_next_tick = 7;
+}

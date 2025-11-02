@@ -1,0 +1,15 @@
+syntax = "proto3";
+package dydxprotocol.indexer.protocol.v1;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/indexer/protocol/v1/types";
+
+// Market type of perpetual.
+// Defined in perpetual.
+enum PerpetualMarketType {
+  // Unspecified market type.
+  PERPETUAL_MARKET_TYPE_UNSPECIFIED = 0;
+  // Market type for cross margin perpetual markets.
+  PERPETUAL_MARKET_TYPE_CROSS = 1;
+  // Market type for isolated margin perpetual markets.
+  PERPETUAL_MARKET_TYPE_ISOLATED = 2;
+}

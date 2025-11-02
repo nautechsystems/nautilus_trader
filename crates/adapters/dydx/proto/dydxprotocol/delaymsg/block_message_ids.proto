@@ -1,0 +1,12 @@
+syntax = "proto3";
+package dydxprotocol.delaymsg;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/delaymsg/types";
+
+// BlockMessageIds stores the id of each message that should be processed at a
+// given block height.
+message BlockMessageIds {
+  // ids stores a list of DelayedMessage ids that should be processed at a given
+  // block height.
+  repeated uint32 ids = 1;
+}

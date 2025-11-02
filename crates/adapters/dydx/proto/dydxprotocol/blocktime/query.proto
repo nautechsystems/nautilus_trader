@@ -1,0 +1,70 @@
+syntax = "proto3";
+package dydxprotocol.blocktime;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/blocktime/types";
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "dydxprotocol/blocktime/blocktime.proto";
+import "dydxprotocol/blocktime/params.proto";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries the DowntimeParams.
+  rpc DowntimeParams(QueryDowntimeParamsRequest)
+      returns (QueryDowntimeParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/blocktime/downtime_params";
+  }
+
+  // Queries the information of the previous block
+  rpc PreviousBlockInfo(QueryPreviousBlockInfoRequest)
+      returns (QueryPreviousBlockInfoResponse);
+
+  // Queries all recorded downtime info.
+  rpc AllDowntimeInfo(QueryAllDowntimeInfoRequest)
+      returns (QueryAllDowntimeInfoResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/blocktime/all_downtime_info";
+  }
+
+  // Queries the SynchronyParams.
+  rpc SynchronyParams(QuerySynchronyParamsRequest)
+      returns (QuerySynchronyParamsResponse) {
+    option (google.api.http).get =
+        "/dydxprotocol/v4/blocktime/synchrony_params";
+  }
+}
+
+// QuerySynchronyParamsRequest is a request type for the SynchronyParams
+message QuerySynchronyParamsRequest {}
+
+// QuerySynchronyParamsResponse is a response type for the SynchronyParams
+message QuerySynchronyParamsResponse {
+  SynchronyParams params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryDowntimeParamsRequest is a request type for the DowntimeParams
+// RPC method.
+message QueryDowntimeParamsRequest {}
+
+// QueryDowntimeParamsResponse is a response type for the DowntimeParams
+// RPC method.
+message QueryDowntimeParamsResponse {
+  DowntimeParams params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryPreviousBlockInfoRequest is a request type for the PreviousBlockInfo
+// RPC method.
+message QueryPreviousBlockInfoRequest {}
+
+// QueryPreviousBlockInfoResponse is a request type for the PreviousBlockInfo
+// RPC method.
+message QueryPreviousBlockInfoResponse { BlockInfo info = 1; }
+
+// QueryAllDowntimeInfoRequest is a request type for the AllDowntimeInfo
+// RPC method.
+message QueryAllDowntimeInfoRequest {}
+
+// QueryAllDowntimeInfoResponse is a request type for the AllDowntimeInfo
+// RPC method.
+message QueryAllDowntimeInfoResponse { AllDowntimeInfo info = 1; }

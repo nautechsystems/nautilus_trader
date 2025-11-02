@@ -1,0 +1,27 @@
+syntax = "proto3";
+package dydxprotocol.listing;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/listing/types";
+
+// ListingVaultDepositParams represents the params for PML megavault deposits
+message ListingVaultDepositParams {
+  // Amount that will be deposited into the new market vault exclusively
+  bytes new_vault_deposit_amount = 1 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+
+  // Amount deposited into the main vault exclusively. This amount does not
+  // include the amount deposited into the new vault.
+  bytes main_vault_deposit_amount = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+
+  // Lockup period for this deposit
+  uint32 num_blocks_to_lock_shares = 3;
+}

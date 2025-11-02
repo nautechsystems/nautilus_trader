@@ -46,7 +46,8 @@
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
-#![deny(clippy::missing_errors_doc)]
+// Note: clippy::missing_errors_doc is not enabled because the proto module contains
+// generated gRPC client code which cannot have # Errors documentation sections
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
@@ -59,3 +60,14 @@ pub mod proto;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+// Re-exports
+pub use crate::{
+    common::{consts::DYDX, types::DydxAccount},
+    config::DydxAdapterConfig,
+    error::{DydxError, DydxResult},
+    grpc::{
+        DydxGrpcClient, Height, OrderBuilder, OrderFlags, OrderGoodUntil, OrderMarketParams,
+        OrderType, TxBuilder, TxHash, Wallet,
+    },
+};

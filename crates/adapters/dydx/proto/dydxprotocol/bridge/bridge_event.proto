@@ -1,0 +1,23 @@
+syntax = "proto3";
+package dydxprotocol.bridge;
+
+import "gogoproto/gogo.proto";
+import "cosmos_proto/cosmos.proto";
+import "cosmos/base/v1beta1/coin.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/bridge/types";
+
+// BridgeEvent is a recognized event from the Ethereum blockchain.
+message BridgeEvent {
+  // The unique id of the Ethereum event log.
+  uint32 id = 1;
+
+  // The tokens bridged.
+  cosmos.base.v1beta1.Coin coin = 2 [ (gogoproto.nullable) = false ];
+
+  // The account address or module address to bridge to.
+  string address = 3 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The Ethereum block height of the event.
+  uint64 eth_block_height = 4;
+}

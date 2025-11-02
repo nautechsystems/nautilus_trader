@@ -1,0 +1,220 @@
+syntax = "proto3";
+package dydxprotocol.indexer.protocol.v1;
+
+import "dydxprotocol/indexer/protocol/v1/subaccount.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/indexer/protocol/v1/types";
+
+// Initial copy of protos from dYdX chain application state protos for the clob
+// module for use to send Indexer specific messages. Do not make any breaking
+// changes to these protos, a new version should be created if a breaking change
+// is needed.
+
+// IndexerOrderId refers to a single order belonging to a Subaccount.
+message IndexerOrderId {
+  // The subaccount ID that opened this order.
+  // Note that this field has `gogoproto.nullable = false` so that it is
+  // generated as a value instead of a pointer. This is because the `OrderId`
+  // proto is used as a key within maps, and map comparisons will compare
+  // pointers for equality (when the desired behavior is to compare the values).
+  IndexerSubaccountId subaccount_id = 1 [ (gogoproto.nullable) = false ];
+
+  // The client ID of this order, unique with respect to the specific
+  // sub account (I.E., the same subaccount can't have two orders with
+  // the same ClientId).
+  fixed32 client_id = 2;
+
+  // order_flags represent order flags for the order. This field is invalid if
+  // it's greater than 257. Each bit represents a different flag.
+  //
+  // The following are the valid orderId flags:
+  // ShortTerm    = uint32(0)
+  // Conditional  = uint32(32)
+  // LongTerm     = uint32(64)
+  // Twap         = uint32(128)
+  // TwapSuborder = uint32(256) (for internal use only)
+  //
+  // If both bits are set or bits other than the 2nd and 3rd are set, the order
+  // ID is invalid.
+  uint32 order_flags = 3;
+
+  // ID of the CLOB the order is created for.
+  uint32 clob_pair_id = 4;
+}
+
+// IndexerOrderV1 represents a single order belonging to a `Subaccount`
+// for a particular `ClobPair`.
+message IndexerOrder {
+  // The unique ID of this order. Meant to be unique across all orders.
+  IndexerOrderId order_id = 1 [ (gogoproto.nullable) = false ];
+
+  // Represents the side of the orderbook the order will be placed on.
+  // Note that Side.SIDE_UNSPECIFIED is an invalid order and cannot be
+  // placed on the orderbook.
+  enum Side {
+    // Default value. This value is invalid and unused.
+    SIDE_UNSPECIFIED = 0;
+    // SIDE_BUY is used to represent a BUY order.
+    SIDE_BUY = 1;
+    // SIDE_SELL is used to represent a SELL order.
+    SIDE_SELL = 2;
+  }
+
+  Side side = 2;
+
+  // The size of this order in base quantums. Must be a multiple of
+  // `ClobPair.StepBaseQuantums` (where `ClobPair.Id = orderId.ClobPairId`).
+  uint64 quantums = 3;
+
+  // The price level that this order will be placed at on the orderbook,
+  // in subticks. Must be a multiple of ClobPair.SubticksPerTick
+  // (where `ClobPair.Id = orderId.ClobPairId`).
+  uint64 subticks = 4;
+
+  // Information about when the order expires.
+  oneof good_til_oneof {
+    // The last block this order can be executed at (after which it will be
+    // unfillable). Used only for Short-Term orders. If this value is non-zero
+    // then the order is assumed to be a Short-Term order.
+    uint32 good_til_block = 5;
+
+    // good_til_block_time represents the unix timestamp (in seconds) at which a
+    // stateful order will be considered expired. The
+    // good_til_block_time is always evaluated against the previous block's
+    // `BlockTime` instead of the block in which the order is committed. If this
+    // value is non-zero then the order is assumed to be a stateful or
+    // conditional order.
+    fixed32 good_til_block_time = 6;
+  }
+
+  // TimeInForce indicates how long an order will remain active before it
+  // is executed or expires.
+  enum TimeInForce {
+    // TIME_IN_FORCE_UNSPECIFIED represents the default behavior where an
+    // order will first match with existing orders on the book, and any
+    // remaining size will be added to the book as a maker order.
+    TIME_IN_FORCE_UNSPECIFIED = 0;
+    // TIME_IN_FORCE_IOC enforces that an order only be matched with
+    // maker orders on the book. If the order has remaining size after
+    // matching with existing orders on the book, the remaining size
+    // is not placed on the book.
+    TIME_IN_FORCE_IOC = 1;
+    // TIME_IN_FORCE_POST_ONLY enforces that an order only be placed
+    // on the book as a maker order. Note this means that validators will cancel
+    // any newly-placed post only orders that would cross with other maker
+    // orders.
+    TIME_IN_FORCE_POST_ONLY = 2;
+    // TIME_IN_FORCE_FILL_OR_KILL enforces that an order will either be filled
+    // completely and immediately by maker orders on the book or canceled if the
+    // entire amount can‘t be matched.
+    TIME_IN_FORCE_FILL_OR_KILL = 3;
+  }
+
+  // The time in force of this order.
+  TimeInForce time_in_force = 7;
+
+  // Enforces that the order can only reduce the size of an existing position.
+  // If a ReduceOnly order would change the side of the existing position,
+  // its size is reduced to that of the remaining size of the position.
+  // If existing orders on the book with ReduceOnly
+  // would already close the position, the least aggressive (out-of-the-money)
+  // ReduceOnly orders are resized and canceled first.
+  bool reduce_only = 8;
+
+  // Set of bit flags set arbitrarily by clients and ignored by the protocol.
+  // Used by indexer to infer information about a placed order.
+  uint32 client_metadata = 9;
+
+  enum ConditionType {
+    // CONDITION_TYPE_UNSPECIFIED represents the default behavior where an
+    // order will be placed immediately on the orderbook.
+    CONDITION_TYPE_UNSPECIFIED = 0;
+    // CONDITION_TYPE_STOP_LOSS represents a stop order. A stop order will
+    // trigger when the oracle price moves at or above the trigger price for
+    // buys, and at or below the trigger price for sells.
+    CONDITION_TYPE_STOP_LOSS = 1;
+    // CONDITION_TYPE_TAKE_PROFIT represents a take profit order. A take profit
+    // order will trigger when the oracle price moves at or below the trigger
+    // price for buys and at or above the trigger price for sells.
+    CONDITION_TYPE_TAKE_PROFIT = 2;
+  }
+
+  ConditionType condition_type = 10;
+
+  // conditional_order_trigger_subticks represents the price at which this order
+  // will be triggered. If the condition_type is CONDITION_TYPE_UNSPECIFIED,
+  // this value is enforced to be 0. If this value is nonzero, condition_type
+  // cannot be CONDITION_TYPE_UNSPECIFIED. Value is in subticks.
+  // Must be a multiple of ClobPair.SubticksPerTick (where `ClobPair.Id =
+  // orderId.ClobPairId`).
+  uint64 conditional_order_trigger_subticks = 11;
+
+  // builder_code_params is the metadata for the partner or builder of an order.
+  BuilderCodeParameters builder_code_params = 12;
+
+  // order_router_address is the address of the order router that forwarded this
+  // order.
+  string order_router_address = 13;
+
+  // twap_parameters represent the configuration for a TWAP order. This must be
+  // set for twap orders and will be ignored for all other order types.
+  TwapParameters twap_parameters = 14;
+}
+
+// TwapParameters represents the necessary configuration for a TWAP order.
+message TwapParameters {
+  // Duration of the TWAP order execution in seconds. Must be in the range
+  // [300 (5 minutes), 86400 (24 hours)].
+  uint32 duration = 1;
+
+  // Interval in seconds for each suborder to execute. Must be a
+  // whole number, a factor of the duration, and in the range
+  // [30 (30 seconds), 3600 (1 hour)].
+  uint32 interval = 2;
+
+  // Price tolerance in ppm for each suborder. This will be applied to
+  // the oracle price each time a suborder is triggered. Must be
+  // be in the range [0, 1_000_000).
+  uint32 price_tolerance = 3;
+}
+
+// BuilderCodeParameters represents the metadata for the partner or builder of
+// an order. This allows them to specify a fee for providing there service which
+// will be paid out in the event of an order fill.
+message BuilderCodeParameters {
+  // The address of the builder to which the fee will be paid.
+  string builder_address = 1;
+
+  // The fee enforced on the order in ppm.
+  uint32 fee_ppm = 2;
+}
+
+// Status of the CLOB.
+// Defined in clob.clob_pair
+enum ClobPairStatus {
+  // Default value. This value is invalid and unused.
+  CLOB_PAIR_STATUS_UNSPECIFIED = 0;
+  // CLOB_PAIR_STATUS_ACTIVE behavior is unfinalized.
+  // TODO(DEC-600): update this documentation.
+  CLOB_PAIR_STATUS_ACTIVE = 1;
+  // CLOB_PAIR_STATUS_PAUSED behavior is unfinalized.
+  // TODO(DEC-600): update this documentation.
+  CLOB_PAIR_STATUS_PAUSED = 2;
+  // CLOB_PAIR_STATUS_CANCEL_ONLY behavior is unfinalized.
+  // TODO(DEC-600): update this documentation.
+  CLOB_PAIR_STATUS_CANCEL_ONLY = 3;
+  // CLOB_PAIR_STATUS_POST_ONLY behavior is unfinalized.
+  // TODO(DEC-600): update this documentation.
+  CLOB_PAIR_STATUS_POST_ONLY = 4;
+  // CLOB_PAIR_STATUS_INITIALIZING represents a newly-added clob pair.
+  // Clob pairs in this state only accept orders which are
+  // both short-term and post-only.
+  CLOB_PAIR_STATUS_INITIALIZING = 5;
+  // CLOB_PAIR_STATUS_FINAL_SETTLEMENT represents a clob pair that has been
+  // deactivated. Clob pairs in this state do not accept new orders and trading
+  // is blocked. All open positions are closed and open stateful orders canceled
+  // by the protocol when the clob pair transitions to this status. All
+  // short-term orders are left to expire.
+  CLOB_PAIR_STATUS_FINAL_SETTLEMENT = 6;
+}

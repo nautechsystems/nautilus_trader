@@ -1,0 +1,239 @@
+syntax = "proto3";
+package dydxprotocol.clob;
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "gogoproto/gogo.proto";
+import "dydxprotocol/clob/block_rate_limit_config.proto";
+import "dydxprotocol/clob/clob_pair.proto";
+import "dydxprotocol/clob/equity_tier_limit_config.proto";
+import "dydxprotocol/clob/matches.proto";
+import "dydxprotocol/clob/order.proto";
+import "dydxprotocol/clob/order_removals.proto";
+import "dydxprotocol/clob/liquidations_config.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+
+// this line is used by starport scaffolding # proto/tx/import
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/clob/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // ProposedOperations is a temporary message used by block proposers
+  // for matching orders as part of the ABCI++ workaround.
+  rpc ProposedOperations(MsgProposedOperations)
+      returns (MsgProposedOperationsResponse);
+  // PlaceOrder allows accounts to place orders on the orderbook.
+  rpc PlaceOrder(MsgPlaceOrder) returns (MsgPlaceOrderResponse);
+  // CancelOrder allows accounts to cancel existing orders on the orderbook.
+  rpc CancelOrder(MsgCancelOrder) returns (MsgCancelOrderResponse);
+  // BatchCancel allows accounts to cancel a batch of orders on the orderbook.
+  rpc BatchCancel(MsgBatchCancel) returns (MsgBatchCancelResponse);
+  // CreateClobPair creates a new clob pair.
+  rpc CreateClobPair(MsgCreateClobPair) returns (MsgCreateClobPairResponse);
+  // UpdateClobPair sets the status of a clob pair. Should return an error
+  // if the authority is not in the clob keeper's set of authorities,
+  // if the ClobPair id is not found in state, or if the update includes
+  // an unsupported status transition.
+  rpc UpdateClobPair(MsgUpdateClobPair) returns (MsgUpdateClobPairResponse);
+  // UpdateEquityTierLimitConfiguration updates the equity tier limit
+  // configuration in state.
+  rpc UpdateEquityTierLimitConfiguration(MsgUpdateEquityTierLimitConfiguration)
+      returns (MsgUpdateEquityTierLimitConfigurationResponse);
+  // UpdateBlockRateLimitConfiguration updates the block rate limit
+  // configuration in state.
+  rpc UpdateBlockRateLimitConfiguration(MsgUpdateBlockRateLimitConfiguration)
+      returns (MsgUpdateBlockRateLimitConfigurationResponse);
+  // UpdateLiquidationsConfig updates the liquidations configuration in state.
+  rpc UpdateLiquidationsConfig(MsgUpdateLiquidationsConfig)
+      returns (MsgUpdateLiquidationsConfigResponse);
+  // UpdateLeverage allows accounts to update their desired leverage for
+  // clob pairs.
+  rpc UpdateLeverage(MsgUpdateLeverage) returns (MsgUpdateLeverageResponse);
+}
+
+// MsgCreateClobPair is a message used by x/gov for creating a new clob pair.
+message MsgCreateClobPair {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // The address that controls the module.
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // `clob_pair` defines parameters for the new clob pair.
+  ClobPair clob_pair = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgCreateClobPairResponse defines the CreateClobPair response type.
+message MsgCreateClobPairResponse {}
+
+// MsgProposedOperations is a message injected by block proposers to
+// specify the operations that occurred in a block.
+message MsgProposedOperations {
+  // The list of operations proposed by the block proposer.
+  repeated OperationRaw operations_queue = 1 [ (gogoproto.nullable) = false ];
+}
+
+// MsgProposedOperationsResponse is the response type of the message injected
+// by block proposers to specify the operations that occurred in a block.
+message MsgProposedOperationsResponse {}
+
+// MsgPlaceOrder is a request type used for placing orders.
+message MsgPlaceOrder { Order order = 1 [ (gogoproto.nullable) = false ]; }
+
+// MsgPlaceOrderResponse is a response type used for placing orders.
+message MsgPlaceOrderResponse {}
+
+// MsgCancelOrder is a request type used for canceling orders.
+message MsgCancelOrder {
+  OrderId order_id = 1 [ (gogoproto.nullable) = false ];
+  // Information about when the order cancellation expires.
+  oneof good_til_oneof {
+    // The last block this order cancellation can be executed at.
+    // Used only for Short-Term orders and must be zero for stateful orders.
+    uint32 good_til_block = 2;
+
+    // good_til_block_time represents the unix timestamp (in seconds) at which a
+    // stateful order cancellation will be considered expired. The
+    // good_til_block_time is always evaluated against the previous block's
+    // `BlockTime` instead of the block in which the order is committed.
+    // This value must be zero for Short-Term orders.
+    fixed32 good_til_block_time = 3;
+  }
+}
+
+// MsgCancelOrderResponse is a response type used for canceling orders.
+message MsgCancelOrderResponse {}
+
+// MsgBatchCancel is a request type used for batch canceling orders.
+// This msg is not atomic. Cancels will be performed optimistically even
+// if some cancels are invalid or fail.
+message MsgBatchCancel {
+  // The subaccount this batch cancel will be applied for.
+  dydxprotocol.subaccounts.SubaccountId subaccount_id = 1
+      [ (gogoproto.nullable) = false ];
+
+  // The batch of short term orders that will be cancelled.
+  repeated OrderBatch short_term_cancels = 2 [ (gogoproto.nullable) = false ];
+
+  // The last block the short term order cancellations can be executed at.
+  uint32 good_til_block = 3;
+}
+
+// OrderBatch represents a batch of orders all belonging to a single clob pair
+// id. Along with a subaccount id and an order flag, is used to represent a
+// batch of orders that share the same subaccount, order flag, and clob pair id.
+message OrderBatch {
+  // The Clob Pair ID all orders in this order batch belong to.
+  uint32 clob_pair_id = 1;
+  // List of client ids in this order batch.
+  // Note that this is serialized as a uint32 instead of a fixed32 to
+  // avoid issues when decoding repeated packed fixed32.
+  repeated uint32 client_ids = 2;
+}
+
+// MsgBatchCancelResponse is a response type used for batch canceling orders.
+// It indicates which cancel orders have succeeded or failed.
+message MsgBatchCancelResponse {
+  // A batch of short term cancel orders that have succeeded.
+  repeated OrderBatch short_term_succeeded = 1;
+  // A batch of short term cancel orders that have failed.
+  repeated OrderBatch short_term_failed = 2;
+}
+
+// MsgUpdateClobPair is a request type used for updating a ClobPair in state.
+message MsgUpdateClobPair {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // Authority is the address that may send this message.
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // `clob_pair` is the ClobPair to write to state.
+  ClobPair clob_pair = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateClobPairResponse is a response type used for setting a ClobPair's
+// status.
+message MsgUpdateClobPairResponse {}
+
+// OperationRaw represents an operation in the proposed operations.
+// Note that the `order_placement` operation is a signed message.
+message OperationRaw {
+  // operationRaw represents an operation that occurred, which can be a match,
+  // a signed order placement, or an order removal.
+  oneof operation {
+    ClobMatch match = 1;
+    bytes short_term_order_placement = 2;
+    OrderRemoval order_removal = 3;
+  }
+}
+
+// MsgUpdateEquityTierLimitConfiguration is the Msg/EquityTierLimitConfiguration
+// request type.
+message MsgUpdateEquityTierLimitConfiguration {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Defines the equity tier limit configuration to update to. All fields must
+  // be set.
+  EquityTierLimitConfiguration equity_tier_limit_config = 2
+      [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateEquityTierLimitConfiguration is the Msg/EquityTierLimitConfiguration
+// response type.
+message MsgUpdateEquityTierLimitConfigurationResponse {}
+
+// MsgUpdateBlockRateLimitConfiguration is the Msg/BlockRateLimitConfiguration
+// request type.
+message MsgUpdateBlockRateLimitConfiguration {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Defines the block rate limit configuration to update to. All fields must be
+  // set.
+  BlockRateLimitConfiguration block_rate_limit_config = 3
+      [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateBlockRateLimitConfiguration is a response type for updating the
+// liquidations config.
+message MsgUpdateBlockRateLimitConfigurationResponse {}
+
+// MsgUpdateLiquidationsConfig is a request type for updating the liquidations
+// config.
+message MsgUpdateLiquidationsConfig {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // Authority is the address that may send this message.
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Defines the liquidations configuration to update to. All fields must
+  // be set.
+  LiquidationsConfig liquidations_config = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateLiquidationsConfig is the Msg/LiquidationsConfig response type.
+message MsgUpdateLiquidationsConfigResponse {}
+
+// LeverageEntry represents a single clob pair leverage setting.
+message LeverageEntry {
+  // The clob pair ID.
+  uint32 clob_pair_id = 1;
+  // The user selected imf.
+  uint32 custom_imf_ppm = 2;
+}
+
+// MsgUpdateLeverage is a request type used for updating leverage for
+// clob pairs.
+message MsgUpdateLeverage {
+  option (cosmos.msg.v1.signer) = "subaccount_id";
+
+  // The subaccount that is updating leverage.
+  dydxprotocol.subaccounts.SubaccountId subaccount_id = 1;
+
+  // List of clob pair leverage settings.
+  repeated LeverageEntry clob_pair_leverage = 2;
+}
+
+// MsgUpdateLeverageResponse is a response type used for updating leverage.
+message MsgUpdateLeverageResponse {}

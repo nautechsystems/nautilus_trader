@@ -1,0 +1,95 @@
+syntax = "proto3";
+package dydxprotocol.bridge;
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "dydxprotocol/bridge/bridge_event.proto";
+import "dydxprotocol/bridge/params.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/bridge/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // AcknowledgeBridges acknowledges bridges and sets them to complete at a
+  // later block.
+  rpc AcknowledgeBridges(MsgAcknowledgeBridges)
+      returns (MsgAcknowledgeBridgesResponse);
+
+  // CompleteBridge finalizes a bridge by minting coins to an address.
+  rpc CompleteBridge(MsgCompleteBridge) returns (MsgCompleteBridgeResponse);
+
+  // UpdateEventParams updates the EventParams in state.
+  rpc UpdateEventParams(MsgUpdateEventParams)
+      returns (MsgUpdateEventParamsResponse);
+
+  // UpdateProposeParams updates the ProposeParams in state.
+  rpc UpdateProposeParams(MsgUpdateProposeParams)
+      returns (MsgUpdateProposeParamsResponse);
+
+  // UpdateSafetyParams updates the SafetyParams in state.
+  rpc UpdateSafetyParams(MsgUpdateSafetyParams)
+      returns (MsgUpdateSafetyParamsResponse);
+}
+
+// MsgAcknowledgeBridges is the Msg/AcknowledgeBridges request type.
+message MsgAcknowledgeBridges {
+  // The events to acknowledge.
+  repeated BridgeEvent events = 1 [ (gogoproto.nullable) = false ];
+}
+
+// MsgAcknowledgeBridgesResponse is the Msg/AcknowledgeBridgesResponse response
+// type.
+message MsgAcknowledgeBridgesResponse {}
+
+// MsgCompleteBridge is the Msg/CompleteBridgeResponse request type.
+message MsgCompleteBridge {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The event to complete.
+  BridgeEvent event = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgCompleteBridgeResponse is the Msg/CompleteBridgeResponse response type.
+message MsgCompleteBridgeResponse {}
+
+// MsgUpdateEventParams is the Msg/UpdateEventParams request type.
+message MsgUpdateEventParams {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The parameters to update. Each field must be set.
+  EventParams params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateEventParamsResponse is the Msg/UpdateEventParams response type.
+message MsgUpdateEventParamsResponse {}
+
+// MsgUpdateProposeParams is the Msg/UpdateProposeParams request type.
+message MsgUpdateProposeParams {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The parameters to update. Each field must be set.
+  ProposeParams params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateProposeParamsResponse is the Msg/UpdateProposeParams response type.
+message MsgUpdateProposeParamsResponse {}
+
+// MsgUpdateSafetyParams is the Msg/UpdateSafetyParams request type.
+message MsgUpdateSafetyParams {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The parameters to update. Each field must be set.
+  SafetyParams params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateSafetyParamsResponse is the Msg/UpdateSafetyParams response type.
+message MsgUpdateSafetyParamsResponse {}

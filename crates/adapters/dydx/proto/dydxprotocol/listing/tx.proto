@@ -1,0 +1,93 @@
+syntax = "proto3";
+package dydxprotocol.listing;
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "gogoproto/gogo.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+import "dydxprotocol/listing/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/listing/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // SetMarketsHardCap sets a hard cap on the number of markets listed
+  rpc SetMarketsHardCap(MsgSetMarketsHardCap)
+      returns (MsgSetMarketsHardCapResponse);
+
+  // CreateMarketPermissionless creates a new market without going through x/gov
+  rpc CreateMarketPermissionless(MsgCreateMarketPermissionless)
+      returns (MsgCreateMarketPermissionlessResponse);
+
+  // SetListingVaultDepositParams sets PML megavault deposit params
+  rpc SetListingVaultDepositParams(MsgSetListingVaultDepositParams)
+      returns (MsgSetListingVaultDepositParamsResponse);
+
+  // UpgradeIsolatedPerpetualToCross upgrades a perpetual from isolated to cross
+  // margin
+  rpc UpgradeIsolatedPerpetualToCross(MsgUpgradeIsolatedPerpetualToCross)
+      returns (MsgUpgradeIsolatedPerpetualToCrossResponse);
+}
+
+// MsgSetMarketsHardCap is used to set a hard cap on the number of markets
+// listed
+message MsgSetMarketsHardCap {
+  // The address that controls the module (the gov module account).
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Hard cap for the total number of markets listed
+  uint32 hard_cap_for_markets = 2;
+}
+
+// MsgSetMarketsHardCapResponse defines the MsgSetMarketsHardCap response
+message MsgSetMarketsHardCapResponse {}
+
+// MsgCreateMarketPermissionless is a message used to create new markets without
+// going through x/gov
+message MsgCreateMarketPermissionless {
+  option (cosmos.msg.v1.signer) = "subaccount_id";
+
+  // The name of the `Perpetual` (e.g. `BTC-USD`).
+  string ticker = 1;
+
+  // The subaccount to deposit from.
+  dydxprotocol.subaccounts.SubaccountId subaccount_id = 2;
+}
+
+// MsgCreateMarketPermissionlessResponse defines the
+// MsgCreateMarketPermissionless response
+message MsgCreateMarketPermissionlessResponse {}
+
+// MsgSetListingVaultDepositParams is a message used to set PML megavault
+// deposit params
+message MsgSetListingVaultDepositParams {
+  // The address that controls the module (the gov module account).
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Params which define the vault deposit for market listing
+  ListingVaultDepositParams params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgSetListingVaultDepositParamsResponse defines the
+// MsgSetListingVaultDepositParams response
+message MsgSetListingVaultDepositParamsResponse {}
+
+// MsgUpgradeIsolatedPerpetualToCross is used to upgrade a market from
+// isolated margin to cross margin.
+message MsgUpgradeIsolatedPerpetualToCross {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // ID of the perpetual to be upgraded to CROSS
+  uint32 perpetual_id = 2;
+}
+
+// MsgUpgradeIsolatedPerpetualToCrossResponse defines the
+// UpgradeIsolatedPerpetualToCross response type.
+message MsgUpgradeIsolatedPerpetualToCrossResponse {}

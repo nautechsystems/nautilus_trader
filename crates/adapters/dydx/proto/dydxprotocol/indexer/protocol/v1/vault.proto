@@ -1,0 +1,27 @@
+syntax = "proto3";
+package dydxprotocol.indexer.protocol.v1;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/indexer/protocol/v1/types";
+
+// Initial copy of protos from dYdX chain application state protos for the
+// vault module for use to send Indexer specific messages. Do not make any
+// breaking changes to these protos, a new version should be created if a
+// breaking change is needed.
+
+// VaultStatus represents the status of a vault.
+enum VaultStatus {
+  // Default value, invalid and unused.
+  VAULT_STATUS_UNSPECIFIED = 0;
+
+  // Don’t place orders. Does not count toward global vault balances.
+  VAULT_STATUS_DEACTIVATED = 1;
+
+  // Don’t place orders. Does count towards global vault balances.
+  VAULT_STATUS_STAND_BY = 2;
+
+  // Places orders on both sides of the book.
+  VAULT_STATUS_QUOTING = 3;
+
+  // Only place orders that close the position.
+  VAULT_STATUS_CLOSE_ONLY = 4;
+}

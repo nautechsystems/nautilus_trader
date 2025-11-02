@@ -23,12 +23,18 @@
 //!
 //! See [dYdX order types](https://help.dydx.trade/en/articles/166985-short-term-vs-long-term-order-types).
 
-use chrono::{DateTime, Utc};
-use dydx_proto::dydxprotocol::clob::{
-    Order, OrderId,
-    order::{ConditionType, Side as OrderSide, TimeInForce as OrderTimeInForce},
-};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
+
+use crate::{
+    common::enums::{
+        DydxOrderFlags as OrderFlags, DydxOrderGoodUntil as OrderGoodUntil,
+        DydxOrderMarketParams as OrderMarketParams, DydxOrderType as OrderType,
+    },
+    proto::dydxprotocol::clob::{
+        Order, OrderId,
+        order::{ConditionType, Side as OrderSide, TimeInForce as OrderTimeInForce},
+    },
+};
 
 /// Maximum short-term order lifetime in blocks.
 ///
@@ -37,65 +43,6 @@ pub const SHORT_TERM_ORDER_MAXIMUM_LIFETIME: u32 = 20;
 
 /// Value used to identify the Rust client in order metadata.
 pub const DEFAULT_RUST_CLIENT_METADATA: u32 = 4;
-
-/// Order [expiration types](https://docs.dydx.xyz/concepts/trading/orders#comparison).
-#[derive(Clone, Debug)]
-pub enum OrderGoodUntil {
-    /// Block expiration is used for short-term orders.
-    /// The order expires after the specified block height.
-    Block(u32),
-    /// Time expiration is used for long-term orders.
-    /// The order expires at the specified timestamp.
-    Time(DateTime<Utc>),
-}
-
-/// Order type enumeration.
-#[derive(Clone, Debug)]
-pub enum OrderType {
-    /// Limit order.
-    Limit,
-    /// Market order.
-    Market,
-    /// Stop limit order.
-    StopLimit,
-    /// Stop market order.
-    StopMarket,
-    /// Take profit order.
-    TakeProfit,
-    /// Take profit market order.
-    TakeProfitMarket,
-}
-
-/// Order flags indicating order lifetime and execution type.
-#[derive(Clone, Debug)]
-pub enum OrderFlags {
-    /// Short-term order (expires by block height).
-    ShortTerm,
-    /// Long-term order (expires by timestamp).
-    LongTerm,
-    /// Conditional order (triggered by trigger price).
-    Conditional,
-}
-
-/// Market parameters required for price and size quantizations.
-///
-/// These quantizations are required for `Order` placement.
-/// See also [how to interpret block data for trades](https://docs.dydx.exchange/api_integration-guides/how_to_interpret_block_data_for_trades).
-#[derive(Clone, Debug)]
-pub struct OrderMarketParams {
-    /// Atomic resolution.
-    pub atomic_resolution: i32,
-    /// CLOB pair ID.
-    pub clob_pair_id: u32,
-    /// Oracle price.
-    pub oracle_price: Option<Decimal>,
-    /// Quantum conversion exponent.
-    pub quantum_conversion_exponent: i32,
-    /// Step base quantums.
-    pub step_base_quantums: u64,
-    /// Subticks per tick.
-    pub subticks_per_tick: u32,
-}
 
 impl OrderMarketParams {
     /// Convert price into subticks.
@@ -355,7 +302,7 @@ impl OrderBuilder {
 
         // Build order ID
         let order_id = Some(OrderId {
-            subaccount_id: Some(dydx_proto::dydxprotocol::subaccounts::SubaccountId {
+            subaccount_id: Some(crate::proto::dydxprotocol::subaccounts::SubaccountId {
                 owner: self.subaccount_owner.clone(),
                 number: self.subaccount_number,
             }),
@@ -371,11 +318,11 @@ impl OrderBuilder {
         // Set good til oneof
         let good_til_oneof = if let Some(until) = self.until {
             match until {
-                OrderGoodUntil::Block(height) => {
-                    Some(dydx_proto::dydxprotocol::clob::order::GoodTilOneof::GoodTilBlock(height))
-                }
+                OrderGoodUntil::Block(height) => Some(
+                    crate::proto::dydxprotocol::clob::order::GoodTilOneof::GoodTilBlock(height),
+                ),
                 OrderGoodUntil::Time(time) => Some(
-                    dydx_proto::dydxprotocol::clob::order::GoodTilOneof::GoodTilBlockTime(
+                    crate::proto::dydxprotocol::clob::order::GoodTilOneof::GoodTilBlockTime(
                         time.timestamp().try_into()?,
                     ),
                 ),

@@ -1,0 +1,41 @@
+syntax = "proto3";
+package dydxprotocol.vault;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/vault/types";
+
+// VaultType represents different types of vaults.
+enum VaultType {
+  // Default value, invalid and unused.
+  VAULT_TYPE_UNSPECIFIED = 0;
+
+  // Vault is associated with a CLOB pair.
+  VAULT_TYPE_CLOB = 1;
+}
+
+// VaultId uniquely identifies a vault by its type and number.
+message VaultId {
+  // Type of the vault.
+  VaultType type = 1;
+
+  // Unique ID of the vault within above type.
+  uint32 number = 2;
+}
+
+// VaultStatus represents the status of a vault.
+enum VaultStatus {
+  // Default value, invalid and unused.
+  VAULT_STATUS_UNSPECIFIED = 0;
+
+  // Don’t place orders. Does not count toward global vault balances.
+  // A vault can only be set to this status if its equity is non-positive.
+  VAULT_STATUS_DEACTIVATED = 1;
+
+  // Don’t place orders. Does count towards global vault balances.
+  VAULT_STATUS_STAND_BY = 2;
+
+  // Places orders on both sides of the book.
+  VAULT_STATUS_QUOTING = 3;
+
+  // Only place orders that close the position.
+  VAULT_STATUS_CLOSE_ONLY = 4;
+}

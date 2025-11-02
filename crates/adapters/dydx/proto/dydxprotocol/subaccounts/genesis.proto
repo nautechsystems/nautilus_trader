@@ -1,0 +1,12 @@
+syntax = "proto3";
+package dydxprotocol.subaccounts;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/subaccounts/types";
+
+// GenesisState defines the subaccounts module's genesis state.
+message GenesisState {
+  repeated Subaccount subaccounts = 1 [ (gogoproto.nullable) = false ];
+}

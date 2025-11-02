@@ -1,0 +1,11 @@
+syntax = "proto3";
+package dydxprotocol.ratelimit;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/ratelimit/types";
+
+// PendingSendPacket contains the channel_id and sequence pair to identify a
+// pending packet
+message PendingSendPacket {
+  string channel_id = 1;
+  uint64 sequence = 2;
+}

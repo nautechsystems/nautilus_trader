@@ -1,0 +1,89 @@
+syntax = "proto3";
+package dydxprotocol.stats;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/stats/types";
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/timestamp.proto";
+
+// BlockStats is used to store stats transiently within the scope of a block.
+message BlockStats {
+  // Fill records data about a fill on this block.
+  message Fill {
+    // Taker wallet address
+    string taker = 1;
+
+    // Maker wallet address
+    string maker = 2;
+
+    // Notional USDC filled in quantums
+    // Used to calculate fee tier, and affiliate revenue attributed for taker
+    uint64 notional = 3;
+
+    // Affiliate fee generated in quantums of the taker fee for the affiliate
+    // Used to calculate affiliate revenue attributed for taker. This is dynamic
+    // per affiliate tier
+    uint64 affiliate_fee_generated_quantums = 4;
+  }
+
+  // The fills that occured on this block.
+  repeated Fill fills = 1;
+}
+
+// StatsMetadata stores metadata for the x/stats module
+message StatsMetadata {
+  // The oldest epoch that is included in the stats. The next epoch to be
+  // removed from the window.
+  uint32 trailing_epoch = 1;
+}
+
+// EpochStats stores stats for a particular epoch
+message EpochStats {
+  // A user and its associated stats
+  message UserWithStats {
+    string user = 1;
+    UserStats stats = 2;
+  }
+
+  // Epoch end time
+  google.protobuf.Timestamp epoch_end_time = 1
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+
+  // Stats for each user in this epoch. Sorted by user.
+  repeated UserWithStats stats = 2;
+}
+
+// GlobalStats stores global stats for the rolling window (default 30d).
+message GlobalStats {
+  // Notional USDC traded in quantums
+  uint64 notional_traded = 1;
+}
+
+// UserStats stores stats for a User. This is the sum of all stats for a user in
+// the rolling window (default 30d).
+message UserStats {
+  // Taker USDC in quantums
+  uint64 taker_notional = 1;
+
+  // Maker USDC in quantums
+  uint64 maker_notional = 2;
+
+  // Affiliate revenue generated in quantums with this user being a referee
+  uint64 affiliate_30d_revenue_generated_quantums = 3;
+
+  // Referred volume in quote quantums with this user being an affiliate
+  uint64 affiliate_30d_referred_volume_quote_quantums = 4;
+}
+
+// CachedStakedBaseTokens stores the last calculated total staked base tokens
+message CachedStakedBaseTokens {
+  // Last calculated total staked base tokens by the delegator.
+  bytes staked_base_tokens = 1 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+  // Block time at which the calculation is cached (in Unix Epoch seconds)
+  // Rounded down to nearest second.
+  int64 cached_at = 2;
+}

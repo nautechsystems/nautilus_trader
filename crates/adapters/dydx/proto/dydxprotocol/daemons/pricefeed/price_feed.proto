@@ -1,0 +1,36 @@
+syntax = "proto3";
+package dydxprotocol.daemons.pricefeed;
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/daemons/pricefeed/api";
+
+// PriceFeedService provides methods related to market prices.
+service PriceFeedService {
+  // Updates market prices.
+  rpc UpdateMarketPrices(UpdateMarketPricesRequest)
+      returns (UpdateMarketPricesResponse) {}
+}
+
+// UpdateMarketPriceRequest is a request message updating market prices.
+message UpdateMarketPricesRequest {
+  repeated MarketPriceUpdate market_price_updates = 1;
+}
+
+// UpdateMarketPricesResponse is a response message for updating market prices.
+message UpdateMarketPricesResponse {}
+
+// ExchangePrice represents a specific exchange's market price
+message ExchangePrice {
+  string exchange_id = 1;
+  uint64 price = 2;
+  google.protobuf.Timestamp last_update_time = 3
+      [ (gogoproto.nullable) = true, (gogoproto.stdtime) = true ];
+}
+
+// MarketPriceUpdate represents an update to a single market
+message MarketPriceUpdate {
+  uint32 market_id = 1;
+  repeated ExchangePrice exchange_prices = 2;
+}

@@ -1,0 +1,304 @@
+syntax = "proto3";
+package dydxprotocol.clob;
+
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+import "dydxprotocol/clob/liquidations.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/clob/types";
+
+// OrderId refers to a single order belonging to a Subaccount.
+message OrderId {
+  // The subaccount ID that opened this order.
+  // Note that this field has `gogoproto.nullable = false` so that it is
+  // generated as a value instead of a pointer. This is because the `OrderId`
+  // proto is used as a key within maps, and map comparisons will compare
+  // pointers for equality (when the desired behavior is to compare the values).
+  dydxprotocol.subaccounts.SubaccountId subaccount_id = 1
+      [ (gogoproto.nullable) = false ];
+
+  // The client ID of this order, unique with respect to the specific
+  // sub account (I.E., the same subaccount can't have two orders with
+  // the same ClientId).
+  fixed32 client_id = 2;
+
+  // order_flags represent order flags for the order. This field is invalid if
+  // it's greater than 257. Each bit represents a different flag.
+  //
+  // The following are the valid orderId flags:
+  // ShortTerm    = uint32(0)
+  // Conditional  = uint32(32)
+  // LongTerm     = uint32(64)
+  // Twap         = uint32(128)
+  // TwapSuborder = uint32(256) (for internal use only)
+  //
+  // If both bits are set or bits other than the 2nd and 3rd are set, the order
+  // ID is invalid.
+  uint32 order_flags = 3;
+
+  // ID of the CLOB the order is created for.
+  uint32 clob_pair_id = 4;
+}
+
+// OrdersFilledDuringLatestBlock represents a list of `OrderIds` that were
+// filled by any non-zero amount in the latest block.
+message OrdersFilledDuringLatestBlock {
+  // A list of unique order_ids that were filled by any non-zero amount in the
+  // latest block.
+  repeated OrderId order_ids = 1 [ (gogoproto.nullable) = false ];
+}
+
+// PotentiallyPrunableOrders represents a list of orders that may be prunable
+// from state at a future block height.
+message PotentiallyPrunableOrders {
+  // A list of unique order_ids that may potentially be pruned from state at a
+  // future block height.
+  repeated OrderId order_ids = 1 [ (gogoproto.nullable) = false ];
+}
+
+// OrderFillState represents the fill amount of an order according to on-chain
+// state. This proto includes both the current on-chain fill amount of the
+// order, as well as the block at which this information can be pruned from
+// state.
+message OrderFillState {
+  // The current fillAmount of the order according to on-chain state.
+  uint64 fill_amount = 1;
+  // The block height at which the fillAmount state for this order can be
+  // pruned.
+  uint32 prunable_block_height = 2;
+}
+
+// StatefulOrderTimeSliceValue represents the type of the value of the
+// `StatefulOrdersTimeSlice` in state. The `StatefulOrdersTimeSlice`
+// in state consists of key/value pairs where the keys are UTF-8-encoded
+// `RFC3339NANO` timestamp strings with right-padded zeroes and no
+// time zone info, and the values are of type `StatefulOrderTimeSliceValue`.
+// This `StatefulOrderTimeSliceValue` in state is used for managing stateful
+// order expiration. Stateful order expirations can be for either long term
+// or conditional orders.
+message StatefulOrderTimeSliceValue {
+  // A unique list of order_ids that expire at this timestamp, sorted in
+  // ascending order by block height and transaction index of each stateful
+  // order.
+  repeated OrderId order_ids = 1 [ (gogoproto.nullable) = false ];
+}
+
+// LongTermOrderPlacement represents the placement of a stateful order in
+// state. It stores the stateful order itself and the `BlockHeight` and
+// `TransactionIndex` at which the order was placed.
+message LongTermOrderPlacement {
+  Order order = 1 [ (gogoproto.nullable) = false ];
+
+  // The block height and transaction index at which the order was placed.
+  // Used for ordering by time priority when the chain is restarted.
+  TransactionOrdering placement_index = 2 [ (gogoproto.nullable) = false ];
+}
+
+// TwapOrderPlacement represents the placement of a TWAP order in
+// the TWAP Order State. It will store the original parent TWAP order as
+// well as maintain the state of the remaining legs and quantums
+// to be executed.
+message TwapOrderPlacement {
+  Order order = 1 [ (gogoproto.nullable) = false ];
+  // The number of legs remaining to be executed.
+  uint32 remaining_legs = 2;
+  // The number of quantums remaining to be executed.
+  uint64 remaining_quantums = 3;
+}
+
+// ConditionalOrderPlacement represents the placement of a conditional order in
+// state. It stores the stateful order itself, the `BlockHeight` and
+// `TransactionIndex` at which the order was placed and triggered.
+message ConditionalOrderPlacement {
+  Order order = 1 [ (gogoproto.nullable) = false ];
+
+  // The block height and transaction index at which the order was placed.
+  TransactionOrdering placement_index = 2 [ (gogoproto.nullable) = false ];
+
+  // The block height and transaction index at which the order was triggered.
+  // Set to be nil if the transaction has not been triggered.
+  // Used for ordering by time priority when the chain is restarted.
+  TransactionOrdering trigger_index = 3;
+}
+
+// Order represents a single order belonging to a `Subaccount`
+// for a particular `ClobPair`.
+message Order {
+  // The unique ID of this order. Meant to be unique across all orders.
+  OrderId order_id = 1 [ (gogoproto.nullable) = false ];
+
+  // Represents the side of the orderbook the order will be placed on.
+  // Note that Side.SIDE_UNSPECIFIED is an invalid order and cannot be
+  // placed on the orderbook.
+  enum Side {
+    // Default value. This value is invalid and unused.
+    SIDE_UNSPECIFIED = 0;
+    // SIDE_BUY is used to represent a BUY order.
+    SIDE_BUY = 1;
+    // SIDE_SELL is used to represent a SELL order.
+    SIDE_SELL = 2;
+  }
+
+  Side side = 2;
+
+  // The size of this order in base quantums. Must be a multiple of
+  // `ClobPair.StepBaseQuantums` (where `ClobPair.Id = orderId.ClobPairId`).
+  uint64 quantums = 3;
+
+  // The price level that this order will be placed at on the orderbook,
+  // in subticks. Must be a multiple of ClobPair.SubticksPerTick
+  // (where `ClobPair.Id = orderId.ClobPairId`).
+  uint64 subticks = 4;
+
+  // Information about when the order expires.
+  oneof good_til_oneof {
+    // The last block this order can be executed at (after which it will be
+    // unfillable). Used only for Short-Term orders. If this value is non-zero
+    // then the order is assumed to be a Short-Term order.
+    uint32 good_til_block = 5;
+
+    // good_til_block_time represents the unix timestamp (in seconds) at which a
+    // stateful order will be considered expired. The
+    // good_til_block_time is always evaluated against the previous block's
+    // `BlockTime` instead of the block in which the order is committed. If this
+    // value is non-zero then the order is assumed to be a stateful or
+    // conditional order.
+    fixed32 good_til_block_time = 6;
+  }
+
+  // TimeInForce indicates how long an order will remain active before it
+  // is executed or expires.
+  enum TimeInForce {
+    // TIME_IN_FORCE_UNSPECIFIED represents the default behavior where an
+    // order will first match with existing orders on the book, and any
+    // remaining size will be added to the book as a maker order.
+    TIME_IN_FORCE_UNSPECIFIED = 0;
+    // TIME_IN_FORCE_IOC enforces that an order only be matched with
+    // maker orders on the book. If the order has remaining size after
+    // matching with existing orders on the book, the remaining size
+    // is not placed on the book.
+    TIME_IN_FORCE_IOC = 1;
+    // TIME_IN_FORCE_POST_ONLY enforces that an order only be placed
+    // on the book as a maker order. Note this means that validators will cancel
+    // any newly-placed post only orders that would cross with other maker
+    // orders.
+    TIME_IN_FORCE_POST_ONLY = 2;
+    // TIME_IN_FORCE_FILL_OR_KILL has been deprecated and will be removed in
+    // future versions.
+    TIME_IN_FORCE_FILL_OR_KILL = 3 [ deprecated = true ];
+  }
+
+  // The time in force of this order.
+  TimeInForce time_in_force = 7;
+
+  // Enforces that the order can only reduce the size of an existing position.
+  // If a ReduceOnly order would change the side of the existing position,
+  // its size is reduced to that of the remaining size of the position.
+  // If existing orders on the book with ReduceOnly
+  // would already close the position, the least aggressive (out-of-the-money)
+  // ReduceOnly orders are resized and canceled first.
+  bool reduce_only = 8;
+
+  // Set of bit flags set arbitrarily by clients and ignored by the protocol.
+  // Used by indexer to infer information about a placed order.
+  uint32 client_metadata = 9;
+
+  enum ConditionType {
+    // CONDITION_TYPE_UNSPECIFIED represents the default behavior where an
+    // order will be placed immediately on the orderbook.
+    CONDITION_TYPE_UNSPECIFIED = 0;
+    // CONDITION_TYPE_STOP_LOSS represents a stop order. A stop order will
+    // trigger when the oracle price moves at or above the trigger price for
+    // buys, and at or below the trigger price for sells.
+    CONDITION_TYPE_STOP_LOSS = 1;
+    // CONDITION_TYPE_TAKE_PROFIT represents a take profit order. A take profit
+    // order will trigger when the oracle price moves at or below the trigger
+    // price for buys and at or above the trigger price for sells.
+    CONDITION_TYPE_TAKE_PROFIT = 2;
+  }
+
+  ConditionType condition_type = 10;
+
+  // conditional_order_trigger_subticks represents the price at which this order
+  // will be triggered. If the condition_type is CONDITION_TYPE_UNSPECIFIED,
+  // this value is enforced to be 0. If this value is nonzero, condition_type
+  // cannot be CONDITION_TYPE_UNSPECIFIED. Value is in subticks.
+  // Must be a multiple of ClobPair.SubticksPerTick (where `ClobPair.Id =
+  // orderId.ClobPairId`).
+  uint64 conditional_order_trigger_subticks = 11;
+
+  // twap_parameters represent the configuration for a TWAP order. This must be
+  // set for twap orders and will be ignored for all other order types.
+  TwapParameters twap_parameters = 12;
+
+  // builder_code_parameters is the metadata for the
+  // partner or builder of an order specifying the fees charged.
+  BuilderCodeParameters builder_code_parameters = 13;
+
+  // order_router_address is the address of the order router that placed the
+  // order.
+  string order_router_address = 14
+      [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+}
+
+// TwapParameters represents the necessary configuration for a TWAP order.
+message TwapParameters {
+  // Duration of the TWAP order execution in seconds. Must be in the range
+  // [300 (5 minutes), 86400 (24 hours)].
+  uint32 duration = 1;
+
+  // Interval in seconds for each suborder to execute. Must be a
+  // whole number, a factor of the duration, and in the range
+  // [30 (30 seconds), 3600 (1 hour)].
+  uint32 interval = 2;
+
+  // Price tolerance in ppm for each suborder. This will be applied to
+  // the oracle price each time a suborder is triggered. Must be
+  // be in the range [0, 1_000_000).
+  uint32 price_tolerance = 3;
+}
+
+// BuilderCodeParameters represents the metadata for the partner or builder of
+// an order. This allows them to specify a fee for providing there service which
+// will be paid out in the event of an order fill.
+message BuilderCodeParameters {
+  // The address of the builder to which the fee will be paid.
+  string builder_address = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The fee enforced on the order in ppm.
+  uint32 fee_ppm = 2;
+}
+
+// TransactionOrdering represents a unique location in the block where a
+// transaction was placed. This proto includes both block height and the
+// transaction index that the specific transaction was placed. This information
+// is used for ordering by time priority when the chain is restarted.
+message TransactionOrdering {
+  // Block height in which the transaction was placed.
+  uint32 block_height = 1;
+
+  // Within the block, the unique transaction index.
+  uint32 transaction_index = 2;
+}
+
+// StreamLiquidationOrder represents an protocol-generated IOC liquidation
+// order. Used in full node streaming.
+message StreamLiquidationOrder {
+  // Information about this liquidation order.
+  PerpetualLiquidationInfo liquidation_info = 1;
+
+  // CLOB pair ID of the CLOB pair the liquidation order will be matched
+  // against.
+  uint32 clob_pair_id = 2;
+
+  // True if this is a buy order liquidating a short position, false if vice
+  // versa.
+  bool is_buy = 3;
+
+  // The number of base quantums for this liquidation order.
+  uint64 quantums = 4;
+
+  // The subticks this liquidation order will be submitted at.
+  uint64 subticks = 5;
+}

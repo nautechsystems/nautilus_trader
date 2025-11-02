@@ -1,0 +1,119 @@
+syntax = "proto3";
+package dydxprotocol.perpetuals;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "dydxprotocol/perpetuals/params.proto";
+import "dydxprotocol/perpetuals/perpetual.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/perpetuals/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries a Perpetual by id.
+  rpc Perpetual(QueryPerpetualRequest) returns (QueryPerpetualResponse) {
+    option (google.api.http).get = "/dydxprotocol/perpetuals/perpetual/{id}";
+  }
+
+  // Queries a list of Perpetual items.
+  rpc AllPerpetuals(QueryAllPerpetualsRequest)
+      returns (QueryAllPerpetualsResponse) {
+    option (google.api.http).get = "/dydxprotocol/perpetuals/perpetual";
+  }
+
+  // Queries a list of LiquidityTiers.
+  rpc AllLiquidityTiers(QueryAllLiquidityTiersRequest)
+      returns (QueryAllLiquidityTiersResponse) {
+    option (google.api.http).get = "/dydxprotocol/perpetuals/liquidity_tiers";
+  }
+
+  // Queries a list of premium votes.
+  rpc PremiumVotes(QueryPremiumVotesRequest)
+      returns (QueryPremiumVotesResponse) {
+    option (google.api.http).get = "/dydxprotocol/perpetuals/premium_votes";
+  }
+
+  // Queries a list of premium samples.
+  rpc PremiumSamples(QueryPremiumSamplesRequest)
+      returns (QueryPremiumSamplesResponse) {
+    option (google.api.http).get = "/dydxprotocol/perpetuals/premium_samples";
+  }
+
+  // Queries the perpetual params.
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/perpetuals/params";
+  }
+
+  // Queries the next perpetual id.
+  rpc NextPerpetualId(QueryNextPerpetualIdRequest)
+      returns (QueryNextPerpetualIdResponse) {
+    option (google.api.http).get = "/dydxprotocol/perpetuals/next_perpetual_id";
+  }
+}
+
+// Queries a Perpetual by id.
+message QueryPerpetualRequest { uint32 id = 1; }
+
+// QueryPerpetualResponse is response type for the Perpetual RPC method.
+message QueryPerpetualResponse {
+  Perpetual perpetual = 1 [ (gogoproto.nullable) = false ];
+}
+
+// Queries a list of Perpetual items.
+message QueryAllPerpetualsRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryAllPerpetualsResponse is response type for the AllPerpetuals RPC method.
+message QueryAllPerpetualsResponse {
+  repeated Perpetual perpetual = 1 [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// Queries a list of LiquidityTier items.
+message QueryAllLiquidityTiersRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// QueryAllLiquidityTiersResponse is response type for the AllLiquidityTiers RPC
+// method.
+message QueryAllLiquidityTiersResponse {
+  repeated LiquidityTier liquidity_tiers = 1 [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryPremiumVotesRequest is the request type for the PremiumVotes RPC method.
+message QueryPremiumVotesRequest {}
+
+// QueryPremiumVotesResponse is the response type for the PremiumVotes RPC
+// method.
+message QueryPremiumVotesResponse {
+  PremiumStore premium_votes = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryPremiumSamplesRequest is the request type for the PremiumSamples RPC
+// method.
+message QueryPremiumSamplesRequest {}
+
+// QueryPremiumSamplesResponse is the response type for the PremiumSamples RPC
+// method.
+message QueryPremiumSamplesResponse {
+  PremiumStore premium_samples = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryParamsResponse is the response type for the Params RPC method.
+message QueryParamsRequest {}
+
+// QueryParamsResponse is the response type for the Params RPC method.
+message QueryParamsResponse {
+  Params params = 1 [ (gogoproto.nullable) = false ];
+}
+
+// QueryNextPerpetualIdRequest is the request type for the NextPerpetualId RPC
+message QueryNextPerpetualIdRequest {}
+
+// QueryNextPerpetualIdResponse is the response type for the NextPerpetualId RPC
+message QueryNextPerpetualIdResponse { uint32 next_perpetual_id = 1; }
+
+// this line is used by starport scaffolding # 3

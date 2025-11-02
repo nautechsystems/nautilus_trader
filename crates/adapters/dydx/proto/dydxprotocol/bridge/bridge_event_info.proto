@@ -1,0 +1,15 @@
+syntax = "proto3";
+package dydxprotocol.bridge;
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/bridge/types";
+
+// BridgeEventInfo stores information about the most recently processed bridge
+// event.
+message BridgeEventInfo {
+  // The next event id (the last processed id plus one) of the logs from the
+  // Ethereum contract.
+  uint32 next_id = 1;
+
+  // The Ethereum block height of the most recently processed bridge event.
+  uint64 eth_block_height = 2;
+}

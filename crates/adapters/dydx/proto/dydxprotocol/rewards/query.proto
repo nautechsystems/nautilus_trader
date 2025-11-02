@@ -1,0 +1,24 @@
+syntax = "proto3";
+package dydxprotocol.rewards;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "dydxprotocol/rewards/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/rewards/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries the Params.
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/rewards/params";
+  }
+}
+
+// QueryParamsRequest is a request type for the Params RPC method.
+message QueryParamsRequest {}
+
+// QueryParamsResponse is a response type for the Params RPC method.
+message QueryParamsResponse {
+  Params params = 1 [ (gogoproto.nullable) = false ];
+}

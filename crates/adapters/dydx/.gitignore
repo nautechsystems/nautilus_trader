@@ -1,0 +1,6 @@
+# Build artifacts (will be in target/ directory in repo root)
+
+# Proto metadata files that aren't needed for compilation
+proto/**/*.yaml
+proto/**/*.json
+proto/**/BUILD.bazel

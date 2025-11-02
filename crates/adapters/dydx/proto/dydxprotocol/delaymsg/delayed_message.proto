@@ -1,0 +1,18 @@
+syntax = "proto3";
+package dydxprotocol.delaymsg;
+
+import "google/protobuf/any.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/delaymsg/types";
+
+// DelayedMessage is a message that is delayed until a certain block height.
+message DelayedMessage {
+  // The ID of the delayed message.
+  uint32 id = 1;
+
+  // The message to be executed.
+  google.protobuf.Any msg = 2;
+
+  // The block height at which the message should be executed.
+  uint32 block_height = 3;
+}

@@ -1,0 +1,12 @@
+syntax = "proto3";
+package dydxprotocol.revshare;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/revshare/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/revshare/types";
+
+// GenesisState defines `x/revshare`'s genesis state.
+message GenesisState {
+  MarketMapperRevenueShareParams params = 1 [ (gogoproto.nullable) = false ];
+}

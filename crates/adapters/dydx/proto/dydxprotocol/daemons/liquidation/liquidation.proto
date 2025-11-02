@@ -1,0 +1,40 @@
+syntax = "proto3";
+package dydxprotocol.daemons.liquidation;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+import "dydxprotocol/clob/liquidations.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/daemons/liquidation/api";
+
+// LiquidationService defines the gRPC service used by liquidation daemon.
+service LiquidationService {
+  // Sends a list of subaccount ids that are potentially liquidatable.
+  rpc LiquidateSubaccounts(LiquidateSubaccountsRequest)
+      returns (LiquidateSubaccountsResponse);
+}
+
+// LiquidateSubaccountsRequest is a request message that contains a list of
+// subaccount ids that potentially need to be liquidated. The list of subaccount
+// ids should not contain duplicates. The application should re-verify these
+// subaccount ids against current state before liquidating their positions.
+message LiquidateSubaccountsRequest {
+  // The block height at which the liquidation daemon is processing.
+  uint32 block_height = 1;
+
+  // The list of liquidatable subaccount ids.
+  repeated dydxprotocol.subaccounts.SubaccountId liquidatable_subaccount_ids = 2
+      [ (gogoproto.nullable) = false ];
+
+  // The list of subaccount ids with negative total net collateral.
+  repeated dydxprotocol.subaccounts.SubaccountId negative_tnc_subaccount_ids = 3
+      [ (gogoproto.nullable) = false ];
+
+  // A map of perpetual id to subaccount open position info.
+  repeated dydxprotocol.clob.SubaccountOpenPositionInfo
+      subaccount_open_position_info = 4 [ (gogoproto.nullable) = false ];
+}
+
+// LiquidateSubaccountsResponse is a response message for
+// LiquidateSubaccountsRequest.
+message LiquidateSubaccountsResponse {}

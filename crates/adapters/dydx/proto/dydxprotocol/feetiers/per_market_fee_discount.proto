@@ -1,0 +1,27 @@
+syntax = "proto3";
+package dydxprotocol.feetiers;
+
+import "google/protobuf/timestamp.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/feetiers/types";
+
+// PerMarketFeeDiscountParams defines a fee discount period for a specific CLOB
+// pair
+message PerMarketFeeDiscountParams {
+  // The CLOB Pair ID this fee holiday applies to
+  uint32 clob_pair_id = 1;
+
+  // Start time
+  google.protobuf.Timestamp start_time = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+
+  // End time
+  google.protobuf.Timestamp end_time = 3
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+
+  // Percentage of normal fee to charge during the period (in parts per
+  // million) 0 = completely free (100% discount) 500000 = charge 50% of normal
+  // fee (50% discount) 1000000 = charge 100% of normal fee (no discount)
+  uint32 charge_ppm = 4;
+}

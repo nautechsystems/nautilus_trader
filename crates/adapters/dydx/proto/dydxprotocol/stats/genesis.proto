@@ -1,0 +1,13 @@
+syntax = "proto3";
+package dydxprotocol.stats;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/stats/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/stats/types";
+
+// GenesisState defines the stats module's genesis state.
+message GenesisState {
+  // The parameters of the module.
+  Params params = 1 [ (gogoproto.nullable) = false ];
+}

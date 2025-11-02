@@ -1,0 +1,18 @@
+syntax = "proto3";
+package dydxprotocol.rewards;
+
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/rewards/types";
+
+// RewardShare stores the relative weight of rewards that each address is
+// entitled to.
+message RewardShare {
+  string address = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  bytes weight = 2 [
+    (gogoproto.customtype) =
+        "github.com/dydxprotocol/v4-chain/protocol/dtypes.SerializableInt",
+    (gogoproto.nullable) = false
+  ];
+}

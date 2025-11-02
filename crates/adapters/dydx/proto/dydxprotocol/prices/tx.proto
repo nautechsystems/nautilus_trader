@@ -1,0 +1,70 @@
+syntax = "proto3";
+package dydxprotocol.prices;
+
+import "gogoproto/gogo.proto";
+import "cosmos_proto/cosmos.proto";
+import "cosmos/msg/v1/msg.proto";
+import "dydxprotocol/prices/market_param.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/prices/types";
+
+// Msg defines the Msg service.
+service Msg {
+  // UpdateMarketPrices updates the oracle price of a market relative to
+  // quoteCurrency.
+  rpc UpdateMarketPrices(MsgUpdateMarketPrices)
+      returns (MsgUpdateMarketPricesResponse);
+  // CreateOracleMarket creates a new oracle market.
+  rpc CreateOracleMarket(MsgCreateOracleMarket)
+      returns (MsgCreateOracleMarketResponse);
+  // UpdateMarketParams allows governance to update the parameters of an
+  // oracle market.
+  rpc UpdateMarketParam(MsgUpdateMarketParam)
+      returns (MsgUpdateMarketParamResponse);
+}
+
+// MsgCreateOracleMarket is a message used by x/gov for creating a new oracle
+// market.
+message MsgCreateOracleMarket {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // The address that controls the module.
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // `params` defines parameters for the new oracle market.
+  MarketParam params = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgCreateOracleMarketResponse defines the CreateOracleMarket response type.
+message MsgCreateOracleMarketResponse {}
+
+// MsgUpdateMarketPrices is a request type for the UpdateMarketPrices method.
+message MsgUpdateMarketPrices {
+  // MarketPrice represents a price update for a single market
+  message MarketPrice {
+    // The id of market to update
+    uint32 market_id = 1;
+    // The updated price
+    uint64 price = 2;
+  }
+
+  repeated MarketPrice market_price_updates = 1;
+}
+
+// MsgUpdateMarketPricesResponse defines the MsgUpdateMarketPrices response
+// type.
+message MsgUpdateMarketPricesResponse {}
+
+// MsgUpdateMarketParam is a message used by x/gov for updating the parameters
+// of an oracle market.
+message MsgUpdateMarketParam {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The market param to update. Each field must be set.
+  MarketParam market_param = 2 [ (gogoproto.nullable) = false ];
+}
+
+// MsgUpdateMarketParamResponse defines the UpdateMarketParam response type.
+message MsgUpdateMarketParamResponse {}

@@ -1,0 +1,85 @@
+syntax = "proto3";
+package dydxprotocol.sending;
+
+import "cosmos_proto/cosmos.proto";
+import "cosmos/base/v1beta1/coin.proto";
+import "cosmos/msg/v1/msg.proto";
+import "gogoproto/gogo.proto";
+import "dydxprotocol/subaccounts/subaccount.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/sending/types";
+
+// Transfer represents a single transfer between two subaccounts.
+message Transfer {
+  // The sender subaccount ID.
+  dydxprotocol.subaccounts.SubaccountId sender = 1
+      [ (gogoproto.nullable) = false ];
+
+  // The recipient subaccount ID.
+  dydxprotocol.subaccounts.SubaccountId recipient = 2
+      [ (gogoproto.nullable) = false ];
+
+  // Id of the asset to transfer.
+  uint32 asset_id = 3;
+
+  // The amount of asset to transfer
+  uint64 amount = 4;
+}
+
+// MsgDepositToSubaccount represents a single transfer from an `x/bank`
+// account to an `x/subaccounts` subaccount.
+message MsgDepositToSubaccount {
+  option (cosmos.msg.v1.signer) = "sender";
+
+  // The sender wallet address.
+  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The recipient subaccount ID.
+  dydxprotocol.subaccounts.SubaccountId recipient = 2
+      [ (gogoproto.nullable) = false ];
+
+  // Id of the asset to transfer.
+  uint32 asset_id = 3;
+
+  // The number of quantums of asset to transfer.
+  uint64 quantums = 4;
+}
+
+// MsgWithdrawFromSubaccount represents a single transfer from an
+// `x/subaccounts` subaccount to an `x/bank` account.
+message MsgWithdrawFromSubaccount {
+  option (cosmos.msg.v1.signer) = "sender";
+
+  // The sender subaccount ID.
+  dydxprotocol.subaccounts.SubaccountId sender = 2
+      [ (gogoproto.nullable) = false ];
+
+  // The recipient wallet address.
+  string recipient = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // Id of the asset to transfer.
+  uint32 asset_id = 3;
+
+  // The number of quantums of asset to transfer.
+  uint64 quantums = 4;
+}
+
+// MsgSendFromModuleToAccount represents a single transfer from a module
+// to an `x/bank` account (can be either a module account address or a user
+// account address).
+// Should only be executed by governance.
+message MsgSendFromModuleToAccount {
+  // Authority is the address that controls the module.
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The sender module name.
+  string sender_module_name = 2;
+
+  // The recipient account address (can be either a module account address
+  // or a user account address).
+  string recipient = 3 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+
+  // The coin to transfer, which specifies both denom and amount.
+  cosmos.base.v1beta1.Coin coin = 4 [ (gogoproto.nullable) = false ];
+}

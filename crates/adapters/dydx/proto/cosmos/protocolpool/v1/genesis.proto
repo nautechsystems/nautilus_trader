@@ -1,0 +1,17 @@
+syntax = "proto3";
+package cosmos.protocolpool.v1;
+
+option go_package = "github.com/cosmos/cosmos-sdk/x/protocolpool/types";
+
+import "cosmos/protocolpool/v1/types.proto";
+import "gogoproto/gogo.proto";
+
+// GenesisState defines the protocolpool module's genesis state.
+message GenesisState {
+  // ContinuousFunds defines the continuous funds at genesis.
+  repeated ContinuousFund continuous_funds = 1 [(gogoproto.nullable) = false];
+
+  // Params defines the parameters of this module, currently only contains the
+  // denoms that will be used for continuous fund distributions.
+  Params params = 2 [(gogoproto.nullable) = false];
+}

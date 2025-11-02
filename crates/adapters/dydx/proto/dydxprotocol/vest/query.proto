@@ -1,0 +1,24 @@
+syntax = "proto3";
+package dydxprotocol.vest;
+
+import "google/api/annotations.proto";
+import "dydxprotocol/vest/vest_entry.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/vest/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  // Queries the VestEntry.
+  rpc VestEntry(QueryVestEntryRequest) returns (QueryVestEntryResponse) {
+    option (google.api.http).get = "/dydxprotocol/v4/vest/vest_entry";
+  }
+}
+
+// QueryVestEntryRequest is a request type for the VestEntry RPC method.
+message QueryVestEntryRequest { string vester_account = 1; }
+
+// QueryVestEntryResponse is a response type for the VestEntry RPC method.
+message QueryVestEntryResponse {
+  VestEntry entry = 1 [ (gogoproto.nullable) = false ];
+}

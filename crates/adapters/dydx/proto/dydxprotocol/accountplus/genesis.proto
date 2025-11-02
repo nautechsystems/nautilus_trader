@@ -1,0 +1,38 @@
+syntax = "proto3";
+package dydxprotocol.accountplus;
+
+import "gogoproto/gogo.proto";
+import "dydxprotocol/accountplus/accountplus.proto";
+import "dydxprotocol/accountplus/models.proto";
+import "dydxprotocol/accountplus/params.proto";
+
+option go_package = "github.com/dydxprotocol/v4-chain/protocol/x/accountplus/types";
+
+// AuthenticatorData represents a genesis exported account with Authenticators.
+// The address is used as the key, and the account authenticators are stored in
+// the authenticators field.
+message AuthenticatorData {
+  // address is an account address, one address can have many authenticators
+  string address = 1;
+
+  // authenticators are the account's authenticators, these can be multiple
+  // types including SignatureVerification, AllOfs, CosmWasmAuthenticators, etc
+  repeated AccountAuthenticator authenticators = 2
+      [ (gogoproto.nullable) = false ];
+}
+
+// Module genesis state
+message GenesisState {
+  repeated AccountState accounts = 1 [ (gogoproto.nullable) = false ];
+
+  // params define the parameters for the authenticator module.
+  Params params = 2 [ (gogoproto.nullable) = false ];
+
+  // next_authenticator_id is the next available authenticator ID.
+  uint64 next_authenticator_id = 3;
+
+  // authenticator_data contains the data for multiple accounts, each with their
+  // authenticators.
+  repeated AuthenticatorData authenticator_data = 4
+      [ (gogoproto.nullable) = false ];
+}
