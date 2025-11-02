@@ -174,6 +174,9 @@ def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[
         "maker_base_fee": 0,  # Gamma API doesn't provide fees, use defaults
         "taker_base_fee": 0,  # Gamma API doesn't provide fees, use defaults
         "active": gamma_market.get("active", False),
+        "neg_risk": gamma_market.get("negRisk", False),
+        "neg_risk_market_id": gamma_market.get("negRiskMarketID"),
+        "neg_risk_request_id": gamma_market.get("negRiskRequestID"),
         # Preserve original data for reference
         "_gamma_original": gamma_market,
     }
