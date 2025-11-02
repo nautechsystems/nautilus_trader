@@ -366,14 +366,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 if order.client_order_id in reported_client_order_ids:
                     continue  # Already reported
 
-                order_status_command = GenerateOrderStatusReport(
+                command = GenerateOrderStatusReport(
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
                     command_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
-                maybe_report = await self.generate_order_status_report(order_status_command)
+                maybe_report = await self.generate_order_status_report(command)
                 if maybe_report:
                     reports.append(maybe_report)
 
@@ -642,15 +642,17 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.get_balance_allowance,
                 params,
             )
-            usdce_balance = usdce_from_units(int(response["balance"]))
-            position_side = PositionSide.LONG if usdce_balance.raw > 0 else PositionSide.FLAT
+            quantity = Quantity.from_raw(usdce_from_units(int(response["balance"])).raw, precision=USDC_POS.precision)
+            position_side = PositionSide.LONG if quantity > 0 else PositionSide.FLAT
+            if position_side == PositionSide.LONG:
+                self._log.info(f"Long position for {instrument_id} of {quantity} shares")
             now = self._clock.timestamp_ns()
 
             report = PositionStatusReport(
                 account_id=self.account_id,
                 instrument_id=instrument_id,
                 position_side=position_side,
-                quantity=Quantity.from_raw(usdce_balance.raw, precision=USDC_POS.precision),
+                quantity=quantity,
                 report_id=UUID4(),
                 ts_last=now,
                 ts_init=now,
@@ -1023,6 +1025,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 )
             else:
                 venue_order_id = VenueOrderId(response["orderID"])
+                self._log.info(
+                    f"Submitted {order.client_order_id!r} {venue_order_id!r}",
+                    LogColor.MAGENTA,
+                )
                 self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
 
                 # Signal order event
