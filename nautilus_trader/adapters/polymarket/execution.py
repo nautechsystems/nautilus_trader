@@ -423,14 +423,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 if order.client_order_id in reported_client_order_ids:
                     continue  # Already reported
 
-                order_status_command = GenerateOrderStatusReport(
+                command = GenerateOrderStatusReport(
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
                     command_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
-                maybe_report = await self.generate_order_status_report(order_status_command)
+                maybe_report = await self.generate_order_status_report(command)
                 if maybe_report:
                     reports.append(maybe_report)
 
@@ -696,7 +696,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Generate reports from quantities
         for instrument_id, quantity in quantities_by_instrument.items():
-            position_side = PositionSide.LONG if quantity > 0 else PositionSide.FLAT
+            position_side = PositionSide.LONG if quantity.raw > 0 else PositionSide.FLAT
             if position_side == PositionSide.LONG:
                 self._log.info(f"Long position for {instrument_id} of {quantity} shares")
 
@@ -744,15 +744,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Convert to quantities by instrument ID
         quantities: dict[InstrumentId, Quantity] = {}
-        precision = USDC_POS.precision
-
+    
         for instrument_id in instrument_ids:
             token_id = str(get_polymarket_token_id(instrument_id))
             size = size_by_asset.get(token_id, 0.0)
 
             # Gamma API returns size as decimal float (e.g., 1.5 shares)
             # Create Quantity directly from the float value
-            quantities[instrument_id] = Quantity(float(size), precision=precision)
+            quantities[instrument_id] = Quantity(float(size), precision=USDC_POS.precision)
 
         return quantities
 
@@ -776,7 +775,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.get_balance_allowance,
                 params,
             )
-            quantities[instrument_id] = usdce_from_units(int(response["balance"]))
+            quantities[instrument_id] = Quantity.from_raw(usdce_from_units(int(response["balance"])).raw, precision=USDC_POS.precision)
 
         return quantities
 
@@ -1141,6 +1140,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 )
             else:
                 venue_order_id = VenueOrderId(response["orderID"])
+                self._log.info(
+                    f"Submitted {order.client_order_id!r} {venue_order_id!r}",
+                    LogColor.MAGENTA,
+                )
                 self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
 
                 # Signal order event
