@@ -19,6 +19,7 @@
 
 use std::{
     fmt,
+    num::NonZero,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -26,11 +27,15 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashMap;
 use dashmap::DashMap;
 use nautilus_common::runtime::get_runtime;
-use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    data::{BarSpecification, BarType, Data},
+    enums::{AggregationSource, BarAggregation, OrderSide, OrderType, PriceType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -38,7 +43,10 @@ use nautilus_model::{
 use nautilus_network::{
     RECONNECTED,
     retry::{RetryManager, create_websocket_retry_manager},
-    websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{
+        AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, WebSocketClient,
+        WebSocketConfig, channel_message_handler,
+    },
 };
 use serde_json::{Value, json};
 use tokio::sync::RwLock;
@@ -48,36 +56,45 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_PONG},
+        consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_PONG, BYBIT_WS_TOPIC_DELIMITER},
         credential::Credential,
         enums::{
             BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
             BybitTriggerType, BybitWsOrderRequestOp,
         },
-        parse::extract_raw_symbol,
+        parse::{extract_raw_symbol, make_bybit_symbol},
         symbol::BybitSymbol,
         urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
     },
     websocket::{
-        auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
         cache,
-        enums::BybitWsOperation,
+        enums::{BybitWsOperation, BybitWsPrivateChannel, BybitWsPublicChannel},
         error::{BybitWsError, BybitWsResult},
         messages::{
             BybitAuthRequest, BybitSubscription, BybitWebSocketError, BybitWebSocketMessage,
             BybitWsAccountExecutionMsg, BybitWsAccountOrderMsg, BybitWsAccountPositionMsg,
             BybitWsAccountWalletMsg, BybitWsAmendOrderParams, BybitWsAuthResponse,
-            BybitWsCancelOrderParams, BybitWsHeader, BybitWsKlineMsg, BybitWsOrderbookDepthMsg,
-            BybitWsPlaceOrderParams, BybitWsRequest, BybitWsResponse, BybitWsSubscriptionMsg,
-            BybitWsTickerLinearMsg, BybitWsTickerOptionMsg, BybitWsTradeMsg,
+            BybitWsBatchCancelItem, BybitWsBatchCancelOrderArgs, BybitWsBatchPlaceItem,
+            BybitWsBatchPlaceOrderArgs, BybitWsCancelOrderParams, BybitWsHeader, BybitWsKlineMsg,
+            BybitWsOrderResponse, BybitWsOrderbookDepthMsg, BybitWsPlaceOrderParams,
+            BybitWsRequest, BybitWsResponse, BybitWsSubscriptionMsg, BybitWsTickerLinearMsg,
+            BybitWsTickerOptionMsg, BybitWsTradeMsg, NautilusWsMessage,
         },
-        subscription::SubscriptionState,
+        parse::{
+            parse_kline_topic, parse_millis_i64, parse_orderbook_deltas,
+            parse_ticker_linear_funding, parse_ws_account_state, parse_ws_fill_report,
+            parse_ws_kline_bar, parse_ws_order_status_report, parse_ws_position_status_report,
+            parse_ws_trade_tick,
+        },
     },
 };
 
 const MAX_ARGS_PER_SUBSCRIPTION_REQUEST: usize = 10;
 const DEFAULT_HEARTBEAT_SECS: u64 = 20;
 const WEBSOCKET_AUTH_WINDOW_MS: i64 = 5_000;
+
+/// Type alias for the funding rate cache.
+type FundingCache = Arc<RwLock<AHashMap<Ustr, (Option<String>, Option<String>)>>>;
 
 /// Determines if a Bybit WebSocket error should trigger a retry.
 fn should_retry_bybit_error(error: &BybitWsError) -> bool {
@@ -116,7 +133,7 @@ pub struct BybitWebSocketClient {
     auth_tracker: AuthTracker,
     heartbeat: Option<u64>,
     inner: Arc<RwLock<Option<WebSocketClient>>>,
-    rx: Option<tokio::sync::mpsc::UnboundedReceiver<BybitWebSocketMessage>>,
+    rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     subscriptions: SubscriptionState,
@@ -124,12 +141,13 @@ pub struct BybitWebSocketClient {
     instruments_cache: Arc<DashMap<InstrumentId, InstrumentAny>>,
     account_id: Option<AccountId>,
     quote_cache: Arc<RwLock<cache::QuoteCache>>,
+    funding_cache: FundingCache,
     retry_manager: Arc<RetryManager<BybitWsError>>,
     cancellation_token: CancellationToken,
 }
 
 impl fmt::Debug for BybitWebSocketClient {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BybitWebSocketClient")
             .field("url", &self.url)
             .field("environment", &self.environment)
@@ -160,6 +178,7 @@ impl Clone for BybitWebSocketClient {
             instruments_cache: Arc::clone(&self.instruments_cache),
             account_id: self.account_id,
             quote_cache: Arc::clone(&self.quote_cache),
+            funding_cache: Arc::clone(&self.funding_cache),
             retry_manager: Arc::clone(&self.retry_manager),
             cancellation_token: self.cancellation_token.clone(),
         }
@@ -202,11 +221,12 @@ impl BybitWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
-            subscriptions: SubscriptionState::new(),
+            subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
+            funding_cache: Arc::new(RwLock::new(AHashMap::new())),
             retry_manager: Arc::new(
                 create_websocket_retry_manager().expect("Failed to create retry manager"),
             ),
@@ -238,11 +258,12 @@ impl BybitWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
-            subscriptions: SubscriptionState::new(),
+            subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
+            funding_cache: Arc::new(RwLock::new(AHashMap::new())),
             retry_manager: Arc::new(
                 create_websocket_retry_manager().expect("Failed to create retry manager"),
             ),
@@ -274,11 +295,12 @@ impl BybitWebSocketClient {
             rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
-            subscriptions: SubscriptionState::new(),
+            subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
+            funding_cache: Arc::new(RwLock::new(AHashMap::new())),
             retry_manager: Arc::new(
                 create_websocket_retry_manager().expect("Failed to create retry manager"),
             ),
@@ -343,7 +365,7 @@ impl BybitWebSocketClient {
             *guard = Some(client);
         }
 
-        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<BybitWebSocketMessage>();
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         self.rx = Some(event_rx);
         self.signal.store(false, Ordering::Relaxed);
 
@@ -355,8 +377,14 @@ impl BybitWebSocketClient {
         let requires_auth = self.requires_auth;
         let is_authenticated = Arc::clone(&self.is_authenticated);
         let quote_cache = Arc::clone(&self.quote_cache);
+        let funding_cache = Arc::clone(&self.funding_cache);
+        let instruments = Arc::clone(&self.instruments_cache);
+        let account_id = self.account_id;
+        let product_type = self.product_type;
 
         let task_handle = get_runtime().spawn(async move {
+            let clock = get_atomic_clock_realtime();
+
             while let Some(message) = message_rx.recv().await {
                 if signal.load(Ordering::Relaxed) {
                     break;
@@ -381,6 +409,7 @@ impl BybitWebSocketClient {
                         let is_authenticated_for_task = is_authenticated.clone();
                         let credential_for_task = credential.clone();
                         let quote_cache_for_task = quote_cache.clone();
+                        let funding_cache_for_task = funding_cache.clone();
                         let event_tx_for_task = event_tx.clone();
 
                         get_runtime().spawn(async move {
@@ -404,7 +433,7 @@ impl BybitWebSocketClient {
                                     Err(e) => {
                                         tracing::error!("Authentication after reconnect failed: {e}");
                                         let error = BybitWebSocketError::from_message(e.to_string());
-                                        let _ = event_tx_for_task.send(BybitWebSocketMessage::Error(error));
+                                        let _ = event_tx_for_task.send(NautilusWsMessage::Error(error));
                                         false
                                     }
                                 }
@@ -416,8 +445,9 @@ impl BybitWebSocketClient {
                                 return;
                             }
 
-                            // Clear the quote cache to prevent stale data after reconnection
+                            // Clear caches to prevent stale data after reconnection
                             quote_cache_for_task.write().await.clear();
+                            funding_cache_for_task.write().await.clear();
 
                             // Resubscribe to all topics
                             if let Err(e) = Self::resubscribe_all_inner(
@@ -428,22 +458,37 @@ impl BybitWebSocketClient {
                             {
                                 tracing::error!("Failed to restore subscriptions after reconnection: {e}");
                                 let error = BybitWebSocketError::from_message(e.to_string());
-                                let _ = event_tx_for_task.send(BybitWebSocketMessage::Error(error));
+                                let _ = event_tx_for_task.send(NautilusWsMessage::Error(error));
                             } else {
                                 tracing::info!("Restored subscriptions after reconnection");
-                                let _ = event_tx_for_task.send(BybitWebSocketMessage::Reconnected);
+                                let _ = event_tx_for_task.send(NautilusWsMessage::Reconnected);
                             }
                         });
                     }
                     Ok(Some(event)) => {
-                        if event_tx.send(event).is_err() {
-                            break;
+                        // Parse Bybit message into Nautilus messages
+                        let nautilus_messages = Self::parse_to_nautilus_messages(
+                            event,
+                            &instruments,
+                            account_id,
+                            product_type,
+                            &quote_cache,
+                            &funding_cache,
+                            clock.get_time_ns(),
+                        )
+                        .await;
+
+                        // Send each parsed message
+                        for nautilus_msg in nautilus_messages {
+                            if event_tx.send(nautilus_msg).is_err() {
+                                break;
+                            }
                         }
                     }
                     Ok(None) => {}
                     Err(e) => {
                         let error = BybitWebSocketError::from_message(e.to_string());
-                        if event_tx.send(BybitWebSocketMessage::Error(error)).is_err() {
+                        if event_tx.send(NautilusWsMessage::Error(error)).is_err() {
                             break;
                         }
                     }
@@ -568,14 +613,14 @@ impl BybitWebSocketClient {
         Self::send_topics_inner(&self.inner, BybitWsOperation::Unsubscribe, topics_to_send).await
     }
 
-    /// Returns a stream of parsed [`BybitWebSocketMessage`] items.
+    /// Returns a stream of parsed [`NautilusWsMessage`] items.
     ///
     /// # Panics
     ///
     /// Panics if called before [`Self::connect`] or if the stream has already been taken.
     pub fn stream(
         &mut self,
-    ) -> impl futures_util::Stream<Item = BybitWebSocketMessage> + Send + 'static {
+    ) -> impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static {
         let rx = self
             .rx
             .take()
@@ -595,11 +640,33 @@ impl BybitWebSocketClient {
         self.subscriptions.len()
     }
 
-    /// Adds an instrument to the cache for parsing WebSocket messages.
-    pub fn add_instrument(&self, instrument: InstrumentAny) {
+    /// Returns the credential associated with this client, if any.
+    #[must_use]
+    pub fn credential(&self) -> Option<&Credential> {
+        self.credential.as_ref()
+    }
+
+    /// Caches a single instrument.
+    ///
+    /// Any existing instrument with the same ID will be replaced.
+    pub fn cache_instrument(&self, instrument: InstrumentAny) {
         let instrument_id = instrument.id();
         self.instruments_cache.insert(instrument_id, instrument);
-        tracing::debug!("Added instrument {instrument_id} to WebSocket client cache");
+        tracing::debug!("Cached instrument {instrument_id} in WebSocket client");
+    }
+
+    /// Caches multiple instruments.
+    ///
+    /// Any existing instruments with the same IDs will be replaced.
+    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
+        for instrument in instruments {
+            let instrument_id = instrument.id();
+            self.instruments_cache.insert(instrument_id, instrument);
+        }
+        tracing::debug!(
+            "Cached {} instruments in WebSocket client",
+            self.instruments_cache.len()
+        );
     }
 
     /// Returns a reference to the instruments cache.
@@ -646,7 +713,10 @@ impl BybitWebSocketClient {
         depth: u32,
     ) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("orderbook.{}.{}", depth, raw_symbol);
+        let topic = format!(
+            "{}.{depth}.{raw_symbol}",
+            BybitWsPublicChannel::OrderBook.as_ref()
+        );
         self.subscribe(vec![topic]).await
     }
 
@@ -657,7 +727,10 @@ impl BybitWebSocketClient {
         depth: u32,
     ) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("orderbook.{}.{}", depth, raw_symbol);
+        let topic = format!(
+            "{}.{depth}.{raw_symbol}",
+            BybitWsPublicChannel::OrderBook.as_ref()
+        );
         self.unsubscribe(vec![topic]).await
     }
 
@@ -672,14 +745,20 @@ impl BybitWebSocketClient {
     /// <https://bybit-exchange.github.io/docs/v5/websocket/public/trade>
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("publicTrade.{}", raw_symbol);
+        let topic = format!(
+            "{}.{raw_symbol}",
+            BybitWsPublicChannel::PublicTrade.as_ref()
+        );
         self.subscribe(vec![topic]).await
     }
 
     /// Unsubscribes from public trade updates for a specific instrument.
     pub async fn unsubscribe_trades(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("publicTrade.{}", raw_symbol);
+        let topic = format!(
+            "{}.{raw_symbol}",
+            BybitWsPublicChannel::PublicTrade.as_ref()
+        );
         self.unsubscribe(vec![topic]).await
     }
 
@@ -694,14 +773,22 @@ impl BybitWebSocketClient {
     /// <https://bybit-exchange.github.io/docs/v5/websocket/public/ticker>
     pub async fn subscribe_ticker(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("tickers.{}", raw_symbol);
+        let topic = format!("{}.{raw_symbol}", BybitWsPublicChannel::Tickers.as_ref());
         self.subscribe(vec![topic]).await
     }
 
     /// Unsubscribes from ticker updates for a specific instrument.
     pub async fn unsubscribe_ticker(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("tickers.{}", raw_symbol);
+        let topic = format!("{}.{raw_symbol}", BybitWsPublicChannel::Tickers.as_ref());
+
+        // Clear funding rate cache to ensure fresh data on resubscribe
+        let symbol = self.product_type.map_or_else(
+            || instrument_id.symbol.inner(),
+            |pt| make_bybit_symbol(raw_symbol, pt),
+        );
+        self.funding_cache.write().await.remove(&symbol);
+
         self.unsubscribe(vec![topic]).await
     }
 
@@ -720,7 +807,11 @@ impl BybitWebSocketClient {
         interval: impl Into<String>,
     ) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("kline.{}.{}", interval.into(), raw_symbol);
+        let topic = format!(
+            "{}.{}.{raw_symbol}",
+            BybitWsPublicChannel::Kline.as_ref(),
+            interval.into()
+        );
         self.subscribe(vec![topic]).await
     }
 
@@ -731,7 +822,11 @@ impl BybitWebSocketClient {
         interval: impl Into<String>,
     ) -> BybitWsResult<()> {
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("kline.{}.{}", interval.into(), raw_symbol);
+        let topic = format!(
+            "{}.{}.{raw_symbol}",
+            BybitWsPublicChannel::Kline.as_ref(),
+            interval.into()
+        );
         self.unsubscribe(vec![topic]).await
     }
 
@@ -750,12 +845,14 @@ impl BybitWebSocketClient {
                 "Order subscription requires authentication".to_string(),
             ));
         }
-        self.subscribe(vec!["order".to_string()]).await
+        self.subscribe(vec![BybitWsPrivateChannel::Order.as_ref().to_string()])
+            .await
     }
 
     /// Unsubscribes from order updates.
     pub async fn unsubscribe_orders(&self) -> BybitWsResult<()> {
-        self.unsubscribe(vec!["order".to_string()]).await
+        self.unsubscribe(vec![BybitWsPrivateChannel::Order.as_ref().to_string()])
+            .await
     }
 
     /// Subscribes to execution/fill updates.
@@ -773,12 +870,14 @@ impl BybitWebSocketClient {
                 "Execution subscription requires authentication".to_string(),
             ));
         }
-        self.subscribe(vec!["execution".to_string()]).await
+        self.subscribe(vec![BybitWsPrivateChannel::Execution.as_ref().to_string()])
+            .await
     }
 
     /// Unsubscribes from execution/fill updates.
     pub async fn unsubscribe_executions(&self) -> BybitWsResult<()> {
-        self.unsubscribe(vec!["execution".to_string()]).await
+        self.unsubscribe(vec![BybitWsPrivateChannel::Execution.as_ref().to_string()])
+            .await
     }
 
     /// Subscribes to position updates.
@@ -796,12 +895,14 @@ impl BybitWebSocketClient {
                 "Position subscription requires authentication".to_string(),
             ));
         }
-        self.subscribe(vec!["position".to_string()]).await
+        self.subscribe(vec![BybitWsPrivateChannel::Position.as_ref().to_string()])
+            .await
     }
 
     /// Unsubscribes from position updates.
     pub async fn unsubscribe_positions(&self) -> BybitWsResult<()> {
-        self.unsubscribe(vec!["position".to_string()]).await
+        self.unsubscribe(vec![BybitWsPrivateChannel::Position.as_ref().to_string()])
+            .await
     }
 
     /// Subscribes to wallet/balance updates.
@@ -819,12 +920,14 @@ impl BybitWebSocketClient {
                 "Wallet subscription requires authentication".to_string(),
             ));
         }
-        self.subscribe(vec!["wallet".to_string()]).await
+        self.subscribe(vec![BybitWsPrivateChannel::Wallet.as_ref().to_string()])
+            .await
     }
 
     /// Unsubscribes from wallet/balance updates.
     pub async fn unsubscribe_wallet(&self) -> BybitWsResult<()> {
-        self.unsubscribe(vec!["wallet".to_string()]).await
+        self.unsubscribe(vec![BybitWsPrivateChannel::Wallet.as_ref().to_string()])
+            .await
     }
 
     /// Places an order via WebSocket.
@@ -967,16 +1070,59 @@ impl BybitWebSocketClient {
             ));
         }
 
+        if orders.is_empty() {
+            return Ok(());
+        }
+
         if orders.len() > 20 {
             return Err(BybitWsError::ClientError(
                 "Batch order limit is 20 orders per request".to_string(),
             ));
         }
 
+        // Get category from first order (all orders in a batch must have same category)
+        let category = orders[0].category;
+
+        // Convert BybitWsPlaceOrderParams to BybitWsBatchPlaceItem (removing category field)
+        let request_items: Vec<BybitWsBatchPlaceItem> = orders
+            .into_iter()
+            .map(|order| BybitWsBatchPlaceItem {
+                symbol: order.symbol,
+                side: order.side,
+                order_type: order.order_type,
+                qty: order.qty,
+                market_unit: order.market_unit,
+                price: order.price,
+                time_in_force: order.time_in_force,
+                order_link_id: order.order_link_id,
+                reduce_only: order.reduce_only,
+                close_on_trigger: order.close_on_trigger,
+                trigger_price: order.trigger_price,
+                trigger_by: order.trigger_by,
+                trigger_direction: order.trigger_direction,
+                tpsl_mode: order.tpsl_mode,
+                take_profit: order.take_profit,
+                stop_loss: order.stop_loss,
+                tp_trigger_by: order.tp_trigger_by,
+                sl_trigger_by: order.sl_trigger_by,
+                sl_trigger_price: order.sl_trigger_price,
+                tp_trigger_price: order.tp_trigger_price,
+                sl_order_type: order.sl_order_type,
+                tp_order_type: order.tp_order_type,
+                sl_limit_price: order.sl_limit_price,
+                tp_limit_price: order.tp_limit_price,
+            })
+            .collect();
+
+        let args = BybitWsBatchPlaceOrderArgs {
+            category,
+            request: request_items,
+        };
+
         let request = BybitWsRequest {
             op: BybitWsOrderRequestOp::CreateBatch,
             header: BybitWsHeader::now(),
-            args: orders,
+            args: vec![args],
         };
 
         let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
@@ -1029,20 +1175,207 @@ impl BybitWebSocketClient {
             ));
         }
 
+        if orders.is_empty() {
+            return Ok(());
+        }
+
         if orders.len() > 20 {
             return Err(BybitWsError::ClientError(
                 "Batch cancel limit is 20 orders per request".to_string(),
             ));
         }
 
+        // Extract category from first order (all orders must have the same category)
+        let category = orders[0].category;
+
+        let request_items: Vec<BybitWsBatchCancelItem> = orders
+            .into_iter()
+            .map(|order| BybitWsBatchCancelItem {
+                symbol: order.symbol,
+                order_id: order.order_id,
+                order_link_id: order.order_link_id,
+            })
+            .collect();
+
+        let args = BybitWsBatchCancelOrderArgs {
+            category,
+            request: request_items,
+        };
+
         let request = BybitWsRequest {
             op: BybitWsOrderRequestOp::CancelBatch,
             header: BybitWsHeader::now(),
-            args: orders,
+            args: vec![args],
         };
 
         let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
         Self::send_text_inner(&self.inner, &payload).await
+    }
+
+    /// Builds order params for placing an order.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_place_order_params(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        post_only: Option<bool>,
+        reduce_only: Option<bool>,
+    ) -> BybitWsResult<BybitWsPlaceOrderParams> {
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+        let raw_symbol = Ustr::from(bybit_symbol.raw_symbol());
+
+        let bybit_side = match order_side {
+            OrderSide::Buy => BybitOrderSide::Buy,
+            OrderSide::Sell => BybitOrderSide::Sell,
+            _ => {
+                return Err(BybitWsError::ClientError(format!(
+                    "Invalid order side: {order_side:?}"
+                )));
+            }
+        };
+
+        let (bybit_order_type, is_stop_order) = match order_type {
+            OrderType::Market => (BybitOrderType::Market, false),
+            OrderType::Limit => (BybitOrderType::Limit, false),
+            OrderType::StopMarket | OrderType::MarketIfTouched => (BybitOrderType::Market, true),
+            OrderType::StopLimit | OrderType::LimitIfTouched => (BybitOrderType::Limit, true),
+            _ => {
+                return Err(BybitWsError::ClientError(format!(
+                    "Unsupported order type: {order_type:?}"
+                )));
+            }
+        };
+
+        let bybit_tif = if post_only == Some(true) {
+            Some(BybitTimeInForce::PostOnly)
+        } else if let Some(tif) = time_in_force {
+            Some(match tif {
+                TimeInForce::Gtc => BybitTimeInForce::Gtc,
+                TimeInForce::Ioc => BybitTimeInForce::Ioc,
+                TimeInForce::Fok => BybitTimeInForce::Fok,
+                _ => {
+                    return Err(BybitWsError::ClientError(format!(
+                        "Unsupported time in force: {tif:?}"
+                    )));
+                }
+            })
+        } else {
+            None
+        };
+
+        let market_unit = if product_type == BybitProductType::Spot
+            && bybit_order_type == BybitOrderType::Market
+        {
+            Some("baseCoin".to_string())
+        } else {
+            None
+        };
+
+        let params = if is_stop_order {
+            BybitWsPlaceOrderParams {
+                category: product_type,
+                symbol: raw_symbol,
+                side: bybit_side,
+                order_type: bybit_order_type,
+                qty: quantity.to_string(),
+                market_unit,
+                price: price.map(|p| p.to_string()),
+                time_in_force: if bybit_order_type == BybitOrderType::Market {
+                    None
+                } else {
+                    bybit_tif
+                },
+                order_link_id: Some(client_order_id.to_string()),
+                reduce_only: reduce_only.filter(|&r| r),
+                close_on_trigger: None,
+                trigger_price: trigger_price.map(|p| p.to_string()),
+                trigger_by: Some(BybitTriggerType::LastPrice),
+                trigger_direction: None,
+                tpsl_mode: None,
+                take_profit: None,
+                stop_loss: None,
+                tp_trigger_by: None,
+                sl_trigger_by: None,
+                sl_trigger_price: None,
+                tp_trigger_price: None,
+                sl_order_type: None,
+                tp_order_type: None,
+                sl_limit_price: None,
+                tp_limit_price: None,
+            }
+        } else {
+            BybitWsPlaceOrderParams {
+                category: product_type,
+                symbol: raw_symbol,
+                side: bybit_side,
+                order_type: bybit_order_type,
+                qty: quantity.to_string(),
+                market_unit,
+                price: price.map(|p| p.to_string()),
+                time_in_force: if bybit_order_type == BybitOrderType::Market {
+                    None
+                } else {
+                    bybit_tif
+                },
+                order_link_id: Some(client_order_id.to_string()),
+                reduce_only: reduce_only.filter(|&r| r),
+                close_on_trigger: None,
+                trigger_price: None,
+                trigger_by: None,
+                trigger_direction: None,
+                tpsl_mode: None,
+                take_profit: None,
+                stop_loss: None,
+                tp_trigger_by: None,
+                sl_trigger_by: None,
+                sl_trigger_price: None,
+                tp_trigger_price: None,
+                sl_order_type: None,
+                tp_order_type: None,
+                sl_limit_price: None,
+                tp_limit_price: None,
+            }
+        };
+
+        Ok(params)
+    }
+
+    /// Builds order params for amending an order.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_amend_order_params(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+        quantity: Option<Quantity>,
+        price: Option<Price>,
+    ) -> BybitWsResult<BybitWsAmendOrderParams> {
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+        let raw_symbol = Ustr::from(bybit_symbol.raw_symbol());
+
+        Ok(BybitWsAmendOrderParams {
+            category: product_type,
+            symbol: raw_symbol,
+            order_id: venue_order_id.map(|v| v.to_string()),
+            order_link_id: client_order_id.map(|c| c.to_string()),
+            qty: quantity.map(|q| q.to_string()),
+            price: price.map(|p| p.to_string()),
+            trigger_price: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+        })
     }
 
     /// Submits an order using Nautilus domain objects.
@@ -1111,6 +1444,16 @@ impl BybitWebSocketClient {
             None
         };
 
+        // For SPOT market orders, specify baseCoin to interpret qty as base currency.
+        // This ensures Nautilus quantities (always in base currency) are interpreted correctly.
+        let market_unit = if product_type == BybitProductType::Spot
+            && bybit_order_type == BybitOrderType::Market
+        {
+            Some("baseCoin".to_string())
+        } else {
+            None
+        };
+
         let params = if is_stop_order {
             // For conditional orders, ALL types use triggerPrice field
             // sl_trigger_price/tp_trigger_price are only for TP/SL attached to regular orders
@@ -1120,8 +1463,13 @@ impl BybitWebSocketClient {
                 side: bybit_side,
                 order_type: bybit_order_type,
                 qty: quantity.to_string(),
+                market_unit: market_unit.clone(),
                 price: price.map(|p| p.to_string()),
-                time_in_force: bybit_tif,
+                time_in_force: if bybit_order_type == BybitOrderType::Market {
+                    None
+                } else {
+                    bybit_tif
+                },
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,
@@ -1148,8 +1496,13 @@ impl BybitWebSocketClient {
                 side: bybit_side,
                 order_type: bybit_order_type,
                 qty: quantity.to_string(),
+                market_unit,
                 price: price.map(|p| p.to_string()),
-                time_in_force: bybit_tif,
+                time_in_force: if bybit_order_type == BybitOrderType::Market {
+                    None
+                } else {
+                    bybit_tif
+                },
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,
@@ -1234,12 +1587,419 @@ impl BybitWebSocketClient {
         self.cancel_order(params).await
     }
 
+    /// Batch cancels multiple orders using Nautilus domain objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if batch cancellation fails or if not authenticated.
+    pub async fn batch_cancel_orders_by_id(
+        &self,
+        product_type: BybitProductType,
+        instrument_ids: Vec<InstrumentId>,
+        venue_order_ids: Vec<Option<VenueOrderId>>,
+        client_order_ids: Vec<Option<ClientOrderId>>,
+    ) -> BybitWsResult<()> {
+        if instrument_ids.len() != venue_order_ids.len()
+            || instrument_ids.len() != client_order_ids.len()
+        {
+            return Err(BybitWsError::ClientError(
+                "instrument_ids, venue_order_ids, and client_order_ids must have the same length"
+                    .to_string(),
+            ));
+        }
+
+        let mut params_vec = Vec::new();
+
+        for ((instrument_id, venue_order_id), client_order_id) in instrument_ids
+            .into_iter()
+            .zip(venue_order_ids.into_iter())
+            .zip(client_order_ids.into_iter())
+        {
+            let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
+                .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+            let raw_symbol = Ustr::from(bybit_symbol.raw_symbol());
+
+            let params = BybitWsCancelOrderParams {
+                category: product_type,
+                symbol: raw_symbol,
+                order_id: venue_order_id.map(|id| id.to_string()),
+                order_link_id: client_order_id.map(|id| id.to_string()),
+            };
+
+            params_vec.push(params);
+        }
+
+        self.batch_cancel_orders(params_vec).await
+    }
+
     fn default_headers() -> Vec<(String, String)> {
         vec![
             ("Content-Type".to_string(), "application/json".to_string()),
             ("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string()),
             ("Referer".to_string(), BYBIT_NAUTILUS_BROKER_ID.to_string()),
         ]
+    }
+
+    /// Parses a Bybit WebSocket message into Nautilus domain messages.
+    ///
+    /// This method converts raw Bybit messages into fully-parsed Nautilus objects,
+    /// performing instrument lookups and data transformations as needed.
+    async fn parse_to_nautilus_messages(
+        msg: BybitWebSocketMessage,
+        instruments: &Arc<DashMap<InstrumentId, InstrumentAny>>,
+        account_id: Option<AccountId>,
+        product_type: Option<BybitProductType>,
+        quote_cache: &Arc<RwLock<cache::QuoteCache>>,
+        funding_cache: &FundingCache,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        let mut result = Vec::new();
+
+        match msg {
+            BybitWebSocketMessage::Orderbook(msg) => {
+                let raw_symbol = msg.data.s;
+                let symbol =
+                    product_type.map_or(raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
+
+                if let Some(instrument_entry) = instruments
+                    .iter()
+                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                {
+                    let instrument = instrument_entry.value();
+
+                    match parse_orderbook_deltas(&msg, instrument, ts_init) {
+                        Ok(deltas) => result.push(NautilusWsMessage::Deltas(deltas)),
+                        Err(e) => tracing::error!("Error parsing orderbook deltas: {e}"),
+                    }
+                } else {
+                    tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
+                }
+            }
+            BybitWebSocketMessage::Trade(msg) => {
+                let mut data_vec = Vec::new();
+                for trade in &msg.data {
+                    let raw_symbol = trade.s;
+                    let symbol =
+                        product_type.map_or(raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
+
+                    if let Some(instrument_entry) = instruments
+                        .iter()
+                        .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                    {
+                        let instrument = instrument_entry.value();
+
+                        match parse_ws_trade_tick(trade, instrument, ts_init) {
+                            Ok(tick) => data_vec.push(Data::Trade(tick)),
+                            Err(e) => tracing::error!("Error parsing trade tick: {e}"),
+                        }
+                    } else {
+                        tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
+                    }
+                }
+                if !data_vec.is_empty() {
+                    result.push(NautilusWsMessage::Data(data_vec));
+                }
+            }
+            BybitWebSocketMessage::TickerLinear(msg) => {
+                let raw_symbol = msg.data.symbol;
+                let symbol =
+                    product_type.map_or(raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
+
+                if let Some(instrument_entry) = instruments
+                    .iter()
+                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                {
+                    let instrument = instrument_entry.value();
+                    let instrument_id = instrument.id();
+                    let ts_event = parse_millis_i64(msg.ts, "ticker.ts").unwrap_or(ts_init);
+
+                    match quote_cache.write().await.process_linear_ticker(
+                        &msg.data,
+                        instrument_id,
+                        instrument,
+                        ts_event,
+                        ts_init,
+                    ) {
+                        Ok(quote) => result.push(NautilusWsMessage::Data(vec![Data::Quote(quote)])),
+                        Err(e) => {
+                            let raw_data = serde_json::to_string(&msg.data)
+                                .unwrap_or_else(|_| "<failed to serialize>".to_string());
+                            tracing::debug!(
+                                "Skipping partial ticker update: {e}, raw_data: {raw_data}"
+                            );
+                        }
+                    }
+
+                    // Extract funding rate if available
+                    if msg.data.funding_rate.is_some() && msg.data.next_funding_time.is_some() {
+                        let cache_key = (
+                            msg.data.funding_rate.clone(),
+                            msg.data.next_funding_time.clone(),
+                        );
+
+                        let should_publish = {
+                            let cache = funding_cache.read().await;
+                            cache.get(&symbol) != Some(&cache_key)
+                        };
+
+                        if should_publish {
+                            match parse_ticker_linear_funding(
+                                &msg.data,
+                                instrument_id,
+                                ts_event,
+                                ts_init,
+                            ) {
+                                Ok(funding) => {
+                                    funding_cache.write().await.insert(symbol, cache_key);
+                                    result.push(NautilusWsMessage::FundingRates(vec![funding]));
+                                }
+                                Err(e) => {
+                                    tracing::debug!("Skipping funding rate update: {e}");
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
+                }
+            }
+            BybitWebSocketMessage::TickerOption(msg) => {
+                let raw_symbol = &msg.data.symbol;
+                let symbol = product_type.map_or_else(
+                    || raw_symbol.as_str().into(),
+                    |pt| make_bybit_symbol(raw_symbol, pt),
+                );
+
+                if let Some(instrument_entry) = instruments
+                    .iter()
+                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                {
+                    let instrument = instrument_entry.value();
+                    let instrument_id = instrument.id();
+                    let ts_event = parse_millis_i64(msg.ts, "ticker.ts").unwrap_or(ts_init);
+
+                    match quote_cache.write().await.process_option_ticker(
+                        &msg.data,
+                        instrument_id,
+                        instrument,
+                        ts_event,
+                        ts_init,
+                    ) {
+                        Ok(quote) => result.push(NautilusWsMessage::Data(vec![Data::Quote(quote)])),
+                        Err(e) => {
+                            let raw_data = serde_json::to_string(&msg.data)
+                                .unwrap_or_else(|_| "<failed to serialize>".to_string());
+                            tracing::debug!(
+                                "Skipping partial ticker update: {e}, raw_data: {raw_data}"
+                            );
+                        }
+                    }
+                } else {
+                    tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
+                }
+            }
+            BybitWebSocketMessage::Kline(msg) => {
+                let (interval_str, raw_symbol) = match parse_kline_topic(&msg.topic) {
+                    Ok(parts) => parts,
+                    Err(e) => {
+                        tracing::warn!("Failed to parse kline topic: {e}");
+                        return result;
+                    }
+                };
+
+                let symbol = product_type
+                    .map_or_else(|| raw_symbol.into(), |pt| make_bybit_symbol(raw_symbol, pt));
+
+                if let Some(instrument_entry) = instruments
+                    .iter()
+                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                {
+                    let instrument = instrument_entry.value();
+
+                    let (step, aggregation) = match interval_str.parse::<usize>() {
+                        Ok(minutes) if minutes > 0 => (minutes, BarAggregation::Minute),
+                        _ => {
+                            tracing::warn!("Unsupported kline interval: {}", interval_str);
+                            return result;
+                        }
+                    };
+
+                    if let Some(non_zero_step) = NonZero::new(step) {
+                        let bar_spec = BarSpecification {
+                            step: non_zero_step,
+                            aggregation,
+                            price_type: PriceType::Last,
+                        };
+                        let bar_type =
+                            BarType::new(instrument.id(), bar_spec, AggregationSource::External);
+
+                        let mut data_vec = Vec::new();
+                        for kline in &msg.data {
+                            // Only process confirmed bars (not partial/building bars)
+                            if !kline.confirm {
+                                continue;
+                            }
+                            match parse_ws_kline_bar(kline, instrument, bar_type, false, ts_init) {
+                                Ok(bar) => data_vec.push(Data::Bar(bar)),
+                                Err(e) => tracing::error!("Error parsing kline to bar: {e}"),
+                            }
+                        }
+                        if !data_vec.is_empty() {
+                            result.push(NautilusWsMessage::Data(data_vec));
+                        }
+                    } else {
+                        tracing::error!("Invalid step value: {}", step);
+                    }
+                } else {
+                    tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
+                }
+            }
+            BybitWebSocketMessage::AccountOrder(msg) => {
+                if let Some(account_id) = account_id {
+                    let mut reports = Vec::new();
+                    for order in &msg.data {
+                        let raw_symbol = order.symbol;
+                        let symbol = make_bybit_symbol(raw_symbol, order.category);
+
+                        if let Some(instrument_entry) = instruments
+                            .iter()
+                            .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                        {
+                            let instrument = instrument_entry.value();
+
+                            match parse_ws_order_status_report(
+                                order, instrument, account_id, ts_init,
+                            ) {
+                                Ok(report) => reports.push(report),
+                                Err(e) => tracing::error!("Error parsing order status report: {e}"),
+                            }
+                        } else {
+                            tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
+                        }
+                    }
+                    if !reports.is_empty() {
+                        result.push(NautilusWsMessage::OrderStatusReports(reports));
+                    }
+                } else {
+                    tracing::error!("Received AccountOrder message but account_id is not set");
+                }
+            }
+            BybitWebSocketMessage::AccountExecution(msg) => {
+                if let Some(account_id) = account_id {
+                    let mut reports = Vec::new();
+                    for execution in &msg.data {
+                        let raw_symbol = execution.symbol;
+                        let symbol = make_bybit_symbol(raw_symbol, execution.category);
+
+                        if let Some(instrument_entry) = instruments
+                            .iter()
+                            .find(|e| e.key().symbol.as_str() == symbol.as_str())
+                        {
+                            let instrument = instrument_entry.value();
+
+                            match parse_ws_fill_report(execution, account_id, instrument, ts_init) {
+                                Ok(report) => reports.push(report),
+                                Err(e) => tracing::error!("Error parsing fill report: {e}"),
+                            }
+                        } else {
+                            tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
+                        }
+                    }
+                    if !reports.is_empty() {
+                        result.push(NautilusWsMessage::FillReports(reports));
+                    }
+                } else {
+                    tracing::error!("Received AccountExecution message but account_id is not set");
+                }
+            }
+            BybitWebSocketMessage::AccountWallet(msg) => {
+                if let Some(account_id) = account_id {
+                    for wallet in &msg.data {
+                        let ts_event = UnixNanos::from(msg.creation_time as u64 * 1_000_000);
+
+                        match parse_ws_account_state(wallet, account_id, ts_event, ts_init) {
+                            Ok(state) => result.push(NautilusWsMessage::AccountState(state)),
+                            Err(e) => tracing::error!("Error parsing account state: {e}"),
+                        }
+                    }
+                } else {
+                    tracing::error!("Received AccountWallet message but account_id is not set");
+                }
+            }
+            BybitWebSocketMessage::AccountPosition(msg) => {
+                if let Some(account_id) = account_id {
+                    for position in &msg.data {
+                        let raw_symbol = position.symbol;
+
+                        if let Some(instrument_entry) = instruments.iter().find(|e| {
+                            let inst_symbol = e.key().symbol.as_str();
+                            inst_symbol.starts_with(raw_symbol.as_str())
+                                && inst_symbol.len() > raw_symbol.len()
+                                && inst_symbol.as_bytes().get(raw_symbol.len()) == Some(&b'-')
+                        }) {
+                            let instrument = instrument_entry.value();
+
+                            match parse_ws_position_status_report(
+                                position, account_id, instrument, ts_init,
+                            ) {
+                                Ok(report) => {
+                                    result.push(NautilusWsMessage::PositionStatusReport(report));
+                                }
+                                Err(e) => {
+                                    tracing::error!("Error parsing position status report: {e}");
+                                }
+                            }
+                        } else {
+                            tracing::warn!(raw_symbol = %raw_symbol, "No instrument found for symbol");
+                        }
+                    }
+                } else {
+                    tracing::error!("Received AccountPosition message but account_id is not set");
+                }
+            }
+            BybitWebSocketMessage::OrderResponse(resp) => {
+                if resp.ret_code == 0 {
+                    tracing::debug!(op = %resp.op, ret_msg = %resp.ret_msg, "Order operation successful");
+                } else {
+                    // Create structured error with operation context
+                    // Note: Full rejection events (OrderRejected/OrderCancelRejected/OrderModifyRejected)
+                    // require trader_id and strategy_id which are not available in WebSocket context.
+                    // The Python layer should handle these responses and create appropriate events.
+                    let operation_type = if resp.op.contains("create") {
+                        "order submission"
+                    } else if resp.op.contains("cancel") {
+                        "order cancellation"
+                    } else if resp.op.contains("amend") {
+                        "order modification"
+                    } else {
+                        "order operation"
+                    };
+
+                    tracing::warn!(
+                        op = %resp.op,
+                        ret_code = resp.ret_code,
+                        ret_msg = %resp.ret_msg,
+                        "Order operation failed: {} rejected", operation_type
+                    );
+
+                    let error_msg = format!(
+                        "Bybit {} failed: {} (code: {})",
+                        operation_type, resp.ret_msg, resp.ret_code
+                    );
+                    let error = BybitWebSocketError::new(resp.ret_code, error_msg);
+                    result.push(NautilusWsMessage::Error(error));
+                }
+            }
+            BybitWebSocketMessage::Error(err) => {
+                result.push(NautilusWsMessage::Error(err));
+            }
+            BybitWebSocketMessage::Reconnected => {
+                result.push(NautilusWsMessage::Reconnected);
+            }
+            _ => {} // Ignore other message types (pong, auth, subscription confirmations, etc.)
+        }
+
+        result
     }
 
     async fn authenticate_if_required(&self) -> BybitWsResult<()> {
@@ -1415,6 +2175,7 @@ impl BybitWebSocketClient {
                                     // Clear from pending_unsubscribe and restore to confirmed
                                     for topic in pending_topics {
                                         subscriptions.confirm_unsubscribe(&topic); // Clear from pending_unsubscribe
+                                        subscriptions.mark_subscribe(&topic); // Mark as subscribing
                                         subscriptions.confirm_subscribe(&topic); // Restore to confirmed
                                         tracing::warn!(
                                             topic = topic,
@@ -1498,6 +2259,20 @@ impl BybitWebSocketClient {
             }
         }
 
+        // Check for order operation responses (order.create, order.amend, order.cancel)
+        if let Some(op) = value.get("op").and_then(Value::as_str)
+            && op.starts_with("order.")
+            && let Ok(order_resp) = serde_json::from_value::<BybitWsOrderResponse>(value.clone())
+        {
+            // Check ret_code to determine success or failure
+            if order_resp.ret_code == 0 {
+                return Some(BybitWebSocketMessage::OrderResponse(order_resp));
+            }
+            // Convert failed order response to error
+            let error = BybitWebSocketError::new(order_resp.ret_code, order_resp.ret_msg);
+            return Some(BybitWebSocketMessage::Error(error));
+        }
+
         if (value.get("ret_code").is_some() || value.get("retCode").is_some())
             && let Ok(resp) = serde_json::from_value::<BybitWsResponse>(value.clone())
         {
@@ -1528,43 +2303,69 @@ impl BybitWebSocketClient {
         }
 
         if let Some(topic) = value.get("topic").and_then(Value::as_str) {
-            if topic.starts_with("orderbook") {
+            let orderbook_channel = BybitWsPublicChannel::OrderBook.as_ref();
+            let public_trade_channel = BybitWsPublicChannel::PublicTrade.as_ref();
+            let trade_channel = BybitWsPublicChannel::Trade.as_ref();
+            let kline_channel = BybitWsPublicChannel::Kline.as_ref();
+            let tickers_channel = BybitWsPublicChannel::Tickers.as_ref();
+            let order_channel = BybitWsPrivateChannel::Order.as_ref();
+            let execution_channel = BybitWsPrivateChannel::Execution.as_ref();
+            let wallet_channel = BybitWsPrivateChannel::Wallet.as_ref();
+            let position_channel = BybitWsPrivateChannel::Position.as_ref();
+
+            if topic.starts_with(orderbook_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsOrderbookDepthMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::Orderbook(msg));
                 }
-            } else if topic.contains("publicTrade") || topic.starts_with("trade") {
+            } else if topic.contains(public_trade_channel) || topic.starts_with(trade_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsTradeMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::Trade(msg));
                 }
-            } else if topic.contains("kline") {
+            } else if topic.contains(kline_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsKlineMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::Kline(msg));
                 }
-            } else if topic.contains("tickers") {
+            } else if topic.contains(tickers_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsTickerOptionMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::TickerOption(msg));
                 }
                 if let Ok(msg) = serde_json::from_value::<BybitWsTickerLinearMsg>(value.clone()) {
                     return Some(BybitWebSocketMessage::TickerLinear(msg));
                 }
-            } else if topic == "order" || topic.starts_with("order.") {
+            } else if topic == order_channel
+                || topic
+                    .strip_prefix(order_channel)
+                    .is_some_and(|s| s.starts_with('.'))
+            {
                 match serde_json::from_value::<BybitWsAccountOrderMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountOrder(msg)),
                     Err(e) => tracing::warn!("Failed to deserialize order message: {e}\n{value}"),
                 }
-            } else if topic == "execution" || topic.starts_with("execution.") {
+            } else if topic == execution_channel
+                || topic
+                    .strip_prefix(execution_channel)
+                    .is_some_and(|s| s.starts_with('.'))
+            {
                 match serde_json::from_value::<BybitWsAccountExecutionMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountExecution(msg)),
                     Err(e) => {
                         tracing::warn!("Failed to deserialize execution message: {e}\n{value}");
                     }
                 }
-            } else if topic == "wallet" || topic.starts_with("wallet.") {
+            } else if topic == wallet_channel
+                || topic
+                    .strip_prefix(wallet_channel)
+                    .is_some_and(|s| s.starts_with('.'))
+            {
                 match serde_json::from_value::<BybitWsAccountWalletMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountWallet(msg)),
                     Err(e) => tracing::warn!("Failed to deserialize wallet message: {e}\n{value}"),
                 }
-            } else if topic == "position" || topic.starts_with("position.") {
+            } else if topic == position_channel
+                || topic
+                    .strip_prefix(position_channel)
+                    .is_some_and(|s| s.starts_with('.'))
+            {
                 match serde_json::from_value::<BybitWsAccountPositionMsg>(value.clone()) {
                     Ok(msg) => return Some(BybitWebSocketMessage::AccountPosition(msg)),
                     Err(e) => {
@@ -1680,5 +2481,171 @@ mod tests {
         let message =
             BybitWebSocketClient::classify_message(&json).expect("expected ticker message");
         assert!(matches!(message, BybitWebSocketMessage::TickerOption(_)));
+    }
+
+    #[rstest]
+    fn test_race_unsubscribe_failure_recovery() {
+        // Simulates the race condition where venue rejects an unsubscribe request.
+        // The adapter must perform the 3-step recovery:
+        // 1. confirm_unsubscribe() - clear pending_unsubscribe
+        // 2. mark_subscribe() - mark as subscribing again
+        // 3. confirm_subscribe() - restore to confirmed state
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        let topic = "publicTrade.BTCUSDT";
+
+        // Initial subscribe flow
+        subscriptions.mark_subscribe(topic);
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+
+        // User unsubscribes
+        subscriptions.mark_unsubscribe(topic);
+        assert_eq!(subscriptions.len(), 0);
+        assert_eq!(subscriptions.pending_unsubscribe_topics(), vec![topic]);
+
+        // Venue REJECTS the unsubscribe (error message)
+        // Adapter must perform 3-step recovery (from lines 2181-2183)
+        subscriptions.confirm_unsubscribe(topic); // Step 1: clear pending_unsubscribe
+        subscriptions.mark_subscribe(topic); // Step 2: mark as subscribing
+        subscriptions.confirm_subscribe(topic); // Step 3: confirm subscription
+
+        // Verify recovery: topic should be back in confirmed state
+        assert_eq!(subscriptions.len(), 1);
+        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+
+        // Verify topic is in all_topics() for reconnect
+        let all = subscriptions.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic.to_string()));
+    }
+
+    #[rstest]
+    fn test_race_resubscribe_before_unsubscribe_ack() {
+        // Simulates: User unsubscribes, then immediately resubscribes before
+        // the unsubscribe ACK arrives from the venue.
+        // This is the race condition fixed in the subscription tracker.
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        let topic = "orderbook.50.BTCUSDT";
+
+        // Initial subscribe
+        subscriptions.mark_subscribe(topic);
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+
+        // User unsubscribes
+        subscriptions.mark_unsubscribe(topic);
+        assert_eq!(subscriptions.len(), 0);
+        assert_eq!(subscriptions.pending_unsubscribe_topics(), vec![topic]);
+
+        // User immediately changes mind and resubscribes (before unsubscribe ACK)
+        subscriptions.mark_subscribe(topic);
+        assert_eq!(subscriptions.pending_subscribe_topics(), vec![topic]);
+
+        // NOW the unsubscribe ACK arrives - should NOT clear pending_subscribe
+        subscriptions.confirm_unsubscribe(topic);
+        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert_eq!(subscriptions.pending_subscribe_topics(), vec![topic]); // CRITICAL
+
+        // Subscribe ACK arrives
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+
+        // Verify final state is correct
+        let all = subscriptions.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic.to_string()));
+    }
+
+    #[rstest]
+    fn test_race_late_subscribe_confirmation_after_unsubscribe() {
+        // Simulates: User subscribes, then unsubscribes before subscribe ACK arrives.
+        // The late subscribe ACK should be ignored.
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        let topic = "tickers.ETHUSDT";
+
+        // User subscribes
+        subscriptions.mark_subscribe(topic);
+        assert_eq!(subscriptions.pending_subscribe_topics(), vec![topic]);
+
+        // User immediately unsubscribes (before subscribe ACK)
+        subscriptions.mark_unsubscribe(topic);
+        assert!(subscriptions.pending_subscribe_topics().is_empty()); // Cleared
+        assert_eq!(subscriptions.pending_unsubscribe_topics(), vec![topic]);
+
+        // Late subscribe confirmation arrives - should be IGNORED
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 0); // Not added to confirmed
+        assert_eq!(subscriptions.pending_unsubscribe_topics(), vec![topic]);
+
+        // Unsubscribe ACK arrives
+        subscriptions.confirm_unsubscribe(topic);
+
+        // Final state: completely empty
+        assert!(subscriptions.is_empty());
+        assert!(subscriptions.all_topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_race_reconnection_with_pending_states() {
+        // Simulates reconnection with mixed pending states.
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        // Set up mixed state before reconnection
+        // Confirmed: publicTrade.BTCUSDT
+        let trade_btc = "publicTrade.BTCUSDT";
+        subscriptions.mark_subscribe(trade_btc);
+        subscriptions.confirm_subscribe(trade_btc);
+
+        // Pending subscribe: publicTrade.ETHUSDT
+        let trade_eth = "publicTrade.ETHUSDT";
+        subscriptions.mark_subscribe(trade_eth);
+
+        // Pending unsubscribe: orderbook.50.BTCUSDT (user cancelled)
+        let book_btc = "orderbook.50.BTCUSDT";
+        subscriptions.mark_subscribe(book_btc);
+        subscriptions.confirm_subscribe(book_btc);
+        subscriptions.mark_unsubscribe(book_btc);
+
+        // Get topics for reconnection
+        let topics_to_restore = subscriptions.all_topics();
+
+        // Should include: confirmed + pending_subscribe (NOT pending_unsubscribe)
+        assert_eq!(topics_to_restore.len(), 2);
+        assert!(topics_to_restore.contains(&trade_btc.to_string()));
+        assert!(topics_to_restore.contains(&trade_eth.to_string()));
+        assert!(!topics_to_restore.contains(&book_btc.to_string())); // Excluded
+    }
+
+    #[rstest]
+    fn test_race_duplicate_subscribe_messages_idempotent() {
+        // Simulates duplicate subscribe requests (e.g., from reconnection logic).
+        // The subscription tracker should be idempotent and not create duplicate state.
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER); // Bybit uses dot delimiter
+
+        let topic = "publicTrade.BTCUSDT";
+
+        // Subscribe and confirm
+        subscriptions.mark_subscribe(topic);
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+
+        // Duplicate mark_subscribe on already-confirmed topic (should be no-op)
+        subscriptions.mark_subscribe(topic);
+        assert!(subscriptions.pending_subscribe_topics().is_empty()); // Not re-added
+        assert_eq!(subscriptions.len(), 1); // Still just 1
+
+        // Duplicate confirm_subscribe (should be idempotent)
+        subscriptions.confirm_subscribe(topic);
+        assert_eq!(subscriptions.len(), 1);
+
+        // Verify final state
+        let all = subscriptions.all_topics();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0], topic);
     }
 }

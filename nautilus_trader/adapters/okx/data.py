@@ -19,7 +19,10 @@ from typing import Any
 from nautilus_trader.adapters.okx.config import OKXDataClientConfig
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
+from nautilus_trader.adapters.okx.types import OKX_INSTRUMENT_TYPES
+from nautilus_trader.adapters.okx.types import OkxInstrument
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.transformers import transform_instrument_from_pyo3
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
@@ -44,6 +47,8 @@ from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
@@ -128,6 +133,8 @@ class OKXDataClient(LiveMarketDataClient):
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.vip_level=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -239,7 +246,7 @@ class OKXDataClient(LiveMarketDataClient):
         # price and size precisions when parsing responses
         instruments_pyo3 = self.instrument_provider.instruments_pyo3()
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
+            self._http_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -253,10 +260,15 @@ class OKXDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
-        pass  # Automatically subscribes for instruments websocket channel
+        # The WebSocket client subscribes per instrument type, so this is handled automatically
+        # when the client connects based on the configured instrument types
+        pass
 
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
-        pass  # Automatically subscribes for instruments websocket channel
+        # OKX instruments channel doesn't support subscribing to individual instruments via instId
+        # Instead, subscribe to the instrument type if not already subscribed
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_instrument(pyo3_instrument_id)
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
@@ -393,6 +405,19 @@ class OKXDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
 
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
+        # OKX instruments channel is subscribed at the type level, not per instrument
+        # Unsubscribing would affect all instruments of that type, which is not desirable
+        pass
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        # OKX instruments channel doesn't support unsubscribing from individual instruments
+        # The subscription is at the type level (SPOT, SWAP, etc.)
+        self._log.debug(
+            f"Cannot unsubscribe from individual instrument {command.instrument_id}, "
+            "instruments channel is type-level only",
+        )
+
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
@@ -504,6 +529,7 @@ class OKXDataClient(LiveMarketDataClient):
     def _handle_msg(self, msg: Any) -> None:
         if isinstance(msg, nautilus_pyo3.OKXWebSocketError):
             self._log.error(repr(msg))
+            return
 
         try:
             if nautilus_pyo3.is_pycapsule(msg):
@@ -512,9 +538,24 @@ class OKXDataClient(LiveMarketDataClient):
                 # to `Data` is still owned and managed by Rust.
                 data = capsule_to_data(msg)
                 self._handle_data(data)
+            elif isinstance(msg, OKX_INSTRUMENT_TYPES):
+                self._handle_instrument_update(msg)
             elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
                 self._handle_data(FundingRateUpdate.from_pyo3(msg))
             else:
                 self._log.error(f"Cannot handle message {msg}, not implemented")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
+
+    def _handle_instrument_update(self, pyo3_instrument: OkxInstrument) -> None:
+        self._http_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        if self._ws_client is not None:
+            self._ws_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        if self._ws_business_client is not None:
+            self._ws_business_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        instrument = transform_instrument_from_pyo3(pyo3_instrument)
+
+        self._handle_data(instrument)

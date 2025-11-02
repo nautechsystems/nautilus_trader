@@ -40,6 +40,8 @@ pub const OKX_WS_DEMO_PUBLIC_URL: &str = "wss://wspap.okx.com:8443/ws/v5/public"
 pub const OKX_WS_DEMO_PRIVATE_URL: &str = "wss://wspap.okx.com:8443/ws/v5/private";
 pub const OKX_WS_DEMO_BUSINESS_URL: &str = "wss://wspap.okx.com:8443/ws/v5/business";
 
+pub const OKX_WS_TOPIC_DELIMITER: char = ':';
+
 /// OKX supported order time in force for market orders.
 ///
 /// # Notes

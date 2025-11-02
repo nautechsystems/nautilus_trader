@@ -1263,7 +1263,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             venue_order_id=venue_order_id,
             venue_position_id=None,  # Not applicable on Polymarket
             trade_id=trade_id,
-            order_side=msg.order_side(),
+            order_side=order.side,
             order_type=order.order_type,
             last_qty=last_qty,
             last_px=last_px,

@@ -36,3 +36,5 @@ pub const BYBIT_WS_PRIVATE_URL: &str = "wss://stream.bybit.com/v5/private";
 
 pub const BYBIT_WS_TESTNET_PUBLIC_URL: &str = "wss://stream-testnet.bybit.com/v5/public/linear";
 pub const BYBIT_WS_TESTNET_PRIVATE_URL: &str = "wss://stream-testnet.bybit.com/v5/private";
+
+pub const BYBIT_WS_TOPIC_DELIMITER: char = '.';

@@ -89,6 +89,7 @@ nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
 iai = { workspace = true }
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
 tracing-test = { workspace = true }
 url = { workspace = true }
 axum = { workspace = true }

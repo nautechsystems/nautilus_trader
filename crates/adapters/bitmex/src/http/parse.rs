@@ -19,11 +19,8 @@ use std::str::FromStr;
 
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     data::{Bar, BarType, TradeTick},
-    enums::{
-        ContingencyType, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
-    },
+    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -198,8 +195,8 @@ pub fn parse_spot_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
-    let base_currency = get_currency(definition.underlying.to_uppercase());
-    let quote_currency = get_currency(definition.quote_currency.to_uppercase());
+    let base_currency = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
 
     let price_increment = Price::from(definition.tick_size.to_string());
 
@@ -289,9 +286,9 @@ pub fn parse_perpetual_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
-    let base_currency = get_currency(definition.underlying.to_uppercase());
-    let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
+    let base_currency = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
+    let settlement_currency = get_currency(&definition.settl_currency.as_ref().map_or_else(
         || definition.quote_currency.to_uppercase(),
         |s| s.to_uppercase(),
     ));
@@ -384,9 +381,9 @@ pub fn parse_futures_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
-    let underlying = get_currency(definition.underlying.to_uppercase());
-    let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
+    let underlying = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
+    let settlement_currency = get_currency(&definition.settl_currency.as_ref().map_or_else(
         || definition.quote_currency.to_uppercase(),
         |s| s.to_uppercase(),
     ));
@@ -923,14 +920,12 @@ pub fn parse_position_report(
     ))
 }
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
-fn get_currency(code: String) -> Currency {
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .get(&code)
-        .copied()
-        .unwrap_or(Currency::new(&code, 8, 0, &code, CurrencyType::Crypto))
+/// Returns a currency from the internal map or creates a new crypto currency.
+///
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed BitMEX assets.
+fn get_currency(code: &str) -> Currency {
+    Currency::get_or_create_crypto(code)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

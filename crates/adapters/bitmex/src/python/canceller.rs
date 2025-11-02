@@ -43,7 +43,8 @@ impl CancelBroadcaster {
         health_check_interval_secs=30,
         health_check_timeout_secs=5,
         expected_reject_patterns=None,
-        idempotent_success_patterns=None
+        idempotent_success_patterns=None,
+        proxy_urls=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
@@ -63,6 +64,7 @@ impl CancelBroadcaster {
         health_check_timeout_secs: u64,
         expected_reject_patterns: Option<Vec<String>>,
         idempotent_success_patterns: Option<Vec<String>>,
+        proxy_urls: Option<Vec<Option<String>>>,
     ) -> PyResult<Self> {
         let config = CancelBroadcasterConfig {
             pool_size,
@@ -83,9 +85,17 @@ impl CancelBroadcaster {
                 .unwrap_or_else(|| CancelBroadcasterConfig::default().expected_reject_patterns),
             idempotent_success_patterns: idempotent_success_patterns
                 .unwrap_or_else(|| CancelBroadcasterConfig::default().idempotent_success_patterns),
+            proxy_urls: proxy_urls.unwrap_or_default(),
         };
 
         Self::new(config).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+        let inst_any = pyobject_to_instrument_any(py, instrument)?;
+        self.add_instrument(inst_any); // Calls trait method which delegates to cache_instrument
+        Ok(())
     }
 
     #[pyo3(name = "start")]
@@ -211,12 +221,5 @@ impl CancelBroadcaster {
             list.append(dict)?;
         }
         Ok(list.into())
-    }
-
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
-        let inst_any = pyobject_to_instrument_any(py, instrument)?;
-        self.add_instrument(inst_any);
-        Ok(())
     }
 }

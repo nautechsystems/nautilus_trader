@@ -159,10 +159,10 @@ def mock_http_client():
     mock.api_passphrase = "test_passphrase"
 
     mock.request_instruments = AsyncMock(return_value=[])
-    mock.add_instrument = MagicMock()
+    mock.cache_instrument = MagicMock()
     mock.cancel_all_requests = MagicMock()
     mock.is_initialized = MagicMock(return_value=True)
-    mock.http_get_server_time = AsyncMock(return_value=1234567890000)
+    mock.get_server_time = AsyncMock(return_value=1234567890000)
 
     mock_account_state = MagicMock()
     mock_account_state.to_dict = MagicMock(
@@ -205,6 +205,8 @@ def _create_ws_mock() -> MagicMock:
     mock.wait_until_active = AsyncMock()
     mock.close = AsyncMock()
     mock.subscribe_instruments = AsyncMock()
+    mock.subscribe_instrument = AsyncMock()
+    mock.cache_instruments = MagicMock()
     mock.subscribe_book = AsyncMock()
     mock.subscribe_book50_l2_tbt = AsyncMock()
     mock.subscribe_book_l2_tbt = AsyncMock()

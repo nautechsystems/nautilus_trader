@@ -71,7 +71,7 @@ async def main():
                 api_key=None,  # 'BYBIT_API_KEY' env var
                 api_secret=None,  # 'BYBIT_API_SECRET' env var
                 instrument_provider=instrument_provider_config,
-                product_types=[BybitProductType.LINEAR],
+                product_types=(BybitProductType.LINEAR,),
                 testnet=False,  # If client uses the testnet
             ),
         },

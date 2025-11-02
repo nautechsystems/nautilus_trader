@@ -149,6 +149,7 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | `subscription_delay_secs` | `3`       | Delay (seconds) before initial market subscription request is sent. |
 | `keep_alive_secs`         | `36,000`  | Keep-alive interval (seconds) for the Betfair session. |
 | `stream_conflate_ms`      | `None`    | Explicit stream conflation interval in milliseconds (`0` disables conflation). |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP requests. |
 
 ### Execution client configuration options
 
@@ -164,6 +165,7 @@ Betfair operates as a betting exchange with unique characteristics compared to t
 | `request_account_state_secs` | `300`    | Interval (seconds) to poll Betfair for account state (`0` disables). |
 | `reconcile_market_ids_only`  | `False`  | When `True`, reconciliation requests only cover configured market IDs. |
 | `ignore_external_orders`     | `False`  | When `True`, ignore stream orders missing from the local cache. |
+| `proxy_url`                  | `None`   | Optional proxy URL for HTTP requests. |
 
 Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
 

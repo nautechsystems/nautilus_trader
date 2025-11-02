@@ -69,6 +69,18 @@ from nautilus_trader.core.rust.common import LogColor
 class BetfairHttpClient:
     """
     Provides a HTTP client for Betfair.
+
+    Parameters
+    ----------
+    username : str
+        The Betfair account username.
+    password : str
+        The Betfair account password.
+    app_key : str
+        The Betfair application key.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
+
     """
 
     def __init__(
@@ -76,6 +88,7 @@ class BetfairHttpClient:
         username: str,
         password: str,
         app_key: str,
+        proxy_url: str | None = None,
     ) -> None:
         # Config
         self.username = username
@@ -83,7 +96,7 @@ class BetfairHttpClient:
         self.app_key = app_key
 
         # Client
-        self._client = HttpClient()
+        self._client = HttpClient(proxy_url=proxy_url)
         self._headers: dict[str, str] = {}
         self._log = Logger(name=type(self).__name__)
         self.reset_headers()

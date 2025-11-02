@@ -93,6 +93,7 @@ impl OKXExecutionClient {
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.is_demo,
+                config.http_proxy_url.clone(),
             )?
         } else {
             OKXHttpClient::new(
@@ -102,6 +103,7 @@ impl OKXExecutionClient {
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.is_demo,
+                config.http_proxy_url.clone(),
             )?
         };
 
@@ -181,7 +183,7 @@ impl OKXExecutionClient {
                 continue;
             }
 
-            self.http_client.add_instruments(instruments.clone());
+            self.http_client.cache_instruments(instruments.clone());
             all_instruments.extend(instruments);
         }
 
@@ -190,7 +192,7 @@ impl OKXExecutionClient {
                 "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
             );
         } else {
-            self.ws_client.initialize_instruments_cache(all_instruments);
+            self.ws_client.cache_instruments(all_instruments);
         }
 
         self.instruments_initialized = true;
@@ -403,6 +405,8 @@ impl ExecutionClient for OKXExecutionClient {
             instrument_types = ?self.config.instrument_types,
             use_fills_channel = self.config.use_fills_channel,
             is_demo = self.config.is_demo,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
             "OKX execution client started"
         );
         Ok(())

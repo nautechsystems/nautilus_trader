@@ -58,8 +58,8 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{
-        PingHandler, TEXT_PING, TEXT_PONG, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, TEXT_PING,
+        TEXT_PONG, WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
 use reqwest::header::USER_AGENT;
@@ -70,7 +70,6 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    auth::{AUTHENTICATION_TIMEOUT_SECS, AuthTracker},
     enums::{OKXSubscriptionEvent, OKXWsChannel, OKXWsOperation},
     error::OKXWsError,
     messages::{
@@ -82,14 +81,14 @@ use super::{
         WsPostOrderParamsBuilder,
     },
     parse::{parse_book_msg_vec, parse_ws_message_data},
-    subscription::{SubscriptionState, topic_from_subscription_arg, topic_from_websocket_arg},
+    subscription::{topic_from_subscription_arg, topic_from_websocket_arg},
 };
 use crate::{
     common::{
         consts::{
             OKX_NAUTILUS_BROKER_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE,
             OKX_POST_ONLY_ERROR_CODE, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
-            OKX_WS_PUBLIC_URL, should_retry_error_code,
+            OKX_WS_PUBLIC_URL, OKX_WS_TOPIC_DELIMITER, should_retry_error_code,
         },
         credential::Credential,
         enums::{
@@ -98,8 +97,9 @@ use crate::{
             conditional_order_to_algo_type, is_conditional_order,
         },
         parse::{
-            bar_spec_as_okx_channel, okx_instrument_type, parse_account_state,
-            parse_client_order_id, parse_millisecond_timestamp, parse_price, parse_quantity,
+            bar_spec_as_okx_channel, okx_instrument_type, okx_instrument_type_from_symbol,
+            parse_account_state, parse_client_order_id, parse_millisecond_timestamp, parse_price,
+            parse_quantity,
         },
     },
     http::models::OKXAccount,
@@ -194,6 +194,19 @@ fn channel_requires_auth(channel: &OKXWsChannel) -> bool {
     )
 }
 
+/// Commands sent to the WebSocket message handler.
+#[derive(Debug)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Commands are ephemeral and immediately consumed"
+)]
+pub enum HandlerCommand {
+    /// Initialize the instruments cache with the given instruments.
+    InitializeInstruments(Vec<InstrumentAny>),
+    /// Update a single instrument in the cache.
+    UpdateInstrument(InstrumentAny),
+}
+
 /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
 #[derive(Clone)]
 #[cfg_attr(
@@ -224,7 +237,8 @@ pub struct OKXWebSocketClient {
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>, // Track orders we've already emitted OrderAccepted for
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
-    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    handler_cmd_tx: Arc<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
+    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     retry_manager: Arc<RetryManager<OKXWsError>>,
     cancellation_token: CancellationToken,
 }
@@ -280,7 +294,7 @@ impl OKXWebSocketClient {
         let subscriptions_inst_family = Arc::new(DashMap::new());
         let subscriptions_inst_id = Arc::new(DashMap::new());
         let subscriptions_bare = Arc::new(DashMap::new());
-        let subscriptions_state = SubscriptionState::new();
+        let subscriptions_state = SubscriptionState::new(OKX_WS_TOPIC_DELIMITER);
 
         Ok(Self {
             url,
@@ -306,7 +320,12 @@ impl OKXWebSocketClient {
             active_client_orders: Arc::new(DashMap::new()),
             emitted_order_accepted: Arc::new(DashMap::new()),
             client_id_aliases: Arc::new(DashMap::new()),
-            instruments_cache: Arc::new(AHashMap::new()),
+            handler_cmd_tx: {
+                // Placeholder channel, will be replaced when connecting
+                let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+                Arc::new(tx)
+            },
+            instruments_cache: Arc::new(DashMap::new()),
             retry_manager: Arc::new(create_websocket_retry_manager()?),
             cancellation_token: CancellationToken::new(),
         })
@@ -408,14 +427,21 @@ impl OKXWebSocketClient {
         }
     }
 
-    /// Initialize the instruments cache with the given `instruments`.
-    pub fn initialize_instruments_cache(&mut self, instruments: Vec<InstrumentAny>) {
-        let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+    /// Caches multiple instruments.
+    ///
+    /// Any existing instruments with the same symbols will be replaced.
+    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
         for inst in instruments {
-            instruments_cache.insert(inst.symbol().inner(), inst.clone());
+            self.instruments_cache.insert(inst.symbol().inner(), inst);
         }
+    }
 
-        self.instruments_cache = Arc::new(instruments_cache);
+    /// Caches a single instrument.
+    ///
+    /// Any existing instrument with the same symbol will be replaced.
+    pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        self.instruments_cache
+            .insert(instrument.symbol().inner(), instrument);
     }
 
     /// Sets the VIP level for this client.
@@ -503,6 +529,23 @@ impl OKXWebSocketClient {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
 
         self.rx = Some(Arc::new(rx));
+
+        // Create fresh command channel for this connection
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        self.handler_cmd_tx = Arc::new(cmd_tx.clone());
+
+        // Replay cached instruments to the new handler via the new channel
+        if !self.instruments_cache.is_empty() {
+            let cached_instruments: Vec<InstrumentAny> = self
+                .instruments_cache
+                .iter()
+                .map(|entry| entry.value().clone())
+                .collect();
+            if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(cached_instruments)) {
+                tracing::error!("Failed to replay instruments to handler: {e}");
+            }
+        }
+
         let signal = self.signal.clone();
         let pending_place_requests = self.pending_place_requests.clone();
         let pending_cancel_requests = self.pending_cancel_requests.clone();
@@ -511,8 +554,6 @@ impl OKXWebSocketClient {
         let active_client_orders = self.active_client_orders.clone();
         let emitted_order_accepted = self.emitted_order_accepted.clone();
         let auth_tracker = self.auth_tracker.clone();
-
-        let instruments_cache = self.instruments_cache.clone();
         let inner_client = self.inner.clone();
         let credential_clone = self.credential.clone();
         let subscriptions_inst_type = self.subscriptions_inst_type.clone();
@@ -528,7 +569,7 @@ impl OKXWebSocketClient {
             async move {
                 let mut handler = OKXWsMessageHandler::new(
                     account_id,
-                    instruments_cache,
+                    cmd_rx,
                     reader,
                     signal.clone(),
                     inner_client.clone(),
@@ -614,7 +655,7 @@ impl OKXWebSocketClient {
                             get_runtime().spawn(async move {
                                 let auth_succeeded = match auth_wait {
                                     Some(rx) => match auth_tracker_for_task
-                                        .wait_for_result(
+                                        .wait_for_result::<OKXWsError>(
                                             Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS),
                                             rx,
                                         )
@@ -648,7 +689,7 @@ impl OKXWebSocketClient {
                                 if confirmed_topic_count <= 10 {
                                     let topics: Vec<_> = confirmed_topics
                                         .iter()
-                                        .map(|entry| entry.key().clone())
+                                        .map(|entry| *entry.key())
                                         .collect();
                                     if !topics.is_empty() {
                                         tracing::trace!(topics = ?topics, "Confirmed topics before reconnect");
@@ -656,7 +697,7 @@ impl OKXWebSocketClient {
                                 }
                                 drop(confirmed_topics);
 
-                                let pending_topics = subscriptions_state_for_task.pending();
+                                let pending_topics = subscriptions_state_for_task.pending_subscribe();
                                 let pending_topic_count = pending_topics.len();
                                 if pending_topic_count > 0 {
                                     tracing::debug!(pending_topic_count, "Pending subscriptions awaiting replay after reconnect");
@@ -908,7 +949,7 @@ impl OKXWebSocketClient {
 
         match self
             .auth_tracker
-            .wait_for_result(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS), rx)
+            .wait_for_result::<OKXWsError>(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS), rx)
             .await
         {
             Ok(()) => {
@@ -1051,17 +1092,13 @@ impl OKXWebSocketClient {
         clippy::result_large_err,
         reason = "OKXWsError contains large tungstenite::Error variant"
     )]
-    fn get_instrument_type_and_family(
-        &self,
-        symbol: Ustr,
+    fn get_instrument_type_and_family_from_instrument(
+        instrument: &InstrumentAny,
     ) -> Result<(OKXInstrumentType, String), OKXWsError> {
-        // Fetch instrument from cache
-        let instrument = self.instruments_cache.get(&symbol).ok_or_else(|| {
-            OKXWsError::ClientError(format!("Instrument not found in cache: {symbol}"))
-        })?;
-
         let inst_type =
             okx_instrument_type(instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+
+        let symbol = instrument.symbol().inner();
 
         // Determine instrument family based on instrument type
         let inst_family = match instrument {
@@ -1462,7 +1499,8 @@ impl OKXWebSocketClient {
 
     /// Subscribes to instrument updates for a specific instrument.
     ///
-    /// Provides updates when instrument specifications change.
+    /// Since OKX doesn't support subscribing to individual instruments via `instId`,
+    /// this method subscribes to the entire instrument type if not already subscribed.
     ///
     /// # Errors
     ///
@@ -1475,13 +1513,22 @@ impl OKXWebSocketClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), OKXWsError> {
-        let arg = OKXSubscriptionArg {
-            channel: OKXWsChannel::Instruments,
-            inst_type: None,
-            inst_family: None,
-            inst_id: Some(instrument_id.symbol.inner()),
-        };
-        self.subscribe(vec![arg]).await
+        let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
+
+        let already_subscribed = self
+            .subscriptions_inst_type
+            .get(&OKXWsChannel::Instruments)
+            .is_some_and(|types| types.contains(&inst_type));
+
+        if already_subscribed {
+            tracing::debug!(
+                "Already subscribed to instrument type {inst_type:?} for {instrument_id}"
+            );
+            return Ok(());
+        }
+
+        tracing::info!("Subscribing to instrument type {inst_type:?} for {instrument_id}");
+        self.subscribe_instruments(inst_type).await
     }
 
     /// Subscribes to order book data for an instrument.
@@ -2420,7 +2467,7 @@ impl OKXWebSocketClient {
             })?;
 
         let instrument_type =
-            okx_instrument_type(instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
+            okx_instrument_type(&instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
         let quote_currency = instrument.quote_currency();
 
         match instrument_type {
@@ -2881,8 +2928,13 @@ impl OKXWebSocketClient {
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-websocket-mass-cancel-order>
     /// Helper function to determine instrument type and family from symbol using instruments cache.
     pub async fn mass_cancel_orders(&self, inst_id: InstrumentId) -> Result<(), OKXWsError> {
+        let instrument = self
+            .instruments_cache
+            .get(&inst_id.symbol.inner())
+            .ok_or_else(|| OKXWsError::ClientError(format!("Unknown instrument {inst_id}")))?;
+
         let (inst_type, inst_family) =
-            self.get_instrument_type_and_family(inst_id.symbol.inner())?;
+            Self::get_instrument_type_and_family_from_instrument(&instrument)?;
 
         let params = WsMassCancelParams {
             inst_type,
@@ -3351,6 +3403,7 @@ struct OKXWsMessageHandler {
     handler: OKXFeedHandler,
     #[allow(dead_code)]
     tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     pending_place_requests: Arc<DashMap<String, PlaceRequestData>>,
     pending_cancel_requests: Arc<DashMap<String, CancelRequestData>>,
     pending_amend_requests: Arc<DashMap<String, AmendRequestData>>,
@@ -3358,7 +3411,7 @@ struct OKXWsMessageHandler {
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
     emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>,
-    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+    instruments_cache: AHashMap<Ustr, InstrumentAny>,
     last_account_state: Option<AccountState>,
     fee_cache: AHashMap<Ustr, Money>,           // Key is order ID
     filled_qty_cache: AHashMap<Ustr, Quantity>, // Key is order ID
@@ -3600,11 +3653,11 @@ impl OKXWsMessageHandler {
         }
     }
 
-    /// Creates a new [`OKXFeedHandler`] instance.
+    /// Creates a new [`OKXWsMessageHandler`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         account_id: AccountId,
-        instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         reader: UnboundedReceiver<Message>,
         signal: Arc<AtomicBool>,
         inner: Arc<tokio::sync::RwLock<Option<WebSocketClient>>>,
@@ -3624,6 +3677,7 @@ impl OKXWsMessageHandler {
             inner,
             handler: OKXFeedHandler::new(reader, signal),
             tx,
+            cmd_rx,
             pending_place_requests,
             pending_cancel_requests,
             pending_amend_requests,
@@ -3631,7 +3685,7 @@ impl OKXWsMessageHandler {
             active_client_orders,
             client_id_aliases,
             emitted_order_accepted,
-            instruments_cache,
+            instruments_cache: AHashMap::new(),
             last_account_state: None,
             fee_cache: AHashMap::new(),
             filled_qty_cache: AHashMap::new(),
@@ -3665,8 +3719,25 @@ impl OKXWsMessageHandler {
 
         let clock = get_atomic_clock_realtime();
 
-        while let Some(event) = self.handler.next().await {
-            let ts_init = clock.get_time_ns();
+        loop {
+            tokio::select! {
+                Some(cmd) = self.cmd_rx.recv() => {
+                    match cmd {
+                        HandlerCommand::InitializeInstruments(instruments) => {
+                            for inst in instruments {
+                                self.instruments_cache.insert(inst.symbol().inner(), inst);
+                            }
+                        }
+                        HandlerCommand::UpdateInstrument(inst) => {
+                            self.instruments_cache.insert(inst.symbol().inner(), inst);
+                        }
+                    }
+                    // Continue processing following command
+                    continue;
+                }
+
+                Some(event) = self.handler.next() => {
+                    let ts_init = clock.get_time_ns();
 
             match event {
                 OKXWebSocketEvent::Ping => {
@@ -3774,16 +3845,14 @@ impl OKXWsMessageHandler {
 
                             if let Some(instrument) = self
                                 .instruments_cache
-                                .get(&Ustr::from(instrument_id.symbol.as_str()))
+                                .get(&instrument_id.symbol.inner())
                             {
                                 match params {
                                     PendingOrderParams::Regular(order_params) => {
-                                        // Check if this is an explicit quote-sized order
                                         let is_explicit_quote_sized = order_params
                                             .tgt_ccy
                                             .is_some_and(|tgt| tgt == OKXTargetCurrency::QuoteCcy);
 
-                                        // Check if this is an implicit quote-sized order:
                                         // SPOT market BUY in cash mode with no tgt_ccy defaults to quote-sizing
                                         let is_implicit_quote_sized =
                                             order_params.tgt_ccy.is_none()
@@ -4156,7 +4225,6 @@ impl OKXWsMessageHandler {
                                             report
                                         );
 
-                                        // Check for duplicate OrderAccepted events
                                         let is_duplicate_accepted =
                                             if let ExecutionReport::Order(ref status_report) =
                                                 report
@@ -4314,7 +4382,12 @@ impl OKXWsMessageHandler {
                                 &mut self.funding_rate_cache,
                                 &self.instruments_cache,
                             ) {
-                                Ok(Some(msg)) => return Some(msg),
+                                Ok(Some(msg)) => {
+                                    if let NautilusWsMessage::Instrument(ref inst) = msg {
+                                        self.instruments_cache.insert(inst.symbol().inner(), inst.as_ref().clone());
+                                    }
+                                    return Some(msg);
+                                }
                                 Ok(None) => continue,
                                 Err(e) => {
                                     tracing::error!(
@@ -4352,7 +4425,7 @@ impl OKXWsMessageHandler {
                     match event {
                         OKXSubscriptionEvent::Subscribe => {
                             if success {
-                                self.subscriptions_state.confirm(&topic);
+                                self.subscriptions_state.confirm_subscribe(&topic);
                             } else {
                                 tracing::warn!(?topic, error = ?msg, code = ?code, "Subscription failed");
                                 self.subscriptions_state.mark_failure(&topic);
@@ -4360,10 +4433,13 @@ impl OKXWsMessageHandler {
                         }
                         OKXSubscriptionEvent::Unsubscribe => {
                             if success {
-                                self.subscriptions_state.clear_pending(&topic);
+                                self.subscriptions_state.confirm_unsubscribe(&topic);
                             } else {
-                                tracing::warn!(?topic, error = ?msg, code = ?code, "Unsubscription failed");
-                                self.subscriptions_state.mark_failure(&topic);
+                                tracing::warn!(?topic, error = ?msg, code = ?code, "Unsubscription failed - restoring subscription");
+                                // Venue rejected unsubscribe, so we're still subscribed. Restore state:
+                                self.subscriptions_state.confirm_unsubscribe(&topic); // Clear pending_unsubscribe
+                                self.subscriptions_state.mark_subscribe(&topic);       // Mark as subscribing
+                                self.subscriptions_state.confirm_subscribe(&topic);    // Confirm subscription
                             }
                         }
                     }
@@ -4372,9 +4448,15 @@ impl OKXWsMessageHandler {
                 }
                 OKXWebSocketEvent::ChannelConnCount { .. } => continue,
             }
-        }
+                }
 
-        None
+                // Handle shutdown - either channel closed or stream ended
+                else => {
+                    tracing::debug!("Handler shutting down: stream ended or command channel closed");
+                    return None;
+                }
+            }
+        }
     }
 }
 
@@ -5022,5 +5104,262 @@ mod tests {
 
         // Should get an error because not connected
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_race_unsubscribe_failure_recovery() {
+        // Simulates the race condition where venue rejects an unsubscribe request.
+        // The adapter must perform the 3-step recovery:
+        // 1. confirm_unsubscribe() - clear pending_unsubscribe
+        // 2. mark_subscribe() - mark as subscribing again
+        // 3. confirm_subscribe() - restore to confirmed state
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let topic = "trades:BTC-USDT-SWAP";
+
+        // Initial subscribe flow
+        client.subscriptions_state.mark_subscribe(topic);
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+
+        // User unsubscribes
+        client.subscriptions_state.mark_unsubscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 0);
+        assert_eq!(
+            client.subscriptions_state.pending_unsubscribe_topics(),
+            vec![topic]
+        );
+
+        // Venue REJECTS the unsubscribe (error message)
+        // Adapter must perform 3-step recovery (from lines 4444-4446)
+        client.subscriptions_state.confirm_unsubscribe(topic); // Step 1: clear pending_unsubscribe
+        client.subscriptions_state.mark_subscribe(topic); // Step 2: mark as subscribing
+        client.subscriptions_state.confirm_subscribe(topic); // Step 3: confirm subscription
+
+        // Verify recovery: topic should be back in confirmed state
+        assert_eq!(client.subscriptions_state.len(), 1);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_unsubscribe_topics()
+                .is_empty()
+        );
+        assert!(
+            client
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+
+        // Verify topic is in all_topics() for reconnect
+        let all = client.subscriptions_state.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic.to_string()));
+    }
+
+    #[rstest]
+    fn test_race_resubscribe_before_unsubscribe_ack() {
+        // Simulates: User unsubscribes, then immediately resubscribes before
+        // the unsubscribe ACK arrives from the venue.
+        // This is the race condition fixed in the subscription tracker.
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let topic = "books:BTC-USDT";
+
+        // Initial subscribe
+        client.subscriptions_state.mark_subscribe(topic);
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+
+        // User unsubscribes
+        client.subscriptions_state.mark_unsubscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 0);
+        assert_eq!(
+            client.subscriptions_state.pending_unsubscribe_topics(),
+            vec![topic]
+        );
+
+        // User immediately changes mind and resubscribes (before unsubscribe ACK)
+        client.subscriptions_state.mark_subscribe(topic);
+        assert_eq!(
+            client.subscriptions_state.pending_subscribe_topics(),
+            vec![topic]
+        );
+
+        // NOW the unsubscribe ACK arrives - should NOT clear pending_subscribe
+        client.subscriptions_state.confirm_unsubscribe(topic);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_unsubscribe_topics()
+                .is_empty()
+        );
+        assert_eq!(
+            client.subscriptions_state.pending_subscribe_topics(),
+            vec![topic]
+        ); // CRITICAL
+
+        // Subscribe ACK arrives
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+
+        // Verify final state is correct
+        let all = client.subscriptions_state.all_topics();
+        assert_eq!(all.len(), 1);
+        assert!(all.contains(&topic.to_string()));
+    }
+
+    #[rstest]
+    fn test_race_late_subscribe_confirmation_after_unsubscribe() {
+        // Simulates: User subscribes, then unsubscribes before subscribe ACK arrives.
+        // The late subscribe ACK should be ignored.
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let topic = "tickers:ETH-USDT";
+
+        // User subscribes
+        client.subscriptions_state.mark_subscribe(topic);
+        assert_eq!(
+            client.subscriptions_state.pending_subscribe_topics(),
+            vec![topic]
+        );
+
+        // User immediately unsubscribes (before subscribe ACK)
+        client.subscriptions_state.mark_unsubscribe(topic);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        ); // Cleared
+        assert_eq!(
+            client.subscriptions_state.pending_unsubscribe_topics(),
+            vec![topic]
+        );
+
+        // Late subscribe confirmation arrives - should be IGNORED
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 0); // Not added to confirmed
+        assert_eq!(
+            client.subscriptions_state.pending_unsubscribe_topics(),
+            vec![topic]
+        );
+
+        // Unsubscribe ACK arrives
+        client.subscriptions_state.confirm_unsubscribe(topic);
+
+        // Final state: completely empty
+        assert!(client.subscriptions_state.is_empty());
+        assert!(client.subscriptions_state.all_topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_race_reconnection_with_pending_states() {
+        // Simulates reconnection with mixed pending states.
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            Some("test_key".to_string()),
+            Some("test_secret".to_string()),
+            Some("test_passphrase".to_string()),
+            Some(AccountId::new("OKX-TEST")),
+            None,
+        )
+        .expect("Failed to create client");
+
+        // Set up mixed state before reconnection
+        // Confirmed: trades:BTC-USDT-SWAP
+        let trade_btc = "trades:BTC-USDT-SWAP";
+        client.subscriptions_state.mark_subscribe(trade_btc);
+        client.subscriptions_state.confirm_subscribe(trade_btc);
+
+        // Pending subscribe: trades:ETH-USDT-SWAP
+        let trade_eth = "trades:ETH-USDT-SWAP";
+        client.subscriptions_state.mark_subscribe(trade_eth);
+
+        // Pending unsubscribe: books:BTC-USDT (user cancelled)
+        let book_btc = "books:BTC-USDT";
+        client.subscriptions_state.mark_subscribe(book_btc);
+        client.subscriptions_state.confirm_subscribe(book_btc);
+        client.subscriptions_state.mark_unsubscribe(book_btc);
+
+        // Get topics for reconnection
+        let topics_to_restore = client.subscriptions_state.all_topics();
+
+        // Should include: confirmed + pending_subscribe (NOT pending_unsubscribe)
+        assert_eq!(topics_to_restore.len(), 2);
+        assert!(topics_to_restore.contains(&trade_btc.to_string()));
+        assert!(topics_to_restore.contains(&trade_eth.to_string()));
+        assert!(!topics_to_restore.contains(&book_btc.to_string())); // Excluded
+    }
+
+    #[rstest]
+    fn test_race_duplicate_subscribe_messages_idempotent() {
+        // Simulates duplicate subscribe requests (e.g., from reconnection logic).
+        // The subscription tracker should be idempotent and not create duplicate state.
+        let client = OKXWebSocketClient::new(
+            Some("wss://test.okx.com".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("Failed to create client");
+
+        let topic = "trades:BTC-USDT-SWAP";
+
+        // Subscribe and confirm
+        client.subscriptions_state.mark_subscribe(topic);
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+
+        // Duplicate mark_subscribe on already-confirmed topic (should be no-op)
+        client.subscriptions_state.mark_subscribe(topic);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        ); // Not re-added
+        assert_eq!(client.subscriptions_state.len(), 1); // Still just 1
+
+        // Duplicate confirm_subscribe (should be idempotent)
+        client.subscriptions_state.confirm_subscribe(topic);
+        assert_eq!(client.subscriptions_state.len(), 1);
+
+        // Verify final state
+        let all = client.subscriptions_state.all_topics();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0], topic);
     }
 }

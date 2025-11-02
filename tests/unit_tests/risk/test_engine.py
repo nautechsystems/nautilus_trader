@@ -973,6 +973,92 @@ class TestRiskEngineWithCashAccount:
         assert order.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
+    def test_submit_order_when_negative_price_for_futures_spread_then_allows(self):
+        # Arrange
+        self.exec_engine.start()
+
+        futures_spread = TestInstrumentProvider.futures_spread()
+        self.cache.add_instrument(futures_spread)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=futures_spread)
+        self.cache.add_quote_tick(quote)
+
+        order = strategy.order_factory.limit(
+            futures_spread.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+            Price.from_str("-17.0"),  # Negative price is valid for spreads
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1  # Command reaches engine
+
+    def test_submit_order_when_negative_price_for_option_spread_then_allows(self):
+        # Arrange
+        self.exec_engine.start()
+
+        option_spread = TestInstrumentProvider.option_spread()
+        self.cache.add_instrument(option_spread)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=option_spread)
+        self.cache.add_quote_tick(quote)
+
+        order = strategy.order_factory.limit(
+            option_spread.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+            Price.from_str("-2.50"),  # Negative price is valid for spreads
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1  # Command reaches engine
+
     def test_submit_order_when_invalid_trigger_price_then_denies(self):
         # Arrange
         self.exec_engine.start()

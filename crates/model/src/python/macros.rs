@@ -26,9 +26,9 @@ macro_rules! identifier_for_python {
             }
 
             fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-                let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+                let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
                 let bindings = py_tuple.get_item(0)?;
-                let value = bindings.downcast::<PyString>()?.extract::<&str>()?;
+                let value = bindings.cast::<PyString>()?.extract::<&str>()?;
                 self.set_inner(value);
                 Ok(())
             }

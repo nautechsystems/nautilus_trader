@@ -129,3 +129,11 @@ path = "bin/ws_post.rs"
 [[bin]]
 name = "hyperliquid-http-exec"
 path = "bin/http_exec.rs"
+
+[[bin]]
+name = "hyperliquid-capture-test-data"
+path = "bin/capture_test_data.rs"
+
+[[bin]]
+name = "hyperliquid-capture-ws-test-data"
+path = "bin/capture_ws_test_data.rs"

@@ -27,11 +27,11 @@ pub mod websocket;
 
 use std::num::NonZeroU32;
 
-use pyo3::{PyTypeCheck, exceptions::PyException, prelude::*};
+use pyo3::{exceptions::PyException, prelude::*};
 
 use crate::{
     python::{
-        http::{HttpError, HttpTimeoutError},
+        http::{HttpClientBuildError, HttpError, HttpInvalidProxyError, HttpTimeoutError},
         websocket::WebSocketClientError,
     },
     ratelimiter::quota::Quota,
@@ -103,16 +103,18 @@ pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Add error classes
     m.add(
-        <WebSocketClientError as PyTypeCheck>::NAME,
+        "WebSocketClientError",
         m.py().get_type::<WebSocketClientError>(),
     )?;
+    m.add("HttpError", m.py().get_type::<HttpError>())?;
+    m.add("HttpTimeoutError", m.py().get_type::<HttpTimeoutError>())?;
     m.add(
-        <HttpError as PyTypeCheck>::NAME,
-        m.py().get_type::<HttpError>(),
+        "HttpInvalidProxyError",
+        m.py().get_type::<HttpInvalidProxyError>(),
     )?;
     m.add(
-        <HttpTimeoutError as PyTypeCheck>::NAME,
-        m.py().get_type::<HttpTimeoutError>(),
+        "HttpClientBuildError",
+        m.py().get_type::<HttpClientBuildError>(),
     )?;
 
     Ok(())

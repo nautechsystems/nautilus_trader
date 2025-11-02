@@ -17,7 +17,7 @@
 
 use std::{
     env,
-    fmt::{self, Debug, Display},
+    fmt::{Debug, Display},
     fs,
     path::Path,
 };
@@ -85,13 +85,13 @@ impl EvmPrivateKey {
 }
 
 impl Debug for EvmPrivateKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("EvmPrivateKey(***redacted***)")
     }
 }
 
 impl Display for EvmPrivateKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("EvmPrivateKey(***redacted***)")
     }
 }
@@ -139,14 +139,14 @@ impl VaultAddress {
 }
 
 impl Debug for VaultAddress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let hex = self.to_hex();
         write!(f, "VaultAddress({}...{})", &hex[..6], &hex[hex.len() - 4..])
     }
 }
 
 impl Display for VaultAddress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_hex())
     }
 }
@@ -160,7 +160,7 @@ pub struct Secrets {
 }
 
 impl Debug for Secrets {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Secrets))
             .field("private_key", &self.private_key)
             .field("vault_address", &self.vault_address)

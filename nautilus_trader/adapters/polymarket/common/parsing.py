@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
 from decimal import Decimal
 from typing import Any
 
@@ -105,7 +106,7 @@ def parse_instrument(
     market_info: dict[str, Any],
     token_id: str,
     outcome: str,
-    ts_init: int,
+    ts_init: int | None = None,
 ) -> BinaryOption:
     instrument_id = get_polymarket_instrument_id(str(market_info["condition_id"]), token_id)
     raw_symbol = Symbol(get_polymarket_token_id(instrument_id))
@@ -125,6 +126,8 @@ def parse_instrument(
 
     maker_fee = Decimal(str(market_info["maker_base_fee"]))
     taker_fee = Decimal(str(market_info["taker_base_fee"]))
+
+    ts_init = ts_init if ts_init is not None else time.time_ns()
 
     return BinaryOption(
         instrument_id=instrument_id,

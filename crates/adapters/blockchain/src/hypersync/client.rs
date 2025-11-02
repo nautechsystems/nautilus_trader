@@ -248,7 +248,7 @@ impl HyperSyncClient {
         let query = Self::construct_contract_events_query(
             from_block,
             to_block,
-            vec![contract_address.clone()],
+            vec![*contract_address],
             topics,
         );
 

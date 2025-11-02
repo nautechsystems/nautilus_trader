@@ -117,7 +117,8 @@ class OrderBookImbalance(Strategy):
             self.book_type = book_type_from_str(self.config.book_type)
             self.subscribe_order_book_deltas(self.instrument.id, self.book_type)
 
-        self._last_trigger_timestamp = self.clock.utc_now()
+        # Initialize to None to allow immediate first execution
+        self._last_trigger_timestamp = None
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
@@ -166,9 +167,14 @@ class OrderBookImbalance(Strategy):
         self.log.info(
             f"Book: {book.best_bid_price()} @ {book.best_ask_price()} ({ratio=:0.2f})",
         )
-        seconds_since_last_trigger = (
-            self.clock.utc_now() - self._last_trigger_timestamp
-        ).total_seconds()
+
+        # Check time since last trigger only if there was a previous trigger
+        if self._last_trigger_timestamp is not None:
+            seconds_since_last_trigger = (
+                self.clock.utc_now() - self._last_trigger_timestamp
+            ).total_seconds()
+        else:
+            seconds_since_last_trigger = float("inf")  # Allow first trigger
 
         if larger > self.config.trigger_min_size and ratio < self.config.trigger_imbalance_ratio:
             self.log.info(
@@ -179,11 +185,13 @@ class OrderBookImbalance(Strategy):
             elif seconds_since_last_trigger < self.config.min_seconds_between_triggers:
                 self.log.info("Time since last order < min_seconds_between_triggers - skipping")
             elif bid_size > ask_size:
+                # Clamp order size to max_trade_size
+                trade_qty = min(ask_size, Quantity.from_str(str(self.config.max_trade_size)))
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
                     price=self.instrument.make_price(book.best_ask_price()),
                     order_side=OrderSide.BUY,
-                    quantity=self.instrument.make_qty(ask_size),
+                    quantity=self.instrument.make_qty(trade_qty),
                     post_only=False,
                     time_in_force=TimeInForce.FOK,
                 )
@@ -194,11 +202,13 @@ class OrderBookImbalance(Strategy):
                     return
                 self.submit_order(order)
             else:
+                # Clamp order size to max_trade_size
+                trade_qty = min(bid_size, Quantity.from_str(str(self.config.max_trade_size)))
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
                     price=self.instrument.make_price(book.best_bid_price()),
                     order_side=OrderSide.SELL,
-                    quantity=self.instrument.make_qty(bid_size),
+                    quantity=self.instrument.make_qty(trade_qty),
                     post_only=False,
                     time_in_force=TimeInForce.FOK,
                 )
@@ -208,6 +218,12 @@ class OrderBookImbalance(Strategy):
                     self.log.warning("Dry run mode is active; skipping new order submission")
                     return
                 self.submit_order(order)
+
+    def on_reset(self) -> None:
+        """
+        Actions to be performed when the strategy is reset.
+        """
+        self._last_trigger_timestamp = None
 
     def on_stop(self) -> None:
         """

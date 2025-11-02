@@ -101,9 +101,17 @@ impl HyperliquidDataClient {
                 is_testnet: config.is_testnet,
                 vault_address: None,
             };
-            HyperliquidHttpClient::with_credentials(&secrets, config.http_timeout_secs)
+            HyperliquidHttpClient::with_credentials(
+                &secrets,
+                config.http_timeout_secs,
+                config.http_proxy_url.clone(),
+            )?
         } else {
-            HyperliquidHttpClient::new(config.is_testnet, config.http_timeout_secs)
+            HyperliquidHttpClient::new(
+                config.is_testnet,
+                config.http_timeout_secs,
+                config.http_proxy_url.clone(),
+            )?
         };
 
         let ws_client = HyperliquidWebSocketClient::new(None, config.is_testnet);
@@ -407,7 +415,13 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Starting Hyperliquid data client {}", self.client_id);
+        tracing::info!(
+            client_id = %self.client_id,
+            is_testnet = self.config.is_testnet,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
+            "Starting Hyperliquid data client"
+        );
         Ok(())
     }
 

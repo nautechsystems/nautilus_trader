@@ -78,18 +78,16 @@ async def test_connect_and_disconnect_manage_resources(
     try:
         # Assert
         mock_instrument_provider.initialize.assert_awaited_once()
-        mock_http_client.add_instrument.assert_called_once_with(
+        mock_http_client.cache_instrument.assert_called_once_with(
             mock_instrument_provider.instruments_pyo3.return_value[0],
         )
         mock_ws_client.connect.assert_awaited_once()
         mock_ws_client.wait_until_active.assert_awaited_once_with(timeout_secs=10.0)
-        assert bitmex_data_client._update_instruments_task is not None
     finally:
         await bitmex_data_client._disconnect()
 
     # Assert
     mock_ws_client.close.assert_awaited_once()
-    assert bitmex_data_client._update_instruments_task is None
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
@@ -57,7 +57,7 @@ impl SortinoRatio {
 }
 
 impl Display for SortinoRatio {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Sortino Ratio ({} days)", self.period)
     }
 }

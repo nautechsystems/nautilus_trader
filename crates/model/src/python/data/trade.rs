@@ -121,31 +121,25 @@ impl TradeTick {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
-        let instrument_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let instrument_id_str = binding.cast::<PyString>()?.extract::<&str>()?;
         let price_raw = py_tuple
             .get_item(1)?
-            .downcast::<PyInt>()?
+            .cast::<PyInt>()?
             .extract::<PriceRaw>()?;
-        let price_prec = py_tuple.get_item(2)?.downcast::<PyInt>()?.extract::<u8>()?;
+        let price_prec = py_tuple.get_item(2)?.cast::<PyInt>()?.extract::<u8>()?;
         let size_raw = py_tuple
             .get_item(3)?
-            .downcast::<PyInt>()?
+            .cast::<PyInt>()?
             .extract::<QuantityRaw>()?;
-        let size_prec = py_tuple.get_item(4)?.downcast::<PyInt>()?.extract::<u8>()?;
+        let size_prec = py_tuple.get_item(4)?.cast::<PyInt>()?.extract::<u8>()?;
 
-        let aggressor_side_u8 = py_tuple.get_item(5)?.downcast::<PyInt>()?.extract::<u8>()?;
+        let aggressor_side_u8 = py_tuple.get_item(5)?.cast::<PyInt>()?.extract::<u8>()?;
         let binding = py_tuple.get_item(6)?;
-        let trade_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
-        let ts_event = py_tuple
-            .get_item(7)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
-        let ts_init = py_tuple
-            .get_item(8)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
+        let trade_id_str = binding.cast::<PyString>()?.extract::<&str>()?;
+        let ts_event = py_tuple.get_item(7)?.cast::<PyInt>()?.extract::<u64>()?;
+        let ts_init = py_tuple.get_item(8)?.cast::<PyInt>()?.extract::<u64>()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.price = Price::from_raw(price_raw, price_prec);

@@ -10,6 +10,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Rust",
   "Topic :: Software Development :: Libraries",
   "Topic :: Scientific/Engineering",
@@ -21,7 +22,7 @@ classifiers = [
 ]
 license = { text = "LGPL-3.0-or-later" }
 readme = "../README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 dependencies = [
   "numpy>=1.26.4",
   "pandas>=2.2.3,<3.0.0",
@@ -127,7 +128,6 @@ ignore = [
   "D416", # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
   "E501", # Line too long - ignored and linted separately
   "E741", # Ambiguous variable name (single char)
-  "PD901", # `df` is a bad variable name. Be kinder to your future self
   "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "S101", # Use of assert detected (OK in test suite)
@@ -135,8 +135,6 @@ ignore = [
   "S106", # Use of hardcoded password (spurious)
   "S113", # Probable use of requests call without timeout **fix**
   "S603", # `subprocess` call: check for execution of untrusted input **fix**
-  "UP006", # Use list instead of List - TODO: reinstate once Bybit is ported to Rust (field name 'list' shadows built-in)
-  "UP035", # typing.List is deprecated - TODO: reinstate once Bybit is ported to Rust (field name 'list' shadows built-in)
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided
@@ -150,6 +148,13 @@ fixable = ["ALL"]
 unfixable = ["E4", "E501", "UP006", "UP035"]
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+lines-after-imports = 2
+split-on-trailing-comma = true
+force-sort-within-sections = true
+known-first-party = ["nautilus_trader"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

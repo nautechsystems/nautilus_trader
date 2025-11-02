@@ -38,6 +38,12 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url to BitMEX's WebSocket API.
         If ``None`` then will use the default production URL.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
     testnet : bool, default False
         If the client is connecting to the BitMEX testnet.
     http_timeout_secs : PositiveInt, default 60
@@ -45,9 +51,9 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of retries for HTTP requests.
     retry_delay_initial_ms : PositiveInt, default 1_000
-        The initial delay (milliseconds) for retries.
+        The initial delay (milliseconds) between retries.
     retry_delay_max_ms : PositiveInt, default 5_000
-        The maximum delay (milliseconds) for exponential backoff.
+        The maximum delay (milliseconds) between retries.
     recv_window_ms : PositiveInt, default 10_000
         The expiration window (milliseconds) for signed requests.
         Note: Specified in milliseconds for consistency with other adapters,
@@ -68,6 +74,8 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     api_secret: str | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
     testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = None
@@ -99,6 +107,12 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url to BitMEX's WebSocket API.
         If ``None`` then will use the default production URL.
+    http_proxy_url : str, optional
+        Optional HTTP proxy URL.
+    ws_proxy_url : str, optional
+        Optional WebSocket proxy URL.
+        Note: WebSocket proxy support is not yet implemented. This field is reserved
+        for future functionality. Use `http_proxy_url` for REST API proxy support.
     testnet : bool, default False
         If the client is connecting to the BitMEX testnet.
     http_timeout_secs : PositiveInt, default 60
@@ -106,9 +120,9 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of retries for HTTP requests.
     retry_delay_initial_ms : PositiveInt, default 1_000
-        The initial delay (milliseconds) for retries.
+        The initial delay (milliseconds) between retries.
     retry_delay_max_ms : PositiveInt, default 5_000
-        The maximum delay (milliseconds) for exponential backoff.
+        The maximum delay (milliseconds) between retries.
     recv_window_ms : PositiveInt, default 10_000
         The expiration window (milliseconds) for signed requests.
         Note: Specified in milliseconds for consistency with other adapters,
@@ -133,6 +147,10 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
         Cancel requests are fanned out to multiple clients in parallel for redundancy,
         with the first successful response short-circuiting remaining requests.
         Recommended maximum pool size of 3.
+    submitter_proxy_urls : list[str], optional
+        Optional list of proxy URLs for submit broadcaster path diversity.
+    canceller_proxy_urls : list[str], optional
+        Optional list of proxy URLs for cancel broadcaster path diversity.
 
     """
 
@@ -140,6 +158,8 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     api_secret: str | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    http_proxy_url: str | None = None
+    ws_proxy_url: str | None = None
     testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = None
@@ -150,3 +170,5 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     max_requests_per_minute: PositiveInt = 120
     submitter_pool_size: PositiveInt | None = None
     canceller_pool_size: PositiveInt | None = None
+    submitter_proxy_urls: list[str] | None = None
+    canceller_proxy_urls: list[str] | None = None

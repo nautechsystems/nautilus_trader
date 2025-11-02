@@ -165,7 +165,7 @@ impl FundingRateUpdate {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyAny>) -> PyResult<Self> {
-        let dict = values.downcast_bound::<pyo3::types::PyDict>(py)?;
+        let dict = values.cast_bound::<pyo3::types::PyDict>(py)?;
 
         let instrument_id_str: String = dict
             .get_item("instrument_id")?
@@ -231,13 +231,13 @@ impl FundingRateUpdate {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
 
         let item0 = py_tuple.get_item(0)?;
-        let instrument_id_str: String = item0.downcast::<PyString>()?.extract()?;
+        let instrument_id_str: String = item0.cast::<PyString>()?.extract()?;
 
         let item1 = py_tuple.get_item(1)?;
-        let rate_str: String = item1.downcast::<PyString>()?.extract()?;
+        let rate_str: String = item1.cast::<PyString>()?.extract()?;
 
         let next_funding_ns: Option<u64> = py_tuple.get_item(2).ok().and_then(|item| {
             if item.is_none() {

@@ -26,6 +26,7 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
     MUTEX_POISONED, UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_or_env_var,
@@ -39,7 +40,10 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
-use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
+use nautilus_network::{
+    http::{HttpClient, HttpClientError},
+    ratelimiter::quota::Quota,
+};
 use reqwest::{Method, StatusCode, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ustr::Ustr;
@@ -103,7 +107,7 @@ pub struct CoinbaseIntxHttpInnerClient {
 
 impl Default for CoinbaseIntxHttpInnerClient {
     fn default() -> Self {
-        Self::new(None, Some(60))
+        Self::new(None, Some(60)).expect("Failed to create default Coinbase INTX HTTP client")
     }
 }
 
@@ -113,9 +117,15 @@ impl CoinbaseIntxHttpInnerClient {
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
-    #[must_use]
-    pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+    ) -> Result<Self, HttpClientError> {
+        Ok(Self {
             base_url: base_url.unwrap_or(COINBASE_INTX_REST_URL.to_string()),
             client: HttpClient::new(
                 Self::default_headers(),
@@ -123,22 +133,26 @@ impl CoinbaseIntxHttpInnerClient {
                 vec![],
                 Some(*COINBASE_INTX_REST_QUOTA),
                 timeout_secs,
-            ),
+                None, // proxy_url
+            )?,
             credential: None,
-        }
+        })
     }
 
     /// Creates a new [`CoinbaseIntxHttpClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base url.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
         api_passphrase: String,
         base_url: String,
         timeout_secs: Option<u64>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, HttpClientError> {
+        Ok(Self {
             base_url,
             client: HttpClient::new(
                 Self::default_headers(),
@@ -146,9 +160,10 @@ impl CoinbaseIntxHttpInnerClient {
                 vec![],
                 Some(*COINBASE_INTX_REST_QUOTA),
                 timeout_secs,
-            ),
+                None, // proxy_url
+            )?,
             credential: Some(Credential::new(api_key, api_secret, api_passphrase)),
-        }
+        })
     }
 
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
@@ -589,7 +604,7 @@ pub struct CoinbaseIntxHttpClient {
 
 impl Default for CoinbaseIntxHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60))
+        Self::new(None, Some(60)).expect("Failed to create default Coinbase INTX HTTP client")
     }
 }
 
@@ -599,13 +614,19 @@ impl CoinbaseIntxHttpClient {
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
-    #[must_use]
-    pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
-        Self {
-            inner: Arc::new(CoinbaseIntxHttpInnerClient::new(base_url, timeout_secs)),
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+    ) -> Result<Self, HttpClientError> {
+        Ok(Self {
+            inner: Arc::new(CoinbaseIntxHttpInnerClient::new(base_url, timeout_secs)?),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,
-        }
+        })
     }
 
     /// Creates a new authenticated [`CoinbaseIntxHttpClient`] using environment variables and
@@ -636,13 +657,16 @@ impl CoinbaseIntxHttpClient {
         let api_passphrase = get_or_env_var(api_passphrase, "COINBASE_INTX_API_PASSPHRASE")?;
         let base_url = base_url.unwrap_or(COINBASE_INTX_REST_URL.to_string());
         Ok(Self {
-            inner: Arc::new(CoinbaseIntxHttpInnerClient::with_credentials(
-                api_key,
-                api_secret,
-                api_passphrase,
-                base_url,
-                timeout_secs,
-            )),
+            inner: Arc::new(
+                CoinbaseIntxHttpInnerClient::with_credentials(
+                    api_key,
+                    api_secret,
+                    api_passphrase,
+                    base_url,
+                    timeout_secs,
+                )
+                .context("Failed to create Coinbase INTX HTTP client")?,
+            ),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,
         })

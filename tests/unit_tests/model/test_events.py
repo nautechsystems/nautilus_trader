@@ -13,8 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.core.rust.model import PositionAdjustmentType
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
@@ -42,6 +45,7 @@ from nautilus_trader.model.events import OrderReleased
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events import PositionAdjusted
 from nautilus_trader.model.events import PositionChanged
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionOpened
@@ -926,3 +930,45 @@ class TestPositionEvents:
             repr(event)
             == f"PositionClosed(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, opening_order_id=O-19700101-000000-000-001-1, closing_order_id=O-19700101-000000-000-001-2, entry=BUY, side=FLAT, signed_qty=0.0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_return=0.00010, realized_pnl=6.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"
         )
+
+    def test_position_adjusted_commission_to_from_dict(self):
+        # Arrange
+        uuid = UUID4()
+        event = PositionAdjusted(
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=InstrumentId.from_str("BTC/USDT.BINANCE"),
+            position_id=PositionId("P-123456"),
+            account_id=AccountId("BINANCE-001"),
+            adjustment_type=PositionAdjustmentType.COMMISSION,
+            quantity_change=Decimal("-0.001"),
+            pnl_change=None,
+            reason="O-19700101-000000-000-001-1",
+            event_id=uuid,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act, Assert
+        assert PositionAdjusted.from_dict(PositionAdjusted.to_dict(event)) == event
+
+    def test_position_adjusted_funding_to_from_dict(self):
+        # Arrange
+        uuid = UUID4()
+        event = PositionAdjusted(
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=InstrumentId.from_str("BTC/USD.BITMEX"),
+            position_id=PositionId("P-123456"),
+            account_id=AccountId("BITMEX-001"),
+            adjustment_type=PositionAdjustmentType.FUNDING,
+            quantity_change=None,
+            pnl_change=Money(-5.50, USD),
+            reason="funding_2024_01_15_08:00",
+            event_id=uuid,
+            ts_event=1_000_000_000,
+            ts_init=2_000_000_000,
+        )
+
+        # Act, Assert
+        assert PositionAdjusted.from_dict(PositionAdjusted.to_dict(event)) == event

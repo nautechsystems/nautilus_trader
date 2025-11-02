@@ -341,7 +341,7 @@ def create_tearsheet(  # noqa: C901
     total_positions = 0
     if hasattr(engine, "kernel"):
         positions = list(engine.kernel.cache.positions()) + list(
-            engine.kernel.cache.position_snapshots()
+            engine.kernel.cache.position_snapshots(),
         )
         total_positions = len(positions)
 
@@ -1702,6 +1702,9 @@ _register_tearsheet_chart("drawdown", "scatter", "Drawdown", _render_drawdown)
 _register_tearsheet_chart("monthly_returns", "heatmap", "Monthly Returns", _render_monthly_returns)
 _register_tearsheet_chart("distribution", "histogram", "Returns Distribution", _render_distribution)
 _register_tearsheet_chart(
-    "rolling_sharpe", "scatter", "Rolling Sharpe Ratio (60-day)", _render_rolling_sharpe
+    "rolling_sharpe",
+    "scatter",
+    "Rolling Sharpe Ratio (60-day)",
+    _render_rolling_sharpe,
 )
 _register_tearsheet_chart("yearly_returns", "bar", "Yearly Returns", _render_yearly_returns)

@@ -366,6 +366,7 @@ For more details on rate limiting, see the official documentation: <https://bina
 | `account_type`                     | `SPOT`  | Account type for data endpoints (spot, margin, USDT futures, coin futures). |
 | `base_url_http`                    | `None`  | Override for the HTTP REST base URL. |
 | `base_url_ws`                      | `None`  | Override for the WebSocket base URL. |
+| `proxy_url`                        | `None`  | Optional proxy URL for HTTP requests. |
 | `us`                               | `False` | Route requests to Binance US endpoints when `True`. |
 | `testnet`                          | `False` | Use Binance testnet endpoints when `True`. |
 | `update_instruments_interval_mins` | `60`    | Interval (minutes) between instrument catalogue refreshes. |
@@ -382,6 +383,7 @@ For more details on rate limiting, see the official documentation: <https://bina
 | `account_type`                       | `SPOT`  | Account type for order placement (spot, margin, USDT futures, coin futures). |
 | `base_url_http`                      | `None`  | Override for the HTTP REST base URL. |
 | `base_url_ws`                        | `None`  | Override for the WebSocket base URL. |
+| `proxy_url`                          | `None`  | Optional proxy URL for HTTP requests. |
 | `us`                                 | `False` | Route requests to Binance US endpoints when `True`. |
 | `testnet`                            | `False` | Use Binance testnet endpoints when `True`. |
 | `use_gtd`                            | `True`  | When `False`, remaps GTD orders to GTC for local expiry management. |

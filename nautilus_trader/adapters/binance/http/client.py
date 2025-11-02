@@ -59,6 +59,8 @@ class BinanceHttpClient:
         The keyed rate limiter quotas for the client.
     ratelimiter_quota : Quota, optional
         The default rate limiter quota for the client.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     """
 
@@ -73,6 +75,7 @@ class BinanceHttpClient:
         ed25519_private_key: str | None = None,
         ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
         ratelimiter_default_quota: Quota | None = None,
+        proxy_url: str | None = None,
     ) -> None:
         self._clock: LiveClock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -97,6 +100,7 @@ class BinanceHttpClient:
         self._client = HttpClient(
             keyed_quotas=ratelimiter_quotas or [],
             default_quota=ratelimiter_default_quota,
+            proxy_url=proxy_url,
         )
 
     @property

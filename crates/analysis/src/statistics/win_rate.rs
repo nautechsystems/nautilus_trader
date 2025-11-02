@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
@@ -43,7 +43,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
 pub struct WinRate {}
 
 impl Display for WinRate {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Win Rate")
     }
 }

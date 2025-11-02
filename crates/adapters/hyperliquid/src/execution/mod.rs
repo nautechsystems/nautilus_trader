@@ -168,8 +168,12 @@ impl HyperliquidExecutionClient {
         ))
         .context("failed to create secrets from private key")?;
 
-        let http_client =
-            HyperliquidHttpClient::with_credentials(&secrets, Some(config.http_timeout_secs));
+        let http_client = HyperliquidHttpClient::with_credentials(
+            &secrets,
+            Some(config.http_timeout_secs),
+            config.http_proxy_url.clone(),
+        )
+        .context("Failed to create Hyperliquid HTTP client")?;
 
         // Create WebSocket client (will connect when needed)
         let ws_client = HyperliquidWebSocketClient::new(None, config.is_testnet);
@@ -354,7 +358,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        tracing::info!("Starting Hyperliquid execution client");
+        tracing::info!(
+            client_id = %self.core.client_id,
+            account_id = %self.core.account_id,
+            is_testnet = self.config.is_testnet,
+            vault_address = ?self.config.vault_address,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
+            "Starting Hyperliquid execution client"
+        );
 
         // Ensure instruments are initialized
         self.ensure_instruments_initialized()?;

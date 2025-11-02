@@ -34,6 +34,7 @@ from nautilus_trader.model.events.order import OrderReleased
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events.position import PositionAdjusted
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionEvent
@@ -59,6 +60,7 @@ __all__ = [
     "OrderSubmitted",
     "OrderTriggered",
     "OrderUpdated",
+    "PositionAdjusted",
     "PositionChanged",
     "PositionClosed",
     "PositionEvent",

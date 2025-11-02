@@ -1321,7 +1321,7 @@ mod tests {
     fn test_parse_order_msg() {
         let json_data = load_test_json("ws_order.json");
         let msg: BitmexOrderMsg = serde_json::from_str(&json_data).unwrap();
-        let cache = dashmap::DashMap::new();
+        let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
         let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
 
@@ -1354,7 +1354,7 @@ mod tests {
         msg.price = Some(98_000.0);
         msg.stop_px = None;
 
-        let cache = dashmap::DashMap::new();
+        let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
 
         let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
@@ -1371,7 +1371,7 @@ mod tests {
         msg.text = None;
         msg.cum_qty = 0;
 
-        let cache = dashmap::DashMap::new();
+        let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
         let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
 
@@ -1391,7 +1391,7 @@ mod tests {
         msg.text = Some(Ustr::from("Order would execute immediately"));
         msg.cum_qty = 0;
 
-        let cache = dashmap::DashMap::new();
+        let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
         let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
 
@@ -1411,7 +1411,7 @@ mod tests {
         msg.text = None;
         msg.cum_qty = 0;
 
-        let cache = dashmap::DashMap::new();
+        let cache = DashMap::new();
         let instrument = create_test_perpetual_instrument();
         let report = parse_order_msg(&msg, &instrument, &cache).unwrap();
 

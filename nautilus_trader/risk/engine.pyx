@@ -60,6 +60,7 @@ from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.functions cimport trading_state_to_str
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.base cimport NEGATIVE_PRICE_INSTRUMENT_CLASSES
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Currency
@@ -888,7 +889,7 @@ cdef class RiskEngine(Component):
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
 
-        if instrument.instrument_class != InstrumentClass.OPTION:
+        if instrument.instrument_class not in NEGATIVE_PRICE_INSTRUMENT_CLASSES:
             if price.raw_int_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"

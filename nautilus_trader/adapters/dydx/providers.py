@@ -85,8 +85,6 @@ class DYDXInstrumentProvider(InstrumentProvider):
 
         await self._load_instruments()
 
-        self._log.info(f"Loaded {len(self._instruments)} instruments")
-
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],

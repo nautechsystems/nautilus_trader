@@ -32,7 +32,7 @@ pub use crate::events::{
         submitted::OrderSubmitted, triggered::OrderTriggered, updated::OrderUpdated,
     },
     position::{
-        PositionEvent, changed::PositionChanged, closed::PositionClosed, opened::PositionOpened,
-        snapshot::PositionSnapshot,
+        PositionEvent, adjusted::PositionAdjusted, changed::PositionChanged,
+        closed::PositionClosed, opened::PositionOpened, snapshot::PositionSnapshot,
     },
 };

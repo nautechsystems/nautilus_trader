@@ -375,7 +375,13 @@ def _get_clang_version() -> str:
             check=True,
             capture_output=True,
         )
-        output = result.stdout.decode().splitlines()[0].lstrip("Apple ").lstrip("Ubuntu ").lstrip("clang version ")
+        output = (
+            result.stdout.decode()
+            .splitlines()[0]
+            .lstrip("Apple ")
+            .lstrip("Ubuntu ")
+            .lstrip("clang version ")
+        )
         return output
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         err_msg = str(e) if isinstance(e, FileNotFoundError) else e.stderr.decode()

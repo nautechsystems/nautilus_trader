@@ -46,7 +46,10 @@ use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::bar::BarType,
     identifiers::{AccountId, InstrumentId},
-    python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
+    python::{
+        data::data_to_pycapsule,
+        instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
+    },
 };
 use pyo3::{conversion::IntoPyObjectExt, exceptions::PyRuntimeError, prelude::*};
 
@@ -124,6 +127,13 @@ impl BitmexWebSocketClient {
         self.set_account_id(account_id);
     }
 
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+        let inst_any = pyobject_to_instrument_any(py, instrument)?;
+        self.cache_instrument(inst_any);
+        Ok(())
+    }
+
     #[pyo3(name = "connect")]
     fn py_connect<'py>(
         &mut self,
@@ -137,7 +147,7 @@ impl BitmexWebSocketClient {
             instruments_any.push(inst_any);
         }
 
-        self.initialize_instruments_cache(instruments_any);
+        self.cache_instruments(instruments_any);
 
         let mut client = self.clone();
 
@@ -155,6 +165,13 @@ impl BitmexWebSocketClient {
                             for data in data_vec {
                                 let py_obj = data_to_pycapsule(py, data);
                                 call_python(py, &callback, py_obj);
+                            }
+                        }
+                        NautilusWsMessage::Instruments(instruments) => {
+                            for instrument in instruments {
+                                if let Ok(py_obj) = instrument_any_to_pyobject(py, instrument) {
+                                    call_python(py, &callback, py_obj);
+                                }
                             }
                         }
                         NautilusWsMessage::OrderStatusReports(reports) => {

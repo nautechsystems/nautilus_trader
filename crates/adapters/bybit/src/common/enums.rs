@@ -15,10 +15,12 @@
 
 //! Enumerations that model Bybit string/int enums across HTTP and WebSocket payloads.
 
+use std::fmt::Display;
+
 use nautilus_model::enums::{AggressorSide, OrderSide};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use strum::{AsRefStr, Display, EnumIter, EnumString};
+use strum::{AsRefStr, EnumIter, EnumString};
 
 /// Unified margin account status values.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
@@ -37,8 +39,22 @@ pub enum BybitUnifiedMarginStatus {
 }
 
 /// Margin mode used by Bybit when switching risk profiles.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.bybit")
@@ -50,8 +66,22 @@ pub enum BybitMarginMode {
 }
 
 /// Position mode as returned by the v5 API.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize_repr,
+    Deserialize_repr,
+)]
 #[repr(i32)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.bybit")
@@ -80,7 +110,7 @@ pub enum BybitPositionIdx {
     Copy,
     Clone,
     Debug,
-    Display,
+    strum::Display,
     PartialEq,
     Eq,
     Hash,
@@ -104,7 +134,7 @@ pub enum BybitAccountType {
     Copy,
     Clone,
     Debug,
-    Display,
+    strum::Display,
     PartialEq,
     Eq,
     Hash,
@@ -133,7 +163,7 @@ pub enum BybitEnvironment {
     Copy,
     Clone,
     Debug,
-    Display,
+    strum::Display,
     Default,
     PartialEq,
     Eq,
@@ -320,6 +350,27 @@ pub enum BybitKlineInterval {
     Week1,
     #[serde(rename = "M")]
     Month1,
+}
+
+impl Display for BybitKlineInterval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Minute1 => "1",
+            Self::Minute3 => "3",
+            Self::Minute5 => "5",
+            Self::Minute15 => "15",
+            Self::Minute30 => "30",
+            Self::Hour1 => "60",
+            Self::Hour2 => "120",
+            Self::Hour4 => "240",
+            Self::Hour6 => "360",
+            Self::Hour12 => "720",
+            Self::Day1 => "D",
+            Self::Week1 => "W",
+            Self::Month1 => "M",
+        };
+        write!(f, "{s}")
+    }
 }
 
 /// Order status values returned by Bybit.

@@ -21,6 +21,7 @@ use chrono::{DateTime, Utc};
 use nautilus_model::{
     data::{Data, funding::FundingRateUpdate},
     events::{AccountState, OrderUpdated},
+    instruments::InstrumentAny,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::{Deserialize, Deserializer, Serialize, de};
@@ -95,6 +96,7 @@ pub struct BitmexSubscription {
 #[derive(Clone, Debug)]
 pub enum NautilusWsMessage {
     Data(Vec<Data>),
+    Instruments(Vec<InstrumentAny>),
     OrderStatusReports(Vec<OrderStatusReport>),
     OrderUpdated(OrderUpdated),
     FillReports(Vec<FillReport>),
@@ -362,34 +364,201 @@ pub struct BitmexTradeBinMsg {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BitmexInstrumentMsg {
-    /// The instrument symbol (e.g., "XBTUSD").
     pub symbol: Ustr,
-    /// Last traded price for the instrument.
+    pub root_symbol: Option<Ustr>,
+    pub state: Option<Ustr>,
+    #[serde(rename = "typ")]
+    pub instrument_type: Option<Ustr>,
+    pub listing: Option<DateTime<Utc>>,
+    pub front: Option<DateTime<Utc>>,
+    pub expiry: Option<DateTime<Utc>>,
+    pub settle: Option<DateTime<Utc>>,
+    pub listed_settle: Option<DateTime<Utc>>,
+    pub position_currency: Option<Ustr>,
+    pub underlying: Option<Ustr>,
+    pub quote_currency: Option<Ustr>,
+    pub underlying_symbol: Option<Ustr>,
+    pub reference: Option<Ustr>,
+    pub reference_symbol: Option<Ustr>,
+    pub max_order_qty: Option<f64>,
+    pub max_price: Option<f64>,
+    pub lot_size: Option<f64>,
+    pub tick_size: Option<f64>,
+    pub multiplier: Option<f64>,
+    pub settl_currency: Option<Ustr>,
+    pub underlying_to_position_multiplier: Option<f64>,
+    pub underlying_to_settle_multiplier: Option<f64>,
+    pub quote_to_settle_multiplier: Option<f64>,
+    pub is_quanto: Option<bool>,
+    pub is_inverse: Option<bool>,
+    pub init_margin: Option<f64>,
+    pub maint_margin: Option<f64>,
+    pub risk_limit: Option<f64>,
+    pub risk_step: Option<f64>,
+    pub maker_fee: Option<f64>,
+    pub taker_fee: Option<f64>,
+    pub settlement_fee: Option<f64>,
+    pub funding_base_symbol: Option<Ustr>,
+    pub funding_quote_symbol: Option<Ustr>,
+    pub funding_premium_symbol: Option<Ustr>,
+    pub funding_timestamp: Option<DateTime<Utc>>,
+    pub funding_interval: Option<DateTime<Utc>>,
+    pub funding_rate: Option<f64>,
+    pub indicative_funding_rate: Option<f64>,
     pub last_price: Option<f64>,
-    /// Last tick direction for the instrument.
     pub last_tick_direction: Option<BitmexTickDirection>,
-    /// Mark price.
     pub mark_price: Option<f64>,
-    /// Index price.
-    pub index_price: Option<f64>,
-    /// Indicative settlement price.
-    pub indicative_settle_price: Option<f64>,
-    /// Open interest for the instrument.
-    pub open_interest: Option<i64>,
-    /// Open value for the instrument.
-    pub open_value: Option<i64>,
-    /// Fair basis.
-    pub fair_basis: Option<f64>,
-    /// Fair basis rate.
-    pub fair_basis_rate: Option<f64>,
-    /// Fair price.
-    pub fair_price: Option<f64>,
-    /// Mark method.
     pub mark_method: Option<Ustr>,
-    /// Indicative tax rate.
+    pub index_price: Option<f64>,
+    pub indicative_settle_price: Option<f64>,
     pub indicative_tax_rate: Option<f64>,
-    /// Timestamp of the update.
+    pub open_interest: Option<i64>,
+    pub open_value: Option<i64>,
+    pub fair_basis: Option<f64>,
+    pub fair_basis_rate: Option<f64>,
+    pub fair_price: Option<f64>,
     pub timestamp: DateTime<Utc>,
+}
+
+impl TryFrom<BitmexInstrumentMsg> for crate::http::models::BitmexInstrument {
+    type Error = anyhow::Error;
+
+    fn try_from(msg: BitmexInstrumentMsg) -> Result<Self, Self::Error> {
+        use crate::common::enums::{BitmexInstrumentState, BitmexInstrumentType};
+
+        // Required fields
+        let root_symbol = msg
+            .root_symbol
+            .ok_or_else(|| anyhow::anyhow!("Missing root_symbol for {}", msg.symbol))?;
+        let underlying = msg
+            .underlying
+            .ok_or_else(|| anyhow::anyhow!("Missing underlying for {}", msg.symbol))?;
+        let quote_currency = msg
+            .quote_currency
+            .ok_or_else(|| anyhow::anyhow!("Missing quote_currency for {}", msg.symbol))?;
+        let tick_size = msg
+            .tick_size
+            .ok_or_else(|| anyhow::anyhow!("Missing tick_size for {}", msg.symbol))?;
+        let multiplier = msg
+            .multiplier
+            .ok_or_else(|| anyhow::anyhow!("Missing multiplier for {}", msg.symbol))?;
+        let is_quanto = msg
+            .is_quanto
+            .ok_or_else(|| anyhow::anyhow!("Missing is_quanto for {}", msg.symbol))?;
+        let is_inverse = msg
+            .is_inverse
+            .ok_or_else(|| anyhow::anyhow!("Missing is_inverse for {}", msg.symbol))?;
+
+        // Parse state - default to Open if not present
+        let state = msg
+            .state
+            .and_then(|s| serde_json::from_str::<BitmexInstrumentState>(&format!("\"{s}\"")).ok())
+            .unwrap_or(BitmexInstrumentState::Open);
+
+        // Parse instrument type - default to PerpetualContract if not present
+        let instrument_type = msg
+            .instrument_type
+            .and_then(|t| serde_json::from_str::<BitmexInstrumentType>(&format!("\"{t}\"")).ok())
+            .unwrap_or(BitmexInstrumentType::PerpetualContract);
+
+        Ok(Self {
+            symbol: msg.symbol,
+            root_symbol,
+            state,
+            instrument_type,
+            listing: msg.listing,
+            front: msg.front,
+            expiry: msg.expiry,
+            settle: msg.settle,
+            listed_settle: msg.listed_settle,
+            position_currency: msg.position_currency,
+            underlying,
+            quote_currency,
+            underlying_symbol: msg.underlying_symbol,
+            reference: msg.reference,
+            reference_symbol: msg.reference_symbol,
+            calc_interval: None,
+            publish_interval: None,
+            publish_time: None,
+            max_order_qty: msg.max_order_qty,
+            max_price: msg.max_price,
+            lot_size: msg.lot_size,
+            tick_size,
+            multiplier,
+            settl_currency: msg.settl_currency,
+            underlying_to_position_multiplier: msg.underlying_to_position_multiplier,
+            underlying_to_settle_multiplier: msg.underlying_to_settle_multiplier,
+            quote_to_settle_multiplier: msg.quote_to_settle_multiplier,
+            is_quanto,
+            is_inverse,
+            init_margin: msg.init_margin,
+            maint_margin: msg.maint_margin,
+            risk_limit: msg.risk_limit,
+            risk_step: msg.risk_step,
+            limit: None,
+            taxed: None,
+            deleverage: None,
+            maker_fee: msg.maker_fee,
+            taker_fee: msg.taker_fee,
+            settlement_fee: msg.settlement_fee,
+            funding_base_symbol: msg.funding_base_symbol,
+            funding_quote_symbol: msg.funding_quote_symbol,
+            funding_premium_symbol: msg.funding_premium_symbol,
+            funding_timestamp: msg.funding_timestamp,
+            funding_interval: msg.funding_interval,
+            funding_rate: msg.funding_rate,
+            indicative_funding_rate: msg.indicative_funding_rate,
+            rebalance_timestamp: None,
+            rebalance_interval: None,
+            prev_close_price: None,
+            limit_down_price: None,
+            limit_up_price: None,
+            prev_total_volume: None,
+            total_volume: None,
+            volume: None,
+            volume_24h: None,
+            prev_total_turnover: None,
+            total_turnover: None,
+            turnover: None,
+            turnover_24h: None,
+            home_notional_24h: None,
+            foreign_notional_24h: None,
+            prev_price_24h: None,
+            vwap: None,
+            high_price: None,
+            low_price: None,
+            last_price: msg.last_price,
+            last_price_protected: None,
+            last_tick_direction: None, // WebSocket uses different enum, skip for now
+            last_change_pcnt: None,
+            bid_price: None,
+            mid_price: None,
+            ask_price: None,
+            impact_bid_price: None,
+            impact_mid_price: None,
+            impact_ask_price: None,
+            has_liquidity: None,
+            open_interest: msg.open_interest.map(|v| v as f64),
+            open_value: msg.open_value.map(|v| v as f64),
+            fair_method: None,
+            fair_basis_rate: msg.fair_basis_rate,
+            fair_basis: msg.fair_basis,
+            fair_price: msg.fair_price,
+            mark_method: None,
+            mark_price: msg.mark_price,
+            indicative_settle_price: msg.indicative_settle_price,
+            settled_price_adjustment_rate: None,
+            settled_price: None,
+            instant_pnl: false,
+            min_tick: None,
+            funding_base_rate: None,
+            funding_quote_rate: None,
+            capped: None,
+            opening_timestamp: None,
+            closing_timestamp: None,
+            timestamp: msg.timestamp,
+        })
+    }
 }
 
 /// Represents an order update message with only changed fields.
@@ -765,4 +934,147 @@ pub struct BitmexLiquidationMsg {
     pub price: f64,
     /// Remaining quantity to be executed.
     pub leaves_qty: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_try_from_instrument_msg_with_full_data_success() {
+        let json_data = r#"{
+            "symbol": "XBTUSD",
+            "rootSymbol": "XBT",
+            "state": "Open",
+            "typ": "FFWCSX",
+            "listing": "2016-05-13T12:00:00.000Z",
+            "front": "2016-05-13T12:00:00.000Z",
+            "positionCurrency": "USD",
+            "underlying": "XBT",
+            "quoteCurrency": "USD",
+            "underlyingSymbol": "XBT=",
+            "reference": "BMEX",
+            "referenceSymbol": ".BXBT",
+            "maxOrderQty": 10000000,
+            "maxPrice": 1000000,
+            "lotSize": 100,
+            "tickSize": 0.1,
+            "multiplier": -100000000,
+            "settlCurrency": "XBt",
+            "underlyingToSettleMultiplier": -100000000,
+            "isQuanto": false,
+            "isInverse": true,
+            "initMargin": 0.01,
+            "maintMargin": 0.005,
+            "riskLimit": 20000000000,
+            "riskStep": 15000000000,
+            "taxed": true,
+            "deleverage": true,
+            "makerFee": 0.0005,
+            "takerFee": 0.0005,
+            "settlementFee": 0,
+            "fundingBaseSymbol": ".XBTBON8H",
+            "fundingQuoteSymbol": ".USDBON8H",
+            "fundingPremiumSymbol": ".XBTUSDPI8H",
+            "fundingTimestamp": "2024-11-25T04:00:00.000Z",
+            "fundingInterval": "2000-01-01T08:00:00.000Z",
+            "fundingRate": 0.00011,
+            "indicativeFundingRate": 0.000125,
+            "prevClosePrice": 97409.63,
+            "limitDownPrice": null,
+            "limitUpPrice": null,
+            "prevTotalVolume": 3868480147789,
+            "totalVolume": 3868507398889,
+            "volume": 27251100,
+            "volume24h": 419742700,
+            "prevTotalTurnover": 37667656761390205,
+            "totalTurnover": 37667684492745237,
+            "turnover": 27731355032,
+            "turnover24h": 431762899194,
+            "homeNotional24h": 4317.62899194,
+            "foreignNotional24h": 419742700,
+            "prevPrice24h": 97655,
+            "vwap": 97216.6863,
+            "highPrice": 98743.5,
+            "lowPrice": 95802.9,
+            "lastPrice": 97893.7,
+            "lastPriceProtected": 97912.5054,
+            "lastTickDirection": "PlusTick",
+            "lastChangePcnt": 0.0024,
+            "bidPrice": 97882.5,
+            "midPrice": 97884.8,
+            "askPrice": 97887.1,
+            "impactBidPrice": 97882.7951,
+            "impactMidPrice": 97884.7,
+            "impactAskPrice": 97886.6277,
+            "hasLiquidity": true,
+            "openInterest": 411647400,
+            "openValue": 420691293378,
+            "fairMethod": "FundingRate",
+            "fairBasisRate": 0.12045,
+            "fairBasis": 5.99,
+            "fairPrice": 97849.76,
+            "markMethod": "FairPrice",
+            "markPrice": 97849.76,
+            "indicativeSettlePrice": 97843.77,
+            "instantPnl": true,
+            "timestamp": "2024-11-24T23:33:19.034Z",
+            "minTick": 0.01,
+            "fundingBaseRate": 0.0003,
+            "fundingQuoteRate": 0.0006,
+            "capped": false
+        }"#;
+
+        let ws_msg: BitmexInstrumentMsg =
+            serde_json::from_str(json_data).expect("Failed to deserialize instrument message");
+
+        let result = crate::http::models::BitmexInstrument::try_from(ws_msg);
+        assert!(
+            result.is_ok(),
+            "TryFrom should succeed with full instrument data"
+        );
+
+        let instrument = result.unwrap();
+        assert_eq!(instrument.symbol.as_str(), "XBTUSD");
+        assert_eq!(instrument.root_symbol.as_str(), "XBT");
+        assert_eq!(instrument.quote_currency.as_str(), "USD");
+        assert_eq!(instrument.tick_size, 0.1);
+    }
+
+    #[rstest]
+    fn test_try_from_instrument_msg_with_partial_data_fails() {
+        let json_data = r#"{
+            "symbol": "XBTUSD",
+            "lastPrice": 95123.5,
+            "lastTickDirection": "ZeroPlusTick",
+            "markPrice": 95125.7,
+            "indexPrice": 95124.3,
+            "indicativeSettlePrice": 95126.0,
+            "openInterest": 123456789,
+            "openValue": 1234567890,
+            "fairBasis": 1.4,
+            "fairBasisRate": 0.00001,
+            "fairPrice": 95125.0,
+            "markMethod": "FairPrice",
+            "indicativeTaxRate": 0.00075,
+            "timestamp": "2024-11-25T12:00:00.000Z"
+        }"#;
+
+        let ws_msg: BitmexInstrumentMsg =
+            serde_json::from_str(json_data).expect("Failed to deserialize instrument message");
+
+        let result = crate::http::models::BitmexInstrument::try_from(ws_msg);
+        assert!(
+            result.is_err(),
+            "TryFrom should fail with partial instrument data (update action)"
+        );
+
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("Missing"),
+            "Error should indicate missing required fields"
+        );
+    }
 }

@@ -44,7 +44,7 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 testnet = True  # If clients use the testnet API
 # symbol = "XBTUSD"  # Bitcoin perpetual swap
 symbol = "ETHUSD"  # Ether perpetual swap
-order_qty = Decimal("10")  # Contract size in USD
+order_qty = Decimal("1")  # Contract size in USD
 
 # symbol = "SOLUSDT"  # Solana quoted in USDT spot
 # order_qty = Decimal("0.1")  # Fractional size
@@ -105,7 +105,7 @@ config_tester = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
     order_qty=order_qty,
-    # order_params={"broadcast_submit_tries": 3},
+    # order_params={"submit_tries": 3},
     # order_display_qty=Decimal(0),  # Must be zero (hidden) or a positive multiple of lot size 100
     # subscribe_book=True,
     enable_buys=True,
