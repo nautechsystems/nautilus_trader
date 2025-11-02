@@ -563,7 +563,8 @@ def adjust_fills_for_partial_window(
     pyo3_instruments = [transform_instrument_to_pyo3(instrument) for instrument in instruments]
     results: dict[InstrumentId, tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]]] = {}
 
-    for pyo3_instrument in pyo3_instruments:
+    for instrument, pyo3_instrument in zip(instruments, pyo3_instruments):
+        assert instrument.id.value == pyo3_instrument.id.value
         pyo3_orders, pyo3_fills = nautilus_pyo3.adjust_fills_for_partial_window(
             pyo3_mass_status,
             pyo3_instrument,
@@ -588,8 +589,8 @@ def adjust_fills_for_partial_window(
             fills[venue_order_id] = reports
 
             if logger:
-                logger.debug(f"Adjusted fills for {pyo3_instrument.id}: {len(orders)} orders, {len(fills)} fills")
+                logger.debug(f"Adjusted fills for {instrument.id}: {len(orders)} orders, {len(fills)} fills")
 
-        results[pyo3_instrument.id] = (orders, fills)
+        results[instrument.id] = (orders, fills)
 
     return results
