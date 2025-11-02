@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 Thin Gamma Markets API client utilities for Polymarket.
 
@@ -28,14 +27,12 @@ References
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 from typing import Any
-from typing import Dict
-from typing import Generator
-from typing import List
 
 import requests
-
 from trader.common.logging import get_logger
+
 
 _logger = get_logger(__name__)
 DEFAULT_GAMMA_BASE_URL = os.getenv("GAMMA_API_URL", "https://gamma-api.polymarket.com")
@@ -46,7 +43,7 @@ def _normalize_base_url(base_url: str | None) -> str:
     return url[:-1] if url.endswith("/") else url
 
 
-def build_markets_query(filters: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def build_markets_query(filters: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     Build query params for Gamma Get Markets from a generic filter dict.
 
@@ -64,7 +61,7 @@ def build_markets_query(filters: Dict[str, Any] | None = None) -> Dict[str, Any]
     - next_cursor: will be added separately by the fetch function
 
     """
-    params: Dict[str, Any] = {}
+    params: dict[str, Any] = {}
     if not filters:
         return params
 
@@ -106,11 +103,11 @@ def build_markets_query(filters: Dict[str, Any] | None = None) -> Dict[str, Any]
 def _request_markets_page(
     session: requests.Session,
     base_url: str,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     offset: int,
     limit: int,
     timeout: float,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Fetch a single page of markets using limit/offset pagination.
 
@@ -137,10 +134,10 @@ def _request_markets_page(
 
 
 def iter_markets(
-    filters: Dict[str, Any] | None = None,
+    filters: dict[str, Any] | None = None,
     base_url: str | None = None,
     timeout: float = 10.0,
-) -> Generator[Dict[str, Any], None, None]:
+) -> Generator[dict[str, Any], None, None]:
     """
     Iterate markets that pass server-side filters, yielding raw market dicts.
     """
@@ -164,8 +161,7 @@ def iter_markets(
             if not markets:
                 _logger.info("No markets returned for offset=%s; stopping", offset)
                 break
-            for market in markets:
-                yield market
+            yield from markets
             if len(markets) < limit:
                 _logger.info("Final page received count=%s (< limit=%s); stopping", len(markets), limit)
                 break
@@ -173,7 +169,7 @@ def iter_markets(
             _logger.debug("Advancing to next page offset=%s", offset)
 
 
-def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[str, Any]:
     """
     Normalize Gamma API market format to CLOB API format.
 
@@ -182,12 +178,12 @@ def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[
 
     Parameters
     ----------
-    gamma_market : Dict[str, Any]
+    gamma_market : dict[str, Any]
         Market data from Gamma API in camelCase format.
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         Market data normalized to CLOB API format with snake_case fields.
 
     """
@@ -284,18 +280,18 @@ def normalize_gamma_market_to_clob_format(gamma_market: Dict[str, Any]) -> Dict[
 
 
 def list_markets(
-    filters: Dict[str, Any] | None = None,
+    filters: dict[str, Any] | None = None,
     base_url: str | None = None,
     timeout: float = 10.0,
     max_results: int | None = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Collect markets into a list.
 
     Use `max_results` to cap total items fetched.
 
     """
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     count = 0
     for market in iter_markets(filters=filters, base_url=base_url, timeout=timeout):
         results.append(market)

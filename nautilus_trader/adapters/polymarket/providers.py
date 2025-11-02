@@ -65,6 +65,54 @@ class PolymarketInstrumentProvider(InstrumentProvider):
     async def load_all_async(self, filters: dict | None = None) -> None:
         await self._load_markets([], filters)
 
+    def _load_ids_using_gamma_markets(
+        self,
+        instrument_ids: list[InstrumentId],
+        filters: dict | None = None,
+    ) -> None:
+        """Load instruments using Gamma API markets."""
+        condition_ids = [get_polymarket_condition_id(inst_id) for inst_id in instrument_ids]
+        
+        if filters is None:
+            filters = {}
+        
+        if len(condition_ids) <= 100:  # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
+            self._log.info(f"Loading {len(condition_ids)} instruments, using direct condition_id filtering")
+            filters["condition_ids"] = condition_ids
+        else:
+            self._log.info(f"Loading {len(condition_ids)} instruments, using bulk load of all markets")
+
+        markets = list_markets(filters=filters)  # Usually, you would use filters={"is_active": True} to skip archived markets
+        for market in markets:
+            condition_id = market.get("conditionId")
+            if not condition_id:
+                continue
+
+            if condition_ids and condition_id not in condition_ids:
+                continue
+
+            normalized_market = normalize_gamma_market_to_clob_format(market)
+
+            # Use the normalized tokens array
+            for token_info in normalized_market.get("tokens", []):
+                token_id = token_info["token_id"]
+                outcome = token_info["outcome"]
+                self._load_instrument(normalized_market, token_id, outcome)
+
+    async def _load_ids_using_clob_api(
+        self,
+        instrument_ids: list[InstrumentId],
+        filters: dict | None = None,
+    ) -> None:
+        """Load instruments using CLOB API."""
+        if len(instrument_ids) > 200:
+            self._log.warning(
+                f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative",
+            )
+            await self._load_markets(instrument_ids, filters)
+        else:
+            await self._load_markets_seq(instrument_ids, filters)
+
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
@@ -82,46 +130,11 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 "instrument_id.venue",
                 "POLYMARKET",
             )
+        
         if self._config.use_gamma_markets:
-            # Extract condition IDs from instrument IDs for filtering
-            condition_ids = [get_polymarket_condition_id(inst_id) for inst_id in instrument_ids]
-            # Use only the first 100 condition_ids to avoid query string length limit
-            if len(condition_ids) <= 100: # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
-                self._log.info(f"Loading {len(condition_ids)} instruments, using direct condition_id filtering")
-                if filters is None:
-                    filters = {}
-                filters["condition_ids"] = condition_ids
-            else:
-                self._log.info(f"Loading {len(condition_ids)} instruments, using bulk load of all markets")
-                if filters is None:
-                    filters = {}
-
-            markets = list_markets(filters=filters) # Usually, you would use filters={"is_active": True} to skip archived markets
-            for market in markets:
-                condition_id = market.get("conditionId")
-                if not condition_id:
-                    continue
-
-                # Filter by condition IDs if specified
-                if condition_ids and condition_id not in condition_ids:
-                    continue
-
-                # Normalize Gamma API format to CLOB API format
-                normalized_market = normalize_gamma_market_to_clob_format(market)
-
-                # Use the normalized tokens array
-                for token_info in normalized_market.get("tokens", []):
-                    token_id = token_info["token_id"]
-                    outcome = token_info["outcome"]
-                    self._load_instrument(normalized_market, token_id, outcome)
+            self._load_ids_using_gamma_markets(instrument_ids, filters)
         else:
-            if len(instrument_ids) > 200:
-                self._log.warning(
-                    f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative",
-                )
-                await self._load_markets(instrument_ids, filters)
-            else:
-                await self._load_markets_seq(instrument_ids, filters)
+            await self._load_ids_using_clob_api(instrument_ids, filters)
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
