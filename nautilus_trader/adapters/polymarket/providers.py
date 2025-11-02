@@ -74,10 +74,10 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         Load instruments using Gamma API markets.
         """
         condition_ids = [get_polymarket_condition_id(inst_id) for inst_id in instrument_ids]
-        
+
         if filters is None:
             filters = {}
-        
+
         if len(condition_ids) <= 100:  # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
             self._log.info(f"Loading {len(condition_ids)} instruments, using direct condition_id filtering")
             filters["condition_ids"] = condition_ids
@@ -134,7 +134,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 "instrument_id.venue",
                 "POLYMARKET",
             )
-        
+
         if self._config.use_gamma_markets:
             self._load_ids_using_gamma_markets(instrument_ids, filters)
         else:
