@@ -1440,7 +1440,7 @@ def test_adjust_fills_missing_order_reports_uses_fill_side(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -1618,7 +1618,7 @@ def test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders(eurus
     mass_status._position_reports[eurusd_instrument.id] = [position_report]
 
     # Act - Adjust fills (should trigger FilterToCurrentLifecycle)
-    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window(
+    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window_single(
         mass_status,
         eurusd_instrument,
     )

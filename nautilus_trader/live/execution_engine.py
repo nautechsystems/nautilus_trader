@@ -1859,10 +1859,7 @@ class LiveExecutionEngine(ExecutionEngine):
             LogColor.BLUE,
         )
 
-        for instrument_id, adjusted_results in adjusted_results.items():
-            adjusted_orders_for_instrument = adjusted_results[0]
-            adjusted_fills_for_instrument = adjusted_results[1]
-
+        for instrument_id, (adjusted_orders_for_instrument, adjusted_fills_for_instrument) in adjusted_results.items():
             # Remove old orders and fills for this instrument
             for venue_order_id in list(final_orders.keys()):
                 order = final_orders[venue_order_id]
