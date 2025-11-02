@@ -11,6 +11,8 @@ CARGO_AUDIT_VERSION := $(shell grep '^cargo-audit *= *"' Cargo.toml | awk -F\" '
 CARGO_DENY_VERSION := $(shell grep '^cargo-deny *= *"' Cargo.toml | awk -F\" '{print $$2}')
 CARGO_LLVM_COV_VERSION := $(shell grep '^cargo-llvm-cov *= *"' Cargo.toml | awk -F\" '{print $$2}')
 CARGO_NEXTEST_VERSION := $(shell grep '^cargo-nextest *= *"' Cargo.toml | awk -F\" '{print $$2}')
+LYCHEE_VERSION := $(shell grep '^lychee *= *"' Cargo.toml | awk -F\" '{print $$2}')
+UV_VERSION := $(shell cat uv-version | tr -d '\n')
 
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
@@ -25,11 +27,23 @@ VERBOSE ?= true
 # allowing the full test suite to run.
 FAIL_FAST ?= false
 
+# HYPERSYNC controls whether hypersync feature is included in cargo features.
+# When set to `true` the hypersync feature is included. When `false` (the default)
+# the feature is excluded. Can be overridden: make check-code HYPERSYNC=true
+HYPERSYNC ?= false
+
 # Select the appropriate flag for `cargo nextest` depending on FAIL_FAST.
 ifeq ($(FAIL_FAST),true)
 FAIL_FAST_FLAG :=
 else
 FAIL_FAST_FLAG := --no-fail-fast
+endif
+
+# Select cargo features based on HYPERSYNC flag (can be overridden with CARGO_FEATURES=...)
+ifeq ($(HYPERSYNC),true)
+CARGO_FEATURES ?= ffi,python,high-precision,defi,hypersync
+else
+CARGO_FEATURES ?= ffi,python,high-precision,defi
 endif
 
 # > Colors
@@ -160,9 +174,24 @@ format:  #-- Format Rust code using nightly formatter
 pre-commit:  #-- Run all pre-commit hooks on all files
 	uv run --active --no-sync pre-commit run --all-files
 
+# The check-code target uses CARGO_FEATURES which is controlled by the HYPERSYNC flag.
+# By default, hypersync is excluded to speed up checks. Override with: make check-code HYPERSYNC=true
+.PHONY: check-code
+check-code: format  #-- Run format, clippy, and ruff --fix (use HYPERSYNC=true to include hypersync feature)
+	$(info $(M) Running code quality checks...)
+	@cargo clippy --all-targets --features "$(CARGO_FEATURES)" -- -D warnings
+	@uv run --active --no-sync ruff check . --fix
+	@printf "$(GREEN)Checks passed$(RESET)\n"
+
+
 .PHONY: pre-flight
 pre-flight:  #-- Run comprehensive pre-flight checks (format, pre-commit, cargo-test-hypersync, build-debug, pytest)
 	$(info $(M) Running pre-flight checks...)
+	@if ! git diff --quiet; then \
+		printf "$(RED)ERROR: You have unstaged changes$(RESET)\n"; \
+		printf "$(YELLOW)Stage your changes first:$(RESET) git add .\n"; \
+		exit 1; \
+	fi
 	@$(MAKE) --no-print-directory format
 	@$(MAKE) --no-print-directory pre-commit
 	@$(MAKE) --no-print-directory cargo-test-hypersync
@@ -196,14 +225,22 @@ clippy-pedantic-crate-%:  #-- Run clippy linter for a specific Rust crate (usage
 #== Dependencies
 
 .PHONY: outdated
-outdated: check-outdated-installed  #-- Check for outdated dependencies
-	cargo outdated --workspace --root-deps-only
+outdated: check-edit-installed  #-- Check for outdated dependencies
+	cargo upgrade --dry-run --incompatible
 	uv tree --outdated --depth 1 --all-groups
 
-.PHONY: update cargo-update
-update: cargo-update  #-- Update all dependencies (uv and cargo)
-	uv self update
+.PHONY: update update-tools cargo-update
+update: update-tools cargo-update  #-- Update all dependencies (cargo and uv)
 	uv lock --upgrade
+
+.PHONY: update-tools
+update-tools:  #-- Update or install required development tools (Rust tools from Cargo.toml, uv from uv-version)
+	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
+	&& cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked \
+	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
+	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked \
+	&& cargo install lychee --version $(LYCHEE_VERSION) --locked \
+	&& uv self update $(UV_VERSION)
 
 #== Security
 
@@ -241,6 +278,22 @@ docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
 	cargo +nightly hack --workspace doc --no-deps --all-features
 
+.PHONY: docs-check-links
+docs-check-links:  #-- Check for broken links in documentation (periodic audit)
+	$(info $(M) Checking documentation links...)
+	@lychee \
+		--verbose \
+		--no-progress \
+		--exclude-all-private \
+		--max-retries 3 \
+		--retry-wait-time 5 \
+		--timeout 30 \
+		--max-concurrency 10 \
+		--accept "100..=103,200..=299,429,502..=504" \
+		--exclude-file .lycheeignore \
+		"**/*.md"
+	@printf "$(GREEN)Link check passed$(RESET)\n"
+
 #== Rust Development
 
 .PHONY: cargo-build
@@ -248,12 +301,8 @@ cargo-build:  #-- Build Rust crates in release mode
 	cargo build --release --all-features
 
 .PHONY: cargo-update
-cargo-update:  #-- Update Rust dependencies and install required tools (versions from Cargo.toml)
-	cargo update \
-	&& cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
-	&& cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked \
-	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
-	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked
+cargo-update:  #-- Update Rust dependencies (versions from Cargo.toml)
+	cargo update
 
 .PHONY: cargo-check
 cargo-check:  #-- Check Rust code without building
@@ -294,10 +343,10 @@ check-hack-installed:  #-- Verify cargo-hack is installed
 		exit 1; \
 	fi
 
-.PHONY: check-outdated-installed
-check-outdated-installed:  #-- Verify cargo-outdated is installed
-	@if ! cargo outdated --version >/dev/null 2>&1; then \
-		echo "cargo-outdated is not installed. You can install it using 'cargo install cargo-outdated'"; \
+.PHONY: check-edit-installed
+check-edit-installed:  #-- Verify cargo-edit is installed
+	@if ! cargo upgrade --version >/dev/null 2>&1; then \
+		echo "cargo-edit is not installed. You can install it using 'cargo install cargo-edit'"; \
 		exit 1; \
 	fi
 

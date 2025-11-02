@@ -725,6 +725,8 @@ The Databento data client provides the following configuration options:
 | `venue_dataset_map`       | `None`  | Optional mapping of Nautilus venues to Databento dataset codes. |
 | `parent_symbols`          | `None`  | Optional mapping `{dataset: {parent symbols}}` to preload definition trees (e.g., `{"GLBX.MDP3": {"ES.FUT", "ES.OPT"}}`). |
 | `instrument_ids`          | `None`  | Sequence of Nautilus `InstrumentId` values to preload definitions for at startup. |
+| `http_proxy_url`          | `None`  | Optional HTTP proxy URL. |
+| `ws_proxy_url`            | `None`  | Optional WebSocket proxy URL. |
 
 :::tip
 We recommend using environment variables to manage your credentials.

@@ -45,6 +45,13 @@ pub struct OKXDataClientConfig {
     pub base_url_ws_public: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
     /// When true the client will use OKX demo endpoints.
     pub is_demo: bool,
     /// Optional HTTP timeout in seconds.
@@ -73,6 +80,8 @@ impl Default for OKXDataClientConfig {
             base_url_http: None,
             base_url_ws_public: None,
             base_url_ws_business: None,
+            http_proxy_url: None,
+            ws_proxy_url: None,
             is_demo: false,
             http_timeout_secs: Some(60),
             max_retries: Some(3),
@@ -148,6 +157,13 @@ pub struct OKXExecClientConfig {
     pub base_url_ws_private: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
     /// When true the client will use OKX demo endpoints.
     pub is_demo: bool,
     /// Optional HTTP timeout in seconds.
@@ -180,6 +196,8 @@ impl Default for OKXExecClientConfig {
             base_url_http: None,
             base_url_ws_private: None,
             base_url_ws_business: None,
+            http_proxy_url: None,
+            ws_proxy_url: None,
             is_demo: false,
             http_timeout_secs: Some(60),
             use_fills_channel: false,

@@ -15,6 +15,7 @@
 
 //! Python bindings for the Bybit HTTP client.
 
+use chrono::{DateTime, Utc};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
@@ -25,29 +26,42 @@ use nautilus_model::{
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
-    common::enums::BybitProductType,
+    common::enums::{BybitMarginMode, BybitPositionMode, BybitProductType},
     http::{client::BybitHttpClient, error::BybitHttpError},
 };
 
 #[pymethods]
 impl BybitHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, proxy_url=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
+        demo: bool,
+        testnet: bool,
         timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
         let timeout = timeout_secs.or(Some(60));
 
         // Try to get credentials from parameters or environment variables
-        let key = api_key.or_else(|| std::env::var("BYBIT_API_KEY").ok());
-        let secret = api_secret.or_else(|| std::env::var("BYBIT_API_SECRET").ok());
+        // Priority: demo > testnet > mainnet
+        let (api_key_env, api_secret_env) = if demo {
+            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
+        } else if testnet {
+            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
+        } else {
+            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
+        };
+
+        let key = api_key.or_else(|| std::env::var(api_key_env).ok());
+        let secret = api_secret.or_else(|| std::env::var(api_secret_env).ok());
 
         if let (Some(k), Some(s)) = (key, secret) {
             Self::with_credentials(
@@ -58,6 +72,8 @@ impl BybitHttpClient {
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
             )
             .map_err(to_pyvalue_err)
         } else {
@@ -67,6 +83,8 @@ impl BybitHttpClient {
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
             )
             .map_err(to_pyvalue_err)
         }
@@ -86,16 +104,27 @@ impl BybitHttpClient {
         self.credential().map(|c| c.api_key()).map(|u| u.as_str())
     }
 
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+    #[pyo3(name = "masked_api_key")]
+    #[must_use]
+    pub fn py_masked_api_key(&self) -> Option<String> {
+        self.credential().map(|c| c.masked_api_key())
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
-        self.add_instrument(inst_any);
+        self.cache_instrument(inst_any);
         Ok(())
     }
 
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
+    }
+
+    #[pyo3(name = "set_use_spot_position_reports")]
+    fn py_set_use_spot_position_reports(&self, use_spot_position_reports: bool) {
+        self.set_use_spot_position_reports(use_spot_position_reports);
     }
 
     #[pyo3(name = "request_instruments")]
@@ -130,6 +159,7 @@ impl BybitHttpClient {
 
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
+        account_id,
         product_type,
         instrument_id,
         client_order_id,
@@ -138,12 +168,14 @@ impl BybitHttpClient {
         quantity,
         time_in_force,
         price = None,
-        reduce_only = false
+        reduce_only = false,
+        is_leverage = false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
@@ -153,12 +185,14 @@ impl BybitHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         reduce_only: bool,
+        is_leverage: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
                 .submit_order(
+                    account_id,
                     product_type,
                     instrument_id,
                     client_order_id,
@@ -168,6 +202,7 @@ impl BybitHttpClient {
                     time_in_force,
                     price,
                     reduce_only,
+                    is_leverage,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
@@ -178,6 +213,7 @@ impl BybitHttpClient {
 
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
+        account_id,
         product_type,
         instrument_id,
         client_order_id=None,
@@ -189,6 +225,7 @@ impl BybitHttpClient {
     fn py_modify_order<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
@@ -201,6 +238,7 @@ impl BybitHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
                 .modify_order(
+                    account_id,
                     product_type,
                     instrument_id,
                     client_order_id,
@@ -216,10 +254,11 @@ impl BybitHttpClient {
     }
 
     #[pyo3(name = "cancel_order")]
-    #[pyo3(signature = (product_type, instrument_id, client_order_id=None, venue_order_id=None))]
+    #[pyo3(signature = (account_id, product_type, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
@@ -229,7 +268,13 @@ impl BybitHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
-                .cancel_order(product_type, instrument_id, client_order_id, venue_order_id)
+                .cancel_order(
+                    account_id,
+                    product_type,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                )
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -241,6 +286,7 @@ impl BybitHttpClient {
     fn py_cancel_all_orders<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -248,7 +294,7 @@ impl BybitHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .cancel_all_orders(product_type, instrument_id)
+                .cancel_all_orders(account_id, product_type, instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -323,21 +369,30 @@ impl BybitHttpClient {
     }
 
     #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (product_type, bar_type, start=None, end=None, limit=None))]
+    #[pyo3(signature = (product_type, bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
+    #[allow(clippy::too_many_arguments)]
     fn py_request_bars<'py>(
         &self,
         py: Python<'py>,
         product_type: BybitProductType,
         bar_type: nautilus_model::data::BarType,
-        start: Option<i64>,
-        end: Option<i64>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
+        timestamp_on_close: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
-                .request_bars(product_type, bar_type, start, end, limit)
+                .request_bars(
+                    product_type,
+                    bar_type,
+                    start,
+                    end,
+                    limit,
+                    timestamp_on_close,
+                )
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -490,6 +545,71 @@ impl BybitHttpClient {
                 let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
                 Ok(pylist)
             })
+        })
+    }
+
+    #[pyo3(name = "set_margin_mode")]
+    fn py_set_margin_mode<'py>(
+        &self,
+        py: Python<'py>,
+        margin_mode: BybitMarginMode,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .set_margin_mode(margin_mode)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
+    }
+
+    #[pyo3(name = "set_leverage")]
+    #[pyo3(signature = (product_type, symbol, buy_leverage, sell_leverage))]
+    fn py_set_leverage<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+        symbol: &str,
+        buy_leverage: &str,
+        sell_leverage: &str,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        let symbol = symbol.to_string();
+        let buy_leverage = buy_leverage.to_string();
+        let sell_leverage = sell_leverage.to_string();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .set_leverage(product_type, &symbol, &buy_leverage, &sell_leverage)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
+    }
+
+    #[pyo3(name = "switch_mode")]
+    #[pyo3(signature = (product_type, mode, symbol=None, coin=None))]
+    fn py_switch_mode<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+        mode: BybitPositionMode,
+        symbol: Option<String>,
+        coin: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .switch_mode(product_type, mode, symbol, coin)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
         })
     }
 }

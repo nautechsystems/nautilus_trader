@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from enum import Enum
+from typing import Any
 
 import msgspec
 
@@ -49,6 +51,33 @@ from nautilus_trader.model.objects import QUANTITY_MIN
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+
+def _symbol_info_to_dict(symbol_info: BinanceFuturesSymbolInfo) -> dict:
+    """
+    Convert symbol info to dict with all enums and nested structs converted to
+    primitives.
+
+    This ensures the info dict contains only JSON-serializable primitives.
+
+    """
+
+    def _convert_value(value: Any) -> Any:
+        # Recursively convert enums and structs to primitives
+        if isinstance(value, Enum):
+            return value.value
+        elif hasattr(value, "__struct_fields__"):
+            return _convert_dict(msgspec.structs.asdict(value))
+        elif isinstance(value, list):
+            return [_convert_value(item) for item in value]
+        elif isinstance(value, dict):
+            return _convert_dict(value)
+        return value
+
+    def _convert_dict(d: dict) -> dict:
+        return {key: _convert_value(val) for key, val in d.items()}
+
+    return _convert_dict(msgspec.structs.asdict(symbol_info))
 
 
 class BinanceFuturesInstrumentProvider(InstrumentProvider):
@@ -308,7 +337,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     taker_fee=taker_fee,
                     ts_event=ts_event,
                     ts_init=ts_init,
-                    info=msgspec.structs.asdict(symbol_info),
+                    info=_symbol_info_to_dict(symbol_info),
                 )
                 self.add_currency(currency=instrument.base_currency)
             elif contract_type in (
@@ -343,7 +372,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     taker_fee=taker_fee,
                     ts_event=ts_event,
                     ts_init=ts_init,
-                    info=msgspec.structs.asdict(symbol_info),
+                    info=_symbol_info_to_dict(symbol_info),
                 )
                 self.add_currency(currency=instrument.underlying)
             else:

@@ -391,7 +391,6 @@ typedef enum InstrumentClass {
     SPORTS_BETTING = 11,
     /**
      * A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, depending on whether the price of an underlying asset is above or below a predetermined level at expiration.
-     * A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
      */
     BINARY_OPTION = 12,
 } InstrumentClass;
@@ -749,6 +748,20 @@ typedef enum PositionSide {
      */
     SHORT = 3,
 } PositionSide;
+
+/**
+ * The type of position adjustment.
+ */
+typedef enum PositionAdjustmentType {
+    /**
+     * Commission adjustment affecting position quantity.
+     */
+    COMMISSION = 1,
+    /**
+     * Funding payment affecting position realized PnL.
+     */
+    FUNDING = 2,
+} PositionAdjustmentType;
 
 /**
  * A record flag bit field, indicating event end and data information.
@@ -2553,6 +2566,21 @@ const char *position_side_to_cstr(enum PositionSide value);
  * Panics if the C string does not correspond to a valid `PositionSide` variant.
  */
 enum PositionSide position_side_from_cstr(const char *ptr);
+
+const char *position_adjustment_type_to_cstr(enum PositionAdjustmentType value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ *
+ * Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `PositionAdjustmentType` variant.
+ */
+enum PositionAdjustmentType position_adjustment_type_from_cstr(const char *ptr);
 
 const char *price_type_to_cstr(enum PriceType value);
 

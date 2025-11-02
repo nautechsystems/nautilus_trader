@@ -33,12 +33,20 @@ create_exception!(network, HttpError, PyException);
 // Python exception class for generic HTTP timeout errors.
 create_exception!(network, HttpTimeoutError, PyException);
 
+// Python exception class for invalid proxy configuration.
+create_exception!(network, HttpInvalidProxyError, PyException);
+
+// Python exception class for HTTP client build errors.
+create_exception!(network, HttpClientBuildError, PyException);
+
 impl HttpClientError {
     #[must_use]
     pub fn into_py_err(self) -> PyErr {
         match self {
             Self::Error(e) => PyErr::new::<HttpError, _>(e),
             Self::TimeoutError(e) => PyErr::new::<HttpTimeoutError, _>(e),
+            Self::InvalidProxy(e) => PyErr::new::<HttpInvalidProxyError, _>(e),
+            Self::ClientBuildError(e) => PyErr::new::<HttpClientBuildError, _>(e),
         }
     }
 }
@@ -96,6 +104,7 @@ impl HttpClient {
     /// `keyed_quota`: A list of string quota pairs that gives quota for specific key values.
     /// `default_quota`: The default rate limiting quota for any request.
     /// Default quota is optional and no quota is passthrough.
+    /// `proxy_url`: Optional proxy URL (e.g., <http://proxy.example.com:8080>).
     ///
     /// Rate limiting can be configured on a per-endpoint basis by passing
     /// key-value pairs of endpoint URLs and their respective quotas.
@@ -111,23 +120,30 @@ impl HttpClient {
     /// When a request is made the URL should be split into all the keys within it.
     ///
     /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
+    ///
+    /// # Errors
+    ///
+    /// - Returns `HttpInvalidProxyError` if the proxy URL is malformed.
+    /// - Returns `HttpClientBuildError` if building the HTTP client fails.
     #[new]
-    #[pyo3(signature = (default_headers=HashMap::new(), header_keys=Vec::new(), keyed_quotas=Vec::new(), default_quota=None, timeout_secs=None))]
-    #[must_use]
+    #[pyo3(signature = (default_headers=HashMap::new(), header_keys=Vec::new(), keyed_quotas=Vec::new(), default_quota=None, timeout_secs=None, proxy_url=None))]
     pub fn py_new(
         default_headers: HashMap<String, String>,
         header_keys: Vec<String>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
         timeout_secs: Option<u64>,
-    ) -> Self {
+        proxy_url: Option<String>,
+    ) -> PyResult<Self> {
         Self::new(
             default_headers,
             header_keys,
             keyed_quotas,
             default_quota,
             timeout_secs,
+            proxy_url,
         )
+        .map_err(HttpClientError::into_py_err)
     }
 
     /// Sends an HTTP request.

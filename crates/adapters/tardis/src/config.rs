@@ -28,4 +28,9 @@ pub struct TardisReplayConfig {
     pub output_path: Option<String>,
     /// The Tardis Machine replay options.
     pub options: Vec<ReplayNormalizedRequestOptions>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality.
+    pub ws_proxy_url: Option<String>,
 }

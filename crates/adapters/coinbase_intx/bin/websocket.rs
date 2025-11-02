@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Cache instruments first (required for correct websocket message parsing)
     let instruments = client.request_instruments().await?;
     let mut client = CoinbaseIntxWebSocketClient::default();
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
 
     client.connect().await?;
 

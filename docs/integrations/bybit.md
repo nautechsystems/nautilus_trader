@@ -318,6 +318,8 @@ The product types for each client must be specified in the configurations.
 | `api_secret`                     | `None`  | API secret; loaded from `BYBIT_API_SECRET`/`BYBIT_TESTNET_API_SECRET` when omitted. |
 | `product_types`                  | `None`  | Sequence of `BybitProductType` values to enable; loads all products when `None`. |
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
+| `http_proxy_url`                 | `None` | Optional HTTP proxy URL. |
+| `ws_proxy_url`                   | `None` | Optional WebSocket proxy URL (not yet implemented). |
 | `demo`                           | `False` | Connect to the Bybit demo environment when `True`. |
 | `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
 | `update_instruments_interval_mins` | `60` | Interval (minutes) between instrument catalogue refreshes. |
@@ -337,12 +339,13 @@ The product types for each client must be specified in the configurations.
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
 | `base_url_ws_private`            | `None`  | Override for the private WebSocket base URL. |
 | `base_url_ws_trade`              | `None`  | Override for the trade WebSocket base URL. |
+| `http_proxy_url`                 | `None` | Optional HTTP proxy URL. |
+| `ws_proxy_url`                   | `None` | Optional WebSocket proxy URL (not yet implemented). |
 | `demo`                           | `False` | Connect to the Bybit demo environment when `True`. |
 | `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
 | `use_gtd`                        | `False` | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support). |
 | `use_ws_execution_fast`          | `False` | Subscribe to the low-latency execution stream. |
-| `use_ws_trade_api`               | `False` | Send order requests over WebSocket instead of HTTP. |
-| `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (requires WebSocket trading enabled). |
+| `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (deprecated). |
 | `use_spot_position_reports`      | `False` | Report SPOT wallet balances as positions when `True`. |
 | `ignore_uncached_instrument_executions` | `False` | Ignore execution messages for instruments not yet cached. |
 | `max_retries`                    | `None` | Maximum retry attempts for order submission/cancel/modify calls. |

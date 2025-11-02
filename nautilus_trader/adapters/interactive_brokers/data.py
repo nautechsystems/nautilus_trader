@@ -214,10 +214,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 generic_tick_list="",  # Empty for basic bid/ask data
             )
         else:
-            await self._client.subscribe_market_data(
+            await self._client.subscribe_ticks(
                 instrument_id=command.instrument_id,
                 contract=contract,
-                generic_tick_list="",  # Empty for basic bid/ask data
+                tick_type="BidAsk",
+                ignore_size=self._ignore_quote_tick_size_updates,
             )
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:

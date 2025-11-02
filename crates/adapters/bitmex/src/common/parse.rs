@@ -365,7 +365,11 @@ pub fn parse_account_state(
             tracing::warn!(
                 "Unknown currency '{currency_str}' in margin message, creating default crypto currency"
             );
-            Currency::new(&currency_str, 8, 0, &currency_str, CurrencyType::Crypto)
+            let currency = Currency::new(&currency_str, 8, 0, &currency_str, CurrencyType::Crypto);
+            if let Err(e) = Currency::register(currency, false) {
+                tracing::error!("Failed to register currency '{currency_str}': {e}");
+            }
+            currency
         }
     };
 

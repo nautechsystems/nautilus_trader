@@ -219,7 +219,7 @@ impl OKXWebSocketClient {
             instruments_any.push(inst_any);
         }
 
-        self.initialize_instruments_cache(instruments_any);
+        self.cache_instruments(instruments_any);
 
         let mut client = self.clone();
 
@@ -1024,7 +1024,7 @@ impl OKXWebSocketClient {
                 Option<bool>,
             ) = obj
                 .extract(py)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
 
             domain_orders.push((
                 instrument_type,
@@ -1068,7 +1068,7 @@ impl OKXWebSocketClient {
                 Option<VenueOrderId>,
             ) = obj
                 .extract(py)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
             batched_cancels.push((instrument_id, client_order_id, order_id));
         }
 
@@ -1107,7 +1107,7 @@ impl OKXWebSocketClient {
                 Option<Quantity>,
             ) = obj
                 .extract(py)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(|e: PyErr| PyRuntimeError::new_err(e.to_string()))?;
             let inst_type =
                 OKXInstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
             domain_orders.push((
@@ -1144,6 +1144,22 @@ impl OKXWebSocketClient {
                 .await
                 .map_err(to_pyvalue_err)
         })
+    }
+
+    #[pyo3(name = "cache_instruments")]
+    fn py_cache_instruments(&self, py: Python<'_>, instruments: Vec<Py<PyAny>>) -> PyResult<()> {
+        let instruments: Result<Vec<_>, _> = instruments
+            .into_iter()
+            .map(|inst| pyobject_to_instrument_any(py, inst))
+            .collect();
+        self.cache_instruments(instruments?);
+        Ok(())
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
+        self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
+        Ok(())
     }
 }
 

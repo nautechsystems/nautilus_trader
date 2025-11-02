@@ -167,6 +167,30 @@ impl Currency {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::CommodityBacked)
     }
+
+    /// Returns a currency from the internal map or creates a new crypto currency if not found.
+    ///
+    /// This is a convenience method for adapters that need to handle unknown currencies
+    /// (e.g., newly listed assets on exchanges). If the currency code is not found in the
+    /// internal map, a new cryptocurrency is created with:
+    /// - 8 decimal precision
+    /// - ISO 4217 code of 0
+    /// - CurrencyType::Crypto
+    ///
+    /// The newly created currency is automatically registered in the internal map.
+    #[must_use]
+    pub fn get_or_create_crypto<T: AsRef<str>>(code: T) -> Self {
+        let code_str = code.as_ref();
+        Self::try_from_str(code_str).unwrap_or_else(|| {
+            let currency = Self::new(code_str, 8, 0, code_str, CurrencyType::Crypto);
+
+            if let Err(e) = Self::register(currency, false) {
+                tracing::error!("Failed to register currency '{code_str}': {e}");
+            }
+
+            currency
+        })
+    }
 }
 
 impl PartialEq for Currency {
@@ -429,5 +453,51 @@ mod tests {
         let serialized = serde_json::to_string(&currency).unwrap();
         let deserialized: Currency = serde_json::from_str(&serialized).unwrap();
         assert_eq!(currency, deserialized);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_existing() {
+        // Test with an existing currency (BTC is in the default map)
+        let currency = Currency::get_or_create_crypto("BTC");
+        assert_eq!(currency.code.as_str(), "BTC");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_new() {
+        // Test with a non-existent currency code
+        let currency = Currency::get_or_create_crypto("NEWCOIN");
+        assert_eq!(currency.code.as_str(), "NEWCOIN");
+        assert_eq!(currency.precision, 8);
+        assert_eq!(currency.iso4217, 0);
+        assert_eq!(currency.name.as_str(), "NEWCOIN");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
+
+        // Verify it was registered and can be retrieved
+        let retrieved = Currency::try_from_str("NEWCOIN");
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap(), currency);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_idempotent() {
+        // First call creates and registers
+        let currency1 = Currency::get_or_create_crypto("TESTCOIN");
+
+        // Second call should retrieve the same currency
+        let currency2 = Currency::get_or_create_crypto("TESTCOIN");
+
+        assert_eq!(currency1, currency2);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_ustr() {
+        use ustr::Ustr;
+
+        // Test that it works with Ustr (via AsRef<str>)
+        let code = Ustr::from("USTRCOIN");
+        let currency = Currency::get_or_create_crypto(code);
+        assert_eq!(currency.code.as_str(), "USTRCOIN");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 }

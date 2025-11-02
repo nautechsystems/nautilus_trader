@@ -124,7 +124,7 @@ async def test_connect_success(exec_client_builder, monkeypatch):
     try:
         # Assert
         instrument_provider.initialize.assert_awaited_once()
-        http_client.add_instrument.assert_called_once_with(
+        http_client.cache_instrument.assert_called_once_with(
             instrument_provider.instruments_pyo3.return_value[0],
         )
         http_client.request_account_state.assert_awaited_once()

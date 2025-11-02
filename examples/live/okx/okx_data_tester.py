@@ -79,7 +79,7 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(
         log_level="INFO",
-        log_level_file="DEBUG",
+        # log_level_file="DEBUG",
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
@@ -118,15 +118,16 @@ config_tester = DataTesterConfig(
     ],
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
-    subscribe_book_at_interval=True,  # Only legacy Cython wrapped book (not PyO3)
+    # subscribe_book_at_interval=True,  # Only legacy Cython wrapped book (not PyO3)
     subscribe_quotes=True,
     subscribe_trades=True,
     subscribe_mark_prices=True,
     subscribe_index_prices=False,  # Only for some derivatives
     subscribe_funding_rates=True,
-    subscribe_bars=True,
-    subscribe_instrument_status=False,
-    subscribe_instrument_close=False,
+    # subscribe_bars=True,
+    # subscribe_instrument=True,
+    # subscribe_instrument_status=True,
+    # subscribe_instrument_close=True,
     # request_bars=True,
     # book_group_size=Decimal("1"),  # Only PyO3 wrapped book (not legacy Cython)
     # book_depth=5,
@@ -134,7 +135,7 @@ config_tester = DataTesterConfig(
     book_interval_ms=100,
     # manage_book=True,
     # use_pyo3_book=True,
-    request_bars=True,
+    # request_bars=True,
     # request_trades=True,  # TODO: Needs to be fixed
 )
 tester = DataTester(config=config_tester)

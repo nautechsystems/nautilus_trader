@@ -38,6 +38,7 @@ from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
@@ -1061,3 +1062,56 @@ class TestPolymarketExecutionClient:
         # Assert order types are correctly identified
         assert market_order.order_type == OrderType.MARKET
         assert limit_order.order_type == OrderType.LIMIT
+
+    @pytest.mark.asyncio()
+    async def test_maker_fill_preserves_original_order_side(self, mocker):
+        """
+        Regression test for issue #3126: Maker fill order side inversion when Yes/No
+        orders cross.
+
+        When a BUY order for "Yes" is matched against a BUY order for "No"
+        (complementary outcomes), the filled event should preserve the original order
+        side (BUY), not invert it based on the trade message.
+
+        """
+        # Arrange - using maker order ID from user_trade1.json that matches our test wallet
+        instrument_id = get_polymarket_instrument_id(
+            "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+            "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        )
+        order = self.strategy.order_factory.limit(
+            instrument_id=instrument_id,
+            order_side=OrderSide.BUY,  # Original order is BUY
+            quantity=Quantity.from_str("100"),
+            price=Price.from_str("0.518"),
+        )
+        client_order_id = order.client_order_id
+        venue_order_id = VenueOrderId(
+            "0xab679e56242324e15e59cfd488cd0f12e4fd71b153b9bfb57518898b9983145e",
+        )
+
+        self.cache.add_order(order, None)
+        self.cache.add_venue_order_id(client_order_id, venue_order_id)
+        filled_spy = mocker.spy(self.exec_client, "generate_order_filled")
+
+        # Act
+        raw_message = pkgutil.get_data(
+            package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
+            resource="user_trade1.json",
+        )
+        msg = msgspec.json.decode(raw_message)
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
+        await self.exec_client._wait_for_ack_trade(msg, venue_order_id)
+
+        # Assert
+        filled_spy.assert_called_once()
+        call_kwargs = filled_spy.call_args.kwargs
+
+        # ASSERTION: order_side must match the original order (BUY), not be inverted
+        assert call_kwargs["order_side"] == OrderSide.BUY, (
+            "Maker fill should preserve original order side (BUY), not invert it. "
+            "This ensures correct position tracking when Yes/No orders cross-match."
+        )
+        assert call_kwargs["client_order_id"] == client_order_id
+        assert call_kwargs["venue_order_id"] == venue_order_id
+        assert call_kwargs["liquidity_side"] == LiquiditySide.MAKER

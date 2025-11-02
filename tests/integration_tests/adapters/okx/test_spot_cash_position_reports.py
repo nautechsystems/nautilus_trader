@@ -181,13 +181,13 @@ async def test_spot_position_reports_long_position_from_positive_balance(
     instrument_provider.get_all.return_value = {instrument.id: instrument}
 
     # Mock OKX balance response: cash_bal=1.5 BTC, liab=0 BTC -> net=1.5 BTC LONG
-    # http_get_balance returns a flattened list of balance details
+    # get_balance returns a flattened list of balance details
     okx_balance_detail = SimpleNamespace(
         ccy="BTC",
         cash_bal="1.5",
         liab="0",
     )
-    http_client.http_get_balance = AsyncMock(return_value=[okx_balance_detail])
+    http_client.get_balance = AsyncMock(return_value=[okx_balance_detail])
 
     command = GeneratePositionStatusReports(
         instrument_id=instrument.id,
@@ -222,13 +222,13 @@ async def test_spot_position_reports_short_position_from_negative_balance(
     instrument_provider.get_all.return_value = {instrument.id: instrument}
 
     # Mock OKX balance response: cash_bal=5.0 ETH, liab=8.0 ETH -> net=-3.0 ETH SHORT
-    # http_get_balance returns a flattened list of balance details
+    # get_balance returns a flattened list of balance details
     okx_balance_detail = SimpleNamespace(
         ccy="ETH",
         cash_bal="5.0",
         liab="8.0",
     )
-    http_client.http_get_balance = AsyncMock(return_value=[okx_balance_detail])
+    http_client.get_balance = AsyncMock(return_value=[okx_balance_detail])
 
     command = GeneratePositionStatusReports(
         instrument_id=instrument.id,
@@ -263,13 +263,13 @@ async def test_spot_position_reports_flat_position_from_zero_balance(
     instrument_provider.get_all.return_value = {instrument.id: instrument}
 
     # Mock OKX balance response: cash_bal=2.0 BTC, liab=2.0 BTC -> net=0 BTC FLAT
-    # http_get_balance returns a flattened list of balance details
+    # get_balance returns a flattened list of balance details
     okx_balance_detail = SimpleNamespace(
         ccy="BTC",
         cash_bal="2.0",
         liab="2.0",
     )
-    http_client.http_get_balance = AsyncMock(return_value=[okx_balance_detail])
+    http_client.get_balance = AsyncMock(return_value=[okx_balance_detail])
 
     command = GeneratePositionStatusReports(
         instrument_id=instrument.id,
@@ -310,7 +310,7 @@ async def test_spot_position_reports_multiple_instruments(
     }
 
     # Mock OKX balance response with multiple currencies
-    # http_get_balance returns a flattened list of balance details
+    # get_balance returns a flattened list of balance details
     okx_btc_detail = SimpleNamespace(
         ccy="BTC",
         cash_bal="1.5",
@@ -321,7 +321,7 @@ async def test_spot_position_reports_multiple_instruments(
         cash_bal="10.0",
         liab="15.0",  # net = -5.0 ETH SHORT
     )
-    http_client.http_get_balance = AsyncMock(return_value=[okx_btc_detail, okx_eth_detail])
+    http_client.get_balance = AsyncMock(return_value=[okx_btc_detail, okx_eth_detail])
 
     command = GeneratePositionStatusReports(
         instrument_id=None,  # Query all instruments
@@ -365,7 +365,7 @@ async def test_spot_position_reports_handles_empty_balance_response(
     client._cache.add_instrument(instrument)
 
     # Mock empty OKX balance response
-    http_client.http_get_balance = AsyncMock(return_value=[])
+    http_client.get_balance = AsyncMock(return_value=[])
 
     command = GeneratePositionStatusReports(
         instrument_id=instrument.id,
@@ -396,13 +396,13 @@ async def test_spot_position_reports_handles_missing_currency(
     client._cache.add_instrument(btc_usdt)
 
     # Mock OKX balance response with only ETH (no BTC)
-    # http_get_balance returns a flattened list of balance details
+    # get_balance returns a flattened list of balance details
     okx_eth_detail = SimpleNamespace(
         ccy="ETH",
         cash_bal="10.0",
         liab="0",
     )
-    http_client.http_get_balance = AsyncMock(return_value=[okx_eth_detail])
+    http_client.get_balance = AsyncMock(return_value=[okx_eth_detail])
 
     command = GeneratePositionStatusReports(
         instrument_id=btc_usdt.id,
@@ -435,8 +435,8 @@ async def test_spot_position_reports_handles_exceptions(
     instrument = TestInstrumentProvider.btcusdt_binance()
     client._cache.add_instrument(instrument)
 
-    # Mock http_get_balance to raise an exception
-    http_client.http_get_balance = AsyncMock(side_effect=Exception("API error"))
+    # Mock get_balance to raise an exception
+    http_client.get_balance = AsyncMock(side_effect=Exception("API error"))
 
     command = GeneratePositionStatusReports(
         instrument_id=instrument.id,
@@ -505,13 +505,13 @@ async def test_spot_position_reports_emits_per_instrument_with_same_base(
     }
 
     # Mock OKX balance response: 1.5 BTC in wallet
-    # http_get_balance returns a flattened list of balance details
+    # get_balance returns a flattened list of balance details
     okx_btc_detail = SimpleNamespace(
         ccy="BTC",
         cash_bal="1.5",
         liab="0",
     )
-    http_client.http_get_balance = AsyncMock(return_value=[okx_btc_detail])
+    http_client.get_balance = AsyncMock(return_value=[okx_btc_detail])
 
     command = GeneratePositionStatusReports(
         instrument_id=None,  # Query all instruments

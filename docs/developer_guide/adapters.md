@@ -94,24 +94,29 @@ nautilus_trader/adapters/your_adapter/
 - **Configurations (`config.rs`)**: Expose typed config structs in `src/config.rs` so Python callers toggle venue-specific behaviour (see how OKX wires demo URLs, retries, and channel flags). Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
 - **Error taxonomy (`error.rs`)**: Centralise HTTP/WebSocket failure handling in an adapter-specific error enum. BitMEX, for example, separates retryable, non-retryable, and fatal variants while embedding the original transport error—follow that shape so operational tooling can react consistently.
 - **Python exports (`python/mod.rs`)**: Mirror the Rust surface area through PyO3 modules by re-exporting clients, enums, and helper functions. When new functionality lands in Rust, add it to `python/mod.rs` so the Python layer stays in sync (the OKX adapter is a good reference).
-- **Python bindings (`python/`)**: Expose Rust functionality to Python through PyO3. Mark venue-specific structs that need Python access with `#[pyclass]` and implement `#[pymethods]` blocks with `#[getter]` attributes for field access. For async methods in the HTTP client, use `pyo3_async_runtimes::tokio::future_into_py` to convert Rust futures into Python awaitables. When returning lists of custom types, map each item with `Py::new(py, item)` before constructing the Python list. Register all exported classes and enums in `python/mod.rs` using `m.add_class::<YourType>()` so they're available to Python code. Follow the pattern established in other adapters: prefixing Python-facing methods with `py_*` in Rust while using `#[pyo3(name = "method_name")]` to expose them without the prefix.
+- **Python bindings (`python/`)**: Expose Rust functionality to Python through PyO3. Mark venue-specific structs that need Python access with `#[pyclass]` and implement `#[pymethods]` blocks with `#[getter]` attributes for field access. For async methods in the HTTP client, use `pyo3_async_runtimes::tokio::future_into_py` to convert Rust futures into Python awaitables. When returning lists of custom types, map each item with `Py::new(py, item)` before constructing the Python list. Register all exported classes and enums in `python/mod.rs` using `m.add_class::<YourType>()` so they're available to Python code. Follow the pattern established in other adapters: prefixing Python-facing methods with `py_*` in Rust while using `#[pyo3(name = "method_name")]` to expose them without the prefix. When delivering instruments from WebSocket to Python, use `instrument_any_to_pyobject()` which returns PyO3 types for caching. Never call `.into_py_any()` directly on `InstrumentAny` as it doesn't implement the required trait.
+- **Type qualification**: Adapter-specific types (enums, structs) and Nautilus domain types should not be fully qualified. Import them at the module level and use short names (e.g., `OKXContractType` instead of `crate::common::enums::OKXContractType`, `InstrumentId` instead of `nautilus_model::identifiers::InstrumentId`). This keeps code concise and readable. Only fully qualify types from `anyhow` and `tokio` to avoid ambiguity with similarly-named types from other crates.
 - **String interning**: Use `ustr::Ustr` for any non-unique strings the platform stores repeatedly (venues, symbols, instrument IDs) to minimise allocations and comparisons.
+- **Instrument cache standardization**: All clients that cache instruments must implement three methods with standardized names: `cache_instruments()` (plural, bulk replace), `cache_instrument()` (singular, upsert), and `get_instrument()` (retrieve by symbol). WebSocket clients should use the dual-tier cache architecture (outer `DashMap`, inner `AHashMap`, command channel sync) documented under WebSocket patterns.
 - **Testing helpers (`common/testing.rs`)**: Store shared fixtures and payload loaders in `src/common/testing.rs` for use across HTTP and WebSocket unit tests. This keeps `#[cfg(test)]` helpers out of production modules and encourages reuse.
 
 ## HTTP client patterns
 
-Adapters use a two-layer HTTP client structure to enable efficient cloning for Python bindings while keeping the actual HTTP logic in a single place.
+Adapters use a standardized two-layer HTTP client architecture to separate low-level API operations from high-level domain logic while enabling efficient cloning for Python bindings.
 
 ### Client structure
 
-Use an inner/outer client pattern with `Arc` wrapping:
+The architecture consists of two complementary clients:
+
+1. **Raw client** (`MyRawHttpClient`) - Low-level API methods matching venue endpoints
+2. **Domain client** (`MyHttpClient`) - High-level methods using Nautilus domain types
 
 ```rust
 use std::sync::Arc;
 use nautilus_network::http::HttpClient;
 
-// Inner client - contains actual HTTP logic
-pub struct MyHttpInnerClient {
+// Raw HTTP client - low-level API methods matching venue endpoints
+pub struct MyRawHttpClient {
     base_url: String,
     client: HttpClient,  // Use nautilus_network::http::HttpClient, not reqwest directly
     credential: Option<Credential>,
@@ -119,18 +124,20 @@ pub struct MyHttpInnerClient {
     cancellation_token: CancellationToken,
 }
 
-// Outer client - wraps inner with Arc for cheap cloning (needed for Python)
+// Domain HTTP client - wraps raw client with Arc, provides high-level API
 pub struct MyHttpClient {
-    pub(crate) inner: Arc<MyHttpInnerClient>,
+    pub(crate) inner: Arc<MyRawHttpClient>,
+    // Additional domain-specific state (e.g., instrument cache)
+    instruments: DashMap<InstrumentId, InstrumentAny>,
 }
 ```
 
 **Key points**:
 
-- Inner client (`*HttpInnerClient`) contains all HTTP logic and state.
-- Outer client (`*HttpClient`) wraps the inner client in an `Arc` for efficient cloning.
+- **Raw client** (`MyRawHttpClient`) contains low-level HTTP methods named to match venue endpoints as closely as possible (e.g., `get_instruments`, `get_balance`, `place_order`). These methods take venue-specific query objects and return venue-specific response types.
+- **Domain client** (`MyHttpClient`) wraps the raw client in an `Arc` for efficient cloning (required for Python bindings). It provides high-level methods that accept Nautilus domain types (e.g., `InstrumentId`, `ClientOrderId`) and return domain objects. It may cache instruments or other venue metadata.
 - Use `nautilus_network::http::HttpClient` instead of `reqwest::Client` directly - this provides rate limiting, retry logic, and consistent error handling.
-- The outer client delegates all methods to the inner client.
+- Both clients are exposed to Python, but the domain client is the primary interface for most use cases.
 
 ### Parser functions
 
@@ -148,23 +155,18 @@ Place parsing helpers (`parse_price_with_precision`, `parse_timestamp`) in the s
 
 ### Method naming and organization
 
-Organize HTTP methods into two distinct sections:
-
-- Low-level direct API calls.
-- High-level domain methods.
+The raw client contains low-level API methods that closely match venue endpoints, taking venue-specific query parameter types and returning venue response types. The domain client wraps the raw client and provides high-level methods that accept Nautilus domain types.
 
 **Naming conventions:**
 
-- **Low-level API methods**: Prefix with `http_` and place near the top of the impl block (e.g., `http_get_instruments`, `http_place_order`).
-- **High-level domain methods**: No prefix, placed in a separate section (e.g., `submit_order`, `cancel_order`).
-- Low-level methods take venue-specific types (builders, JSON values).
-- High-level methods take Nautilus domain objects (InstrumentId, ClientOrderId, OrderSide, etc.).
+- **Raw client methods**: Named to match venue endpoints as closely as possible (e.g., `get_instruments`, `get_balance`, `place_order`). These methods are internal to the raw client and take venue-specific types (builders, JSON values).
+- **Domain client methods**: Named based on operation semantics (e.g., `request_instruments`, `submit_order`, `cancel_order`). These are the methods exposed to Python and take Nautilus domain objects (InstrumentId, ClientOrderId, OrderSide, etc.).
 
-**High-level method flow:**
+**Domain method flow:**
 
-High-level domain methods in the inner client follow a three-step pattern: build venue-specific parameters from Nautilus types, call the corresponding `http_*` method, then parse or extract the response. For endpoints returning domain objects (positions, orders, trades), call parser functions from `common/parse`. For endpoints returning raw venue data (fee rates, balances), extract the result directly from the response envelope. Methods prefixed with `request_*` indicate they return domain data, while methods like `submit_*`, `cancel_*`, or `modify_*` perform actions and return acknowledgments.
+Domain methods follow a three-step pattern: build venue-specific parameters from Nautilus types, call the corresponding raw client method, then parse the response. For endpoints returning domain objects (positions, orders, trades), call parser functions from `common/parse`. For endpoints returning raw venue data (fee rates, balances), extract the result directly from the response envelope. Methods prefixed with `request_*` indicate they return domain data, while methods like `submit_*`, `cancel_*`, or `modify_*` perform actions and return acknowledgments.
 
-The outer client delegates all methods directly to the inner client without additional logic - this separation exists solely to enable cheap cloning for Python bindings via `Arc`.
+The domain client wraps the raw client in an `Arc` for efficient cloning required by Python bindings.
 
 ### Query parameter builders
 
@@ -272,6 +274,21 @@ On reconnection, restore authentication and public subscriptions, but skip priva
 ### Ping/Pong handling
 
 Support both control frame pings and application-level pings.
+
+### Instrument cache architecture
+
+WebSocket clients that cache instruments use a **dual-tier pattern** for performance:
+
+- **Outer client**: `Arc<DashMap<Ustr, InstrumentAny>>` provides thread-safe cache for concurrent Python access.
+- **Inner handler**: `AHashMap<Ustr, InstrumentAny>` provides local cache for single-threaded hot path during message parsing.
+- **Command channel**: `tokio::sync::mpsc::unbounded_channel` synchronizes updates from outer to inner.
+
+**Command enum pattern:**
+
+- `HandlerCommand::InitializeInstruments(Vec<InstrumentAny>)` replays cache on connect.
+- `HandlerCommand::UpdateInstrument(InstrumentAny)` syncs individual updates post-connection.
+
+**Critical implementation detail:** When `cache_instrument()` is called after connection, it must send an `UpdateInstrument` command to the inner handler. Otherwise, instruments added dynamically (e.g., from WebSocket updates) won't be available for parsing market data.
 
 ### Message routing
 

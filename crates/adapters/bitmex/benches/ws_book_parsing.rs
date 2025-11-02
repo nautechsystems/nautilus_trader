@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{hint::black_box, sync::Arc};
+use std::hint::black_box;
 
 use ahash::AHashMap;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -34,7 +34,7 @@ use ustr::Ustr;
 const ORDERBOOK_L2: &str = include_str!("../test_data/ws_orderbook_l2.json");
 const ORDERBOOK_10: &str = include_str!("../test_data/ws_orderbook_10.json");
 
-fn instrument_cache() -> Arc<AHashMap<Ustr, InstrumentAny>> {
+fn instrument_cache() -> AHashMap<Ustr, InstrumentAny> {
     let instrument = CryptoPerpetual::new(
         InstrumentId::from("XBTUSD.BITMEX"),
         Symbol::from("XBTUSD"),
@@ -67,17 +67,19 @@ fn instrument_cache() -> Arc<AHashMap<Ustr, InstrumentAny>> {
         Ustr::from("XBTUSD"),
         InstrumentAny::CryptoPerpetual(instrument),
     );
-    Arc::new(map)
+    map
 }
 
 fn bench_orderbook_l2(c: &mut Criterion) {
-    let instruments = instrument_cache();
-
     c.bench_function("bitmex_parse_orderbook_l2", |b| {
-        let instruments = instruments.clone();
         b.iter_batched(
-            || from_str::<BitmexWsMessage>(ORDERBOOK_L2).expect("orderbook l2 message"),
-            |message| match message {
+            || {
+                (
+                    from_str::<BitmexWsMessage>(ORDERBOOK_L2).expect("orderbook l2 message"),
+                    instrument_cache(),
+                )
+            },
+            |(message, instruments)| match message {
                 BitmexWsMessage::Table(
                     BitmexTableMessage::OrderBookL2 { action, data, .. }
                     | BitmexTableMessage::OrderBookL2_25 { action, data, .. },
@@ -94,13 +96,15 @@ fn bench_orderbook_l2(c: &mut Criterion) {
 }
 
 fn bench_orderbook_10(c: &mut Criterion) {
-    let instruments = instrument_cache();
-
     c.bench_function("bitmex_parse_orderbook_10", |b| {
-        let instruments = instruments.clone();
         b.iter_batched(
-            || from_str::<BitmexWsMessage>(ORDERBOOK_10).expect("orderbook 10 message"),
-            |message| match message {
+            || {
+                (
+                    from_str::<BitmexWsMessage>(ORDERBOOK_10).expect("orderbook 10 message"),
+                    instrument_cache(),
+                )
+            },
+            |(message, instruments)| match message {
                 BitmexWsMessage::Table(BitmexTableMessage::OrderBook10 { data, .. }) => {
                     let payload = parse_book10_msg_vec(data, &instruments, UnixNanos::default());
                     black_box(payload);

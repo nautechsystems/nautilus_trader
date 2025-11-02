@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{hint::black_box, sync::Arc};
+use std::hint::black_box;
 
 use ahash::AHashMap;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -35,7 +35,7 @@ use ustr::Ustr;
 const TRADES: &str = include_str!("../test_data/ws_trade.json");
 const TRADE_BIN_1M: &str = include_str!("../test_data/ws_trade_bin_1m.json");
 
-fn instrument_cache() -> Arc<AHashMap<Ustr, InstrumentAny>> {
+fn instrument_cache() -> AHashMap<Ustr, InstrumentAny> {
     let instrument = CryptoPerpetual::new(
         InstrumentId::from("XBTUSD.BITMEX"),
         Symbol::from("XBTUSD"),
@@ -68,17 +68,19 @@ fn instrument_cache() -> Arc<AHashMap<Ustr, InstrumentAny>> {
         Ustr::from("XBTUSD"),
         InstrumentAny::CryptoPerpetual(instrument),
     );
-    Arc::new(map)
+    map
 }
 
 fn bench_trades(c: &mut Criterion) {
-    let instruments = instrument_cache();
-
     c.bench_function("bitmex_parse_trades", |b| {
-        let instruments = instruments.clone();
         b.iter_batched(
-            || from_str::<BitmexWsMessage>(TRADES).expect("trade message"),
-            |message| match message {
+            || {
+                (
+                    from_str::<BitmexWsMessage>(TRADES).expect("trade message"),
+                    instrument_cache(),
+                )
+            },
+            |(message, instruments)| match message {
                 BitmexWsMessage::Table(BitmexTableMessage::Trade { data, .. }) => {
                     let payload = parse_trade_msg_vec(data, &instruments, UnixNanos::default());
                     black_box(payload);
@@ -91,13 +93,15 @@ fn bench_trades(c: &mut Criterion) {
 }
 
 fn bench_trade_bins(c: &mut Criterion) {
-    let instruments = instrument_cache();
-
     c.bench_function("bitmex_parse_trade_bin_1m", |b| {
-        let instruments = instruments.clone();
         b.iter_batched(
-            || from_str::<BitmexWsMessage>(TRADE_BIN_1M).expect("trade bin message"),
-            |message| match message {
+            || {
+                (
+                    from_str::<BitmexWsMessage>(TRADE_BIN_1M).expect("trade bin message"),
+                    instrument_cache(),
+                )
+            },
+            |(message, instruments)| match message {
                 BitmexWsMessage::Table(BitmexTableMessage::TradeBin1m { data, .. }) => {
                     let payload = parse_trade_bin_msg_vec(
                         data,

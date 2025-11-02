@@ -404,7 +404,6 @@ impl ExecutionEngine {
     fn handle_submit_order_list(&self, client: Rc<dyn ExecutionClient>, cmd: &SubmitOrderList) {
         let orders = cmd.order_list.orders.clone();
 
-        // Cache orders
         let mut cache = self.cache.borrow_mut();
         for order in &orders {
             if !cache.order_exists(&order.client_order_id()) {
@@ -422,7 +421,6 @@ impl ExecutionEngine {
         }
         drop(cache);
 
-        // Get instrument from cache
         let instrument = {
             let cache = self.cache.borrow();
             if let Some(instrument) = cache.instrument(&cmd.instrument_id) {

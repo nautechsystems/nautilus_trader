@@ -51,8 +51,10 @@ use nautilus_model::{
         },
     },
     instruments::{
-        CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
-        stubs::{audusd_sim, crypto_perpetual_ethusdt, xbtusd_bitmex},
+        CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny, OptionSpread,
+        stubs::{
+            audusd_sim, crypto_perpetual_ethusdt, futures_spread_es, option_spread, xbtusd_bitmex,
+        },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     types::{AccountBalance, Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
@@ -354,6 +356,16 @@ fn instrument_xbtusd_bitmex(xbtusd_bitmex: CryptoPerpetual) -> InstrumentAny {
 #[fixture]
 fn instrument_audusd(audusd_sim: CurrencyPair) -> InstrumentAny {
     InstrumentAny::CurrencyPair(audusd_sim)
+}
+
+#[fixture]
+fn instrument_futures_spread(futures_spread_es: FuturesSpread) -> InstrumentAny {
+    InstrumentAny::FuturesSpread(futures_spread_es)
+}
+
+#[fixture]
+fn instrument_option_spread(option_spread: OptionSpread) -> InstrumentAny {
+    InstrumentAny::OptionSpread(option_spread)
 }
 
 #[fixture]
@@ -1420,6 +1432,130 @@ fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from("price 0.0 invalid (<= 0)")
+    );
+}
+
+#[rstest]
+fn test_submit_order_when_negative_price_for_futures_spread_then_allows(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    client_order_id: ClientOrderId,
+    instrument_futures_spread: InstrumentAny,
+    venue_order_id: VenueOrderId,
+    execute_order_event_handler: ShareableMessageHandler,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_execute(),
+        execute_order_event_handler.clone(),
+    );
+
+    simple_cache
+        .add_instrument(instrument_futures_spread.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_futures_spread.id())
+        .side(OrderSide::Buy)
+        .price(Price::from_raw(-17, 0)) // Negative price is valid for spreads
+        .quantity(Quantity::from("1"))
+        .build();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+        instrument_futures_spread.id(),
+        client_order_id,
+        venue_order_id,
+        order,
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock.borrow().timestamp_ns(),
+    )
+    .unwrap();
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
+    assert_eq!(
+        saved_execute_messages.first().unwrap().instrument_id(),
+        instrument_futures_spread.id()
+    );
+}
+
+#[rstest]
+fn test_submit_order_when_negative_price_for_option_spread_then_allows(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    client_order_id: ClientOrderId,
+    instrument_option_spread: InstrumentAny,
+    venue_order_id: VenueOrderId,
+    execute_order_event_handler: ShareableMessageHandler,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_execute(),
+        execute_order_event_handler.clone(),
+    );
+
+    simple_cache
+        .add_instrument(instrument_option_spread.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_option_spread.id())
+        .side(OrderSide::Buy)
+        .price(Price::from_raw(-250, 2)) // Negative price -2.50 is valid for spreads
+        .quantity(Quantity::from("1"))
+        .build();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+        instrument_option_spread.id(),
+        client_order_id,
+        venue_order_id,
+        order,
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock.borrow().timestamp_ns(),
+    )
+    .unwrap();
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
+    assert_eq!(
+        saved_execute_messages.first().unwrap().instrument_id(),
+        instrument_option_spread.id()
     );
 }
 

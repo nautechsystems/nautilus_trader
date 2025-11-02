@@ -394,7 +394,7 @@ pub struct CandleData {
 }
 
 /// WebSocket book data
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsBookData {
     pub coin: Ustr,
     pub levels: [Vec<WsLevelData>; 2], // [bids, asks]
@@ -402,7 +402,7 @@ pub struct WsBookData {
 }
 
 /// WebSocket level data
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsLevelData {
     /// Price
     pub px: String,
@@ -413,7 +413,7 @@ pub struct WsLevelData {
 }
 
 /// WebSocket trade data
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTradeData {
     pub coin: Ustr,
     pub side: String,

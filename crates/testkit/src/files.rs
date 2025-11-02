@@ -15,6 +15,7 @@
 
 use std::{
     cmp,
+    fmt::Display,
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, copy},
     path::Path,
@@ -34,7 +35,7 @@ enum DownloadError {
     NonRetryable(String),
 }
 
-impl std::fmt::Display for DownloadError {
+impl Display for DownloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Retryable(msg) => write!(f, "Retryable error: {msg}"),

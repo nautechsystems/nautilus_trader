@@ -48,7 +48,7 @@ impl Credential {
         let api_key = api_key.into();
         let api_secret_bytes = api_secret.into().into_bytes();
 
-        let api_key = Ustr::from(api_key.as_str());
+        let api_key = Ustr::from(&api_key);
 
         Self {
             api_key,
@@ -60,6 +60,22 @@ impl Credential {
     #[must_use]
     pub fn api_key(&self) -> &Ustr {
         &self.api_key
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    ///
+    /// Shows first 4 and last 4 characters with ellipsis in between.
+    /// For keys shorter than 8 characters, shows asterisks only.
+    #[must_use]
+    pub fn masked_api_key(&self) -> String {
+        let key = self.api_key.as_str();
+        let len = key.len();
+
+        if len <= 8 {
+            "*".repeat(len)
+        } else {
+            format!("{}...{}", &key[..4], &key[len - 4..])
+        }
     }
 
     /// Produces the Bybit WebSocket authentication signature for the provided expiry timestamp.

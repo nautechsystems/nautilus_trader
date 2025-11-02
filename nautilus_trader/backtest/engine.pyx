@@ -166,7 +166,7 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instruments.base cimport EXPIRING_INSTRUMENT_TYPES
+from nautilus_trader.model.instruments.base cimport EXPIRING_INSTRUMENT_CLASSES
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
@@ -3542,7 +3542,7 @@ cdef class OrderMatchingEngine:
         self.account_type = account_type
         self.market_status = MarketStatus.OPEN
 
-        self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_TYPES
+        self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_CLASSES
         self._instrument_close = None
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders

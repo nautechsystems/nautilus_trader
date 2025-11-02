@@ -41,9 +41,9 @@ impl Symbol {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
-        let value = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let value = binding.cast::<PyString>()?.extract::<&str>()?;
         self.set_inner(value);
         Ok(())
     }

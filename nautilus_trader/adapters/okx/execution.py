@@ -20,6 +20,7 @@ from typing import Any
 from nautilus_trader.adapters.okx.config import OKXExecClientConfig
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
+from nautilus_trader.adapters.okx.types import OkxInstrument
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -147,6 +148,8 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
         self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_cash_position_reports=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
         if config.use_spot_cash_position_reports:
             self._log.warning(
@@ -224,7 +227,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
     async def _check_clock_sync(self) -> None:
         try:
-            server_time: int = await self._http_client.http_get_server_time()
+            server_time: int = await self._http_client.get_server_time()
             nautilus_time: int = self._clock.timestamp_ms()
             self._log.info(f"OKX server time {server_time} UNIX (ms)")
             self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
@@ -369,8 +372,9 @@ class OKXExecutionClient(LiveExecutionClient):
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses.
         instruments_pyo3 = self.okx_instrument_provider.instruments_pyo3()
+
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
+            self._http_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -484,11 +488,11 @@ class OKXExecutionClient(LiveExecutionClient):
         canonical_requested_id: ClientOrderId | None = None
 
         try:
-            pyo3_reports: list[nautilus_pyo3.OrderStatusReport] = (
-                await self._http_client.request_order_status_reports(
-                    account_id=self.pyo3_account_id,
-                    instrument_id=pyo3_instrument_id,
-                )
+            pyo3_reports: list[
+                nautilus_pyo3.OrderStatusReport
+            ] = await self._http_client.request_order_status_reports(
+                account_id=self.pyo3_account_id,
+                instrument_id=pyo3_instrument_id,
             )
 
             if not pyo3_reports:
@@ -711,7 +715,7 @@ class OKXExecutionClient(LiveExecutionClient):
         reports: list[PositionStatusReport] = []
 
         try:
-            okx_balance_details = await self._http_client.http_get_balance()
+            okx_balance_details = await self._http_client.get_balance()
 
             if not okx_balance_details:
                 self._log.warning("No OKX balance details returned from balance query")
@@ -1486,6 +1490,15 @@ class OKXExecutionClient(LiveExecutionClient):
                 self._log.debug(f"Received unhandled message type: {type(msg)}")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
+
+    def _handle_instrument_update(self, pyo3_instrument: OkxInstrument) -> None:
+        self._http_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        if self._ws_client is not None:
+            self._ws_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        if self._ws_business_client is not None:
+            self._ws_business_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
 
     def _handle_account_state(self, pyo3_account_state: nautilus_pyo3.AccountState) -> None:
         account_state = AccountState.from_dict(pyo3_account_state.to_dict())

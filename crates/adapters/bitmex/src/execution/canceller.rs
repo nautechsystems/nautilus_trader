@@ -31,6 +31,7 @@
 // lands so we can drop the per-call heap allocation
 
 use std::{
+    fmt::Debug,
     future::Future,
     pin::Pin,
     sync::{
@@ -105,12 +106,12 @@ trait CancelExecutor: Send + Sync {
 
 impl CancelExecutor for BitmexHttpClient {
     fn add_instrument(&self, instrument: InstrumentAny) {
-        Self::add_instrument(self, instrument);
+        Self::cache_instrument(self, instrument);
     }
 
     fn health_check(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
         Box::pin(async move {
-            Self::http_get_server_time(self)
+            Self::get_server_time(self)
                 .await
                 .map(|_| ())
                 .map_err(|e| anyhow::anyhow!("{e}"))
@@ -183,6 +184,12 @@ pub struct CancelBroadcasterConfig {
     pub expected_reject_patterns: Vec<String>,
     /// Substrings to identify idempotent success (order already cancelled/not found).
     pub idempotent_success_patterns: Vec<String>,
+    /// Optional list of proxy URLs for path diversity.
+    ///
+    /// Each transport instance uses the proxy at its index. If the list is shorter
+    /// than pool_size, remaining transports will use no proxy. If longer, extra proxies
+    /// are ignored.
+    pub proxy_urls: Vec<Option<String>>,
 }
 
 impl Default for CancelBroadcasterConfig {
@@ -210,6 +217,7 @@ impl Default for CancelBroadcasterConfig {
                 r"orderID not found".to_string(),
                 r"Unable to cancel order due to existing state".to_string(),
             ],
+            proxy_urls: vec![],
         }
     }
 }
@@ -228,7 +236,7 @@ struct TransportClient {
     error_count: Arc<AtomicU64>,
 }
 
-impl std::fmt::Debug for TransportClient {
+impl Debug for TransportClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TransportClient")
             .field("client_id", &self.client_id)
@@ -355,6 +363,9 @@ impl CancelBroadcaster {
         };
 
         for i in 0..config.pool_size {
+            // Assign proxy from config list, or None if index exceeds list length
+            let proxy_url = config.proxy_urls.get(i).and_then(|p| p.clone());
+
             let client = BitmexHttpClient::with_credentials(
                 config.api_key.clone(),
                 config.api_secret.clone(),
@@ -366,6 +377,7 @@ impl CancelBroadcaster {
                 config.recv_window_ms,
                 config.max_requests_per_second,
                 config.max_requests_per_minute,
+                proxy_url,
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client {i}: {e}"))?;
 
@@ -524,12 +536,14 @@ impl CancelBroadcaster {
                         handle.abort();
                     }
                     self.successful_cancels.fetch_add(1, Ordering::Relaxed);
+
                     tracing::debug!(
                         "{} broadcast succeeded [{}] {}",
                         operation,
                         client_id,
                         params
                     );
+
                     return Ok(result);
                 }
                 Ok((client_id, Err(e))) => {
@@ -541,13 +555,11 @@ impl CancelBroadcaster {
                             handle.abort();
                         }
                         self.idempotent_successes.fetch_add(1, Ordering::Relaxed);
+
                         tracing::debug!(
-                            "Idempotent success [{}] - {}: {} {}",
-                            client_id,
-                            idempotent_reason,
-                            error_msg,
-                            params
+                            "Idempotent success [{client_id}] - {idempotent_reason}: {error_msg} {params}",
                         );
+
                         return idempotent_result();
                     }
 
@@ -582,15 +594,12 @@ impl CancelBroadcaster {
         // All tasks failed
         self.failed_cancels.fetch_add(1, Ordering::Relaxed);
         tracing::error!(
-            "All {} requests failed: {:?} {}",
+            "All {} requests failed: {errors:?} {params}",
             operation.to_lowercase(),
-            errors,
-            params
         );
         Err(anyhow::anyhow!(
-            "All {} requests failed: {:?}",
+            "All {} requests failed: {errors:?}",
             operation.to_lowercase(),
-            errors
         ))
     }
 
@@ -1264,6 +1273,7 @@ mod tests {
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec!["test_pattern".to_string()],
             idempotent_success_patterns: vec!["AlreadyCanceled".to_string()],
+            proxy_urls: vec![],
         };
 
         let broadcaster = CancelBroadcaster::new(config.clone());
@@ -1297,6 +1307,7 @@ mod tests {
             health_check_timeout_secs: 1,
             expected_reject_patterns: vec![],
             idempotent_success_patterns: vec![],
+            proxy_urls: vec![],
         };
 
         let broadcaster = CancelBroadcaster::new(config).unwrap();
@@ -1341,6 +1352,7 @@ mod tests {
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![],
             idempotent_success_patterns: vec![],
+            proxy_urls: vec![],
         };
 
         let broadcaster = CancelBroadcaster::new(config).unwrap();
@@ -1376,6 +1388,7 @@ mod tests {
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![],
             idempotent_success_patterns: vec![],
+            proxy_urls: vec![],
         };
 
         let broadcaster = CancelBroadcaster::new(config);
@@ -1420,6 +1433,7 @@ mod tests {
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![],
             idempotent_success_patterns: vec![],
+            proxy_urls: vec![],
         };
 
         let broadcaster1 = CancelBroadcaster::new(config).unwrap();
@@ -1470,6 +1484,7 @@ mod tests {
                 "orderID not found".to_string(),
                 "Unable to cancel".to_string(),
             ],
+            proxy_urls: vec![],
         };
 
         let broadcaster = CancelBroadcaster::new(config).unwrap();
@@ -1509,6 +1524,7 @@ mod tests {
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![],
             idempotent_success_patterns: vec!["AlreadyCanceled".to_string()],
+            proxy_urls: vec![],
         };
 
         let broadcaster = CancelBroadcaster::new(config).unwrap();
@@ -1541,6 +1557,7 @@ mod tests {
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![],
             idempotent_success_patterns: vec!["orderID not found".to_string()],
+            proxy_urls: vec![],
         };
 
         let broadcaster = CancelBroadcaster::new(config).unwrap();
@@ -1608,6 +1625,7 @@ mod tests {
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec![],
             idempotent_success_patterns: vec![],
+            proxy_urls: vec![],
         };
 
         let broadcaster = CancelBroadcaster::new(config).unwrap();
@@ -1645,6 +1663,7 @@ mod tests {
             health_check_timeout_secs: 1,
             expected_reject_patterns: vec![],
             idempotent_success_patterns: vec![],
+            proxy_urls: vec![],
         };
 
         let broadcaster = CancelBroadcaster::new(config).unwrap();

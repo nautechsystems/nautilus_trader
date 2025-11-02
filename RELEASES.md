@@ -2,28 +2,57 @@
 
 Released on TBD (UTC).
 
+This release adds support for Python 3.14 with the following limitations:
+- Windows platform: Python 3.14 not supported yet (available on Python 3.12-3.13)
+- dYdX adapter extras (`[dydx]`) unavailable due to upstream `coincurve` compatibility (available on Python 3.12-3.13)
+- Interactive Brokers adapter extras (`[ib]`) unavailable due to upstream `nautilus-ibapi` compatibility (available on Python 3.12-3.13)
+
 ### Enhancements
+- Added support for Python 3.14
 - Added initial backtest visualization tearsheets with plotly
+- Added `proxy_url` support for HTTP clients
 - Added `CAGR` portfolio statistic
 - Added `CalmarRatio` portfolio statistic
 - Added `MaxDrawdown` portfolio statistic
+- Added `quote_quantity` parameter for `close_position(...)` and `close_all_positions(...)` strategy methods
+- Added PolymarketDataLoader for loading historical data with docs and example
+- Introduced `PositionAdjusted` events for tracking quantity/PnL changes outside normal order fills (base currency commissions, funding payments, manual adjustments)
 - Upgraded continuous reconciliation for execution engine using position reports to detect missed fills
 
 ### Breaking Changes
 - Dropped support for Python 3.11
+- Removed `use_ws_trade_api` config option from Bybit execution client (using WebSocket trade API only)
+- dYdX adapter extras (`[dydx]`) unavailable on Python 3.14 due to upstream `coincurve` compatibility (available on Python 3.12-3.13)
+- Interactive Brokers adapter extras (`[ib]`) unavailable on Python 3.14 due to upstream `nautilus-ibapi` compatibility (available on Python 3.12-3.13)
 
 ### Security
 TBD
 
 ### Fixes
-None
+- Fixed risk engine negative price handling for spread instruments (#3136), thanks for reporting @q351941406
+- Fixed spawned order client_id caching in `ExecAlgorithm` (#3122), thanks for reporting @kirill-gr1
+- Fixed parse_dates parameter in CSV loaders (#3132), thanks @maomao9-0
+- Fixed Binance instrument info dict JSON serialization (#3128), thanks for reporting @woung717
+- Fixed Interactive Brokers quote tick subscriptions to use tick-by-tick data (#3135), thanks for reporting @genliusrocks
+- Fixed OKX pre-open instrument parsing and standardize enum usage (#3134), thanks for reporting @3wtz
+- Fixed Polymarket maker fill order side inversion (#3126), thanks for reporting @santivazq
+- Fixed Polymarket instrument provider market filtering (#3133), thanks @MisterMM23
 
 ### Internal Improvements
+- Added BitMEX submit broadcaster
+- Added non-mutating swap quote simulation for Pool tickmap profiling (#3123), thanks @filipmacek
+- Ported Bybit integration adapter to Rust
 - Refactored reading of feather files in catalog (#3114), thanks @faysou
+- Repaired OKX spot margin position reports for borrowing, thanks @sunlei
+- Repaired Bybit docs links in comment (#3125), thanks @sunlei
+- Repaired Bybit HTTP order place (#3127), thanks @sunlei
 - Upgraded implied-vol crate (#3115), thanks @faysou
+- Upgraded Rust (MSRV) to 1.91.0
+- Upgraded `pyo3` crate to v0.27.0
+- Upgraded `pyo3-async-runtimes` crate to v0.27.0
 
 ### Documentation Updates
-None
+- Added Polymarket historical data loading docs
 
 ### Deprecations
 None

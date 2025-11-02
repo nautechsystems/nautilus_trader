@@ -183,9 +183,7 @@ def secs_to_nanos(secs: builtins.float) -> builtins.int:
     int
     """
 
-def unix_nanos_to_iso8601(
-    timestamp_ns: builtins.int, nanos_precision: builtins.bool | None = True
-) -> builtins.str:
+def unix_nanos_to_iso8601(timestamp_ns: builtins.int, nanos_precision: builtins.bool | None = True) -> builtins.str:
     r"""
     Return UNIX nanoseconds as an ISO 8601 (RFC 3339) format string.
 
@@ -205,3 +203,4 @@ def unix_nanos_to_iso8601(
     ValueError
         If `timestamp_ns` is invalid.
     """
+

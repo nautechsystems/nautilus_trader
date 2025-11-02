@@ -127,6 +127,10 @@ impl FromRow<'_, PgRow> for BlockTimestampRow {
 ///
 /// This function directly processes a PostgreSQL row and creates the appropriate DexPoolData
 /// variant based on the event_type discriminator field, using the provided context.
+///
+/// # Errors
+///
+/// Returns an error if row field extraction fails or data validation fails.
 pub fn transform_row_to_dex_pool_data(
     row: &PgRow,
     chain: nautilus_model::defi::SharedChain,
@@ -247,16 +251,15 @@ pub fn transform_row_to_dex_pool_data(
 
             // UNION queries return NUMERIC type, not domain types, so we need to read as strings
             let position_liquidity_str = row.try_get::<String, _>("position_liquidity")?;
-            let position_liquidity =
-                u128::from_str_radix(&position_liquidity_str, 10).map_err(|e| {
-                    sqlx::Error::Decode(
-                        format!(
-                            "Invalid position_liquidity '{}': {}",
-                            position_liquidity_str, e
-                        )
-                        .into(),
+            let position_liquidity = position_liquidity_str.parse::<u128>().map_err(|e| {
+                sqlx::Error::Decode(
+                    format!(
+                        "Invalid position_liquidity '{}': {}",
+                        position_liquidity_str, e
                     )
-                })?;
+                    .into(),
+                )
+            })?;
 
             let amount0_str = row.try_get::<String, _>("amount0")?;
             let amount0 = U256::from_str_radix(&amount0_str, 10).map_err(|e| {
@@ -311,12 +314,12 @@ pub fn transform_row_to_dex_pool_data(
 
             // UNION queries return NUMERIC type, not domain types, so we need to read as strings
             let amount0_str = row.try_get::<String, _>("amount0")?;
-            let amount0 = u128::from_str_radix(&amount0_str, 10).map_err(|e| {
+            let amount0 = amount0_str.parse::<u128>().map_err(|e| {
                 sqlx::Error::Decode(format!("Invalid amount0 '{}': {}", amount0_str, e).into())
             })?;
 
             let amount1_str = row.try_get::<String, _>("amount1")?;
-            let amount1 = u128::from_str_radix(&amount1_str, 10).map_err(|e| {
+            let amount1 = amount1_str.parse::<u128>().map_err(|e| {
                 sqlx::Error::Decode(format!("Invalid amount1 '{}': {}", amount1_str, e).into())
             })?;
 

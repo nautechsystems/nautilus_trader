@@ -1249,6 +1249,7 @@ cdef class Strategy(Actor):
         list[str] tags = None,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = True,
+        bint quote_quantity = False,
         dict[str, object] params = None,
     ):
         """
@@ -1271,6 +1272,8 @@ cdef class Strategy(Actor):
         reduce_only : bool, default True
             If the market order to close the position should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
+        quote_quantity : bool, default False
+            If the order quantity should be interpreted as quoted (e.g. in USDT for ETH-USDT).
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1294,7 +1297,7 @@ cdef class Strategy(Actor):
             quantity=position.quantity,
             time_in_force=time_in_force,
             reduce_only=reduce_only,
-            quote_quantity=False,
+            quote_quantity=quote_quantity,
             exec_algorithm_id=None,
             exec_algorithm_params=None,
             tags=tags,
@@ -1310,6 +1313,7 @@ cdef class Strategy(Actor):
         list[str] tags = None,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = True,
+        bint quote_quantity = False,
         dict[str, object] params = None,
     ):
         """
@@ -1331,6 +1335,8 @@ cdef class Strategy(Actor):
         reduce_only : bool, default True
             If the market orders to close positions should carry the 'reduce-only' execution instruction.
             Optional, as not all venues support this feature.
+        quote_quantity : bool, default False
+            If the order quantity is denominated in the quote currency.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
@@ -1359,7 +1365,15 @@ cdef class Strategy(Actor):
 
         cdef Position position
         for position in positions_open:
-            self.close_position(position, client_id, tags, time_in_force, reduce_only, params)
+            self.close_position(
+                position,
+                client_id,
+                tags,
+                time_in_force,
+                reduce_only,
+                quote_quantity,
+                params,
+            )
 
     cpdef void query_account(self, AccountId account_id, ClientId client_id = None, dict[str, object] params = None):
         """

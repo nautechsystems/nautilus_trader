@@ -105,7 +105,7 @@ Specifying a display quantity of zero is also equivalent to setting an order as 
 
 ### Trigger type
 
-Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm)
+Also known as [trigger method](https://www.interactivebrokers.com/en/software/tws/usersguidebook/configuretws/Modify%20the%20Stop%20Trigger%20Method.htm)
 which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
 
 - `DEFAULT`: The default trigger type for the venue (typically `LAST` or `BID_ASK`).
@@ -709,7 +709,7 @@ The following `Cache` methods are available:
 - `self.cache.is_order_emulated(...)`: Checks if a specific order is emulated.
 - `self.cache.orders_emulated_count(...)`: Returns the count of emulated orders.
 
-See the full [API reference](../api_reference/cache) for additional details.
+See the full [API reference](../api_reference/cache.md) for additional details.
 
 #### Direct order queries
 

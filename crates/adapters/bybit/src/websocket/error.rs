@@ -66,3 +66,9 @@ impl From<serde_json::Error> for BybitWsError {
         Self::Json(error.to_string())
     }
 }
+
+impl From<String> for BybitWsError {
+    fn from(msg: String) -> Self {
+        Self::Authentication(msg)
+    }
+}

@@ -81,6 +81,7 @@ impl SubmitBroadcaster {
             health_check_timeout_secs,
             expected_reject_patterns: expected_reject_patterns
                 .unwrap_or_else(|| SubmitBroadcasterConfig::default().expected_reject_patterns),
+            proxy_urls: vec![], // TODO: Add proxy_urls parameter to Python API when needed
         };
 
         Self::new(config).map_err(to_pyvalue_err)
@@ -196,10 +197,10 @@ impl SubmitBroadcaster {
         Ok(list.into())
     }
 
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
-        self.add_instrument(inst_any);
+        self.add_instrument(inst_any); // Calls trait method which delegates to cache_instrument
         Ok(())
     }
 }

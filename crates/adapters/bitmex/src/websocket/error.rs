@@ -53,6 +53,12 @@ impl From<serde_json::Error> for BitmexWsError {
     }
 }
 
+impl From<String> for BitmexWsError {
+    fn from(msg: String) -> Self {
+        Self::AuthenticationError(msg)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

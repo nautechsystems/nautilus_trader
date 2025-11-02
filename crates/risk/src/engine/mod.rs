@@ -939,7 +939,13 @@ impl RiskEngine {
             ));
         }
 
-        if instrument.instrument_class() != InstrumentClass::Option && price_val.raw <= 0 {
+        if !matches!(
+            instrument.instrument_class(),
+            InstrumentClass::Option
+                | InstrumentClass::FuturesSpread
+                | InstrumentClass::OptionSpread
+        ) && price_val.raw <= 0
+        {
             return Some(format!("price {price_val} invalid (<= 0)"));
         }
 

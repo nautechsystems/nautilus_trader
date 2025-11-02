@@ -22,8 +22,8 @@ use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
-        AccountType, AggressorSide, AssetClass, BarAggregation, CurrencyType, LiquiditySide,
-        OptionKind, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
+        AccountType, AggressorSide, AssetClass, BarAggregation, LiquiditySide, OptionKind,
+        OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
     },
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
@@ -40,7 +40,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        enums::{BybitContractType, BybitOptionType, BybitProductType},
+        enums::{BybitContractType, BybitKlineInterval, BybitOptionType, BybitProductType},
         symbol::BybitSymbol,
     },
     http::models::{
@@ -76,17 +76,18 @@ pub fn extract_raw_symbol(symbol: &str) -> &str {
 /// assert_eq!(symbol.as_str(), "ETHUSDT-LINEAR");
 /// ```
 #[must_use]
-pub fn make_bybit_symbol(raw_symbol: &str, product_type: BybitProductType) -> Ustr {
+pub fn make_bybit_symbol<S: AsRef<str>>(raw_symbol: S, product_type: BybitProductType) -> Ustr {
+    let raw = raw_symbol.as_ref();
     let suffix = match product_type {
         BybitProductType::Spot => "-SPOT",
         BybitProductType::Linear => "-LINEAR",
         BybitProductType::Inverse => "-INVERSE",
         BybitProductType::Option => "-OPTION",
     };
-    Ustr::from(&format!("{raw_symbol}{suffix}"))
+    Ustr::from(&format!("{raw}{suffix}"))
 }
 
-/// Converts a Nautilus bar aggregation and step to a Bybit kline interval string.
+/// Converts a Nautilus bar aggregation and step to a Bybit kline interval.
 ///
 /// Bybit supported intervals: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720 (minutes), D, W, M
 ///
@@ -96,43 +97,53 @@ pub fn make_bybit_symbol(raw_symbol: &str, product_type: BybitProductType) -> Us
 pub fn bar_spec_to_bybit_interval(
     aggregation: BarAggregation,
     step: u64,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<BybitKlineInterval> {
     match aggregation {
-        BarAggregation::Minute => {
-            if !BYBIT_MINUTE_INTERVALS.contains(&step) {
-                anyhow::bail!(
-                    "Bybit only supports the following minute intervals: {:?}",
-                    BYBIT_MINUTE_INTERVALS
-                );
-            }
-            Ok(step.to_string())
-        }
-        BarAggregation::Hour => {
-            if !BYBIT_HOUR_INTERVALS.contains(&step) {
-                anyhow::bail!(
-                    "Bybit only supports the following hour intervals: {:?}",
-                    BYBIT_HOUR_INTERVALS
-                );
-            }
-            Ok((step * 60).to_string())
-        }
+        BarAggregation::Minute => match step {
+            1 => Ok(BybitKlineInterval::Minute1),
+            3 => Ok(BybitKlineInterval::Minute3),
+            5 => Ok(BybitKlineInterval::Minute5),
+            15 => Ok(BybitKlineInterval::Minute15),
+            30 => Ok(BybitKlineInterval::Minute30),
+            // Bybit normalizes minute intervals ≥60 to hour intervals
+            60 => Ok(BybitKlineInterval::Hour1),
+            120 => Ok(BybitKlineInterval::Hour2),
+            240 => Ok(BybitKlineInterval::Hour4),
+            360 => Ok(BybitKlineInterval::Hour6),
+            720 => Ok(BybitKlineInterval::Hour12),
+            _ => anyhow::bail!(
+                "Bybit only supports the following minute intervals: {:?}",
+                BYBIT_MINUTE_INTERVALS
+            ),
+        },
+        BarAggregation::Hour => match step {
+            1 => Ok(BybitKlineInterval::Hour1),
+            2 => Ok(BybitKlineInterval::Hour2),
+            4 => Ok(BybitKlineInterval::Hour4),
+            6 => Ok(BybitKlineInterval::Hour6),
+            12 => Ok(BybitKlineInterval::Hour12),
+            _ => anyhow::bail!(
+                "Bybit only supports the following hour intervals: {:?}",
+                BYBIT_HOUR_INTERVALS
+            ),
+        },
         BarAggregation::Day => {
             if step != 1 {
                 anyhow::bail!("Bybit only supports 1 DAY interval bars");
             }
-            Ok("D".to_string())
+            Ok(BybitKlineInterval::Day1)
         }
         BarAggregation::Week => {
             if step != 1 {
                 anyhow::bail!("Bybit only supports 1 WEEK interval bars");
             }
-            Ok("W".to_string())
+            Ok(BybitKlineInterval::Week1)
         }
         BarAggregation::Month => {
             if step != 1 {
                 anyhow::bail!("Bybit only supports 1 MONTH interval bars");
             }
-            Ok("M".to_string())
+            Ok(BybitKlineInterval::Month1)
         }
         _ => {
             anyhow::bail!("Bybit does not support {:?} bars", aggregation);
@@ -211,6 +222,18 @@ pub fn parse_linear_instrument(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
+    // Validate required fields
+    anyhow::ensure!(
+        !definition.base_coin.is_empty(),
+        "base_coin is empty for symbol '{}'",
+        definition.symbol
+    );
+    anyhow::ensure!(
+        !definition.quote_coin.is_empty(),
+        "quote_coin is empty for symbol '{}'",
+        definition.symbol
+    );
+
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = resolve_settlement_currency(
@@ -325,6 +348,18 @@ pub fn parse_inverse_instrument(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
+    // Validate required fields
+    anyhow::ensure!(
+        !definition.base_coin.is_empty(),
+        "base_coin is empty for symbol '{}'",
+        definition.symbol
+    );
+    anyhow::ensure!(
+        !definition.quote_coin.is_empty(),
+        "quote_coin is empty for symbol '{}'",
+        definition.symbol
+    );
+
     let base_currency = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = resolve_settlement_currency(
@@ -480,7 +515,7 @@ pub fn parse_option_instrument(
         raw_symbol,
         AssetClass::Cryptocurrency,
         None,
-        Ustr::from(definition.base_coin.as_str()),
+        definition.base_coin,
         option_kind,
         strike_price,
         quote_currency,
@@ -721,25 +756,13 @@ pub fn parse_account_state(
 
     // Parse each coin balance
     for coin in &wallet_balance.coin {
-        let currency = Currency::from_str(&coin.coin)?;
-
         let wallet_balance_f64 = if coin.wallet_balance.is_empty() {
             0.0
         } else {
             coin.wallet_balance.parse::<f64>()?
         };
 
-        // TODO: extract this logic to a function
-        let spot_borrow_f64 = if let Some(ref spot_borrow) = coin.spot_borrow {
-            if spot_borrow.is_empty() {
-                0.0
-            } else {
-                spot_borrow.parse::<f64>()?
-            }
-        } else {
-            0.0
-        };
-
+        let spot_borrow_f64 = parse_optional_balance_field(&coin.spot_borrow)?;
         let total_f64 = wallet_balance_f64 - spot_borrow_f64;
 
         let locked_f64 = if coin.locked.is_empty() {
@@ -748,15 +771,10 @@ pub fn parse_account_state(
             coin.locked.parse::<f64>()?
         };
 
+        let currency = get_currency(&coin.coin);
         let total = Money::new(total_f64, currency);
         let locked = Money::new(locked_f64, currency);
-
-        // Calculate free balance
-        let free = if total.raw >= locked.raw {
-            Money::from_raw(total.raw - locked.raw, currency)
-        } else {
-            Money::new(0.0, currency)
-        };
+        let free = Money::from_raw(total.raw - locked.raw, currency);
 
         balances.push(AccountBalance::new(total, locked, free));
     }
@@ -765,8 +783,6 @@ pub fn parse_account_state(
 
     // Parse margin balances for each coin with position margin data
     for coin in &wallet_balance.coin {
-        let currency = Currency::from_str(&coin.coin)?;
-
         let initial_margin_f64 = match &coin.total_position_im {
             Some(im) if !im.is_empty() => im.parse::<f64>()?,
             _ => 0.0,
@@ -776,6 +792,8 @@ pub fn parse_account_state(
             Some(mm) if !mm.is_empty() => mm.parse::<f64>()?,
             _ => 0.0,
         };
+
+        let currency = get_currency(&coin.coin);
 
         // Only create margin balance if there are actual margin requirements
         if initial_margin_f64 > 0.0 || maintenance_margin_f64 > 0.0 {
@@ -883,9 +901,12 @@ fn resolve_settlement_currency(
     }
 }
 
+/// Returns a currency from the internal map or creates a new crypto currency.
+///
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed Bybit assets.
 fn get_currency(code: &str) -> Currency {
-    Currency::try_from_str(code)
-        .unwrap_or_else(|| Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+    Currency::get_or_create_crypto(code)
 }
 
 fn extract_strike_from_symbol(symbol: &str) -> anyhow::Result<Price> {
@@ -894,6 +915,19 @@ fn extract_strike_from_symbol(symbol: &str) -> anyhow::Result<Price> {
         .get(2)
         .ok_or_else(|| anyhow::anyhow!("invalid option symbol '{symbol}'"))?;
     parse_price(strike, "option strike")
+}
+
+fn parse_optional_balance_field(value: &Option<String>) -> anyhow::Result<f64> {
+    if let Some(s) = value {
+        if s.is_empty() {
+            Ok(0.0)
+        } else {
+            s.parse::<f64>()
+                .with_context(|| format!("Failed to parse balance field '{s}'"))
+        }
+    } else {
+        Ok(0.0)
+    }
 }
 
 /// Parses a Bybit order into a Nautilus OrderStatusReport.
@@ -1232,5 +1266,75 @@ mod tests {
             report.client_order_id.as_ref().unwrap().to_string(),
             "O-20251001-164609-APEX-000-49"
         );
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Minute, 1, BybitKlineInterval::Minute1)]
+    #[case(BarAggregation::Minute, 3, BybitKlineInterval::Minute3)]
+    #[case(BarAggregation::Minute, 5, BybitKlineInterval::Minute5)]
+    #[case(BarAggregation::Minute, 15, BybitKlineInterval::Minute15)]
+    #[case(BarAggregation::Minute, 30, BybitKlineInterval::Minute30)]
+    #[case(BarAggregation::Minute, 60, BybitKlineInterval::Hour1)]
+    #[case(BarAggregation::Minute, 120, BybitKlineInterval::Hour2)]
+    #[case(BarAggregation::Minute, 240, BybitKlineInterval::Hour4)]
+    #[case(BarAggregation::Minute, 360, BybitKlineInterval::Hour6)]
+    #[case(BarAggregation::Minute, 720, BybitKlineInterval::Hour12)]
+    fn test_bar_spec_to_bybit_interval_minutes(
+        #[case] aggregation: BarAggregation,
+        #[case] step: u64,
+        #[case] expected: BybitKlineInterval,
+    ) {
+        let result = bar_spec_to_bybit_interval(aggregation, step).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Hour, 1, BybitKlineInterval::Hour1)]
+    #[case(BarAggregation::Hour, 2, BybitKlineInterval::Hour2)]
+    #[case(BarAggregation::Hour, 4, BybitKlineInterval::Hour4)]
+    #[case(BarAggregation::Hour, 6, BybitKlineInterval::Hour6)]
+    #[case(BarAggregation::Hour, 12, BybitKlineInterval::Hour12)]
+    fn test_bar_spec_to_bybit_interval_hours(
+        #[case] aggregation: BarAggregation,
+        #[case] step: u64,
+        #[case] expected: BybitKlineInterval,
+    ) {
+        let result = bar_spec_to_bybit_interval(aggregation, step).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Day, 1, BybitKlineInterval::Day1)]
+    #[case(BarAggregation::Week, 1, BybitKlineInterval::Week1)]
+    #[case(BarAggregation::Month, 1, BybitKlineInterval::Month1)]
+    fn test_bar_spec_to_bybit_interval_day_week_month(
+        #[case] aggregation: BarAggregation,
+        #[case] step: u64,
+        #[case] expected: BybitKlineInterval,
+    ) {
+        let result = bar_spec_to_bybit_interval(aggregation, step).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Minute, 2)]
+    #[case(BarAggregation::Minute, 10)]
+    #[case(BarAggregation::Hour, 3)]
+    #[case(BarAggregation::Hour, 24)]
+    #[case(BarAggregation::Day, 2)]
+    #[case(BarAggregation::Week, 2)]
+    #[case(BarAggregation::Month, 2)]
+    fn test_bar_spec_to_bybit_interval_unsupported_steps(
+        #[case] aggregation: BarAggregation,
+        #[case] step: u64,
+    ) {
+        let result = bar_spec_to_bybit_interval(aggregation, step);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_bar_spec_to_bybit_interval_unsupported_aggregation() {
+        let result = bar_spec_to_bybit_interval(BarAggregation::Second, 1);
+        assert!(result.is_err());
     }
 }

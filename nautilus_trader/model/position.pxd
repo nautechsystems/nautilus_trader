@@ -16,9 +16,11 @@
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.position cimport PositionAdjusted
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -34,6 +36,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Position:
     cdef list _events
+    cdef list _adjustments
     cdef list _trade_ids
     cdef Quantity _buy_qty
     cdef Quantity _sell_qty
@@ -71,6 +74,10 @@ cdef class Position:
     """The multiplier for the positions instrument.\n\n:returns: `Quantity`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `bool`"""
+    cdef readonly bint is_spot_currency
+    """If the instrument is a spot currency pair.\n\n:returns: `bool`"""
+    cdef readonly InstrumentClass instrument_class
+    """The position instrument class.\n\n:returns: `InstrumentClass`"""
     cdef readonly Currency quote_currency
     """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly Currency base_currency
@@ -103,6 +110,7 @@ cdef class Position:
     cdef list venue_order_ids_c(self)
     cdef list trade_ids_c(self)
     cdef list events_c(self)
+    cdef list adjustments_c(self)
     cdef OrderFilled last_event_c(self)
     cdef TradeId last_trade_id_c(self)
     cdef bint has_trade_id_c(self, TradeId trade_id)
@@ -119,6 +127,7 @@ cdef class Position:
     cpdef bint is_opposite_side(self, OrderSide side)
 
     cpdef void apply(self, OrderFilled fill)
+    cpdef void apply_adjustment(self, PositionAdjusted adjustment)
 
     cpdef Money notional_value(self, Price price)
     cpdef Money calculate_pnl(self, double avg_px_open, double avg_px_close, Quantity quantity)

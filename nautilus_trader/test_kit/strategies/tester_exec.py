@@ -315,10 +315,12 @@ class ExecTester(Strategy):
             self.log.warning(f"Open position with {net_qty}, skipping")
             return
 
+        quantity = self.instrument.make_qty(abs(net_qty))
+
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY if net_qty > 0 else OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.config.order_qty),
+            quantity=quantity,
             time_in_force=self.config.open_position_time_in_force,
             quote_quantity=self.config.use_quote_quantity,
         )
