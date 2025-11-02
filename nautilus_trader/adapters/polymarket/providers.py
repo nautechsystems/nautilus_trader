@@ -70,7 +70,9 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        """Load instruments using Gamma API markets."""
+        """
+        Load instruments using Gamma API markets.
+        """
         condition_ids = [get_polymarket_condition_id(inst_id) for inst_id in instrument_ids]
         
         if filters is None:
@@ -104,7 +106,9 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        """Load instruments using CLOB API."""
+        """
+        Load instruments using CLOB API.
+        """
         if len(instrument_ids) > 200:
             self._log.warning(
                 f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative",
