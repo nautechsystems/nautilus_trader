@@ -86,7 +86,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         if self._config.use_gamma_markets:
             # Extract condition IDs from instrument IDs for filtering
             condition_ids = [get_polymarket_condition_id(inst_id) for inst_id in instrument_ids]
-
+            filters["condition_ids"] = condition_ids
             markets = list_markets(filters=filters) # Usually, you would use filters={"is_active": True} to skip archived markets
             for market in markets:
                 condition_id = market.get("conditionId")
