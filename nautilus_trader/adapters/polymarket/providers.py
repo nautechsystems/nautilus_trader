@@ -86,7 +86,13 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         if self._config.use_gamma_markets:
             # Extract condition IDs from instrument IDs for filtering
             condition_ids = [get_polymarket_condition_id(inst_id) for inst_id in instrument_ids]
-            filters["condition_ids"] = condition_ids
+            # Use only the first 100 condition_ids to avoid query string length limit
+            if len(condition_ids) <= 100: # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
+                self._log.info(f"Loading {len(condition_ids)} instruments, using direct condition_id filtering")
+                filters["condition_ids"] = condition_ids
+            else:
+                self._log.info(f"Loading {len(condition_ids)} instruments, using bulk load of all markets")
+
             markets = list_markets(filters=filters) # Usually, you would use filters={"is_active": True} to skip archived markets
             for market in markets:
                 condition_id = market.get("conditionId")
