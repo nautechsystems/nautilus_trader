@@ -19,10 +19,9 @@ from collections import defaultdict
 from collections import deque
 from collections.abc import Coroutine
 from typing import Any
-import urllib.parse
-import urllib.request
 
 import msgspec
+import requests
 from py_clob_client.client import BalanceAllowanceParams
 from py_clob_client.client import ClobClient
 from py_clob_client.client import MarketOrderArgs
@@ -177,7 +176,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Get the user address (funder) - this is the address that holds positions
         # For proxy wallets, this differs from the signer address
-        user_address = http_client.builder.funder if hasattr(http_client, 'builder') else wallet_address
+        user_address = http_client.builder.funder if hasattr(http_client, "builder") else wallet_address
         validate_ethereum_address(user_address)
         self._user_address = user_address
 
@@ -187,6 +186,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # HTTP API
         self._http_client = http_client
+        self._http_session = requests.Session()
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
@@ -308,16 +308,19 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     def _fetch_user_positions(self, *, limit: int = 100, size_threshold: int = 0) -> list[dict[str, Any]]:
         """
-        Fetch all current positions for the configured user using the Polymarket Data API.
+        Fetch all current positions for the configured user using the Polymarket Data
+        API.
 
-        Implements pagination as the endpoint returns a maximum of 100 entries per request.
+        Implements pagination as the endpoint returns a maximum of 100 entries per
+        request.
+
         """
         base_url = "https://data-api.polymarket.com/positions"
         results: list[dict[str, Any]] = []
         offset = 0
 
         while True:
-            query = {
+            params = {
                 "user": self._user_address,
                 "limit": str(limit),
                 "offset": str(offset),
@@ -325,7 +328,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 "sortBy": "TOKENS",
                 "sortDirection": "DESC",
             }
-            url = f"{base_url}?{urllib.parse.urlencode(query)}"
             headers = {
                 "User-Agent": (
                     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -333,10 +335,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 ),
                 "Accept": "application/json, text/plain, */*",
             }
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310
-                payload = resp.read()
-            data = msgspec.json.decode(payload)
+            response = self._http_session.get(base_url, params=params, headers=headers, timeout=15)
+            response.raise_for_status()
+            data = msgspec.json.decode(response.content)
             if not data:
                 break
             if isinstance(data, list):
@@ -722,7 +723,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self,
         instrument_ids: list[InstrumentId],
     ) -> dict[InstrumentId, Quantity]:
-        """Fetch position quantities using Gamma API (bulk fetch)."""
+        """
+        Fetch position quantities using Gamma API (bulk fetch).
+        """
         self._log.debug("Fetching positions from Gamma API")
 
         # Fetch all user positions once (paginated)
@@ -739,12 +742,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
             size_val = p.get("size", 0) or 0
             try:
                 size_by_asset[asset] = float(size_val)
-            except Exception:
+            except Exception as e:
+                self._log.warning(f"Failed to parse position size for asset {asset}: {e}")
                 continue
 
         # Convert to quantities by instrument ID
         quantities: dict[InstrumentId, Quantity] = {}
-    
+
         for instrument_id in instrument_ids:
             token_id = str(get_polymarket_token_id(instrument_id))
             size = size_by_asset.get(token_id, 0.0)
@@ -759,7 +763,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self,
         instrument_ids: list[InstrumentId],
     ) -> dict[InstrumentId, Quantity]:
-        """Fetch position quantities using CLOB API (individual queries)."""
+        """
+        Fetch position quantities using CLOB API (individual queries).
+        """
         quantities: dict[InstrumentId, Quantity] = {}
 
         for instrument_id in instrument_ids:
