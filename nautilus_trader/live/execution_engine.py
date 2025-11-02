@@ -1834,6 +1834,7 @@ class LiveExecutionEngine(ExecutionEngine):
         final_orders = dict(mass_status._order_reports)
         final_fills = dict(mass_status._fill_reports)
 
+        reconciliation_instruments: list[Instrument] = []
         for instrument_id in mass_status.position_reports.keys():
             # Respect reconciliation_instrument_ids filter
             if not self._consider_for_reconciliation(instrument_id):
@@ -1842,43 +1843,40 @@ class LiveExecutionEngine(ExecutionEngine):
                     f"not in `reconciliation_instrument_ids` include list",
                 )
                 continue
+            reconciliation_instruments.append(self._cache.instrument(instrument_id))
 
-            self._log.info(
-                f"Attempting to adjust fills for {instrument_id}",
-                LogColor.BLUE,
-            )
-            instrument = self._cache.instrument(instrument_id)
-            if instrument:
-                self._log.info(
-                    f"Calling adjust_fills_for_partial_window for {instrument_id}",
-                    LogColor.BLUE,
-                )
-                adjusted_orders_for_instrument, adjusted_fills_for_instrument = (
-                    adjust_fills_for_partial_window(
-                        mass_status,
-                        instrument,
-                        self._log,
-                    )
-                )
+        self._log.debug(
+            f"Attempting to adjust fills for {len(reconciliation_instruments)} instruments",
+            LogColor.BLUE,
+        )
+        adjusted_results = adjust_fills_for_partial_window(
+            mass_status,
+            reconciliation_instruments,
+            self._log,
+        )
+        self._log.debug(
+            f"Updating adjusted fills for {len(reconciliation_instruments)} instruments",
+            LogColor.BLUE,
+        )
 
-                # Remove old orders and fills for this instrument
-                for venue_order_id in list(final_orders.keys()):
-                    order = final_orders[venue_order_id]
-                    if order.instrument_id == instrument_id:
-                        del final_orders[venue_order_id]
+        for instrument_id, adjusted_results in adjusted_results.items():
+            adjusted_orders_for_instrument = adjusted_results[0]
+            adjusted_fills_for_instrument = adjusted_results[1]
 
-                for venue_order_id in list(final_fills.keys()):
-                    fills = final_fills[venue_order_id]
-                    if fills and fills[0].instrument_id == instrument_id:
-                        del final_fills[venue_order_id]
+            # Remove old orders and fills for this instrument
+            for venue_order_id in list(final_orders.keys()):
+                order = final_orders[venue_order_id]
+                if order.instrument_id == instrument_id:
+                    del final_orders[venue_order_id]
 
-                # Add adjusted orders and fills for this instrument
-                final_orders.update(adjusted_orders_for_instrument)
-                final_fills.update(adjusted_fills_for_instrument)
-                self._log.info(
-                    f"Adjusted {len(adjusted_orders_for_instrument)} orders, {len(adjusted_fills_for_instrument)} fills for {instrument_id}",
-                    LogColor.BLUE,
-                )
+            for venue_order_id in list(final_fills.keys()):
+                fills = final_fills[venue_order_id]
+                if fills and fills[0].instrument_id == instrument_id:
+                    del final_fills[venue_order_id]
+
+            # Add adjusted orders and fills for this instrument
+            final_orders.update(adjusted_orders_for_instrument)
+            final_fills.update(adjusted_fills_for_instrument)
 
         # Apply all adjustments at once
         mass_status._order_reports = final_orders

@@ -7623,9 +7623,9 @@ def calculate_reconciliation_price(
 ) -> Decimal | None: ...
 def adjust_fills_for_partial_window(
     mass_status: ExecutionMassStatus,
-    instrument: Any,  # PyO3 InstrumentAny
+    instruments: list[Instrument],  # PyO3 InstrumentAny
     tolerance: str | None = None,
-) -> tuple[dict[str, OrderStatusReport], dict[str, list[FillReport]]]: ...
+) -> dict[InstrumentId, tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]]]: ...
 
 ###################################################################################################
 # Test Kit
