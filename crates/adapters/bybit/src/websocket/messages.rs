@@ -819,40 +819,46 @@ pub struct BybitWsAccountWalletMsg {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsAccountPosition {
-    pub position_idx: i32,
-    pub risk_id: i64,
-    pub risk_limit_value: String,
+    pub category: BybitProductType,
     pub symbol: Ustr,
     pub side: Ustr,
     pub size: String,
-    #[serde(default)]
-    pub avg_price: Option<String>,
-    pub position_value: String,
+    pub position_idx: i32,
     pub trade_mode: i32,
-    pub position_status: Ustr,
-    pub auto_add_margin: i32,
-    pub adl_rank_indicator: i32,
+    pub position_value: String,
+    pub risk_id: i64,
+    pub risk_limit_value: String,
+    pub entry_price: String,
+    pub mark_price: String,
     pub leverage: String,
     pub position_balance: String,
-    pub mark_price: String,
-    pub liq_price: String,
-    pub bust_price: String,
-    #[serde(rename = "positionMM")]
-    pub position_mm: String,
+    pub auto_add_margin: i32,
     #[serde(rename = "positionIM")]
     pub position_im: String,
+    #[serde(rename = "positionIMByMp")]
+    pub position_im_by_mp: String,
+    #[serde(rename = "positionMM")]
+    pub position_mm: String,
+    #[serde(rename = "positionMMByMp")]
+    pub position_mm_by_mp: String,
+    pub liq_price: String,
+    pub bust_price: String,
     pub tpsl_mode: Ustr,
     pub take_profit: String,
     pub stop_loss: String,
     pub trailing_stop: String,
     pub unrealised_pnl: String,
+    pub session_avg_price: String,
     pub cur_realised_pnl: String,
     pub cum_realised_pnl: String,
-    pub seq: i64,
-    #[serde(default)]
-    pub is_reduce_only: bool,
+    pub position_status: Ustr,
+    pub adl_rank_indicator: i32,
     pub created_time: String,
     pub updated_time: String,
+    pub seq: i64,
+    pub is_reduce_only: bool,
+    pub mmr_sys_updated_time: String,
+    pub leverage_sys_updated_time: String,
 }
 
 /// Envelope for position updates on private streams.

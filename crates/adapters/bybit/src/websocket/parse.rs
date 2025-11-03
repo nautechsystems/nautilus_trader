@@ -643,17 +643,12 @@ pub fn parse_ws_position_status_report(
         PositionSideSpecified::Flat
     };
 
-    let avg_px_open = if let Some(ref avg_price) = position.avg_price {
-        if !avg_price.is_empty() && avg_price != "0" {
-            avg_price
-                .parse::<f64>()
-                .with_context(|| format!("Failed to parse avgPrice='{}' as f64", avg_price))?
-        } else {
-            0.0
-        }
-    } else {
-        0.0
-    };
+    let avg_px_open = position.entry_price.parse::<f64>().with_context(|| {
+        format!(
+            "Failed to parse entryPrice='{}' as f64",
+            position.entry_price
+        )
+    })?;
 
     let _unrealized_pnl = position.unrealised_pnl.parse::<f64>().with_context(|| {
         format!(
