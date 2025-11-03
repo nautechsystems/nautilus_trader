@@ -373,14 +373,10 @@ impl FeedHandler {
                 if let Some(account_id) = account_id {
                     for position in &msg.data {
                         let raw_symbol = position.symbol;
+                        let symbol =
+                            product_type.map_or(raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
 
-                        if let Some(instrument) = instruments.values().find(|inst| {
-                            let inst_symbol = inst.symbol();
-                            let inst_symbol_str = inst_symbol.as_str();
-                            inst_symbol_str.starts_with(raw_symbol.as_str())
-                                && inst_symbol_str.len() > raw_symbol.len()
-                                && inst_symbol_str.as_bytes().get(raw_symbol.len()) == Some(&b'-')
-                        }) {
+                        if let Some(instrument) = instruments.get(&symbol) {
                             match parse_ws_position_status_report(
                                 position, account_id, instrument, ts_init,
                             ) {
@@ -392,7 +388,7 @@ impl FeedHandler {
                                 }
                             }
                         } else {
-                            tracing::warn!(raw_symbol = %raw_symbol, "No instrument found for symbol");
+                            tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
                         }
                     }
                 }
