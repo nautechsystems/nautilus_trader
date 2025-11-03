@@ -52,7 +52,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 
 use super::error::DydxHttpError;
-use crate::common::consts::DYDX_HTTP_URL_MAINNET;
+use crate::common::urls::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL};
 
 /// Default dYdX Indexer REST API rate limit.
 ///
@@ -131,7 +131,11 @@ impl DydxRawHttpClient {
         is_testnet: bool,
         retry_config: Option<RetryConfig>,
     ) -> anyhow::Result<Self> {
-        let base_url = base_url.unwrap_or_else(|| DYDX_HTTP_URL_MAINNET.to_string());
+        let base_url = if is_testnet {
+            base_url.unwrap_or_else(|| DYDX_TESTNET_HTTP_URL.to_string())
+        } else {
+            base_url.unwrap_or_else(|| DYDX_HTTP_URL.to_string())
+        };
 
         let retry_manager = RetryManager::new(retry_config.unwrap_or_default())
             .map_err(|e| DydxHttpError::ValidationError(e.to_string()))?;
@@ -367,7 +371,7 @@ mod tests {
 
         let client = client.unwrap();
         assert!(!client.is_testnet());
-        assert_eq!(client.base_url(), DYDX_HTTP_URL_MAINNET);
+        assert_eq!(client.base_url(), DYDX_HTTP_URL);
     }
 
     #[tokio::test]
@@ -377,5 +381,6 @@ mod tests {
 
         let client = client.unwrap();
         assert!(client.is_testnet());
+        assert_eq!(client.base_url(), DYDX_TESTNET_HTTP_URL);
     }
 }
