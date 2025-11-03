@@ -13,17 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! HTTP client bindings for the dYdX adapter.
+//! HTTP/REST client implementation for the dYdX v4 Indexer API.
 //!
-//! This module provides an HTTP client for interacting with the dYdX v4 Indexer REST API.
-//! It handles:
-//! - Request signing and authentication.
+//! This module provides an HTTP client for interacting with dYdX's Indexer REST endpoints, including:
+//!
+//! - Market data queries (perpetual markets, trades, candles).
+//! - Account information (subaccounts, positions, fills).
+//! - Order queries and historical data.
 //! - Rate limiting and retry logic.
-//! - Request/response models.
-//! - Parsing dYdX data into Nautilus domain models.
 //!
-//! The client supports dYdX REST endpoints including:
-//! - Market data (instruments, trades, candles).
-//! - Account data (subaccounts, positions, fills).
-//! - Order management queries.
-//! - Historical data.
+//! # Important Note
+//!
+//! The dYdX v4 Indexer REST API is **publicly accessible** and does NOT require
+//! authentication or request signing. All endpoints use wallet addresses and subaccount
+//! numbers as query parameters. Order submission and trading operations use gRPC with
+//! blockchain transaction signing, not REST API.
+//!
+//! # Official documentation
+//!
+//! See: <https://docs.dydx.exchange/api_integration-indexer/indexer_api>
+
+pub mod client;
+pub mod error;
+pub mod models;
+pub mod parse;
+pub mod query;

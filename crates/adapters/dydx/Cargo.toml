@@ -70,7 +70,6 @@ chrono = { workspace = true }
 cosmrs = "0.21"
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
-dydx-proto = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
