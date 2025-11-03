@@ -342,7 +342,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         if self._reconciliation_interval_secs:
             self._log.info(
-                f"Starting periodic position reconciliation every {self._reconciliation_interval_secs} seconds."
+                f"Starting periodic position reconciliation every {self._reconciliation_interval_secs} seconds.",
             )
             self._reconciliation_task = self.create_task(
                 self._run_periodic_reconciliation(),
@@ -397,7 +397,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 break
             except Exception as e:
                 self._log.exception("Error during periodic position reconciliation", e)
-            
+
             await asyncio.sleep(self._reconciliation_interval_secs)
 
     async def _reconcile_positions(self) -> None:
@@ -409,7 +409,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 command_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
-            broker_reports = await self.generate_position_status_reports( command )
+            broker_reports = await self.generate_position_status_reports(command)
 
             broker_quantities = {}
             for report in broker_reports:
@@ -435,17 +435,17 @@ class DYDXExecutionClient(LiveExecutionClient):
 
             internal_quantities[position.instrument_id] += position.signed_qty
 
-        self._log.debug( f'Broker quantities: {broker_quantities}, internal quantities: {internal_quantities}' )
+        self._log.debug(f"Broker quantities: {broker_quantities}, internal quantities: {internal_quantities}")
 
         all_instrument_ids = set(broker_quantities.keys()) | set(internal_quantities.keys())
 
         for instrument_id in all_instrument_ids:
-            broker_quantity = broker_quantities.get( instrument_id, 0.0 )
-            internal_quantity = internal_quantities.get( instrument_id, 0.0 )
+            broker_quantity = broker_quantities.get(instrument_id, 0.0)
+            internal_quantity = internal_quantities.get(instrument_id, 0.0)
 
             if broker_quantity != internal_quantity:
                 self._log.error(
-                    f"Broker quantity ( {broker_quantity} ) does not match internal quantity ( {internal_quantity} ) for {instrument_id.value}: "
+                    f"Broker quantity ( {broker_quantity} ) does not match internal quantity ( {internal_quantity} ) for {instrument_id.value}: ",
                 )
 
     async def _get_order_status_report(
@@ -1005,20 +1005,20 @@ class DYDXExecutionClient(LiveExecutionClient):
     async def _track_order_cancel(
         self,
         client_order_id: ClientOrderId,
-        good_til_block: int
+        good_til_block: int,
     ):
         self._log.info(f"Tracking order cancellation for {client_order_id} until block {good_til_block}...")
 
         start = self._clock.timestamp_ns()
 
         while self._clock.timestamp_ns() - start < TRACK_CANCEL_TIMEOUT_SECS * 1e9:
-            order = self._cache.order( client_order_id )
+            order = self._cache.order(client_order_id)
 
             if order.status != OrderStatus.ACCEPTED:
                 self._log.info(f"Order {client_order_id} status changed to {order.status}. Stopping tracking.")
                 break
 
-            if self._block_height >= int( good_til_block ):
+            if self._block_height >= int(good_til_block):
                 self._log.info(f"Order {client_order_id} reached good til block {good_til_block} at block height {self._block_height}. Sending cancel request...")
 
                 self.generate_order_canceled(
@@ -1033,7 +1033,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
             await asyncio.sleep( TRACK_CANCEL_INTERVAL_SECS)
 
-    def _handle_order_message(
+    def _handle_order_message(  # noqa: C901
         self,
         order_msg: DYDXWsOrderSubaccountMessageContents,
     ) -> None:
@@ -1102,11 +1102,12 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
 
         elif order_msg.status == DYDXOrderStatus.BEST_EFFORT_CANCELED:
-            self._loop.create_task( self._track_order_cancel( report.client_order_id, order_msg.goodTilBlock ) )
+            good_til_block = int(order_msg.goodTilBlock) if order_msg.goodTilBlock else 0
+            self._loop.create_task(self._track_order_cancel( report.client_order_id, good_til_block))
 
         elif order_msg.status in (DYDXOrderStatus.FILLED,):
             if order.status == OrderStatus.SUBMITTED:
-                self._log.warning( f'Received a fill message for a submitted order {order.client_order_id}. Generating an inferred OrderAccepted.' )
+                self._log.warning(f"Received a fill message for a submitted order {order.client_order_id}. Generating an inferred OrderAccepted.")
                 self.generate_order_accepted(
                     strategy_id=strategy_id,
                     instrument_id=report.instrument_id,
@@ -1115,7 +1116,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                     ts_event=report.ts_last,
                 )
 
-                self._cache.add_venue_order_id( client_order_id, report.venue_order_id )
+                self._cache.add_venue_order_id(client_order_id, report.venue_order_id)
 
             else:
                 # Skip order filled message and best effort canceled message. The _handle_fill_message generates
@@ -1232,7 +1233,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         for order in command.order_list.orders:
             await self._submit_order_single(order=order)
 
-    async def _submit_order_single(self, order: Order) -> None:  # noqa: C901
+    async def _submit_order_single(self, order: Order) -> None:
         """
         Submit a single order.
         """
@@ -1263,7 +1264,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        await self._broadcast_order( order=order )
+        await self._broadcast_order(order=order)
 
     async def _broadcast_order(self, order: Order) -> None:
         retry_manager = await self._retry_manager_pool.acquire()
@@ -1286,7 +1287,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
-    async def _attempt_order_broadcast(self, order: Order) -> None:
+    async def _attempt_order_broadcast(self, order: Order) -> None:  # noqa: C901
         instrument = self._cache.instrument(order.instrument_id)
 
         order_builder = self._get_order_builder(instrument)

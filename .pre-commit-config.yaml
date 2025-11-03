@@ -167,8 +167,7 @@ repos:
 
       - id: check-error-conventions
         name: check error conventions
-        description:
-          Enforces error variable naming conventions (Rust use Err(e), Python use as e:)
+        description: Enforces error variable naming conventions (Rust use Err(e), Python use as e:)
         entry: .pre-commit-hooks/check_error_conventions.sh
         language: script
         types_or: [rust, python, cython]
@@ -243,38 +242,39 @@ repos:
     rev: v1.7.7
     hooks:
       - id: docformatter
-        language_version: python3.13  # Pin to 3.13 due to untokenize incompatibility with 3.14
+        language_version: python3.13 # Pin to 3.13 due to untokenize incompatibility with 3.14
         additional_dependencies: [tomli]
-        args: [
-          "--wrap-summaries", "88",
-          "--wrap-descriptions", "88",
-          "--make-summary-multi-line",
-          "--pre-summary-newline",
-          "--blank",
-          "--recursive",
-          "--in-place",
-        ]
+        args:
+          [
+            "--wrap-summaries",
+            "88",
+            "--wrap-descriptions",
+            "88",
+            "--make-summary-multi-line",
+            "--pre-summary-newline",
+            "--blank",
+            "--recursive",
+            "--in-place",
+          ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.18.2
     hooks:
       - id: mypy
         exclude: (^python/|^nautilus_trader/.*\.pyi$)
-        args: [
-          "--config", "pyproject.toml",
-          "--allow-incomplete-defs",
-        ]
-        additional_dependencies: [
-          msgspec,
-          types-frozendict,
-          types-pytz,
-          types-redis,
-          types-requests,
-          types-toml,
-        ]
+        args: ["--config", "pyproject.toml", "--allow-incomplete-defs"]
+        additional_dependencies:
+          [
+            msgspec,
+            types-frozendict,
+            types-pytz,
+            types-redis,
+            types-requests,
+            types-toml,
+          ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.7  # Must match uv-version file
+    rev: 0.9.7 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$
