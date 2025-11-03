@@ -26,12 +26,6 @@ pub const DYDX_CHAIN_ID: &str = "dydx-mainnet-1";
 /// dYdX testnet chain ID.
 pub const DYDX_TESTNET_CHAIN_ID: &str = "dydx-testnet-4";
 
-/// dYdX mainnet Indexer HTTP API base URL.
-pub const DYDX_HTTP_URL_MAINNET: &str = "https://indexer.dydx.trade";
-
-/// dYdX testnet Indexer HTTP API base URL.
-pub const DYDX_HTTP_URL_TESTNET: &str = "https://indexer.v4testnet.dydx.exchange";
-
 /// Determines if an HTTP status code should trigger a retry.
 ///
 /// Retries on:
