@@ -858,7 +858,7 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef uint64_t start_time_ns = dt_to_unix_nanos(start_time)
         cdef uint64_t now_ns = dt_to_unix_nanos(now)
 
-        cdef bint fire_immediately = start_time_ns >= now_ns and start_time_ns - now_ns <= self._bar_build_delay * 1000
+        cdef bint fire_immediately = (start_time_ns == now_ns)
         self._skip_first_non_full_bar = self._skip_first_non_full_bar and now > start_time
 
         if self.bar_type.spec.aggregation != BarAggregation.MONTH:

@@ -2184,7 +2184,7 @@ def run_backtest_and_return_engine(with_data=True):
         ],
     )
 
-    register_time_range_generator("default", BacktestEngine.default_time_range_generator)
+    register_time_range_generator("default", default_time_range_generator)
 
     strategies = [
         ImportableStrategyConfig(

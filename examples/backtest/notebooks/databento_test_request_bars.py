@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -34,7 +34,6 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarAggregation
@@ -150,43 +149,43 @@ class TestHistoricalAggStrategy(Strategy):
             # self.register_indicator_for_bars(self.bar_type_1, self.composite_sma)
 
             # Test request_aggregated_bars
-            # self.request_aggregated_bars(
-            #     [self.bar_type_1, self.bar_type_2, self.bar_type_3],
-            #     start=start_historical_bars,
-            #     end=end_historical_bars,
-            #     update_subscriptions=True,
-            #     include_external_data=True,
-            #     params={
-            #         "time_range_generator": "",  # Use default time range generator
-            #         "durations_seconds": [120],  # Request 2-minute chunks
-            #     },
-            #     callback=self.strategy_subscribe_bars,
-            # )
-
-            # Test request_join
-            self.external_bar_type_2 = BarType.from_str("NQU4.XCME-1-MINUTE-LAST-EXTERNAL")
-            uuid_1 = self.request_bars(
-                self.external_bar_type,
-                unix_nanos_to_dt(0),
-                join_request=True,
-                callback=lambda x: self.user_log("join bars ES done", log_color=LogColor.BLUE),
-            )
-            uuid_2 = self.request_bars(
-                self.external_bar_type_2,
-                unix_nanos_to_dt(0),
-                join_request=True,
-                callback=lambda x: self.user_log("join bars NQ done", log_color=LogColor.BLUE),
-            )
-            self.request_join(
-                (uuid_1, uuid_2),
-                start_historical_bars,
-                end_historical_bars,
+            self.request_aggregated_bars(
+                [self.bar_type_1, self.bar_type_2, self.bar_type_3],
+                start=start_historical_bars,
+                end=end_historical_bars,
+                update_subscriptions=True,
+                include_external_data=True,
                 params={
                     "time_range_generator": "",  # Use default time range generator
                     "durations_seconds": [120],  # Request 2-minute chunks
                 },
-                callback=lambda x: self.user_log("join bars done", log_color=LogColor.BLUE),
+                callback=self.strategy_subscribe_bars,
             )
+
+            # Test request_join
+            # self.external_bar_type_2 = BarType.from_str("NQU4.XCME-1-MINUTE-LAST-EXTERNAL")
+            # uuid_1 = self.request_bars(
+            #     self.external_bar_type,
+            #     unix_nanos_to_dt(0),
+            #     join_request=True,
+            #     callback=lambda x: self.user_log("join bars ES done", log_color=LogColor.BLUE),
+            # )
+            # uuid_2 = self.request_bars(
+            #     self.external_bar_type_2,
+            #     unix_nanos_to_dt(0),
+            #     join_request=True,
+            #     callback=lambda x: self.user_log("join bars NQ done", log_color=LogColor.BLUE),
+            # )
+            # self.request_join(
+            #     (uuid_1, uuid_2),
+            #     start_historical_bars,
+            #     end_historical_bars,
+            #     params={
+            #         "time_range_generator": "",  # Use default time range generator
+            #         "durations_seconds": [120],  # Request 2-minute chunks
+            #     },
+            #     callback=lambda x: self.user_log("join bars done", log_color=LogColor.BLUE),
+            # )
         elif self.config.data_type == "quotes":
             utc_now = self.clock.utc_now()
             start_historical_bars = utc_now - pd.Timedelta(
