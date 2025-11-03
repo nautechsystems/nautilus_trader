@@ -15,6 +15,8 @@
 
 //! Core constants shared across the dYdX adapter components.
 
+use reqwest::StatusCode;
+
 /// dYdX adapter name.
 pub const DYDX: &str = "DYDX";
 
@@ -23,3 +25,61 @@ pub const DYDX_CHAIN_ID: &str = "dydx-mainnet-1";
 
 /// dYdX testnet chain ID.
 pub const DYDX_TESTNET_CHAIN_ID: &str = "dydx-testnet-4";
+
+/// dYdX mainnet Indexer HTTP API base URL.
+pub const DYDX_HTTP_URL_MAINNET: &str = "https://indexer.dydx.trade";
+
+/// dYdX testnet Indexer HTTP API base URL.
+pub const DYDX_HTTP_URL_TESTNET: &str = "https://indexer.v4testnet.dydx.exchange";
+
+/// Determines if an HTTP status code should trigger a retry.
+///
+/// Retries on:
+/// - 429 (Too Many Requests)
+/// - 500-599 (Server Errors)
+///
+/// Does NOT retry on:
+/// - 400 (Bad Request) - indicates client error that won't be fixed by retrying
+/// - 401 (Unauthorized) - not applicable for dYdX Indexer (no auth required)
+/// - 403 (Forbidden) - typically compliance/screening issues
+/// - 404 (Not Found) - resource doesn't exist
+#[must_use]
+pub const fn should_retry_error_code(status: &StatusCode) -> bool {
+    matches!(status.as_u16(), 429 | 500..=599)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_should_retry_429() {
+        assert!(should_retry_error_code(&StatusCode::TOO_MANY_REQUESTS));
+    }
+
+    #[test]
+    fn test_should_retry_server_errors() {
+        assert!(should_retry_error_code(&StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(should_retry_error_code(&StatusCode::BAD_GATEWAY));
+        assert!(should_retry_error_code(&StatusCode::SERVICE_UNAVAILABLE));
+        assert!(should_retry_error_code(&StatusCode::GATEWAY_TIMEOUT));
+    }
+
+    #[test]
+    fn test_should_not_retry_client_errors() {
+        assert!(!should_retry_error_code(&StatusCode::BAD_REQUEST));
+        assert!(!should_retry_error_code(&StatusCode::UNAUTHORIZED));
+        assert!(!should_retry_error_code(&StatusCode::FORBIDDEN));
+        assert!(!should_retry_error_code(&StatusCode::NOT_FOUND));
+    }
+
+    #[test]
+    fn test_should_not_retry_success() {
+        assert!(!should_retry_error_code(&StatusCode::OK));
+        assert!(!should_retry_error_code(&StatusCode::CREATED));
+    }
+}
