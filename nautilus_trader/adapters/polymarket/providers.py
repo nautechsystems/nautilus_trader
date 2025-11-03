@@ -85,6 +85,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
             self._log.info(f"Loading {len(condition_ids)} instruments, using bulk load of all markets")
 
         markets = list_markets(filters=filters)  # Usually, you would use filters={"is_active": True} to skip archived markets
+        self._log.info(f"Loaded {len(markets)} markets using Gamma API")
         for market in markets:
             condition_id = market.get("conditionId")
             if not condition_id:

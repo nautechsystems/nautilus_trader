@@ -31,10 +31,8 @@ from collections.abc import Generator
 from typing import Any
 
 import requests
-from trader.common.logging import get_logger
 
 
-_logger = get_logger(__name__)
 DEFAULT_GAMMA_BASE_URL = os.getenv("GAMMA_API_URL", "https://gamma-api.polymarket.com")
 
 
@@ -121,8 +119,7 @@ def _request_markets_page(
 
     resp = session.get(url, params=effective_params, timeout=timeout)
     if resp.status_code != 200:
-        _logger.error("Gamma Get Markets failed status=%s url=%s params=%s body=%s", resp.status_code, url, effective_params, resp.text)
-        raise RuntimeError(f"Gamma Get Markets failed: {resp.status_code} {resp.text}")
+        raise RuntimeError(f"Gamma Get Markets failed: {resp.status_code} for url {url} with params {effective_params} and body {resp.text}")
 
     data = resp.json()
     if isinstance(data, list):
@@ -146,10 +143,8 @@ def iter_markets(
     limit = int(filters.get("limit", 500)) if filters else 500
     offset = int(filters.get("offset", 0)) if filters else 0
 
-    _logger.info("Fetching Gamma markets with server-side filters limit=%s offset=%s base=%s", limit, offset, base)
     with requests.Session() as session:
         while True:
-            _logger.debug("Requesting markets page limit=%s offset=%s", limit, offset)
             markets = _request_markets_page(
                 session=session,
                 base_url=base,
@@ -159,14 +154,11 @@ def iter_markets(
                 timeout=timeout,
             )
             if not markets:
-                _logger.info("No markets returned for offset=%s; stopping", offset)
                 break
             yield from markets
             if len(markets) < limit:
-                _logger.info("Final page received count=%s (< limit=%s); stopping", len(markets), limit)
                 break
             offset += limit
-            _logger.debug("Advancing to next page offset=%s", offset)
 
 
 def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[str, Any]:
@@ -298,5 +290,4 @@ def list_markets(
         count += 1
         if max_results is not None and len(results) >= max_results:
             break
-    _logger.info("Collected %s markets (max_results=%s)", count, max_results)
     return results
