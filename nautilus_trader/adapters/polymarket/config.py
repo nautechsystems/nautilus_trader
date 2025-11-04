@@ -132,8 +132,9 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     ack_timeout_secs : PositiveFloat, default 5.0
         The timeout (seconds) to wait for order/trade acknowledgment from cache.
     use_data_api : bool, default False
-        If True, uses the Data API for fetching user positions (experimental, can handle large workloads).
-        If False, uses the CLOB API balance/allowance endpoint (stable, one request per instrument).
+        Determines which API to use for fetching user positions:
+        - True: Data API (experimental) - efficient for large workloads, fewer API calls
+        - False: CLOB API (stable, default) - balance/allowance endpoint, one request per instrument
 
     """
 
