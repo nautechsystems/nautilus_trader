@@ -5221,19 +5221,14 @@ dependencies = [
 name = "nautilus-dydx"
 version = "0.52.0"
 dependencies = [
- "ahash 0.8.12",
  "anyhow",
- "async-stream",
- "async-trait",
  "axum",
  "bip32",
  "chrono",
  "cosmrs",
  "criterion",
  "derive_builder",
- "futures-util",
- "indexmap 2.12.0",
- "log",
+ "hex",
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",
@@ -5252,15 +5247,16 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
+ "serde_with",
  "strum 0.27.2",
  "thiserror 2.0.17",
  "tokio",
  "tokio-util",
  "tonic",
- "tracing",
  "tracing-test",
  "url",
  "ustr",
+ "zeroize",
 ]
 
 [[package]]

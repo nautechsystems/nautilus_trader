@@ -20,9 +20,9 @@
 
 use std::{fmt::Debug, str::FromStr};
 
-use bip32::{DerivationPath, Language, Mnemonic, Seed};
 use cosmrs::{
     AccountId,
+    bip32::{DerivationPath, Language, Mnemonic, Seed},
     crypto::{PublicKey, secp256k1::SigningKey},
     tx,
 };

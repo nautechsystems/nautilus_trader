@@ -15,16 +15,40 @@
 
 //! Core constants shared across the dYdX adapter components.
 
+use std::sync::LazyLock;
+
+use nautilus_model::identifiers::Venue;
 use reqwest::StatusCode;
+use ustr::Ustr;
 
 /// dYdX adapter name.
 pub const DYDX: &str = "DYDX";
+
+/// dYdX venue identifier.
+pub static DYDX_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(DYDX)));
 
 /// dYdX mainnet chain ID.
 pub const DYDX_CHAIN_ID: &str = "dydx-mainnet-1";
 
 /// dYdX testnet chain ID.
 pub const DYDX_TESTNET_CHAIN_ID: &str = "dydx-testnet-4";
+
+/// Cosmos SDK bech32 address prefix for dYdX.
+pub const DYDX_BECH32_PREFIX: &str = "dydx";
+
+/// USDC gas denomination (native chain token).
+pub const USDC_GAS_DENOM: &str =
+    "ibc/8E27BA2D5493AF5636760E354E46004562C46AB7EC0CC4C1CA14E9E20E2545B5";
+
+/// USDC asset denomination for transfers.
+pub const USDC_DENOM: &str = "uusdc";
+
+/// HD wallet derivation path for dYdX accounts (Cosmos SLIP-0044).
+/// Format: m/44'/118'/0'/0/{account_index}
+pub const DYDX_DERIVATION_PATH_PREFIX: &str = "m/44'/118'/0'/0";
+
+/// Coin type for Cosmos ecosystem (SLIP-0044).
+pub const COSMOS_COIN_TYPE: u32 = 118;
 
 /// Determines if an HTTP status code should trigger a retry.
 ///

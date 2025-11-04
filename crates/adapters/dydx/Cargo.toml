@@ -55,34 +55,26 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
-ahash = { workspace = true }
 anyhow = { workspace = true }
-async-stream = { workspace = true }
-async-trait = { workspace = true }
-bip32 = { version = "0.5", default-features = false, features = [
-  "bip39",
-  "alloc",
-  "secp256k1",
-] }
+bip32 = "0.5"
 chrono = { workspace = true }
-cosmrs = "0.21"
+cosmrs = { version = "0.21", features = ["bip32"] }
 derive_builder = { workspace = true }
-futures-util = { workspace = true }
-indexmap = { workspace = true }
-log = { workspace = true }
+hex = "0.4"
 prost = "0.13"
 prost-types = "0.13"
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = "3.11"
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tonic = "0.13"
-tracing = { workspace = true }
 ustr = { workspace = true }
+zeroize = { version = "1.8", features = ["derive"] }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }

@@ -52,7 +52,10 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 
 use super::error::DydxHttpError;
-use crate::common::urls::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL};
+use crate::common::{
+    enums::DydxCandleResolution,
+    urls::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL},
+};
 
 /// Default dYdX Indexer REST API rate limit.
 ///
@@ -353,6 +356,187 @@ impl DydxRawHttpClient {
             error: e.to_string(),
             body: String::from_utf8_lossy(&response.body).to_string(),
         })
+    }
+
+    // ========================================================================
+    // Markets Endpoints
+    // ========================================================================
+
+    /// Fetch all perpetual markets.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_markets(&self) -> Result<super::models::MarketsResponse, DydxHttpError> {
+        self.send_request(Method::GET, "/v4/perpetualMarkets", None)
+            .await
+    }
+
+    /// Fetch orderbook for a specific market.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_orderbook(
+        &self,
+        ticker: &str,
+    ) -> Result<super::models::OrderbookResponse, DydxHttpError> {
+        let endpoint = format!("/v4/orderbooks/perpetualMarket/{ticker}");
+        self.send_request(Method::GET, &endpoint, None).await
+    }
+
+    /// Fetch recent trades for a market.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_trades(
+        &self,
+        ticker: &str,
+        limit: Option<u32>,
+    ) -> Result<super::models::TradesResponse, DydxHttpError> {
+        let endpoint = format!("/v4/trades/perpetualMarket/{ticker}");
+        let query = limit.map(|l| format!("limit={l}"));
+        self.send_request(Method::GET, &endpoint, query.as_deref())
+            .await
+    }
+
+    /// Fetch candles/klines for a market.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_candles(
+        &self,
+        ticker: &str,
+        resolution: DydxCandleResolution,
+        limit: Option<u32>,
+    ) -> Result<super::models::CandlesResponse, DydxHttpError> {
+        let endpoint = format!("/v4/candles/perpetualMarkets/{ticker}");
+        let mut query_parts = vec![format!("resolution={}", resolution)];
+        if let Some(l) = limit {
+            query_parts.push(format!("limit={l}"));
+        }
+        let query = query_parts.join("&");
+        self.send_request(Method::GET, &endpoint, Some(&query))
+            .await
+    }
+
+    // ========================================================================
+    // Account Endpoints
+    // ========================================================================
+
+    /// Fetch subaccount information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_subaccount(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+    ) -> Result<super::models::SubaccountResponse, DydxHttpError> {
+        let endpoint = format!("/v4/addresses/{address}/subaccountNumber/{subaccount_number}");
+        self.send_request(Method::GET, &endpoint, None).await
+    }
+
+    /// Fetch fills for a subaccount.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_fills(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        market: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<super::models::FillsResponse, DydxHttpError> {
+        let endpoint = "/v4/fills";
+        let mut query_parts = vec![
+            format!("address={address}"),
+            format!("subaccountNumber={subaccount_number}"),
+        ];
+        if let Some(m) = market {
+            query_parts.push(format!("market={m}"));
+        }
+        if let Some(l) = limit {
+            query_parts.push(format!("limit={l}"));
+        }
+        let query = query_parts.join("&");
+        self.send_request(Method::GET, endpoint, Some(&query)).await
+    }
+
+    /// Fetch orders for a subaccount.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_orders(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        market: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<super::models::OrdersResponse, DydxHttpError> {
+        let endpoint = "/v4/orders";
+        let mut query_parts = vec![
+            format!("address={address}"),
+            format!("subaccountNumber={subaccount_number}"),
+        ];
+        if let Some(m) = market {
+            query_parts.push(format!("market={m}"));
+        }
+        if let Some(l) = limit {
+            query_parts.push(format!("limit={l}"));
+        }
+        let query = query_parts.join("&");
+        self.send_request(Method::GET, endpoint, Some(&query)).await
+    }
+
+    /// Fetch transfers for a subaccount.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_transfers(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        limit: Option<u32>,
+    ) -> Result<super::models::TransfersResponse, DydxHttpError> {
+        let endpoint = "/v4/transfers";
+        let mut query_parts = vec![
+            format!("address={address}"),
+            format!("subaccountNumber={subaccount_number}"),
+        ];
+        if let Some(l) = limit {
+            query_parts.push(format!("limit={l}"));
+        }
+        let query = query_parts.join("&");
+        self.send_request(Method::GET, endpoint, Some(&query)).await
+    }
+
+    // ========================================================================
+    // Utility Endpoints
+    // ========================================================================
+
+    /// Get current server time.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_time(&self) -> Result<super::models::TimeResponse, DydxHttpError> {
+        self.send_request(Method::GET, "/v4/time", None).await
+    }
+
+    /// Get current blockchain height.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response parsing fails.
+    pub async fn get_height(&self) -> Result<super::models::HeightResponse, DydxHttpError> {
+        self.send_request(Method::GET, "/v4/height", None).await
     }
 }
 
