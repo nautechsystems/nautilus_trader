@@ -688,7 +688,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         else:
             instrument_ids = [inst.id for inst in self._cache.instruments(venue=POLYMARKET_VENUE)]
 
-        if self._config.use_gamma_api:
+        if self._config.use_data_api:
             # Fetch all positions once (bulk operation)
             quantities_by_instrument = await self._fetch_quantities_from_gamma_api(instrument_ids)
         else:
