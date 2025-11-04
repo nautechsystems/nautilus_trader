@@ -131,9 +131,9 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         Note: there will be a performance penalty parsing the JSON without an efficient msgspec decoder.
     ack_timeout_secs : PositiveFloat, default 5.0
         The timeout (seconds) to wait for order/trade acknowledgment from cache.
-    use_data_api : bool, default True
-        If True, uses the Data API for fetching user positions.
-        If False, uses the CLOB API balance/allowance endpoint.
+    use_data_api : bool, default False
+        If True, uses the Data API for fetching user positions (experimental, can handle large workloads).
+        If False, uses the CLOB API balance/allowance endpoint (stable, one request per instrument).
 
     """
 
