@@ -1,0 +1,62 @@
+[package]
+name = "nautilus-gateio2"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Nautilus Trader integration adapter for Gate.io"
+documentation.workspace = true
+
+[lib]
+name = "nautilus_gateio2"
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "gateio2-http-spot"
+path = "bin/http_spot.rs"
+
+[[bin]]
+name = "gateio2-http-futures"
+path = "bin/http_futures.rs"
+
+[[bin]]
+name = "gateio2-ws-spot"
+path = "bin/ws_spot.rs"
+
+[[bin]]
+name = "gateio2-ws-futures"
+path = "bin/ws_futures.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+futures-util = { workspace = true }
+indexmap = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true, features = ["native-tls"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true } # Needed for example binaries
+url = { workspace = true }
+ustr = { workspace = true }
+zeroize = { workspace = true }
+
+# Cryptography for signature
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+# Optional Python bindings
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true, features = ["fmt"] }
+
+[features]
+default = []
+python = ["pyo3", "pyo3-async-runtimes", "nautilus-core/python", "nautilus-model/python"]
