@@ -18,7 +18,11 @@
 //! This module provides the main gRPC client for interacting with dYdX v4 validator nodes.
 //! It handles transaction signing, broadcasting, and querying account state.
 
-use dydx_proto::{
+use prost::Message as ProstMessage;
+use tonic::transport::Channel;
+
+use crate::error::DydxError;
+use crate::proto::{
     cosmos_sdk_proto::cosmos::{
         auth::v1beta1::{
             BaseAccount, QueryAccountRequest, query_client::QueryClient as AuthClient,
@@ -47,10 +51,6 @@ use dydx_proto::{
         },
     },
 };
-use prost::Message as ProstMessage;
-use tonic::transport::Channel;
-
-use crate::error::DydxError;
 
 /// Transaction hash type (internally uses tendermint::Hash).
 pub type TxHash = String;
@@ -65,18 +65,6 @@ pub struct Height(pub u32);
 /// - Transaction signing and broadcasting.
 /// - Account query operations.
 /// - Order placement and management via Cosmos SDK messages.
-///
-/// # Examples
-///
-/// ```no_run
-/// use nautilus_dydx::grpc::DydxGrpcClient;
-///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let grpc_url = "https://dydx-grpc.publicnode.com:443".to_string();
-/// let client = DydxGrpcClient::new(grpc_url).await?;
-/// # Ok(())
-/// # }
-/// ```
 #[derive(Debug, Clone)]
 pub struct DydxGrpcClient {
     channel: Channel,
