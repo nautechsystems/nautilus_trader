@@ -452,7 +452,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
     filters: dict[str, Any] | None = None
     filter_callable: str | None = None
     log_warnings: bool = True
-    use_gamma_markets: bool = False  
+    use_gamma_markets: bool = False
 
 
 class OrderEmulatorConfig(NautilusConfig, frozen=True):
