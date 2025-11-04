@@ -19,23 +19,11 @@
 //! from the dYdX Indexer API into strongly-typed Nautilus data types such as
 //! instruments, trades, bars, account states, etc.
 
-use super::models::DydxMarketData;
-
 // TODO: Implement parsing functions for:
-// - parse_instrument_any: Convert dYdX perpetual market to InstrumentAny
-// - parse_trade_tick: Convert dYdX trade to TradeTick
-// - parse_candlestick: Convert dYdX candle to Bar
-// - parse_account_state: Convert dYdX subaccount to AccountState
-// - parse_order_status_report: Convert dYdX order to OrderStatusReport
-// - parse_position_status_report: Convert dYdX position to PositionStatusReport
-// - parse_fill_report: Convert dYdX fill to FillReport
-
-/// Placeholder parsing function.
-///
-/// # Errors
-///
-/// Returns an error if parsing fails.
-pub fn parse_market_data(_data: &DydxMarketData) -> anyhow::Result<()> {
-    // TODO: Implement actual parsing logic
-    Ok(())
-}
+// - parse_instrument_any: Convert DydxPerpetualMarket to InstrumentAny
+// - parse_trade_tick: Convert DydxTrade to TradeTick
+// - parse_candlestick: Convert DydxCandle to Bar
+// - parse_account_state: Convert DydxSubaccount to AccountState
+// - parse_order_status_report: Convert DydxOrder to OrderStatusReport
+// - parse_position_status_report: Convert DydxPerpetualPosition to PositionStatusReport
+// - parse_fill_report: Convert DydxFill to FillReport

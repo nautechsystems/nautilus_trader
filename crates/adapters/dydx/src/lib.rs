@@ -57,3 +57,10 @@ pub mod http;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+// Re-exports
+pub use crate::{
+    config::DydxAdapterConfig,
+    error::DydxError,
+    http::{client::DydxRawHttpClient, error::DydxHttpError},
+};

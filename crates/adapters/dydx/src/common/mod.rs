@@ -13,6 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Common functionality shared across the dYdX adapter.
+//!
+//! This module provides core utilities, constants, and data structures used throughout
+//! the dYdX v4 integration, including:
+//!
+//! - Common types and blockchain primitives (addresses, subaccounts).
+//! - Constants for HTTP retry logic and rate limits.
+//! - URL management for Indexer and gRPC endpoints.
+
 pub mod consts;
 pub mod types;
 pub mod urls;
