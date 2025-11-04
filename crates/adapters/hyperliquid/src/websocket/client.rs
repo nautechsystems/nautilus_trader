@@ -16,15 +16,14 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use futures_util::{Stream, future::BoxFuture};
-use nautilus_core::time::get_atomic_clock_realtime;
+use futures_util::future::BoxFuture;
 use nautilus_model::{
     data::BarType,
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -32,78 +31,16 @@ use crate::{
     common::{enums::HyperliquidBarInterval, parse::bar_type_to_interval},
     http::error::{Error, Result as HyperliquidResult},
     websocket::{
+        handler::{FeedHandler, HandlerCommand},
         messages::{
-            ActionPayload, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest,
-            NautilusWsMessage, PostRequest, PostResponsePayload, SubscriptionRequest,
+            ActionPayload, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
+            PostRequest, PostResponsePayload, SubscriptionRequest,
         },
-        parse::{parse_ws_fill_report, parse_ws_order_status_report},
         post::{
             PostBatcher, PostIds, PostLane, PostRouter, ScheduledPost, WsSender, lane_for_action,
         },
     },
 };
-
-/// Errors that can occur during Hyperliquid WebSocket operations.
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum HyperliquidError {
-    #[error("URL parsing failed: {0}")]
-    UrlParsing(String),
-
-    #[error("Message serialization failed: {0}")]
-    MessageSerialization(String),
-
-    #[error("Message deserialization failed: {0}")]
-    MessageDeserialization(String),
-
-    #[error("WebSocket connection failed: {0}")]
-    Connection(String),
-
-    #[error("Channel send failed: {0}")]
-    ChannelSend(String),
-}
-
-/// Codec for encoding and decoding Hyperliquid WebSocket messages.
-///
-/// This struct provides methods to validate URLs and serialize/deserialize messages
-/// according to the Hyperliquid WebSocket protocol.
-#[derive(Debug, Default)]
-pub struct HyperliquidCodec;
-
-impl HyperliquidCodec {
-    /// Creates a new Hyperliquid codec instance.
-    pub fn new() -> Self {
-        Self
-    }
-
-    /// Validates that a URL is a proper WebSocket URL.
-    pub fn validate_url(url: &str) -> Result<(), HyperliquidError> {
-        if url.starts_with("ws://") || url.starts_with("wss://") {
-            Ok(())
-        } else {
-            Err(HyperliquidError::UrlParsing(format!(
-                "URL must start with ws:// or wss://, was: {}",
-                url
-            )))
-        }
-    }
-
-    /// Encodes a WebSocket request to JSON bytes.
-    pub fn encode(&self, request: &HyperliquidWsRequest) -> Result<Vec<u8>, HyperliquidError> {
-        serde_json::to_vec(request).map_err(|e| {
-            HyperliquidError::MessageSerialization(format!("Failed to serialize request: {e}"))
-        })
-    }
-
-    /// Decodes JSON bytes to a WebSocket message.
-    pub fn decode(&self, data: &[u8]) -> Result<HyperliquidWsMessage, HyperliquidError> {
-        serde_json::from_slice(data).map_err(|e| {
-            HyperliquidError::MessageDeserialization(format!(
-                "Failed to deserialize message: {}",
-                e
-            ))
-        })
-    }
-}
 
 /// Low-level Hyperliquid WebSocket client that wraps Nautilus WebSocketClient.
 ///
@@ -112,7 +49,7 @@ impl HyperliquidCodec {
 #[derive(Debug)]
 pub struct HyperliquidWebSocketInnerClient {
     inner: Arc<WebSocketClient>,
-    rx_inbound: mpsc::Receiver<HyperliquidWsMessage>,
+    rx_inbound: Option<tokio::sync::mpsc::UnboundedReceiver<HyperliquidWsMessage>>,
     sent_subscriptions: HashSet<String>,
     _reader_task: tokio::task::JoinHandle<()>,
     post_router: Arc<PostRouter>,
@@ -147,8 +84,10 @@ impl HyperliquidWebSocketInnerClient {
 
         let post_router = PostRouter::new();
         let post_ids = PostIds::new(1);
-        let (tx_inbound, rx_inbound) = mpsc::channel::<HyperliquidWsMessage>(1024);
-        let (tx_outbound, mut rx_outbound) = mpsc::channel::<HyperliquidWsRequest>(1024);
+        let (tx_inbound, rx_inbound) =
+            tokio::sync::mpsc::unbounded_channel::<HyperliquidWsMessage>();
+        let (tx_outbound, mut rx_outbound) =
+            tokio::sync::mpsc::channel::<HyperliquidWsRequest>(1024);
 
         let ws_sender = WsSender::new(tx_outbound);
 
@@ -163,7 +102,7 @@ impl HyperliquidWebSocketInnerClient {
                                 if let HyperliquidWsMessage::Post { data } = &hl_msg {
                                     post_router_for_reader.complete(data.clone()).await;
                                 }
-                                if let Err(e) = tx_inbound.send(hl_msg).await {
+                                if let Err(e) = tx_inbound.send(hl_msg) {
                                     tracing::error!("Failed to send decoded message: {e}");
                                     break;
                                 }
@@ -227,7 +166,7 @@ impl HyperliquidWebSocketInnerClient {
 
         let hl_client = Self {
             inner: client,
-            rx_inbound,
+            rx_inbound: Some(rx_inbound),
             sent_subscriptions: HashSet::new(),
             _reader_task: reader_task,
             post_router,
@@ -285,7 +224,19 @@ impl HyperliquidWebSocketInnerClient {
     /// Get the next event from the WebSocket stream.
     /// Returns None when the connection is closed or the receiver is exhausted.
     pub async fn ws_next_event(&mut self) -> Option<HyperliquidWsMessage> {
-        self.rx_inbound.recv().await
+        if let Some(ref mut rx) = self.rx_inbound {
+            rx.recv().await
+        } else {
+            None
+        }
+    }
+
+    /// Takes ownership of the inbound message receiver.
+    /// Returns None if the receiver has already been taken.
+    pub fn take_receiver(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<HyperliquidWsMessage>> {
+        self.rx_inbound.take()
     }
 
     /// Returns true if the WebSocket connection is active.
@@ -377,9 +328,9 @@ impl HyperliquidWebSocketInnerClient {
 
 /// High-level Hyperliquid WebSocket client that provides standardized domain methods.
 ///
-/// This client uses Arc<RwLock<>> for internal state to support Clone and safe sharing
+/// This client uses Arc<RwLock<>> for internal state to support safe sharing
 /// across async tasks, following the same pattern as other exchange adapters (OKX, Bitmex, Bybit).
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
@@ -387,9 +338,29 @@ impl HyperliquidWebSocketInnerClient {
 pub struct HyperliquidWebSocketClient {
     inner: Arc<RwLock<Option<HyperliquidWebSocketInnerClient>>>,
     url: String,
-    instruments: Arc<DashMap<InstrumentId, InstrumentAny>>,
-    instruments_by_symbol: Arc<DashMap<Ustr, InstrumentId>>,
+    instruments: Arc<DashMap<Ustr, InstrumentAny>>,
     bar_types: Arc<DashMap<String, BarType>>,
+    handler_cmd_tx: Arc<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
+    #[allow(
+        dead_code,
+        reason = "Reserved for future stream() method implementation"
+    )]
+    rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
+    account_id: Option<AccountId>,
+}
+
+impl Clone for HyperliquidWebSocketClient {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+            url: self.url.clone(),
+            instruments: Arc::clone(&self.instruments),
+            bar_types: Arc::clone(&self.bar_types),
+            handler_cmd_tx: Arc::clone(&self.handler_cmd_tx),
+            rx: None,
+            account_id: self.account_id,
+        }
+    }
 }
 
 impl HyperliquidWebSocketClient {
@@ -409,59 +380,80 @@ impl HyperliquidWebSocketClient {
             }
         });
 
+        // We don't have a handler yet; this placeholder keeps add_instrument() working.
+        // connect() swaps in the real channel and replays any queued instruments so the
+        // handler sees them once it starts.
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+
         Self {
             inner: Arc::new(RwLock::new(None)),
             url,
             instruments: Arc::new(DashMap::new()),
-            instruments_by_symbol: Arc::new(DashMap::new()),
             bar_types: Arc::new(DashMap::new()),
+            handler_cmd_tx: Arc::new(cmd_tx),
+            rx: None,
+            account_id: None,
         }
     }
 
     /// Adds an instrument to the cache for parsing WebSocket messages.
     pub fn add_instrument(&self, instrument: InstrumentAny) {
-        let instrument_id = instrument.id();
-        self.instruments.insert(instrument_id, instrument);
+        let symbol = instrument.symbol().inner();
+        self.instruments.insert(symbol, instrument.clone());
 
-        // Extract coin prefix (e.g., "BTC" from "BTC-PERP") and index for fast lookup
-        let symbol = instrument_id.symbol.as_str();
-        if let Some(coin) = symbol.split('-').next() {
-            self.instruments_by_symbol
-                .insert(Ustr::from(coin), instrument_id);
+        // Before connect() the handler isn't running; this send will fail and that's expected
+        // because connect() replays the instruments via InitializeInstruments.
+        if let Err(e) = self
+            .handler_cmd_tx
+            .send(HandlerCommand::UpdateInstrument(instrument))
+        {
+            tracing::debug!("Failed to send instrument update to handler: {e}");
         }
+
+        tracing::debug!("Cached instrument {symbol} in WebSocket client");
     }
 
     /// Gets an instrument from the cache by ID.
     pub fn get_instrument(&self, id: &InstrumentId) -> Option<InstrumentAny> {
-        self.instruments.get(id).map(|e| e.value().clone())
+        self.instruments
+            .get(&id.symbol.inner())
+            .map(|e| e.value().clone())
     }
 
     /// Gets an instrument from the cache by symbol.
     pub fn get_instrument_by_symbol(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        // Fast path: lookup instrument id by coin prefix, then fetch instrument by id.
-        if let Some(id_entry) = self.instruments_by_symbol.get(symbol) {
-            let instrument_id = *id_entry.value();
-            if let Some(inst_entry) = self.instruments.get(&instrument_id) {
-                return Some(inst_entry.value().clone());
-            }
-        }
-
-        // Fallback: (should be rare) scan full instruments map to find exact symbol match
-        self.instruments
-            .iter()
-            .find(|e| e.key().symbol == (*symbol).into())
-            .map(|e| e.value().clone())
+        self.instruments.get(symbol).map(|e| e.value().clone())
     }
 
     /// Creates a new Hyperliquid WebSocket client and establishes connection.
-    pub async fn connect(url: &str) -> anyhow::Result<Self> {
-        let inner_client = HyperliquidWebSocketInnerClient::connect(url).await?;
+    pub async fn connect(url: &str, account_id: Option<AccountId>) -> anyhow::Result<Self> {
+        let mut inner_client = HyperliquidWebSocketInnerClient::connect(url).await?;
+
+        let msg_rx = inner_client
+            .take_receiver()
+            .ok_or_else(|| anyhow::anyhow!("Failed to take receiver from inner client"))?;
+
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+
+        let instruments_cache = Arc::new(DashMap::new());
+
+        tokio::spawn(async move {
+            let mut handler = FeedHandler::new(cmd_rx, msg_rx, out_tx, account_id);
+
+            while handler.next().await.is_some() {}
+
+            tracing::debug!("FeedHandler task completed");
+        });
+
         Ok(Self {
             inner: Arc::new(RwLock::new(Some(inner_client))),
             url: url.to_string(),
-            instruments: Arc::new(DashMap::new()),
-            instruments_by_symbol: Arc::new(DashMap::new()),
+            instruments: instruments_cache,
             bar_types: Arc::new(DashMap::new()),
+            handler_cmd_tx: Arc::new(cmd_tx),
+            rx: Some(out_rx),
+            account_id,
         })
     }
 
@@ -826,155 +818,27 @@ impl HyperliquidWebSocketClient {
             .await
     }
 
-    /// Creates a stream of execution messages (order updates and fills).
+    /// Returns a stream of Nautilus messages from the WebSocket connection.
     ///
-    /// This method spawns a background task that listens for WebSocket messages
-    /// and processes OrderUpdates and UserEvents (fills) into ExecutionReports.
-    /// The execution reports are sent through the returned stream for processing
-    /// by the execution client.
+    /// This is the standardized method for consuming messages from the handler.
+    /// The handler parses and converts raw WebSocket messages to Nautilus domain messages.
     ///
-    /// # Arguments
+    /// # Panics
     ///
-    /// * `account_id` - Account ID for report generation
-    /// * `user_address` - User address to subscribe to order updates and user events
-    ///
-    /// # Returns
-    ///
-    /// A stream of `NautilusWsMessage` containing execution reports
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if subscription fails or connection cannot be established
-    pub async fn stream_execution_messages(
-        &self,
-        account_id: AccountId,
-        user_address: String,
-    ) -> anyhow::Result<impl Stream<Item = NautilusWsMessage>> {
-        self.ensure_connected().await?;
+    /// Panics if called before [`Self::connect`] or if the stream has already been taken.
+    pub fn stream(
+        &mut self,
+    ) -> impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static {
+        let rx = self
+            .rx
+            .take()
+            .expect("Stream receiver already taken or client not connected");
 
-        self.subscribe_order_updates(&user_address).await?;
-        self.subscribe_user_events(&user_address).await?;
-
-        let client = self.clone();
-        let (tx, rx) = mpsc::unbounded_channel();
-
-        tokio::spawn(async move {
-            let clock = get_atomic_clock_realtime();
-
-            loop {
-                let event = client.next_event().await;
-
-                match event {
-                    Some(msg) => {
-                        match &msg {
-                            HyperliquidWsMessage::OrderUpdates { data } => {
-                                let mut exec_reports = Vec::new();
-
-                                for order_update in data {
-                                    if let Some(instrument) =
-                                        client.get_instrument_by_symbol(&order_update.order.coin)
-                                    {
-                                        let ts_init = clock.get_time_ns();
-
-                                        match parse_ws_order_status_report(
-                                            order_update,
-                                            &instrument,
-                                            account_id,
-                                            ts_init,
-                                        ) {
-                                            Ok(report) => {
-                                                exec_reports.push(ExecutionReport::Order(report));
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Error parsing order update: {}",
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    } else {
-                                        tracing::warn!(
-                                            "No instrument found for symbol: {}",
-                                            order_update.order.coin
-                                        );
-                                    }
-                                }
-
-                                if !exec_reports.is_empty()
-                                    && let Err(e) =
-                                        tx.send(NautilusWsMessage::ExecutionReports(exec_reports))
-                                {
-                                    tracing::error!("Failed to send execution reports: {e}");
-                                    break;
-                                }
-                            }
-                            HyperliquidWsMessage::UserEvents { data } => {
-                                use crate::websocket::messages::WsUserEventData;
-
-                                let ts_init = clock.get_time_ns();
-
-                                match data {
-                                    WsUserEventData::Fills { fills } => {
-                                        let mut exec_reports = Vec::new();
-
-                                        for fill in fills {
-                                            if let Some(instrument) =
-                                                client.get_instrument_by_symbol(&fill.coin)
-                                            {
-                                                match parse_ws_fill_report(
-                                                    fill,
-                                                    &instrument,
-                                                    account_id,
-                                                    ts_init,
-                                                ) {
-                                                    Ok(report) => {
-                                                        exec_reports
-                                                            .push(ExecutionReport::Fill(report));
-                                                    }
-                                                    Err(e) => {
-                                                        tracing::error!(
-                                                            "Error parsing fill: {}",
-                                                            e
-                                                        );
-                                                    }
-                                                }
-                                            } else {
-                                                tracing::warn!(
-                                                    "No instrument found for symbol: {}",
-                                                    fill.coin
-                                                );
-                                            }
-                                        }
-
-                                        if !exec_reports.is_empty()
-                                            && let Err(e) = tx.send(
-                                                NautilusWsMessage::ExecutionReports(exec_reports),
-                                            )
-                                        {
-                                            tracing::error!("Failed to send fill reports: {e}");
-                                            break;
-                                        }
-                                    }
-                                    _ => {
-                                        // Other user events (funding, liquidation, etc.) not handled yet
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    None => {
-                        break;
-                    }
-                }
-            }
-        });
-
-        Ok(async_stream::stream! {
+        async_stream::stream! {
             let mut rx = rx;
-            while let Some(msg) = rx.recv().await {
-                yield msg;
+            while let Some(event) = rx.recv().await {
+                yield event;
             }
-        })
+        }
     }
 }

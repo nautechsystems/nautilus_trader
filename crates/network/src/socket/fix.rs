@@ -17,7 +17,7 @@
 
 use memchr::memchr;
 
-use crate::socket::TcpMessageHandler;
+use super::TcpMessageHandler;
 
 const MIN_MESSAGE_SIZE: usize = 10; // Minimum length for "8=FIX" + "10=xxx|"
 const MAX_MESSAGE_SIZE: usize = 8192; // Max message size to prevent buffer bloat
@@ -132,7 +132,7 @@ mod process_fix_buffer_tests {
     use nautilus_core::MUTEX_POISONED;
     use rstest::rstest;
 
-    use crate::{fix::process_fix_buffer, socket::TcpMessageHandler};
+    use super::{TcpMessageHandler, process_fix_buffer};
 
     #[rstest]
     fn test_process_empty_buffer() {

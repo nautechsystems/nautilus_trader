@@ -2488,254 +2488,6 @@ fn test_submit_order_list_sells_when_over_free_balance_then_denies(
     );
 }
 
-// TODO: Implement test for multi-currency cash account over cumulative notional
-#[ignore = "TODO: Requires ExecutionClient implementation"]
-#[rstest]
-fn test_submit_order_list_sells_when_multi_currency_cash_account_over_cumulative_notional() {}
-
-#[ignore = "Message bus related changes re-investigate"]
-#[rstest]
-fn test_submit_order_when_reducing_and_buy_order_adds_then_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    client_order_id: ClientOrderId,
-    instrument_xbtusd_bitmex: InstrumentAny,
-    venue_order_id: VenueOrderId,
-    process_order_event_handler: ShareableMessageHandler,
-    execute_order_event_handler: ShareableMessageHandler,
-    bitmex_cash_account_state_multi: AccountState,
-    mut simple_cache: Cache,
-) {
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_process(),
-        process_order_event_handler,
-    );
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_execute(),
-        execute_order_event_handler.clone(),
-    );
-
-    simple_cache
-        .add_instrument(instrument_xbtusd_bitmex.clone())
-        .unwrap();
-
-    simple_cache
-        .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
-        )))
-        .unwrap();
-
-    let quote = QuoteTick::new(
-        instrument_xbtusd_bitmex.id(),
-        Price::from("0.075000"),
-        Price::from("0.075005"),
-        Quantity::from("50000"),
-        Quantity::from("50000"),
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
-
-    simple_cache.add_quote(quote).unwrap();
-
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-
-    risk_engine.set_max_notional_per_order(
-        instrument_xbtusd_bitmex.id(),
-        Decimal::from_str("10000").unwrap(),
-    );
-
-    let order1 = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let submit_order1 = SubmitOrder::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
-        client_order_id,
-        venue_order_id,
-        order1,
-        None,
-        None,
-        None, // params
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-    risk_engine.set_trading_state(TradingState::Reducing);
-
-    let order2 = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let submit_order2 = SubmitOrder::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
-        client_order_id,
-        venue_order_id,
-        order2,
-        None,
-        None,
-        None, // params
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
-
-    let saved_execute_messages =
-        get_execute_order_event_handler_messages(execute_order_event_handler);
-    assert_eq!(saved_execute_messages.len(), 1);
-
-    // TODO: currently, portfolio.is_net_long() is false, because portfolio.net_position() is not updated
-    // assert!(risk_engine.portfolio.is_net_long(&instrument_xbtusd_bitmex.id()));
-    // let saved_process_messages =
-    //     get_process_order_event_handler_messages(process_order_event_handler);
-    // assert_eq!(saved_process_messages.len(), 1);
-
-    // assert_eq!(
-    //     saved_process_messages.first().unwrap().event_type(),
-    //     OrderEventType::Denied
-    // );
-    // assert_eq!(
-    //     saved_process_messages.first().unwrap().message().unwrap(),
-    //     "BUY when TradingState.REDUCING and LONG"
-    // );
-}
-
-#[ignore = "Message bus related changes re-investigate"]
-#[rstest]
-fn test_submit_order_when_reducing_and_sell_order_adds_then_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    client_order_id: ClientOrderId,
-    instrument_xbtusd_bitmex: InstrumentAny,
-    venue_order_id: VenueOrderId,
-    process_order_event_handler: ShareableMessageHandler,
-    execute_order_event_handler: ShareableMessageHandler,
-    bitmex_cash_account_state_multi: AccountState,
-    mut simple_cache: Cache,
-) {
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_process(),
-        process_order_event_handler,
-    );
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_execute(),
-        execute_order_event_handler.clone(),
-    );
-
-    simple_cache
-        .add_instrument(instrument_xbtusd_bitmex.clone())
-        .unwrap();
-
-    simple_cache
-        .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
-        )))
-        .unwrap();
-
-    let quote = QuoteTick::new(
-        instrument_xbtusd_bitmex.id(),
-        Price::from("0.075000"),
-        Price::from("0.075005"),
-        Quantity::from("50000"),
-        Quantity::from("50000"),
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
-
-    simple_cache.add_quote(quote).unwrap();
-
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-
-    risk_engine.set_max_notional_per_order(
-        instrument_xbtusd_bitmex.id(),
-        Decimal::from_str("10000").unwrap(),
-    );
-
-    let order1 = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
-        .side(OrderSide::Sell)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let submit_order1 = SubmitOrder::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
-        client_order_id,
-        venue_order_id,
-        order1,
-        None,
-        None,
-        None, // params
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-    risk_engine.set_trading_state(TradingState::Reducing);
-
-    let order2 = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
-        .side(OrderSide::Sell)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let submit_order2 = SubmitOrder::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
-        client_order_id,
-        venue_order_id,
-        order2,
-        None,
-        None,
-        None, // params
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
-    let saved_execute_messages =
-        get_execute_order_event_handler_messages(execute_order_event_handler);
-    assert_eq!(saved_execute_messages.len(), 1);
-
-    // TODO: currently, portfolio.is_net_short() is false, because portfolio.net_position() is not updated
-    // assert!(risk_engine.portfolio.is_net_short(&instrument_xbtusd_bitmex.id()));
-    // let saved_process_messages =
-    //     get_process_order_event_handler_messages(process_order_event_handler);
-    // assert_eq!(saved_process_messages.len(), 1);
-
-    // assert_eq!(
-    //     saved_process_messages.first().unwrap().event_type(),
-    //     OrderEventType::Denied
-    // );
-    // assert_eq!(
-    //     saved_process_messages.first().unwrap().message().unwrap(),
-    //     "SELL when TradingState.REDUCING and SHORT"
-    // );
-}
-
 #[rstest]
 fn test_submit_order_when_trading_halted_then_denies_order(
     strategy_id_ema_cross: StrategyId,
@@ -2795,7 +2547,6 @@ fn test_submit_order_when_trading_halted_then_denies_order(
     );
 }
 
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_submit_order_beyond_rate_limit_then_denies_order(
     strategy_id_ema_cross: StrategyId,
@@ -2951,7 +2702,14 @@ fn test_submit_order_list_when_trading_halted_then_denies_orders(
     }
 }
 
-#[ignore = "Under development"]
+// Test that order lists with BUY orders are denied when in REDUCING state and already LONG.
+//
+// This test verifies the risk engine correctly prevents adding to existing positions
+// when the trading state is set to REDUCING (position reduction mode only).
+//
+// TODO: Complete implementation - similar to single order reducing tests but for order lists.
+// The test logic needs to properly track portfolio position state through message bus updates.
+#[ignore = "Under development - requires portfolio state tracking integration"]
 #[rstest]
 fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     strategy_id_ema_cross: StrategyId,
@@ -3080,7 +2838,14 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     assert_eq!(saved_execute_messages.len(), 1);
 }
 
-#[ignore = "Revisit after high-precision merged"]
+// Test that order lists with SELL orders are denied when in REDUCING state and already SHORT.
+//
+// This test verifies the risk engine correctly prevents adding to existing short positions
+// when the trading state is set to REDUCING (position reduction mode only).
+//
+// TODO: Re-enable after high-precision decimal work is merged and stable.
+// The test may have precision-related issues with position calculations.
+#[ignore = "Waiting on high-precision decimal merge"]
 #[rstest]
 fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
     strategy_id_ema_cross: StrategyId,
@@ -3209,89 +2974,16 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
 }
 
 // SUBMIT BRACKET ORDER TESTS
-#[ignore = "Message bus related changes re-investigate"]
-#[rstest]
-fn test_submit_bracket_with_default_settings_sends_to_client(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    client_order_id: ClientOrderId,
-    instrument_audusd: InstrumentAny,
-    venue_order_id: VenueOrderId,
-    process_order_event_handler: ShareableMessageHandler,
-    cash_account_state_million_usd: AccountState,
-    mut simple_cache: Cache,
-) {
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_process(),
-        process_order_event_handler,
-    );
 
-    simple_cache
-        .add_instrument(instrument_audusd.clone())
-        .unwrap();
-
-    simple_cache
-        .add_account(AccountAny::Cash(cash_account(
-            cash_account_state_million_usd,
-        )))
-        .unwrap();
-
-    let risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let entry = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let stop_loss = OrderTestBuilder::new(OrderType::StopMarket)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .trigger_price(Price::from_raw(1, 1))
-        .build();
-
-    let take_profit = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .price(Price::from_raw(1001, 4))
-        .build();
-
-    let bracket = OrderList::new(
-        OrderListId::new("1"),
-        instrument_audusd.id(),
-        StrategyId::new("S-001"),
-        vec![entry, stop_loss, take_profit],
-        risk_engine.clock.borrow().timestamp_ns(),
-    );
-
-    let _submit_bracket = SubmitOrderList::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        bracket.instrument_id,
-        client_order_id,
-        venue_order_id,
-        bracket,
-        None,
-        None,
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    // risk_engine.execute(TradingCommand::SubmitOrderList(submit_bracket));
-
-    // Get messages and test
-    // TODO: complete fn execution_gateway
-    // let saved_process_messages =
-    //     get_process_order_event_handler_messages(process_order_event_handler);
-    // assert_eq!(saved_process_messages.len(), 0);
-}
-
-// TODO: Verify bracket orders with emulated orders are sent to emulator
-#[ignore = "TODO: Requires emulator implementation"]
+// Verify bracket orders with emulated orders are sent to emulator.
+//
+// This test requires the order emulator component to be implemented. The emulator
+// handles client-side order management for conditional orders (stop-loss, take-profit, etc.)
+// that need to be triggered locally before being sent to the venue.
+//
+// TODO: Re-enable once the emulator component is integrated with the risk engine.
+// Dependencies: Order emulation infrastructure in execution engine
+#[ignore = "Waiting on emulator implementation"]
 #[rstest]
 fn test_submit_bracket_with_emulated_orders_sends_to_emulator() {}
 
@@ -3379,8 +3071,14 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
     }
 }
 
-// TODO: Verify emulated orders are sent to emulator
-#[ignore = "TODO: Requires emulator implementation"]
+// Verify that orders marked for emulation are correctly routed to the emulator.
+//
+// This test should verify that when an order is submitted with emulation flags,
+// the risk engine routes it to the order emulator rather than directly to execution.
+//
+// TODO: Re-enable once the emulator component is integrated with the risk engine.
+// Dependencies: Order emulation infrastructure in execution engine
+#[ignore = "Waiting on emulator implementation"]
 #[rstest]
 fn test_submit_order_for_emulation_sends_command_to_emulator() {}
 
@@ -3436,7 +3134,6 @@ fn test_modify_order_when_no_order_found_logs_error(
     assert_eq!(saved_process_messages.len(), 0);
 }
 
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_modify_order_beyond_rate_limit_then_rejects(
     strategy_id_ema_cross: StrategyId,
@@ -3510,7 +3207,6 @@ fn test_modify_order_beyond_rate_limit_then_rejects(
     );
 }
 
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_modify_order_with_default_settings_then_sends_to_client(
     strategy_id_ema_cross: StrategyId,
@@ -3599,8 +3295,15 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
     );
 }
 
-// TODO: Verify modify order for emulated orders sends to emulator
-#[ignore = "TODO: Requires emulator implementation"]
+// Verify that modifications to emulated orders are routed to the emulator.
+//
+// This test should verify that when modifying an order that's being managed by
+// the emulator, the modification command is sent to the emulator rather than
+// directly to the venue.
+//
+// TODO: Re-enable once the emulator component is integrated with the risk engine.
+// Dependencies: Order emulation infrastructure in execution engine
+#[ignore = "Waiting on emulator implementation"]
 #[rstest]
 fn test_modify_order_for_emulated_order_then_sends_to_emulator() {}
 
@@ -3664,7 +3367,6 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies_with_be
     assert_eq!(saved_process_messages.len(), 0); // Currently, it executes because check_orders_risk returns true for margin_account
 }
 
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto_cash_account(
     strategy_id_ema_cross: StrategyId,
@@ -3747,8 +3449,18 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
     );
 }
 
-// TODO: Verify account balance updates correctly with partial and full fills
-#[ignore = "TODO: Requires account balance tracking implementation"]
+// Verify that account balances are correctly updated with partial and full order fills.
+//
+// This test should verify that when orders are partially or fully filled, the
+// account balance tracking reflects the correct values including:
+// - Reserved margin/capital being released
+// - Commission being deducted
+// - Realized P&L being applied to account balance
+//
+// TODO: Re-enable once real-time account balance tracking is implemented.
+// Dependencies: Account balance tracking in portfolio/risk engine integration
+// Related: Real-time position valuation and margin calculations
+#[ignore = "Waiting on account balance tracking implementation"]
 #[rstest]
 fn test_partial_fill_and_full_fill_account_balance_correct() {}
 

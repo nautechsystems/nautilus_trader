@@ -15,8 +15,6 @@
 
 from typing import Any
 
-import pytest
-
 from nautilus_trader.backtest.engine import OrderMatchingEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
@@ -136,35 +134,6 @@ class TestOrderMatchingEngine:
 
         # Assert
         assert exec_messages
-
-    @pytest.mark.skip(reason="WIP to introduce flags")
-    def test_process_auction_book(self) -> None:
-        # Arrange
-        snapshot = TestDataStubs.order_book_snapshot(
-            instrument=self.instrument,
-            bid_price=100,
-            ask_price=105,
-        )
-        self.matching_engine.process_order_book(snapshot)
-
-        client_order: MarketOrder = TestExecStubs.market_order(
-            instrument=self.instrument,
-            order_side=OrderSide.BUY,
-            time_in_force=TimeInForce.AT_THE_CLOSE,
-        )
-        self.cache.add_order(client_order)
-        self.matching_engine.process_order(client_order, self.account_id)
-        self.matching_engine.process_status(MarketStatusAction.PRE_OPEN)
-
-        messages: list[Any] = []
-        self.msgbus.register("ExecEngine.process", messages.append)
-
-        # Act
-        self.matching_engine.process_status(MarketStatusAction.PAUSE)
-
-        # Assert
-        assert self.matching_engine.msgbus.sent_count == 1
-        assert isinstance(messages[0], OrderFilled)
 
     def test_process_order_book_depth_10(self) -> None:
         # Arrange - Create L2_MBP matching engine for depth10 data

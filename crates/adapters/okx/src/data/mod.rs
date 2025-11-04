@@ -60,6 +60,7 @@ use crate::{
     common::{
         consts::OKX_VENUE,
         enums::{OKXBookChannel, OKXContractType, OKXInstrumentType, OKXVipLevel},
+        parse::okx_instrument_type_from_symbol,
     },
     config::OKXDataClientConfig,
     http::client::OKXHttpClient,
@@ -118,9 +119,15 @@ impl OKXDataClient {
             )?
         };
 
-        let ws_public =
-            OKXWebSocketClient::new(Some(config.ws_public_url()), None, None, None, None, None)
-                .context("failed to construct OKX public websocket client")?;
+        let ws_public = OKXWebSocketClient::new(
+            Some(config.ws_public_url()),
+            None,
+            None,
+            None,
+            None,
+            Some(20), // Heartbeat
+        )
+        .context("failed to construct OKX public websocket client")?;
 
         let ws_business = if config.requires_business_ws() {
             Some(
@@ -130,7 +137,7 @@ impl OKXDataClient {
                     config.api_secret.clone(),
                     config.api_passphrase.clone(),
                     None,
-                    None,
+                    Some(20), // Heartbeat
                 )
                 .context("failed to construct OKX business websocket client")?,
             )
@@ -467,7 +474,14 @@ fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
 }
 
 fn contract_filter_with_config(config: &OKXDataClientConfig, instrument: &InstrumentAny) -> bool {
-    match config.contract_types.as_ref() {
+    contract_filter_with_config_types(config.contract_types.as_ref(), instrument)
+}
+
+fn contract_filter_with_config_types(
+    contract_types: Option<&Vec<OKXContractType>>,
+    instrument: &InstrumentAny,
+) -> bool {
+    match contract_types {
         None => true,
         Some(filter) if filter.is_empty() => true,
         Some(filter) => {
@@ -1004,58 +1018,180 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
-        let instruments = {
-            let guard = self
-                .instruments
-                .read()
-                .expect("instrument cache lock poisoned");
-            guard.values().cloned().collect::<Vec<_>>()
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instruments_cache = self.instruments.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let venue = self.venue();
+        let start = request.start;
+        let end = request.end;
+        let params = request.params.clone();
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+        let instrument_types = if self.config.instrument_types.is_empty() {
+            vec![OKXInstrumentType::Spot]
+        } else {
+            self.config.instrument_types.clone()
         };
+        let contract_types = self.config.contract_types.clone();
+        let instrument_families = self.config.instrument_families.clone();
 
-        let response = DataResponse::Instruments(InstrumentsResponse::new(
-            request.request_id,
-            request.client_id.unwrap_or(self.client_id),
-            self.venue(),
-            instruments,
-            datetime_to_unix_nanos(request.start),
-            datetime_to_unix_nanos(request.end),
-            self.clock.get_time_ns(),
-            request.params.clone(),
-        ));
+        tokio::spawn(async move {
+            let mut all_instruments = Vec::new();
 
-        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send instruments response: {e}");
-        }
+            for inst_type in instrument_types {
+                let supports_family = matches!(
+                    inst_type,
+                    OKXInstrumentType::Futures
+                        | OKXInstrumentType::Swap
+                        | OKXInstrumentType::Option
+                );
+
+                let families = match (&instrument_families, inst_type, supports_family) {
+                    (Some(families), OKXInstrumentType::Option, true) => families.clone(),
+                    (Some(families), _, true) => families.clone(),
+                    (None, OKXInstrumentType::Option, _) => {
+                        tracing::warn!(
+                            "Skipping OPTION type: instrument_families required but not configured"
+                        );
+                        continue;
+                    }
+                    _ => vec![],
+                };
+
+                if families.is_empty() {
+                    match http.request_instruments(inst_type, None).await {
+                        Ok(instruments) => {
+                            for instrument in instruments {
+                                if !contract_filter_with_config_types(
+                                    contract_types.as_ref(),
+                                    &instrument,
+                                ) {
+                                    continue;
+                                }
+
+                                upsert_instrument(&instruments_cache, instrument.clone());
+                                all_instruments.push(instrument);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to fetch instruments for {inst_type:?}: {e:?}");
+                        }
+                    }
+                } else {
+                    for family in families {
+                        match http
+                            .request_instruments(inst_type, Some(family.clone()))
+                            .await
+                        {
+                            Ok(instruments) => {
+                                for instrument in instruments {
+                                    if !contract_filter_with_config_types(
+                                        contract_types.as_ref(),
+                                        &instrument,
+                                    ) {
+                                        continue;
+                                    }
+
+                                    upsert_instrument(&instruments_cache, instrument.clone());
+                                    all_instruments.push(instrument);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed to fetch instruments for {inst_type:?} family {family}: {e:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            let response = DataResponse::Instruments(InstrumentsResponse::new(
+                request_id,
+                client_id,
+                venue,
+                all_instruments,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                params,
+            ));
+
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                tracing::error!("Failed to send instruments response: {e}");
+            }
+        });
 
         Ok(())
     }
 
     fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
-        let instrument = {
-            let guard = self
-                .instruments
-                .read()
-                .expect("instrument cache lock poisoned");
-            guard
-                .get(&request.instrument_id)
-                .cloned()
-                .context("instrument not found in cache")?
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instruments = self.instruments.clone();
+        let instrument_id = request.instrument_id;
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let start = request.start;
+        let end = request.end;
+        let params = request.params.clone();
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+        let instrument_types = if self.config.instrument_types.is_empty() {
+            vec![OKXInstrumentType::Spot]
+        } else {
+            self.config.instrument_types.clone()
         };
+        let contract_types = self.config.contract_types.clone();
 
-        let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-            request.request_id,
-            request.client_id.unwrap_or(self.client_id),
-            instrument.id(),
-            instrument,
-            datetime_to_unix_nanos(request.start),
-            datetime_to_unix_nanos(request.end),
-            self.clock.get_time_ns(),
-            request.params.clone(),
-        )));
+        tokio::spawn(async move {
+            match http
+                .request_instrument(instrument_id)
+                .await
+                .context("fetch instrument from API")
+            {
+                Ok(instrument) => {
+                    let inst_id = instrument.id();
+                    let symbol = inst_id.symbol.as_str();
+                    let inst_type = okx_instrument_type_from_symbol(symbol);
+                    if !instrument_types.contains(&inst_type) {
+                        tracing::error!(
+                            "Instrument {instrument_id} type {inst_type:?} not in configured types {instrument_types:?}"
+                        );
+                        return;
+                    }
 
-        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send instrument response: {e}");
-        }
+                    if !contract_filter_with_config_types(contract_types.as_ref(), &instrument) {
+                        tracing::error!(
+                            "Instrument {instrument_id} filtered out by contract_types config"
+                        );
+                        return;
+                    }
+
+                    upsert_instrument(&instruments, instrument.clone());
+
+                    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                        request_id,
+                        client_id,
+                        instrument.id(),
+                        instrument,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    )));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send instrument response: {e}");
+                    }
+                }
+                Err(e) => tracing::error!("Instrument request failed: {e:?}"),
+            }
+        });
 
         Ok(())
     }

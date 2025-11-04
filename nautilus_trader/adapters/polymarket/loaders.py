@@ -16,12 +16,15 @@
 Provides data loaders for historical Polymarket data from various APIs.
 """
 
+from __future__ import annotations
+
+from typing import Any
 from urllib.parse import urlencode
 
 import msgspec
 import pandas as pd
 
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import BookOrder
@@ -71,7 +74,7 @@ class PolymarketDataLoader:
         slug: str,
         token_index: int = 0,
         http_client: nautilus_pyo3.HttpClient | None = None,
-    ) -> "PolymarketDataLoader":
+    ) -> PolymarketDataLoader:
         """
         Create a loader by fetching market data from Polymarket APIs.
 
@@ -121,7 +124,7 @@ class PolymarketDataLoader:
         outcome = token["outcome"]
 
         # Create instrument
-        instrument = parse_instrument(
+        instrument = parse_polymarket_instrument(
             market_info=market_details,
             token_id=token_id,
             outcome=outcome,
@@ -303,7 +306,7 @@ class PolymarketDataLoader:
     async def find_market_by_slug(
         slug: str,
         http_client: nautilus_pyo3.HttpClient | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Find a specific market by slug.
 
@@ -316,7 +319,7 @@ class PolymarketDataLoader:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Market data dictionary.
 
         Raises
@@ -339,7 +342,7 @@ class PolymarketDataLoader:
     async def fetch_market_details(
         condition_id: str,
         http_client: nautilus_pyo3.HttpClient | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Fetch detailed market information from Polymarket CLOB API.
 
@@ -352,7 +355,7 @@ class PolymarketDataLoader:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Detailed market information.
 
         """
@@ -377,7 +380,7 @@ class PolymarketDataLoader:
         start_time_ms: int,
         end_time_ms: int,
         limit: int = 500,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Fetch orderbook history from DomeAPI.
 
@@ -394,7 +397,7 @@ class PolymarketDataLoader:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             List of orderbook snapshot dictionaries.
 
         Notes
@@ -451,7 +454,7 @@ class PolymarketDataLoader:
         start_time_ms: int,
         end_time_ms: int,
         fidelity: int = 1,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Fetch price history from Polymarket CLOB API.
 
@@ -468,7 +471,7 @@ class PolymarketDataLoader:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             List of price history points with 't' (timestamp) and 'p' (price).
 
         """

@@ -87,7 +87,7 @@ pub fn parse_ws_trade_tick(
     };
 
     let trade_id = TradeId::new_checked(trade.tid.to_string())
-        .context("Invalid trade identifier in Hyperliquid trade message")?;
+        .context("invalid trade identifier in Hyperliquid trade message")?;
 
     let ts_event = parse_millis_to_nanos(trade.time);
 
@@ -100,7 +100,7 @@ pub fn parse_ws_trade_tick(
         ts_event,
         ts_init,
     )
-    .context("Failed to construct TradeTick from Hyperliquid trade message")
+    .context("failed to construct TradeTick from Hyperliquid trade message")
 }
 
 /// Parses a WebSocket L2 order book message into [`OrderBookDeltas`].
@@ -206,7 +206,7 @@ pub fn parse_ws_quote_tick(
         ts_event,
         ts_init,
     )
-    .context("Failed to construct QuoteTick from Hyperliquid BBO message")
+    .context("failed to construct QuoteTick from Hyperliquid BBO message")
 }
 
 /// Parses a WebSocket candle message into a [`Bar`].
@@ -220,23 +220,23 @@ pub fn parse_ws_candle(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let open_decimal = Decimal::from_str(&candle.o).context("Failed to parse open price")?;
+    let open_decimal = Decimal::from_str(&candle.o).context("failed to parse open price")?;
     let open_raw = open_decimal.mantissa() as PriceRaw;
     let open = Price::from_raw(open_raw, price_precision);
 
-    let high_decimal = Decimal::from_str(&candle.h).context("Failed to parse high price")?;
+    let high_decimal = Decimal::from_str(&candle.h).context("failed to parse high price")?;
     let high_raw = high_decimal.mantissa() as PriceRaw;
     let high = Price::from_raw(high_raw, price_precision);
 
-    let low_decimal = Decimal::from_str(&candle.l).context("Failed to parse low price")?;
+    let low_decimal = Decimal::from_str(&candle.l).context("failed to parse low price")?;
     let low_raw = low_decimal.mantissa() as PriceRaw;
     let low = Price::from_raw(low_raw, price_precision);
 
-    let close_decimal = Decimal::from_str(&candle.c).context("Failed to parse close price")?;
+    let close_decimal = Decimal::from_str(&candle.c).context("failed to parse close price")?;
     let close_raw = close_decimal.mantissa() as PriceRaw;
     let close = Price::from_raw(close_raw, price_precision);
 
-    let volume_decimal = Decimal::from_str(&candle.v).context("Failed to parse volume")?;
+    let volume_decimal = Decimal::from_str(&candle.v).context("failed to parse volume")?;
     let volume_raw = volume_decimal.mantissa().unsigned_abs() as QuantityRaw;
     let volume = Quantity::from_raw(volume_raw, size_precision);
 
@@ -352,7 +352,7 @@ pub fn parse_ws_fill_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
     let trade_id = TradeId::new_checked(fill.tid.to_string())
-        .context("Invalid trade identifier in Hyperliquid fill message")?;
+        .context("invalid trade identifier in Hyperliquid fill message")?;
 
     // Parse order side
     let order_side: OrderSide = match fill.side.as_str() {

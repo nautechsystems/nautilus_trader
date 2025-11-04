@@ -19,7 +19,6 @@
 
 use std::{
     fmt,
-    num::NonZero,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -30,12 +29,9 @@ use std::{
 use ahash::AHashMap;
 use dashmap::DashMap;
 use nautilus_common::runtime::get_runtime;
-use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
-};
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::{BarSpecification, BarType, Data},
-    enums::{AggregationSource, BarAggregation, OrderSide, OrderType, PriceType, TimeInForce},
+    enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -70,21 +66,16 @@ use crate::{
         cache,
         enums::{BybitWsOperation, BybitWsPrivateChannel, BybitWsPublicChannel},
         error::{BybitWsError, BybitWsResult},
+        handler::{self, FeedHandler},
         messages::{
-            BybitAuthRequest, BybitSubscription, BybitWebSocketError, BybitWebSocketMessage,
-            BybitWsAccountExecutionMsg, BybitWsAccountOrderMsg, BybitWsAccountPositionMsg,
-            BybitWsAccountWalletMsg, BybitWsAmendOrderParams, BybitWsAuthResponse,
-            BybitWsBatchCancelItem, BybitWsBatchCancelOrderArgs, BybitWsBatchPlaceItem,
-            BybitWsBatchPlaceOrderArgs, BybitWsCancelOrderParams, BybitWsHeader, BybitWsKlineMsg,
+            BybitAuthRequest, BybitSubscription, BybitWebSocketError, BybitWsAccountExecutionMsg,
+            BybitWsAccountOrderMsg, BybitWsAccountPositionMsg, BybitWsAccountWalletMsg,
+            BybitWsAmendOrderParams, BybitWsAuthResponse, BybitWsBatchCancelItem,
+            BybitWsBatchCancelOrderArgs, BybitWsBatchPlaceItem, BybitWsBatchPlaceOrderArgs,
+            BybitWsCancelOrderParams, BybitWsHeader, BybitWsKlineMsg, BybitWsMessage,
             BybitWsOrderResponse, BybitWsOrderbookDepthMsg, BybitWsPlaceOrderParams,
             BybitWsRequest, BybitWsResponse, BybitWsSubscriptionMsg, BybitWsTickerLinearMsg,
             BybitWsTickerOptionMsg, BybitWsTradeMsg, NautilusWsMessage,
-        },
-        parse::{
-            parse_kline_topic, parse_millis_i64, parse_orderbook_deltas,
-            parse_ticker_linear_funding, parse_ws_account_state, parse_ws_fill_report,
-            parse_ws_kline_bar, parse_ws_order_status_report, parse_ws_position_status_report,
-            parse_ws_trade_tick,
         },
     },
 };
@@ -133,12 +124,14 @@ pub struct BybitWebSocketClient {
     auth_tracker: AuthTracker,
     heartbeat: Option<u64>,
     inner: Arc<RwLock<Option<WebSocketClient>>>,
-    rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
+    out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     subscriptions: SubscriptionState,
     is_authenticated: Arc<AtomicBool>,
-    instruments_cache: Arc<DashMap<InstrumentId, InstrumentAny>>,
+    is_connected: Arc<AtomicBool>,
+    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    cmd_tx: Arc<tokio::sync::mpsc::UnboundedSender<handler::HandlerCommand>>,
     account_id: Option<AccountId>,
     quote_cache: Arc<RwLock<cache::QuoteCache>>,
     funding_cache: FundingCache,
@@ -170,12 +163,14 @@ impl Clone for BybitWebSocketClient {
             auth_tracker: self.auth_tracker.clone(),
             heartbeat: self.heartbeat,
             inner: Arc::clone(&self.inner),
-            rx: None, // Each clone gets its own receiver
+            out_rx: None, // Each clone gets its own receiver
             signal: Arc::clone(&self.signal),
             task_handle: None, // Each clone gets its own task handle
             subscriptions: self.subscriptions.clone(),
             is_authenticated: Arc::clone(&self.is_authenticated),
+            is_connected: Arc::clone(&self.is_connected),
             instruments_cache: Arc::clone(&self.instruments_cache),
+            cmd_tx: Arc::clone(&self.cmd_tx),
             account_id: self.account_id,
             quote_cache: Arc::clone(&self.quote_cache),
             funding_cache: Arc::clone(&self.funding_cache),
@@ -209,6 +204,11 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
+        // We don't have a handler yet; this placeholder keeps cache_instrument() working.
+        // connect() swaps in the real channel and replays any queued instruments so the
+        // handler sees them once it starts.
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<handler::HandlerCommand>();
+
         Self {
             url: url.unwrap_or_else(|| bybit_ws_public_url(product_type, environment)),
             environment,
@@ -218,12 +218,14 @@ impl BybitWebSocketClient {
             auth_tracker: AuthTracker::new(),
             heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
             inner: Arc::new(RwLock::new(None)),
-            rx: None,
+            out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
+            is_connected: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
+            cmd_tx: Arc::new(cmd_tx),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
             funding_cache: Arc::new(RwLock::new(AHashMap::new())),
@@ -246,6 +248,11 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
+        // We don't have a handler yet; this placeholder keeps cache_instrument() working.
+        // connect() swaps in the real channel and replays any queued instruments so the
+        // handler sees them once it starts.
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<handler::HandlerCommand>();
+
         Self {
             url: url.unwrap_or_else(|| bybit_ws_private_url(environment).to_string()),
             environment,
@@ -255,12 +262,14 @@ impl BybitWebSocketClient {
             auth_tracker: AuthTracker::new(),
             heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
             inner: Arc::new(RwLock::new(None)),
-            rx: None,
+            out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
+            is_connected: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
+            cmd_tx: Arc::new(cmd_tx),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
             funding_cache: Arc::new(RwLock::new(AHashMap::new())),
@@ -283,6 +292,11 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
+        // We don't have a handler yet; this placeholder keeps cache_instrument() working.
+        // connect() swaps in the real channel and replays any queued instruments so the
+        // handler sees them once it starts.
+        let (cmd_tx, _) = tokio::sync::mpsc::unbounded_channel::<handler::HandlerCommand>();
+
         Self {
             url: url.unwrap_or_else(|| bybit_ws_trade_url(environment).to_string()),
             environment,
@@ -292,12 +306,14 @@ impl BybitWebSocketClient {
             auth_tracker: AuthTracker::new(),
             heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
             inner: Arc::new(RwLock::new(None)),
-            rx: None,
+            out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             is_authenticated: Arc::new(AtomicBool::new(false)),
+            is_connected: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
+            cmd_tx: Arc::new(cmd_tx),
             account_id: None,
             quote_cache: Arc::new(RwLock::new(cache::QuoteCache::new())),
             funding_cache: Arc::new(RwLock::new(AHashMap::new())),
@@ -318,7 +334,7 @@ impl BybitWebSocketClient {
     ///
     /// Panics if the ping message cannot be serialized to JSON.
     pub async fn connect(&mut self) -> BybitWsResult<()> {
-        let (message_handler, mut message_rx) = channel_message_handler();
+        let (raw_handler, mut raw_rx) = channel_message_handler();
 
         let inner_for_ping = Arc::clone(&self.inner);
         let ping_handler: PingHandler = Arc::new(move |payload: Vec<u8>| {
@@ -345,7 +361,7 @@ impl BybitWebSocketClient {
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: Self::default_headers(),
-            message_handler: Some(message_handler),
+            message_handler: Some(raw_handler),
             heartbeat: self.heartbeat,
             heartbeat_msg: Some(ping_msg),
             ping_handler: Some(ping_handler),
@@ -365,9 +381,27 @@ impl BybitWebSocketClient {
             *guard = Some(client);
         }
 
-        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
-        self.rx = Some(event_rx);
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        self.out_rx = Some(out_rx);
         self.signal.store(false, Ordering::Relaxed);
+
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<handler::HandlerCommand>();
+        self.cmd_tx = Arc::new(cmd_tx.clone());
+
+        if !self.instruments_cache.is_empty() {
+            let cached_instruments: Vec<InstrumentAny> = self
+                .instruments_cache
+                .iter()
+                .map(|entry| entry.value().clone())
+                .collect();
+            if let Err(e) = cmd_tx.send(handler::HandlerCommand::InitializeInstruments(
+                cached_instruments,
+            )) {
+                tracing::error!("Failed to replay instruments to handler: {e}");
+            }
+        }
+
+        let (msg_tx, msg_rx) = tokio::sync::mpsc::unbounded_channel::<BybitWsMessage>();
 
         let inner = Arc::clone(&self.inner);
         let signal = Arc::clone(&self.signal);
@@ -378,14 +412,35 @@ impl BybitWebSocketClient {
         let is_authenticated = Arc::clone(&self.is_authenticated);
         let quote_cache = Arc::clone(&self.quote_cache);
         let funding_cache = Arc::clone(&self.funding_cache);
-        let instruments = Arc::clone(&self.instruments_cache);
         let account_id = self.account_id;
         let product_type = self.product_type;
 
-        let task_handle = get_runtime().spawn(async move {
-            let clock = get_atomic_clock_realtime();
+        let handler_quote_cache = Arc::clone(&quote_cache);
+        let handler_funding_cache = Arc::clone(&funding_cache);
+        let handler_out_tx = out_tx.clone();
 
-            while let Some(message) = message_rx.recv().await {
+        get_runtime().spawn(async move {
+            let mut handler = FeedHandler::new(
+                cmd_rx,
+                msg_rx,
+                handler_out_tx,
+                account_id,
+                product_type,
+                handler_quote_cache,
+                handler_funding_cache,
+            );
+
+            while handler.next().await.is_some() {}
+
+            tracing::debug!("Handler task completed");
+        });
+
+        let msg_tx_for_task = msg_tx.clone();
+        let out_tx_for_reconnect = out_tx.clone();
+        let out_tx_for_task = out_tx.clone();
+
+        let task_handle = get_runtime().spawn(async move {
+            while let Some(message) = raw_rx.recv().await {
                 if signal.load(Ordering::Relaxed) {
                     break;
                 }
@@ -400,7 +455,7 @@ impl BybitWebSocketClient {
                 )
                 .await
                 {
-                    Ok(Some(BybitWebSocketMessage::Reconnected)) => {
+                    Ok(Some(BybitWsMessage::Reconnected)) => {
                         tracing::info!("Handling WebSocket reconnection");
 
                         let inner_for_task = inner.clone();
@@ -410,7 +465,7 @@ impl BybitWebSocketClient {
                         let credential_for_task = credential.clone();
                         let quote_cache_for_task = quote_cache.clone();
                         let funding_cache_for_task = funding_cache.clone();
-                        let event_tx_for_task = event_tx.clone();
+                        let event_tx_for_task = out_tx_for_reconnect.clone();
 
                         get_runtime().spawn(async move {
                             // Authenticate if required
@@ -465,30 +520,16 @@ impl BybitWebSocketClient {
                             }
                         });
                     }
-                    Ok(Some(event)) => {
-                        // Parse Bybit message into Nautilus messages
-                        let nautilus_messages = Self::parse_to_nautilus_messages(
-                            event,
-                            &instruments,
-                            account_id,
-                            product_type,
-                            &quote_cache,
-                            &funding_cache,
-                            clock.get_time_ns(),
-                        )
-                        .await;
-
-                        // Send each parsed message
-                        for nautilus_msg in nautilus_messages {
-                            if event_tx.send(nautilus_msg).is_err() {
-                                break;
-                            }
+                    Ok(Some(msg)) => {
+                        if msg_tx_for_task.send(msg).is_err() {
+                            tracing::debug!("Feed handler receiver dropped, stopping main loop");
+                            break;
                         }
                     }
                     Ok(None) => {}
                     Err(e) => {
                         let error = BybitWebSocketError::from_message(e.to_string());
-                        if event_tx.send(NautilusWsMessage::Error(error)).is_err() {
+                        if out_tx_for_task.send(NautilusWsMessage::Error(error)).is_err() {
                             break;
                         }
                     }
@@ -497,6 +538,9 @@ impl BybitWebSocketClient {
         });
 
         self.task_handle = Some(task_handle);
+
+        // Mark as connected to suppress pre-connect instrument caching logs
+        self.is_connected.store(true, Ordering::Relaxed);
 
         self.authenticate_if_required().await?;
 
@@ -525,8 +569,9 @@ impl BybitWebSocketClient {
             tracing::error!(error = %e, "Bybit websocket task terminated with error");
         }
 
-        self.rx = None;
+        self.out_rx = None;
         self.is_authenticated.store(false, Ordering::Relaxed);
+        self.is_connected.store(false, Ordering::Relaxed);
 
         Ok(())
     }
@@ -622,7 +667,7 @@ impl BybitWebSocketClient {
         &mut self,
     ) -> impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static {
         let rx = self
-            .rx
+            .out_rx
             .take()
             .expect("Stream receiver already taken or client not connected");
 
@@ -650,19 +695,46 @@ impl BybitWebSocketClient {
     ///
     /// Any existing instrument with the same ID will be replaced.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        let instrument_id = instrument.id();
-        self.instruments_cache.insert(instrument_id, instrument);
-        tracing::debug!("Cached instrument {instrument_id} in WebSocket client");
+        let symbol = instrument.symbol().inner();
+        self.instruments_cache.insert(symbol, instrument.clone());
+
+        // Before connect() the handler isn't running; this send will fail and that's expected
+        // because connect() replays the instruments via InitializeInstruments.
+        if let Err(e) = self
+            .cmd_tx
+            .send(handler::HandlerCommand::UpdateInstrument(instrument))
+        {
+            // Only log if we're connected (unexpected failure)
+            if self.is_connected.load(Ordering::Relaxed) {
+                tracing::debug!("Failed to send instrument update to handler: {e}");
+            }
+        }
+
+        tracing::debug!("Cached instrument {symbol} in WebSocket client");
     }
 
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same IDs will be replaced.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for instrument in instruments {
-            let instrument_id = instrument.id();
-            self.instruments_cache.insert(instrument_id, instrument);
+        for instrument in &instruments {
+            self.instruments_cache
+                .insert(instrument.symbol().inner(), instrument.clone());
         }
+
+        // Before connect() the handler isn't running; this send will fail and that's expected
+        // because connect() replays the instruments via InitializeInstruments.
+        if !instruments.is_empty()
+            && let Err(e) = self
+                .cmd_tx
+                .send(handler::HandlerCommand::InitializeInstruments(instruments))
+        {
+            // Only log if we're connected (unexpected failure)
+            if self.is_connected.load(Ordering::Relaxed) {
+                tracing::debug!("Failed to send bulk instrument update to handler: {e}");
+            }
+        }
+
         tracing::debug!(
             "Cached {} instruments in WebSocket client",
             self.instruments_cache.len()
@@ -671,7 +743,7 @@ impl BybitWebSocketClient {
 
     /// Returns a reference to the instruments cache.
     #[must_use]
-    pub fn instruments(&self) -> &Arc<DashMap<InstrumentId, InstrumentAny>> {
+    pub fn instruments(&self) -> &Arc<DashMap<Ustr, InstrumentAny>> {
         &self.instruments_cache
     }
 
@@ -1640,368 +1712,6 @@ impl BybitWebSocketClient {
         ]
     }
 
-    /// Parses a Bybit WebSocket message into Nautilus domain messages.
-    ///
-    /// This method converts raw Bybit messages into fully-parsed Nautilus objects,
-    /// performing instrument lookups and data transformations as needed.
-    async fn parse_to_nautilus_messages(
-        msg: BybitWebSocketMessage,
-        instruments: &Arc<DashMap<InstrumentId, InstrumentAny>>,
-        account_id: Option<AccountId>,
-        product_type: Option<BybitProductType>,
-        quote_cache: &Arc<RwLock<cache::QuoteCache>>,
-        funding_cache: &FundingCache,
-        ts_init: UnixNanos,
-    ) -> Vec<NautilusWsMessage> {
-        let mut result = Vec::new();
-
-        match msg {
-            BybitWebSocketMessage::Orderbook(msg) => {
-                let raw_symbol = msg.data.s;
-                let symbol =
-                    product_type.map_or(raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
-
-                if let Some(instrument_entry) = instruments
-                    .iter()
-                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                {
-                    let instrument = instrument_entry.value();
-
-                    match parse_orderbook_deltas(&msg, instrument, ts_init) {
-                        Ok(deltas) => result.push(NautilusWsMessage::Deltas(deltas)),
-                        Err(e) => tracing::error!("Error parsing orderbook deltas: {e}"),
-                    }
-                } else {
-                    tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
-                }
-            }
-            BybitWebSocketMessage::Trade(msg) => {
-                let mut data_vec = Vec::new();
-                for trade in &msg.data {
-                    let raw_symbol = trade.s;
-                    let symbol =
-                        product_type.map_or(raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
-
-                    if let Some(instrument_entry) = instruments
-                        .iter()
-                        .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                    {
-                        let instrument = instrument_entry.value();
-
-                        match parse_ws_trade_tick(trade, instrument, ts_init) {
-                            Ok(tick) => data_vec.push(Data::Trade(tick)),
-                            Err(e) => tracing::error!("Error parsing trade tick: {e}"),
-                        }
-                    } else {
-                        tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
-                    }
-                }
-                if !data_vec.is_empty() {
-                    result.push(NautilusWsMessage::Data(data_vec));
-                }
-            }
-            BybitWebSocketMessage::TickerLinear(msg) => {
-                let raw_symbol = msg.data.symbol;
-                let symbol =
-                    product_type.map_or(raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
-
-                if let Some(instrument_entry) = instruments
-                    .iter()
-                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                {
-                    let instrument = instrument_entry.value();
-                    let instrument_id = instrument.id();
-                    let ts_event = parse_millis_i64(msg.ts, "ticker.ts").unwrap_or(ts_init);
-
-                    match quote_cache.write().await.process_linear_ticker(
-                        &msg.data,
-                        instrument_id,
-                        instrument,
-                        ts_event,
-                        ts_init,
-                    ) {
-                        Ok(quote) => result.push(NautilusWsMessage::Data(vec![Data::Quote(quote)])),
-                        Err(e) => {
-                            let raw_data = serde_json::to_string(&msg.data)
-                                .unwrap_or_else(|_| "<failed to serialize>".to_string());
-                            tracing::debug!(
-                                "Skipping partial ticker update: {e}, raw_data: {raw_data}"
-                            );
-                        }
-                    }
-
-                    // Extract funding rate if available
-                    if msg.data.funding_rate.is_some() && msg.data.next_funding_time.is_some() {
-                        let cache_key = (
-                            msg.data.funding_rate.clone(),
-                            msg.data.next_funding_time.clone(),
-                        );
-
-                        let should_publish = {
-                            let cache = funding_cache.read().await;
-                            cache.get(&symbol) != Some(&cache_key)
-                        };
-
-                        if should_publish {
-                            match parse_ticker_linear_funding(
-                                &msg.data,
-                                instrument_id,
-                                ts_event,
-                                ts_init,
-                            ) {
-                                Ok(funding) => {
-                                    funding_cache.write().await.insert(symbol, cache_key);
-                                    result.push(NautilusWsMessage::FundingRates(vec![funding]));
-                                }
-                                Err(e) => {
-                                    tracing::debug!("Skipping funding rate update: {e}");
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
-                }
-            }
-            BybitWebSocketMessage::TickerOption(msg) => {
-                let raw_symbol = &msg.data.symbol;
-                let symbol = product_type.map_or_else(
-                    || raw_symbol.as_str().into(),
-                    |pt| make_bybit_symbol(raw_symbol, pt),
-                );
-
-                if let Some(instrument_entry) = instruments
-                    .iter()
-                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                {
-                    let instrument = instrument_entry.value();
-                    let instrument_id = instrument.id();
-                    let ts_event = parse_millis_i64(msg.ts, "ticker.ts").unwrap_or(ts_init);
-
-                    match quote_cache.write().await.process_option_ticker(
-                        &msg.data,
-                        instrument_id,
-                        instrument,
-                        ts_event,
-                        ts_init,
-                    ) {
-                        Ok(quote) => result.push(NautilusWsMessage::Data(vec![Data::Quote(quote)])),
-                        Err(e) => {
-                            let raw_data = serde_json::to_string(&msg.data)
-                                .unwrap_or_else(|_| "<failed to serialize>".to_string());
-                            tracing::debug!(
-                                "Skipping partial ticker update: {e}, raw_data: {raw_data}"
-                            );
-                        }
-                    }
-                } else {
-                    tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
-                }
-            }
-            BybitWebSocketMessage::Kline(msg) => {
-                let (interval_str, raw_symbol) = match parse_kline_topic(&msg.topic) {
-                    Ok(parts) => parts,
-                    Err(e) => {
-                        tracing::warn!("Failed to parse kline topic: {e}");
-                        return result;
-                    }
-                };
-
-                let symbol = product_type
-                    .map_or_else(|| raw_symbol.into(), |pt| make_bybit_symbol(raw_symbol, pt));
-
-                if let Some(instrument_entry) = instruments
-                    .iter()
-                    .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                {
-                    let instrument = instrument_entry.value();
-
-                    let (step, aggregation) = match interval_str.parse::<usize>() {
-                        Ok(minutes) if minutes > 0 => (minutes, BarAggregation::Minute),
-                        _ => {
-                            tracing::warn!("Unsupported kline interval: {}", interval_str);
-                            return result;
-                        }
-                    };
-
-                    if let Some(non_zero_step) = NonZero::new(step) {
-                        let bar_spec = BarSpecification {
-                            step: non_zero_step,
-                            aggregation,
-                            price_type: PriceType::Last,
-                        };
-                        let bar_type =
-                            BarType::new(instrument.id(), bar_spec, AggregationSource::External);
-
-                        let mut data_vec = Vec::new();
-                        for kline in &msg.data {
-                            // Only process confirmed bars (not partial/building bars)
-                            if !kline.confirm {
-                                continue;
-                            }
-                            match parse_ws_kline_bar(kline, instrument, bar_type, false, ts_init) {
-                                Ok(bar) => data_vec.push(Data::Bar(bar)),
-                                Err(e) => tracing::error!("Error parsing kline to bar: {e}"),
-                            }
-                        }
-                        if !data_vec.is_empty() {
-                            result.push(NautilusWsMessage::Data(data_vec));
-                        }
-                    } else {
-                        tracing::error!("Invalid step value: {}", step);
-                    }
-                } else {
-                    tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
-                }
-            }
-            BybitWebSocketMessage::AccountOrder(msg) => {
-                if let Some(account_id) = account_id {
-                    let mut reports = Vec::new();
-                    for order in &msg.data {
-                        let raw_symbol = order.symbol;
-                        let symbol = make_bybit_symbol(raw_symbol, order.category);
-
-                        if let Some(instrument_entry) = instruments
-                            .iter()
-                            .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                        {
-                            let instrument = instrument_entry.value();
-
-                            match parse_ws_order_status_report(
-                                order, instrument, account_id, ts_init,
-                            ) {
-                                Ok(report) => reports.push(report),
-                                Err(e) => tracing::error!("Error parsing order status report: {e}"),
-                            }
-                        } else {
-                            tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
-                        }
-                    }
-                    if !reports.is_empty() {
-                        result.push(NautilusWsMessage::OrderStatusReports(reports));
-                    }
-                } else {
-                    tracing::error!("Received AccountOrder message but account_id is not set");
-                }
-            }
-            BybitWebSocketMessage::AccountExecution(msg) => {
-                if let Some(account_id) = account_id {
-                    let mut reports = Vec::new();
-                    for execution in &msg.data {
-                        let raw_symbol = execution.symbol;
-                        let symbol = make_bybit_symbol(raw_symbol, execution.category);
-
-                        if let Some(instrument_entry) = instruments
-                            .iter()
-                            .find(|e| e.key().symbol.as_str() == symbol.as_str())
-                        {
-                            let instrument = instrument_entry.value();
-
-                            match parse_ws_fill_report(execution, account_id, instrument, ts_init) {
-                                Ok(report) => reports.push(report),
-                                Err(e) => tracing::error!("Error parsing fill report: {e}"),
-                            }
-                        } else {
-                            tracing::warn!(raw_symbol = %raw_symbol, full_symbol = %symbol, "No instrument found for symbol");
-                        }
-                    }
-                    if !reports.is_empty() {
-                        result.push(NautilusWsMessage::FillReports(reports));
-                    }
-                } else {
-                    tracing::error!("Received AccountExecution message but account_id is not set");
-                }
-            }
-            BybitWebSocketMessage::AccountWallet(msg) => {
-                if let Some(account_id) = account_id {
-                    for wallet in &msg.data {
-                        let ts_event = UnixNanos::from(msg.creation_time as u64 * 1_000_000);
-
-                        match parse_ws_account_state(wallet, account_id, ts_event, ts_init) {
-                            Ok(state) => result.push(NautilusWsMessage::AccountState(state)),
-                            Err(e) => tracing::error!("Error parsing account state: {e}"),
-                        }
-                    }
-                } else {
-                    tracing::error!("Received AccountWallet message but account_id is not set");
-                }
-            }
-            BybitWebSocketMessage::AccountPosition(msg) => {
-                if let Some(account_id) = account_id {
-                    for position in &msg.data {
-                        let raw_symbol = position.symbol;
-
-                        if let Some(instrument_entry) = instruments.iter().find(|e| {
-                            let inst_symbol = e.key().symbol.as_str();
-                            inst_symbol.starts_with(raw_symbol.as_str())
-                                && inst_symbol.len() > raw_symbol.len()
-                                && inst_symbol.as_bytes().get(raw_symbol.len()) == Some(&b'-')
-                        }) {
-                            let instrument = instrument_entry.value();
-
-                            match parse_ws_position_status_report(
-                                position, account_id, instrument, ts_init,
-                            ) {
-                                Ok(report) => {
-                                    result.push(NautilusWsMessage::PositionStatusReport(report));
-                                }
-                                Err(e) => {
-                                    tracing::error!("Error parsing position status report: {e}");
-                                }
-                            }
-                        } else {
-                            tracing::warn!(raw_symbol = %raw_symbol, "No instrument found for symbol");
-                        }
-                    }
-                } else {
-                    tracing::error!("Received AccountPosition message but account_id is not set");
-                }
-            }
-            BybitWebSocketMessage::OrderResponse(resp) => {
-                if resp.ret_code == 0 {
-                    tracing::debug!(op = %resp.op, ret_msg = %resp.ret_msg, "Order operation successful");
-                } else {
-                    // Create structured error with operation context
-                    // Note: Full rejection events (OrderRejected/OrderCancelRejected/OrderModifyRejected)
-                    // require trader_id and strategy_id which are not available in WebSocket context.
-                    // The Python layer should handle these responses and create appropriate events.
-                    let operation_type = if resp.op.contains("create") {
-                        "order submission"
-                    } else if resp.op.contains("cancel") {
-                        "order cancellation"
-                    } else if resp.op.contains("amend") {
-                        "order modification"
-                    } else {
-                        "order operation"
-                    };
-
-                    tracing::warn!(
-                        op = %resp.op,
-                        ret_code = resp.ret_code,
-                        ret_msg = %resp.ret_msg,
-                        "Order operation failed: {} rejected", operation_type
-                    );
-
-                    let error_msg = format!(
-                        "Bybit {} failed: {} (code: {})",
-                        operation_type, resp.ret_msg, resp.ret_code
-                    );
-                    let error = BybitWebSocketError::new(resp.ret_code, error_msg);
-                    result.push(NautilusWsMessage::Error(error));
-                }
-            }
-            BybitWebSocketMessage::Error(err) => {
-                result.push(NautilusWsMessage::Error(err));
-            }
-            BybitWebSocketMessage::Reconnected => {
-                result.push(NautilusWsMessage::Reconnected);
-            }
-            _ => {} // Ignore other message types (pong, auth, subscription confirmations, etc.)
-        }
-
-        result
-    }
-
     async fn authenticate_if_required(&self) -> BybitWsResult<()> {
         Self::authenticate_inner(
             &self.inner,
@@ -2078,18 +1788,18 @@ impl BybitWebSocketClient {
         requires_auth: bool,
         is_authenticated: &Arc<AtomicBool>,
         message: Message,
-    ) -> BybitWsResult<Option<BybitWebSocketMessage>> {
+    ) -> BybitWsResult<Option<BybitWsMessage>> {
         match message {
             Message::Text(text) => {
                 tracing::trace!("Bybit WS message: {text}");
 
                 if text == RECONNECTED {
                     tracing::debug!("Bybit websocket reconnected signal received");
-                    return Ok(Some(BybitWebSocketMessage::Reconnected));
+                    return Ok(Some(BybitWsMessage::Reconnected));
                 }
 
                 if text.trim().eq_ignore_ascii_case(BYBIT_PONG) {
-                    return Ok(Some(BybitWebSocketMessage::Pong));
+                    return Ok(Some(BybitWsMessage::Pong));
                 }
 
                 let value: Value = serde_json::from_str(&text).map_err(BybitWsError::from)?;
@@ -2109,7 +1819,7 @@ impl BybitWebSocketClient {
                             return Ok(None);
                         }
                         BybitWsOperation::Pong => {
-                            return Ok(Some(BybitWebSocketMessage::Pong));
+                            return Ok(Some(BybitWsMessage::Pong));
                         }
                         _ => {}
                     }
@@ -2117,14 +1827,14 @@ impl BybitWebSocketClient {
 
                 if let Some(event) = Self::classify_message(&value) {
                     // Log raw JSON for error events to aid debugging
-                    if matches!(event, BybitWebSocketMessage::Error(_)) {
+                    if matches!(event, BybitWsMessage::Error(_)) {
                         tracing::debug!(
                             json = %serde_json::to_string(&value).unwrap_or_default(),
                             "Received error event from Bybit"
                         );
                     }
 
-                    if let BybitWebSocketMessage::Auth(auth) = &event {
+                    if let BybitWsMessage::Auth(auth) = &event {
                         // Auth is successful if either success=true OR retCode=0
                         let is_success =
                             auth.success.unwrap_or(false) || auth.ret_code.unwrap_or(-1) == 0;
@@ -2140,7 +1850,7 @@ impl BybitWebSocketClient {
                                 .unwrap_or_else(|| "Authentication failed".to_string());
                             auth_tracker.fail(message);
                         }
-                    } else if let BybitWebSocketMessage::Subscription(sub_msg) = &event {
+                    } else if let BybitWsMessage::Subscription(sub_msg) = &event {
                         // Handle subscription/unsubscription confirmation
                         match sub_msg.op {
                             BybitWsOperation::Subscribe => {
@@ -2187,13 +1897,13 @@ impl BybitWebSocketClient {
                             }
                             _ => {}
                         }
-                    } else if let BybitWebSocketMessage::Error(e) = &event
+                    } else if let BybitWsMessage::Error(e) = &event
                         && requires_auth
                         && !is_authenticated.load(Ordering::Relaxed)
                     {
                         auth_tracker.fail(e.message.clone());
                     }
-                    if let BybitWebSocketMessage::Error(e) = &event {
+                    if let BybitWsMessage::Error(e) = &event {
                         tracing::warn!(
                             code = e.code,
                             message = %e.message,
@@ -2206,20 +1916,20 @@ impl BybitWebSocketClient {
                     return Ok(Some(event));
                 }
 
-                Ok(Some(BybitWebSocketMessage::Raw(value)))
+                Ok(Some(BybitWsMessage::Raw(value)))
             }
             Message::Ping(payload) => {
                 Self::send_pong_inner(inner, payload.to_vec()).await?;
                 Ok(None)
             }
-            Message::Pong(_) => Ok(Some(BybitWebSocketMessage::Pong)),
+            Message::Pong(_) => Ok(Some(BybitWsMessage::Pong)),
             Message::Binary(_) => Ok(None),
             Message::Close(_) => Ok(None),
             Message::Frame(_) => Ok(None),
         }
     }
 
-    fn classify_message(value: &Value) -> Option<BybitWebSocketMessage> {
+    fn classify_message(value: &Value) -> Option<BybitWsMessage> {
         // Check for auth response first (by op field) to avoid confusion with subscription messages
         if let Ok(op) = serde_json::from_value::<BybitWsOperation>(
             value.get("op").cloned().unwrap_or(Value::Null),
@@ -2232,7 +1942,7 @@ impl BybitWebSocketClient {
 
                 if is_success {
                     tracing::debug!("Auth successful, returning Auth message");
-                    return Some(BybitWebSocketMessage::Auth(auth));
+                    return Some(BybitWsMessage::Auth(auth));
                 }
                 let resp = BybitWsResponse {
                     op: Some(auth.op.clone()),
@@ -2244,18 +1954,18 @@ impl BybitWebSocketClient {
                     ret_msg: auth.ret_msg,
                 };
                 let error = BybitWebSocketError::from_response(&resp);
-                return Some(BybitWebSocketMessage::Error(error));
+                return Some(BybitWsMessage::Error(error));
             }
         }
 
         if let Some(success) = value.get("success").and_then(Value::as_bool) {
             if success {
                 if let Ok(msg) = serde_json::from_value::<BybitWsSubscriptionMsg>(value.clone()) {
-                    return Some(BybitWebSocketMessage::Subscription(msg));
+                    return Some(BybitWsMessage::Subscription(msg));
                 }
             } else if let Ok(resp) = serde_json::from_value::<BybitWsResponse>(value.clone()) {
                 let error = BybitWebSocketError::from_response(&resp);
-                return Some(BybitWebSocketMessage::Error(error));
+                return Some(BybitWsMessage::Error(error));
             }
         }
 
@@ -2266,11 +1976,11 @@ impl BybitWebSocketClient {
         {
             // Check ret_code to determine success or failure
             if order_resp.ret_code == 0 {
-                return Some(BybitWebSocketMessage::OrderResponse(order_resp));
+                return Some(BybitWsMessage::OrderResponse(order_resp));
             }
             // Convert failed order response to error
             let error = BybitWebSocketError::new(order_resp.ret_code, order_resp.ret_msg);
-            return Some(BybitWebSocketMessage::Error(error));
+            return Some(BybitWsMessage::Error(error));
         }
 
         if (value.get("ret_code").is_some() || value.get("retCode").is_some())
@@ -2278,16 +1988,16 @@ impl BybitWebSocketClient {
         {
             if resp.ret_code.unwrap_or_default() != 0 {
                 let error = BybitWebSocketError::from_response(&resp);
-                return Some(BybitWebSocketMessage::Error(error));
+                return Some(BybitWsMessage::Error(error));
             }
-            return Some(BybitWebSocketMessage::Response(resp));
+            return Some(BybitWsMessage::Response(resp));
         }
 
         if let Ok(auth) = serde_json::from_value::<BybitWsAuthResponse>(value.clone())
             && auth.op == BybitWsOperation::Auth
         {
             if auth.success.unwrap_or(false) {
-                return Some(BybitWebSocketMessage::Auth(auth));
+                return Some(BybitWsMessage::Auth(auth));
             }
             let resp = BybitWsResponse {
                 op: Some(auth.op.clone()),
@@ -2299,7 +2009,7 @@ impl BybitWebSocketClient {
                 ret_msg: auth.ret_msg,
             };
             let error = BybitWebSocketError::from_response(&resp);
-            return Some(BybitWebSocketMessage::Error(error));
+            return Some(BybitWsMessage::Error(error));
         }
 
         if let Some(topic) = value.get("topic").and_then(Value::as_str) {
@@ -2315,22 +2025,22 @@ impl BybitWebSocketClient {
 
             if topic.starts_with(orderbook_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsOrderbookDepthMsg>(value.clone()) {
-                    return Some(BybitWebSocketMessage::Orderbook(msg));
+                    return Some(BybitWsMessage::Orderbook(msg));
                 }
             } else if topic.contains(public_trade_channel) || topic.starts_with(trade_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsTradeMsg>(value.clone()) {
-                    return Some(BybitWebSocketMessage::Trade(msg));
+                    return Some(BybitWsMessage::Trade(msg));
                 }
             } else if topic.contains(kline_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsKlineMsg>(value.clone()) {
-                    return Some(BybitWebSocketMessage::Kline(msg));
+                    return Some(BybitWsMessage::Kline(msg));
                 }
             } else if topic.contains(tickers_channel) {
                 if let Ok(msg) = serde_json::from_value::<BybitWsTickerOptionMsg>(value.clone()) {
-                    return Some(BybitWebSocketMessage::TickerOption(msg));
+                    return Some(BybitWsMessage::TickerOption(msg));
                 }
                 if let Ok(msg) = serde_json::from_value::<BybitWsTickerLinearMsg>(value.clone()) {
-                    return Some(BybitWebSocketMessage::TickerLinear(msg));
+                    return Some(BybitWsMessage::TickerLinear(msg));
                 }
             } else if topic == order_channel
                 || topic
@@ -2338,7 +2048,7 @@ impl BybitWebSocketClient {
                     .is_some_and(|s| s.starts_with('.'))
             {
                 match serde_json::from_value::<BybitWsAccountOrderMsg>(value.clone()) {
-                    Ok(msg) => return Some(BybitWebSocketMessage::AccountOrder(msg)),
+                    Ok(msg) => return Some(BybitWsMessage::AccountOrder(msg)),
                     Err(e) => tracing::warn!("Failed to deserialize order message: {e}\n{value}"),
                 }
             } else if topic == execution_channel
@@ -2347,7 +2057,7 @@ impl BybitWebSocketClient {
                     .is_some_and(|s| s.starts_with('.'))
             {
                 match serde_json::from_value::<BybitWsAccountExecutionMsg>(value.clone()) {
-                    Ok(msg) => return Some(BybitWebSocketMessage::AccountExecution(msg)),
+                    Ok(msg) => return Some(BybitWsMessage::AccountExecution(msg)),
                     Err(e) => {
                         tracing::warn!("Failed to deserialize execution message: {e}\n{value}");
                     }
@@ -2358,7 +2068,7 @@ impl BybitWebSocketClient {
                     .is_some_and(|s| s.starts_with('.'))
             {
                 match serde_json::from_value::<BybitWsAccountWalletMsg>(value.clone()) {
-                    Ok(msg) => return Some(BybitWebSocketMessage::AccountWallet(msg)),
+                    Ok(msg) => return Some(BybitWsMessage::AccountWallet(msg)),
                     Err(e) => tracing::warn!("Failed to deserialize wallet message: {e}\n{value}"),
                 }
             } else if topic == position_channel
@@ -2367,7 +2077,7 @@ impl BybitWebSocketClient {
                     .is_some_and(|s| s.starts_with('.'))
             {
                 match serde_json::from_value::<BybitWsAccountPositionMsg>(value.clone()) {
-                    Ok(msg) => return Some(BybitWebSocketMessage::AccountPosition(msg)),
+                    Ok(msg) => return Some(BybitWsMessage::AccountPosition(msg)),
                     Err(e) => {
                         tracing::warn!("Failed to deserialize position message: {e}\n{value}");
                     }
@@ -2453,7 +2163,7 @@ mod tests {
             .expect("invalid fixture");
         let message =
             BybitWebSocketClient::classify_message(&json).expect("expected orderbook message");
-        assert!(matches!(message, BybitWebSocketMessage::Orderbook(_)));
+        assert!(matches!(message, BybitWsMessage::Orderbook(_)));
     }
 
     #[rstest]
@@ -2462,7 +2172,7 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_public_trade.json")).expect("invalid fixture");
         let message =
             BybitWebSocketClient::classify_message(&json).expect("expected trade message");
-        assert!(matches!(message, BybitWebSocketMessage::Trade(_)));
+        assert!(matches!(message, BybitWsMessage::Trade(_)));
     }
 
     #[rstest]
@@ -2471,7 +2181,7 @@ mod tests {
             .expect("invalid fixture");
         let message =
             BybitWebSocketClient::classify_message(&json).expect("expected ticker message");
-        assert!(matches!(message, BybitWebSocketMessage::TickerLinear(_)));
+        assert!(matches!(message, BybitWsMessage::TickerLinear(_)));
     }
 
     #[rstest]
@@ -2480,7 +2190,7 @@ mod tests {
             .expect("invalid fixture");
         let message =
             BybitWebSocketClient::classify_message(&json).expect("expected ticker message");
-        assert!(matches!(message, BybitWebSocketMessage::TickerOption(_)));
+        assert!(matches!(message, BybitWsMessage::TickerOption(_)));
     }
 
     #[rstest]

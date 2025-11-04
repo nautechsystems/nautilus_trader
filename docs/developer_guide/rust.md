@@ -33,6 +33,41 @@ while zero-cost abstractions and the absence of a garbage collector deliver C-li
   - `ffi`: enables C FFI bindings.
   - `stubs`: exposes testing stubs.
 
+## Build configurations
+
+To avoid unnecessary rebuilds during development, align cargo features, profiles, and flags across different build targets.
+Cargo's build cache is keyed by the exact combination of features, profiles, and flags—any mismatch triggers a full rebuild.
+
+### Aligned targets (testing and linting)
+
+| Target                      | Features                         | Profile   | `--all-targets` | `--no-deps` | Purpose        |
+|-----------------------------|----------------------------------|-----------|-----------------|-------------|----------------|
+| `cargo-test`                | `ffi,python,high-precision,defi` | `nextest` | ✓ (implicit)    | n/a         | Run tests.     |
+| `cargo-clippy` (pre-commit) | `ffi,python,high-precision,defi` | `nextest` | ✓               | n/a         | Lint all code. |
+| `cargo-doc` (pre-commit)    | `ffi,python,high-precision,defi` | `nextest` | n/a             | ✓           | Lint docs.     |
+
+These targets share the same feature set and profile, allowing cargo to reuse compiled artifacts between linting, testing, and doc checking without rebuilds.
+The `nextest` profile is used to align with the workflow of the majority of core maintainers who use cargo-nextest for running tests.
+
+### Separate target (Python extension building)
+
+| Target        | Features                             | Profile   | Notes |
+|---------------|--------------------------------------|-----------|-------|
+| `build`       | Includes `extension-module` + subset | `release` | Requires different features for PyO3 extension module. |
+| `build-debug` | Includes `extension-module` + subset | `dev`     | Requires different features for PyO3 extension module. |
+
+Python extension building intentionally uses different features (`extension-module` is required) and will trigger rebuilds. This is expected and unavoidable.
+
+### Rebuild triggers to avoid
+
+Mismatches in any of these cause full rebuilds:
+
+- Different feature combinations (e.g., `--features "a,b"` vs `--features "a,c"`).
+- Different `--no-default-features` usage (enables/disables default features).
+- Different profiles (e.g., `dev` vs `nextest` vs `release`).
+
+When adding new build targets or modifying existing ones, maintain alignment with the testing/linting group to preserve fast incremental builds.
+
 ## Module organization
 
 - Keep modules focused on a single responsibility.
@@ -164,6 +199,16 @@ Use structured error handling patterns consistently:
    ```
 
    **Note**: Use `anyhow::bail!` for early returns, but `anyhow::anyhow!` in closure contexts like `ok_or_else()` where early returns aren't possible.
+
+5. **Error Context**: Use lowercase for `.context()` messages to support error chaining (except proper nouns/acronyms):
+
+   ```rust
+   // Good - lowercase chains naturally
+   parse_timestamp(value).context("failed to parse timestamp")?;
+
+   // Exception - proper nouns stay capitalized
+   connect().context("BitMEX websocket did not become active")?;
+   ```
 
 ### Async patterns
 
@@ -300,6 +345,77 @@ let mut prices: HashMap<InstrumentId, Price> = HashMap::new();
 
 - **Cryptographic security required**: Use standard `HashMap` when hash flooding attacks are a concern (e.g., handling untrusted user input in network protocols).
 - **Network clients**: Currently prefer standard `HashMap` for network-facing components where security considerations outweigh performance benefits.
+
+### Thread-safe hash map patterns
+
+`AHashMap` is not thread-safe. Wrapping it in `Arc` only enables sharing the pointer across threads but does not coordinate mutation. Use `Arc<AHashMap>` only when the map is immutable after construction, otherwise add proper synchronization.
+
+```rust
+// Avoid: Data races when multiple threads mutate
+let cache = Arc::new(AHashMap::new());
+let cache_clone = Arc::clone(&cache);
+tokio::spawn(async move {
+    cache_clone.insert(key, value);  // Data race
+});
+cache.insert(other_key, other_value);  // Data race
+```
+
+**Patterns:**
+
+1. **Immutable after construction** – Build the map once, then share it read-only:
+
+   ```rust
+   let mut map = AHashMap::new();
+   map.insert(key1, value1);
+   map.insert(key2, value2);
+   let shared_map = Arc::new(map);  // Now immutable
+
+   // Multiple threads can safely read
+   let map_clone = Arc::clone(&shared_map);
+   tokio::spawn(async move {
+       if let Some(value) = map_clone.get(&key1) {
+           // Safe read-only access
+       }
+   });
+   ```
+
+2. **Concurrent reads and writes** – Use `DashMap`:
+
+   ```rust
+   use dashmap::DashMap;
+
+   let cache: Arc<DashMap<K, V>> = Arc::new(DashMap::new());
+
+   // Multiple threads can safely read and write concurrently
+   cache.insert(key, value);
+   if let Some(entry) = cache.get(&key) {
+       // Safe concurrent access
+   }
+   ```
+
+   `DashMap` internally uses sharding and fine-grained locking for efficient concurrent access.
+
+3. **Single-threaded hot paths** – Use plain `AHashMap` in single-threaded contexts:
+
+   ```rust
+   struct Handler {
+       instruments: AHashMap<Ustr, InstrumentAny>,
+   }
+
+   impl Handler {
+       async fn next(&mut self) -> Option<()> {
+           // Handler runs on a single task, no concurrent access
+           self.instruments.insert(key, value);
+           Ok(())
+       }
+   }
+   ```
+
+**Decision tree:**
+
+- Immutable after construction → Use `Arc<AHashMap<K, V>>`
+- Concurrent access needed → Use `Arc<DashMap<K, V>>`
+- Single-threaded access → Use plain `AHashMap<K, V>`
 
 ### Re-export patterns
 

@@ -152,6 +152,7 @@ class BybitDataClient(LiveMarketDataClient):
             self._ws_clients[product_type] = ws_client
 
         self._depths: dict[nautilus_pyo3.InstrumentId, int] = {}
+        self._quote_depths: dict[nautilus_pyo3.InstrumentId, int] = {}
 
         # Reference counting for ticker channel
         self._ticker_subscriptions: dict[nautilus_pyo3.InstrumentId, set[str]] = {}
@@ -316,13 +317,22 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
 
-        # Reference counting: only subscribe if first user of ticker channel
-        if pyo3_instrument_id not in self._ticker_subscriptions:
-            self._ticker_subscriptions[pyo3_instrument_id] = set()
-            await ws_client.subscribe_ticker(pyo3_instrument_id)
-        self._ticker_subscriptions[pyo3_instrument_id].add("quotes")
+        # SPOT ticker channel doesn't include bid/ask, use orderbook depth=1
+        if product_type == nautilus_pyo3.BybitProductType.SPOT:
+            depth = 1
+            self._quote_depths[pyo3_instrument_id] = depth
+            await ws_client.subscribe_orderbook(pyo3_instrument_id, depth)
+        else:
+            # Reference counting: only subscribe if first user of ticker channel
+            if pyo3_instrument_id not in self._ticker_subscriptions:
+                self._ticker_subscriptions[pyo3_instrument_id] = set()
+                await ws_client.subscribe_ticker(pyo3_instrument_id)
+            self._ticker_subscriptions[pyo3_instrument_id].add("quotes")
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -341,6 +351,16 @@ class BybitDataClient(LiveMarketDataClient):
         # Bybit doesn't have a separate funding rate subscription
         # Funding rate data comes through ticker subscriptions for perpetual instruments
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
+
+        if product_type == nautilus_pyo3.BybitProductType.SPOT:
+            self._log.warning(
+                f"Cannot subscribe to funding rates for SPOT instrument {command.instrument_id}",
+            )
+            return
+
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
 
         # Reference counting: only subscribe if first user of ticker channel
@@ -366,14 +386,22 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
 
-        # Reference counting: only unsubscribe if last user of ticker channel
-        if pyo3_instrument_id in self._ticker_subscriptions:
-            self._ticker_subscriptions[pyo3_instrument_id].discard("quotes")
-            if not self._ticker_subscriptions[pyo3_instrument_id]:
-                await ws_client.unsubscribe_ticker(pyo3_instrument_id)
-                del self._ticker_subscriptions[pyo3_instrument_id]
+        if product_type == nautilus_pyo3.BybitProductType.SPOT:
+            depth = self._quote_depths.get(pyo3_instrument_id, 1)
+            await ws_client.unsubscribe_orderbook(pyo3_instrument_id, depth)
+            self._quote_depths.pop(pyo3_instrument_id, None)
+        else:
+            # Reference counting: only unsubscribe if last user of ticker channel
+            if pyo3_instrument_id in self._ticker_subscriptions:
+                self._ticker_subscriptions[pyo3_instrument_id].discard("quotes")
+                if not self._ticker_subscriptions[pyo3_instrument_id]:
+                    await ws_client.unsubscribe_ticker(pyo3_instrument_id)
+                    del self._ticker_subscriptions[pyo3_instrument_id]
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -392,6 +420,13 @@ class BybitDataClient(LiveMarketDataClient):
         # Bybit doesn't have a separate funding rate subscription
         # Unsubscribe from ticker which includes funding rate updates
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
+
+        if product_type == nautilus_pyo3.BybitProductType.SPOT:
+            return
+
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
 
         # Reference counting: only unsubscribe if last user of ticker channel

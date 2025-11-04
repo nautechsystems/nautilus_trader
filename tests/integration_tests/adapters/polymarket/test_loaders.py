@@ -21,7 +21,7 @@ from unittest.mock import Mock
 import msgspec.json
 import pytest
 
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import OrderBookDeltas
@@ -72,7 +72,7 @@ def price_history_data():
 @pytest.fixture
 def test_instrument(market_details_data):
     token = market_details_data["tokens"][0]
-    return parse_instrument(
+    return parse_polymarket_instrument(
         market_info=market_details_data,
         token_id=token["token_id"],
         outcome=token["outcome"],

@@ -190,6 +190,24 @@ impl OKXHttpClient {
         })
     }
 
+    #[pyo3(name = "request_instrument")]
+    fn py_request_instrument<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let instrument = client
+                .request_instrument(instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| instrument_any_to_pyobject(py, instrument))
+        })
+    }
+
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,

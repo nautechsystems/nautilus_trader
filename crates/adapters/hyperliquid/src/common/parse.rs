@@ -668,7 +668,7 @@ pub fn orders_to_hyperliquid_requests(
 /// Creates a JSON value representing multiple orders for the Hyperliquid exchange action.
 pub fn orders_to_hyperliquid_action_value(orders: &[&OrderAny]) -> anyhow::Result<Value> {
     let requests = orders_to_hyperliquid_requests(orders)?;
-    serde_json::to_value(requests).context("Failed to serialize orders to JSON")
+    serde_json::to_value(requests).context("failed to serialize orders to JSON")
 }
 
 /// Converts an OrderAny into a Hyperliquid order request.

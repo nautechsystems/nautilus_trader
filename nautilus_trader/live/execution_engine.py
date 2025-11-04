@@ -1834,6 +1834,7 @@ class LiveExecutionEngine(ExecutionEngine):
         final_orders = dict(mass_status._order_reports)
         final_fills = dict(mass_status._fill_reports)
 
+        reconciliation_instruments: list[Instrument] = []
         for instrument_id in mass_status.position_reports.keys():
             # Respect reconciliation_instrument_ids filter
             if not self._consider_for_reconciliation(instrument_id):
@@ -1843,42 +1844,48 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 continue
 
-            self._log.info(
-                f"Attempting to adjust fills for {instrument_id}",
-                LogColor.BLUE,
-            )
             instrument = self._cache.instrument(instrument_id)
-            if instrument:
-                self._log.info(
-                    f"Calling adjust_fills_for_partial_window for {instrument_id}",
-                    LogColor.BLUE,
+            if not instrument:
+                self._log.debug(
+                    f"Skipping fill adjustment for {instrument_id}: "
+                    f"instrument not found in cache",
                 )
-                adjusted_orders_for_instrument, adjusted_fills_for_instrument = (
-                    adjust_fills_for_partial_window(
-                        mass_status,
-                        instrument,
-                        self._log,
-                    )
-                )
+                continue
 
-                # Remove old orders and fills for this instrument
-                for venue_order_id in list(final_orders.keys()):
-                    order = final_orders[venue_order_id]
-                    if order.instrument_id == instrument_id:
-                        del final_orders[venue_order_id]
+            reconciliation_instruments.append(instrument)
 
-                for venue_order_id in list(final_fills.keys()):
-                    fills = final_fills[venue_order_id]
-                    if fills and fills[0].instrument_id == instrument_id:
-                        del final_fills[venue_order_id]
+        self._log.info(
+            f"Attempting to adjust fills for {len(reconciliation_instruments)} instruments",
+            LogColor.BLUE,
+        )
+        adjusted_results = adjust_fills_for_partial_window(
+            mass_status,
+            reconciliation_instruments,
+            self._log,
+        )
+        self._log.info(
+            f"Updating adjusted fills for {len(reconciliation_instruments)} instruments",
+            LogColor.BLUE,
+        )
 
-                # Add adjusted orders and fills for this instrument
-                final_orders.update(adjusted_orders_for_instrument)
-                final_fills.update(adjusted_fills_for_instrument)
-                self._log.info(
-                    f"Adjusted {len(adjusted_orders_for_instrument)} orders, {len(adjusted_fills_for_instrument)} fills for {instrument_id}",
-                    LogColor.BLUE,
-                )
+        for instrument_id, (
+            adjusted_orders_for_instrument,
+            adjusted_fills_for_instrument,
+        ) in adjusted_results.items():
+            # Remove old orders and fills for this instrument
+            for venue_order_id in list(final_orders.keys()):
+                order = final_orders[venue_order_id]
+                if order.instrument_id == instrument_id:
+                    del final_orders[venue_order_id]
+
+            for venue_order_id in list(final_fills.keys()):
+                fills = final_fills[venue_order_id]
+                if fills and fills[0].instrument_id == instrument_id:
+                    del final_fills[venue_order_id]
+
+            # Add adjusted orders and fills for this instrument
+            final_orders.update(adjusted_orders_for_instrument)
+            final_fills.update(adjusted_fills_for_instrument)
 
         # Apply all adjustments at once
         mass_status._order_reports = final_orders
@@ -1951,18 +1958,12 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._log_skipping_reconciliation_on_instrument_id(order_report)
                 continue
 
-            # Check and handle duplicate client order IDs
             client_order_id = order_report.client_order_id
 
             if client_order_id is not None:
                 if client_order_id in self.filtered_client_order_ids:
                     self._log_skipping_reconciliation_on_client_order_id(order_report)
                     continue
-
-                if client_order_id in reconciled_orders:
-                    self._log.error(f"Duplicate {client_order_id!r} detected: {order_report}")
-                    results.append(False)
-                    continue  # Determine how to handle this
 
             # Check for duplicate trade IDs
             for fill_report in trades:

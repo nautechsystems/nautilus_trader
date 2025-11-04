@@ -33,7 +33,7 @@ use crate::common::parse::{parse_price_with_precision, parse_quantity_with_preci
 /// a valid `QuoteTick` which requires both sides.
 #[derive(Debug)]
 pub struct QuoteCache {
-    last_quotes: AHashMap<InstrumentId, QuoteTick>,
+    pub last_quotes: AHashMap<InstrumentId, QuoteTick>,
 }
 
 impl QuoteCache {

@@ -813,7 +813,7 @@ pub fn parse_position_status_report(
 
     // Deserialize the position data
     let asset_position: AssetPosition = serde_json::from_value(position_data.clone())
-        .context("Failed to deserialize AssetPosition")?;
+        .context("failed to deserialize AssetPosition")?;
 
     let position = &asset_position.position;
     let instrument_id = instrument.id();
@@ -831,7 +831,7 @@ pub fn parse_position_status_report(
     let quantity = Quantity::new(
         quantity_value
             .to_f64()
-            .context("Failed to convert quantity to f64")?,
+            .context("failed to convert quantity to f64")?,
         instrument.size_precision(),
     );
 

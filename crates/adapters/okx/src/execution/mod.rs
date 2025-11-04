@@ -66,12 +66,14 @@ pub struct OKXExecutionClient {
     core: ExecutionClientCore,
     config: OKXExecClientConfig,
     http_client: OKXHttpClient,
-    ws_client: OKXWebSocketClient,
+    ws_private: OKXWebSocketClient,
+    ws_business: OKXWebSocketClient,
     trade_mode: OKXTradeMode,
     started: bool,
     connected: bool,
     instruments_initialized: bool,
     ws_stream_handle: Option<JoinHandle<()>>,
+    ws_business_stream_handle: Option<JoinHandle<()>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
@@ -108,15 +110,25 @@ impl OKXExecutionClient {
         };
 
         let account_id = core.account_id;
-        let ws_client = OKXWebSocketClient::new(
+        let ws_private = OKXWebSocketClient::new(
             Some(config.ws_private_url()),
             config.api_key.clone(),
             config.api_secret.clone(),
             config.api_passphrase.clone(),
             Some(account_id),
-            None,
+            Some(20), // Heartbeat
         )
-        .context("failed to construct OKX execution websocket client")?;
+        .context("failed to construct OKX private websocket client")?;
+
+        let ws_business = OKXWebSocketClient::new(
+            Some(config.ws_business_url()),
+            config.api_key.clone(),
+            config.api_secret.clone(),
+            config.api_passphrase.clone(),
+            Some(account_id),
+            Some(20), // Heartbeat
+        )
+        .context("failed to construct OKX business websocket client")?;
 
         let trade_mode = Self::derive_trade_mode(core.account_type, &config);
 
@@ -124,12 +136,14 @@ impl OKXExecutionClient {
             core,
             config,
             http_client,
-            ws_client,
+            ws_private,
+            ws_business,
             trade_mode,
             started: false,
             connected: false,
             instruments_initialized: false,
             ws_stream_handle: None,
+            ws_business_stream_handle: None,
             pending_tasks: Mutex::new(Vec::new()),
         })
     }
@@ -192,7 +206,7 @@ impl OKXExecutionClient {
                 "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
             );
         } else {
-            self.ws_client.cache_instruments(all_instruments);
+            self.ws_private.cache_instruments(all_instruments);
         }
 
         self.instruments_initialized = true;
@@ -237,11 +251,11 @@ impl OKXExecutionClient {
         cmd: &nautilus_common::messages::execution::SubmitOrder,
     ) -> anyhow::Result<()> {
         let order = cmd.order.clone();
-        let ws_client = self.ws_client.clone();
+        let ws_private = self.ws_private.clone();
         let trade_mode = self.trade_mode;
 
         self.spawn_task("submit_order", async move {
-            ws_client
+            ws_private
                 .submit_order(
                     order.trader_id(),
                     order.strategy_id(),
@@ -302,11 +316,11 @@ impl OKXExecutionClient {
         &self,
         cmd: &nautilus_common::messages::execution::CancelOrder,
     ) -> anyhow::Result<()> {
-        let ws_client = self.ws_client.clone();
+        let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
         self.spawn_task("cancel_order", async move {
-            ws_client
+            ws_private
                 .cancel_order(
                     command.trader_id,
                     command.strategy_id,
@@ -322,9 +336,9 @@ impl OKXExecutionClient {
     }
 
     fn mass_cancel_instrument(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
-        let ws_client = self.ws_client.clone();
+        let ws_private = self.ws_private.clone();
         self.spawn_task("mass_cancel_orders", async move {
-            ws_client.mass_cancel_orders(instrument_id).await?;
+            ws_private.mass_cancel_orders(instrument_id).await?;
             Ok(())
         });
         Ok(())
@@ -481,11 +495,11 @@ impl ExecutionClient for OKXExecutionClient {
         &self,
         cmd: &nautilus_common::messages::execution::ModifyOrder,
     ) -> anyhow::Result<()> {
-        let ws_client = self.ws_client.clone();
+        let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
         self.spawn_task("modify_order", async move {
-            ws_client
+            ws_private
                 .modify_order(
                     command.trader_id,
                     command.strategy_id,
@@ -521,9 +535,9 @@ impl ExecutionClient for OKXExecutionClient {
             ));
         }
 
-        let ws_client = self.ws_client.clone();
+        let ws_private = self.ws_private.clone();
         self.spawn_task("batch_cancel_orders", async move {
-            ws_client.batch_cancel_orders(payload).await?;
+            ws_private.batch_cancel_orders(payload).await?;
             Ok(())
         });
 
@@ -558,31 +572,35 @@ impl LiveExecutionClient for OKXExecutionClient {
 
         self.ensure_instruments_initialized_async().await?;
 
-        self.ws_client.connect().await?;
-        self.ws_client.wait_until_active(10.0).await?;
+        self.ws_private.connect().await?;
+        self.ws_private.wait_until_active(10.0).await?;
 
         for inst_type in self.instrument_types() {
             tracing::info!(
                 "Subscribing to orders channel for instrument type: {:?}",
                 inst_type
             );
-            self.ws_client.subscribe_orders(inst_type).await?;
+            self.ws_private.subscribe_orders(inst_type).await?;
 
             // OKX doesn't support algo orders channel for OPTIONS
             if inst_type != OKXInstrumentType::Option {
-                self.ws_client.subscribe_orders_algo(inst_type).await?;
+                self.ws_private.subscribe_orders_algo(inst_type).await?;
             }
 
             if self.config.use_fills_channel
-                && let Err(e) = self.ws_client.subscribe_fills(inst_type).await
+                && let Err(e) = self.ws_private.subscribe_fills(inst_type).await
             {
                 tracing::warn!("Failed to subscribe to fills channel ({inst_type:?}): {e}");
             }
         }
 
-        self.ws_client.subscribe_account().await?;
+        self.ws_private.subscribe_account().await?;
+
+        self.ws_business.connect().await?;
+        self.ws_business.wait_until_active(10.0).await?;
 
         self.start_ws_stream()?;
+        self.start_ws_business_stream()?;
         self.refresh_account_state().await?;
 
         self.connected = true;
@@ -597,11 +615,19 @@ impl LiveExecutionClient for OKXExecutionClient {
         }
 
         self.http_client.cancel_all_requests();
-        if let Err(e) = self.ws_client.close().await {
-            tracing::warn!("Error while closing OKX websocket: {e:?}");
+        if let Err(e) = self.ws_private.close().await {
+            tracing::warn!("Error while closing OKX private websocket: {e:?}");
+        }
+
+        if let Err(e) = self.ws_business.close().await {
+            tracing::warn!("Error while closing OKX business websocket: {e:?}");
         }
 
         if let Some(handle) = self.ws_stream_handle.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.ws_business_stream_handle.take() {
             handle.abort();
         }
 
@@ -794,7 +820,7 @@ impl OKXExecutionClient {
             return Ok(());
         }
 
-        let stream = self.ws_client.stream();
+        let stream = self.ws_private.stream();
         let runtime = get_runtime();
         let handle = runtime.spawn(async move {
             pin_mut!(stream);
@@ -804,6 +830,24 @@ impl OKXExecutionClient {
         });
 
         self.ws_stream_handle = Some(handle);
+        Ok(())
+    }
+
+    fn start_ws_business_stream(&mut self) -> anyhow::Result<()> {
+        if self.ws_business_stream_handle.is_some() {
+            return Ok(());
+        }
+
+        let stream = self.ws_business.stream();
+        let runtime = get_runtime();
+        let handle = runtime.spawn(async move {
+            pin_mut!(stream);
+            while let Some(message) = stream.next().await {
+                dispatch_ws_message(message);
+            }
+        });
+
+        self.ws_business_stream_handle = Some(handle);
         Ok(())
     }
 }

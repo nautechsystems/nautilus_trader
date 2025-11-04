@@ -691,64 +691,6 @@ class TestReconciliationEdgeCases:
         exec_engine.register_client(client)
         return exec_engine
 
-    @pytest.mark.skip(reason="Duplicates now automatically removed during reconciliation")
-    @pytest.mark.asyncio()
-    async def test_duplicate_client_order_id_fails_validation(self, live_exec_engine):
-        """
-        Test that duplicate client order IDs cause reconciliation failure.
-        """
-        # Arrange
-        client_order_id = ClientOrderId("O-123")
-
-        report1 = OrderStatusReport(
-            instrument_id=AUDUSD_SIM.id,
-            account_id=TestIdStubs.account_id(),
-            client_order_id=client_order_id,
-            venue_order_id=VenueOrderId("V-1"),
-            order_side=OrderSide.BUY,
-            order_type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY,
-            order_status=OrderStatus.FILLED,
-            quantity=Quantity.from_int(100),
-            filled_qty=Quantity.from_int(100),
-            report_id=UUID4(),
-            ts_accepted=0,
-            ts_last=0,
-            ts_init=0,
-        )
-
-        report2 = OrderStatusReport(
-            instrument_id=AUDUSD_SIM.id,
-            account_id=TestIdStubs.account_id(),
-            client_order_id=client_order_id,
-            venue_order_id=VenueOrderId("V-2"),
-            order_side=OrderSide.SELL,
-            order_type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY,
-            order_status=OrderStatus.FILLED,
-            quantity=Quantity.from_int(50),
-            filled_qty=Quantity.from_int(50),
-            report_id=UUID4(),
-            ts_accepted=0,
-            ts_last=0,
-            ts_init=0,
-        )
-
-        mass_status = ExecutionMassStatus(
-            client_id=ClientId("TEST"),
-            venue=Venue("TEST"),
-            account_id=TestIdStubs.account_id(),
-            report_id=UUID4(),
-            ts_init=0,
-        )
-        mass_status.add_order_reports([report1, report2])
-
-        # Act
-        result = live_exec_engine._reconcile_execution_mass_status(mass_status)
-
-        # Assert
-        assert result is False
-
     @pytest.mark.asyncio()
     async def test_mass_status_failure_preserves_position_results(self, live_exec_engine):
         """

@@ -139,7 +139,7 @@ async def test_subscribe_quote_ticks(data_client_builder, monkeypatch):
 
     await client._connect()
     try:
-        ws_client.subscribe_ticker.reset_mock()
+        ws_client.subscribe_orderbook.reset_mock()
 
         command = SimpleNamespace(
             instrument_id=InstrumentId(Symbol("BTCUSDT-SPOT"), BYBIT_VENUE),
@@ -148,9 +148,9 @@ async def test_subscribe_quote_ticks(data_client_builder, monkeypatch):
         # Act
         await client._subscribe_quote_ticks(command)
 
-        # Assert
+        # Assert: SPOT instruments use orderbook depth=1 for quotes
         expected_id = nautilus_pyo3.InstrumentId.from_str("BTCUSDT-SPOT.BYBIT")
-        ws_client.subscribe_ticker.assert_awaited_once_with(expected_id)
+        ws_client.subscribe_orderbook.assert_awaited_once_with(expected_id, 1)
     finally:
         await client._disconnect()
 
@@ -220,6 +220,7 @@ async def test_subscribe_funding_rates(data_client_builder, monkeypatch):
     try:
         ws_client.subscribe_ticker.reset_mock()
 
+        # SPOT instruments don't support funding rates
         command = SimpleNamespace(
             instrument_id=InstrumentId(Symbol("BTCUSDT-SPOT"), BYBIT_VENUE),
         )
@@ -227,9 +228,8 @@ async def test_subscribe_funding_rates(data_client_builder, monkeypatch):
         # Act
         await client._subscribe_funding_rates(command)
 
-        # Assert
-        expected_id = nautilus_pyo3.InstrumentId.from_str("BTCUSDT-SPOT.BYBIT")
-        ws_client.subscribe_ticker.assert_awaited_once_with(expected_id)
+        # Assert: SPOT should not subscribe (returns early with warning)
+        ws_client.subscribe_ticker.assert_not_awaited()
     finally:
         await client._disconnect()
 

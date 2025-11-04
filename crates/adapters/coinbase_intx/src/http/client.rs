@@ -665,7 +665,7 @@ impl CoinbaseIntxHttpClient {
                     base_url,
                     timeout_secs,
                 )
-                .context("Failed to create Coinbase INTX HTTP client")?,
+                .context("failed to create Coinbase INTX HTTP client")?,
             ),
             instruments_cache: Arc::new(Mutex::new(HashMap::new())),
             cache_initialized: false,

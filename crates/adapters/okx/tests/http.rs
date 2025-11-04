@@ -548,3 +548,172 @@ async fn test_request_trades_uses_after_before() {
     );
     assert_eq!(query.get("limit"), Some(&"100".to_string()));
 }
+
+#[tokio::test]
+async fn test_request_bars_range_mode_pagination() {
+    use nautilus_model::{
+        data::{BarSpecification, BarType},
+        enums::{AggregationSource, BarAggregation, PriceType},
+        identifiers::InstrumentId,
+    };
+
+    let router = Router::new()
+        .route(
+            "/api/v5/public/instruments",
+            get({
+                move || async move {
+                    Json(load_test_data("http_get_instruments_swap.json")).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/market/candles",
+            get({
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    // Simulate OKX API behavior where we need multiple pages
+                    // to get all bars in the requested range
+                    let before = params.get("before").and_then(|s| s.parse::<i64>().ok());
+
+                    // This simulates the scenario where pagination might get stuck
+                    let data = if let Some(b) = before {
+                        let mut bars = Vec::new();
+                        for i in 0..10 {
+                            let ts = b - (i * 60_000);
+                            bars.push(json!([
+                                ts.to_string(),
+                                "100000.0",
+                                "100100.0",
+                                "99900.0",
+                                "100050.0",
+                                "10.5",
+                                "0",
+                                "0",
+                                "0"
+                            ]));
+                        }
+                        bars
+                    } else {
+                        vec![
+                            json!([
+                                "1762172280000",
+                                "108077.2",
+                                "108169.1",
+                                "108059.1",
+                                "108154.9",
+                                "7.204",
+                                "0",
+                                "0",
+                                "0"
+                            ]),
+                            json!([
+                                "1762172220000",
+                                "108100.0",
+                                "108150.0",
+                                "108050.0",
+                                "108077.2",
+                                "5.123",
+                                "0",
+                                "0",
+                                "0"
+                            ]),
+                        ]
+                    };
+
+                    Json(json!({
+                        "code": "0",
+                        "msg": "",
+                        "data": data,
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/api/v5/market/history-candles",
+            get({
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    let before = params.get("before").and_then(|s| s.parse::<i64>().ok());
+
+                    let data = if let Some(b) = before {
+                        let mut bars = Vec::new();
+                        for i in 0..50 {
+                            let ts = b - (i * 60_000);
+                            bars.push(json!([
+                                ts.to_string(),
+                                "100000.0",
+                                "100100.0",
+                                "99900.0",
+                                "100050.0",
+                                "10.5",
+                                "0",
+                                "0",
+                                "0"
+                            ]));
+                        }
+                        bars
+                    } else {
+                        vec![]
+                    };
+
+                    Json(json!({
+                        "code": "0",
+                        "msg": "",
+                        "data": data,
+                    }))
+                }
+            }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let base_url = format!("http://{}", addr);
+    let client =
+        OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+
+    for instrument in load_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let bar_type = BarType::new(
+        InstrumentId::from("BTC-USD.OKX"),
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+        AggregationSource::External,
+    );
+
+    // Regression test for issue #3145 where Range mode pagination could get stuck
+    // when all bars on a page are filtered out
+    let start = Utc::now() - ChronoDuration::hours(2);
+    let end = Utc::now() - ChronoDuration::hours(1);
+
+    let bars = client
+        .request_bars(bar_type, Some(start), Some(end), Some(100))
+        .await
+        .unwrap();
+
+    assert!(!bars.is_empty(), "Should retrieve bars in Range mode");
+
+    for bar in &bars {
+        let bar_ts = bar.ts_event.as_i64();
+        let start_ns = start.timestamp_nanos_opt().unwrap();
+        let end_ns = end.timestamp_nanos_opt().unwrap();
+        assert!(
+            bar_ts >= start_ns && bar_ts <= end_ns,
+            "Bar timestamp should be within requested range"
+        );
+    }
+
+    for i in 1..bars.len() {
+        assert!(
+            bars[i].ts_event >= bars[i - 1].ts_event,
+            "Bars should be in chronological order"
+        );
+    }
+}

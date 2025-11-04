@@ -92,13 +92,13 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
 # Dependencies
 # -----------------------------------------------------------------------------
 ahash = "0.8.12"
-alloy = { version = "1.0.42", default-features = false, features = [
+alloy = { version = "1.1.0", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
 alloy-primitives = { version = "1.4.1", features = ["serde"] }
-alloy-signer = { version = "1.0.42", default-features = false }
-alloy-signer-local = { version = "1.0.42", default-features = false, features = [
+alloy-signer = { version = "1.1.0", default-features = false }
+alloy-signer-local = { version = "1.1.0", default-features = false, features = [
   "mnemonic",
 ] }
 anyhow = "1.0.100"
@@ -224,7 +224,7 @@ reqwest = { version = "0.12.24", default-features = false, features = [
 rmp-serde = "1.3.0"
 rust_decimal = "1.39.0"
 rust_decimal_macros = "1.39.0"
-rustls = { version = "0.23.34", default-features = false, features = [
+rustls = { version = "0.23.35", default-features = false, features = [
   "aws-lc-rs",
   "std",
 ] }
@@ -280,7 +280,7 @@ tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.28.0", features = [
   "rustls-tls-webpki-roots",
 ] }
-tokio-util = { version = "0.7.16", default-features = false, features = ["io"] }
+tokio-util = { version = "0.7.17", default-features = false, features = ["io"] }
 toml = { version = "0.9.8", default-features = false, features = [
   "parse",
   "serde",
@@ -324,7 +324,7 @@ proptest = "1.9.0"
 rstest = "0.26.1"
 tempfile = "3.23.0"
 tracing-test = "0.2.5"
-turmoil = "0.6.6"
+turmoil = "0.7.0"
 
 # -----------------------------------------------------------------------------
 # Build dependencies
@@ -338,7 +338,7 @@ cbindgen = "0.29.2"
 cargo-audit = "0.21.2"
 cargo-deny = "0.18.5"
 cargo-llvm-cov = "0.6.21"
-cargo-nextest = "0.9.108"
+cargo-nextest = "0.9.111"
 lychee = "0.21.0"
 
 # -----------------------------------------------------------------------------

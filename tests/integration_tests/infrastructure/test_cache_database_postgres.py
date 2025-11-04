@@ -30,8 +30,6 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarAggregation
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import CustomData
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
@@ -56,8 +54,6 @@ from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from nautilus_trader.trading.filters import NewsEvent
-from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -181,57 +177,6 @@ class TestCachePostgresAdapter:
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["BTC"]
-
-    ################################################################################
-    # Instrument - Betting
-    ################################################################################
-    @pytest.mark.skip(reason="from_pyo3 must be implemented")
-    @pytest.mark.asyncio
-    async def test_add_instrument_betting(self):
-        betting = TestInstrumentProvider.betting_instrument()
-        self.database.add_currency(betting.quote_currency)
-
-        # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies(), timeout=_TEST_TIMEOUT)
-
-        currencies = self.database.load_currencies()
-        assert list(currencies.keys()) == ["GBP"]
-
-        # add instrument
-        self.database.add_instrument(betting)
-
-        # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(betting.id), timeout=_TEST_TIMEOUT)
-
-        # Assert
-        assert betting == self.database.load_instrument(betting.id)
-
-    ################################################################################
-    # Instrument - Binary Option
-    ################################################################################
-    @pytest.mark.skip(reason="from_pyo3 must be implemented")
-    @pytest.mark.asyncio
-    async def test_add_instrument_binary_option(self):
-        binary_option = TestInstrumentProvider.binary_option()
-        self.database.add_currency(binary_option.quote_currency)
-
-        # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies(), timeout=_TEST_TIMEOUT)
-
-        currencies = self.database.load_currencies()
-        assert list(currencies.keys()) == ["USDC"]
-
-        # add instrument
-        self.database.add_instrument(binary_option)
-
-        # Allow MPSC thread to insert
-        await eventually(
-            lambda: self.database.load_instrument(binary_option.id),
-            timeout=_TEST_TIMEOUT,
-        )
-
-        # Assert
-        assert binary_option == self.database.load_instrument(binary_option.id)
 
     ################################################################################
     # Instrument - Crypto Future
@@ -833,25 +778,3 @@ class TestCachePostgresAdapter:
 
         signals = self.database.load_signals(signal_cls, signal_name)
         assert len(signals) == 1
-
-    @pytest.mark.skip(reason="WIP")
-    @pytest.mark.asyncio
-    async def test_add_and_load_custom_data(self):
-        metadata = {"a": "1", "b": "2"}
-        data_type = DataType(NewsEvent, metadata)
-        event = NewsEvent(
-            impact=NewsImpact.LOW,
-            name="something-happened",
-            currency="USD",
-            ts_event=1,
-            ts_init=2,
-        )
-        data = CustomData(data_type, event)
-
-        self.database.add_custom_data(data)
-
-        # TODO: WIP - loading needs more work
-        # await eventually(lambda: len(self.database.load_custom_data(data_type)) > 0, timeout=_TEST_TIMEOUT)
-        #
-        # signals = self.database.load_custom_data(data_type)
-        # assert len(signals) == 1

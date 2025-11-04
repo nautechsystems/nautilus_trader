@@ -1,23 +1,37 @@
 # Live Trading
 
-Live trading in NautilusTrader enables traders to deploy their backtested strategies in a real-time
+NautilusTrader enables traders to deploy their backtested strategies in a real-time
 trading environment with no code changes. This seamless transition from backtesting to live trading
-is a core feature of the platform, ensuring consistency and reliability. However, there are
-key differences to be aware of between backtesting and live trading.
+is a core feature of the platform, ensuring consistency and reliability.
+
+**Live trading involves real financial risk and requires a careful, risk-managed approach.
+Before deploying to production, ensure you thoroughly understand all aspects of system configuration,
+node operations, execution reconciliation, and the differences between backtesting and live trading.**
 
 This guide provides an overview of the key aspects of live trading.
-
-:::info Platform differences
-Windows signal handling differs from Unix-like systems. If you are running on Windows, please read
-the note on [Windows signal handling](#windows-signal-handling) for guidance on graceful shutdown
-behavior and Ctrl+C (SIGINT) support.
-:::
 
 :::warning **One TradingNode per process**
 Running multiple `TradingNode` instances concurrently in the same process is not supported due to global singleton state.
 Add multiple strategies to a single node, or run additional nodes in separate processes for parallel execution.
 
 See [Processes and threads](architecture.md#processes-and-threads) for details.
+:::
+
+:::danger **Jupyter notebooks not recommended for live trading**
+Running live trading nodes in Jupyter notebooks is **not recommended** due to event loop conflicts and operational risks:
+
+- Jupyter runs its own asyncio event loop, which conflicts with `TradingNode`'s event loop management.
+- Workarounds like `nest_asyncio` are not production-grade solutions.
+- Notebooks are unstable for production: cells can be re-executed out of order, kernels can crash, and state can be lost.
+- Lacks proper logging, monitoring, and graceful shutdown capabilities required for production trading systems.
+
+Use Jupyter notebooks for backtesting, analysis, and experimentation. For live trading, run your trading nodes as standalone Python scripts or services with proper process management.
+:::
+
+:::info Platform differences
+Windows signal handling differs from Unix-like systems. If you are running on Windows, please read
+the note on [Windows signal handling](#windows-signal-handling) for guidance on graceful shutdown
+behavior and Ctrl+C (SIGINT) support.
 :::
 
 ## Configuration
@@ -157,12 +171,12 @@ For full details see the `LiveExecEngineConfig` [API Reference](../api_reference
 
 **Purpose**: Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
 
-| Setting                         | Default | Description                                                                                        |
-|---------------------------------|---------|----------------------------------------------------------------------------------------------------|
-| `reconciliation`                | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state.  |
-| `reconciliation_lookback_mins`  | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.   |
-| `reconciliation_instrument_ids` | None    | An include list of specific instrument IDs to consider for reconciliation.                         |
-| `filtered_client_order_ids`     | None    | A list of client order IDs to filter from reconciliation (useful when the venue holds duplicates). |
+| Setting                           | Default | Description                                                                                        |
+|-----------------------------------|---------|----------------------------------------------------------------------------------------------------|
+| `reconciliation`                  | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state.  |
+| `reconciliation_lookback_mins`    | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.   |
+| `reconciliation_instrument_ids`   | None    | An include list of specific instrument IDs to consider for reconciliation.                         |
+| `filtered_client_order_ids`       | None    | A list of client order IDs to filter from reconciliation (useful when the venue holds duplicates). |
 
 See [Execution reconciliation](#execution-reconciliation) for additional background.
 

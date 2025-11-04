@@ -99,9 +99,10 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            okx_instrument_type, parse_account_state, parse_candlestick, parse_fill_report,
-            parse_index_price_update, parse_instrument_any, parse_mark_price_update,
-            parse_order_status_report, parse_position_status_report, parse_trade_tick,
+            okx_instrument_type, okx_instrument_type_from_symbol, parse_account_state,
+            parse_candlestick, parse_fill_report, parse_index_price_update, parse_instrument_any,
+            parse_mark_price_update, parse_order_status_report, parse_position_status_report,
+            parse_trade_tick,
         },
     },
     http::{
@@ -1284,6 +1285,97 @@ impl OKXHttpClient {
         Ok(instruments)
     }
 
+    /// Requests a single instrument by `instrument_id` from OKX.
+    ///
+    /// Fetches the instrument from the API, caches it, and returns it.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The API request fails.
+    /// - The instrument is not found.
+    /// - Failed to parse instrument data.
+    pub async fn request_instrument(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<InstrumentAny> {
+        let symbol = instrument_id.symbol.as_str();
+        let instrument_type = okx_instrument_type_from_symbol(symbol);
+
+        let mut params = GetInstrumentsParamsBuilder::default();
+        params.inst_type(instrument_type);
+        params.inst_id(symbol);
+
+        let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
+
+        let resp = self
+            .inner
+            .get_instruments(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let raw_inst = resp
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found"))?;
+
+        // Skip pre-open instruments which have incomplete/empty field values
+        if raw_inst.state == OKXInstrumentStatus::Preopen {
+            anyhow::bail!("Instrument {symbol} is in pre-open state");
+        }
+
+        let fee_rate_opt = {
+            let fee_params = GetTradeFeeParams {
+                inst_type: instrument_type,
+                uly: None,
+                inst_family: None,
+            };
+
+            match self.inner.get_trade_fee(fee_params).await {
+                Ok(rates) => rates.into_iter().next(),
+                Err(OKXHttpError::MissingCredentials) => {
+                    log::debug!("Missing credentials for fee rates, using None");
+                    None
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch fee rates for {symbol}: {e}");
+                    None
+                }
+            }
+        };
+
+        let (maker_fee, taker_fee) = if let Some(ref fee_rate) = fee_rate_opt {
+            let is_usdt_margined = raw_inst.ct_type == OKXContractType::Linear;
+            let (maker_str, taker_str) = if is_usdt_margined {
+                (&fee_rate.maker_u, &fee_rate.taker_u)
+            } else {
+                (&fee_rate.maker, &fee_rate.taker)
+            };
+
+            let maker = if !maker_str.is_empty() {
+                Decimal::from_str(maker_str).ok()
+            } else {
+                None
+            };
+            let taker = if !taker_str.is_empty() {
+                Decimal::from_str(taker_str).ok()
+            } else {
+                None
+            };
+
+            (maker, taker)
+        } else {
+            (None, None)
+        };
+
+        let ts_init = self.generate_ts_init();
+        let instrument = parse_instrument_any(raw_inst, None, None, maker_fee, taker_fee, ts_init)?
+            .ok_or_else(|| anyhow::anyhow!("Unsupported instrument type for {symbol}"))?;
+
+        self.cache_instrument(instrument.clone());
+
+        Ok(instrument)
+    }
+
     /// Requests the latest mark price for the `instrument_type` from OKX.
     ///
     /// # Errors
@@ -1885,9 +1977,9 @@ impl OKXHttpClient {
                 }
             }
 
-            // Duplicate-window mitigation for Latest/Backward
+            // Duplicate-window mitigation for Latest/Backward/Range
             if contribution == 0
-                && matches!(mode, Mode::Latest | Mode::Backward)
+                && matches!(mode, Mode::Latest | Mode::Backward | Mode::Range)
                 && let Some(b) = before_ms
             {
                 let jump = (page_cap as i64).saturating_mul(slot_ms.max(1));

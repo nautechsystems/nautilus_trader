@@ -129,7 +129,7 @@ pub struct OKXSubscriptionArg {
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-pub enum OKXWebSocketEvent {
+pub enum OKXWsMessage {
     Login {
         event: String,
         code: String,
@@ -831,10 +831,10 @@ mod tests {
     fn test_deserialize_subscribe_confirmation() {
         let json_str = r#"{"event":"subscribe","arg":{"channel":"instruments","instType":"SPOT"},"connId":"380cfa6a"}"#;
 
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
             Ok(msg) => {
-                if let OKXWebSocketEvent::Subscription {
+                if let OKXWsMessage::Subscription {
                     event,
                     arg,
                     conn_id,
@@ -858,10 +858,10 @@ mod tests {
     fn test_deserialize_subscribe_with_inst_id() {
         let json_str = r#"{"event":"subscribe","arg":{"channel":"candle1m","instId":"ETH-USDT"},"connId":"358602f5"}"#;
 
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
             Ok(msg) => {
-                if let OKXWebSocketEvent::Subscription {
+                if let OKXWsMessage::Subscription {
                     event,
                     arg,
                     conn_id,
@@ -902,9 +902,9 @@ mod tests {
     #[rstest]
     fn test_order_response_with_enum_operation() {
         let json_str = r#"{"id":"req-123","op":"order","code":"0","msg":"","data":[]}"#;
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
-            Ok(OKXWebSocketEvent::OrderResponse {
+            Ok(OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -922,9 +922,9 @@ mod tests {
         }
 
         let json_str = r#"{"id":"cancel-456","op":"cancel-order","code":"50001","msg":"Order not found","data":[]}"#;
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
-            Ok(OKXWebSocketEvent::OrderResponse {
+            Ok(OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -942,9 +942,9 @@ mod tests {
         }
 
         let json_str = r#"{"id":"amend-789","op":"amend-order","code":"50002","msg":"Invalid price","data":[]}"#;
-        let result: Result<OKXWebSocketEvent, _> = serde_json::from_str(json_str);
+        let result: Result<OKXWsMessage, _> = serde_json::from_str(json_str);
         match result {
-            Ok(OKXWebSocketEvent::OrderResponse {
+            Ok(OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -991,10 +991,10 @@ mod tests {
             "data": [{"sMsg": "Order placed successfully"}]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(success_response).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(success_response).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::OrderResponse {
+            OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -1018,10 +1018,10 @@ mod tests {
             "data": [{"sMsg": "Order with client order ID not found"}]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(failure_response).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(failure_response).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::OrderResponse {
+            OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -1049,10 +1049,10 @@ mod tests {
             "connId": "a4d3ae55"
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(subscription_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(subscription_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::Subscription {
+            OKXWsMessage::Subscription {
                 event,
                 arg,
                 conn_id,
@@ -1079,10 +1079,10 @@ mod tests {
             "connId": "a4d3ae55"
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(login_success).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(login_success).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::Login {
+            OKXWsMessage::Login {
                 event,
                 code,
                 msg,
@@ -1104,10 +1104,10 @@ mod tests {
             "msg": "Invalid request"
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(error_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(error_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::Error { code, msg } => {
+            OKXWsMessage::Error { code, msg } => {
                 assert_eq!(code, "60012");
                 assert_eq!(msg, "Invalid request");
             }
@@ -1187,10 +1187,10 @@ mod tests {
         ];
 
         for (response_json, expected_msg) in responses {
-            let parsed: OKXWebSocketEvent = serde_json::from_str(response_json).unwrap();
+            let parsed: OKXWsMessage = serde_json::from_str(response_json).unwrap();
 
             match parsed {
-                OKXWebSocketEvent::OrderResponse {
+                OKXWsMessage::OrderResponse {
                     id: _,
                     op: _,
                     code,
@@ -1231,10 +1231,10 @@ mod tests {
             }]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(book_data_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(book_data_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::BookData { arg, action, data } => {
+            OKXWsMessage::BookData { arg, action, data } => {
                 assert_eq!(arg.channel, OKXWsChannel::Books);
                 assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT")));
                 assert_eq!(
@@ -1264,10 +1264,10 @@ mod tests {
             }]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(data_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(data_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::Data { arg, data } => {
+            OKXWsMessage::Data { arg, data } => {
                 assert_eq!(arg.channel, OKXWsChannel::Trades);
                 assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT")));
                 assert!(data.is_array());
@@ -1325,10 +1325,10 @@ mod tests {
             "data": [{"sMsg": "Order placed successfully"}]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(order_response_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(order_response_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::OrderResponse {
+            OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,
@@ -1355,10 +1355,10 @@ mod tests {
             "data": [{"sMsg": "Order with client order ID not found"}]
         }"#;
 
-        let parsed: OKXWebSocketEvent = serde_json::from_str(order_response_json).unwrap();
+        let parsed: OKXWsMessage = serde_json::from_str(order_response_json).unwrap();
 
         match parsed {
-            OKXWebSocketEvent::OrderResponse {
+            OKXWsMessage::OrderResponse {
                 id,
                 op,
                 code,

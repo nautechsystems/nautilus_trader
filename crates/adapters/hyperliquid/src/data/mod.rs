@@ -141,7 +141,7 @@ impl HyperliquidDataClient {
             .http_client
             .request_instruments()
             .await
-            .context("Failed to fetch instruments during bootstrap")?;
+            .context("failed to fetch instruments during bootstrap")?;
 
         let mut instruments_map = self.instruments.write().unwrap();
         let mut coin_map = self.coin_to_instrument_id.write().unwrap();
@@ -174,7 +174,7 @@ impl HyperliquidDataClient {
         self.ws_client
             .ensure_connected()
             .await
-            .context("Failed to connect to Hyperliquid WebSocket")?;
+            .context("failed to connect to Hyperliquid WebSocket")?;
 
         // Spawn background task to consume WebSocket events
         let ws_client = self.ws_client.clone();
@@ -462,12 +462,12 @@ impl DataClient for HyperliquidDataClient {
         let _instruments = self
             .bootstrap_instruments()
             .await
-            .context("Failed to bootstrap instruments")?;
+            .context("failed to bootstrap instruments")?;
 
         // Connect WebSocket client
         self.spawn_ws()
             .await
-            .context("Failed to spawn WebSocket client")?;
+            .context("failed to spawn WebSocket client")?;
 
         self.is_connected.store(true, Ordering::Relaxed);
         tracing::info!("Hyperliquid data client connected");
@@ -645,7 +645,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         // Clone WebSocket client for async task
@@ -675,7 +675,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         let ws = self.ws_client.clone();
@@ -713,7 +713,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         let ws = self.ws_client.clone();
@@ -747,7 +747,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         let ws = self.ws_client.clone();
@@ -791,7 +791,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         let ws = self.ws_client.clone();
@@ -825,7 +825,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         let ws = self.ws_client.clone();
@@ -859,7 +859,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         let ws = self.ws_client.clone();
@@ -887,7 +887,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         let ws = self.ws_client.clone();
@@ -924,7 +924,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         let ws = self.ws_client.clone();
@@ -951,7 +951,7 @@ impl DataClient for HyperliquidDataClient {
             .as_str()
             .split('-')
             .next()
-            .context("Invalid instrument symbol")?;
+            .context("invalid instrument symbol")?;
         let coin = Ustr::from(coin);
 
         let ws = self.ws_client.clone();
@@ -1012,7 +1012,7 @@ async fn request_bars_from_http(
         guard
             .get(&instrument_id)
             .cloned()
-            .context("Instrument not found in cache")?
+            .context("instrument not found in cache")?
     };
 
     let price_precision = instrument.price_precision();
@@ -1024,7 +1024,7 @@ async fn request_bars_from_http(
         .as_str()
         .split('-')
         .next()
-        .context("Invalid instrument symbol")?;
+        .context("invalid instrument symbol")?;
 
     // Convert bar type to Hyperliquid interval
     let interval = bar_type_to_interval(&bar_type)?;
@@ -1050,7 +1050,7 @@ async fn request_bars_from_http(
     let response = http_client
         .info_candle_snapshot(coin, interval.as_str(), start_time, end_time)
         .await
-        .context("Failed to fetch candle snapshot from Hyperliquid")?;
+        .context("failed to fetch candle snapshot from Hyperliquid")?;
 
     // Convert candles to bars
     let mut bars: Vec<Bar> = response

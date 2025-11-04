@@ -173,7 +173,7 @@ impl HyperliquidExecutionClient {
             Some(config.http_timeout_secs),
             config.http_proxy_url.clone(),
         )
-        .context("Failed to create Hyperliquid HTTP client")?;
+        .context("failed to create Hyperliquid HTTP client")?;
 
         // Create WebSocket client (will connect when needed)
         let ws_client = HyperliquidWebSocketClient::new(None, config.is_testnet);
@@ -240,12 +240,12 @@ impl HyperliquidExecutionClient {
             .http_client
             .info_clearinghouse_state(account_address)
             .await
-            .context("Failed to fetch clearinghouse state")?;
+            .context("failed to fetch clearinghouse state")?;
 
         // Deserialize the response
         let state: crate::http::models::ClearinghouseState =
             serde_json::from_value(clearinghouse_state)
-                .context("Failed to deserialize clearinghouse state")?;
+                .context("failed to deserialize clearinghouse state")?;
 
         tracing::debug!(
             "Received clearinghouse state: cross_margin_summary={:?}, asset_positions={}",
@@ -257,7 +257,7 @@ impl HyperliquidExecutionClient {
         if let Some(ref cross_margin_summary) = state.cross_margin_summary {
             let (balances, margins) =
                 crate::common::parse::parse_account_balances_and_margins(cross_margin_summary)
-                    .context("Failed to parse account balances and margins")?;
+                    .context("failed to parse account balances and margins")?;
 
             let ts_event = if let Some(time_ms) = state.time {
                 nautilus_core::UnixNanos::from(time_ms * 1_000_000)
@@ -283,7 +283,7 @@ impl HyperliquidExecutionClient {
         let address = self
             .http_client
             .get_user_address()
-            .context("Failed to get user address from HTTP client")?;
+            .context("failed to get user address from HTTP client")?;
 
         Ok(address)
     }
@@ -860,7 +860,8 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
 
         // Connect WebSocket client
         let url = crate::common::consts::ws_url(self.config.is_testnet);
-        self.ws_client = HyperliquidWebSocketClient::connect(url).await?;
+        self.ws_client =
+            HyperliquidWebSocketClient::connect(url, Some(self.core.account_id)).await?;
 
         // Subscribe to user-specific order updates and fills
         let user_address = self.get_user_address()?;
@@ -928,7 +929,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
             .http_client
             .request_order_status_reports(&user_address, cmd.instrument_id)
             .await
-            .context("Failed to generate order status reports")?;
+            .context("failed to generate order status reports")?;
 
         // Filter by client_order_id if specified
         let reports = if let Some(client_order_id) = cmd.client_order_id {
@@ -957,7 +958,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
             .http_client
             .request_fill_reports(&user_address, cmd.instrument_id)
             .await
-            .context("Failed to generate fill reports")?;
+            .context("failed to generate fill reports")?;
 
         // Filter by time range if specified
         let reports = if let (Some(start), Some(end)) = (cmd.start, cmd.end) {
@@ -990,7 +991,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
             .http_client
             .request_position_status_reports(&user_address, cmd.instrument_id)
             .await
-            .context("Failed to generate position status reports")?;
+            .context("failed to generate position status reports")?;
 
         tracing::info!("Generated {} position status reports", reports.len());
         Ok(reports)

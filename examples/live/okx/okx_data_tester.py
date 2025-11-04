@@ -132,9 +132,10 @@ config_tester = DataTesterConfig(
     # book_group_size=Decimal("1"),  # Only PyO3 wrapped book (not legacy Cython)
     # book_depth=5,
     # book_levels_to_print=50,
-    book_interval_ms=100,
+    # book_interval_ms=100,
     # manage_book=True,
     # use_pyo3_book=True,
+    # request_instruments=True,
     # request_bars=True,
     # request_trades=True,  # TODO: Needs to be fixed
 )

@@ -14,10 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import pkgutil
 
-import aiohttp
-import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -132,68 +129,6 @@ class TestBinanceSpotExecutionClient:
         )
 
         yield
-
-    @pytest.mark.skip(reason="Pending overhaul of testing")
-    @pytest.mark.asyncio()
-    async def test_connect(self, monkeypatch):
-        # Arrange: prepare data for monkey patch
-        response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_wallet_trading_fee.json",
-        )
-
-        response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_spot_market_exchange_info.json",
-        )
-
-        response3 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_spot_wallet_account.json",
-        )
-
-        response4 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_spot_streams_listen_key.json",
-        )
-
-        http_responses = [response4, response3, response2, response1]
-
-        # Mock coroutine for patch
-        async def mock_send_request(
-            self,  # (needed for mock)
-            http_method: str,  # (needed for mock)
-            url_path: str,  # (needed for mock)
-            payload: dict[str, str],  # (needed for mock)
-        ) -> bytes:
-            response = msgspec.json.decode(http_responses.pop())
-            return response
-
-        # Mock coroutine for patch
-        async def mock_ws_connect(
-            self,  # (needed for mock)
-            url: str,  # (needed for mock)
-        ) -> bytes:
-            return b"connected"
-
-        # Apply mock coroutine to client
-        monkeypatch.setattr(
-            target=BinanceHttpClient,
-            name="send_request",
-            value=mock_send_request,
-        )
-
-        monkeypatch.setattr(
-            target=aiohttp.ClientSession,
-            name="ws_connect",
-            value=mock_ws_connect,
-        )
-
-        # Act
-        self.exec_client.connect()
-
-        # Assert
-        await eventually(lambda: self.exec_client.is_connected)
 
     @pytest.mark.asyncio()
     async def test_submit_unsupported_order_logs_error(self, mocker):

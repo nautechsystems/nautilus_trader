@@ -84,7 +84,7 @@ docker = ["docker>=7.1.0,<8.0.0"]
 dydx = [
   "v4-proto==7.0.5; python_version < '3.14'",
   "grpcio==1.68.1; python_version < '3.14'",
-  "protobuf==5.29.1; python_version < '3.14'",
+  "protobuf==5.29.5; python_version < '3.14'", # Pinned to 5.29.5 (fixes GHSA-8qvm-5x2c-j2w7)
   "bech32>=1.2.0,<2.0.0; python_version < '3.14'",
   "ecdsa>=0.19.1,<1.0.0; python_version < '3.14'",
   "bip-utils>=2.10.0,<3.0.0; python_version < '3.14'",
@@ -109,7 +109,7 @@ dev = [
   "types-toml>=0.10.2,<1.0.0",
 ]
 test = [
-  "aiohttp==3.11.18,<4.0.0", # Pinned to 3.11.8 for wheel compatibility on supported platforms
+  "aiohttp==3.12.14,<4.0.0", # Pinned to 3.12.14 (fixes GHSA-9548-qrrj-x5pj)
   "coverage>=7.11.0,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.0,<2.0.0",

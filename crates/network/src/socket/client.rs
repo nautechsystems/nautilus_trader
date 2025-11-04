@@ -15,7 +15,7 @@
 
 //! High-performance raw TCP client implementation with TLS capability, automatic reconnection
 //! with exponential backoff and state management.
-
+//!
 //! **Key features**:
 //! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED).
 //! - Synchronized reconnection with backoff.
@@ -38,19 +38,17 @@ use std::{
     time::Duration,
 };
 
-use bytes::Bytes;
 use nautilus_core::CleanDrop;
 use nautilus_cryptography::providers::install_cryptographic_provider;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio_tungstenite::{
-    MaybeTlsStream,
-    tungstenite::{Error, client::IntoClientRequest, stream::Mode},
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::Mode};
 
+use super::{
+    SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand, fix::process_fix_buffer,
+};
 use crate::{
     backoff::ExponentialBackoff,
     error::SendError,
-    fix::process_fix_buffer,
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     net::TcpStream,
@@ -62,91 +60,6 @@ const CONNECTION_STATE_CHECK_INTERVAL_MS: u64 = 10;
 const GRACEFUL_SHUTDOWN_DELAY_MS: u64 = 100;
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 const SEND_OPERATION_CHECK_INTERVAL_MS: u64 = 1;
-
-type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
-type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
-pub type TcpMessageHandler = Arc<dyn Fn(&[u8]) + Send + Sync>;
-
-/// Configuration for TCP socket connection.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct SocketConfig {
-    /// The URL to connect to.
-    pub url: String,
-    /// The connection mode {Plain, TLS}.
-    pub mode: Mode,
-    /// The sequence of bytes which separates lines.
-    pub suffix: Vec<u8>,
-    /// The optional function to handle incoming messages.
-    pub message_handler: Option<TcpMessageHandler>,
-    /// The optional heartbeat with period and beat message.
-    pub heartbeat: Option<(u64, Vec<u8>)>,
-    /// The timeout (milliseconds) for reconnection attempts.
-    pub reconnect_timeout_ms: Option<u64>,
-    /// The initial reconnection delay (milliseconds) for reconnects.
-    pub reconnect_delay_initial_ms: Option<u64>,
-    /// The maximum reconnect delay (milliseconds) for exponential backoff.
-    pub reconnect_delay_max_ms: Option<u64>,
-    /// The exponential backoff factor for reconnection delays.
-    pub reconnect_backoff_factor: Option<f64>,
-    /// The maximum jitter (milliseconds) added to reconnection delays.
-    pub reconnect_jitter_ms: Option<u64>,
-    /// The path to the certificates directory.
-    pub certs_dir: Option<String>,
-}
-
-impl Debug for SocketConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(SocketConfig))
-            .field("url", &self.url)
-            .field("mode", &self.mode)
-            .field("suffix", &self.suffix)
-            .field(
-                "message_handler",
-                &self.message_handler.as_ref().map(|_| "<function>"),
-            )
-            .field("heartbeat", &self.heartbeat)
-            .field("reconnect_timeout_ms", &self.reconnect_timeout_ms)
-            .field(
-                "reconnect_delay_initial_ms",
-                &self.reconnect_delay_initial_ms,
-            )
-            .field("reconnect_delay_max_ms", &self.reconnect_delay_max_ms)
-            .field("reconnect_backoff_factor", &self.reconnect_backoff_factor)
-            .field("reconnect_jitter_ms", &self.reconnect_jitter_ms)
-            .field("certs_dir", &self.certs_dir)
-            .finish()
-    }
-}
-
-impl Clone for SocketConfig {
-    fn clone(&self) -> Self {
-        Self {
-            url: self.url.clone(),
-            mode: self.mode,
-            suffix: self.suffix.clone(),
-            message_handler: self.message_handler.clone(),
-            heartbeat: self.heartbeat.clone(),
-            reconnect_timeout_ms: self.reconnect_timeout_ms,
-            reconnect_delay_initial_ms: self.reconnect_delay_initial_ms,
-            reconnect_delay_max_ms: self.reconnect_delay_max_ms,
-            reconnect_backoff_factor: self.reconnect_backoff_factor,
-            reconnect_jitter_ms: self.reconnect_jitter_ms,
-            certs_dir: self.certs_dir.clone(),
-        }
-    }
-}
-
-/// Represents a command for the writer task.
-#[derive(Debug)]
-pub enum WriterCommand {
-    /// Update the writer reference with a new one after reconnection.
-    Update(TcpWriter),
-    /// Send data to the server.
-    Send(Bytes),
-}
 
 /// Creates a `TcpStream` with the server.
 ///

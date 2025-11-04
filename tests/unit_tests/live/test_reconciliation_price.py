@@ -22,7 +22,7 @@ from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window
+from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window_single
 from nautilus_trader.live.reconciliation import calculate_reconciliation_price
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
@@ -379,7 +379,7 @@ def test_adjust_fills_no_position_report(ethusdt_instrument):
     )
     mass_status._fill_reports[venue_order_id] = [fill]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -455,7 +455,7 @@ def test_adjust_fills_complete_lifecycle_no_adjustment(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -529,7 +529,7 @@ def test_adjust_fills_incomplete_lifecycle_adds_synthetic_fill(ethusdt_instrumen
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -630,7 +630,7 @@ def test_adjust_fills_with_zero_crossings(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -726,7 +726,7 @@ def test_adjust_fills_current_lifecycle_mismatch_creates_synthetic(ethusdt_instr
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -829,7 +829,7 @@ def test_adjust_fills_oldest_lifecycle_incomplete_adds_synthetic(ethusdt_instrum
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -924,7 +924,7 @@ def test_adjust_fills_short_position(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -1024,7 +1024,7 @@ def test_adjust_fills_flat_position_after_zero_crossings(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -1108,7 +1108,7 @@ def test_adjust_fills_position_flip_in_current_lifecycle(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -1321,7 +1321,7 @@ def test_adjust_fills_multi_instrument_preserves_all_fills(eurusd_instrument, et
             eurusd_instrument if instrument_id == eurusd_instrument.id else ethusdt_instrument
         )
         adjusted_orders_for_instrument, adjusted_fills_for_instrument = (
-            adjust_fills_for_partial_window(mass_status, instrument)
+            adjust_fills_for_partial_window_single(mass_status, instrument)
         )
 
         # Remove old fills for this instrument
@@ -1440,7 +1440,7 @@ def test_adjust_fills_missing_order_reports_uses_fill_side(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -1618,7 +1618,7 @@ def test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders(eurus
     mass_status._position_reports[eurusd_instrument.id] = [position_report]
 
     # Act - Adjust fills (should trigger FilterToCurrentLifecycle)
-    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window(
+    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window_single(
         mass_status,
         eurusd_instrument,
     )
@@ -1783,7 +1783,7 @@ def test_adjust_fills_replace_current_lifecycle_reuses_venue_order_id(eurusd_ins
     mass_status._position_reports = {eurusd_instrument.id: [position_report]}
 
     # Act - Run reconciliation
-    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window(
+    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window_single(
         mass_status,
         eurusd_instrument,
     )

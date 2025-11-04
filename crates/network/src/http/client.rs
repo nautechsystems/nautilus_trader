@@ -13,183 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A high-performance HTTP client implementation.
+//! HTTP client implementation with rate limiting and timeout support.
 
-use std::{collections::HashMap, hash::Hash, str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
-use bytes::Bytes;
-use http::{HeaderValue, StatusCode, status::InvalidStatusCode};
 use nautilus_core::collections::into_ustr_vec;
 use reqwest::{
     Method, Response, Url,
-    header::{HeaderMap, HeaderName},
+    header::{HeaderMap, HeaderName, HeaderValue},
 };
 use ustr::Ustr;
 
+use super::{HttpClientError, HttpResponse, HttpStatus};
 use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
-
-/// Represents a HTTP status code.
-///
-/// Wraps [`http::StatusCode`] to expose a Python-compatible type and reuse
-/// its validation and convenience methods.
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct HttpStatus {
-    inner: StatusCode,
-}
-
-impl HttpStatus {
-    /// Create a new [`HttpStatus`] instance from a given [`StatusCode`].
-    #[must_use]
-    pub const fn new(code: StatusCode) -> Self {
-        Self { inner: code }
-    }
-
-    /// Returns the status code as a `u16` (e.g., `200` for OK).
-    #[inline]
-    #[must_use]
-    pub const fn as_u16(&self) -> u16 {
-        self.inner.as_u16()
-    }
-
-    /// Returns the three-digit ASCII representation of this status (e.g., `"200"`).
-    #[inline]
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        self.inner.as_str()
-    }
-
-    /// Checks if this status is in the 1xx (informational) range.
-    #[inline]
-    #[must_use]
-    pub fn is_informational(&self) -> bool {
-        self.inner.is_informational()
-    }
-
-    /// Checks if this status is in the 2xx (success) range.
-    #[inline]
-    #[must_use]
-    pub fn is_success(&self) -> bool {
-        self.inner.is_success()
-    }
-
-    /// Checks if this status is in the 3xx (redirection) range.
-    #[inline]
-    #[must_use]
-    pub fn is_redirection(&self) -> bool {
-        self.inner.is_redirection()
-    }
-
-    /// Checks if this status is in the 4xx (client error) range.
-    #[inline]
-    #[must_use]
-    pub fn is_client_error(&self) -> bool {
-        self.inner.is_client_error()
-    }
-
-    /// Checks if this status is in the 5xx (server error) range.
-    #[inline]
-    #[must_use]
-    pub fn is_server_error(&self) -> bool {
-        self.inner.is_server_error()
-    }
-}
-
-impl TryFrom<u16> for HttpStatus {
-    type Error = InvalidStatusCode;
-
-    /// Attempts to construct a [`HttpStatus`] from a `u16`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the code is not in the valid `100..999` range.
-    fn try_from(code: u16) -> Result<Self, Self::Error> {
-        Ok(Self {
-            inner: StatusCode::from_u16(code)?,
-        })
-    }
-}
-
-/// Represents the HTTP methods supported by the `HttpClient`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub enum HttpMethod {
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    PATCH,
-}
-
-impl From<HttpMethod> for Method {
-    fn from(value: HttpMethod) -> Self {
-        match value {
-            HttpMethod::GET => Self::GET,
-            HttpMethod::POST => Self::POST,
-            HttpMethod::PUT => Self::PUT,
-            HttpMethod::DELETE => Self::DELETE,
-            HttpMethod::PATCH => Self::PATCH,
-        }
-    }
-}
-
-/// Represents the response from an HTTP request.
-///
-/// This struct encapsulates the status, headers, and body of an HTTP response,
-/// providing easy access to the key components of the response.
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct HttpResponse {
-    /// The HTTP status code.
-    pub status: HttpStatus,
-    /// The response headers as a map of key-value pairs.
-    pub headers: HashMap<String, String>,
-    /// The raw response body.
-    pub body: Bytes,
-}
-
-/// Errors returned by the HTTP client.
-///
-/// Includes generic transport errors, timeouts, and proxy configuration errors.
-#[derive(thiserror::Error, Debug)]
-pub enum HttpClientError {
-    #[error("HTTP error occurred: {0}")]
-    Error(String),
-
-    #[error("HTTP request timed out: {0}")]
-    TimeoutError(String),
-
-    #[error("Invalid proxy URL: {0}")]
-    InvalidProxy(String),
-
-    #[error("Failed to build HTTP client: {0}")]
-    ClientBuildError(String),
-}
-
-impl From<reqwest::Error> for HttpClientError {
-    fn from(source: reqwest::Error) -> Self {
-        if source.is_timeout() {
-            Self::TimeoutError(source.to_string())
-        } else {
-            Self::Error(source.to_string())
-        }
-    }
-}
-
-impl From<String> for HttpClientError {
-    fn from(value: String) -> Self {
-        Self::Error(value)
-    }
-}
 
 /// An HTTP client that supports rate limiting and timeouts.
 ///

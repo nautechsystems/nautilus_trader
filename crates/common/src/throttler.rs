@@ -800,27 +800,6 @@ mod tests {
         assert_eq!(throttler.qsize(), 0);
     }
 
-    #[ignore = "Used for manually testing failing cases"]
-    #[rstest]
-    fn test_case() {
-        let inputs = [
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::AdvanceClock(5),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::AdvanceClock(5),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-        ]
-        .to_vec();
-
-        let test_throttler = test_throttler_buffered();
-        test_throttler_with_inputs(inputs, test_throttler);
-    }
-
     #[rstest]
     #[allow(unsafe_code)]
     fn prop_test() {

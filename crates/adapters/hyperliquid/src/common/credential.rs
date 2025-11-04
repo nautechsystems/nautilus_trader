@@ -436,26 +436,4 @@ mod tests {
             assert_eq!(normalize_address(input).unwrap(), expected);
         }
     }
-
-    #[rstest]
-    #[ignore = "This test modifies environment variables - run manually if needed"]
-    fn test_secrets_from_env() {
-        // Note: This test requires setting environment variables manually
-        // HYPERLIQUID_PK=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
-        // HYPERLIQUID_VAULT=0x1234567890abcdef1234567890abcdef12345678
-        // HYPERLIQUID_NETWORK=testnet
-
-        // For now, just test the error case when variables are not set
-        match Secrets::from_env() {
-            Err(e) => {
-                assert!(
-                    e.to_string().contains("HYPERLIQUID_PK")
-                        || e.to_string().contains("environment variable not set")
-                );
-            }
-            Ok(_) => {
-                // If environment variables are actually set, that's fine too
-            }
-        }
-    }
 }

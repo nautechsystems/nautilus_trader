@@ -15,7 +15,6 @@
 
 from unittest.mock import AsyncMock
 
-import msgspec
 import pytest
 from ibapi.contract import ContractDetails
 
@@ -176,55 +175,6 @@ async def test_load_instrument_using_contract_id(mocker, instrument_provider):
     assert fx.multiplier == 1
     assert fx.price_increment == Price.from_str("0.00005")
     assert fx.price_precision == 5
-
-
-@pytest.mark.skip(reason="Scope of test not clear!")
-@pytest.mark.asyncio()
-async def test_none_filters(instrument_provider):
-    # Act, Arrange, Assert
-    instrument_provider.load_all(None)
-
-
-@pytest.mark.skip(reason="Scope of test not clear!")
-@pytest.mark.asyncio()
-async def test_instrument_filter_callable_none(mocker, instrument_provider):
-    # Arrange
-    mock_ib_contract_calls(
-        mocker=mocker,
-        instrument_provider=instrument_provider,
-        contract_details=IBTestContractStubs.aapl_equity_contract_details(),
-    )
-
-    # Act
-    await instrument_provider.load_async(
-        IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ"),
-    )
-
-    # Assert
-    assert len(instrument_provider.get_all()) == 1
-
-
-@pytest.mark.skip(reason="Scope of test not clear!")
-@pytest.mark.asyncio()
-async def test_instrument_filter_callable_option_filter(mocker, instrument_provider):
-    # Arrange
-    mock_ib_contract_calls(
-        mocker=mocker,
-        instrument_provider=instrument_provider,
-        contract_details=IBTestContractStubs.tsla_option_contract_details(),
-    )
-
-    # Act
-    new_cb = "tests.integration_tests.adapters.interactive_brokers.test_kit:filter_out_options"
-    instrument_provider.config = msgspec.structs.replace(
-        instrument_provider.config,
-        filter_callable=new_cb,
-    )
-    await instrument_provider.load_async(instrument_id=None)
-    option_instruments = instrument_provider.get_all()
-
-    # Assert
-    assert len(option_instruments) == 0
 
 
 @pytest.mark.asyncio()

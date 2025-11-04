@@ -22,7 +22,7 @@ from py_clob_client.client import ClobClient
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.gamma_markets import list_markets
 from nautilus_trader.adapters.polymarket.common.gamma_markets import normalize_gamma_market_to_clob_format
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.common.component import LiveClock
@@ -264,7 +264,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         token_id: str,
         outcome: str,
     ) -> BinaryOption:
-        instrument = parse_instrument(
+        instrument = parse_polymarket_instrument(
             market_info=market_info,
             token_id=token_id,
             outcome=outcome,

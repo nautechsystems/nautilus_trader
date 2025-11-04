@@ -18,7 +18,7 @@ use std::hint::black_box;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::identifiers::InstrumentId;
-use nautilus_okx::websocket::{messages::OKXWebSocketEvent, parse::parse_trade_msg_vec};
+use nautilus_okx::websocket::{messages::OKXWsMessage, parse::parse_trade_msg_vec};
 use serde_json::from_str;
 
 const TRADES: &str = include_str!("../test_data/ws_trades.json");
@@ -26,9 +26,9 @@ const TRADES: &str = include_str!("../test_data/ws_trades.json");
 fn bench_trades(c: &mut Criterion) {
     c.bench_function("parse_trades", |b| {
         b.iter_batched(
-            || from_str::<OKXWebSocketEvent>(TRADES).expect("trades event"),
+            || from_str::<OKXWsMessage>(TRADES).expect("trades event"),
             |event| match event {
-                OKXWebSocketEvent::Data { data, .. } => {
+                OKXWsMessage::Data { data, .. } => {
                     let instrument_id = InstrumentId::from("BTC-USDT.OKX");
                     let parsed =
                         parse_trade_msg_vec(data, &instrument_id, 1, 8, UnixNanos::default())

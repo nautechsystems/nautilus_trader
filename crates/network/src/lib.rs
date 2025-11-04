@@ -66,7 +66,6 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod backoff;
-pub mod fix;
 pub mod http;
 pub mod mode;
 pub mod net;

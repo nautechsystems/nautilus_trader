@@ -485,8 +485,9 @@ All data loader methods are **asynchronous** and must be called with `await`.
 ```python
 import asyncio
 from datetime import UTC, datetime, timedelta
+
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket import parse_polymarket_instrument
 from nautilus_trader.core.datetime import millis_to_nanos
 
 async def load_market_data():
@@ -498,7 +499,7 @@ async def load_market_data():
     token = market_details["tokens"][0]
     token_id = token["token_id"]
 
-    instrument = parse_instrument(
+    instrument = parse_polymarket_instrument(
         market_info=market_details,
         token_id=token_id,
         outcome=token["outcome"],
@@ -607,19 +608,20 @@ A complete working example is available at `examples/backtest/polymarket_simple_
 
 ```python
 import asyncio
-from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+
+import pandas as pd
 
 from nautilus_trader.adapters.polymarket import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.model.currencies import USDC_POS
-from nautilus_trader.model.enums import AccountType, BookType, OmsType
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 
@@ -629,8 +631,8 @@ async def run_backtest():
     instrument = loader.instrument
 
     # Fetch historical data
-    end = pd.Timestamp.now(tz="UTC")
-    start = end - pd.Timedelta(hours=24)
+    start = pd.Timestamp("2025-10-30", tz="UTC")
+    end = pd.Timestamp("2025-10-31", tz="UTC")
 
     deltas = await loader.load_orderbook_snapshots(
         start=start,

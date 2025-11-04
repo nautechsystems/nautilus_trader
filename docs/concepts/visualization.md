@@ -99,16 +99,17 @@ When `currency` is `None` (default), all currencies are displayed in the tearshe
 
 The tearsheet can include any combination of the following built-in charts:
 
-| Chart Name         | Type      | Description                                              |
-|--------------------|-----------|----------------------------------------------------------|
-| `run_info`         | Table     | Run metadata and account balances.                       |
-| `stats_table`      | Table     | Performance statistics (PnL, returns, general metrics).  |
-| `equity`           | Line      | Cumulative returns over time with optional benchmark.    |
-| `drawdown`         | Area      | Drawdown percentage from peak equity.                    |
-| `monthly_returns`  | Heatmap   | Monthly return percentages organized by year.            |
-| `distribution`     | Histogram | Distribution of individual return values.                |
-| `rolling_sharpe`   | Line      | 60-day rolling Sharpe ratio.                             |
-| `yearly_returns`   | Bar       | Annual return percentages.                               |
+| Chart Name         | Type         | Description                                              |
+|--------------------|--------------|----------------------------------------------------------|
+| `run_info`         | Table        | Run metadata and account balances.                       |
+| `stats_table`      | Table        | Performance statistics (PnL, returns, general metrics).  |
+| `equity`           | Line         | Cumulative returns over time with optional benchmark.    |
+| `drawdown`         | Area         | Drawdown percentage from peak equity.                    |
+| `monthly_returns`  | Heatmap      | Monthly return percentages organized by year.            |
+| `distribution`     | Histogram    | Distribution of individual return values.                |
+| `rolling_sharpe`   | Line         | 60-day rolling Sharpe ratio.                             |
+| `yearly_returns`   | Bar          | Annual return percentages.                               |
+| `bars_with_fills`  | Candlestick  | Price bars (OHLC) with order fills overlaid as bars.     |
 
 All charts are registered in the chart registry and can be referenced by name in
 `TearsheetConfig.charts`.
@@ -234,16 +235,17 @@ config = TearsheetConfig(
 
 ### Configuration parameters
 
-| Parameter           | Type            | Default                           | Description                                   |
-|---------------------|-----------------|-----------------------------------|-----------------------------------------------|
-| `charts`            | `list[str]`     | All built-in charts               | List of chart names to include.               |
-| `theme`             | `str`           | `"plotly_white"`                  | Theme name for styling.                       |
-| `layout`            | `GridLayout`    | `None` (auto-calculated)          | Custom subplot grid layout.                   |
-| `title`             | `str`           | Auto-generated with strategy/time | Tearsheet title.                              |
-| `include_benchmark` | `bool`          | `True`                            | Show benchmark when provided.                 |
-| `benchmark_name`    | `str`           | `"Benchmark"`                     | Display name for benchmark.                   |
-| `height`            | `int`           | `1500`                            | Total height in pixels.                       |
-| `show_logo`         | `bool`          | `True`                            | Display NautilusTrader logo (not implemented).|
+| Parameter           | Type                          | Default                           | Description                                   |
+|---------------------|-------------------------------|-----------------------------------|-----------------------------------------------|
+| `charts`            | `list[str]`                   | All built-in charts               | List of chart names to include.               |
+| `theme`             | `str`                         | `"plotly_white"`                  | Theme name for styling.                       |
+| `layout`            | `GridLayout`                  | `None` (auto-calculated)          | Custom subplot grid layout.                   |
+| `title`             | `str`                         | Auto-generated with strategy/time | Tearsheet title.                              |
+| `include_benchmark` | `bool`                        | `True`                            | Show benchmark when provided.                 |
+| `benchmark_name`    | `str`                         | `"Benchmark"`                     | Display name for benchmark.                   |
+| `height`            | `int`                         | `1500`                            | Total height in pixels.                       |
+| `show_logo`         | `bool`                        | `True`                            | Display NautilusTrader logo (not implemented).|
+| `chart_args`        | `dict[str, dict[str, Any]]`   | `None`                            | Arguments for specific charts (e.g., `bar_type` for `bars_with_fills`).|
 
 When `layout` is `None`, the grid dimensions and row heights are automatically calculated
 based on the number of charts. For 8 charts (the default), a 4×2 grid is used with
@@ -462,8 +464,47 @@ create_tearsheet_from_stats(
 
 Provides fine-grained control over data inputs and allows analysis of precomputed statistics.
 
-Individual chart functions (`create_equity_curve`, `create_drawdown_chart`, etc.) offer
-the most control for creating standalone visualizations outside the tearsheet framework.
+### Standalone chart functions
+
+Individual chart functions can be used independently to generate single-purpose HTML visualizations
+or Plotly figures for custom analysis workflows.
+
+#### Price bars with fills
+
+The `create_bars_with_fills` function generates a candlestick chart with order fills overlaid,
+useful for visually analyzing strategy execution within price action. It can be used standalone
+or included in tearsheets:
+
+```python
+from nautilus_trader.analysis.tearsheet import create_bars_with_fills
+from nautilus_trader.model.data import BarType
+
+# Standalone usage
+bar_type = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
+fig = create_bars_with_fills(
+    engine=engine,
+    bar_type=bar_type,
+    title="ES Futures - Entry/Exit Analysis",
+)
+fig.show()  # Display in Jupyter
+fig.write_html("bars_with_fills.html")  # Or save to file
+
+# Include in tearsheet
+config = TearsheetConfig(
+    charts=["stats_table", "equity", "bars_with_fills"],
+    chart_args={
+        "bars_with_fills": {"bar_type": "ESM4.XCME-1-MINUTE-LAST-EXTERNAL"},
+    },
+)
+create_tearsheet(engine=engine, config=config)
+```
+
+The visualization shows candlesticks for OHLC price action with vertical bars representing order fills
+(colored by buy/sell side). The `chart_args` parameter in `TearsheetConfig` allows passing custom
+arguments to charts that require additional configuration beyond standard tearsheet data.
+
+Other individual chart functions include `create_equity_curve`, `create_drawdown_chart`,
+`create_monthly_returns_heatmap`, and more. See the API reference for the complete list.
 
 ## Related guides
 

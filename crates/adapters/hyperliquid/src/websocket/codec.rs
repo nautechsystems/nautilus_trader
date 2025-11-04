@@ -21,10 +21,57 @@ use ustr::Ustr;
 
 use crate::{
     common::enums::HyperliquidBarInterval::{self, OneMinute},
-    websocket::messages::{
-        HyperliquidWsMessage, HyperliquidWsRequest, PostRequest, SubscriptionRequest, WsLevelData,
+    websocket::{
+        HyperliquidWsError,
+        messages::{
+            HyperliquidWsMessage, HyperliquidWsRequest, PostRequest, SubscriptionRequest,
+            WsLevelData,
+        },
     },
 };
+
+/// Codec for encoding and decoding Hyperliquid WebSocket messages.
+///
+/// This struct provides methods to validate URLs and serialize/deserialize messages
+/// according to the Hyperliquid WebSocket protocol.
+#[derive(Debug, Default)]
+pub struct HyperliquidCodec;
+
+impl HyperliquidCodec {
+    /// Creates a new Hyperliquid codec instance.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Validates that a URL is a proper WebSocket URL.
+    pub fn validate_url(url: &str) -> Result<(), HyperliquidWsError> {
+        if url.starts_with("ws://") || url.starts_with("wss://") {
+            Ok(())
+        } else {
+            Err(HyperliquidWsError::UrlParsing(format!(
+                "URL must start with ws:// or wss://, was: {}",
+                url
+            )))
+        }
+    }
+
+    /// Encodes a WebSocket request to JSON bytes.
+    pub fn encode(&self, request: &HyperliquidWsRequest) -> Result<Vec<u8>, HyperliquidWsError> {
+        serde_json::to_vec(request).map_err(|e| {
+            HyperliquidWsError::MessageSerialization(format!("Failed to serialize request: {e}"))
+        })
+    }
+
+    /// Decodes JSON bytes to a WebSocket message.
+    pub fn decode(&self, data: &[u8]) -> Result<HyperliquidWsMessage, HyperliquidWsError> {
+        serde_json::from_slice(data).map_err(|e| {
+            HyperliquidWsError::MessageDeserialization(format!(
+                "Failed to deserialize message: {}",
+                e
+            ))
+        })
+    }
+}
 
 /// Canonical outbound (mirrors OKX/BitMEX "op + args" pattern).
 #[derive(Debug, Clone, Serialize, Deserialize)]

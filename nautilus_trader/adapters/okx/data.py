@@ -431,9 +431,13 @@ class OKXDataClient(LiveMarketDataClient):
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
-        instrument: Instrument | None = self._instrument_provider.find(request.instrument_id)
-        if instrument is None:
-            self._log.error(f"Cannot find instrument for {request.instrument_id}")
+        try:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+            pyo3_instrument = await self._http_client.request_instrument(pyo3_instrument_id)
+            self._handle_instrument_update(pyo3_instrument)  # type: ignore[arg-type]
+            instrument = transform_instrument_from_pyo3(pyo3_instrument)
+        except Exception as e:
+            self._log.error(f"Failed to request instrument {request.instrument_id}: {e}")
             return
 
         self._handle_instrument(
@@ -443,6 +447,24 @@ class OKXDataClient(LiveMarketDataClient):
             request.end,
             request.params,
         )
+
+    async def _fetch_instruments_for_type(
+        self,
+        inst_type: nautilus_pyo3.OKXInstrumentType,
+        family: str | None = None,
+    ) -> list[Instrument]:
+        try:
+            pyo3_instruments = await self._http_client.request_instruments(inst_type, family)
+            instruments = []
+            for pyo3_instrument in pyo3_instruments:
+                self._handle_instrument_update(pyo3_instrument)  # type: ignore[arg-type]
+                instrument = transform_instrument_from_pyo3(pyo3_instrument)
+                instruments.append(instrument)
+            return instruments
+        except Exception as e:
+            family_str = f" family {family}" if family else ""
+            self._log.error(f"Failed to fetch instruments for {inst_type}{family_str}: {e}")
+            return []
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         if request.start is not None:
@@ -455,11 +477,37 @@ class OKXDataClient(LiveMarketDataClient):
                 f"Requesting instruments for {request.venue} with specified `end` which has no effect",
             )
 
-        instruments = self._instrument_provider.get_all()
+        all_instruments: list[Instrument] = []
+
+        instrument_types = (
+            self._instrument_provider.instrument_types
+            if self._instrument_provider.instrument_types
+            else [nautilus_pyo3.OKXInstrumentType.SPOT]
+        )
+        instrument_families = list(self._instrument_provider.instrument_families or [])
+
+        for inst_type in instrument_types:
+            supports_family = inst_type in (
+                nautilus_pyo3.OKXInstrumentType.FUTURES,
+                nautilus_pyo3.OKXInstrumentType.SWAP,
+                nautilus_pyo3.OKXInstrumentType.OPTION,
+            )
+
+            if instrument_families and supports_family:
+                for family in instrument_families:
+                    instruments = await self._fetch_instruments_for_type(inst_type, family)
+                    all_instruments.extend(instruments)
+            elif inst_type == nautilus_pyo3.OKXInstrumentType.OPTION:
+                self._log.warning(
+                    "Skipping OPTION type: instrument_families required but not configured",
+                )
+            else:
+                instruments = await self._fetch_instruments_for_type(inst_type)
+                all_instruments.extend(instruments)
 
         self._handle_instruments(
             request.venue,
-            instruments,
+            all_instruments,
             request.id,
             request.start,
             request.end,
@@ -467,14 +515,14 @@ class OKXDataClient(LiveMarketDataClient):
         )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        self._log.error(
+        self._log.warning(
             "Cannot request historical quotes: not published by OKX. Subscribe to "
-            "quotes or L1_MBP order book.",
+            "quotes or L1_MBP order book",
         )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         if request.start is None or request.end is None:
-            self._log.error(
+            self._log.warning(
                 f"Cannot request historical trades for {request.instrument_id}: "
                 "both start and end times are required",
             )

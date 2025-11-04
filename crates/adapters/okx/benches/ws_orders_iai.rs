@@ -22,7 +22,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_okx::websocket::{
-    messages::{OKXOrderMsg, OKXWebSocketEvent},
+    messages::{OKXOrderMsg, OKXWsMessage},
     parse::parse_order_msg,
 };
 use serde_json::{from_str, from_value};
@@ -31,9 +31,9 @@ use ustr::Ustr;
 const ORDERS: &str = include_str!("../test_data/ws_orders.json");
 
 fn build_context() -> (Vec<OKXOrderMsg>, AHashMap<Ustr, InstrumentAny>, AccountId) {
-    let event: OKXWebSocketEvent = from_str(ORDERS).expect("orders event");
+    let event: OKXWsMessage = from_str(ORDERS).expect("orders event");
     let data = match event {
-        OKXWebSocketEvent::Data { data, .. } => data,
+        OKXWsMessage::Data { data, .. } => data,
         _ => unreachable!(),
     };
     let orders: Vec<OKXOrderMsg> = from_value(data).expect("orders payload");

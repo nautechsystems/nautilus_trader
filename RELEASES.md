@@ -10,6 +10,7 @@ This release adds support for Python 3.14 with the following limitations:
 ### Enhancements
 - Added support for Python 3.14
 - Added initial backtest visualization tearsheets with plotly
+- Added `create_bars_with_fills` to Tearsheet (#3137), thanks @faysou
 - Added `proxy_url` support for HTTP clients
 - Added `CAGR` portfolio statistic
 - Added `CalmarRatio` portfolio statistic
@@ -22,6 +23,7 @@ This release adds support for Python 3.14 with the following limitations:
 ### Breaking Changes
 - Dropped support for Python 3.11
 - Removed `use_ws_trade_api` config option from Bybit execution client (using WebSocket trade API only)
+- Renamed `parse_instrument` to `parse_polymarket_instrument` in Polymarket adapter for clarity
 - dYdX adapter extras (`[dydx]`) unavailable on Python 3.14 due to upstream `coincurve` compatibility (available on Python 3.12-3.13)
 - Interactive Brokers adapter extras (`[ib]`) unavailable on Python 3.14 due to upstream `nautilus-ibapi` compatibility (available on Python 3.12-3.13)
 
@@ -35,6 +37,7 @@ TBD
 - Fixed Binance instrument info dict JSON serialization (#3128), thanks for reporting @woung717
 - Fixed Interactive Brokers quote tick subscriptions to use tick-by-tick data (#3135), thanks for reporting @genliusrocks
 - Fixed OKX pre-open instrument parsing and standardize enum usage (#3134), thanks for reporting @3wtz
+- Fixed OKX request_bars pagination halting prematurely in Range mode (#3145), thanks for reporting @3wtz
 - Fixed Polymarket maker fill order side inversion (#3126), thanks for reporting @santivazq
 - Fixed Polymarket instrument provider market filtering (#3133), thanks @MisterMM23
 
@@ -42,10 +45,13 @@ TBD
 - Added BitMEX submit broadcaster
 - Added non-mutating swap quote simulation for Pool tickmap profiling (#3123), thanks @filipmacek
 - Ported Bybit integration adapter to Rust
+- Refactored network crate to modularize `http`, `socket`, and `websocket`
 - Refactored reading of feather files in catalog (#3114), thanks @faysou
+- Optimized execution reconciliation to avoid quadratic complexity (#3140), thanks @DeirhX
 - Repaired OKX spot margin position reports for borrowing, thanks @sunlei
 - Repaired Bybit docs links in comment (#3125), thanks @sunlei
 - Repaired Bybit HTTP order place (#3127), thanks @sunlei
+- Repaired Bybit `AccountPosition` message parsing (#3147), thanks @sunlei
 - Upgraded implied-vol crate (#3115), thanks @faysou
 - Upgraded Rust (MSRV) to 1.91.0
 - Upgraded `pyo3` crate to v0.27.0
