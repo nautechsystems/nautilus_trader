@@ -15,7 +15,16 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod enums;
+
 use pyo3::prelude::*;
+
+use crate::http::models::{
+    DydxCandleResolution, DydxFillType, DydxFundingOrderSide, DydxLiquidity, DydxMarketStatus,
+    DydxMarketType, DydxOrderSide, DydxOrderStatus, DydxOrderType, DydxPositionSide,
+    DydxPositionStatus, DydxTimeInForce, DydxTradeType, DydxTradingRewardAggregationPeriod,
+    DydxTransferType,
+};
 
 /// Loaded as `nautilus_pyo3.dydx`.
 ///
@@ -25,5 +34,35 @@ use pyo3::prelude::*;
 #[pymodule]
 pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__package__", "nautilus_trader.core.nautilus_pyo3.dydx")?;
+
+    // Market data enums
+    m.add_class::<DydxMarketStatus>()?;
+    m.add_class::<DydxTradeType>()?;
+    m.add_class::<DydxCandleResolution>()?;
+
+    // Position enums
+    m.add_class::<DydxPositionStatus>()?;
+    m.add_class::<DydxPositionSide>()?;
+
+    // Order enums
+    m.add_class::<DydxOrderSide>()?;
+    m.add_class::<DydxOrderType>()?;
+    m.add_class::<DydxOrderStatus>()?;
+    m.add_class::<DydxTimeInForce>()?;
+
+    // Fill enums
+    m.add_class::<DydxLiquidity>()?;
+    m.add_class::<DydxFillType>()?;
+    m.add_class::<DydxMarketType>()?;
+
+    // Transfer enums
+    m.add_class::<DydxTransferType>()?;
+
+    // Funding enums
+    m.add_class::<DydxFundingOrderSide>()?;
+
+    // Rewards enums
+    m.add_class::<DydxTradingRewardAggregationPeriod>()?;
+
     Ok(())
 }

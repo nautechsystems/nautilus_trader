@@ -27,6 +27,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use strum::{AsRefStr, Display, EnumIter, EnumString};
 use ustr::Ustr;
 
 // ================================================================================================
@@ -105,8 +106,26 @@ pub struct DydxPerpetualMarket {
 /// # References
 ///
 /// - <https://docs.dydx.exchange/api_integration-indexer/indexer_api#perpetualmarketresponseobject>
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxMarketStatus {
     /// Market is active and accepting all order types.
     Active,
@@ -189,8 +208,26 @@ pub struct DydxTrade {
 /// # References
 ///
 /// - <https://docs.dydx.exchange/api_integration-indexer/indexer_api#traderesponseobject>
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxTradeType {
     /// Normal limit order fill.
     Limit,
@@ -251,7 +288,25 @@ pub struct DydxCandle {
 /// # References
 ///
 /// - <https://docs.dydx.exchange/api_integration-indexer/indexer_api#candleresolution>
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxCandleResolution {
     /// 1 minute candle.
     #[serde(rename = "1MIN")]
@@ -374,8 +429,26 @@ pub struct DydxAssetPosition {
 }
 
 /// Position status enumeration.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxPositionStatus {
     /// Position is currently open.
     Open,
@@ -384,8 +457,26 @@ pub enum DydxPositionStatus {
 }
 
 /// Position side enumeration.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxPositionSide {
     /// Long position (or positive balance for assets).
     Long,
@@ -465,8 +556,26 @@ pub struct DydxOrder {
 }
 
 /// Order side enumeration.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxOrderSide {
     /// Buy order.
     Buy,
@@ -479,8 +588,26 @@ pub enum DydxOrderSide {
 /// # References
 ///
 /// - <https://docs.dydx.exchange/api_integration-indexer/indexer_api#orderresponseobject>
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxOrderType {
     /// Limit order.
     Limit,
@@ -501,8 +628,26 @@ pub enum DydxOrderType {
 /// # References
 ///
 /// - <https://docs.dydx.exchange/api_integration-indexer/indexer_api#orderresponseobject>
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxOrderStatus {
     /// Order is open and active.
     Open,
@@ -521,8 +666,26 @@ pub enum DydxOrderStatus {
 /// # References
 ///
 /// - <https://docs.dydx.exchange/types/time_in_force>
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxTimeInForce {
     /// Good-til-time: order remains active until expiry or filled.
     Gtt,
@@ -586,8 +749,26 @@ pub struct DydxFill {
 }
 
 /// Liquidity type enumeration.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxLiquidity {
     /// Order took liquidity from the book.
     Taker,
@@ -602,8 +783,26 @@ pub enum DydxLiquidity {
 /// # References
 ///
 /// - <https://docs.dydx.exchange/api_integration-indexer/indexer_api#fillresponseobject>
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxFillType {
     /// Normal limit order fill.
     Limit,
@@ -618,8 +817,26 @@ pub enum DydxFillType {
 }
 
 /// Market type enumeration.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxMarketType {
     /// Perpetual futures market.
     Perpetual,
@@ -773,8 +990,26 @@ pub struct DydxAccountWithParent {
 /// # References
 ///
 /// - <https://docs.dydx.exchange/api_integration-indexer/indexer_api#transfertype>
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxTransferType {
     /// Transfer into the protocol.
     TransferIn,
@@ -840,8 +1075,26 @@ pub struct DydxFundingPayment {
 }
 
 /// Funding order side enumeration.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxFundingOrderSide {
     /// Long position.
     Long,
@@ -945,8 +1198,26 @@ pub struct DydxHistoricalTradingRewardAggregation {
 }
 
 /// Trading reward aggregation period enumeration.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxTradingRewardAggregationPeriod {
     /// Daily aggregation.
     Daily,
