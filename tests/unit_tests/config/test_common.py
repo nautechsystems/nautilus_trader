@@ -141,6 +141,7 @@ def test_json_primitives() -> None:
         "filters": None,
         "filter_callable": None,
         "log_warnings": True,
+        "use_gamma_markets": False,
     }
 
 

@@ -227,7 +227,7 @@ def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[
         # Order book and trading settings
         "enable_order_book": gamma_market.get("enableOrderBook", True),
         "minimum_tick_size": gamma_market.get("orderPriceMinTickSize", 0.001),
-        "minimum_order_size": gamma_market.get("orderMinSize"),
+        "minimum_order_size": gamma_market.get("orderMinSize", 5),
         "accepting_orders": gamma_market.get("acceptingOrders", True),
         "accepting_order_timestamp": gamma_market.get("acceptingOrdersTimestamp"),
         "seconds_delay": gamma_market.get("secondsDelay", 0),
