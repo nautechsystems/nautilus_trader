@@ -1124,12 +1124,12 @@ mod tests {
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id.symbol.as_str(), "ETHUSDT-LINEAR");
         assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
-        assert_eq!(report.quantity, instrument.make_qty(2.5, None));
+        assert_eq!(report.quantity, instrument.make_qty(0.01, None));
         assert_eq!(
             report.avg_px_open,
-            Some(Decimal::try_from(2450.75).unwrap())
+            Some(Decimal::try_from(3641.075).unwrap())
         );
-        assert_eq!(report.ts_last, UnixNanos::new(1_697_682_417_038_000_000));
+        assert_eq!(report.ts_last, UnixNanos::new(1_762_199_125_472_000_000));
         assert_eq!(report.ts_init, TS);
     }
 
