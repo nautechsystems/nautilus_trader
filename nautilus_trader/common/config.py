@@ -429,6 +429,10 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         whether the instrument should be loaded
     log_warnings : bool, default True
         If parser warnings should be logged.
+    use_gamma_markets : bool, default False
+        Determines which API to use for loading market data:
+        - True: Gamma Markets API (experimental) - faster with server-side filtering, but provides less detailed data
+        - False: CLOB API (stable, default) - complete data, but slower due to sequential fetching
 
     """
 
@@ -448,7 +452,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
     filters: dict[str, Any] | None = None
     filter_callable: str | None = None
     log_warnings: bool = True
-    use_gamma_markets: bool = False  # If True, use Gamma Markets API to get instruments. This is much faster, but contains less data about the instruments.
+    use_gamma_markets: bool = False  
 
 
 class OrderEmulatorConfig(NautilusConfig, frozen=True):
