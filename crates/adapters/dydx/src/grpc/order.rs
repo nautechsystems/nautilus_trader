@@ -24,11 +24,15 @@
 //! See [dYdX order types](https://help.dydx.trade/en/articles/166985-short-term-vs-long-term-order-types).
 
 use chrono::{DateTime, Utc};
-use dydx_proto::dydxprotocol::clob::{
-    Order, OrderId,
-    order::{ConditionType, Side as OrderSide, TimeInForce as OrderTimeInForce},
-};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
+
+use crate::proto::dydxprotocol::{
+    clob::{
+        Order, OrderId,
+        order::{ConditionType, GoodTilOneof, Side as OrderSide, TimeInForce as OrderTimeInForce},
+    },
+    subaccounts::SubaccountId,
+};
 
 /// Maximum short-term order lifetime in blocks.
 ///
@@ -355,7 +359,7 @@ impl OrderBuilder {
 
         // Build order ID
         let order_id = Some(OrderId {
-            subaccount_id: Some(dydx_proto::dydxprotocol::subaccounts::SubaccountId {
+            subaccount_id: Some(SubaccountId {
                 owner: self.subaccount_owner.clone(),
                 number: self.subaccount_number,
             }),
@@ -371,14 +375,10 @@ impl OrderBuilder {
         // Set good til oneof
         let good_til_oneof = if let Some(until) = self.until {
             match until {
-                OrderGoodUntil::Block(height) => {
-                    Some(dydx_proto::dydxprotocol::clob::order::GoodTilOneof::GoodTilBlock(height))
+                OrderGoodUntil::Block(height) => Some(GoodTilOneof::GoodTilBlock(height)),
+                OrderGoodUntil::Time(time) => {
+                    Some(GoodTilOneof::GoodTilBlockTime(time.timestamp().try_into()?))
                 }
-                OrderGoodUntil::Time(time) => Some(
-                    dydx_proto::dydxprotocol::clob::order::GoodTilOneof::GoodTilBlockTime(
-                        time.timestamp().try_into()?,
-                    ),
-                ),
             }
         } else {
             None

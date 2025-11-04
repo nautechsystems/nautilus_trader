@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Re-exports of dYdX Protocol Buffer definitions.
+//! Protocol Buffer definitions for dYdX v4.
 //!
-//! This module provides convenient re-exports of types from the `dydx-proto` crate,
-//! organized by their proto package structure.
-
-/// Re-export the entire dydx-proto crate for full access to all types.
-pub use dydx_proto::*;
+//! This module will contain generated protobuf code for the dYdX protocol.
+//! Generated files will be included here once proto compilation is set up.
