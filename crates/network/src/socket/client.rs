@@ -242,6 +242,9 @@ impl SocketClientInner {
         match tcp_result {
             Ok(stream) => {
                 tracing::debug!("TCP connection established to {socket_addr}, proceeding with TLS");
+                if let Err(error) = stream.set_nodelay(true) {
+                    tracing::warn!(?error, "Failed to enable TCP_NODELAY for socket client");
+                }
                 let request = request_url.into_client_request()?;
                 tcp_tls(&request, mode, stream, connector)
                     .await

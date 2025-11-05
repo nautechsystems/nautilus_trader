@@ -39,7 +39,7 @@ use tokio_tungstenite::MaybeTlsStream;
 #[cfg(feature = "turmoil")]
 use tokio_tungstenite::client_async;
 #[cfg(not(feature = "turmoil"))]
-use tokio_tungstenite::connect_async;
+use tokio_tungstenite::connect_async_with_config;
 use tokio_tungstenite::tungstenite::{
     Error, Message, client::IntoClientRequest, http::HeaderValue,
 };
@@ -221,7 +221,7 @@ impl WebSocketClientInner {
     }
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
-    /// Production version that uses `connect_async` convenience helper.
+    /// Production version that uses `connect_async_with_config` convenience helper.
     ///
     /// # Errors
     ///
@@ -246,7 +246,9 @@ impl WebSocketClientInner {
             req_headers.insert(header_name, header_value);
         }
 
-        connect_async(request).await.map(|resp| resp.0.split())
+        connect_async_with_config(request, None, true)
+            .await
+            .map(|resp| resp.0.split())
     }
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
@@ -297,6 +299,9 @@ impl WebSocketClientInner {
         // Use the connector to get a turmoil-compatible stream
         let connector = crate::net::RealTcpConnector;
         let tcp_stream = connector.connect(&addr).await?;
+        if let Err(error) = tcp_stream.set_nodelay(true) {
+            tracing::warn!(?error, "Failed to enable TCP_NODELAY for turmoil connector");
+        }
 
         // Wrap stream appropriately based on scheme
         let maybe_tls_stream = if scheme == "wss" {

@@ -75,6 +75,7 @@ impl HttpClient {
         }
 
         let mut client_builder = reqwest::Client::builder().default_headers(header_map);
+        client_builder = client_builder.tcp_nodelay(true);
 
         if let Some(timeout_secs) = timeout_secs {
             client_builder = client_builder.timeout(Duration::from_secs(timeout_secs));
