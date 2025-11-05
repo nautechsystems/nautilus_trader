@@ -79,8 +79,8 @@ impl DydxWebSocketClient {
     ///
     /// # Arguments
     ///
-    /// * `url` - The WebSocket URL (e.g., wss://indexer.dydx.trade/v4/ws)
-    /// * `heartbeat` - Optional heartbeat interval in seconds
+    /// * `url` - The WebSocket URL (e.g., wss://indexer.dydx.trade/v4/ws).
+    /// * `heartbeat` - Optional heartbeat interval in seconds.
     #[must_use]
     pub fn new_public(url: String, _heartbeat: Option<u64>) -> Self {
         Self {
@@ -97,11 +97,17 @@ impl DydxWebSocketClient {
     ///
     /// # Arguments
     ///
-    /// * `url` - The WebSocket URL
-    /// * `credential` - dYdX wallet credential (only address is used for subscriptions)
-    /// * `heartbeat` - Optional heartbeat interval in seconds
+    /// * `url` - The WebSocket URL.
+    /// * `credential` - The credential containing wallet information.
+    /// * `account_id` - The account ID for account message parsing.
+    /// * `heartbeat` - Optional heartbeat interval in seconds.
     #[must_use]
-    pub fn new_private(url: String, credential: DydxCredential, _heartbeat: Option<u64>) -> Self {
+    pub fn new_private(
+        url: String,
+        credential: DydxCredential,
+        _account_id: AccountId,
+        _heartbeat: Option<u64>,
+    ) -> Self {
         Self {
             url,
             credential: Some(credential),
@@ -227,8 +233,8 @@ impl DydxWebSocketClient {
     ///
     /// # Arguments
     ///
-    /// * `symbol` - The instrument symbol (e.g., "BTC-USD")
-    /// * `resolution` - The candle resolution (e.g., "1MIN", "5MINS", "1HOUR")
+    /// * `symbol` - The instrument symbol (e.g., "BTC-USD").
+    /// * `resolution` - The candle resolution (e.g., "1MIN", "5MINS", "1HOUR").
     ///
     /// # Errors
     ///
@@ -287,14 +293,13 @@ impl DydxWebSocketClient {
     ///
     /// # Arguments
     ///
-    /// * `address` - The wallet address
-    /// * `subaccount_number` - The subaccount number (0 for default subaccount)
+    /// * `address` - The wallet address.
+    /// * `subaccount_number` - The subaccount number (0 for default subaccount).
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - The client was not created with credentials
-    /// - The subscription request fails
+    /// Returns an error if the client was not created with credentials or if the
+    /// subscription request fails.
     ///
     /// # References
     ///
