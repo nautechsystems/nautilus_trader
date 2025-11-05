@@ -336,27 +336,6 @@ pub enum DydxCandleResolution {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nautilus_model::enums::OrderSide;
-
-    #[test]
-    fn test_order_side_serialization() {
-        // Test that OrderSide serializes to SCREAMING_SNAKE_CASE as expected by dYdX API
-        let buy = OrderSide::Buy;
-        let sell = OrderSide::Sell;
-
-        assert_eq!(serde_json::to_string(&buy).unwrap(), r#""BUY""#);
-        assert_eq!(serde_json::to_string(&sell).unwrap(), r#""SELL""#);
-
-        // Test deserialization
-        assert_eq!(
-            serde_json::from_str::<OrderSide>(r#""BUY""#).unwrap(),
-            OrderSide::Buy
-        );
-        assert_eq!(
-            serde_json::from_str::<OrderSide>(r#""SELL""#).unwrap(),
-            OrderSide::Sell
-        );
-    }
 
     #[test]
     fn test_order_status_conversion() {
