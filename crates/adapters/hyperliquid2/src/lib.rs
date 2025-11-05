@@ -13,20 +13,45 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) integration adapter.
-
-#![warn(rustc::all)]
-#![deny(unsafe_code)]
-#![deny(nonstandard_style)]
-#![deny(missing_debug_implementations)]
-// #![deny(clippy::missing_errors_doc)]
-// #![deny(clippy::missing_panics_doc)]
-#![deny(rustdoc::broken_intra_doc_links)]
+//! Nautilus Trader integration adapter for Hyperliquid cryptocurrency exchange.
+//!
+//! This adapter provides connectivity to Hyperliquid's perpetual futures trading platform,
+//! supporting both market data and order execution via HTTP REST API and WebSocket streams.
+//!
+//! # Features
+//!
+//! - **HTTP Client**: REST API for market data, account info, and order management
+//! - **WebSocket Client**: Real-time streaming of trades, order books, and user events
+//! - **Ethereum-style Authentication**: Uses ethers crate for wallet-based signing
+//! - **Type Conversions**: Parsing of Hyperliquid types to Nautilus instruments
+//! - **Python Bindings**: PyO3 integration for use in Nautilus Trader Python ecosystem
+//!
+//! # Example
+//!
+//! ```rust,no_run
+//! use nautilus_hyperliquid2::http::Hyperliquid2HttpClient;
+//!
+//! #[tokio::main]
+//! async fn main() -> anyhow::Result<()> {
+//!     // Create HTTP client
+//!     let client = Hyperliquid2HttpClient::new(None, None, false)?;
+//!
+//!     // Load instruments
+//!     let instruments = client.load_instruments().await?;
+//!     println!("Loaded {} instruments", instruments.len());
+//!
+//!     Ok(())
+//! }
+//! ```
 
 pub mod common;
-pub mod config;
 pub mod http;
 pub mod websocket;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+// Re-exports
+pub use common::*;
+pub use http::Hyperliquid2HttpClient;
+pub use websocket::Hyperliquid2WebSocketClient;

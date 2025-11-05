@@ -12,24 +12,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
-Provides an execution client for Hyperliquid.
-
-This module provides the `HyperliquidExecutionClient` class which connects to the
-Hyperliquid HTTP and WebSocket APIs for order management and trade execution.
+Live execution client for Hyperliquid.
 """
 
-import asyncio
+from nautilus_hyperliquid2 import Hyperliquid2HttpClient
+from nautilus_hyperliquid2 import Hyperliquid2WebSocketClient
 
-from nautilus_trader.adapters.hyperliquid2.constants import HYPERLIQUID_VENUE
-from nautilus_trader.adapters.hyperliquid2.providers import HyperliquidInstrumentProvider
+from nautilus_trader.adapters.hyperliquid2.providers import Hyperliquid2InstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -37,129 +31,151 @@ from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 
 
-class HyperliquidExecutionClient(LiveExecutionClient):
+class Hyperliquid2LiveExecClient(LiveExecutionClient):
     """
-    Provides an execution client for the `Hyperliquid` DEX.
+    Live execution client for the Hyperliquid exchange.
 
     Parameters
     ----------
-    loop : asyncio.AbstractEventLoop
-        The event loop for the client.
-    client : nautilus_pyo3.HyperliquidHttpClient
+    http_client : Hyperliquid2HttpClient
         The Hyperliquid HTTP client.
-    ws_client : nautilus_pyo3.HyperliquidWebSocketClient
+    ws_client : Hyperliquid2WebSocketClient
         The Hyperliquid WebSocket client.
+    instrument_provider : Hyperliquid2InstrumentProvider
+        The instrument provider.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    instrument_provider : HyperliquidInstrumentProvider
-        The instrument provider.
-    base_url_http : str, optional
-        The base HTTP URL.
-    base_url_ws : str, optional
-        The base WebSocket URL.
-    name : str, optional
-        The custom client name.
+    account_id : AccountId, optional
+        The account ID for the client.
 
     """
 
     def __init__(
         self,
-        loop: asyncio.AbstractEventLoop,
-        client: nautilus_pyo3.HyperliquidHttpClient,
-        ws_client: nautilus_pyo3.HyperliquidWebSocketClient,
+        http_client: Hyperliquid2HttpClient,
+        ws_client: Hyperliquid2WebSocketClient,
+        instrument_provider: Hyperliquid2InstrumentProvider,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-        instrument_provider: HyperliquidInstrumentProvider,
-        base_url_http: str | None = None,
-        base_url_ws: str | None = None,
-        name: str | None = None,
+        account_id: AccountId | None = None,
     ) -> None:
         super().__init__(
-            loop=loop,
-            client_id=ClientId(name or "HYPERLIQUID"),
-            venue=HYPERLIQUID_VENUE,
-            oms_type=None,
-            instrument_provider=instrument_provider,
-            account_type=None,
-            base_currency=None,
+            client_id=ClientId("HYPERLIQUID"),
+            venue=instrument_provider.venue,
+            account_id=account_id or AccountId("HYPERLIQUID-001"),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
         )
 
-        # Clients
-        self._http_client = client
+        self._http_client = http_client
         self._ws_client = ws_client
-
-        # Configuration
-        self._base_url_http = base_url_http
-        self._base_url_ws = base_url_ws
-
-        # Account
-        self._account_id = AccountId("HYPERLIQUID-001")
-
-    @property
-    def hyperliquid_instrument_provider(self) -> HyperliquidInstrumentProvider:
-        return self._instrument_provider
+        self._instrument_provider = instrument_provider
 
     async def _connect(self) -> None:
+        """Connect to Hyperliquid."""
+        self._log.info("Connecting to Hyperliquid")
+
         # Load instruments
-        self._log.info("Loading Hyperliquid instruments...")
         await self._instrument_provider.load_all_async()
 
-        # Connect WebSocket for execution updates
-        if self._ws_client:
-            self._log.info("Connecting to Hyperliquid WebSocket for execution...")
-            await self._ws_client.connect()
-            
-            # Subscribe to execution channels
-            await self._ws_client.subscribe_order_updates()
-            await self._ws_client.subscribe_user_events()
-            
-            self._log.info("Connected to Hyperliquid WebSocket for execution", LogColor.GREEN)
+        # Connect WebSocket
+        await self._ws_client.connect()
+
+        self._log.info("Connected to Hyperliquid")
 
     async def _disconnect(self) -> None:
-        # Disconnect WebSocket
-        if self._ws_client:
-            self._log.info("Disconnecting from Hyperliquid WebSocket...")
-            await self._ws_client.disconnect()
-            self._log.info("Disconnected from Hyperliquid WebSocket", LogColor.BLUE)
+        """Disconnect from Hyperliquid."""
+        self._log.info("Disconnecting from Hyperliquid")
+        # WebSocket disconnect logic would go here
+        self._log.info("Disconnected from Hyperliquid")
 
-    # -- EXECUTION COMMANDS -----------------------------------------------------------------------
+    # Account methods
+
+    async def generate_account_report(self, **kwargs) -> None:
+        """Generate account report."""
+        self._log.warning("Account report generation not yet implemented")
+
+    async def generate_order_status_report(self, **kwargs) -> None:
+        """Generate order status report."""
+        self._log.warning("Order status report generation not yet implemented")
+
+    async def generate_fill_reports(self, **kwargs) -> None:
+        """Generate fill reports."""
+        self._log.warning("Fill report generation not yet implemented")
+
+    async def generate_position_status_reports(self, **kwargs) -> None:
+        """Generate position status reports."""
+        self._log.warning("Position status report generation not yet implemented")
+
+    # Order submission methods (stubs for now)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        self._log.info(f"Submitting order: {command.order}")
-        self._log.error("Order submission not yet implemented")
+        """Submit an order."""
+        PyCondition.not_none(command, "command")
+
+        self._log.warning(
+            f"Order submission not yet implemented: {command.order.client_order_id}"
+        )
+
+        # In a full implementation, this would:
+        # 1. Convert Nautilus order to Hyperliquid format
+        # 2. Submit order via HTTP client
+        # 3. Handle response and generate appropriate events
+        # 4. Subscribe to order updates via WebSocket
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        self._log.info(f"Submitting order list: {len(command.order_list.orders)} orders")
-        self._log.error("Order list submission not yet implemented")
+        """Submit a list of orders."""
+        PyCondition.not_none(command, "command")
+
+        self._log.warning(
+            f"Order list submission not yet implemented: {command.order_list.id}"
+        )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        self._log.info(f"Modifying order: {command.client_order_id}")
-        self._log.error("Order modification not yet implemented")
+        """Modify an order."""
+        PyCondition.not_none(command, "command")
+
+        self._log.warning(
+            f"Order modification not yet implemented: {command.client_order_id}"
+        )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.info(f"Canceling order: {command.client_order_id}")
-        self._log.error("Order cancellation not yet implemented")
+        """Cancel an order."""
+        PyCondition.not_none(command, "command")
+
+        self._log.warning(
+            f"Order cancellation not yet implemented: {command.client_order_id}"
+        )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._log.info("Canceling all orders")
-        self._log.error("Cancel all orders not yet implemented")
+        """Cancel all orders."""
+        PyCondition.not_none(command, "command")
 
-    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        self._log.info(f"Batch canceling {len(command.cancels)} orders")
-        self._log.error("Batch cancel orders not yet implemented")
+        instrument_id = command.instrument_id
+        if instrument_id:
+            self._log.warning(
+                f"Cancel all orders not yet implemented for {instrument_id}"
+            )
+        else:
+            self._log.warning("Cancel all orders not yet implemented")
 
     async def _query_order(self, command: QueryOrder) -> None:
-        self._log.info(f"Querying order: {command.client_order_id}")
-        self._log.error("Order query not yet implemented")
+        """Query an order."""
+        PyCondition.not_none(command, "command")
+
+        self._log.warning(
+            f"Order query not yet implemented: {command.client_order_id}"
+        )

@@ -1,118 +1,54 @@
 [package]
 name = "nautilus-hyperliquid2"
-readme = "README.md"
-publish = false  # Do not publish to crates.io yet
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
 authors.workspace = true
-license.workspace = true
-description.workspace = true
-categories.workspace = true
-keywords.workspace = true
+description = "Nautilus Trader integration adapter for Hyperliquid"
 documentation.workspace = true
-repository.workspace = true
-homepage.workspace = true
 
 [lib]
 name = "nautilus_hyperliquid2"
 crate-type = ["rlib", "cdylib"]
 
-[features]
-default = []
-extension-module = [
-  "nautilus-common/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-execution/extension-module",
-  "nautilus-model/extension-module",
-  "nautilus-network/extension-module",
-  "pyo3/extension-module",
-]
-python = [
-  "nautilus-common/python",
-  "nautilus-core/python",
-  "nautilus-execution/python",
-  "nautilus-model/python",
-  "nautilus-network/python",
-  "pyo3",
-  "pyo3-async-runtimes",
-]
+# Example binaries
+[[bin]]
+name = "hyperliquid2-http"
+path = "bin/http.rs"
 
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+[[bin]]
+name = "hyperliquid2-ws"
+path = "bin/ws.rs"
 
 [dependencies]
-nautilus-common = { workspace = true }
-rustls = { workspace = true }
+anyhow = { workspace = true }
+futures-util = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-serialization = { workspace = true }
-
-ahash = { workspace = true }
-anyhow = { workspace = true }
-async-stream = { workspace = true }
-base64 = { workspace = true }
-chrono = { workspace = true, features = ["serde"] }
-dashmap = { workspace = true }
-derive_builder = { workspace = true }
-futures-util = { workspace = true }
-indexmap = { workspace = true }
-log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
-reqwest = { workspace = true }
-aws-lc-rs = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_urlencoded = { workspace = true }
-strum = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-tungstenite = { workspace = true }
+tokio-tungstenite = { workspace = true, features = ["native-tls"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }  # Needed for example binaries
-ustr = { workspace = true }
-uuid = { workspace = true }
-
-# Hyperliquid-specific dependencies
-hyperliquid_rust_sdk = "0.6.0"
-hex = { workspace = true }
-k256 = "0.13"
-sha2 = "0.10"
-sha3 = "0.10"
+tracing-subscriber = { workspace = true }
 url = { workspace = true }
+ustr = { workspace = true }
+zeroize = { workspace = true }
+
+# Cryptography for signature (Hyperliquid uses eth-style signing)
+ethers = { version = "2.0", features = ["abigen"] }
+hex = "0.4"
+
+# Optional Python bindings
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-testkit = { workspace = true }
-criterion = { workspace = true }
-rstest = { workspace = true }
-tracing-test = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt"] }
 
-[[bin]]
-name = "hyperliquid-http-public"
-path = "bin/http-public.rs"
-
-[[bin]]
-name = "hyperliquid-http-private"
-path = "bin/http-private.rs"
-
-[[bin]]
-name = "hyperliquid-ws-data"
-path = "bin/ws-data.rs"
-
-[[bin]]
-name = "hyperliquid-ws-exec"
-path = "bin/ws-exec.rs"
-
-[[example]]
-name = "websocket_example"
-path = "examples/websocket_example.rs"
-
-[[example]]
-name = "trading_example"
-path = "examples/trading_example.rs"
+[features]
+default = []
+python = ["pyo3", "pyo3-async-runtimes", "nautilus-core/python", "nautilus-model/python"]
+extension-module = ["python", "pyo3/extension-module"]

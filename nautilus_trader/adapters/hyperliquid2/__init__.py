@@ -13,33 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Hyperliquid blockchain integration adapter.
+Hyperliquid adapter for Nautilus Trader.
 
-This subpackage provides an instrument provider, data and execution clients,
-configurations, and constants for connecting to and interacting with Hyperliquid's API.
-
-For convenience, the most commonly used symbols are re-exported at the
-subpackage's top level, so downstream code can simply import from
-``nautilus_trader.adapters.hyperliquid``.
-
+This adapter provides connectivity to the Hyperliquid cryptocurrency exchange,
+supporting perpetual futures trading with real-time market data and order execution.
 """
-from nautilus_trader.adapters.hyperliquid2.config import HyperliquidDataClientConfig
-from nautilus_trader.adapters.hyperliquid2.config import HyperliquidExecClientConfig
-from nautilus_trader.adapters.hyperliquid2.constants import HYPERLIQUID
-from nautilus_trader.adapters.hyperliquid2.constants import HYPERLIQUID_CLIENT_ID
-from nautilus_trader.adapters.hyperliquid2.constants import HYPERLIQUID_VENUE
-from nautilus_trader.adapters.hyperliquid2.factories import HyperliquidLiveDataClientFactory
-from nautilus_trader.adapters.hyperliquid2.factories import HyperliquidLiveExecClientFactory
-from nautilus_trader.adapters.hyperliquid2.providers import HyperliquidInstrumentProvider
+
+from nautilus_trader.adapters.hyperliquid2.config import Hyperliquid2DataClientConfig
+from nautilus_trader.adapters.hyperliquid2.config import Hyperliquid2ExecClientConfig
+from nautilus_trader.adapters.hyperliquid2.factories import Hyperliquid2LiveDataClientFactory
+from nautilus_trader.adapters.hyperliquid2.factories import Hyperliquid2LiveExecClientFactory
+from nautilus_trader.adapters.hyperliquid2.providers import Hyperliquid2InstrumentProvider
 
 
 __all__ = [
-    "HYPERLIQUID",
-    "HYPERLIQUID_CLIENT_ID", 
-    "HYPERLIQUID_VENUE",
-    "HyperliquidDataClientConfig",
-    "HyperliquidExecClientConfig",
-    "HyperliquidInstrumentProvider",
-    "HyperliquidLiveDataClientFactory",
-    "HyperliquidLiveExecClientFactory",
+    "Hyperliquid2DataClientConfig",
+    "Hyperliquid2ExecClientConfig",
+    "Hyperliquid2LiveDataClientFactory",
+    "Hyperliquid2LiveExecClientFactory",
+    "Hyperliquid2InstrumentProvider",
 ]

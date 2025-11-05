@@ -13,9 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common utilities and types for the Hyperliquid adapter.
+//! Common types and utilities for Hyperliquid adapter.
 
 pub mod consts;
-pub mod credentials;
+pub mod credential;
 pub mod enums;
-pub mod models;
+pub mod errors;
+pub mod parse;
+pub mod types;
+pub mod urls;
+
+// Re-exports
+pub use consts::*;
+pub use credential::HyperliquidCredentials;
+pub use enums::*;
+pub use errors::{HyperliquidHttpError, HyperliquidWebSocketError};
+pub use parse::*;
+pub use types::*;
+pub use urls::HyperliquidUrls;

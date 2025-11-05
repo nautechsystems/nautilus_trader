@@ -12,76 +12,59 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Configuration classes for the Hyperliquid adapter.
+"""
 
-from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
 
-class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
+class Hyperliquid2DataClientConfig(LiveDataClientConfig, frozen=True):
     """
-    Configuration for ``HyperliquidDataClient`` instances.
+    Configuration for ``Hyperliquid2LiveDataClient`` instances.
 
     Parameters
     ----------
-    private_key : str, default None
-        The Hyperliquid private key for wallet-based authentication.
-        If ``None`` then will source the `HYPERLIQUID_PRIVATE_KEY` environment variable.
-    wallet_address : str, default None
-        The Hyperliquid wallet address.
-        If ``None`` then will source the `HYPERLIQUID_WALLET_ADDRESS` environment variable.
-    base_url_http : str, default None
-        The base URL for Hyperliquid HTTP API.
-        If ``None`` then will use the default mainnet URL.
-    base_url_ws : str, default None
-        The base URL for Hyperliquid WebSocket API.
-        If ``None`` then will use the default mainnet URL.
+    private_key : str | None, optional
+        The Ethereum private key for authentication (hex string).
+        If ``None``, will try to load from environment variable HYPERLIQUID_PRIVATE_KEY.
+    http_base : str | None, optional
+        The base HTTP URL for the Hyperliquid API.
+        If ``None``, defaults to https://api.hyperliquid.xyz.
+    ws_base : str | None, optional
+        The base WebSocket URL for Hyperliquid streams.
+        If ``None``, defaults to wss://api.hyperliquid.xyz/ws.
     testnet : bool, default False
-        If the client should connect to testnet instead of mainnet.
-    http_timeout_secs : PositiveInt, default 60
-        The HTTP timeout in seconds for requests.
-    update_instruments_interval_mins : PositiveInt, default 60
-        The interval (minutes) between reloading instruments from the venue.
-
+        If True, connect to Hyperliquid testnet instead of mainnet.
     """
 
     private_key: str | None = None
-    wallet_address: str | None = None
-    base_url_http: str | None = None
-    base_url_ws: str | None = None
+    http_base: str | None = None
+    ws_base: str | None = None
     testnet: bool = False
-    http_timeout_secs: PositiveInt | None = 60
-    update_instruments_interval_mins: PositiveInt | None = 60
 
 
-class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
+class Hyperliquid2ExecClientConfig(LiveExecClientConfig, frozen=True):
     """
-    Configuration for ``HyperliquidExecutionClient`` instances.
+    Configuration for ``Hyperliquid2LiveExecClient`` instances.
 
     Parameters
     ----------
-    private_key : str, default None
-        The Hyperliquid private key for wallet-based authentication.
-        If ``None`` then will source the `HYPERLIQUID_PRIVATE_KEY` environment variable.
-    wallet_address : str, default None
-        The Hyperliquid wallet address.
-        If ``None`` then will source the `HYPERLIQUID_WALLET_ADDRESS` environment variable.
-    base_url_http : str, default None
-        The base URL for Hyperliquid HTTP API.
-        If ``None`` then will use the default mainnet URL.
-    base_url_ws : str, default None
-        The base URL for Hyperliquid WebSocket API.
-        If ``None`` then will use the default mainnet URL.
+    private_key : str | None, optional
+        The Ethereum private key for authentication (hex string).
+        If ``None``, will try to load from environment variable HYPERLIQUID_PRIVATE_KEY.
+    http_base : str | None, optional
+        The base HTTP URL for the Hyperliquid API.
+        If ``None``, defaults to https://api.hyperliquid.xyz.
+    ws_base : str | None, optional
+        The base WebSocket URL for Hyperliquid streams.
+        If ``None``, defaults to wss://api.hyperliquid.xyz/ws.
     testnet : bool, default False
-        If the client should connect to testnet instead of mainnet.
-    http_timeout_secs : PositiveInt, default 60
-        The HTTP timeout in seconds for requests.
-
+        If True, connect to Hyperliquid testnet instead of mainnet.
     """
 
     private_key: str | None = None
-    wallet_address: str | None = None
-    base_url_http: str | None = None
-    base_url_ws: str | None = None
+    http_base: str | None = None
+    ws_base: str | None = None
     testnet: bool = False
-    http_timeout_secs: PositiveInt | None = 60

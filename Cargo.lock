@@ -3528,19 +3528,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_logger"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd405aab171cb85d6735e5c8d9db038c17d3ca007a4d2c25f337935c3d90580"
-dependencies = [
- "humantime",
- "is-terminal",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4655,19 +4642,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyper-tls"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
-dependencies = [
- "bytes",
- "hyper 0.14.32",
- "native-tls",
- "tokio",
- "tokio-native-tls",
-]
-
-[[package]]
 name = "hyper-util"
 version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4689,31 +4663,6 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "hyperliquid_rust_sdk"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e98c1caa302f8365034565d962f142940303c66a63b4ff3db1126314ddfa678"
-dependencies = [
- "chrono",
- "env_logger",
- "ethers",
- "futures-util",
- "hex",
- "http 0.2.12",
- "lazy_static",
- "log",
- "rand 0.8.5",
- "reqwest 0.11.27",
- "rmp-serde",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tokio-tungstenite 0.20.1",
- "uuid 1.18.1",
 ]
 
 [[package]]
@@ -5074,17 +5023,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.108",
-]
-
-[[package]]
-name = "is-terminal"
-version = "0.4.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
-dependencies = [
- "hermit-abi",
- "libc",
- "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6160,50 +6098,26 @@ dependencies = [
 name = "nautilus-hyperliquid2"
 version = "0.52.0"
 dependencies = [
- "ahash 0.8.12",
  "anyhow",
- "async-stream",
- "aws-lc-rs",
- "base64 0.22.1",
- "chrono",
- "criterion",
- "dashmap",
- "derive_builder",
+ "ethers",
  "futures-util",
  "hex",
- "hyperliquid_rust_sdk",
- "indexmap 2.12.0",
- "k256",
- "log",
- "nautilus-common",
  "nautilus-core",
- "nautilus-execution",
  "nautilus-model",
  "nautilus-network",
- "nautilus-serialization",
- "nautilus-testkit",
  "pyo3",
  "pyo3-async-runtimes",
  "reqwest 0.12.24",
- "rstest",
  "rust_decimal",
- "rust_decimal_macros",
- "rustls 0.23.34",
  "serde",
  "serde_json",
- "serde_urlencoded",
- "sha2",
- "sha3",
- "strum 0.27.2",
- "thiserror 2.0.17",
  "tokio",
  "tokio-tungstenite 0.28.0",
  "tracing",
  "tracing-subscriber",
- "tracing-test",
  "url",
  "ustr",
- "uuid 1.18.1",
+ "zeroize",
 ]
 
 [[package]]
@@ -8249,12 +8163,10 @@ dependencies = [
  "http-body 0.4.6",
  "hyper 0.14.32",
  "hyper-rustls 0.24.2",
- "hyper-tls",
  "ipnet",
  "js-sys",
  "log",
  "mime",
- "native-tls",
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
@@ -8266,7 +8178,6 @@ dependencies = [
  "sync_wrapper 0.1.2",
  "system-configuration",
  "tokio",
- "tokio-native-tls",
  "tokio-rustls 0.24.1",
  "tower-service",
  "url",
@@ -9889,15 +9800,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "termcolor"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
-dependencies = [
- "winapi-util",
-]
-
-[[package]]
 name = "testing_table"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10136,10 +10038,8 @@ checksum = "212d5dcb2a1ce06d81107c3d0ffa3121fe974b73f068c8282cb1c32328113b6c"
 dependencies = [
  "futures-util",
  "log",
- "native-tls",
  "rustls 0.21.12",
  "tokio",
- "tokio-native-tls",
  "tokio-rustls 0.24.1",
  "tungstenite 0.20.1",
  "webpki-roots 0.25.4",
@@ -10425,7 +10325,6 @@ dependencies = [
  "http 0.2.12",
  "httparse",
  "log",
- "native-tls",
  "rand 0.8.5",
  "rustls 0.21.12",
  "sha1",

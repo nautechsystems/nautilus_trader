@@ -13,52 +13,46 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::num::NonZeroU32;
-use std::sync::LazyLock;
+//! Hyperliquid constants and configuration values.
 
-use nautilus_model::identifiers::Venue;
-use nautilus_network::ratelimiter::quota::Quota;
-use ustr::Ustr;
-
+/// Hyperliquid venue identifier
 pub const HYPERLIQUID: &str = "HYPERLIQUID";
-pub static HYPERLIQUID_VENUE: LazyLock<Venue> =
-    LazyLock::new(|| Venue::new(Ustr::from(HYPERLIQUID)));
 
-// Hyperliquid API URLs
-pub const HYPERLIQUID_HTTP_URL: &str = "https://api.hyperliquid.xyz";
-pub const HYPERLIQUID_TESTNET_HTTP_URL: &str = "https://api.hyperliquid-testnet.xyz";
-pub const HYPERLIQUID_WS_URL: &str = "wss://api.hyperliquid.xyz/ws";
-pub const HYPERLIQUID_TESTNET_WS_URL: &str = "wss://api.hyperliquid-testnet.xyz/ws";
+/// Base HTTP URL for Hyperliquid API (mainnet)
+pub const HYPERLIQUID_HTTP_BASE_URL: &str = "https://api.hyperliquid.xyz";
 
-// API endpoints
-pub const HYPERLIQUID_INFO_ENDPOINT: &str = "/info";
-pub const HYPERLIQUID_EXCHANGE_ENDPOINT: &str = "/exchange";
+/// Base HTTP URL for Hyperliquid testnet
+pub const HYPERLIQUID_HTTP_TESTNET_URL: &str = "https://api.hyperliquid-testnet.xyz";
 
-// Rate limits (based on Hyperliquid documentation)
-/// Hyperliquid HTTP rate limit: 1200 requests per minute
-pub static HYPERLIQUID_HTTP_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_minute(NonZeroU32::new(1200).unwrap())
-});
+/// Base WebSocket URL for Hyperliquid (mainnet)
+pub const HYPERLIQUID_WS_BASE_URL: &str = "wss://api.hyperliquid.xyz/ws";
 
-/// Hyperliquid WebSocket rate limit: No explicit limit, but connection-based
-pub static HYPERLIQUID_WS_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(100).unwrap())
-});
+/// Base WebSocket URL for Hyperliquid testnet
+pub const HYPERLIQUID_WS_TESTNET_URL: &str = "wss://api.hyperliquid-testnet.xyz/ws";
 
-// Trading constants
-pub const HYPERLIQUID_CLIENT_ID: &str = "HYPERLIQUID";
+/// Info endpoint path
+pub const HYPERLIQUID_INFO_PATH: &str = "/info";
 
-// Authentication constants
-pub const HYPERLIQUID_SIGNATURE_VERSION: &str = "1";
-pub const HYPERLIQUID_API_WALLET_ENV_KEY: &str = "HYPERLIQUID_WALLET_ADDRESS";
-pub const HYPERLIQUID_PRIVATE_KEY_ENV_KEY: &str = "HYPERLIQUID_PRIVATE_KEY";
-pub const HYPERLIQUID_TESTNET_WALLET_ENV_KEY: &str = "HYPERLIQUID_TESTNET_WALLET_ADDRESS";  
-pub const HYPERLIQUID_TESTNET_PRIVATE_KEY_ENV_KEY: &str = "HYPERLIQUID_TESTNET_PRIVATE_KEY";
+/// Exchange endpoint path
+pub const HYPERLIQUID_EXCHANGE_PATH: &str = "/exchange";
 
-// Precision constants
-pub const HYPERLIQUID_DEFAULT_PRICE_PRECISION: u8 = 6;
-pub const HYPERLIQUID_DEFAULT_SIZE_PRECISION: u8 = 8;
+/// Default price precision
+pub const HYPERLIQUID_DEFAULT_PRICE_PRECISION: u8 = 5;
 
-// WebSocket constants
-pub const HYPERLIQUID_HEARTBEAT_INTERVAL_SECS: u64 = 30;
-pub const HYPERLIQUID_RECONNECT_DELAY_SECS: u64 = 5;
+/// Default size precision
+pub const HYPERLIQUID_DEFAULT_SIZE_PRECISION: u8 = 6;
+
+/// Maximum candles per request
+pub const HYPERLIQUID_MAX_CANDLES: usize = 5000;
+
+/// Maximum fills per request
+pub const HYPERLIQUID_MAX_FILLS: usize = 2000;
+
+/// Maximum orders per request
+pub const HYPERLIQUID_MAX_ORDERS: usize = 2000;
+
+/// WebSocket ping interval (seconds)
+pub const HYPERLIQUID_WS_PING_INTERVAL_SECS: u64 = 30;
+
+/// WebSocket connection timeout (seconds)
+pub const HYPERLIQUID_WS_TIMEOUT_SECS: u64 = 30;

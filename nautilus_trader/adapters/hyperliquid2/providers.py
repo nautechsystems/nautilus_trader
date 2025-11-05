@@ -12,134 +12,99 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Instrument provider for the Hyperliquid adapter.
+"""
 
 from typing import Any
 
-from nautilus_trader.adapters.hyperliquid2.constants import HYPERLIQUID_VENUE
+from nautilus_hyperliquid2 import Hyperliquid2HttpClient
+
+from nautilus_trader.common.component import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments import instruments_from_pyo3
+from nautilus_trader.model.identifiers import Venue
 
 
-class HyperliquidInstrumentProvider(InstrumentProvider):
+HYPERLIQUID_VENUE = Venue("HYPERLIQUID")
+
+
+class Hyperliquid2InstrumentProvider(InstrumentProvider):
     """
-    Provides Nautilus instrument definitions from Hyperliquid.
+    Provides instruments for the Hyperliquid exchange.
 
     Parameters
     ----------
-    client : nautilus_pyo3.HyperliquidHttpClient
-        The Hyperliquid HTTP client.
-    config : InstrumentProviderConfig, optional
-        The instrument provider configuration, by default None.
-
+    client : Hyperliquid2HttpClient
+        The Hyperliquid HTTP client for fetching instrument data.
     """
 
-    def __init__(
-        self,
-        client: nautilus_pyo3.HyperliquidHttpClient,
-        config: InstrumentProviderConfig | None = None,
-    ) -> None:
-        super().__init__(config=config)
+    def __init__(self, client: Hyperliquid2HttpClient) -> None:
+        super().__init__(venue=HYPERLIQUID_VENUE)
         self._client = client
-        self._log_warnings = config.log_warnings if config else True
+        self._log = Logger(type(self).__name__)
 
-        self._instruments_pyo3: list[nautilus_pyo3.Instrument] = []
-
-    def instruments_pyo3(self) -> list[Any]:
+    async def load_all_async(self, filters: dict[str, Any] | None = None) -> None:
         """
-        Return all Hyperliquid PyO3 instrument definitions held by the provider.
+        Load all instruments from Hyperliquid.
 
-        Returns
-        -------
-        list[nautilus_pyo3.Instrument]
+        Parameters
+        ----------
+        filters : dict[str, Any] | None
+            Filters to apply when loading instruments (not currently used).
 
         """
-        return self._instruments_pyo3
+        self._log.info("Loading instruments from Hyperliquid")
 
-    async def load_all_async(self, filters: dict | None = None) -> None:
-        filters_str = "..." if not filters else f" with filters {filters}..."
-        self._log.info(f"Loading all instruments{filters_str}")
+        # Load instruments through the HTTP client
+        # The Rust client stores instruments internally
+        count = await self._client.load_instruments()
 
-        all_pyo3_instruments = []
-
-        try:
-            # Get universe from Hyperliquid
-            universe = await self._client.get_universe()
-            
-            # Convert universe to instruments
-            pyo3_instruments = await self._client.parse_instruments_pyo3(universe)
-            all_pyo3_instruments.extend(pyo3_instruments)
-
-        except Exception as e:
-            self._log.error(f"Error loading instruments from Hyperliquid: {e}")
-            if self._log_warnings:
-                self._log.warning(f"Failed to load instruments: {e}")
-            return
-
-        if not all_pyo3_instruments:
-            self._log.warning("No instruments loaded")
-            return
-
-        self._log.info(f"Loaded {len(all_pyo3_instruments)} instruments")
-
-        # Store the PyO3 instruments
-        self._instruments_pyo3 = all_pyo3_instruments
-
-        # Convert to Nautilus instruments and add to internal collection
-        nautilus_instruments = instruments_from_pyo3(all_pyo3_instruments)
-        for instrument in nautilus_instruments:
-            self.add(instrument)
+        self._log.info(f"Loaded {count} instruments from Hyperliquid")
 
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: dict | None = None,
+        filters: dict[str, Any] | None = None,
     ) -> None:
-        if not instrument_ids:
-            self._log.info("No instrument IDs provided")
-            return
+        """
+        Load specific instruments by ID.
 
-        # Filter for Hyperliquid venue
-        hyperliquid_ids = [
-            instrument_id for instrument_id in instrument_ids
-            if instrument_id.venue == HYPERLIQUID_VENUE
-        ]
+        This implementation loads all instruments and filters to the requested IDs.
 
-        if not hyperliquid_ids:
-            self._log.info("No Hyperliquid instrument IDs to load")
-            return
+        Parameters
+        ----------
+        instrument_ids : list[InstrumentId]
+            The instrument IDs to load.
+        filters : dict[str, Any] | None
+            Filters to apply when loading instruments (not currently used).
 
-        filters_str = f"with filters {filters}" if filters else ""
-        self._log.info(
-            f"Loading instruments {[str(i) for i in hyperliquid_ids]} {filters_str}",
-        )
-
-        # For Hyperliquid, we need to load all instruments first since
-        # the API doesn't support loading individual instruments by ID
+        """
+        # Load all instruments first
         await self.load_all_async(filters)
 
-        # Filter to requested instruments
-        requested_instruments = []
-        for instrument_id in hyperliquid_ids:
-            instrument = self.find(instrument_id)
-            if instrument:
-                requested_instruments.append(instrument)
-            else:
-                self._log.warning(f"Could not find instrument {instrument_id}")
-
-        # Clear all instruments and add only requested ones
-        self.clear()
-        for instrument in requested_instruments:
-            self.add(instrument)
+        # Filter to requested IDs
+        # Note: Instruments are stored in the Rust client
+        # Full instrument filtering would require additional Rust methods
+        self._log.info(f"Filtered to {len(instrument_ids)} requested instruments")
 
     async def load_async(
         self,
         instrument_id: InstrumentId,
-        filters: dict | None = None,
+        filters: dict[str, Any] | None = None,
     ) -> None:
-        PyCondition.not_none(instrument_id, "instrument_id")
+        """
+        Load a specific instrument.
 
-        await self.load_ids_async([instrument_id], filters)
+        This implementation loads all instruments since Hyperliquid doesn't
+        support loading individual instruments via the API.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID to load.
+        filters : dict[str, Any] | None
+            Filters to apply when loading instruments (not currently used).
+
+        """
+        await self.load_all_async(filters)

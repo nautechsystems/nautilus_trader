@@ -13,23 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from `pyo3`.
+//! Python bindings for Hyperliquid adapter.
 
-pub mod enums;
 pub mod http;
-pub mod urls;
 pub mod websocket;
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.hyperliquid`.
+/// Hyperliquid2 Python module
 #[pymodule]
-pub fn hyperliquid(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Register HTTP client
-    m.add_class::<crate::http::client::HyperliquidHttpClient>()?;
-    
-    // Register WebSocket client
-    m.add_class::<crate::websocket::client::HyperliquidWebSocketClient>()?;
-    
+pub fn hyperliquid2(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<http::PyHyperliquid2HttpClient>()?;
+    m.add_class::<websocket::PyHyperliquid2WebSocketClient>()?;
     Ok(())
 }

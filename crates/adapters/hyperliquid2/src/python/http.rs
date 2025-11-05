@@ -15,313 +15,171 @@
 
 //! Python bindings for Hyperliquid HTTP client.
 
-use pyo3::prelude::*;
+use crate::http::Hyperliquid2HttpClient;
+use pyo3::{prelude::*, types::PyDict};
 use pyo3_async_runtimes::tokio::future_into_py;
 
-use crate::common::credentials::HyperliquidCredentials;
-use crate::http::client::HyperliquidHttpClient;
+fn to_pyerr(err: impl std::fmt::Display) -> PyErr {
+    pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
+}
+
+/// Python wrapper for Hyperliquid HTTP client
+#[pyclass(name = "Hyperliquid2HttpClient")]
+pub struct PyHyperliquid2HttpClient {
+    client: Hyperliquid2HttpClient,
+}
 
 #[pymethods]
-impl HyperliquidHttpClient {
-    /// Create a new Hyperliquid HTTP client.
+impl PyHyperliquid2HttpClient {
+    /// Creates a new Hyperliquid HTTP client
+    ///
+    /// # Parameters
+    /// - `private_key`: Optional Ethereum private key for authenticated requests
+    /// - `http_base`: Optional custom HTTP base URL
+    /// - `testnet`: Whether to use testnet (default: false)
     #[new]
-    #[pyo3(signature = (base_url=None, private_key=None, wallet_address=None, testnet=false))]
+    #[pyo3(signature = (private_key=None, http_base=None, testnet=false))]
     fn py_new(
-        base_url: Option<String>,
         private_key: Option<String>,
-        wallet_address: Option<String>,
+        http_base: Option<String>,
         testnet: bool,
     ) -> PyResult<Self> {
-        let credentials = if let Some(key) = private_key {
-            Some(HyperliquidCredentials::new(key, wallet_address, testnet))
-        } else {
-            None
-        };
-
-        Self::new(base_url, credentials)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+        let client = Hyperliquid2HttpClient::new(private_key, http_base, testnet)
+            .map_err(to_pyerr)?;
+        Ok(Self { client })
     }
 
-    /// Get market universe (list of available assets).
-    #[pyo3(name = "get_universe")]
-    fn py_get_universe<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+    /// Loads all instruments from Hyperliquid
+    ///
+    /// Returns the count of loaded instruments.
+    /// Actual instruments are cached internally and accessed via InstrumentProvider.
+    #[pyo3(name = "load_instruments")]
+    fn py_load_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.client.clone();
         future_into_py(py, async move {
-            let result = client.get_universe().await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            
-            // Convert to JSON string for Python
-            serde_json::to_string(&result)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            client
+                .load_instruments()
+                .await
+                .map(|instruments| instruments.len())
+                .map_err(to_pyerr)
         })
     }
 
-    /// Get all market mid prices.
-    #[pyo3(name = "get_all_mids")]
-    fn py_get_all_mids<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+    /// Fetches meta information (universe of assets)
+    #[pyo3(name = "request_meta_info")]
+    fn py_request_meta_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.client.clone();
         future_into_py(py, async move {
-            let result = client.get_all_mids().await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            
-            serde_json::to_string(&result)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            let meta_info = client.request_meta_info().await.map_err(to_pyerr)?;
+            let json_str = serde_json::to_string(&meta_info).map_err(to_pyerr)?;
+            Python::with_gil(|py| {
+                let json_module = py.import_bound("json")?;
+                json_module.call_method1("loads", (json_str,))
+            })
         })
     }
 
-    /// Get L2 order book for a specific asset.
-    #[pyo3(name = "get_l2_book")]
-    fn py_get_l2_book<'py>(&self, py: Python<'py>, coin: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+    /// Fetches all mids (mid prices for all assets)
+    #[pyo3(name = "request_all_mids")]
+    fn py_request_all_mids<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.client.clone();
         future_into_py(py, async move {
-            let result = client.get_l2_book(&coin).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            
-            serde_json::to_string(&result)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            let mids = client.request_all_mids().await.map_err(to_pyerr)?;
+            let json_str = serde_json::to_string(&mids).map_err(to_pyerr)?;
+            Python::with_gil(|py| {
+                let json_module = py.import_bound("json")?;
+                json_module.call_method1("loads", (json_str,))
+            })
         })
     }
 
-    /// Get recent trades for a specific asset.
-    #[pyo3(name = "get_recent_trades")]
-    fn py_get_recent_trades<'py>(&self, py: Python<'py>, coin: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+    /// Fetches L2 order book for a specific coin
+    #[pyo3(name = "request_l2_book")]
+    fn py_request_l2_book<'py>(
+        &self,
+        py: Python<'py>,
+        coin: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.client.clone();
         future_into_py(py, async move {
-            let result = client.get_recent_trades(&coin).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            
-            serde_json::to_string(&result)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            let book = client.request_l2_book(&coin).await.map_err(to_pyerr)?;
+            let json_str = serde_json::to_string(&book).map_err(to_pyerr)?;
+            Python::with_gil(|py| {
+                let json_module = py.import_bound("json")?;
+                json_module.call_method1("loads", (json_str,))
+            })
         })
     }
 
-    /// Place a new order.
-    #[pyo3(name = "place_order")]
-    fn py_place_order<'py>(&self, py: Python<'py>, order_json: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+    /// Fetches recent trades for a specific coin
+    #[pyo3(name = "request_trades")]
+    fn py_request_trades<'py>(
+        &self,
+        py: Python<'py>,
+        coin: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.client.clone();
         future_into_py(py, async move {
-            let order_request: crate::common::models::HyperliquidOrderRequest = 
-                serde_json::from_str(&order_json)
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-            
-            let result = client.place_order(&order_request).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-                
-            serde_json::to_string(&result)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            let trades = client.request_trades(&coin).await.map_err(to_pyerr)?;
+            let json_str = serde_json::to_string(&trades).map_err(to_pyerr)?;
+            Python::with_gil(|py| {
+                let json_module = py.import_bound("json")?;
+                json_module.call_method1("loads", (json_str,))
+            })
         })
     }
 
-    /// Cancel an order.
-    #[pyo3(name = "cancel_order")]
-    fn py_cancel_order<'py>(&self, py: Python<'py>, cancel_json: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+    /// Fetches user state (positions, balances)
+    #[pyo3(name = "request_user_state")]
+    fn py_request_user_state<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.client.clone();
         future_into_py(py, async move {
-            let cancel_request: crate::common::models::HyperliquidCancelOrderRequest = 
-                serde_json::from_str(&cancel_json)
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-            
-            let result = client.cancel_order(&cancel_request).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-                
-            serde_json::to_string(&result)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            let state = client.request_user_state(&user).await.map_err(to_pyerr)?;
+            let json_str = serde_json::to_string(&state).map_err(to_pyerr)?;
+            Python::with_gil(|py| {
+                let json_module = py.import_bound("json")?;
+                json_module.call_method1("loads", (json_str,))
+            })
         })
     }
 
-    /// Modify an order.
-    #[pyo3(name = "modify_order")]
-    fn py_modify_order<'py>(&self, py: Python<'py>, modify_json: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+    /// Fetches open orders for a user
+    #[pyo3(name = "request_open_orders")]
+    fn py_request_open_orders<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.client.clone();
         future_into_py(py, async move {
-            let modify_request: crate::common::models::HyperliquidModifyOrderRequest = 
-                serde_json::from_str(&modify_json)
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-            
-            let result = client.modify_order(&modify_request).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-                
-            serde_json::to_string(&result)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            let orders = client.request_open_orders(&user).await.map_err(to_pyerr)?;
+            let json_str = serde_json::to_string(&orders).map_err(to_pyerr)?;
+            Python::with_gil(|py| {
+                let json_module = py.import_bound("json")?;
+                json_module.call_method1("loads", (json_str,))
+            })
         })
     }
 
-    /// Update leverage.
-    #[pyo3(name = "update_leverage")]
-    fn py_update_leverage<'py>(&self, py: Python<'py>, leverage_json: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+    /// Fetches user fills (trade history)
+    #[pyo3(name = "request_user_fills")]
+    fn py_request_user_fills<'py>(
+        &self,
+        py: Python<'py>,
+        user: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.client.clone();
         future_into_py(py, async move {
-            let leverage_request: crate::common::models::HyperliquidUpdateLeverageRequest = 
-                serde_json::from_str(&leverage_json)
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-            
-            let result = client.update_leverage(&leverage_request).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-                
-            serde_json::to_string(&result)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    }
-
-    /// Get user state (positions, margin).
-    #[pyo3(name = "get_user_state")]
-    fn py_get_user_state<'py>(&self, py: Python<'py>, user_address: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-        future_into_py(py, async move {
-            let user_state = client.get_user_state(&user_address).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            
-            // Convert to JSON string for Python
-            serde_json::to_string(&user_state)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    }
-
-    /// Get user portfolio.
-    #[pyo3(name = "get_portfolio")]
-    fn py_get_portfolio<'py>(&self, py: Python<'py>, user_address: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-        future_into_py(py, async move {
-            let portfolio = client.get_portfolio(&user_address).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            
-            serde_json::to_string(&portfolio)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    }
-
-    /// Get user fills.
-    #[pyo3(name = "get_user_fills")]
-    fn py_get_user_fills<'py>(&self, py: Python<'py>, user_address: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-        future_into_py(py, async move {
-            let fills = client.get_user_fills(&user_address).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            
-            serde_json::to_string(&fills)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    }
-
-    /// Get user open orders.
-    #[pyo3(name = "get_open_orders")]
-    fn py_get_open_orders<'py>(&self, py: Python<'py>, user_address: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-        future_into_py(py, async move {
-            let orders = client.get_open_orders(&user_address).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            
-            serde_json::to_string(&orders)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    }
-
-    /// Get historical orders.
-    #[pyo3(name = "get_historical_orders")]
-    fn py_get_historical_orders<'py>(&self, py: Python<'py>, user_address: String) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-        future_into_py(py, async move {
-            let orders = client.get_historical_orders(&user_address).await
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            
-            serde_json::to_string(&orders)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
-        })
-    }
-
-    /// Parse instruments from universe data.
-    #[pyo3(name = "parse_instruments_pyo3")]
-    fn py_parse_instruments_pyo3<'py>(&self, py: Python<'py>, universe_json: String) -> PyResult<Bound<'py, PyAny>> {
-        use pyo3_async_runtimes::tokio::future_into_py;
-        
-        let client = self.clone();
-        future_into_py(py, async move {
-            use nautilus_model::{
-                instruments::CryptoPerpetual,
-                identifiers::{InstrumentId, Symbol},
-                types::{Currency, Price, Quantity},
-                enums::CurrencyType,
-            };
-            use nautilus_core::UnixNanos;
-            use crate::common::{consts::HYPERLIQUID_VENUE, models::HyperliquidUniverse};
-            use rust_decimal::Decimal;
-
-            // Parse the universe JSON
-            let universe_data: HyperliquidUniverse = serde_json::from_str(&universe_json)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Failed to parse universe JSON: {}", e)))?;
-
-            let mut instruments = Vec::new();
-
-            for asset in universe_data.universe {
-                // Skip instruments with negative size decimals (invalid)
-                if asset.sz_decimals < 0 {
-                    continue;
-                }
-
-                // Create instrument ID
-                let symbol = Symbol::new(&format!("{}-PERP", asset.name));
-                let instrument_id = InstrumentId::new(symbol, *HYPERLIQUID_VENUE);
-
-                // Create currencies - Currency::new doesn't return a Result
-                let base_currency = Currency::new(
-                    asset.name.as_str(),
-                    8, // Standard precision for crypto
-                    0, // ISO code (not applicable for crypto)
-                    asset.name.as_str(),
-                    CurrencyType::Crypto,
-                );
-                
-                let quote_currency = Currency::USD(); // All Hyperliquid perpetuals are USD quoted
-                let settlement_currency = quote_currency;
-
-                // Create price and size increments based on asset decimals
-                let price_precision = 6u8; // Typical precision for crypto prices
-                let size_precision = asset.sz_decimals as u8;
-
-                let price_increment = Price::new(1.0 / 10_f64.powi(price_precision as i32), price_precision);
-                
-                // Handle size increment properly for precision 0
-                let size_increment_qty = if size_precision == 0 {
-                    // For precision 0, size increment is 1.0 (whole units)
-                    Quantity::new(1.0, 0)
-                } else {
-                    // For precision > 0, calculate fractional increment
-                    let size_increment_price = Price::new(1.0 / 10_f64.powi(size_precision as i32), size_precision);
-                    Quantity::new(size_increment_price.as_f64(), size_precision)
-                };
-
-                // Create the CryptoPerpetual instrument
-                let instrument = CryptoPerpetual::new(
-                    instrument_id,
-                    Symbol::new(&asset.name), // raw symbol
-                    base_currency,
-                    quote_currency,
-                    settlement_currency,
-                    false, // is_inverse (Hyperliquid perpetuals are not inverse)
-                    price_precision,
-                    size_precision,
-                    price_increment,
-                    size_increment_qty,
-                    None, // multiplier (default to 1)
-                    None, // lot_size (default to 1)
-                    None, // max_quantity
-                    None, // min_quantity
-                    None, // max_notional
-                    None, // min_notional
-                    None, // max_price
-                    None, // min_price
-                    Some(Decimal::new(5, 2)), // margin_init (5%)
-                    Some(Decimal::new(3, 2)), // margin_maint (3%)
-                    Some(Decimal::ZERO),      // maker_fee (0%)
-                    Some(Decimal::new(2, 4)), // taker_fee (0.02%)
-                    UnixNanos::default(),     // ts_event
-                    UnixNanos::default(),     // ts_init
-                );
-
-                instruments.push(instrument);
-            }
-
-            Ok(instruments)
+            let fills = client.request_user_fills(&user).await.map_err(to_pyerr)?;
+            let json_str = serde_json::to_string(&fills).map_err(to_pyerr)?;
+            Python::with_gil(|py| {
+                let json_module = py.import_bound("json")?;
+                json_module.call_method1("loads", (json_str,))
+            })
         })
     }
 }

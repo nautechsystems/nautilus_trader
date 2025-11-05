@@ -13,156 +13,132 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Hyperliquid-specific enums and types.
+//! Hyperliquid enumeration types.
 
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
 
-/// Hyperliquid order types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
-pub enum HyperliquidOrderType {
-    #[serde(rename = "market")]
-    #[strum(serialize = "market")]
-    Market,
-    #[serde(rename = "limit")]
-    #[strum(serialize = "limit")]
-    Limit,
-    #[serde(rename = "stop_market")]
-    #[strum(serialize = "stop_market")]
-    StopMarket,
-    #[serde(rename = "stop_limit")]
-    #[strum(serialize = "stop_limit")]
-    StopLimit,
-    #[serde(rename = "scale")]
-    #[strum(serialize = "scale")]
-    Scale,
-}
-
-/// Hyperliquid order side.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
+/// Hyperliquid order side
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum HyperliquidOrderSide {
+    /// Buy order
     #[serde(rename = "A")]
-    #[strum(serialize = "A")]
-    Ask, // Sell
+    Buy,
+    /// Sell order
     #[serde(rename = "B")]
-    #[strum(serialize = "B")]
-    Bid, // Buy
+    Sell,
 }
 
-/// Hyperliquid time in force.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
+/// Hyperliquid order type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum HyperliquidOrderType {
+    /// Limit order
+    #[serde(rename = "limit")]
+    Limit,
+    /// Market order
+    #[serde(rename = "market")]
+    Market,
+    /// Stop market order
+    #[serde(rename = "stopMarket")]
+    StopMarket,
+    /// Stop limit order
+    #[serde(rename = "stopLimit")]
+    StopLimit,
+    /// Take profit market order
+    #[serde(rename = "takeProfitMarket")]
+    TakeProfitMarket,
+    /// Take profit limit order
+    #[serde(rename = "takeProfitLimit")]
+    TakeProfitLimit,
+}
+
+/// Hyperliquid time in force
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HyperliquidTimeInForce {
+    /// Good till cancel
     #[serde(rename = "Gtc")]
-    #[strum(serialize = "Gtc")]
-    GoodTillCancel,
+    Gtc,
+    /// Immediate or cancel
     #[serde(rename = "Ioc")]
-    #[strum(serialize = "Ioc")]
-    ImmediateOrCancel,
+    Ioc,
+    /// Fill or kill
     #[serde(rename = "Alo")]
-    #[strum(serialize = "Alo")]
-    AddLiquidityOnly,
+    Alo, // Add liquidity only (post-only)
 }
 
-/// Hyperliquid order status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
+/// Hyperliquid order status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum HyperliquidOrderStatus {
-    #[serde(rename = "open")]
-    #[strum(serialize = "open")]
+    /// Order is open
     Open,
-    #[serde(rename = "filled")]
-    #[strum(serialize = "filled")]
+    /// Order is filled
     Filled,
-    #[serde(rename = "canceled")]
-    #[strum(serialize = "canceled")]
+    /// Order is canceled
     Canceled,
-    #[serde(rename = "triggered")]
-    #[strum(serialize = "triggered")]
-    Triggered,
-    #[serde(rename = "rejected")]
-    #[strum(serialize = "rejected")]
+    /// Order is rejected
     Rejected,
+    /// Order triggered
+    Triggered,
 }
 
-/// Hyperliquid WebSocket channel types.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
+/// Hyperliquid WebSocket channel type
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HyperliquidWsChannel {
-    #[serde(rename = "allMids")]
-    #[strum(serialize = "allMids")]
+    /// Subscribe to all market data
     AllMids,
-    #[serde(rename = "notification")]
-    #[strum(serialize = "notification")]
-    Notification,
-    #[serde(rename = "webData2")]
-    #[strum(serialize = "webData2")]
-    WebData2,
-    #[serde(rename = "candle")]
-    #[strum(serialize = "candle")]
-    Candle,
-    #[serde(rename = "l2Book")]
-    #[strum(serialize = "l2Book")]
-    L2Book,
-    #[serde(rename = "trades")]
-    #[strum(serialize = "trades")]
-    Trades,
-    #[serde(rename = "orderUpdates")]
-    #[strum(serialize = "orderUpdates")]
-    OrderUpdates,
-    #[serde(rename = "userEvents")]
-    #[strum(serialize = "userEvents")]
-    UserEvents,
+    /// Subscribe to trades for a specific coin
+    Trades {
+        /// Trading pair (e.g., "BTC")
+        coin: String,
+    },
+    /// Subscribe to L2 order book
+    L2Book {
+        /// Trading pair (e.g., "BTC")
+        coin: String,
+    },
+    /// Subscribe to candles
+    Candle {
+        /// Trading pair (e.g., "BTC")
+        coin: String,
+        /// Interval (e.g., "1m", "5m", "1h")
+        interval: String,
+    },
+    /// Subscribe to user events
+    User {
+        /// User address
+        user: String,
+    },
+    /// Subscribe to user fills
+    UserFills {
+        /// User address
+        user: String,
+    },
 }
 
-/// Hyperliquid WebSocket operation types.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
-pub enum HyperliquidWsOperation {
-    #[serde(rename = "subscribe")]
-    #[strum(serialize = "subscribe")]
-    Subscribe,
-    #[serde(rename = "unsubscribe")]
-    #[strum(serialize = "unsubscribe")]
-    Unsubscribe,
+impl HyperliquidWsChannel {
+    /// Returns the channel name for subscription
+    pub fn channel_name(&self) -> String {
+        match self {
+            Self::AllMids => "allMids".to_string(),
+            Self::Trades { coin } => format!("trades@{}", coin),
+            Self::L2Book { coin } => format!("l2Book@{}", coin),
+            Self::Candle { coin, interval } => format!("candle@{}@{}", coin, interval),
+            Self::User { user } => format!("user@{}", user),
+            Self::UserFills { user } => format!("userFills@{}", user),
+        }
+    }
 }
 
-/// Hyperliquid asset class types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
-pub enum HyperliquidAssetClass {
-    #[serde(rename = "spot")]
-    #[strum(serialize = "spot")]
-    Spot,
-    #[serde(rename = "perp")]
-    #[strum(serialize = "perp")]
-    Perpetual,
-}
-
-/// Hyperliquid margin mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
-pub enum HyperliquidMarginMode {
-    #[serde(rename = "cross")]
-    #[strum(serialize = "cross")]
-    Cross,
-    #[serde(rename = "isolated")]
-    #[strum(serialize = "isolated")]
-    Isolated,
-}
-
-/// Hyperliquid position side.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
-pub enum HyperliquidPositionSide {
-    #[serde(rename = "long")]
-    #[strum(serialize = "long")]
-    Long,
-    #[serde(rename = "short")]
-    #[strum(serialize = "short")]
-    Short,
-}
-
-/// Hyperliquid execution type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
-pub enum HyperliquidExecType {
-    #[serde(rename = "trade")]
-    #[strum(serialize = "trade")]
-    Trade,
-    #[serde(rename = "liquidation")]
-    #[strum(serialize = "liquidation")]
-    Liquidation,
+/// WebSocket subscription status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SubscriptionStatus {
+    /// Subscription pending
+    Pending,
+    /// Subscription active
+    Subscribed,
+    /// Unsubscription pending
+    Unsubscribing,
+    /// Unsubscribed
+    Unsubscribed,
 }
