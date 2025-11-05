@@ -15,10 +15,17 @@
 
 //! Python bindings for DeFi pool profiler.
 
+use std::str::FromStr;
+
+use alloy_primitives::{U160, U256};
+use nautilus_core::python::to_pyvalue_err;
 use pyo3::prelude::*;
 
 use crate::{
-    defi::{Pool, pool_analysis::PoolProfiler},
+    defi::{
+        Pool,
+        pool_analysis::{PoolProfiler, quote::SwapQuote},
+    },
     identifiers::InstrumentId,
 };
 
@@ -139,5 +146,39 @@ impl PoolProfiler {
     #[pyo3(name = "liquidity_utilization_rate")]
     fn py_liquidity_utilization_rate(&self) -> f64 {
         self.liquidity_utilization_rate()
+    }
+
+    #[pyo3(name = "swap_exact_in")]
+    fn py_swap_exact_in(
+        &self,
+        amount_in: &str,
+        zero_for_one: bool,
+        sqrt_price_limit_x96: Option<&str>,
+    ) -> PyResult<SwapQuote> {
+        let amount_in = U256::from_str(amount_in).map_err(to_pyvalue_err)?;
+        let sqrt_price_limit = match sqrt_price_limit_x96 {
+            Some(limit_str) => Some(U160::from_str(limit_str).map_err(to_pyvalue_err)?),
+            None => None,
+        };
+
+        self.swap_exact_in(amount_in, zero_for_one, sqrt_price_limit)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "swap_exact_out")]
+    fn py_swap_exact_out(
+        &self,
+        amount_out: &str,
+        zero_for_one: bool,
+        sqrt_price_limit_x96: Option<&str>,
+    ) -> PyResult<SwapQuote> {
+        let amount_out = U256::from_str(amount_out).map_err(to_pyvalue_err)?;
+        let sqrt_price_limit = match sqrt_price_limit_x96 {
+            Some(limit_str) => Some(U160::from_str(limit_str).map_err(to_pyvalue_err)?),
+            None => None,
+        };
+
+        self.swap_exact_out(amount_out, zero_for_one, sqrt_price_limit)
+            .map_err(to_pyvalue_err)
     }
 }
