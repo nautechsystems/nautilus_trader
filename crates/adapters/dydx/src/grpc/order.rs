@@ -24,6 +24,7 @@
 //! See [dYdX order types](https://help.dydx.trade/en/articles/166985-short-term-vs-long-term-order-types).
 
 use chrono::{DateTime, Utc};
+use nautilus_model::enums::OrderType;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::proto::dydxprotocol::{
@@ -51,23 +52,6 @@ pub enum OrderGoodUntil {
     /// Time expiration is used for long-term orders.
     /// The order expires at the specified timestamp.
     Time(DateTime<Utc>),
-}
-
-/// Order type enumeration.
-#[derive(Clone, Debug)]
-pub enum OrderType {
-    /// Limit order.
-    Limit,
-    /// Market order.
-    Market,
-    /// Stop limit order.
-    StopLimit,
-    /// Stop market order.
-    StopMarket,
-    /// Take profit order.
-    TakeProfit,
-    /// Take profit market order.
-    TakeProfitMarket,
 }
 
 /// Order flags indicating order lifetime and execution type.
@@ -269,7 +253,7 @@ impl OrderBuilder {
         trigger_price: Decimal,
         size: Decimal,
     ) -> Self {
-        self.order_type = Some(OrderType::TakeProfit);
+        self.order_type = Some(OrderType::LimitIfTouched);
         self.price = Some(price);
         self.trigger_price = Some(trigger_price);
         self.side = Some(side);
@@ -286,7 +270,7 @@ impl OrderBuilder {
         trigger_price: Decimal,
         size: Decimal,
     ) -> Self {
-        self.order_type = Some(OrderType::TakeProfitMarket);
+        self.order_type = Some(OrderType::MarketIfTouched);
         self.trigger_price = Some(trigger_price);
         self.side = Some(side);
         self.size = Some(size);

@@ -50,6 +50,56 @@ pub const DYDX_DERIVATION_PATH_PREFIX: &str = "m/44'/118'/0'/0";
 /// Coin type for Cosmos ecosystem (SLIP-0044).
 pub const COSMOS_COIN_TYPE: u32 = 118;
 
+// Mainnet URLs
+/// dYdX v4 mainnet HTTP API base URL.
+pub const DYDX_HTTP_URL: &str = "https://indexer.dydx.trade";
+
+/// dYdX v4 mainnet WebSocket URL.
+pub const DYDX_WS_URL: &str = "wss://indexer.dydx.trade/v4/ws";
+
+/// dYdX v4 mainnet gRPC URLs (public validator nodes with fallbacks).
+///
+/// Multiple nodes are provided for redundancy. The client should attempt to connect
+/// to nodes in order, falling back to the next if connection fails. This is critical
+/// for DEX environments where individual nodes can fail or become unavailable.
+pub const DYDX_GRPC_URLS: &[&str] = &[
+    "https://dydx-grpc.publicnode.com:443",
+    "https://dydx-ops-grpc.kingnodes.com:443",
+    "https://dydx-mainnet-grpc.autostake.com:443",
+];
+
+/// dYdX v4 mainnet gRPC URL (primary public node).
+///
+/// # Notes
+///
+/// For production use, consider using `DYDX_GRPC_URLS` array with fallback logic
+/// via `DydxGrpcClient::new_with_fallback()`.
+pub const DYDX_GRPC_URL: &str = DYDX_GRPC_URLS[0];
+
+// Testnet URLs
+/// dYdX v4 testnet HTTP API base URL.
+pub const DYDX_TESTNET_HTTP_URL: &str = "https://indexer.v4testnet.dydx.exchange";
+
+/// dYdX v4 testnet WebSocket URL.
+pub const DYDX_TESTNET_WS_URL: &str = "wss://indexer.v4testnet.dydx.exchange/v4/ws";
+
+/// dYdX v4 testnet gRPC URLs (public validator nodes with fallbacks).
+///
+/// Multiple nodes are provided for redundancy. The client should attempt to connect
+/// to nodes in order, falling back to the next if connection fails.
+pub const DYDX_TESTNET_GRPC_URLS: &[&str] = &[
+    "https://dydx-testnet-grpc.publicnode.com:443",
+    "https://test-dydx-grpc.kingnodes.com:443",
+];
+
+/// dYdX v4 testnet gRPC URL (primary public node).
+///
+/// # Notes
+///
+/// For production use, consider using `DYDX_TESTNET_GRPC_URLS` array with fallback logic
+/// via `DydxGrpcClient::new_with_fallback()`.
+pub const DYDX_TESTNET_GRPC_URL: &str = DYDX_TESTNET_GRPC_URLS[0];
+
 /// Determines if an HTTP status code should trigger a retry.
 ///
 /// Retries on:

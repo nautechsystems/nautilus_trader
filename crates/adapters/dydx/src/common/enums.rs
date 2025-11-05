@@ -15,51 +15,9 @@
 
 //! Enumerations mapping dYdX v4 concepts onto idiomatic Nautilus variants.
 
-use nautilus_model::enums::{LiquiditySide, OrderSide, OrderStatus, PositionSide};
+use nautilus_model::enums::{LiquiditySide, OrderStatus, PositionSide};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
-
-/// Represents the side of an order or trade (Buy/Sell).
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    PartialEq,
-    Eq,
-    Hash,
-    AsRefStr,
-    EnumIter,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum DydxOrderSide {
-    /// Buy side of a trade or order.
-    Buy,
-    /// Sell side of a trade or order.
-    Sell,
-}
-
-impl From<OrderSide> for DydxOrderSide {
-    fn from(value: OrderSide) -> Self {
-        match value {
-            OrderSide::Buy => Self::Buy,
-            OrderSide::Sell => Self::Sell,
-            OrderSide::NoOrderSide => Self::Buy, // Default fallback
-        }
-    }
-}
-
-impl From<DydxOrderSide> for OrderSide {
-    fn from(value: DydxOrderSide) -> Self {
-        match value {
-            DydxOrderSide::Buy => Self::Buy,
-            DydxOrderSide::Sell => Self::Sell,
-        }
-    }
-}
 
 /// dYdX order status throughout its lifecycle.
 #[derive(
@@ -378,13 +336,26 @@ pub enum DydxCandleResolution {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nautilus_model::enums::OrderSide;
 
     #[test]
-    fn test_order_side_conversion() {
-        assert_eq!(OrderSide::from(DydxOrderSide::Buy), OrderSide::Buy);
-        assert_eq!(OrderSide::from(DydxOrderSide::Sell), OrderSide::Sell);
-        assert_eq!(DydxOrderSide::from(OrderSide::Buy), DydxOrderSide::Buy);
-        assert_eq!(DydxOrderSide::from(OrderSide::Sell), DydxOrderSide::Sell);
+    fn test_order_side_serialization() {
+        // Test that OrderSide serializes to SCREAMING_SNAKE_CASE as expected by dYdX API
+        let buy = OrderSide::Buy;
+        let sell = OrderSide::Sell;
+
+        assert_eq!(serde_json::to_string(&buy).unwrap(), r#""BUY""#);
+        assert_eq!(serde_json::to_string(&sell).unwrap(), r#""SELL""#);
+
+        // Test deserialization
+        assert_eq!(
+            serde_json::from_str::<OrderSide>(r#""BUY""#).unwrap(),
+            OrderSide::Buy
+        );
+        assert_eq!(
+            serde_json::from_str::<OrderSide>(r#""SELL""#).unwrap(),
+            OrderSide::Sell
+        );
     }
 
     #[test]

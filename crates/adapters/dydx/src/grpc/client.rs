@@ -78,7 +78,7 @@ pub struct DydxGrpcClient {
 }
 
 impl DydxGrpcClient {
-    /// Create a new gRPC client.
+    /// Create a new gRPC client with a single URL.
     ///
     /// # Errors
     ///
@@ -104,6 +104,49 @@ impl DydxGrpcClient {
             subaccounts: SubaccountsClient::new(channel.clone()),
             channel,
         })
+    }
+
+    /// Create a new gRPC client with fallback support.
+    ///
+    /// Attempts to connect to each URL in the provided list until a successful
+    /// connection is established. This is useful for DEX environments where nodes
+    /// can fail and fallback options are needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if none of the provided URLs can establish a connection.
+    pub async fn new_with_fallback(grpc_urls: &[impl AsRef<str>]) -> Result<Self, DydxError> {
+        if grpc_urls.is_empty() {
+            return Err(DydxError::Config("No gRPC URLs provided".to_string()));
+        }
+
+        let mut last_error = None;
+
+        for (idx, url) in grpc_urls.iter().enumerate() {
+            let url_str = url.as_ref();
+            tracing::debug!(
+                "Attempting to connect to gRPC node: {url_str} (attempt {}/{})",
+                idx + 1,
+                grpc_urls.len()
+            );
+
+            match Self::new(url_str.to_string()).await {
+                Ok(client) => {
+                    tracing::info!("Successfully connected to gRPC node: {url_str}");
+                    return Ok(client);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to connect to gRPC node {url_str}: {e}");
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
+            DydxError::Grpc(tonic::Status::unavailable(
+                "All gRPC connection attempts failed".to_string(),
+            ))
+        }))
     }
 
     /// Get the underlying gRPC channel.

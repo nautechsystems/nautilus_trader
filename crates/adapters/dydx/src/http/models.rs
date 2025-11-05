@@ -25,13 +25,14 @@
 //! - Accounts: <https://docs.dydx.exchange/api_integration-indexer/indexer_api#accounts>
 
 use chrono::{DateTime, Utc};
+use nautilus_model::enums::OrderSide;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 
 use crate::common::enums::{
-    DydxCandleResolution, DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderSide,
-    DydxOrderStatus, DydxPositionStatus, DydxTickerType, DydxTimeInForce,
+    DydxCandleResolution, DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderStatus,
+    DydxPositionStatus, DydxTickerType, DydxTimeInForce,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -157,7 +158,7 @@ pub struct Trade {
     /// Unique trade ID.
     pub id: String,
     /// Order side that was the taker.
-    pub side: DydxOrderSide,
+    pub side: OrderSide,
     /// Trade size in base currency.
     #[serde_as(as = "DisplayFromStr")]
     pub size: Decimal,
@@ -267,7 +268,7 @@ pub struct PerpetualPosition {
     /// Position status.
     pub status: DydxPositionStatus,
     /// Position side (determined by size sign).
-    pub side: DydxOrderSide,
+    pub side: OrderSide,
     /// Position size (negative for short).
     #[serde_as(as = "DisplayFromStr")]
     pub size: Decimal,
@@ -314,7 +315,7 @@ pub struct AssetPosition {
     /// Asset symbol.
     pub symbol: String,
     /// Position side (always LONG for assets).
-    pub side: DydxOrderSide,
+    pub side: OrderSide,
     /// Asset size (balance).
     #[serde_as(as = "DisplayFromStr")]
     pub size: Decimal,
@@ -344,7 +345,7 @@ pub struct Order {
     #[serde_as(as = "DisplayFromStr")]
     pub clob_pair_id: u32,
     /// Order side.
-    pub side: DydxOrderSide,
+    pub side: OrderSide,
     /// Order size.
     #[serde_as(as = "DisplayFromStr")]
     pub size: Decimal,
@@ -405,7 +406,7 @@ pub struct Fill {
     /// Unique fill ID.
     pub id: String,
     /// Order side.
-    pub side: DydxOrderSide,
+    pub side: OrderSide,
     /// Liquidity side (MAKER/TAKER).
     pub liquidity: DydxLiquidity,
     /// Fill type.
@@ -523,7 +524,7 @@ pub struct PlaceOrderRequest {
     /// CLOB pair ID.
     pub clob_pair_id: u32,
     /// Order side.
-    pub side: DydxOrderSide,
+    pub side: OrderSide,
     /// Order size in quantums.
     pub quantums: u64,
     /// Order subticks (price representation).

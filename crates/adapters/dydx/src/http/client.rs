@@ -53,8 +53,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::error::DydxHttpError;
 use crate::common::{
+    consts::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL},
     enums::DydxCandleResolution,
-    urls::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL},
 };
 
 /// Default dYdX Indexer REST API rate limit.

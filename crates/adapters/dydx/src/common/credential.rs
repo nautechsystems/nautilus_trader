@@ -222,8 +222,9 @@ mod tests {
 
     #[test]
     fn test_from_private_key() {
-        // Use a test private key (all zeros - not a real key)
-        let test_key = "0".repeat(64);
+        // Use a valid test private key (small non-zero value)
+        // This is a valid secp256k1 private key: 32 bytes with value 1
+        let test_key = format!("{:0>64}", "1");
 
         let credential = DydxCredential::from_private_key(&test_key, vec![])
             .expect("Failed to create credential from private key");
@@ -261,7 +262,11 @@ mod tests {
             .expect("Failed to create credential");
 
         let debug_str = format!("{:?}", credential);
+        // Should contain redacted marker
         assert!(debug_str.contains("<redacted>"));
-        assert!(!debug_str.contains("signing_key"));
+        // Should contain the struct name
+        assert!(debug_str.contains("DydxCredential"));
+        // Should show address
+        assert!(debug_str.contains(&credential.address));
     }
 }

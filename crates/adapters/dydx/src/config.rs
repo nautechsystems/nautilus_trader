@@ -17,6 +17,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::common::consts::{DYDX_CHAIN_ID, DYDX_GRPC_URLS, DYDX_HTTP_URL, DYDX_WS_URL};
+
 /// Configuration for the dYdX adapter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxAdapterConfig {
@@ -25,20 +27,46 @@ pub struct DydxAdapterConfig {
     /// Base URL for the WebSocket API.
     pub ws_url: String,
     /// Base URL for the gRPC API (Cosmos SDK transactions).
+    ///
+    /// For backwards compatibility, a single URL can be provided.
+    /// Consider using `grpc_urls` for fallback support.
     pub grpc_url: String,
+    /// List of gRPC URLs with fallback support.
+    ///
+    /// If provided, the client will attempt to connect to each URL in order
+    /// until a successful connection is established. This is recommended for
+    /// production use in DEX environments where nodes can fail.
+    #[serde(default)]
+    pub grpc_urls: Vec<String>,
     /// Chain ID (e.g., "dydx-mainnet-1" for mainnet, "dydx-testnet-4" for testnet).
     pub chain_id: String,
     /// Request timeout in seconds.
     pub timeout_secs: u64,
 }
 
+impl DydxAdapterConfig {
+    /// Get the list of gRPC URLs to use for connection with fallback support.
+    ///
+    /// Returns `grpc_urls` if non-empty, otherwise falls back to a single-element
+    /// vector containing `grpc_url`.
+    #[must_use]
+    pub fn get_grpc_urls(&self) -> Vec<String> {
+        if !self.grpc_urls.is_empty() {
+            self.grpc_urls.clone()
+        } else {
+            vec![self.grpc_url.clone()]
+        }
+    }
+}
+
 impl Default for DydxAdapterConfig {
     fn default() -> Self {
         Self {
-            base_url: "https://api.dydx.exchange".to_string(),
-            ws_url: "wss://api.dydx.exchange/v4/ws".to_string(),
-            grpc_url: "https://dydx-grpc.publicnode.com:443".to_string(),
-            chain_id: "dydx-mainnet-1".to_string(),
+            base_url: DYDX_HTTP_URL.to_string(),
+            ws_url: DYDX_WS_URL.to_string(),
+            grpc_url: DYDX_GRPC_URLS[0].to_string(),
+            grpc_urls: DYDX_GRPC_URLS.iter().map(|&s| s.to_string()).collect(),
+            chain_id: DYDX_CHAIN_ID.to_string(),
             timeout_secs: 30,
         }
     }

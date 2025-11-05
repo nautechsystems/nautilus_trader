@@ -47,7 +47,7 @@ pub use builder::TxBuilder;
 pub use client::{DydxGrpcClient, Height, TxHash};
 pub use order::{
     DEFAULT_RUST_CLIENT_METADATA, OrderBuilder, OrderFlags, OrderGoodUntil, OrderMarketParams,
-    OrderType, SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+    SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
 };
 pub use types::ChainId;
 pub use wallet::{Account, Subaccount, Wallet};

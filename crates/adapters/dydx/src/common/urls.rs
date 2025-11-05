@@ -13,25 +13,109 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! URL constants for dYdX API endpoints.
+//! URL helpers for dYdX services.
 
-// HTTP API URLs
-/// dYdX v4 mainnet HTTP API base URL.
-pub const DYDX_HTTP_URL: &str = "https://indexer.dydx.trade";
+use super::consts::{
+    DYDX_GRPC_URLS, DYDX_HTTP_URL, DYDX_TESTNET_GRPC_URLS, DYDX_TESTNET_HTTP_URL,
+    DYDX_TESTNET_WS_URL, DYDX_WS_URL,
+};
 
-/// dYdX v4 testnet HTTP API base URL.
-pub const DYDX_TESTNET_HTTP_URL: &str = "https://indexer.v4testnet.dydx.exchange";
+/// Gets the HTTP base URL for the specified network.
+#[must_use]
+pub const fn http_base_url(is_testnet: bool) -> &'static str {
+    if is_testnet {
+        DYDX_TESTNET_HTTP_URL
+    } else {
+        DYDX_HTTP_URL
+    }
+}
 
-// WebSocket URLs
-/// dYdX v4 mainnet WebSocket URL.
-pub const DYDX_WS_URL: &str = "wss://indexer.dydx.trade/v4/ws";
+/// Gets the WebSocket URL for the specified network.
+#[must_use]
+pub const fn ws_url(is_testnet: bool) -> &'static str {
+    if is_testnet {
+        DYDX_TESTNET_WS_URL
+    } else {
+        DYDX_WS_URL
+    }
+}
 
-/// dYdX v4 testnet WebSocket URL.
-pub const DYDX_TESTNET_WS_URL: &str = "wss://indexer.v4testnet.dydx.exchange/v4/ws";
+/// Gets the gRPC URLs with fallback support for the specified network.
+///
+/// Returns an array of gRPC endpoints that should be tried in order.
+/// This is important for DEX environments where individual validator nodes
+/// can become unavailable or fail.
+#[must_use]
+pub const fn grpc_urls(is_testnet: bool) -> &'static [&'static str] {
+    if is_testnet {
+        DYDX_TESTNET_GRPC_URLS
+    } else {
+        DYDX_GRPC_URLS
+    }
+}
 
-// gRPC URLs
-/// dYdX v4 mainnet gRPC URL (public node).
-pub const DYDX_GRPC_URL: &str = "https://dydx-grpc.publicnode.com:443";
+/// Gets the primary gRPC URL for the specified network.
+///
+/// # Notes
+///
+/// For production use, consider using `grpc_urls()` to get all available
+/// endpoints and implement fallback logic via `DydxGrpcClient::new_with_fallback()`.
+#[must_use]
+pub const fn grpc_url(is_testnet: bool) -> &'static str {
+    grpc_urls(is_testnet)[0]
+}
 
-/// dYdX v4 testnet gRPC URL.
-pub const DYDX_TESTNET_GRPC_URL: &str = "https://dydx-testnet-grpc.publicnode.com:443";
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_http_urls() {
+        assert_eq!(http_base_url(false), "https://indexer.dydx.trade");
+        assert_eq!(
+            http_base_url(true),
+            "https://indexer.v4testnet.dydx.exchange"
+        );
+    }
+
+    #[rstest]
+    fn test_ws_urls() {
+        assert_eq!(ws_url(false), "wss://indexer.dydx.trade/v4/ws");
+        assert_eq!(ws_url(true), "wss://indexer.v4testnet.dydx.exchange/v4/ws");
+    }
+
+    #[rstest]
+    fn test_grpc_urls() {
+        let mainnet_urls = grpc_urls(false);
+        assert_eq!(mainnet_urls.len(), 3);
+        assert_eq!(mainnet_urls[0], "https://dydx-grpc.publicnode.com:443");
+        assert_eq!(mainnet_urls[1], "https://dydx-ops-grpc.kingnodes.com:443");
+        assert_eq!(
+            mainnet_urls[2],
+            "https://dydx-mainnet-grpc.autostake.com:443"
+        );
+
+        let testnet_urls = grpc_urls(true);
+        assert_eq!(testnet_urls.len(), 2);
+        assert_eq!(
+            testnet_urls[0],
+            "https://dydx-testnet-grpc.publicnode.com:443"
+        );
+        assert_eq!(testnet_urls[1], "https://test-dydx-grpc.kingnodes.com:443");
+    }
+
+    #[rstest]
+    fn test_grpc_url() {
+        assert_eq!(grpc_url(false), "https://dydx-grpc.publicnode.com:443");
+        assert_eq!(
+            grpc_url(true),
+            "https://dydx-testnet-grpc.publicnode.com:443"
+        );
+    }
+}
