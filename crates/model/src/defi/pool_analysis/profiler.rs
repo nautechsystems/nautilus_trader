@@ -288,7 +288,6 @@ impl PoolProfiler {
             self.tick_map.liquidity = swap.liquidity;
         }
 
-        self.analytics.total_swaps += 1;
         self.last_processed_event = Some(BlockPosition::new(
             swap.block,
             swap.transaction_hash.clone(),
@@ -333,7 +332,6 @@ impl PoolProfiler {
             self.simulate_swap_through_ticks(amount_specified, zero_for_one, sqrt_price_limit_x96)?;
         self.apply_swap_quote(&swap_quote);
 
-        self.analytics.total_swaps += 1;
         let swap_event = PoolSwap::new(
             self.pool.chain.clone(),
             self.pool.dex.clone(),
@@ -395,6 +393,7 @@ impl PoolProfiler {
     ) -> anyhow::Result<SwapQuote> {
         let mut current_sqrt_price = self.state.price_sqrt_ratio_x96;
         let mut current_tick = self.state.current_tick;
+        let mut current_active_liquidity = self.tick_map.liquidity;
         let exact_input = amount_specified.is_positive();
         let mut amount_specified_remaining = amount_specified;
         let mut amount_calculated = I256::ZERO;
@@ -506,6 +505,16 @@ impl PoolProfiler {
                             current_fee_growth_global
                         },
                     ));
+
+                    // Update local liquidity tracking when crossing ticks
+                    if let Some(tick_data) = self.tick_map.get_tick(tick_next) {
+                        let liquidity_net = tick_data.liquidity_net;
+                        current_active_liquidity = if zero_for_one {
+                            liquidity_math_add(current_active_liquidity, -liquidity_net)
+                        } else {
+                            liquidity_math_add(current_active_liquidity, liquidity_net)
+                        };
+                    }
                 }
 
                 current_tick = if zero_for_one {
@@ -540,6 +549,7 @@ impl PoolProfiler {
             current_sqrt_price,
             self.state.current_tick,
             current_tick,
+            current_active_liquidity,
             current_fee_growth_global,
             lp_fee,
             protocol_fee,
@@ -555,7 +565,7 @@ impl PoolProfiler {
     /// - Price and tick updates
     /// - Fee growth and protocol fee accumulation
     /// - Tick crossing mutations (updating tick fee accumulators and active liquidity)
-    fn apply_swap_quote(&mut self, swap_quote: &SwapQuote) {
+    pub fn apply_swap_quote(&mut self, swap_quote: &SwapQuote) {
         // Update price and tick.
         self.state.current_tick = swap_quote.tick_after;
         self.state.price_sqrt_ratio_x96 = swap_quote.sqrt_price_after_x96;
@@ -582,166 +592,13 @@ impl PoolProfiler {
                 liquidity_math_add(self.tick_map.liquidity, liquidity_net)
             };
         }
-    }
+        self.analytics.total_swaps += 1;
 
-    /// Swaps an exact amount of token0 for token1.
-    ///
-    /// Convenience method for executing exact input swaps from token0 to token1.
-    /// Sets up parameters and delegates to `execute_swap`.
-    ///
-    /// # Errors
-    ///
-    /// Returns error from [`Self::execute_swap`] when swap execution fails.
-    pub fn swap_exact0_for_1(
-        &mut self,
-        sender: Address,
-        recipient: Address,
-        block: BlockPosition,
-        amount0_in: U256,
-        sqrt_price_limit_x96: Option<U160>,
-    ) -> anyhow::Result<PoolSwap> {
-        let amount_specified = I256::from(amount0_in);
-        let sqrt_price_limit_x96 = sqrt_price_limit_x96.unwrap_or(MIN_SQRT_RATIO + U160::from(1));
-        self.execute_swap(
-            sender,
-            recipient,
-            block,
-            true,
-            amount_specified,
-            sqrt_price_limit_x96,
-        )
-    }
-
-    /// Swaps token0 for an exact amount of token1.
-    ///
-    /// Convenience method for executing exact output swaps from token0 to token1.
-    /// Uses negative amount to indicate exact output specification.
-    ///
-    /// # Errors
-    ///
-    /// Returns error from [`Self::execute_swap`] when swap execution fails.
-    pub fn swap_0_for_exact1(
-        &mut self,
-        sender: Address,
-        recipient: Address,
-        block: BlockPosition,
-        amount1_out: U256,
-        sqrt_price_limit_x96: Option<U160>,
-    ) -> anyhow::Result<PoolSwap> {
-        let amount_specified = -I256::from(amount1_out);
-        let sqrt_price_limit_x96 = sqrt_price_limit_x96.unwrap_or(MIN_SQRT_RATIO + U160::from(1));
-        self.execute_swap(
-            sender,
-            recipient,
-            block,
-            true,
-            amount_specified,
-            sqrt_price_limit_x96,
-        )
-    }
-
-    /// Swaps an exact amount of token1 for token0.
-    ///
-    /// Convenience method for executing exact input swaps from token1 to token0.
-    /// Sets up parameters and delegates to `execute_swap`.
-    ///
-    /// # Errors
-    ///
-    /// Returns error from [`Self::execute_swap`] when swap execution fails.
-    pub fn swap_exact1_for_0(
-        &mut self,
-        sender: Address,
-        recipient: Address,
-        block: BlockPosition,
-        amount1_in: U256,
-        sqrt_price_limit_x96: Option<U160>,
-    ) -> anyhow::Result<PoolSwap> {
-        let amount_specified = I256::from(amount1_in);
-        let sqrt_price_limit_x96 = sqrt_price_limit_x96.unwrap_or(MAX_SQRT_RATIO - U160::from(1));
-        self.execute_swap(
-            sender,
-            recipient,
-            block,
-            false,
-            amount_specified,
-            sqrt_price_limit_x96,
-        )
-    }
-
-    /// Swaps token1 for an exact amount of token0.
-    ///
-    /// Convenience method for executing exact output swaps from token1 to token0.
-    /// Uses negative amount to indicate the exact output specification.
-    ///
-    /// # Errors
-    ///
-    /// Returns error from [`Self::execute_swap`] when swap execution fails.
-    pub fn swap_1_for_exact0(
-        &mut self,
-        sender: Address,
-        recipient: Address,
-        block: BlockPosition,
-        amount0_out: U256,
-        sqrt_price_limit_x96: Option<U160>,
-    ) -> anyhow::Result<PoolSwap> {
-        let amount_specified = -I256::from(amount0_out);
-        let sqrt_price_limit_x96 = sqrt_price_limit_x96.unwrap_or(MAX_SQRT_RATIO - U160::from(1));
-        self.execute_swap(
-            sender,
-            recipient,
-            block,
-            false,
-            amount_specified,
-            sqrt_price_limit_x96,
-        )
-    }
-
-    /// Swaps to move the pool price down to a target price.
-    ///
-    /// Performs a token0-for-token1 swap with maximum input to reach the target price.
-    ///
-    /// # Errors
-    ///
-    /// Returns error from [`Self::execute_swap`] when swap execution fails.
-    pub fn swap_to_lower_sqrt_price(
-        &mut self,
-        sender: Address,
-        recipient: Address,
-        block: BlockPosition,
-        sqrt_price_limit_x96: U160,
-    ) -> anyhow::Result<PoolSwap> {
-        self.execute_swap(
-            sender,
-            recipient,
-            block,
-            true,
-            I256::MAX,
-            sqrt_price_limit_x96,
-        )
-    }
-
-    /// Swaps to move the pool price up to a target price.
-    ///
-    /// Performs a token1-for-token0 swap with maximum input to reach the target price.
-    ///
-    /// # Errors
-    ///
-    /// Returns error from [`Self::execute_swap`] when swap execution fails.
-    pub fn swap_to_higher_sqrt_price(
-        &mut self,
-        sender: Address,
-        recipient: Address,
-        block: BlockPosition,
-        sqrt_price_limit_x96: U160,
-    ) -> anyhow::Result<PoolSwap> {
-        self.execute_swap(
-            sender,
-            recipient,
-            block,
-            false,
-            I256::MAX,
-            sqrt_price_limit_x96,
-        )
+        debug_assert_eq!(
+            self.tick_map.liquidity, swap_quote.liquidity_after,
+            "Liquidity mismatch in apply_swap_quote: computed={}, quote={}",
+            self.tick_map.liquidity, swap_quote.liquidity_after
+        );
     }
 
     /// Returns a comprehensive swap quote without modifying pool state.
@@ -769,6 +626,13 @@ impl PoolProfiler {
         sqrt_price_limit_x96: Option<U160>,
     ) -> anyhow::Result<SwapQuote> {
         self.check_if_initialized();
+        if amount_specified.is_zero() {
+            anyhow::bail!("Cannot quote swap with zero amount");
+        }
+
+        if let Some(price_limit) = sqrt_price_limit_x96 {
+            self.validate_price_limit(price_limit, zero_for_one)?;
+        }
 
         let limit = sqrt_price_limit_x96.unwrap_or_else(|| {
             if zero_for_one {
@@ -779,6 +643,90 @@ impl PoolProfiler {
         });
 
         self.simulate_swap_through_ticks(amount_specified, zero_for_one, limit)
+    }
+
+    /// Simulates an exact input swap (know input amount, calculate output amount).
+    ///
+    /// # Errors
+    /// Returns error if pool is not initialized, input is zero, or price limit is invalid
+    pub fn swap_exact_in(
+        &self,
+        amount_in: U256,
+        zero_for_one: bool,
+        sqrt_price_limit_x96: Option<U160>,
+    ) -> anyhow::Result<SwapQuote> {
+        // Positive = exact input.
+        let amount_specified = I256::from(amount_in);
+        let quote = self.quote_swap(amount_specified, zero_for_one, sqrt_price_limit_x96)?;
+
+        Ok(quote)
+    }
+
+    /// Simulates an exact output swap (know output amount, calculate required input amount).
+    ///
+    /// # Errors
+    /// Returns error if pool is not initialized, output is zero, price limit is invalid,
+    /// or insufficient liquidity exists to fulfill the exact output amount
+    pub fn swap_exact_out(
+        &self,
+        amount_out: U256,
+        zero_for_one: bool,
+        sqrt_price_limit_x96: Option<U160>,
+    ) -> anyhow::Result<SwapQuote> {
+        // Negative = exact output.
+        let amount_specified = -I256::from(amount_out);
+        let quote = self.quote_swap(amount_specified, zero_for_one, sqrt_price_limit_x96)?;
+        quote.validate_exact_output(amount_out)?;
+
+        Ok(quote)
+    }
+
+    /// Simulates a swap to move the pool price down to a target price.
+    ///
+    /// # Errors
+    /// Returns error if pool is not initialized or price limit is invalid.
+    pub fn swap_to_lower_sqrt_price(
+        &self,
+        sqrt_price_limit_x96: U160,
+    ) -> anyhow::Result<SwapQuote> {
+        self.quote_swap(I256::MAX, true, Some(sqrt_price_limit_x96))
+    }
+
+    /// Simulates a swap to move the pool price up to a target price.
+    ///
+    /// # Errors
+    /// Returns error if pool is not initialized or price limit is invalid.
+    pub fn swap_to_higher_sqrt_price(
+        &self,
+        sqrt_price_limit_x96: U160,
+    ) -> anyhow::Result<SwapQuote> {
+        self.quote_swap(I256::MAX, false, Some(sqrt_price_limit_x96))
+    }
+
+    /// Validates that the price limit is in the correct direction for the swap.
+    ///
+    /// # Errors
+    /// Returns error if price limit violates swap direction constraints.
+    fn validate_price_limit(
+        &self,
+        limit_price_sqrt: U160,
+        zero_for_one: bool,
+    ) -> anyhow::Result<()> {
+        if zero_for_one {
+            // Swapping token0 for token1: price must decrease
+            if limit_price_sqrt >= self.state.price_sqrt_ratio_x96 {
+                anyhow::bail!("Price limit must be less than current price for zero_for_one swaps");
+            }
+        } else {
+            // Swapping token1 for token0: price must increase
+            if limit_price_sqrt <= self.state.price_sqrt_ratio_x96 {
+                anyhow::bail!(
+                    "Price limit must be greater than current price for one_for_zero swaps"
+                );
+            }
+        }
+
+        Ok(())
     }
 
     /// Processes a mint (liquidity add) event from historical data.
