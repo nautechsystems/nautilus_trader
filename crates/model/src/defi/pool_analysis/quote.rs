@@ -15,9 +15,11 @@
 
 use std::cmp::Ordering;
 
-use alloy_primitives::{I256, U160, U256};
+use alloy_primitives::{Address, I256, U160, U256};
 
-use crate::defi::tick_map::tick::CrossedTick;
+use crate::defi::{
+    Pool, PoolSwap, SharedChain, SharedDex, data::block::BlockPosition, tick_map::tick::CrossedTick,
+};
 
 /// Comprehensive swap quote containing profiling metrics for a hypothetical swap.
 ///
@@ -42,6 +44,8 @@ pub struct SwapQuote {
     pub tick_before: i32,
     /// Tick position after the swap.
     pub tick_after: i32,
+    /// Active liquidity after the swap.
+    pub liquidity_after: u128,
     /// Fee growth global for target token after the swap (Q128.128 format).
     pub fee_growth_global_after: U256,
     /// Total fees paid to liquidity providers.
@@ -62,6 +66,7 @@ impl SwapQuote {
         sqrt_price_after_x96: U160,
         tick_before: i32,
         tick_after: i32,
+        liquidity_after: u128,
         fee_growth_global_after: U256,
         lp_fee: U256,
         protocol_fee: U256,
@@ -74,6 +79,7 @@ impl SwapQuote {
             sqrt_price_after_x96,
             tick_before,
             tick_after,
+            liquidity_after,
             fee_growth_global_after,
             lp_fee,
             protocol_fee,
@@ -111,5 +117,68 @@ impl SwapQuote {
     /// how much liquidity the swap traversed.
     pub fn total_crossed_ticks(&self) -> u32 {
         self.crossed_ticks.len() as u32
+    }
+
+    /// Gets the output amount for the given swap direction.
+    pub fn get_output_amount(&self) -> U256 {
+        if self.zero_for_one() {
+            self.amount1.unsigned_abs()
+        } else {
+            self.amount0.unsigned_abs()
+        }
+    }
+
+    /// Validates that the quote satisfied an exact output request.
+    ///
+    /// # Errors
+    /// Returns error if the actual output is less than the requested amount.
+    pub fn validate_exact_output(&self, amount_out_requested: U256) -> anyhow::Result<()> {
+        let actual_out = self.get_output_amount();
+        if actual_out < amount_out_requested {
+            anyhow::bail!(
+                "Insufficient liquidity: requested {}, got {}",
+                amount_out_requested,
+                actual_out
+            );
+        }
+        Ok(())
+    }
+
+    /// Converts this quote into a [`PoolSwap`] event with the provided metadata.
+    ///
+    /// # Returns
+    /// A [`PoolSwap`] event containing both the quote data and provided metadata
+    #[allow(clippy::too_many_arguments)]
+    pub fn to_swap_event(
+        &self,
+        chain: SharedChain,
+        dex: SharedDex,
+        pool_address: &Address,
+        block: BlockPosition,
+        sender: Address,
+        recipient: Address,
+    ) -> PoolSwap {
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_address);
+        PoolSwap::new(
+            chain,
+            dex,
+            instrument_id,
+            *pool_address,
+            block.number,
+            block.transaction_hash,
+            block.transaction_index,
+            block.log_index,
+            None, // timestamp
+            sender,
+            recipient,
+            self.amount0,
+            self.amount1,
+            self.sqrt_price_after_x96,
+            self.liquidity_after,
+            self.tick_after,
+            None,
+            None,
+            None,
+        )
     }
 }
