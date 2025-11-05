@@ -300,7 +300,7 @@ impl WebSocketClientInner {
         let connector = crate::net::RealTcpConnector;
         let tcp_stream = connector.connect(&addr).await?;
         if let Err(e) = tcp_stream.set_nodelay(true) {
-            tracing::warn!(?error, "Failed to enable TCP_NODELAY for turmoil connector");
+            tracing::warn!("Failed to enable TCP_NODELAY for socket client: {e:?}");
         }
 
         // Wrap stream appropriately based on scheme
