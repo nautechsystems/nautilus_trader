@@ -70,6 +70,9 @@ else:
 ################################################################################
 
 USE_SCCACHE = "sccache" in os.environ.get("CC", "") or "sccache" in os.environ.get("CXX", "")
+if USE_SCCACHE:
+    os.environ["RUSTC_WRAPPER"] = "sccache"
+    os.environ["CARGO_INCREMENTAL"] = "0"
 
 if IS_LINUX:
     # Use clang as the default compiler
@@ -592,6 +595,8 @@ if __name__ == "__main__":
     print_env_var_if_exists("PYTHONHOME")
     print_env_var_if_exists("RUSTFLAGS")
     print_env_var_if_exists("DRY_RUN")
+    print_env_var_if_exists("RUSTC_WRAPPER")
+    print_env_var_if_exists("CARGO_INCREMENTAL")
 
     if DRY_RUN:
         show_rustanalyzer_settings()
