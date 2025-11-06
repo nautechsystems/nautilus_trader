@@ -39,6 +39,12 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
+use nautilus_network::{
+    RECONNECTED,
+    websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
+};
+use tokio::sync::RwLock;
+use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::error::{DydxWsError, DydxWsResult};
@@ -72,6 +78,14 @@ pub struct DydxWebSocketClient {
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     /// Optional account ID for account message parsing.
     account_id: Option<AccountId>,
+    /// Optional heartbeat interval in seconds.
+    heartbeat: Option<u64>,
+    /// Inner websocket client holder (with reconnection and handler mode).
+    inner: Arc<RwLock<Option<WebSocketClient>>>,
+    /// Inbound decoded dYdX websocket messages receiver.
+    rx_inbound: Option<tokio::sync::mpsc::UnboundedReceiver<super::messages::DydxWsMessage>>,
+    /// Background reader task handle.
+    reader_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl DydxWebSocketClient {
@@ -85,6 +99,10 @@ impl DydxWebSocketClient {
             is_connected: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
+            heartbeat: _heartbeat,
+            inner: Arc::new(RwLock::new(None)),
+            rx_inbound: None,
+            reader_task: None,
         }
     }
 
@@ -103,6 +121,10 @@ impl DydxWebSocketClient {
             is_connected: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: Some(account_id),
+            heartbeat: _heartbeat,
+            inner: Arc::new(RwLock::new(None)),
+            rx_inbound: None,
+            reader_task: None,
         }
     }
 
@@ -161,6 +183,201 @@ impl DydxWebSocketClient {
         self.instruments_cache.get(symbol).map(|r| r.clone())
     }
 
+    /// Takes ownership of the inbound typed message receiver.
+    /// Returns None if the receiver has already been taken or not connected.
+    pub fn take_receiver(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<super::messages::DydxWsMessage>> {
+        self.rx_inbound.take()
+    }
+
+    /// Connects the websocket client in handler mode with automatic reconnection.
+    ///
+    /// Spawns a background task to decode raw websocket messages into typed
+    /// [`super::messages::DydxWsMessage`] values and forwards them through an internal channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection cannot be established.
+    pub async fn connect(&mut self) -> DydxWsResult<()> {
+        if self.is_connected() {
+            return Ok(());
+        }
+
+        let (message_handler, mut raw_rx) = channel_message_handler();
+
+        let cfg = WebSocketConfig {
+            url: self.url.clone(),
+            headers: vec![],
+            message_handler: Some(message_handler),
+            heartbeat: self.heartbeat,
+            heartbeat_msg: None,
+            ping_handler: None,
+            reconnect_timeout_ms: Some(15_000),
+            reconnect_delay_initial_ms: Some(250),
+            reconnect_delay_max_ms: Some(5_000),
+            reconnect_backoff_factor: Some(2.0),
+            reconnect_jitter_ms: Some(200),
+        };
+
+        let client = WebSocketClient::connect(cfg, None, vec![], None)
+            .await
+            .map_err(|e| DydxWsError::Transport(e.to_string()))?;
+
+        // Set inner client
+        {
+            let mut guard = self.inner.write().await;
+            *guard = Some(client);
+        }
+
+        // Inbound typed message channel
+        let (tx_inbound, rx_inbound) =
+            tokio::sync::mpsc::unbounded_channel::<super::messages::DydxWsMessage>();
+
+        // Spawn reader task to decode messages
+        let reader_task = tokio::spawn(async move {
+            while let Some(msg) = raw_rx.recv().await {
+                match msg {
+                    Message::Text(txt) => {
+                        if txt == RECONNECTED {
+                            let _ = tx_inbound.send(super::messages::DydxWsMessage::Reconnected);
+                            continue;
+                        }
+
+                        match serde_json::from_str::<serde_json::Value>(&txt) {
+                            Ok(val) => {
+                                // Attempt to classify message using generic envelope
+                                match serde_json::from_value::<super::messages::DydxWsGenericMsg>(
+                                    val.clone(),
+                                ) {
+                                    Ok(meta) => {
+                                        let result = if meta.is_connected() {
+                                            serde_json::from_value::<
+                                                super::messages::DydxWsConnectedMsg,
+                                            >(val)
+                                            .map(super::messages::DydxWsMessage::Connected)
+                                        } else if meta.is_subscribed() {
+                                            serde_json::from_value::<
+                                                super::messages::DydxWsSubscriptionMsg,
+                                            >(val)
+                                            .map(super::messages::DydxWsMessage::Subscribed)
+                                        } else if meta.is_unsubscribed() {
+                                            serde_json::from_value::<
+                                                super::messages::DydxWsSubscriptionMsg,
+                                            >(val)
+                                            .map(super::messages::DydxWsMessage::Unsubscribed)
+                                        } else if meta.is_channel_data() {
+                                            serde_json::from_value::<
+                                                super::messages::DydxWsChannelDataMsg,
+                                            >(val)
+                                            .map(super::messages::DydxWsMessage::ChannelData)
+                                        } else if meta.is_channel_batch_data() {
+                                            serde_json::from_value::<
+                                                super::messages::DydxWsChannelBatchDataMsg,
+                                            >(val)
+                                            .map(super::messages::DydxWsMessage::ChannelBatchData)
+                                        } else if meta.is_error() {
+                                            serde_json::from_value::<super::error::DydxWebSocketError>(val)
+                                                .map(super::messages::DydxWsMessage::Error)
+                                        } else {
+                                            Ok(super::messages::DydxWsMessage::Raw(val))
+                                        };
+
+                                        match result {
+                                            Ok(msg) => {
+                                                let _ = tx_inbound.send(msg);
+                                            }
+                                            Err(e) => {
+                                                let err =
+                                                    super::error::DydxWebSocketError::from_message(
+                                                        e.to_string(),
+                                                    );
+                                                let _ = tx_inbound.send(
+                                                    super::messages::DydxWsMessage::Error(err),
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // Fallback to raw if generic parse fails
+                                        let _ = tx_inbound
+                                            .send(super::messages::DydxWsMessage::Raw(val));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let err =
+                                    super::error::DydxWebSocketError::from_message(e.to_string());
+                                let _ = tx_inbound.send(super::messages::DydxWsMessage::Error(err));
+                            }
+                        }
+                    }
+                    Message::Ping(_data) => {
+                        // Handled by lower layers where appropriate
+                    }
+                    Message::Pong(_data) => {
+                        let _ = tx_inbound.send(super::messages::DydxWsMessage::Pong);
+                    }
+                    Message::Binary(_bin) => {
+                        // dYdX uses text frames; ignore binary
+                    }
+                    Message::Close(_frame) => {
+                        break;
+                    }
+                    Message::Frame(_) => {}
+                }
+            }
+        });
+
+        self.rx_inbound = Some(rx_inbound);
+        self.reader_task = Some(reader_task);
+        self.is_connected.store(true, Ordering::Relaxed);
+        tracing::info!("Connected dYdX WebSocket: {}", self.url);
+        Ok(())
+    }
+
+    /// Disconnects the websocket client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client cannot be accessed.
+    pub async fn disconnect(&mut self) -> DydxWsResult<()> {
+        // Close inner client if exists
+        {
+            let guard = self.inner.read().await;
+            if let Some(inner) = guard.as_ref() {
+                inner.disconnect().await;
+            }
+        }
+
+        self.is_connected.store(false, Ordering::Relaxed);
+
+        if let Some(handle) = self.reader_task.take() {
+            handle.abort();
+        }
+
+        // Drop receiver to stop any consumers
+        self.rx_inbound = None;
+        Ok(())
+    }
+
+    async fn send_text_inner(&self, text: &str) -> DydxWsResult<()> {
+        let guard = self.inner.read().await;
+        let client = guard.as_ref().ok_or(DydxWsError::NotConnected)?;
+        client
+            .send_text(text.to_string(), None)
+            .await
+            .map_err(DydxWsError::from)
+    }
+
+    fn ticker_from_instrument_id(instrument_id: &InstrumentId) -> String {
+        let mut s = instrument_id.symbol.as_str().to_string();
+        if let Some(stripped) = s.strip_suffix("-PERP") {
+            s = stripped.to_string();
+        }
+        s
+    }
+
     /// Subscribes to public trade updates for a specific instrument.
     ///
     /// # Errors
@@ -171,9 +388,14 @@ impl DydxWebSocketClient {
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#trades-channel>
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
-        // TODO: Implement subscription
-        tracing::debug!("Subscribe to trades for {instrument_id}");
-        Ok(())
+        let ticker = Self::ticker_from_instrument_id(&instrument_id);
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Subscribe,
+            channel: super::enums::DydxWsChannel::Trades,
+            id: Some(ticker),
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Unsubscribes from public trade updates for a specific instrument.
@@ -182,9 +404,14 @@ impl DydxWebSocketClient {
     ///
     /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_trades(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
-        // TODO: Implement unsubscription
-        tracing::debug!("Unsubscribe from trades for {instrument_id}");
-        Ok(())
+        let ticker = Self::ticker_from_instrument_id(&instrument_id);
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Unsubscribe,
+            channel: super::enums::DydxWsChannel::Trades,
+            id: Some(ticker),
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Subscribes to orderbook updates for a specific instrument.
@@ -197,9 +424,14 @@ impl DydxWebSocketClient {
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#orderbook-channel>
     pub async fn subscribe_orderbook(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
-        // TODO: Implement subscription
-        tracing::debug!("Subscribe to orderbook for {instrument_id}");
-        Ok(())
+        let ticker = Self::ticker_from_instrument_id(&instrument_id);
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Subscribe,
+            channel: super::enums::DydxWsChannel::Orderbook,
+            id: Some(ticker),
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Unsubscribes from orderbook updates for a specific instrument.
@@ -208,9 +440,14 @@ impl DydxWebSocketClient {
     ///
     /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_orderbook(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
-        // TODO: Implement unsubscription
-        tracing::debug!("Unsubscribe from orderbook for {instrument_id}");
-        Ok(())
+        let ticker = Self::ticker_from_instrument_id(&instrument_id);
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Unsubscribe,
+            channel: super::enums::DydxWsChannel::Orderbook,
+            id: Some(ticker),
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Subscribes to candle/kline updates for a specific instrument.
@@ -227,9 +464,15 @@ impl DydxWebSocketClient {
         instrument_id: InstrumentId,
         resolution: &str,
     ) -> DydxWsResult<()> {
-        // TODO: Implement subscription
-        tracing::debug!("Subscribe to candles for {instrument_id} with resolution {resolution}");
-        Ok(())
+        let ticker = Self::ticker_from_instrument_id(&instrument_id);
+        let id = format!("{ticker}-{resolution}");
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Subscribe,
+            channel: super::enums::DydxWsChannel::Candles,
+            id: Some(id),
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Unsubscribes from candle/kline updates for a specific instrument.
@@ -242,11 +485,15 @@ impl DydxWebSocketClient {
         instrument_id: InstrumentId,
         resolution: &str,
     ) -> DydxWsResult<()> {
-        // TODO: Implement unsubscription
-        tracing::debug!(
-            "Unsubscribe from candles for {instrument_id} with resolution {resolution}"
-        );
-        Ok(())
+        let ticker = Self::ticker_from_instrument_id(&instrument_id);
+        let id = format!("{ticker}-{resolution}");
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Unsubscribe,
+            channel: super::enums::DydxWsChannel::Candles,
+            id: Some(id),
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Subscribes to market updates for all instruments.
@@ -259,9 +506,13 @@ impl DydxWebSocketClient {
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#markets-channel>
     pub async fn subscribe_markets(&self) -> DydxWsResult<()> {
-        // TODO: Implement subscription
-        tracing::debug!("Subscribe to markets");
-        Ok(())
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Subscribe,
+            channel: super::enums::DydxWsChannel::Markets,
+            id: None,
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Unsubscribes from market updates.
@@ -270,9 +521,13 @@ impl DydxWebSocketClient {
     ///
     /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_markets(&self) -> DydxWsResult<()> {
-        // TODO: Implement unsubscription
-        tracing::debug!("Unsubscribe from markets");
-        Ok(())
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Unsubscribe,
+            channel: super::enums::DydxWsChannel::Markets,
+            id: None,
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Subscribes to subaccount updates (orders, fills, positions, balances).
@@ -298,10 +553,14 @@ impl DydxWebSocketClient {
                 "Subaccount subscriptions require authentication. Use new_private() to create an authenticated client".to_string(),
             ));
         }
-
-        // TODO: Implement subscription
-        tracing::debug!("Subscribe to subaccount {address}/{subaccount_number}");
-        Ok(())
+        let id = format!("{address}/{subaccount_number}");
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Subscribe,
+            channel: super::enums::DydxWsChannel::Subaccounts,
+            id: Some(id),
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Unsubscribes from subaccount updates.
@@ -314,9 +573,14 @@ impl DydxWebSocketClient {
         address: &str,
         subaccount_number: u32,
     ) -> DydxWsResult<()> {
-        // TODO: Implement unsubscription
-        tracing::debug!("Unsubscribe from subaccount {address}/{subaccount_number}");
-        Ok(())
+        let id = format!("{address}/{subaccount_number}");
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Unsubscribe,
+            channel: super::enums::DydxWsChannel::Subaccounts,
+            id: Some(id),
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Subscribes to block height updates.
@@ -329,9 +593,13 @@ impl DydxWebSocketClient {
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#block-height-channel>
     pub async fn subscribe_block_height(&self) -> DydxWsResult<()> {
-        // TODO: Implement subscription
-        tracing::debug!("Subscribe to block height");
-        Ok(())
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Subscribe,
+            channel: super::enums::DydxWsChannel::BlockHeight,
+            id: None,
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 
     /// Unsubscribes from block height updates.
@@ -340,8 +608,12 @@ impl DydxWebSocketClient {
     ///
     /// Returns an error if the unsubscription request fails.
     pub async fn unsubscribe_block_height(&self) -> DydxWsResult<()> {
-        // TODO: Implement unsubscription
-        tracing::debug!("Unsubscribe from block height");
-        Ok(())
+        let sub = super::messages::DydxSubscription {
+            op: super::enums::DydxWsOperation::Unsubscribe,
+            channel: super::enums::DydxWsChannel::BlockHeight,
+            id: None,
+        };
+        let payload = serde_json::to_string(&sub)?;
+        self.send_text_inner(&payload).await
     }
 }

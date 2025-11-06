@@ -71,3 +71,42 @@ impl Default for DydxAdapterConfig {
         }
     }
 }
+
+/// Configuration for the dYdX data client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DydxDataClientConfig {
+    /// Base URL for the HTTP API.
+    pub base_url_http: Option<String>,
+    /// Base URL for the WebSocket API.
+    pub base_url_ws: Option<String>,
+    /// HTTP request timeout in seconds.
+    pub http_timeout_secs: Option<u64>,
+    /// Maximum number of retry attempts for failed HTTP requests.
+    pub max_retries: Option<u64>,
+    /// Initial retry delay in milliseconds.
+    pub retry_delay_initial_ms: Option<u64>,
+    /// Maximum retry delay in milliseconds.
+    pub retry_delay_max_ms: Option<u64>,
+    /// Whether this is a testnet configuration.
+    pub is_testnet: bool,
+    /// HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// WebSocket proxy URL.
+    pub ws_proxy_url: Option<String>,
+}
+
+impl Default for DydxDataClientConfig {
+    fn default() -> Self {
+        Self {
+            base_url_http: None,
+            base_url_ws: None,
+            http_timeout_secs: Some(60),
+            max_retries: Some(3),
+            retry_delay_initial_ms: Some(100),
+            retry_delay_max_ms: Some(5000),
+            is_testnet: false,
+            http_proxy_url: None,
+            ws_proxy_url: None,
+        }
+    }
+}

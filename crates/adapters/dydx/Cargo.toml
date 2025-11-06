@@ -57,6 +57,7 @@ nautilus-network = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 bip32 = { workspace = true }
 chrono = { workspace = true }
 cosmrs = { workspace = true }

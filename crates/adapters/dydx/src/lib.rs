@@ -52,9 +52,33 @@
 
 pub mod common;
 pub mod config;
+pub mod data;
 pub mod error;
 pub mod http;
 pub mod websocket;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+// Re-exports
+pub use crate::{
+    common::{
+        enums::{
+            DydxCandleResolution, DydxMarketStatus, DydxOrderSide, DydxOrderStatus, DydxOrderType,
+            DydxTickerType, DydxTimeInForce,
+        },
+        models::DydxAccount,
+    },
+    data::DydxDataClient,
+    error::DydxError,
+    http::{
+        client::DydxHttpClient,
+        error::DydxHttpError,
+        models::{MarketsResponse, PerpetualMarket},
+    },
+    websocket::{
+        client::DydxWebSocketClient,
+        enums::{DydxWsChannel, DydxWsOperation},
+        error::DydxWsError,
+    },
+};

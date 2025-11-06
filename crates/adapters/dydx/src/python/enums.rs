@@ -13,21 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from `pyo3`.
+//! Python bindings for dYdX enums.
+//!
+//! This module provides Python access to dYdX-specific enum types
+//! used throughout the adapter.
 
-pub mod enums;
-pub mod http;
-
-use pyo3::prelude::*;
-
-/// Loaded as `nautilus_pyo3.dydx`.
-///
-/// # Errors
-///
-/// Returns an error if any bindings fail to register with the Python module.
-#[pymodule]
-pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("__package__", "nautilus_trader.core.nautilus_pyo3.dydx")?;
-    m.add_class::<crate::http::client::DydxHttpClient>()?;
-    Ok(())
-}
+// Re-export enums that should be available in Python
+// The #[pyclass] attributes in the enum definitions will make them available

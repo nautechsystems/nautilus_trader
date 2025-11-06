@@ -1,0 +1,204 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Python bindings for dYdX HTTP client.
+
+use std::str::FromStr;
+
+use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::python::instruments::instrument_any_to_pyobject;
+use pyo3::prelude::*;
+use rust_decimal::Decimal;
+use ustr::Ustr;
+
+use crate::http::client::DydxHttpClient;
+
+#[pymethods]
+impl DydxHttpClient {
+    /// Creates a new [`DydxHttpClient`] instance.
+    ///
+    /// # Parameters
+    ///
+    /// - `base_url`: Optional base URL for the HTTP client (defaults to mainnet)
+    /// - `is_testnet`: Whether to use testnet endpoints (default: false)
+    ///
+    /// # Examples
+    ///
+    /// ```python
+    /// # Mainnet client
+    /// client = DydxHttpClient()
+    ///
+    /// # Testnet client
+    /// client = DydxHttpClient(is_testnet=True)
+    ///
+    /// # Custom URL
+    /// client = DydxHttpClient(base_url="https://custom.dydx.exchange")
+    /// ```
+    #[new]
+    #[pyo3(signature = (base_url=None, is_testnet=false))]
+    fn py_new(base_url: Option<String>, is_testnet: bool) -> PyResult<Self> {
+        // Mirror the Rust client's constructor signature with sensible defaults
+        Self::new(
+            base_url, None, // timeout_secs
+            None, // proxy_url
+            is_testnet, None, // retry_config
+        )
+        .map_err(to_pyvalue_err)
+    }
+
+    /// Returns `true` if the client is configured for testnet.
+    #[pyo3(name = "is_testnet")]
+    fn py_is_testnet(&self) -> bool {
+        self.is_testnet()
+    }
+
+    /// Returns the base URL for the HTTP client.
+    #[pyo3(name = "base_url")]
+    fn py_base_url(&self) -> String {
+        self.base_url().to_string()
+    }
+
+    /// Requests all available instruments from the dYdX Indexer API.
+    ///
+    /// # Parameters
+    ///
+    /// - `maker_fee`: Optional maker fee as decimal string (e.g., "0.0002")
+    /// - `taker_fee`: Optional taker fee as decimal string (e.g., "0.0005")
+    /// - `ts_init`: Optional initialization timestamp in nanoseconds
+    ///
+    /// # Returns
+    ///
+    /// List of instruments as Python objects.
+    ///
+    /// # Examples
+    ///
+    /// ```python
+    /// client = DydxHttpClient()
+    /// instruments = await client.request_instruments()
+    ///
+    /// # With fees
+    /// instruments = await client.request_instruments(
+    ///     maker_fee="0.0002",
+    ///     taker_fee="0.0005",
+    /// )
+    /// ```
+    #[pyo3(name = "request_instruments")]
+    fn py_request_instruments<'py>(
+        &self,
+        py: Python<'py>,
+        maker_fee: Option<String>,
+        taker_fee: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let maker = maker_fee
+            .as_ref()
+            .map(|s| Decimal::from_str(s))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
+        let taker = taker_fee
+            .as_ref()
+            .map(|s| Decimal::from_str(s))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let instruments = client
+                .request_instruments(None, maker, taker)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            #[allow(deprecated)]
+            Python::with_gil(|py| {
+                let py_instruments: PyResult<Vec<Py<PyAny>>> = instruments
+                    .into_iter()
+                    .map(|inst| instrument_any_to_pyobject(py, inst))
+                    .collect();
+                py_instruments
+            })
+        })
+    }
+
+    /// Gets a cached instrument by symbol.
+    ///
+    /// # Parameters
+    ///
+    /// - `symbol`: The instrument symbol (e.g., "BTC-USD")
+    ///
+    /// # Returns
+    ///
+    /// The instrument as a Python object, or None if not found.
+    ///
+    /// # Examples
+    ///
+    /// ```python
+    /// client = DydxHttpClient()
+    /// await client.request_instruments()  # Load instruments first
+    ///
+    /// btc_usd = client.get_instrument("BTC-USD")
+    /// if btc_usd:
+    ///     print(f"Found {btc_usd.id}")
+    /// ```
+    #[pyo3(name = "get_instrument")]
+    fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
+        let instrument = self.get_instrument(Ustr::from(symbol));
+        match instrument {
+            Some(inst) => Ok(Some(instrument_any_to_pyobject(py, inst)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Returns the number of cached instruments.
+    ///
+    /// # Examples
+    ///
+    /// ```python
+    /// client = DydxHttpClient()
+    /// await client.request_instruments()
+    /// print(f"Cached {client.instrument_count()} instruments")
+    /// ```
+    #[pyo3(name = "instrument_count")]
+    fn py_instrument_count(&self) -> usize {
+        self.instruments_cache.len()
+    }
+
+    /// Returns all cached instrument symbols.
+    ///
+    /// # Examples
+    ///
+    /// ```python
+    /// client = DydxHttpClient()
+    /// await client.request_instruments()
+    /// symbols = client.instrument_symbols()
+    /// print(f"Available: {symbols}")
+    /// ```
+    #[pyo3(name = "instrument_symbols")]
+    fn py_instrument_symbols(&self) -> Vec<String> {
+        self.instruments_cache
+            .iter()
+            .map(|entry| entry.key().to_string())
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "DydxHttpClient(base_url='{}', is_testnet={}, cached_instruments={})",
+            self.base_url(),
+            self.is_testnet(),
+            self.instruments_cache.len()
+        )
+    }
+}

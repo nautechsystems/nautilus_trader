@@ -89,6 +89,29 @@ pub enum DydxTimeInForce {
     Ioc,
 }
 
+/// dYdX order side.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DydxOrderSide {
+    /// Buy order.
+    Buy,
+    /// Sell order.
+    Sell,
+}
+
 /// dYdX order type.
 #[derive(
     Copy,

@@ -16,13 +16,24 @@
 //! Provides an ergonomic wrapper around the **dYdX v4 Indexer REST API** –
 //! <https://docs.dydx.exchange/api_integration-indexer/indexer_api>.
 //!
-//! The core type exported by this module is [`DydxRawHttpClient`]. It offers an
-//! interface to all exchange endpoints currently required by NautilusTrader.
+//! This module exports two complementary HTTP clients following the standardized
+//! two-layer architecture pattern established in OKX, Bybit, and BitMEX adapters:
 //!
-//! Key responsibilities handled internally:
+//! - [`DydxRawHttpClient`]: Low-level HTTP methods matching dYdX Indexer API endpoints.
+//! - [`DydxHttpClient`]: High-level methods using Nautilus domain types with instrument caching.
+//!
+//! ## Two-Layer Architecture
+//!
+//! The raw client handles HTTP communication, rate limiting, retries, and basic response parsing.
+//! The domain client wraps the raw client in an `Arc`, maintains an instrument cache using `DashMap`,
+//! and provides high-level methods that work with Nautilus domain types.
+//!
+//! ## Key Responsibilities
+//!
 //! • Rate-limiting based on the public dYdX specification.
 //! • Zero-copy deserialization of large JSON payloads into domain models.
 //! • Conversion of raw exchange errors into the rich [`DydxHttpError`] enum.
+//! • Instrument caching with standard methods: `cache_instruments()`, `cache_instrument()`, `get_instrument()`.
 //!
 //! # Important Note
 //!
@@ -39,9 +50,18 @@
 //! | Account data                         | <https://docs.dydx.exchange/api_integration-indexer/indexer_api#accounts> |
 //! | Utility endpoints                    | <https://docs.dydx.exchange/api_integration-indexer/indexer_api#utility> |
 
-use std::{fmt::Debug, num::NonZeroU32, sync::LazyLock};
+use std::{
+    fmt::Debug,
+    num::NonZeroU32,
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
+use dashmap::DashMap;
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     http::HttpClient,
     ratelimiter::quota::Quota,
@@ -50,6 +70,7 @@ use nautilus_network::{
 use reqwest::{Method, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use super::error::DydxHttpError;
 use crate::common::{
@@ -361,7 +382,7 @@ impl DydxRawHttpClient {
     // Markets Endpoints
     // ========================================================================
 
-    /// Fetch all perpetual markets.
+    /// Fetch all perpetual markets from dYdX.
     ///
     /// # Errors
     ///
@@ -370,6 +391,65 @@ impl DydxRawHttpClient {
         self.send_request(Method::GET, "/v4/perpetualMarkets", None)
             .await
     }
+
+    /// Fetch all instruments and parse them into Nautilus `InstrumentAny` types.
+    ///
+    /// This method fetches all perpetual markets from dYdX and converts them
+    /// into Nautilus instrument definitions using the `parse_instrument_any` function.
+    ///
+    /// # Parameters
+    ///
+    /// - `maker_fee`: Optional maker fee to apply to all instruments
+    /// - `taker_fee`: Optional taker fee to apply to all instruments
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The HTTP request fails
+    /// - The response cannot be parsed
+    /// - Any instrument parsing fails
+    ///
+    pub async fn fetch_instruments(
+        &self,
+        maker_fee: Option<rust_decimal::Decimal>,
+        taker_fee: Option<rust_decimal::Decimal>,
+    ) -> Result<Vec<InstrumentAny>, DydxHttpError> {
+        use nautilus_core::time::get_atomic_clock_realtime;
+
+        let markets_response = self.get_markets().await?;
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        let mut instruments = Vec::new();
+        let mut skipped = 0;
+
+        for (ticker, market) in markets_response.markets {
+            match super::parse::parse_instrument_any(&market, maker_fee, taker_fee, ts_init) {
+                Ok(instrument) => {
+                    instruments.push(instrument);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse instrument {ticker}: {e}");
+                    skipped += 1;
+                }
+            }
+        }
+
+        if skipped > 0 {
+            tracing::info!(
+                "Parsed {} instruments, skipped {} (inactive or invalid)",
+                instruments.len(),
+                skipped
+            );
+        } else {
+            tracing::info!("Parsed {} instruments", instruments.len());
+        }
+
+        Ok(instruments)
+    }
+
+    // ========================================================================
+    // Account Endpoints
+    // ========================================================================
 
     /// Fetch orderbook for a specific market.
     ///
@@ -539,16 +619,334 @@ impl DydxRawHttpClient {
     }
 }
 
+/// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.exchange) Indexer REST API.
+///
+/// This client wraps the underlying `DydxRawHttpClient` to handle conversions
+/// into the Nautilus domain model, following the two-layer pattern established
+/// in OKX, Bybit, and BitMEX adapters.
+///
+/// **Architecture:**
+/// - **Raw client** (`DydxRawHttpClient`): Low-level HTTP methods matching dYdX Indexer API endpoints.
+/// - **Domain client** (`DydxHttpClient`): High-level methods using Nautilus domain types.
+///
+/// The domain client:
+/// - Wraps the raw client in an `Arc` for efficient cloning (required for Python bindings).
+/// - Maintains an instrument cache using `DashMap` for thread-safe concurrent access.
+/// - Provides standard cache methods: `cache_instruments()`, `cache_instrument()`, `get_instrument()`.
+/// - Tracks cache initialization state for optimizations.
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
+pub struct DydxHttpClient {
+    /// Raw HTTP client wrapped in Arc for efficient cloning.
+    pub(crate) inner: Arc<DydxRawHttpClient>,
+    /// Instrument cache shared across the adapter using DashMap for thread-safe access.
+    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    /// Tracks whether the instrument cache has been initialized.
+    cache_initialized: AtomicBool,
+}
+
+impl Clone for DydxHttpClient {
+    fn clone(&self) -> Self {
+        let cache_initialized = AtomicBool::new(false);
+        let is_initialized = self.cache_initialized.load(Ordering::Acquire);
+        if is_initialized {
+            cache_initialized.store(true, Ordering::Release);
+        }
+
+        Self {
+            inner: self.inner.clone(),
+            instruments_cache: self.instruments_cache.clone(),
+            cache_initialized,
+        }
+    }
+}
+
+impl Default for DydxHttpClient {
+    fn default() -> Self {
+        Self::new(None, Some(60), None, false, None)
+            .expect("Failed to create default DydxHttpClient")
+    }
+}
+
+impl DydxHttpClient {
+    /// Creates a new [`DydxHttpClient`] using the default dYdX Indexer HTTP URL,
+    /// optionally overridden with a custom base URL.
+    ///
+    /// **Note**: No credentials are required as the dYdX Indexer API is publicly accessible.
+    /// Order submission and trading operations use gRPC with blockchain transaction signing.
+    ///
+    /// # Parameters
+    ///
+    /// - `base_url`: Optional custom base URL (defaults to production or testnet based on `is_testnet`).
+    /// - `timeout_secs`: Optional request timeout in seconds (default: 60).
+    /// - `proxy_url`: Optional HTTP proxy URL.
+    /// - `is_testnet`: If `true`, uses testnet URL; otherwise uses mainnet.
+    /// - `retry_config`: Optional custom retry configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying HTTP client or retry manager cannot be created.
+    pub fn new(
+        base_url: Option<String>,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+        is_testnet: bool,
+        retry_config: Option<RetryConfig>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            inner: Arc::new(DydxRawHttpClient::new(
+                base_url,
+                timeout_secs,
+                proxy_url,
+                is_testnet,
+                retry_config,
+            )?),
+            instruments_cache: Arc::new(DashMap::new()),
+            cache_initialized: AtomicBool::new(false),
+        })
+    }
+
+    /// Requests instruments and returns Nautilus domain types.
+    ///
+    /// This is the primary method for fetching instrument definitions from the
+    /// dYdX Indexer API. Results are automatically cached in `instruments_cache`
+    /// for subsequent lookups using `get_instrument()`.
+    ///
+    /// # Parameters
+    ///
+    /// - `symbol`: Optional symbol filter (e.g., "BTC-USD"). If None, fetches all markets.
+    /// - `maker_fee`: Optional maker fee to apply to instruments (should come from user's fee tier).
+    /// - `taker_fee`: Optional taker fee to apply to instruments (should come from user's fee tier).
+    ///
+    /// # Returns
+    ///
+    /// A vector of [`InstrumentAny`] domain objects representing dYdX perpetual markets.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The HTTP request to dYdX Indexer API fails.
+    /// - The response cannot be parsed.
+    ///
+    /// Individual instrument parsing errors are logged as warnings and do not fail the entire request.
+    ///
+    pub async fn request_instruments(
+        &self,
+        symbol: Option<String>,
+        maker_fee: Option<rust_decimal::Decimal>,
+        taker_fee: Option<rust_decimal::Decimal>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        use nautilus_core::time::get_atomic_clock_realtime;
+
+        let markets_response = self.inner.get_markets().await?;
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        let mut instruments = Vec::new();
+        let mut skipped = 0;
+
+        for (ticker, market) in markets_response.markets {
+            // Filter by symbol if specified
+            if let Some(ref sym) = symbol
+                && ticker != *sym
+            {
+                continue;
+            }
+
+            // Parse using http/parse.rs
+            match super::parse::parse_instrument_any(&market, maker_fee, taker_fee, ts_init) {
+                Ok(instrument) => {
+                    // Cache the instrument
+                    let symbol_ustr = instrument.id().symbol.inner();
+                    self.instruments_cache
+                        .insert(symbol_ustr, instrument.clone());
+                    instruments.push(instrument);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse instrument {ticker}: {e}");
+                    skipped += 1;
+                }
+            }
+        }
+
+        if !instruments.is_empty() {
+            self.cache_initialized.store(true, Ordering::Release);
+        }
+
+        if skipped > 0 {
+            tracing::info!(
+                "Parsed {} instruments, skipped {} (inactive or invalid)",
+                instruments.len(),
+                skipped
+            );
+        } else {
+            tracing::debug!("Parsed {} instruments", instruments.len());
+        }
+
+        Ok(instruments)
+    }
+
+    /// Standard cache_instruments() method - bulk replace cache.
+    ///
+    /// This method clears the existing cache and fetches all available instruments
+    /// from the dYdX Indexer API, repopulating the cache. This is typically called
+    /// during initialization and periodically for refreshing instrument definitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or instrument parsing fails.
+    ///
+    pub async fn cache_instruments(&self) -> anyhow::Result<()> {
+        self.instruments_cache.clear();
+        self.request_instruments(None, None, None).await?;
+        tracing::info!("Cached {} instruments", self.instruments_cache.len());
+        Ok(())
+    }
+
+    /// Standard cache_instrument() method - upsert single instrument.
+    ///
+    /// This method inserts or updates a single instrument in the cache. If an
+    /// instrument with the same symbol already exists, it will be replaced.
+    /// This is useful for dynamically updating instrument definitions without
+    /// fetching the entire market list.
+    ///
+    /// # Parameters
+    ///
+    /// - `instrument`: The [`InstrumentAny`] to cache.
+    ///
+    pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        let symbol = instrument.id().symbol.inner();
+        self.instruments_cache.insert(symbol, instrument);
+        self.cache_initialized.store(true, Ordering::Release);
+    }
+
+    /// Standard get_instrument() method - retrieve by symbol.
+    ///
+    /// This method retrieves a cached instrument by its symbol. Returns `None`
+    /// if the instrument is not found in the cache. The cache must be initialized
+    /// either by calling `cache_instruments()` or `request_instruments()` first.
+    ///
+    /// # Parameters
+    ///
+    /// - `symbol`: The instrument symbol as a [`Ustr`] (e.g., `Ustr::from("BTC-USD")`).
+    ///
+    /// # Returns
+    ///
+    /// `Some(InstrumentAny)` if found, `None` otherwise.
+    ///
+    #[must_use]
+    pub fn get_instrument(&self, symbol: Ustr) -> Option<InstrumentAny> {
+        self.instruments_cache
+            .get(&symbol)
+            .map(|entry| entry.clone())
+    }
+
+    /// Helper to get instrument or fetch if not cached.
+    ///
+    /// This is a convenience method that first checks the cache, and if the
+    /// instrument is not found, fetches it from the API. This is useful for
+    /// ensuring an instrument is available without explicitly managing the cache.
+    ///
+    /// # Parameters
+    ///
+    /// - `symbol`: The instrument symbol as a [`Ustr`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The HTTP request fails.
+    /// - The instrument is not found on the exchange.
+    ///
+    #[allow(dead_code)]
+    async fn instrument_or_fetch(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
+        if let Some(instrument) = self.get_instrument(symbol) {
+            return Ok(instrument);
+        }
+
+        // Fetch from API
+        let instruments = self
+            .request_instruments(Some(symbol.to_string()), None, None)
+            .await?;
+
+        instruments
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {symbol}"))
+    }
+
+    /// Exposes raw HTTP client for testing and advanced use cases.
+    ///
+    /// This provides access to the underlying [`DydxRawHttpClient`] for cases
+    /// where low-level API access is needed. Most users should use the domain
+    /// client methods instead.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the Arc-wrapped raw HTTP client.
+    #[must_use]
+    pub fn raw_client(&self) -> &Arc<DydxRawHttpClient> {
+        &self.inner
+    }
+
+    /// Check if this client is configured for testnet.
+    ///
+    /// # Returns
+    ///
+    /// `true` if using testnet, `false` if using mainnet.
+    #[must_use]
+    pub fn is_testnet(&self) -> bool {
+        self.inner.is_testnet()
+    }
+
+    /// Get the base URL being used by this client.
+    ///
+    /// # Returns
+    ///
+    /// The base URL string (either mainnet or testnet).
+    #[must_use]
+    pub fn base_url(&self) -> &str {
+        self.inner.base_url()
+    }
+
+    /// Check if the instrument cache has been initialized.
+    ///
+    /// # Returns
+    ///
+    /// `true` if cache contains instruments, `false` otherwise.
+    #[must_use]
+    pub fn is_cache_initialized(&self) -> bool {
+        self.cache_initialized.load(Ordering::Acquire)
+    }
+
+    /// Get the number of instruments currently cached.
+    ///
+    /// # Returns
+    ///
+    /// The count of cached instruments.
+    #[must_use]
+    pub fn cached_instruments_count(&self) -> usize {
+        self.instruments_cache.len()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
+
     use super::*;
 
+    // ========================================================================
+    // Raw Client Tests
+    // ========================================================================
+
     #[tokio::test]
-    async fn test_client_creation() {
+    async fn test_raw_client_creation() {
         let client = DydxRawHttpClient::new(None, Some(30), None, false, None);
         assert!(client.is_ok());
 
@@ -558,12 +956,125 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_testnet_client() {
+    async fn test_raw_client_testnet() {
         let client = DydxRawHttpClient::new(None, Some(30), None, true, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
         assert!(client.is_testnet());
         assert_eq!(client.base_url(), DYDX_TESTNET_HTTP_URL);
+    }
+
+    // ========================================================================
+    // Domain Client Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_domain_client_creation() {
+        let client = DydxHttpClient::new(None, Some(30), None, false, None);
+        assert!(client.is_ok());
+
+        let client = client.unwrap();
+        assert!(!client.is_testnet());
+        assert_eq!(client.base_url(), DYDX_HTTP_URL);
+        assert!(!client.is_cache_initialized());
+        assert_eq!(client.cached_instruments_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_domain_client_testnet() {
+        let client = DydxHttpClient::new(None, Some(30), None, true, None);
+        assert!(client.is_ok());
+
+        let client = client.unwrap();
+        assert!(client.is_testnet());
+        assert_eq!(client.base_url(), DYDX_TESTNET_HTTP_URL);
+    }
+
+    #[tokio::test]
+    async fn test_domain_client_default() {
+        let client = DydxHttpClient::default();
+        assert!(!client.is_testnet());
+        assert_eq!(client.base_url(), DYDX_HTTP_URL);
+        assert!(!client.is_cache_initialized());
+    }
+
+    #[tokio::test]
+    async fn test_domain_client_clone() {
+        let client = DydxHttpClient::new(None, Some(30), None, false, None).unwrap();
+
+        // Clone before initialization
+        let cloned = client.clone();
+        assert!(!cloned.is_cache_initialized());
+
+        // Simulate cache initialization
+        client.cache_initialized.store(true, Ordering::Release);
+
+        // Clone after initialization
+        #[allow(clippy::redundant_clone)]
+        let cloned_after = client.clone();
+        assert!(cloned_after.is_cache_initialized());
+    }
+
+    #[test]
+    fn test_domain_client_cache_instrument() {
+        use nautilus_model::{
+            identifiers::{InstrumentId, Symbol},
+            instruments::CryptoPerpetual,
+            types::Currency,
+        };
+
+        let client = DydxHttpClient::default();
+        assert_eq!(client.cached_instruments_count(), 0);
+
+        // Create a test instrument
+        let instrument_id =
+            InstrumentId::new(Symbol::from("BTC-USD"), *crate::common::consts::DYDX_VENUE);
+        let price = nautilus_model::types::Price::from("1.0");
+        let size = nautilus_model::types::Quantity::from("0.001");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            Symbol::from("BTC-USD"),
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::USD(),
+            false,
+            price.precision,
+            size.precision,
+            price,
+            size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        // Cache the instrument
+        client.cache_instrument(InstrumentAny::CryptoPerpetual(instrument));
+        assert_eq!(client.cached_instruments_count(), 1);
+        assert!(client.is_cache_initialized());
+
+        // Retrieve it
+        let btc_usd = Ustr::from("BTC-USD");
+        let cached = client.get_instrument(btc_usd);
+        assert!(cached.is_some());
+    }
+
+    #[test]
+    fn test_domain_client_get_instrument_not_found() {
+        let client = DydxHttpClient::default();
+        let eth_usd = Ustr::from("ETH-USD");
+        let result = client.get_instrument(eth_usd);
+        assert!(result.is_none());
     }
 }
