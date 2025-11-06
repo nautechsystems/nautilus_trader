@@ -36,7 +36,7 @@ use std::sync::{
 
 use dashmap::DashMap;
 use nautilus_model::{
-    identifiers::AccountId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
 use ustr::Ustr;
@@ -76,11 +76,6 @@ pub struct DydxWebSocketClient {
 
 impl DydxWebSocketClient {
     /// Creates a new public WebSocket client for market data.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` - The WebSocket URL (e.g., wss://indexer.dydx.trade/v4/ws).
-    /// * `heartbeat` - Optional heartbeat interval in seconds.
     #[must_use]
     pub fn new_public(url: String, _heartbeat: Option<u64>) -> Self {
         Self {
@@ -94,18 +89,11 @@ impl DydxWebSocketClient {
     }
 
     /// Creates a new private WebSocket client for account updates.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` - The WebSocket URL.
-    /// * `credential` - The credential containing wallet information.
-    /// * `account_id` - The account ID for account message parsing.
-    /// * `heartbeat` - Optional heartbeat interval in seconds.
     #[must_use]
     pub fn new_private(
         url: String,
         credential: DydxCredential,
-        _account_id: AccountId,
+        account_id: AccountId,
         _heartbeat: Option<u64>,
     ) -> Self {
         Self {
@@ -114,7 +102,7 @@ impl DydxWebSocketClient {
             requires_auth: true,
             is_connected: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
-            account_id: None,
+            account_id: Some(account_id),
         }
     }
 
@@ -173,10 +161,6 @@ impl DydxWebSocketClient {
         self.instruments_cache.get(symbol).map(|r| r.clone())
     }
 
-    // ========================================================================
-    // Subscription Methods
-    // ========================================================================
-
     /// Subscribes to public trade updates for a specific instrument.
     ///
     /// # Errors
@@ -186,9 +170,9 @@ impl DydxWebSocketClient {
     /// # References
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#trades-channel>
-    pub async fn subscribe_trades(&self, symbol: &str) -> DydxWsResult<()> {
+    pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
         // TODO: Implement subscription
-        tracing::debug!("Subscribe to trades for {symbol}");
+        tracing::debug!("Subscribe to trades for {instrument_id}");
         Ok(())
     }
 
@@ -197,9 +181,9 @@ impl DydxWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the unsubscription request fails.
-    pub async fn unsubscribe_trades(&self, symbol: &str) -> DydxWsResult<()> {
+    pub async fn unsubscribe_trades(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
         // TODO: Implement unsubscription
-        tracing::debug!("Unsubscribe from trades for {symbol}");
+        tracing::debug!("Unsubscribe from trades for {instrument_id}");
         Ok(())
     }
 
@@ -212,9 +196,9 @@ impl DydxWebSocketClient {
     /// # References
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#orderbook-channel>
-    pub async fn subscribe_orderbook(&self, symbol: &str) -> DydxWsResult<()> {
+    pub async fn subscribe_orderbook(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
         // TODO: Implement subscription
-        tracing::debug!("Subscribe to orderbook for {symbol}");
+        tracing::debug!("Subscribe to orderbook for {instrument_id}");
         Ok(())
     }
 
@@ -223,18 +207,13 @@ impl DydxWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the unsubscription request fails.
-    pub async fn unsubscribe_orderbook(&self, symbol: &str) -> DydxWsResult<()> {
+    pub async fn unsubscribe_orderbook(&self, instrument_id: InstrumentId) -> DydxWsResult<()> {
         // TODO: Implement unsubscription
-        tracing::debug!("Unsubscribe from orderbook for {symbol}");
+        tracing::debug!("Unsubscribe from orderbook for {instrument_id}");
         Ok(())
     }
 
     /// Subscribes to candle/kline updates for a specific instrument.
-    ///
-    /// # Arguments
-    ///
-    /// * `symbol` - The instrument symbol (e.g., "BTC-USD").
-    /// * `resolution` - The candle resolution (e.g., "1MIN", "5MINS", "1HOUR").
     ///
     /// # Errors
     ///
@@ -243,9 +222,13 @@ impl DydxWebSocketClient {
     /// # References
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#candles-channel>
-    pub async fn subscribe_candles(&self, symbol: &str, resolution: &str) -> DydxWsResult<()> {
+    pub async fn subscribe_candles(
+        &self,
+        instrument_id: InstrumentId,
+        resolution: &str,
+    ) -> DydxWsResult<()> {
         // TODO: Implement subscription
-        tracing::debug!("Subscribe to candles for {symbol} with resolution {resolution}");
+        tracing::debug!("Subscribe to candles for {instrument_id} with resolution {resolution}");
         Ok(())
     }
 
@@ -254,9 +237,15 @@ impl DydxWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the unsubscription request fails.
-    pub async fn unsubscribe_candles(&self, symbol: &str, resolution: &str) -> DydxWsResult<()> {
+    pub async fn unsubscribe_candles(
+        &self,
+        instrument_id: InstrumentId,
+        resolution: &str,
+    ) -> DydxWsResult<()> {
         // TODO: Implement unsubscription
-        tracing::debug!("Unsubscribe from candles for {symbol} with resolution {resolution}");
+        tracing::debug!(
+            "Unsubscribe from candles for {instrument_id} with resolution {resolution}"
+        );
         Ok(())
     }
 
@@ -290,11 +279,6 @@ impl DydxWebSocketClient {
     ///
     /// This requires authentication and will only work for private WebSocket clients
     /// created with [`Self::new_private`].
-    ///
-    /// # Arguments
-    ///
-    /// * `address` - The wallet address.
-    /// * `subaccount_number` - The subaccount number (0 for default subaccount).
     ///
     /// # Errors
     ///

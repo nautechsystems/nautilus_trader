@@ -23,7 +23,10 @@ use nautilus_model::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::websocket::{enums::DydxWsOperation, error::DydxWebSocketError};
+use crate::websocket::{
+    enums::{DydxWsChannel, DydxWsOperation},
+    error::DydxWebSocketError,
+};
 
 /// dYdX WebSocket subscription message.
 ///
@@ -36,7 +39,7 @@ pub struct DydxSubscription {
     #[serde(rename = "type")]
     pub op: DydxWsOperation,
     /// The channel to subscribe to.
-    pub channel: String,
+    pub channel: DydxWsChannel,
     /// Optional channel-specific identifier (e.g., market symbol).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -100,7 +103,7 @@ pub struct DydxWsSubscriptionMsg {
     /// The message sequence number.
     pub message_id: u64,
     /// The channel name.
-    pub channel: String,
+    pub channel: DydxWsChannel,
     /// Optional channel-specific identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -129,7 +132,7 @@ pub struct DydxWsChannelDataMsg {
     /// The message sequence number.
     pub message_id: u64,
     /// The channel name.
-    pub channel: String,
+    pub channel: DydxWsChannel,
     /// Optional channel-specific identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -151,7 +154,7 @@ pub struct DydxWsChannelBatchDataMsg {
     /// The message sequence number.
     pub message_id: u64,
     /// The channel name.
-    pub channel: String,
+    pub channel: DydxWsChannel,
     /// Optional channel-specific identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -176,7 +179,7 @@ pub struct DydxWsGenericMsg {
     pub message_id: Option<u64>,
     /// Optional channel name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel: Option<String>,
+    pub channel: Option<DydxWsChannel>,
     /// Optional channel-specific identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,

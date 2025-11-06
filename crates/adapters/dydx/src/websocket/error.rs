@@ -22,6 +22,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use super::enums::DydxWsChannel;
+
 /// Result type for dYdX WebSocket operations.
 pub type DydxWsResult<T> = Result<T, DydxWsError>;
 
@@ -109,7 +111,7 @@ pub struct DydxWebSocketError {
     pub message_id: Option<u64>,
     /// The channel name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel: Option<String>,
+    pub channel: Option<DydxWsChannel>,
     /// The channel-specific ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
