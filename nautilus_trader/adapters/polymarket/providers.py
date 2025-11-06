@@ -65,7 +65,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
     async def load_all_async(self, filters: dict | None = None) -> None:
         await self._load_markets([], filters)
 
-    def _load_ids_using_gamma_markets(
+    async def _load_ids_using_gamma_markets(
         self,
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
@@ -75,8 +75,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         """
         condition_ids = [get_polymarket_condition_id(inst_id) for inst_id in instrument_ids]
 
-        if filters is None:
-            filters = {}
+        # Create a copy to avoid mutating the caller's filters
+        filters = filters.copy() if filters is not None else {}
 
         if len(condition_ids) <= 100:  # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
             self._log.info(f"Loading {len(condition_ids)} instruments, using direct condition_id filtering")
@@ -84,7 +84,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         else:
             self._log.info(f"Loading {len(condition_ids)} instruments, using bulk load of all markets")
 
-        markets = list_markets(filters=filters)  # Usually, you would use filters={"is_active": True} to skip archived markets
+        # Wrap synchronous blocking call with asyncio.to_thread
+        markets = await asyncio.to_thread(list_markets, filters=filters)
         self._log.info(f"Loaded {len(markets)} markets using Gamma API")
         for market in markets:
             condition_id = market.get("conditionId")
@@ -137,7 +138,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
             )
 
         if self._config.use_gamma_markets:
-            self._load_ids_using_gamma_markets(instrument_ids, filters)
+            await self._load_ids_using_gamma_markets(instrument_ids, filters)
         else:
             await self._load_ids_using_clob_api(instrument_ids, filters)
 
@@ -204,8 +205,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        if filters is None:
-            filters = {}
+        # Create a copy to avoid mutating the caller's filters
+        filters = filters.copy() if filters is not None else {}
 
         if instrument_ids:
             instruments_str = "instruments: " + ", ".join([str(x) for x in instrument_ids])
