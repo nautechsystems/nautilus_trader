@@ -5223,6 +5223,7 @@ dependencies = [
 name = "nautilus-dydx"
 version = "0.52.0"
 dependencies = [
+ "ahash 0.8.12",
  "anyhow",
  "axum",
  "bip32",

@@ -55,6 +55,7 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 bip32 = { workspace = true }
 chrono = { workspace = true }
