@@ -56,10 +56,9 @@ nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
 anyhow = { workspace = true }
-ahash = { workspace = true }
-bip32 = "0.5"
+bip32 = { workspace = true }
 chrono = { workspace = true }
-cosmrs = { version = "0.21", features = ["bip32"] }
+cosmrs = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 hex = { workspace = true }
@@ -75,10 +74,9 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
-tonic = "0.13"
+tonic = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-zeroize = { workspace = true, features = ["derive"] }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
