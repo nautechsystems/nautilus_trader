@@ -20,7 +20,6 @@ use crate::{
     websocket::Hyperliquid2WebSocketClient,
 };
 use pyo3::prelude::*;
-use pyo3_async_runtimes::tokio::future_into_py;
 
 fn to_pyerr(err: impl std::fmt::Display) -> PyErr {
     pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
@@ -54,7 +53,7 @@ impl PyHyperliquid2WebSocketClient {
     #[pyo3(name = "connect")]
     fn py_connect<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client.connect().await.map_err(to_pyerr)
         })
     }
@@ -63,7 +62,7 @@ impl PyHyperliquid2WebSocketClient {
     #[pyo3(name = "subscribe_all_mids")]
     fn py_subscribe_all_mids<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let channel = HyperliquidWsChannel::AllMids;
             client.subscribe(channel).await.map_err(to_pyerr)
         })
@@ -77,7 +76,7 @@ impl PyHyperliquid2WebSocketClient {
         coin: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let channel = HyperliquidWsChannel::Trades { coin };
             client.subscribe(channel).await.map_err(to_pyerr)
         })
@@ -91,7 +90,7 @@ impl PyHyperliquid2WebSocketClient {
         coin: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let channel = HyperliquidWsChannel::L2Book { coin };
             client.subscribe(channel).await.map_err(to_pyerr)
         })
@@ -106,7 +105,7 @@ impl PyHyperliquid2WebSocketClient {
         interval: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let channel = HyperliquidWsChannel::Candle { coin, interval };
             client.subscribe(channel).await.map_err(to_pyerr)
         })
@@ -120,7 +119,7 @@ impl PyHyperliquid2WebSocketClient {
         user: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let channel = HyperliquidWsChannel::User { user };
             client.subscribe(channel).await.map_err(to_pyerr)
         })
@@ -134,7 +133,7 @@ impl PyHyperliquid2WebSocketClient {
         user: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let channel = HyperliquidWsChannel::UserFills { user };
             client.subscribe(channel).await.map_err(to_pyerr)
         })
@@ -144,7 +143,7 @@ impl PyHyperliquid2WebSocketClient {
     #[pyo3(name = "receive")]
     fn py_receive<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client.receive().await.map_err(to_pyerr)
         })
     }
@@ -157,7 +156,7 @@ impl PyHyperliquid2WebSocketClient {
         coin: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let channel = HyperliquidWsChannel::Trades { coin };
             client.unsubscribe(channel).await.map_err(to_pyerr)
         })
@@ -171,7 +170,7 @@ impl PyHyperliquid2WebSocketClient {
         coin: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let channel = HyperliquidWsChannel::L2Book { coin };
             client.unsubscribe(channel).await.map_err(to_pyerr)
         })

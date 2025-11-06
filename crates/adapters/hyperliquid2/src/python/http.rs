@@ -16,8 +16,7 @@
 //! Python bindings for Hyperliquid HTTP client.
 
 use crate::http::Hyperliquid2HttpClient;
-use pyo3::{prelude::*, types::PyDict};
-use pyo3_async_runtimes::tokio::future_into_py;
+use pyo3::prelude::*;
 
 fn to_pyerr(err: impl std::fmt::Display) -> PyErr {
     pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
@@ -56,7 +55,7 @@ impl PyHyperliquid2HttpClient {
     #[pyo3(name = "load_instruments")]
     fn py_load_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .load_instruments()
                 .await
@@ -69,13 +68,10 @@ impl PyHyperliquid2HttpClient {
     #[pyo3(name = "request_meta_info")]
     fn py_request_meta_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let meta_info = client.request_meta_info().await.map_err(to_pyerr)?;
             let json_str = serde_json::to_string(&meta_info).map_err(to_pyerr)?;
-            Python::with_gil(|py| {
-                let json_module = py.import_bound("json")?;
-                json_module.call_method1("loads", (json_str,))
-            })
+            Ok(json_str)
         })
     }
 
@@ -83,13 +79,10 @@ impl PyHyperliquid2HttpClient {
     #[pyo3(name = "request_all_mids")]
     fn py_request_all_mids<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mids = client.request_all_mids().await.map_err(to_pyerr)?;
             let json_str = serde_json::to_string(&mids).map_err(to_pyerr)?;
-            Python::with_gil(|py| {
-                let json_module = py.import_bound("json")?;
-                json_module.call_method1("loads", (json_str,))
-            })
+            Ok(json_str)
         })
     }
 
@@ -101,13 +94,10 @@ impl PyHyperliquid2HttpClient {
         coin: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let book = client.request_l2_book(&coin).await.map_err(to_pyerr)?;
             let json_str = serde_json::to_string(&book).map_err(to_pyerr)?;
-            Python::with_gil(|py| {
-                let json_module = py.import_bound("json")?;
-                json_module.call_method1("loads", (json_str,))
-            })
+            Ok(json_str)
         })
     }
 
@@ -119,13 +109,10 @@ impl PyHyperliquid2HttpClient {
         coin: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let trades = client.request_trades(&coin).await.map_err(to_pyerr)?;
             let json_str = serde_json::to_string(&trades).map_err(to_pyerr)?;
-            Python::with_gil(|py| {
-                let json_module = py.import_bound("json")?;
-                json_module.call_method1("loads", (json_str,))
-            })
+            Ok(json_str)
         })
     }
 
@@ -137,13 +124,10 @@ impl PyHyperliquid2HttpClient {
         user: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let state = client.request_user_state(&user).await.map_err(to_pyerr)?;
             let json_str = serde_json::to_string(&state).map_err(to_pyerr)?;
-            Python::with_gil(|py| {
-                let json_module = py.import_bound("json")?;
-                json_module.call_method1("loads", (json_str,))
-            })
+            Ok(json_str)
         })
     }
 
@@ -155,13 +139,10 @@ impl PyHyperliquid2HttpClient {
         user: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let orders = client.request_open_orders(&user).await.map_err(to_pyerr)?;
             let json_str = serde_json::to_string(&orders).map_err(to_pyerr)?;
-            Python::with_gil(|py| {
-                let json_module = py.import_bound("json")?;
-                json_module.call_method1("loads", (json_str,))
-            })
+            Ok(json_str)
         })
     }
 
@@ -173,13 +154,10 @@ impl PyHyperliquid2HttpClient {
         user: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
-        future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let fills = client.request_user_fills(&user).await.map_err(to_pyerr)?;
             let json_str = serde_json::to_string(&fills).map_err(to_pyerr)?;
-            Python::with_gil(|py| {
-                let json_module = py.import_bound("json")?;
-                json_module.call_method1("loads", (json_str,))
-            })
+            Ok(json_str)
         })
     }
 }

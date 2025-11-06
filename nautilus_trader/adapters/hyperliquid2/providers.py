@@ -57,7 +57,7 @@ class Hyperliquid2InstrumentProvider(InstrumentProvider):
         self._log.info("Loading instruments from Hyperliquid")
 
         # Load instruments through the HTTP client
-        # The Rust client stores instruments internally
+        # The Rust client stores instruments internally and returns count
         count = await self._client.load_instruments()
 
         self._log.info(f"Loaded {count} instruments from Hyperliquid")

@@ -36,26 +36,26 @@ class Hyperliquid2HttpClient:
         Returns the count of loaded instruments.
         """
         ...
-    async def request_meta_info(self) -> dict[str, Any]:
-        """Fetch meta information (universe of assets)."""
+    async def request_meta_info(self) -> str:
+        """Fetch meta information (universe of assets) as JSON string."""
         ...
-    async def request_all_mids(self) -> dict[str, Any]:
-        """Fetch all mid prices."""
+    async def request_all_mids(self) -> str:
+        """Fetch all mid prices as JSON string."""
         ...
-    async def request_l2_book(self, coin: str) -> dict[str, Any]:
-        """Fetch L2 order book for a specific coin."""
+    async def request_l2_book(self, coin: str) -> str:
+        """Fetch L2 order book for a specific coin as JSON string."""
         ...
-    async def request_trades(self, coin: str) -> list[dict[str, Any]]:
-        """Fetch recent trades for a specific coin."""
+    async def request_trades(self, coin: str) -> str:
+        """Fetch recent trades for a specific coin as JSON string."""
         ...
-    async def request_user_state(self, user: str) -> dict[str, Any]:
-        """Fetch user state (positions, balances)."""
+    async def request_user_state(self, user: str) -> str:
+        """Fetch user state (positions, balances) as JSON string."""
         ...
-    async def request_open_orders(self, user: str) -> list[dict[str, Any]]:
-        """Fetch open orders for a user."""
+    async def request_open_orders(self, user: str) -> str:
+        """Fetch open orders for a user as JSON string."""
         ...
-    async def request_user_fills(self, user: str) -> list[dict[str, Any]]:
-        """Fetch user fills (trade history)."""
+    async def request_user_fills(self, user: str) -> str:
+        """Fetch user fills (trade history) as JSON string."""
         ...
 
 class Hyperliquid2WebSocketClient:
