@@ -56,9 +56,11 @@ nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
 anyhow = { workspace = true }
-bip32 = { workspace = true }
+ahash = { workspace = true }
+bip32 = "0.5"
 chrono = { workspace = true }
-cosmrs = { workspace = true }
+cosmrs = { version = "0.21", features = ["bip32"] }
+dashmap = { workspace = true }
 derive_builder = { workspace = true }
 hex = { workspace = true }
 prost = { workspace = true }
@@ -71,8 +73,10 @@ serde_with = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
-tonic = { workspace = true }
+tonic = "0.13"
+tracing = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true, features = ["derive"] }
 

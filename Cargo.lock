@@ -5223,12 +5223,14 @@ dependencies = [
 name = "nautilus-dydx"
 version = "0.52.0"
 dependencies = [
+ "ahash 0.8.12",
  "anyhow",
  "axum",
  "bip32",
  "chrono",
  "cosmrs",
  "criterion",
+ "dashmap",
  "derive_builder",
  "hex",
  "nautilus-common",
@@ -5253,8 +5255,10 @@ dependencies = [
  "strum 0.27.2",
  "thiserror 2.0.17",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
  "tonic",
+ "tracing",
  "tracing-test",
  "url",
  "ustr",
