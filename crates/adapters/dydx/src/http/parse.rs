@@ -225,6 +225,7 @@ mod tests {
     use std::str::FromStr;
 
     use chrono::Utc;
+    use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::*;
@@ -261,7 +262,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_instrument_any_valid() {
         let market = create_test_market();
         let maker_fee = Some(Decimal::from_str("0.0002").unwrap());
@@ -284,7 +285,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_instrument_any_inactive_market() {
         let mut market = create_test_market();
         market.status = DydxMarketStatus::Paused;
@@ -294,7 +295,7 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("not active"));
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_instrument_any_invalid_ticker() {
         let mut market = create_test_market();
         market.ticker = "INVALID".to_string();
@@ -311,14 +312,14 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_validate_ticker_format_valid() {
         assert!(validate_ticker_format("BTC-USD").is_ok());
         assert!(validate_ticker_format("ETH-USD").is_ok());
         assert!(validate_ticker_format("ATOM-USD").is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_validate_ticker_format_invalid() {
         // Missing hyphen
         assert!(validate_ticker_format("BTCUSD").is_err());
@@ -336,7 +337,7 @@ mod tests {
         assert!(validate_ticker_format("-").is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_ticker_currencies_valid() {
         let (base, quote) = parse_ticker_currencies("BTC-USD").unwrap();
         assert_eq!(base, "BTC");
@@ -347,13 +348,13 @@ mod tests {
         assert_eq!(quote, "USDC");
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_ticker_currencies_invalid() {
         assert!(parse_ticker_currencies("INVALID").is_err());
         assert!(parse_ticker_currencies("BTC-USD-PERP").is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_validate_market_active() {
         assert!(validate_market_active("BTC-USD", &DydxMarketStatus::Active).is_ok());
 

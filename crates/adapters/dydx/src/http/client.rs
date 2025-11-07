@@ -938,6 +938,7 @@ impl DydxHttpClient {
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
+    use rstest::rstest;
 
     use super::*;
 
@@ -1016,7 +1017,7 @@ mod tests {
         assert!(cloned_after.is_cache_initialized());
     }
 
-    #[test]
+    #[rstest]
     fn test_domain_client_cache_instrument() {
         use nautilus_model::{
             identifiers::{InstrumentId, Symbol},
@@ -1070,7 +1071,7 @@ mod tests {
         assert!(cached.is_some());
     }
 
-    #[test]
+    #[rstest]
     fn test_domain_client_get_instrument_not_found() {
         let client = DydxHttpClient::default();
         let eth_usd = Ustr::from("ETH-USD");

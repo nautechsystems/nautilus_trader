@@ -358,9 +358,11 @@ pub enum DydxCandleResolution {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_order_status_conversion() {
         assert_eq!(
             OrderStatus::from(DydxOrderStatus::Open),
@@ -376,7 +378,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_liquidity_conversion() {
         assert_eq!(
             LiquiditySide::from(DydxLiquidity::Maker),

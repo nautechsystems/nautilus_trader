@@ -122,14 +122,16 @@ pub const fn should_retry_error_code(status: &StatusCode) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_should_retry_429() {
         assert!(should_retry_error_code(&StatusCode::TOO_MANY_REQUESTS));
     }
 
-    #[test]
+    #[rstest]
     fn test_should_retry_server_errors() {
         assert!(should_retry_error_code(&StatusCode::INTERNAL_SERVER_ERROR));
         assert!(should_retry_error_code(&StatusCode::BAD_GATEWAY));
@@ -137,7 +139,7 @@ mod tests {
         assert!(should_retry_error_code(&StatusCode::GATEWAY_TIMEOUT));
     }
 
-    #[test]
+    #[rstest]
     fn test_should_not_retry_client_errors() {
         assert!(!should_retry_error_code(&StatusCode::BAD_REQUEST));
         assert!(!should_retry_error_code(&StatusCode::UNAUTHORIZED));
@@ -145,7 +147,7 @@ mod tests {
         assert!(!should_retry_error_code(&StatusCode::NOT_FOUND));
     }
 
-    #[test]
+    #[rstest]
     fn test_should_not_retry_success() {
         assert!(!should_retry_error_code(&StatusCode::OK));
         assert!(!should_retry_error_code(&StatusCode::CREATED));

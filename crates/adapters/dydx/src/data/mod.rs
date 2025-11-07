@@ -359,6 +359,7 @@ impl DydxDataClient {
 mod tests {
     use nautilus_common::runner::set_data_event_sender;
     use nautilus_model::identifiers::ClientId;
+    use rstest::rstest;
 
     use super::*;
 
@@ -368,7 +369,7 @@ mod tests {
         set_data_event_sender(sender);
     }
 
-    #[test]
+    #[rstest]
     fn test_new_data_client() {
         setup_test_env();
 

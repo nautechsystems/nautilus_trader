@@ -198,12 +198,14 @@ impl DydxCredential {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     // Test mnemonic from dYdX v4 client examples
     const TEST_MNEMONIC: &str = "mirror actor skill push coach wait confirm orchard lunch mobile athlete gossip awake miracle matter bus reopen team ladder lazy list timber render wait";
 
-    #[test]
+    #[rstest]
     fn test_from_mnemonic() {
         let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![])
             .expect("Failed to create credential");
@@ -212,7 +214,7 @@ mod tests {
         assert!(credential.authenticator_ids.is_empty());
     }
 
-    #[test]
+    #[rstest]
     fn test_from_mnemonic_with_authenticators() {
         let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![1, 2, 3])
             .expect("Failed to create credential");
@@ -220,7 +222,7 @@ mod tests {
         assert_eq!(credential.authenticator_ids, vec![1, 2, 3]);
     }
 
-    #[test]
+    #[rstest]
     fn test_from_private_key() {
         // Use a valid test private key (small non-zero value)
         // This is a valid secp256k1 private key: 32 bytes with value 1
@@ -233,7 +235,7 @@ mod tests {
         assert!(credential.authenticator_ids.is_empty());
     }
 
-    #[test]
+    #[rstest]
     fn test_account_id() {
         let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![])
             .expect("Failed to create credential");
@@ -242,7 +244,7 @@ mod tests {
         assert_eq!(account_id.to_string(), credential.address);
     }
 
-    #[test]
+    #[rstest]
     fn test_sign_bytes() {
         let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![])
             .expect("Failed to create credential");
@@ -256,7 +258,7 @@ mod tests {
         assert_eq!(signature.len(), 64);
     }
 
-    #[test]
+    #[rstest]
     fn test_debug_redacts_key() {
         let credential = DydxCredential::from_mnemonic(TEST_MNEMONIC, 0, vec![])
             .expect("Failed to create credential");

@@ -470,9 +470,11 @@ impl DydxGrpcClient {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_current_url_tracked() {
         // Test that we can track the current URL
         let url = "https://example.com:9090".to_string();

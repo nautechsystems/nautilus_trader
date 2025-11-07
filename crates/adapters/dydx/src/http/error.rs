@@ -107,9 +107,11 @@ impl From<BuildError> for DydxHttpError {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_build_error_display() {
         let error = BuildError::MissingAddress;
         assert_eq!(error.to_string(), "Missing required address parameter");
@@ -121,7 +123,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_dydx_http_error_from_string() {
         let error: DydxHttpError = "Invalid parameter".to_string().into();
         match error {
@@ -130,7 +132,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_dydx_http_error_from_build_error() {
         let build_error = BuildError::MissingSubaccountNumber;
         let http_error: DydxHttpError = build_error.into();
