@@ -752,9 +752,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
         quantities: dict[InstrumentId, Quantity] = {}
 
         for instrument_id in instrument_ids:
+            token_id = str(get_polymarket_token_id(instrument_id))
             size = size_by_asset.get(instrument_id, 0.0)
+
             # Gamma API returns size as decimal float (e.g., 1.5 shares)
             # Create Quantity directly from the float value
+            if size > 0:
+                self._log.info(f"Size for {instrument_id} is {size}")
             quantities[instrument_id] = Quantity(float(size), precision=USDC_POS.precision)
 
         return quantities
@@ -1146,7 +1150,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 )
             else:
                 venue_order_id = VenueOrderId(response["orderID"])
-                self._log.info(
+                self._log.debug(
                     f"Submitted {order.client_order_id!r} {venue_order_id!r}",
                     LogColor.MAGENTA,
                 )
