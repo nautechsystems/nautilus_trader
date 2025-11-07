@@ -207,10 +207,10 @@ impl DydxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The HTTP request fails
-    /// - The response has a non-success HTTP status code
-    /// - The response body cannot be deserialized to type `T`
-    /// - The request is canceled
+    /// - The HTTP request fails.
+    /// - The response has a non-success HTTP status code.
+    /// - The response body cannot be deserialized to type `T`.
+    /// - The request is canceled.
     pub async fn send_request<T>(
         &self,
         method: Method,
@@ -297,11 +297,11 @@ impl DydxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The request body cannot be serialized to JSON
-    /// - The HTTP request fails
-    /// - The response has a non-success HTTP status code
-    /// - The response body cannot be deserialized to type `T`
-    /// - The request is canceled
+    /// - The request body cannot be serialized to JSON.
+    /// - The HTTP request fails.
+    /// - The response has a non-success HTTP status code.
+    /// - The response body cannot be deserialized to type `T`.
+    /// - The request is canceled.
     pub async fn send_post_request<T, B>(
         &self,
         endpoint: &str,
@@ -405,9 +405,9 @@ impl DydxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The HTTP request fails
-    /// - The response cannot be parsed
-    /// - Any instrument parsing fails
+    /// - The HTTP request fails.
+    /// - The response cannot be parsed.
+    /// - Any instrument parsing fails.
     ///
     pub async fn fetch_instruments(
         &self,

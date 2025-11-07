@@ -125,8 +125,8 @@ impl DydxDataClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The HTTP request fails
-    /// - Instrument parsing fails
+    /// - The HTTP request fails.
+    /// - Instrument parsing fails.
     ///
     async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
         tracing::info!("Bootstrapping dYdX instruments");
@@ -218,43 +218,32 @@ impl DataClient for DydxDataClient {
                 .await
                 .context("failed to subscribe to markets channel")?;
 
-            // Start message processing task (WS -> FeedHandler -> DataEvent)
-            if let Some(mut rx) = ws.take_receiver() {
+            // Start message processing task (handler already converts to NautilusWsMessage)
+            if let Some(rx) = ws.take_receiver() {
                 let data_tx = self._data_sender.clone();
-                let account_id = ws.account_id();
-                let handler = crate::websocket::handler::FeedHandler::new(account_id);
 
                 let task = tokio::spawn(async move {
+                    let mut rx = rx;
                     while let Some(msg) = rx.recv().await {
-                        match handler.handle_message(msg) {
-                            Ok(Some(crate::websocket::messages::NautilusWsMessage::Data(
-                                items,
-                            ))) => {
+                        match msg {
+                            crate::websocket::messages::NautilusWsMessage::Data(items) => {
                                 for d in items {
                                     let _ = data_tx.send(DataEvent::Data(d));
                                 }
                             }
-                            Ok(Some(crate::websocket::messages::NautilusWsMessage::Deltas(
-                                deltas,
-                            ))) => {
+                            crate::websocket::messages::NautilusWsMessage::Deltas(deltas) => {
                                 // Wrap OrderBookDeltas in the API wrapper expected by Data::Deltas
                                 let data: NautilusData = OrderBookDeltas_API::new(*deltas).into();
                                 let _ = data_tx.send(DataEvent::Data(data));
                             }
-                            Ok(Some(crate::websocket::messages::NautilusWsMessage::Error(err))) => {
+                            crate::websocket::messages::NautilusWsMessage::Error(err) => {
                                 tracing::error!("dYdX WS error: {err}");
                             }
-                            Ok(Some(
-                                crate::websocket::messages::NautilusWsMessage::Reconnected,
-                            )) => {
+                            crate::websocket::messages::NautilusWsMessage::Reconnected => {
                                 tracing::info!("dYdX WS reconnected");
                             }
-                            Ok(Some(_other)) => {
+                            _other => {
                                 // TODO: handle orders/fills/positions/account state if used by DataClient
-                            }
-                            Ok(None) => {}
-                            Err(e) => {
-                                tracing::error!("Feed handler error: {e}");
                             }
                         }
                     }

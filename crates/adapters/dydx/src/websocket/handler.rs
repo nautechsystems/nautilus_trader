@@ -17,8 +17,17 @@
 //!
 //! This module processes incoming WebSocket messages and converts them into
 //! Nautilus domain objects.
+//!
+//! The handler owns the WebSocketClient exclusively and runs in a dedicated
+//! Tokio task within the lock-free I/O boundary.
 
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use ahash::AHashMap;
 use nautilus_core::nanos::UnixNanos;
@@ -32,13 +41,18 @@ use nautilus_model::{
     instruments::Instrument,
     types::{Price, Quantity},
 };
+use nautilus_network::{RECONNECTED, websocket::WebSocketClient};
 use rust_decimal::Decimal;
+use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::{
     DydxWsError, DydxWsResult,
     enums::DydxWsChannel,
-    messages::{DydxWsChannelBatchDataMsg, DydxWsChannelDataMsg, DydxWsMessage, NautilusWsMessage},
+    messages::{
+        DydxWsChannelBatchDataMsg, DydxWsChannelDataMsg, DydxWsConnectedMsg, DydxWsGenericMsg,
+        DydxWsMessage, DydxWsSubscriptionMsg, NautilusWsMessage,
+    },
     types::{
         DydxCandle, DydxMarketsContents, DydxOrderbookContents, DydxOrderbookSnapshotContents,
         DydxTradeContents,
@@ -53,33 +67,184 @@ pub enum HandlerCommand {
     UpdateInstrument(Box<nautilus_model::instruments::InstrumentAny>),
     /// Initialize instruments in bulk.
     InitializeInstruments(Vec<nautilus_model::instruments::InstrumentAny>),
+    /// Send a text message via WebSocket.
+    SendText(String),
 }
 
 /// Processes incoming WebSocket messages and converts them to Nautilus domain objects.
-#[derive(Debug)]
+///
+/// The handler owns the WebSocketClient exclusively within the lock-free I/O boundary,
+/// eliminating RwLock contention on the hot path.
 pub struct FeedHandler {
     /// Account ID for parsing account-specific messages.
-    #[allow(dead_code)] // TODO: Will be used for subaccount message parsing
     account_id: Option<AccountId>,
+    /// Command receiver from outer client.
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    /// Output sender for Nautilus messages.
+    out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+    /// Raw WebSocket message receiver.
+    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+    /// Owned WebSocket client (no RwLock).
+    client: WebSocketClient,
+    /// Manual disconnect signal.
+    signal: Arc<AtomicBool>,
     /// Cached instruments for parsing market data.
     instruments: AHashMap<Ustr, nautilus_model::instruments::InstrumentAny>,
     /// Cached bar types by topic (e.g., "BTC-USD/1MIN").
     bar_types: AHashMap<String, BarType>,
 }
 
+impl std::fmt::Debug for FeedHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FeedHandler")
+            .field("account_id", &self.account_id)
+            .field("instruments_count", &self.instruments.len())
+            .field("bar_types_count", &self.bar_types.len())
+            .finish_non_exhaustive()
+    }
+}
+
 impl FeedHandler {
     /// Creates a new [`FeedHandler`].
     #[must_use]
-    pub fn new(account_id: Option<AccountId>) -> Self {
+    pub fn new(
+        account_id: Option<AccountId>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+        out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        client: WebSocketClient,
+        signal: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             account_id,
+            cmd_rx,
+            out_tx,
+            raw_rx,
+            client,
+            signal,
             instruments: AHashMap::new(),
             bar_types: AHashMap::new(),
         }
     }
 
+    /// Main processing loop for the handler.
+    pub async fn run(&mut self) {
+        loop {
+            tokio::select! {
+                // Process commands from outer client
+                Some(cmd) = self.cmd_rx.recv() => {
+                    self.handle_command(cmd).await;
+                }
+
+                // Process raw WebSocket messages
+                Some(msg) = self.raw_rx.recv() => {
+                    if let Some(nautilus_msg) = self.process_raw_message(msg).await
+                        && self.out_tx.send(nautilus_msg).is_err()
+                    {
+                        tracing::debug!("Receiver dropped, stopping handler");
+                        break;
+                    }
+                }
+
+                else => {
+                    tracing::debug!("Handler shutting down: channels closed");
+                    break;
+                }
+            }
+
+            // Check for stop signal
+            if self.signal.load(Ordering::Relaxed) {
+                tracing::debug!("Handler received stop signal");
+                break;
+            }
+        }
+    }
+
+    /// Processes a raw WebSocket message.
+    async fn process_raw_message(&self, msg: Message) -> Option<NautilusWsMessage> {
+        match msg {
+            Message::Text(txt) => {
+                if txt == RECONNECTED {
+                    return Some(NautilusWsMessage::Reconnected);
+                }
+
+                match serde_json::from_str::<serde_json::Value>(&txt) {
+                    Ok(val) => {
+                        // Attempt to classify message using generic envelope
+                        match serde_json::from_value::<DydxWsGenericMsg>(val.clone()) {
+                            Ok(meta) => {
+                                let result = if meta.is_connected() {
+                                    serde_json::from_value::<DydxWsConnectedMsg>(val)
+                                        .map(DydxWsMessage::Connected)
+                                } else if meta.is_subscribed() {
+                                    serde_json::from_value::<DydxWsSubscriptionMsg>(val)
+                                        .map(DydxWsMessage::Subscribed)
+                                } else if meta.is_unsubscribed() {
+                                    serde_json::from_value::<DydxWsSubscriptionMsg>(val)
+                                        .map(DydxWsMessage::Unsubscribed)
+                                } else if meta.is_channel_data() {
+                                    serde_json::from_value::<DydxWsChannelDataMsg>(val)
+                                        .map(DydxWsMessage::ChannelData)
+                                } else if meta.is_channel_batch_data() {
+                                    serde_json::from_value::<DydxWsChannelBatchDataMsg>(val)
+                                        .map(DydxWsMessage::ChannelBatchData)
+                                } else if meta.is_error() {
+                                    serde_json::from_value::<
+                                        crate::websocket::error::DydxWebSocketError,
+                                    >(val)
+                                    .map(DydxWsMessage::Error)
+                                } else {
+                                    Ok(DydxWsMessage::Raw(val))
+                                };
+
+                                match result {
+                                    Ok(dydx_msg) => self.handle_dydx_message(dydx_msg),
+                                    Err(e) => {
+                                        let err = crate::websocket::error::DydxWebSocketError::from_message(
+                                            e.to_string(),
+                                        );
+                                        Some(NautilusWsMessage::Error(err))
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                // Fallback to raw if generic parse fails
+                                None
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let err = crate::websocket::error::DydxWebSocketError::from_message(
+                            e.to_string(),
+                        );
+                        Some(NautilusWsMessage::Error(err))
+                    }
+                }
+            }
+            Message::Pong(_data) => None,
+            Message::Ping(_data) => None,  // Handled by lower layers
+            Message::Binary(_bin) => None, // dYdX uses text frames
+            Message::Close(_frame) => {
+                tracing::info!("WebSocket close frame received");
+                None
+            }
+            Message::Frame(_) => None,
+        }
+    }
+
+    /// Handles a parsed dYdX WebSocket message.
+    fn handle_dydx_message(&self, msg: DydxWsMessage) -> Option<NautilusWsMessage> {
+        match self.handle_message(msg) {
+            Ok(opt_msg) => opt_msg,
+            Err(e) => {
+                tracing::error!("Error handling message: {e}");
+                None
+            }
+        }
+    }
+
     /// Handles a command to update the internal state.
-    pub fn handle_command(&mut self, command: HandlerCommand) {
+    async fn handle_command(&mut self, command: HandlerCommand) {
         match command {
             HandlerCommand::UpdateInstrument(instrument) => {
                 let symbol = instrument.id().symbol.inner();
@@ -89,6 +254,11 @@ impl FeedHandler {
                 for instrument in instruments {
                     let symbol = instrument.id().symbol.inner();
                     self.instruments.insert(symbol, instrument);
+                }
+            }
+            HandlerCommand::SendText(text) => {
+                if let Err(e) = self.client.send_text(text, None).await {
+                    tracing::error!("Failed to send WebSocket text: {e}");
                 }
             }
         }

@@ -34,20 +34,23 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
-    RECONNECTED,
+    mode::ConnectionMode,
     websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
 };
-use tokio::sync::RwLock;
-use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
-use super::error::{DydxWsError, DydxWsResult};
+use super::{
+    error::{DydxWsError, DydxWsResult},
+    handler::{FeedHandler, HandlerCommand},
+    messages::NautilusWsMessage,
+};
 use crate::common::credential::DydxCredential;
 
 /// WebSocket client for dYdX v4 market data and account streams.
@@ -63,8 +66,17 @@ use crate::common::credential::DydxCredential;
 /// - Transaction signing (when placing orders via the validator node)
 ///
 /// It is **NOT** used for WebSocket message signing or authentication.
+///
+/// # Architecture
+///
+/// This client follows a two-layer architecture:
+/// - **Outer client** (this struct): Orchestrates connection and maintains Python-accessible state
+/// - **Inner handler**: Owns WebSocketClient exclusively and processes messages in a dedicated task
+///
+/// Communication uses lock-free channels:
+/// - Commands flow from client → handler via `handler_cmd_tx`
+/// - Parsed events flow from handler → client via `out_rx`
 #[derive(Debug)]
-#[allow(dead_code)] // TODO: Remove once implementation is complete
 pub struct DydxWebSocketClient {
     /// The WebSocket connection URL.
     url: String,
@@ -72,37 +84,47 @@ pub struct DydxWebSocketClient {
     credential: Option<DydxCredential>,
     /// Whether authentication is required for this client.
     requires_auth: bool,
-    /// Whether the client is currently connected.
-    is_connected: Arc<AtomicBool>,
-    /// Cached instruments for parsing market data.
+    /// Shared connection state (lock-free atomic).
+    connection_mode: Arc<ArcSwap<std::sync::atomic::AtomicU8>>,
+    /// Manual disconnect signal.
+    signal: Arc<AtomicBool>,
+    /// Cached instruments for parsing market data (Python-accessible).
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     /// Optional account ID for account message parsing.
     account_id: Option<AccountId>,
     /// Optional heartbeat interval in seconds.
     heartbeat: Option<u64>,
-    /// Network-level WebSocket client (to be refactored: handler should own this inside lock-free I/O boundary).
-    inner: Arc<RwLock<Option<WebSocketClient>>>,
-    /// Inbound decoded dYdX websocket messages receiver.
-    rx_inbound: Option<tokio::sync::mpsc::UnboundedReceiver<super::messages::DydxWsMessage>>,
-    /// Background reader task handle.
-    reader_task: Option<tokio::task::JoinHandle<()>>,
+    /// Command channel sender to handler.
+    handler_cmd_tx: Arc<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
+    /// Receiver for parsed Nautilus messages from handler.
+    out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
+    /// Background handler task handle.
+    handler_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl DydxWebSocketClient {
     /// Creates a new public WebSocket client for market data.
     #[must_use]
     pub fn new_public(url: String, _heartbeat: Option<u64>) -> Self {
+        use std::sync::atomic::AtomicU8;
+
+        // Create dummy command channel (will be replaced on connect)
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+
         Self {
             url,
             credential: None,
             requires_auth: false,
-            is_connected: Arc::new(AtomicBool::new(false)),
+            connection_mode: Arc::new(ArcSwap::from_pointee(AtomicU8::new(
+                ConnectionMode::Closed as u8,
+            ))),
+            signal: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
             heartbeat: _heartbeat,
-            inner: Arc::new(RwLock::new(None)),
-            rx_inbound: None,
-            reader_task: None,
+            handler_cmd_tx: Arc::new(cmd_tx),
+            out_rx: None,
+            handler_task: None,
         }
     }
 
@@ -114,17 +136,25 @@ impl DydxWebSocketClient {
         account_id: AccountId,
         _heartbeat: Option<u64>,
     ) -> Self {
+        use std::sync::atomic::AtomicU8;
+
+        // Create dummy command channel (will be replaced on connect)
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+
         Self {
             url,
             credential: Some(credential),
             requires_auth: true,
-            is_connected: Arc::new(AtomicBool::new(false)),
+            connection_mode: Arc::new(ArcSwap::from_pointee(AtomicU8::new(
+                ConnectionMode::Closed as u8,
+            ))),
+            signal: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: Some(account_id),
             heartbeat: _heartbeat,
-            inner: Arc::new(RwLock::new(None)),
-            rx_inbound: None,
-            reader_task: None,
+            handler_cmd_tx: Arc::new(cmd_tx),
+            out_rx: None,
+            handler_task: None,
         }
     }
 
@@ -137,7 +167,12 @@ impl DydxWebSocketClient {
     /// Returns `true` when the client is connected.
     #[must_use]
     pub fn is_connected(&self) -> bool {
-        self.is_connected.load(Ordering::Relaxed)
+        let mode = self.connection_mode.load();
+        let mode_u8 = mode.load(Ordering::Relaxed);
+        matches!(
+            mode_u8,
+            x if x == ConnectionMode::Active as u8 || x == ConnectionMode::Reconnect as u8
+        )
     }
 
     /// Sets the account ID for account message parsing.
@@ -156,16 +191,32 @@ impl DydxWebSocketClient {
     /// Any existing instrument with the same ID will be replaced.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
         let symbol = instrument.id().symbol.inner();
-        self.instruments_cache.insert(symbol, instrument);
+        self.instruments_cache.insert(symbol, instrument.clone());
+
+        // Send command to handler if connected
+        if let Err(e) = self
+            .handler_cmd_tx
+            .send(HandlerCommand::UpdateInstrument(Box::new(instrument)))
+        {
+            tracing::debug!("Failed to send UpdateInstrument command to handler: {e}");
+        }
     }
 
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same IDs will be replaced.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for instrument in instruments {
+        for instrument in &instruments {
             self.instruments_cache
-                .insert(instrument.id().symbol.inner(), instrument);
+                .insert(instrument.id().symbol.inner(), instrument.clone());
+        }
+
+        // Send command to handler if connected
+        if let Err(e) = self
+            .handler_cmd_tx
+            .send(HandlerCommand::InitializeInstruments(instruments))
+        {
+            tracing::debug!("Failed to send InitializeInstruments command to handler: {e}");
         }
     }
 
@@ -187,14 +238,14 @@ impl DydxWebSocketClient {
     /// Returns None if the receiver has already been taken or not connected.
     pub fn take_receiver(
         &mut self,
-    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<super::messages::DydxWsMessage>> {
-        self.rx_inbound.take()
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>> {
+        self.out_rx.take()
     }
 
     /// Connects the websocket client in handler mode with automatic reconnection.
     ///
-    /// Spawns a background task to decode raw websocket messages into typed
-    /// [`super::messages::DydxWsMessage`] values and forwards them through an internal channel.
+    /// Spawns a background handler task that owns the WebSocketClient and processes
+    /// raw messages into typed [`NautilusWsMessage`] values.
     ///
     /// # Errors
     ///
@@ -204,7 +255,7 @@ impl DydxWebSocketClient {
             return Ok(());
         }
 
-        let (message_handler, mut raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = channel_message_handler();
 
         let cfg = WebSocketConfig {
             url: self.url.clone(),
@@ -224,114 +275,38 @@ impl DydxWebSocketClient {
             .await
             .map_err(|e| DydxWsError::Transport(e.to_string()))?;
 
-        // Set inner client
-        {
-            let mut guard = self.inner.write().await;
-            *guard = Some(client);
+        // Update connection state atomically
+        self.connection_mode.store(client.connection_mode_atomic());
+
+        // Create fresh channels for this connection
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+
+        self.handler_cmd_tx = Arc::new(cmd_tx.clone());
+        self.out_rx = Some(out_rx);
+
+        // Replay cached instruments to the new handler
+        if !self.instruments_cache.is_empty() {
+            let cached_instruments: Vec<InstrumentAny> = self
+                .instruments_cache
+                .iter()
+                .map(|entry| entry.value().clone())
+                .collect();
+            if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(cached_instruments)) {
+                tracing::error!("Failed to replay instruments to handler: {e}");
+            }
         }
 
-        // Inbound typed message channel
-        let (tx_inbound, rx_inbound) =
-            tokio::sync::mpsc::unbounded_channel::<super::messages::DydxWsMessage>();
+        // Spawn handler task
+        let account_id = self.account_id;
+        let signal = self.signal.clone();
 
-        // Spawn reader task to decode messages
-        let reader_task = tokio::spawn(async move {
-            while let Some(msg) = raw_rx.recv().await {
-                match msg {
-                    Message::Text(txt) => {
-                        if txt == RECONNECTED {
-                            let _ = tx_inbound.send(super::messages::DydxWsMessage::Reconnected);
-                            continue;
-                        }
-
-                        match serde_json::from_str::<serde_json::Value>(&txt) {
-                            Ok(val) => {
-                                // Attempt to classify message using generic envelope
-                                match serde_json::from_value::<super::messages::DydxWsGenericMsg>(
-                                    val.clone(),
-                                ) {
-                                    Ok(meta) => {
-                                        let result = if meta.is_connected() {
-                                            serde_json::from_value::<
-                                                super::messages::DydxWsConnectedMsg,
-                                            >(val)
-                                            .map(super::messages::DydxWsMessage::Connected)
-                                        } else if meta.is_subscribed() {
-                                            serde_json::from_value::<
-                                                super::messages::DydxWsSubscriptionMsg,
-                                            >(val)
-                                            .map(super::messages::DydxWsMessage::Subscribed)
-                                        } else if meta.is_unsubscribed() {
-                                            serde_json::from_value::<
-                                                super::messages::DydxWsSubscriptionMsg,
-                                            >(val)
-                                            .map(super::messages::DydxWsMessage::Unsubscribed)
-                                        } else if meta.is_channel_data() {
-                                            serde_json::from_value::<
-                                                super::messages::DydxWsChannelDataMsg,
-                                            >(val)
-                                            .map(super::messages::DydxWsMessage::ChannelData)
-                                        } else if meta.is_channel_batch_data() {
-                                            serde_json::from_value::<
-                                                super::messages::DydxWsChannelBatchDataMsg,
-                                            >(val)
-                                            .map(super::messages::DydxWsMessage::ChannelBatchData)
-                                        } else if meta.is_error() {
-                                            serde_json::from_value::<super::error::DydxWebSocketError>(val)
-                                                .map(super::messages::DydxWsMessage::Error)
-                                        } else {
-                                            Ok(super::messages::DydxWsMessage::Raw(val))
-                                        };
-
-                                        match result {
-                                            Ok(msg) => {
-                                                let _ = tx_inbound.send(msg);
-                                            }
-                                            Err(e) => {
-                                                let err =
-                                                    super::error::DydxWebSocketError::from_message(
-                                                        e.to_string(),
-                                                    );
-                                                let _ = tx_inbound.send(
-                                                    super::messages::DydxWsMessage::Error(err),
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(_) => {
-                                        // Fallback to raw if generic parse fails
-                                        let _ = tx_inbound
-                                            .send(super::messages::DydxWsMessage::Raw(val));
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                let err =
-                                    super::error::DydxWebSocketError::from_message(e.to_string());
-                                let _ = tx_inbound.send(super::messages::DydxWsMessage::Error(err));
-                            }
-                        }
-                    }
-                    Message::Ping(_data) => {
-                        // Handled by lower layers where appropriate
-                    }
-                    Message::Pong(_data) => {
-                        let _ = tx_inbound.send(super::messages::DydxWsMessage::Pong);
-                    }
-                    Message::Binary(_bin) => {
-                        // dYdX uses text frames; ignore binary
-                    }
-                    Message::Close(_frame) => {
-                        break;
-                    }
-                    Message::Frame(_) => {}
-                }
-            }
+        let handler_task = tokio::spawn(async move {
+            let mut handler = FeedHandler::new(account_id, cmd_rx, out_tx, raw_rx, client, signal);
+            handler.run().await;
         });
 
-        self.rx_inbound = Some(rx_inbound);
-        self.reader_task = Some(reader_task);
-        self.is_connected.store(true, Ordering::Relaxed);
+        self.handler_task = Some(handler_task);
         tracing::info!("Connected dYdX WebSocket: {}", self.url);
         Ok(())
     }
@@ -342,32 +317,29 @@ impl DydxWebSocketClient {
     ///
     /// Returns an error if the underlying client cannot be accessed.
     pub async fn disconnect(&mut self) -> DydxWsResult<()> {
-        // Close inner client if exists
-        {
-            let guard = self.inner.read().await;
-            if let Some(inner) = guard.as_ref() {
-                inner.disconnect().await;
-            }
-        }
+        // Set stop signal
+        self.signal.store(true, Ordering::Relaxed);
 
-        self.is_connected.store(false, Ordering::Relaxed);
-
-        if let Some(handle) = self.reader_task.take() {
+        // Abort handler task if it exists
+        if let Some(handle) = self.handler_task.take() {
             handle.abort();
         }
 
         // Drop receiver to stop any consumers
-        self.rx_inbound = None;
+        self.out_rx = None;
+
+        tracing::info!("Disconnected dYdX WebSocket");
         Ok(())
     }
 
+    /// Sends a text message via the handler.
     async fn send_text_inner(&self, text: &str) -> DydxWsResult<()> {
-        let guard = self.inner.read().await;
-        let client = guard.as_ref().ok_or(DydxWsError::NotConnected)?;
-        client
-            .send_text(text.to_string(), None)
-            .await
-            .map_err(DydxWsError::from)
+        self.handler_cmd_tx
+            .send(HandlerCommand::SendText(text.to_string()))
+            .map_err(|e| {
+                DydxWsError::Transport(format!("Failed to send command to handler: {e}"))
+            })?;
+        Ok(())
     }
 
     fn ticker_from_instrument_id(instrument_id: &InstrumentId) -> String {

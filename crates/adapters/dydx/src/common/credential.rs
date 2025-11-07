@@ -144,7 +144,7 @@ impl DydxCredential {
     ///
     /// # Errors
     ///
-    /// Returns error if the address cannot be parsed as a valid account ID.
+    /// Returns an error if the address cannot be parsed as a valid account ID.
     pub fn account_id(&self) -> anyhow::Result<AccountId> {
         self.address
             .parse()
@@ -157,7 +157,7 @@ impl DydxCredential {
     ///
     /// # Errors
     ///
-    /// Returns error if SignDoc serialization or signing fails.
+    /// Returns an error if SignDoc serialization or signing fails.
     pub fn sign(&self, sign_doc: &SignDoc) -> anyhow::Result<Vec<u8>> {
         let sign_bytes = sign_doc
             .clone()
@@ -177,7 +177,7 @@ impl DydxCredential {
     ///
     /// # Errors
     ///
-    /// Returns error if signing fails.
+    /// Returns an error if signing fails.
     pub fn sign_bytes(&self, message: &[u8]) -> anyhow::Result<Vec<u8>> {
         let signature = self
             .signing_key
