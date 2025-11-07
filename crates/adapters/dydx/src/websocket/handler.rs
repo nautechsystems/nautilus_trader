@@ -18,6 +18,8 @@
 //! This module processes incoming WebSocket messages and converts them into
 //! Nautilus domain objects.
 
+use std::str::FromStr;
+
 use ahash::AHashMap;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
@@ -31,7 +33,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
-use std::str::FromStr;
 use ustr::Ustr;
 
 use super::{

@@ -25,8 +25,8 @@ use dashmap::DashMap;
 use nautilus_common::{messages::DataEvent, runner::get_data_event_sender};
 use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
 use nautilus_data::client::DataClient;
-use nautilus_model::data::{Data as NautilusData, OrderBookDeltas_API};
 use nautilus_model::{
+    data::{Data as NautilusData, OrderBookDeltas_API},
     identifiers::{ClientId, Venue},
     instruments::InstrumentAny,
 };
@@ -368,9 +368,10 @@ impl DydxDataClient {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use nautilus_common::runner::set_data_event_sender;
     use nautilus_model::identifiers::ClientId;
+
+    use super::*;
 
     fn setup_test_env() {
         // Initialize data event sender for tests
