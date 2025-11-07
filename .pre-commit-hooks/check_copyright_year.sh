@@ -49,10 +49,16 @@ while IFS=: read -r file _ line_content; do
 done < <(rg --line-number --no-heading "Copyright \(C\) 2015-[0-9]{4}" -g '*.rs' -g '*.py' -g '*.pyx' -g '*.pxd')
 
 # Get list of files with copyright headers
-mapfile -t FILES_WITH_HEADERS < <(rg --files-with-matches "Copyright \(C\)" -g '*.rs' -g '*.py' -g '*.pyx' -g '*.pxd' 2> /dev/null || true)
+FILES_WITH_HEADERS=()
+while IFS= read -r file; do
+  FILES_WITH_HEADERS+=("$file")
+done < <(rg --files-with-matches "Copyright \(C\)" -g '*.rs' -g '*.py' -g '*.pyx' -g '*.pxd' 2> /dev/null || true)
 
 # Get all tracked files
-mapfile -t ALL_FILES < <(git ls-files '*.rs' '*.py' '*.pyx' '*.pxd')
+ALL_FILES=()
+while IFS= read -r file; do
+  ALL_FILES+=("$file")
+done < <(git ls-files '*.rs' '*.py' '*.pyx' '*.pxd')
 
 # Convert files with headers to associative array for fast lookup
 declare -A HAS_HEADER
