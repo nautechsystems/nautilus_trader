@@ -33,19 +33,6 @@ impl DydxHttpClient {
     ///
     /// - `base_url`: Optional base URL for the HTTP client (defaults to mainnet)
     /// - `is_testnet`: Whether to use testnet endpoints (default: false)
-    ///
-    /// # Examples
-    ///
-    /// ```python
-    /// # Mainnet client
-    /// client = DydxHttpClient()
-    ///
-    /// # Testnet client
-    /// client = DydxHttpClient(is_testnet=True)
-    ///
-    /// # Custom URL
-    /// client = DydxHttpClient(base_url="https://custom.dydx.exchange")
-    /// ```
     #[new]
     #[pyo3(signature = (base_url=None, is_testnet=false))]
     fn py_new(base_url: Option<String>, is_testnet: bool) -> PyResult<Self> {
@@ -81,19 +68,6 @@ impl DydxHttpClient {
     /// # Returns
     ///
     /// List of instruments as Python objects.
-    ///
-    /// # Examples
-    ///
-    /// ```python
-    /// client = DydxHttpClient()
-    /// instruments = await client.request_instruments()
-    ///
-    /// # With fees
-    /// instruments = await client.request_instruments(
-    ///     maker_fee="0.0002",
-    ///     taker_fee="0.0005",
-    /// )
-    /// ```
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(
         &self,
@@ -141,17 +115,6 @@ impl DydxHttpClient {
     /// # Returns
     ///
     /// The instrument as a Python object, or None if not found.
-    ///
-    /// # Examples
-    ///
-    /// ```python
-    /// client = DydxHttpClient()
-    /// await client.request_instruments()  # Load instruments first
-    ///
-    /// btc_usd = client.get_instrument("BTC-USD")
-    /// if btc_usd:
-    ///     print(f"Found {btc_usd.id}")
-    /// ```
     #[pyo3(name = "get_instrument")]
     fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
         let instrument = self.get_instrument(Ustr::from(symbol));
@@ -162,29 +125,12 @@ impl DydxHttpClient {
     }
 
     /// Returns the number of cached instruments.
-    ///
-    /// # Examples
-    ///
-    /// ```python
-    /// client = DydxHttpClient()
-    /// await client.request_instruments()
-    /// print(f"Cached {client.instrument_count()} instruments")
-    /// ```
     #[pyo3(name = "instrument_count")]
     fn py_instrument_count(&self) -> usize {
         self.instruments_cache.len()
     }
 
     /// Returns all cached instrument symbols.
-    ///
-    /// # Examples
-    ///
-    /// ```python
-    /// client = DydxHttpClient()
-    /// await client.request_instruments()
-    /// symbols = client.instrument_symbols()
-    /// print(f"Available: {symbols}")
-    /// ```
     #[pyo3(name = "instrument_symbols")]
     fn py_instrument_symbols(&self) -> Vec<String> {
         self.instruments_cache

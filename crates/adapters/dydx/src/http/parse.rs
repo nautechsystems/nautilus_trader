@@ -104,13 +104,6 @@ pub fn validate_market_active(ticker: &str, status: &DydxMarketStatus) -> anyhow
 /// [`CryptoPerpetual`] instrument with the appropriate fields mapped from
 /// the dYdX market definition.
 ///
-/// # Parameters
-///
-/// - `definition`: The dYdX perpetual market definition from the API
-/// - `maker_fee`: Optional maker fee as a decimal (e.g., 0.0002 for 0.02%)
-/// - `taker_fee`: Optional taker fee as a decimal (e.g., 0.0005 for 0.05%)
-/// - `ts_init`: Initialization timestamp in nanoseconds since Unix epoch
-///
 /// # Returns
 ///
 /// Returns an [`InstrumentAny::CryptoPerpetual`] on success.
@@ -118,12 +111,12 @@ pub fn validate_market_active(ticker: &str, status: &DydxMarketStatus) -> anyhow
 /// # Errors
 ///
 /// Returns an error if:
-/// - Market status is not Active
-/// - Ticker format is invalid (not BASE-QUOTE)
-/// - Required fields are missing or invalid
-/// - Price or quantity values cannot be parsed
-/// - Currency parsing fails
-/// - Margin fractions are out of valid range
+/// - Market status is not Active.
+/// - Ticker format is invalid (not BASE-QUOTE).
+/// - Required fields are missing or invalid.
+/// - Price or quantity values cannot be parsed.
+/// - Currency parsing fails.
+/// - Margin fractions are out of valid range.
 ///
 pub fn parse_instrument_any(
     definition: &PerpetualMarket,

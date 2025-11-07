@@ -80,7 +80,7 @@ pub struct DydxWebSocketClient {
     account_id: Option<AccountId>,
     /// Optional heartbeat interval in seconds.
     heartbeat: Option<u64>,
-    /// Inner websocket client holder (with reconnection and handler mode).
+    /// Network-level WebSocket client (to be refactored: handler should own this inside lock-free I/O boundary).
     inner: Arc<RwLock<Option<WebSocketClient>>>,
     /// Inbound decoded dYdX websocket messages receiver.
     rx_inbound: Option<tokio::sync::mpsc::UnboundedReceiver<super::messages::DydxWsMessage>>,

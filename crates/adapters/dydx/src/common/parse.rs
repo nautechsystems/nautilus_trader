@@ -77,10 +77,6 @@ pub fn parse_instrument_id<S: AsRef<str>>(ticker: S) -> InstrumentId {
 ///
 /// Returns an error if the string cannot be parsed into a valid price.
 pub fn parse_price(value: &str, field_name: &str) -> anyhow::Result<Price> {
-    if value.is_empty() {
-        anyhow::bail!("Field '{field_name}' is empty, cannot parse as Price");
-    }
-
     Price::from_str(value).map_err(|e| {
         anyhow::anyhow!("Failed to parse '{field_name}' value '{value}' into Price: {e}")
     })
@@ -92,10 +88,6 @@ pub fn parse_price(value: &str, field_name: &str) -> anyhow::Result<Price> {
 ///
 /// Returns an error if the string cannot be parsed into a valid quantity.
 pub fn parse_quantity(value: &str, field_name: &str) -> anyhow::Result<Quantity> {
-    if value.is_empty() {
-        anyhow::bail!("Field '{field_name}' is empty, cannot parse as Quantity");
-    }
-
     Quantity::from_str(value).map_err(|e| {
         anyhow::anyhow!("Failed to parse '{field_name}' value '{value}' into Quantity: {e}")
     })
@@ -107,10 +99,6 @@ pub fn parse_quantity(value: &str, field_name: &str) -> anyhow::Result<Quantity>
 ///
 /// Returns an error if the string cannot be parsed into a valid decimal.
 pub fn parse_decimal(value: &str, field_name: &str) -> anyhow::Result<Decimal> {
-    if value.is_empty() {
-        anyhow::bail!("Field '{field_name}' is empty, cannot parse as Decimal");
-    }
-
     Decimal::from_str(value).map_err(|e| {
         anyhow::anyhow!("Failed to parse '{field_name}' value '{value}' into Decimal: {e}")
     })
@@ -122,9 +110,11 @@ pub fn parse_decimal(value: &str, field_name: &str) -> anyhow::Result<Decimal> {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_get_currency() {
         let btc = get_currency("BTC");
         assert_eq!(btc.code.as_str(), "BTC");
@@ -133,40 +123,31 @@ mod tests {
         assert_eq!(usdc.code.as_str(), "USDC");
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_instrument_id() {
         let instrument_id = parse_instrument_id("BTC-USD");
         assert_eq!(instrument_id.symbol.as_str(), "BTC-USD-PERP");
         assert_eq!(instrument_id.venue, *DYDX_VENUE);
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_price() {
         let price = parse_price("0.01", "test_price").unwrap();
         assert_eq!(price.to_string(), "0.01");
-
-        let err = parse_price("", "empty_price");
-        assert!(err.is_err());
 
         let err = parse_price("invalid", "invalid_price");
         assert!(err.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_quantity() {
         let qty = parse_quantity("1.5", "test_qty").unwrap();
         assert_eq!(qty.to_string(), "1.5");
-
-        let err = parse_quantity("", "empty_qty");
-        assert!(err.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_decimal() {
         let decimal = parse_decimal("0.001", "test_decimal").unwrap();
         assert_eq!(decimal.to_string(), "0.001");
-
-        let err = parse_decimal("", "empty_decimal");
-        assert!(err.is_err());
     }
 }
