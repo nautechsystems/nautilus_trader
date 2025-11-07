@@ -15,13 +15,13 @@
 
 import asyncio
 import json
+import urllib.parse
 from collections import defaultdict
 from collections import deque
 from collections.abc import Coroutine
 from typing import Any
 
 import msgspec
-import requests
 from py_clob_client.client import BalanceAllowanceParams
 from py_clob_client.client import ClobClient
 from py_clob_client.client import MarketOrderArgs
@@ -63,6 +63,9 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
@@ -176,7 +179,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Get the user address (funder) - this is the address that holds positions
         # For proxy wallets, this differs from the signer address
-        user_address = http_client.builder.funder if hasattr(http_client, "builder") else wallet_address
+        user_address = http_client.builder.funder or config.funder or wallet_address
         validate_ethereum_address(user_address)
         self._user_address = user_address
 
@@ -186,7 +189,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # HTTP API
         self._http_client = http_client
-        self._http_session = requests.Session()
+        self._http_client_async = HttpClient(timeout_secs=15)
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
@@ -306,7 +309,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-    def _fetch_user_positions(self, *, limit: int = 100, size_threshold: int = 0) -> list[dict[str, Any]]:
+    async def _fetch_user_positions(self, *, limit: int = 100, size_threshold: int = 0) -> list[dict[str, Any]]:
         """
         Fetch all current positions for the configured user using the Polymarket Data
         API.
@@ -328,16 +331,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 "sortBy": "TOKENS",
                 "sortDirection": "DESC",
             }
-            headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/118.0 Safari/537.36"
-                ),
-                "Accept": "application/json, text/plain, */*",
-            }
-            response = self._http_session.get(base_url, params=params, headers=headers, timeout=15)
-            response.raise_for_status()
-            data = msgspec.json.decode(response.content)
+            url = f"{base_url}?{urllib.parse.urlencode(params)}"
+            response: HttpResponse = await self._http_client_async.request(
+                HttpMethod.GET,
+                url=url,
+            )
+            
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}: Failed to fetch positions")
+            
+            data = msgspec.json.decode(response.body)
             if not data:
                 break
             if isinstance(data, list):
@@ -729,8 +732,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.debug("Fetching positions from Gamma API")
 
         # Fetch all user positions once (paginated)
-        positions: list[dict[str, Any]] = await asyncio.to_thread(
-            self._fetch_user_positions,
+        positions: list[dict[str, Any]] = await self._fetch_user_positions(
             limit=100,
             size_threshold=0,
         )
@@ -738,21 +740,19 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # Map asset (token id) -> size (shares)
         size_by_asset: dict[str, float] = {}
         for p in positions:
-            asset = str(p.get("asset", ""))
+            instrument_id = InstrumentId.from_str(p.get("conditionId", "") + "-" + str(p.get("asset", "") + ".POLYMARKET"))
             size_val = p.get("size", 0) or 0
             try:
-                size_by_asset[asset] = float(size_val)
+                size_by_asset[instrument_id] = float(size_val)
             except Exception as e:
-                self._log.warning(f"Failed to parse position size for asset {asset}: {e}")
+                self._log.warning(f"Failed to parse position size for instrument {instrument_id}: {e}")
                 continue
 
         # Convert to quantities by instrument ID
         quantities: dict[InstrumentId, Quantity] = {}
 
         for instrument_id in instrument_ids:
-            token_id = str(get_polymarket_token_id(instrument_id))
-            size = size_by_asset.get(token_id, 0.0)
-
+            size = size_by_asset.get(instrument_id, 0.0)
             # Gamma API returns size as decimal float (e.g., 1.5 shares)
             # Create Quantity directly from the float value
             quantities[instrument_id] = Quantity(float(size), precision=USDC_POS.precision)
