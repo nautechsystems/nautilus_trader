@@ -179,7 +179,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Get the user address (funder) - this is the address that holds positions
         # For proxy wallets, this differs from the signer address
-        user_address = http_client.builder.funder or config.funder or wallet_address
+        user_address = http_client.builder.funder if hasattr(http_client, "builder") else config.funder or wallet_address
         validate_ethereum_address(user_address)
         self._user_address = user_address
 
