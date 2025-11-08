@@ -1705,8 +1705,7 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_long_request(self, DataClient client, RequestData request):
         start, end = self._bound_dates(request)
-        request.start = start
-        request.end = end
+        request.start, request.end = start, end
         self._requests[request.id] = request
 
         time_range_generator = get_time_range_generator(
@@ -1761,7 +1760,7 @@ cdef class DataEngine(Component):
             self._handle_long_request_response
         )
 
-        # We remove time_range_generator from params to avoid infinite recursion
+        # We remove time_range_generator from params to avoid an infinite recursion
         new_request.params.pop("time_range_generator", None)
 
         # Send the sub-request through the message bus to properly register the callback
@@ -1776,8 +1775,12 @@ cdef class DataEngine(Component):
             self._log.error(f"No parent request ID found for sub-request {sub_request_id}")
             return
 
+        # Storing information about the data count received in the parent request's params
+        cdef int data_count = response.params.get("data_count", 0)
+        cdef RequestData parent_request = self._requests.get(parent_request_id)
+        parent_request.params["data_count"] = parent_request.params.get("data_count", 0) + data_count
+
         # Process the next interval with feedback on if data was received
-        cdef int data_count = response.params.get("data_count", len(response.data))
         cdef bint data_received = data_count > 0
         self._update_long_request_data(parent_request_id, data_received=data_received)
 

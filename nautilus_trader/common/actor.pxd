@@ -364,6 +364,7 @@ cdef class Actor(Component):
     cpdef void _handle_order_book_depth_response(self, DataResponse response)
     cpdef void _handle_bars_response(self, DataResponse response)
     cpdef void _handle_aggregated_bars_response(self, DataResponse response)
+    cpdef void _unsubscribe_historical_aggregated_bars(self, tuple bar_types, bint include_external_data = *)
     cpdef void _handle_order_filled(self, OrderFilled fill)
     cpdef void _finish_response(self, UUID4 request_id)
     cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick)
