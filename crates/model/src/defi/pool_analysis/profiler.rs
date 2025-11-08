@@ -443,7 +443,7 @@ impl PoolProfiler {
             let swap_step_result = compute_swap_step(
                 current_sqrt_price,
                 sqrt_price_target,
-                self.get_active_liquidity(),
+                current_active_liquidity,
                 amount_specified_remaining,
                 fee_tier,
             )?;
@@ -479,9 +479,9 @@ impl PoolProfiler {
             lp_fee += step_fee_amount;
 
             // Update global fee tracker
-            if self.tick_map.liquidity > 0 {
+            if current_active_liquidity > 0 {
                 let fee_growth_delta =
-                    FullMath::mul_div(step_fee_amount, Q128, U256::from(self.tick_map.liquidity))?;
+                    FullMath::mul_div(step_fee_amount, Q128, U256::from(current_active_liquidity))?;
                 current_fee_growth_global += fee_growth_delta;
             }
 
