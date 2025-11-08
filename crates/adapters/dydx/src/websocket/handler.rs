@@ -312,11 +312,7 @@ impl FeedHandler {
             DydxWsChannel::Orderbook => self.parse_orderbook(&data, false),
             DydxWsChannel::Candles => self.parse_candles(&data),
             DydxWsChannel::Markets => self.parse_markets(&data),
-            DydxWsChannel::Subaccounts => {
-                // TODO: Parse subaccount updates (orders, fills, positions)
-                tracing::debug!("Subaccount channel_data not yet implemented");
-                Ok(None)
-            }
+            DydxWsChannel::Subaccounts => self.parse_subaccounts(&data),
             DydxWsChannel::BlockHeight => {
                 tracing::debug!("Block height update received");
                 Ok(None)
@@ -763,6 +759,40 @@ impl FeedHandler {
                 oracle_prices.len()
             );
             // TODO: Implement custom oracle price data type if needed
+        }
+
+        Ok(None)
+    }
+
+    fn parse_subaccounts(
+        &self,
+        data: &DydxWsChannelDataMsg,
+    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+        use crate::schemas::ws::DydxWsSubaccountsChannelContents;
+
+        let contents: DydxWsSubaccountsChannelContents =
+            serde_json::from_value(data.contents.clone()).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to parse subaccounts contents: {e}"))
+            })?;
+
+        // Handle orders
+        if let Some(orders) = contents.orders
+            && !orders.is_empty()
+        {
+            tracing::debug!("Received {} order update(s)", orders.len());
+            // Orders are handled by execution client, not data client
+            // For now, log and skip
+            return Ok(None);
+        }
+
+        // Handle fills
+        if let Some(fills) = contents.fills
+            && !fills.is_empty()
+        {
+            tracing::debug!("Received {} fill update(s)", fills.len());
+            // Fills are handled by execution client, not data client
+            // For now, log and skip
+            return Ok(None);
         }
 
         Ok(None)

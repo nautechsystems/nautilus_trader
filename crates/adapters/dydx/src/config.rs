@@ -42,6 +42,39 @@ pub struct DydxAdapterConfig {
     pub chain_id: String,
     /// Request timeout in seconds.
     pub timeout_secs: u64,
+    /// Wallet address for the account (optional, can be derived from mnemonic).
+    #[serde(default)]
+    pub wallet_address: Option<String>,
+    /// Subaccount number (default: 0).
+    #[serde(default)]
+    pub subaccount: u32,
+    /// Whether this is a testnet configuration.
+    #[serde(default)]
+    pub is_testnet: bool,
+    /// Mnemonic phrase for wallet (optional, loaded from environment if not provided).
+    #[serde(default)]
+    pub mnemonic: Option<String>,
+    /// Maximum number of retries for failed requests (default: 3).
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    /// Initial retry delay in milliseconds (default: 1000ms).
+    #[serde(default = "default_retry_delay_initial_ms")]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum retry delay in milliseconds (default: 10000ms).
+    #[serde(default = "default_retry_delay_max_ms")]
+    pub retry_delay_max_ms: u64,
+}
+
+fn default_max_retries() -> u32 {
+    3
+}
+
+fn default_retry_delay_initial_ms() -> u64 {
+    1000
+}
+
+fn default_retry_delay_max_ms() -> u64 {
+    10000
 }
 
 impl DydxAdapterConfig {
@@ -68,6 +101,13 @@ impl Default for DydxAdapterConfig {
             grpc_urls: DYDX_GRPC_URLS.iter().map(|&s| s.to_string()).collect(),
             chain_id: DYDX_CHAIN_ID.to_string(),
             timeout_secs: 30,
+            wallet_address: None,
+            subaccount: 0,
+            is_testnet: false,
+            mnemonic: None,
+            max_retries: default_max_retries(),
+            retry_delay_initial_ms: default_retry_delay_initial_ms(),
+            retry_delay_max_ms: default_retry_delay_max_ms(),
         }
     }
 }

@@ -397,11 +397,6 @@ impl DydxRawHttpClient {
     /// This method fetches all perpetual markets from dYdX and converts them
     /// into Nautilus instrument definitions using the `parse_instrument_any` function.
     ///
-    /// # Parameters
-    ///
-    /// - `maker_fee`: Optional maker fee to apply to all instruments
-    /// - `taker_fee`: Optional taker fee to apply to all instruments
-    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -678,14 +673,6 @@ impl DydxHttpClient {
     /// **Note**: No credentials are required as the dYdX Indexer API is publicly accessible.
     /// Order submission and trading operations use gRPC with blockchain transaction signing.
     ///
-    /// # Parameters
-    ///
-    /// - `base_url`: Optional custom base URL (defaults to production or testnet based on `is_testnet`).
-    /// - `timeout_secs`: Optional request timeout in seconds (default: 60).
-    /// - `proxy_url`: Optional HTTP proxy URL.
-    /// - `is_testnet`: If `true`, uses testnet URL; otherwise uses mainnet.
-    /// - `retry_config`: Optional custom retry configuration.
-    ///
     /// # Errors
     ///
     /// Returns an error if the underlying HTTP client or retry manager cannot be created.
@@ -714,12 +701,6 @@ impl DydxHttpClient {
     /// This is the primary method for fetching instrument definitions from the
     /// dYdX Indexer API. Results are automatically cached in `instruments_cache`
     /// for subsequent lookups using `get_instrument()`.
-    ///
-    /// # Parameters
-    ///
-    /// - `symbol`: Optional symbol filter (e.g., "BTC-USD"). If None, fetches all markets.
-    /// - `maker_fee`: Optional maker fee to apply to instruments (should come from user's fee tier).
-    /// - `taker_fee`: Optional taker fee to apply to instruments (should come from user's fee tier).
     ///
     /// # Returns
     ///
@@ -812,10 +793,6 @@ impl DydxHttpClient {
     /// This is useful for dynamically updating instrument definitions without
     /// fetching the entire market list.
     ///
-    /// # Parameters
-    ///
-    /// - `instrument`: The [`InstrumentAny`] to cache.
-    ///
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
         let symbol = instrument.id().symbol.inner();
         self.instruments_cache.insert(symbol, instrument);
@@ -827,10 +804,6 @@ impl DydxHttpClient {
     /// This method retrieves a cached instrument by its symbol. Returns `None`
     /// if the instrument is not found in the cache. The cache must be initialized
     /// either by calling `cache_instruments()` or `request_instruments()` first.
-    ///
-    /// # Parameters
-    ///
-    /// - `symbol`: The instrument symbol as a [`Ustr`] (e.g., `Ustr::from("BTC-USD")`).
     ///
     /// # Returns
     ///
@@ -848,10 +821,6 @@ impl DydxHttpClient {
     /// This is a convenience method that first checks the cache, and if the
     /// instrument is not found, fetches it from the API. This is useful for
     /// ensuring an instrument is available without explicitly managing the cache.
-    ///
-    /// # Parameters
-    ///
-    /// - `symbol`: The instrument symbol as a [`Ustr`].
     ///
     /// # Errors
     ///

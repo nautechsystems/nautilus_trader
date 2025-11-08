@@ -54,7 +54,12 @@ pub mod common;
 pub mod config;
 pub mod data;
 pub mod error;
+pub mod execution;
+// TODO: Re-enable once proto files are generated
+// pub mod grpc;
 pub mod http;
+// pub mod proto;
+pub mod schemas;
 pub mod websocket;
 
 #[cfg(feature = "python")]

@@ -28,11 +28,6 @@ use crate::http::client::DydxHttpClient;
 #[pymethods]
 impl DydxHttpClient {
     /// Creates a new [`DydxHttpClient`] instance.
-    ///
-    /// # Parameters
-    ///
-    /// - `base_url`: Optional base URL for the HTTP client (defaults to mainnet)
-    /// - `is_testnet`: Whether to use testnet endpoints (default: false)
     #[new]
     #[pyo3(signature = (base_url=None, is_testnet=false))]
     fn py_new(base_url: Option<String>, is_testnet: bool) -> PyResult<Self> {
@@ -58,12 +53,6 @@ impl DydxHttpClient {
     }
 
     /// Requests all available instruments from the dYdX Indexer API.
-    ///
-    /// # Parameters
-    ///
-    /// - `maker_fee`: Optional maker fee as decimal string (e.g., "0.0002")
-    /// - `taker_fee`: Optional taker fee as decimal string (e.g., "0.0005")
-    /// - `ts_init`: Optional initialization timestamp in nanoseconds
     ///
     /// # Returns
     ///
@@ -107,10 +96,6 @@ impl DydxHttpClient {
     }
 
     /// Gets a cached instrument by symbol.
-    ///
-    /// # Parameters
-    ///
-    /// - `symbol`: The instrument symbol (e.g., "BTC-USD")
     ///
     /// # Returns
     ///
