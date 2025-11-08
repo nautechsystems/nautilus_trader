@@ -17,9 +17,10 @@
 
 use std::{
     cell::Ref,
-    sync::{Mutex, atomic::AtomicU64},
+    sync::{Arc, Mutex, atomic::AtomicU64},
 };
 
+use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
@@ -33,15 +34,17 @@ use nautilus_common::{
         },
     },
     runner::get_exec_event_sender,
+    runtime::get_runtime,
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{MUTEX_POISONED, UnixNanos};
 use nautilus_execution::client::{ExecutionClient, LiveExecutionClient, base::ExecutionClientCore};
 use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
     accounts::AccountAny,
-    enums::OmsType,
+    enums::{OmsType, OrderType},
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::InstrumentAny,
+    orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
@@ -51,11 +54,13 @@ use tokio::task::JoinHandle;
 use crate::{
     common::consts::DYDX_VENUE,
     config::DydxAdapterConfig,
-    // TODO: Re-enable once proto files are generated
-    // grpc::{DydxGrpcClient, OrderBuilder, Wallet},
+    execution::submitter::OrderSubmitter,
+    grpc::{DydxGrpcClient, OrderBuilder, Wallet},
     http::client::DydxRawHttpClient,
     websocket::client::DydxWebSocketClient,
 };
+
+pub mod submitter;
 
 /// Maximum client order ID value for dYdX.
 pub const MAX_CLIENT_ID: u32 = u32::MAX;
@@ -68,10 +73,9 @@ pub struct DydxExecutionClient {
     config: DydxAdapterConfig,
     http_client: DydxRawHttpClient,
     ws_client: DydxWebSocketClient,
-    // TODO: Re-enable once proto files are generated
-    // grpc_client: Arc<tokio::sync::RwLock<DydxGrpcClient>>,
-    // wallet: Arc<tokio::sync::RwLock<Option<Wallet>>>,
-    // order_builders: DashMap<InstrumentId, OrderBuilder>,
+    grpc_client: Arc<tokio::sync::RwLock<DydxGrpcClient>>,
+    wallet: Arc<tokio::sync::RwLock<Option<Wallet>>>,
+    order_builders: DashMap<InstrumentId, OrderBuilder>,
     instruments: DashMap<InstrumentId, InstrumentAny>,
     block_height: AtomicU64,
     oracle_prices: DashMap<InstrumentId, Decimal>,
@@ -103,23 +107,21 @@ impl DydxExecutionClient {
         let _account_id = core.account_id;
         let ws_client = DydxWebSocketClient::new_public(config.ws_url.clone(), Some(20));
 
-        // TODO: Re-enable once proto files are generated
-        // let grpc_urls = config.get_grpc_urls();
-        // let grpc_client = Arc::new(tokio::sync::RwLock::new(
-        //     get_runtime()
-        //         .block_on(async { DydxGrpcClient::new_with_fallback(&grpc_urls).await })
-        //         .context("failed to construct dYdX gRPC client")?,
-        // ));
+        let grpc_urls = config.get_grpc_urls();
+        let grpc_client = Arc::new(tokio::sync::RwLock::new(
+            get_runtime()
+                .block_on(async { DydxGrpcClient::new_with_fallback(&grpc_urls).await })
+                .context("failed to construct dYdX gRPC client")?,
+        ));
 
         Ok(Self {
             core,
             config,
             http_client,
             ws_client,
-            // TODO: Re-enable once proto files are generated
-            // grpc_client,
-            // wallet: Arc::new(tokio::sync::RwLock::new(None)),
-            // order_builders: DashMap::new(),
+            grpc_client,
+            wallet: Arc::new(tokio::sync::RwLock::new(None)),
+            order_builders: DashMap::new(),
             instruments: DashMap::new(),
             block_height: AtomicU64::new(0),
             oracle_prices: DashMap::new(),
@@ -185,6 +187,29 @@ impl DydxExecutionClient {
             |entry| entry.value().clone(),
         )
     }
+
+    fn spawn_task<F>(&self, label: &'static str, fut: F)
+    where
+        F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
+    {
+        let handle = tokio::spawn(async move {
+            if let Err(e) = fut.await {
+                tracing::error!("{label}: {e:?}");
+            }
+        });
+
+        self.pending_tasks
+            .lock()
+            .expect(MUTEX_POISONED)
+            .push(handle);
+    }
+
+    fn abort_pending_tasks(&self) {
+        let mut guard = self.pending_tasks.lock().expect(MUTEX_POISONED);
+        for handle in guard.drain(..) {
+            handle.abort();
+        }
+    }
 }
 
 impl ExecutionClient for DydxExecutionClient {
@@ -225,43 +250,134 @@ impl ExecutionClient for DydxExecutionClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         if self.started {
+            tracing::warn!("dYdX execution client already started");
             return Ok(());
         }
+
+        tracing::info!("Starting dYdX execution client");
         self.started = true;
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
         if !self.started {
+            tracing::warn!("dYdX execution client not started");
             return Ok(());
         }
+
+        tracing::info!("Stopping dYdX execution client");
+        self.abort_pending_tasks();
         self.started = false;
         self.connected = false;
         Ok(())
     }
 
-    fn submit_order(&self, _cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+        let order = cmd.order.clone();
+
+        // Check connection status
+        if !self.is_connected() {
+            let reason = "Cannot submit order: execution client not connected";
+            tracing::error!("{}", reason);
+            anyhow::bail!(reason);
+        }
+
+        // Check if order is already closed
+        if order.is_closed() {
+            tracing::warn!("Cannot submit closed order {}", order.client_order_id());
+            return Ok(());
+        }
+
+        // Validate order type - only market and limit orders supported
+        match order.order_type() {
+            OrderType::Market | OrderType::Limit => {
+                // Supported order types
+                tracing::debug!(
+                    "Submitting {} order: {}",
+                    if matches!(order.order_type(), OrderType::Market) {
+                        "MARKET"
+                    } else {
+                        "LIMIT"
+                    },
+                    order.client_order_id()
+                );
+            }
+            order_type => {
+                let reason = format!(
+                    "Order type {:?} not supported. Only MARKET and LIMIT orders are supported for dYdX",
+                    order_type
+                );
+                tracing::error!("{}", reason);
+                anyhow::bail!(reason);
+            }
+        }
+
+        let grpc_client = self.grpc_client.clone();
+        let wallet = self.wallet.clone();
+        let wallet_address = self.wallet_address.clone();
+        let subaccount_number = self.subaccount_number;
+
+        self.spawn_task("submit_order", async move {
+            let wallet_guard = wallet.read().await;
+            let _wallet = wallet_guard
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?;
+
+            let grpc_guard = grpc_client.read().await;
+            let _submitter =
+                OrderSubmitter::new((*grpc_guard).clone(), wallet_address, subaccount_number);
+
+            tracing::info!(
+                "Submitting {} order: {:?}",
+                order.order_type(),
+                order.client_order_id()
+            );
+
+            // Implementation will be completed when we add actual gRPC submission
+            // For now, just log
+
+            Ok(())
+        });
+
         Ok(())
     }
 
     fn submit_order_list(&self, _cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        Ok(())
+        anyhow::bail!("Order lists not supported by dYdX")
     }
 
     fn modify_order(&self, _cmd: &ModifyOrder) -> anyhow::Result<()> {
-        anyhow::bail!("modify_order not supported by dYdX")
+        anyhow::bail!("Order modification not supported by dYdX")
     }
 
-    fn cancel_order(&self, _cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+        if !self.is_connected() {
+            anyhow::bail!("Cannot cancel order: not connected");
+        }
+
+        let client_order_id = cmd.client_order_id;
+        let _grpc_client = self.grpc_client.clone();
+        let _wallet = self.wallet.clone();
+
+        self.spawn_task("cancel_order", async move {
+            tracing::info!("Cancelling order: {:?}", client_order_id);
+            Ok(())
+        });
+
         Ok(())
     }
 
-    fn cancel_all_orders(&self, _cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+        if !self.is_connected() {
+            anyhow::bail!("Cannot cancel orders: not connected");
+        }
+
+        tracing::info!("Cancelling all orders for {:?}", cmd.instrument_id);
         Ok(())
     }
 
     fn batch_cancel_orders(&self, _cmd: &BatchCancelOrders) -> anyhow::Result<()> {
-        Ok(())
+        anyhow::bail!("Batch cancel not supported by dYdX")
     }
 
     fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
@@ -277,33 +393,49 @@ impl ExecutionClient for DydxExecutionClient {
 impl LiveExecutionClient for DydxExecutionClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
+            tracing::warn!("dYdX execution client already connected");
             return Ok(());
+        }
+
+        tracing::info!("Connecting to dYdX");
+
+        // Initialize wallet from config if mnemonic is provided
+        if let Some(mnemonic) = &self.config.mnemonic {
+            let wallet = Wallet::from_mnemonic(mnemonic)?;
+            *self.wallet.write().await = Some(wallet);
+            tracing::debug!("Wallet initialized");
         }
 
         // TODO: Implement WebSocket connection and subscriptions
         // - Load instruments
         // - Connect WebSocket
         // - Subscribe to v4_markets, v4_block_height, v4_subaccounts
-        // - Initialize wallet from GRPC
         // - Set leverage for all instruments
 
         self.connected = true;
-        tracing::info!("{} connected", self.core.client_id);
+        tracing::info!("dYdX execution client connected");
+
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         if !self.connected {
+            tracing::warn!("dYdX execution client not connected");
             return Ok(());
         }
+
+        tracing::info!("Disconnecting from dYdX");
 
         // TODO: Implement WebSocket disconnection
         // - Unsubscribe from v4_markets, v4_block_height, v4_subaccounts
         // - Disconnect WebSocket and GRPC clients
-        // - Clean up ws_stream_handle and pending_tasks
+        // - Clean up ws_stream_handle
+
+        self.abort_pending_tasks();
 
         self.connected = false;
-        tracing::info!("{} disconnected", self.core.client_id);
+        tracing::info!("dYdX execution client disconnected");
+
         Ok(())
     }
 

@@ -150,3 +150,45 @@ impl Default for DydxDataClientConfig {
         }
     }
 }
+
+/// Configuration for the dYdX execution client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DYDXExecClientConfig {
+    /// gRPC endpoint URL.
+    pub grpc_endpoint: String,
+    /// WebSocket endpoint URL.
+    pub ws_endpoint: String,
+    /// Wallet mnemonic for signing transactions.
+    pub mnemonic: Option<String>,
+    /// Wallet address.
+    pub wallet_address: Option<String>,
+    /// Subaccount number (default: 0).
+    pub subaccount_number: u32,
+    /// HTTP request timeout in seconds.
+    pub http_timeout_secs: Option<u64>,
+    /// Maximum number of retry attempts.
+    pub max_retries: Option<u64>,
+    /// Initial retry delay in milliseconds.
+    pub retry_delay_initial_ms: Option<u64>,
+    /// Maximum retry delay in milliseconds.
+    pub retry_delay_max_ms: Option<u64>,
+    /// Whether this is a testnet configuration.
+    pub is_testnet: bool,
+}
+
+impl Default for DYDXExecClientConfig {
+    fn default() -> Self {
+        Self {
+            grpc_endpoint: DYDX_GRPC_URLS[0].to_string(),
+            ws_endpoint: DYDX_WS_URL.to_string(),
+            mnemonic: None,
+            wallet_address: None,
+            subaccount_number: 0,
+            http_timeout_secs: Some(60),
+            max_retries: Some(3),
+            retry_delay_initial_ms: Some(100),
+            retry_delay_max_ms: Some(5000),
+            is_testnet: false,
+        }
+    }
+}

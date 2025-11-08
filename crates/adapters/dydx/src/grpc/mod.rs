@@ -36,18 +36,65 @@
 //! (placing orders, transfers, etc.). The HTTP/REST API (Indexer) is read-only and used
 //! for querying market data and historical information.
 
-pub mod builder;
-pub mod client;
-pub mod order;
+// TODO: Enable when proto is generated
+// pub mod builder;
+// pub mod client;
+// pub mod order;
 pub mod types;
 pub mod wallet;
 
 // Re-exports
-pub use builder::TxBuilder;
-pub use client::{DydxGrpcClient, Height, TxHash};
-pub use order::{
-    DEFAULT_RUST_CLIENT_METADATA, OrderBuilder, OrderFlags, OrderGoodUntil, OrderMarketParams,
-    SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
-};
+// TODO: Enable when proto is generated
+// pub use builder::TxBuilder;
+// pub use client::{DydxGrpcClient, Height, TxHash};
+// pub use order::{
+//     DEFAULT_RUST_CLIENT_METADATA, OrderBuilder, OrderFlags, OrderGoodUntil, OrderMarketParams,
+//     SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+// };
 pub use types::ChainId;
 pub use wallet::{Account, Subaccount, Wallet};
+
+// Temporary stubs until proto is generated
+#[derive(Debug, Clone)]
+pub struct DydxGrpcClient;
+
+impl DydxGrpcClient {
+    /// Creates a new dYdX gRPC client.
+    ///
+    /// # Errors
+    ///
+    /// This is a stub that currently never fails. Will return connection errors when implemented.
+    pub async fn new(_endpoint: String) -> anyhow::Result<Self> {
+        Ok(Self)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Height(pub u32);
+
+pub type TxHash = String;
+
+#[derive(Debug, Clone)]
+pub struct OrderBuilder;
+
+#[derive(Debug, Clone)]
+pub struct OrderFlags;
+
+#[derive(Debug, Clone)]
+pub enum OrderGoodUntil {
+    Block(u32),
+    Time(chrono::DateTime<chrono::Utc>),
+}
+
+#[derive(Debug, Clone)]
+pub struct OrderMarketParams {
+    pub atomic_resolution: i32,
+    pub clob_pair_id: u32,
+    pub oracle_price: Option<u64>,
+    pub quantum_conversion_exponent: i32,
+    pub step_base_quantums: u64,
+    pub subticks_per_tick: u32,
+}
+
+pub const SHORT_TERM_ORDER_MAXIMUM_LIFETIME: u32 = 20;
+pub const DEFAULT_RUST_CLIENT_METADATA: u32 = 4;
