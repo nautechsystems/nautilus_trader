@@ -12,9 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import asyncio
-from collections.abc import Coroutine
 from typing import Any
 
 import msgspec
