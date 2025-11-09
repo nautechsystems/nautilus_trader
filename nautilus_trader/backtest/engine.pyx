@@ -3946,9 +3946,6 @@ cdef class OrderMatchingEngine:
         if bar_type.aggregation_source == AggregationSource.INTERNAL:
             return  # Do not process internally aggregated bars
 
-        if bar_type.spec.aggregation == BarAggregation.MONTH:
-            return  # Do not process monthly bars (there is no available `timedelta`)
-
         # Validate precisions
         if bar._mem.open.precision != self.instrument.price_precision:
             raise RuntimeError(

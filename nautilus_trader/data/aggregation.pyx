@@ -888,7 +888,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._skip_first_non_full_bar = self._skip_first_non_full_bar and now > start_time
 
-        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
+        if self.bar_type.spec.aggregation not in (BarAggregation.MONTH, BarAggregation.YEAR):
             self._clock.set_timer(
                 name=self._timer_name,
                 interval=self.interval,
@@ -906,8 +906,13 @@ cdef class TimeBarAggregator(BarAggregator):
 
             self.stored_open_ns = self.next_close_ns - self.interval_ns
         else:
-            # The monthly alert time is defined iteratively at each alert time as there is no regular interval
-            alert_time = start_time + (pd.DateOffset(months=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
+            # The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
+            if self.bar_type.spec.aggregation == BarAggregation.MONTH:
+                alert_time = start_time + (pd.DateOffset(months=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
+            elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+                alert_time = start_time + (pd.DateOffset(years=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
+            else:
+                alert_time = start_time
 
             self._clock.set_time_alert(
                 name=self._timer_name,
@@ -949,7 +954,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time += self._time_bars_origin_offset
 
             if now < start_time:
-                start_time -= pd.Timedelta(weeks=1)
+                start_time -= pd.Timedelta(weeks=step)
         elif aggregation == BarAggregation.MONTH:
             start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
 
@@ -963,6 +968,14 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time += pd.DateOffset(months=step)
 
             start_time -= pd.DateOffset(months=step)
+        elif aggregation == BarAggregation.YEAR:
+            start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
+
+            if self._time_bars_origin_offset is not None:
+                start_time += self._time_bars_origin_offset
+
+            if now < start_time:
+                start_time -= pd.DateOffset(years=step)
         else:  # pragma: no cover (design-time error)
             raise ValueError(
                 f"Aggregation type not supported for time bars, "
@@ -990,7 +1003,7 @@ cdef class TimeBarAggregator(BarAggregator):
             return pd.Timedelta(days=(1 * step))
         elif aggregation == BarAggregation.WEEK:
             return pd.Timedelta(days=(7 * step))
-        elif aggregation == BarAggregation.MONTH:
+        elif aggregation in (BarAggregation.MONTH, BarAggregation.YEAR):
             # not actually used
             return pd.Timedelta(days=0)
         else:
@@ -1050,10 +1063,7 @@ cdef class TimeBarAggregator(BarAggregator):
         # Close time becomes the next open time
         self.stored_open_ns = event.ts_event
 
-        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
-            # On receiving this event, timer should now have a new `next_time_ns`
-            self.next_close_ns = self._clock.next_time_ns(self._timer_name)
-        else:
+        if self.bar_type.spec.aggregation == BarAggregation.MONTH:
             alert_time = unix_nanos_to_dt(event.ts_event) + pd.DateOffset(months=self.bar_type.spec.step)
             self._clock.set_time_alert(
                 name=self._timer_name,
@@ -1062,6 +1072,18 @@ cdef class TimeBarAggregator(BarAggregator):
                 override=True,
             )
             self.next_close_ns = dt_to_unix_nanos(alert_time)
+        elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+            alert_time = unix_nanos_to_dt(event.ts_event) + pd.DateOffset(years=self.bar_type.spec.step)
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=alert_time,
+                callback=self._build_bar,
+                override=True,
+            )
+            self.next_close_ns = dt_to_unix_nanos(alert_time)
+        else:
+            # On receiving this event, timer should now have a new `next_time_ns`
+            self.next_close_ns = self._clock.next_time_ns(self._timer_name)
 
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
         if self._skip_first_non_full_bar:

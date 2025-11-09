@@ -602,9 +602,6 @@ cdef class BarSpecification:
             Raises
             ------
             ValueError
-                If the aggregation is MONTH or YEAR (since months and years have variable
-                lengths 28-31 days or 365-366 days, making fixed nanosecond conversion
-                impossible).
                 If the aggregation is not a time-based aggregation.
 
             Notes
@@ -612,9 +609,7 @@ cdef class BarSpecification:
             Only time-based aggregations can be converted to nanosecond intervals.
             Threshold-based and information-based aggregations will raise a ValueError.
 
-            Month or year intervals require special handling due to their variable length,
-            which cannot be expressed as a fixed number of nanoseconds. DateOffset is used
-            instead for these aggregations.
+            Month or year intervals use proxy values to estimate their respective durations.
 
             Examples
             --------
@@ -630,27 +625,17 @@ cdef class BarSpecification:
             elif aggregation is BarAggregation.SECOND:
                 return secs_to_nanos(step)
             elif aggregation is BarAggregation.MINUTE:
-                return secs_to_nanos(step) * 60
+                return step * secs_to_nanos(60)
             elif aggregation is BarAggregation.HOUR:
-                return secs_to_nanos(step) * 60 * 60
+                return step * secs_to_nanos(60 * 60)
             elif aggregation is BarAggregation.DAY:
-                return secs_to_nanos(step) * 60 * 60 * 24
+                return step * secs_to_nanos(60 * 60 * 24)
             elif aggregation is BarAggregation.WEEK:
-                return secs_to_nanos(step) * 60 * 60 * 24 * 7
+                return step * secs_to_nanos(60 * 60 * 24 * 7)
             elif aggregation is BarAggregation.MONTH:
-                # Not actually used for the aggregation. DateOffset are used instead
-                # given the fact, the lengths of the months differs.
-                raise ValueError(
-                    f"get_interval_ns not supported for the `BarAggregation.MONTH` aggregation "
-                    f"`DateOffset` is used instead."
-                )
+                return step * secs_to_nanos(60 * 60 * 24 * 30) # Proxy for comparing bar lengths
             elif aggregation is BarAggregation.YEAR:
-                # Not actually used for the aggregation. DateOffset are used instead
-                # given the fact, the lengths of the years differs (leap years).
-                raise ValueError(
-                    f"get_interval_ns not supported for the `BarAggregation.YEAR` aggregation "
-                    f"`DateOffset` is used instead."
-                )
+                return step * secs_to_nanos(60 * 60 * 24 * 365) # Proxy for comparing bar lengths
             else:
                 # Design time error
                 raise ValueError(

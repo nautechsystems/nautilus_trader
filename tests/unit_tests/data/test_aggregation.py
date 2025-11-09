@@ -2748,6 +2748,82 @@ class TestTimeBarAggregator:
         assert bar.volume == Quantity.from_int(3)
         assert bar.ts_init == pd.Timestamp("2024-4-1").value
 
+    def test_update_timer_with_test_clock_sends_single_yearly_bar_to_handler_with_bars(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(pd.Timestamp("2023-6-15").value)
+        handler = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec3 = BarSpecification(1, BarAggregation.YEAR, PriceType.LAST)
+        bar_spec1 = BarSpecification(1, BarAggregation.DAY, PriceType.LAST)
+        bar_type = BarType.new_composite(
+            instrument_id,
+            bar_spec3,
+            AggregationSource.INTERNAL,
+            bar_spec1.step,
+            bar_spec1.aggregation,
+            AggregationSource.EXTERNAL,
+        )
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type.standard(),
+            handler.append,
+            clock,
+        )
+        aggregator.start_timer()
+        composite_bar_type = bar_type.composite()
+
+        bar1 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00005"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("1.00004"),
+            close=Price.from_str("1.00007"),
+            volume=Quantity.from_int(1),
+            ts_event=pd.Timestamp("2023-7-1").value,  # time in nanoseconds
+            ts_init=pd.Timestamp("2023-7-1").value,
+        )
+
+        bar2 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00007"),
+            high=Price.from_str("1.00020"),
+            low=Price.from_str("1.00003"),
+            close=Price.from_str("1.00015"),
+            volume=Quantity.from_int(1),
+            ts_event=pd.Timestamp("2023-8-15").value,
+            ts_init=pd.Timestamp("2023-8-15").value,
+        )
+
+        bar3 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00015"),
+            high=Price.from_str("1.00025"),
+            low=Price.from_str("1.00007"),
+            close=Price.from_str("1.00018"),
+            volume=Quantity.from_int(1),
+            ts_event=pd.Timestamp("2023-12-31").value,
+            ts_init=pd.Timestamp("2023-12-31").value,
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+        aggregator.handle_bar(bar3)
+        events = clock.advance_time(pd.Timestamp("2024-1-1").value)
+        events[0].handle()
+
+        # Assert
+        bar = handler[0]
+        assert len(handler) == 1
+        assert bar.bar_type == bar_type.standard()
+        assert bar.open == Price.from_str("1.00005")
+        assert bar.high == Price.from_str("1.00025")
+        assert bar.low == Price.from_str("1.00003")
+        assert bar.close == Price.from_str("1.00018")
+        assert bar.volume == Quantity.from_int(3)
+        assert bar.ts_init == pd.Timestamp("2024-1-1").value
+
     def test_update_timer_with_test_clock_sends_single_weekly_bar_to_handler_with_bars(self):
         # Arrange
         clock = TestClock()
