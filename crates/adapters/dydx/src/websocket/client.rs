@@ -31,7 +31,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use arc_swap::ArcSwap;
@@ -93,7 +93,7 @@ pub struct DydxWebSocketClient {
     #[allow(dead_code)]
     subscriptions: SubscriptionState,
     /// Shared connection state (lock-free atomic).
-    connection_mode: Arc<ArcSwap<std::sync::atomic::AtomicU8>>,
+    connection_mode: Arc<ArcSwap<AtomicU8>>,
     /// Manual disconnect signal.
     signal: Arc<AtomicBool>,
     /// Cached instruments for parsing market data (Python-accessible).

@@ -51,7 +51,8 @@
 //! | Utility endpoints                    | <https://docs.dydx.exchange/api_integration-indexer/indexer_api#utility> |
 
 use std::{
-    fmt::Debug,
+    collections::HashMap,
+    fmt::{Debug, Formatter},
     num::NonZeroU32,
     sync::{
         Arc, LazyLock,
@@ -121,7 +122,7 @@ impl Default for DydxRawHttpClient {
 }
 
 impl Debug for DydxRawHttpClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DydxRawHttpClient))
             .field("base_url", &self.base_url)
             .field("is_testnet", &self.is_testnet)
@@ -164,7 +165,7 @@ impl DydxRawHttpClient {
         let retry_manager = RetryManager::new(retry_config.unwrap_or_default());
 
         // Build headers
-        let mut headers = std::collections::HashMap::new();
+        let mut headers = HashMap::new();
         headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
         let client = HttpClient::new(
@@ -991,7 +992,7 @@ mod tests {
         use nautilus_model::{
             identifiers::{InstrumentId, Symbol},
             instruments::CryptoPerpetual,
-            types::Currency,
+            types::{Currency, Price, Quantity},
         };
 
         let client = DydxHttpClient::default();
@@ -1000,8 +1001,8 @@ mod tests {
         // Create a test instrument
         let instrument_id =
             InstrumentId::new(Symbol::from("BTC-USD"), *crate::common::consts::DYDX_VENUE);
-        let price = nautilus_model::types::Price::from("1.0");
-        let size = nautilus_model::types::Quantity::from("0.001");
+        let price = Price::from("1.0");
+        let size = Quantity::from("0.001");
         let instrument = CryptoPerpetual::new(
             instrument_id,
             Symbol::from("BTC-USD"),

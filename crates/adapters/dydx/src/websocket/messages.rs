@@ -15,6 +15,8 @@
 
 //! WebSocket message types for dYdX public and private channels.
 
+use std::collections::HashMap;
+
 use nautilus_model::{
     data::{Data, OrderBookDeltas},
     events::AccountState,
@@ -23,6 +25,7 @@ use nautilus_model::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::schemas::ws::DydxWsMessageType;
 use crate::websocket::{
     enums::{DydxWsChannel, DydxWsOperation},
     error::DydxWebSocketError,
@@ -97,7 +100,7 @@ pub enum NautilusWsMessage {
 pub struct DydxWsSubscriptionMsg {
     /// The message type ("subscribed" or "unsubscribed").
     #[serde(rename = "type")]
-    pub msg_type: String,
+    pub msg_type: DydxWsMessageType,
     /// The connection ID.
     pub connection_id: String,
     /// The message sequence number.
@@ -114,7 +117,7 @@ pub struct DydxWsSubscriptionMsg {
 pub struct DydxWsConnectedMsg {
     /// The message type ("connected").
     #[serde(rename = "type")]
-    pub msg_type: String,
+    pub msg_type: DydxWsMessageType,
     /// The connection ID assigned by the server.
     pub connection_id: String,
     /// The message sequence number.
@@ -126,7 +129,7 @@ pub struct DydxWsConnectedMsg {
 pub struct DydxWsChannelDataMsg {
     /// The message type ("channel_data").
     #[serde(rename = "type")]
-    pub msg_type: String,
+    pub msg_type: DydxWsMessageType,
     /// The connection ID.
     pub connection_id: String,
     /// The message sequence number.
@@ -148,7 +151,7 @@ pub struct DydxWsChannelDataMsg {
 pub struct DydxWsChannelBatchDataMsg {
     /// The message type ("channel_batch_data").
     #[serde(rename = "type")]
-    pub msg_type: String,
+    pub msg_type: DydxWsMessageType,
     /// The connection ID.
     pub connection_id: String,
     /// The message sequence number.
@@ -170,7 +173,7 @@ pub struct DydxWsChannelBatchDataMsg {
 pub struct DydxWsGenericMsg {
     /// The message type.
     #[serde(rename = "type")]
-    pub msg_type: String,
+    pub msg_type: DydxWsMessageType,
     /// Optional connection ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connection_id: Option<String>,
@@ -192,37 +195,37 @@ impl DydxWsGenericMsg {
     /// Returns `true` if this message is an error.
     #[must_use]
     pub fn is_error(&self) -> bool {
-        self.msg_type == "error"
+        self.msg_type == DydxWsMessageType::Error
     }
 
     /// Returns `true` if this message is a subscription confirmation.
     #[must_use]
     pub fn is_subscribed(&self) -> bool {
-        self.msg_type == "subscribed"
+        self.msg_type == DydxWsMessageType::Subscribed
     }
 
     /// Returns `true` if this message is an unsubscription confirmation.
     #[must_use]
     pub fn is_unsubscribed(&self) -> bool {
-        self.msg_type == "unsubscribed"
+        self.msg_type == DydxWsMessageType::Unsubscribed
     }
 
     /// Returns `true` if this message is a connection notification.
     #[must_use]
     pub fn is_connected(&self) -> bool {
-        self.msg_type == "connected"
+        self.msg_type == DydxWsMessageType::Connected
     }
 
     /// Returns `true` if this message is channel data.
     #[must_use]
     pub fn is_channel_data(&self) -> bool {
-        self.msg_type == "channel_data"
+        self.msg_type == DydxWsMessageType::ChannelData
     }
 
     /// Returns `true` if this message is batch channel data.
     #[must_use]
     pub fn is_channel_batch_data(&self) -> bool {
-        self.msg_type == "channel_batch_data"
+        self.msg_type == DydxWsMessageType::ChannelBatchData
     }
 }
 
@@ -231,8 +234,7 @@ impl DydxWsGenericMsg {
 // ================================================================================================
 
 use chrono::{DateTime, Utc};
-
-use crate::common::enums::DydxOrderSide;
+use nautilus_model::enums::OrderSide;
 
 /// Trade message from v4_trades channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,7 +243,7 @@ pub struct DydxTrade {
     /// Trade ID.
     pub id: String,
     /// Order side (BUY/SELL).
-    pub side: DydxOrderSide,
+    pub side: OrderSide,
     /// Trade size.
     pub size: String,
     /// Trade price.
@@ -345,5 +347,5 @@ pub struct DydxOraclePriceMarket {
 pub struct DydxMarketsContents {
     /// Oracle prices by market symbol.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub oracle_prices: Option<std::collections::HashMap<String, DydxOraclePriceMarket>>,
+    pub oracle_prices: Option<HashMap<String, DydxOraclePriceMarket>>,
 }

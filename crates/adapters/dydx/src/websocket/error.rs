@@ -23,6 +23,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 use super::enums::DydxWsChannel;
+use crate::schemas::ws::DydxWsMessageType;
 
 /// Result type for dYdX WebSocket operations.
 pub type DydxWsResult<T> = Result<T, DydxWsError>;
@@ -100,7 +101,7 @@ impl From<anyhow::Error> for DydxWsError {
 pub struct DydxWebSocketError {
     /// The type field (typically "error").
     #[serde(rename = "type")]
-    pub msg_type: String,
+    pub msg_type: DydxWsMessageType,
     /// The error message from the venue.
     pub message: String,
     /// The connection ID.
@@ -122,7 +123,7 @@ impl DydxWebSocketError {
     #[must_use]
     pub fn from_message(message: String) -> Self {
         Self {
-            msg_type: "error".to_string(),
+            msg_type: DydxWsMessageType::Error,
             message,
             connection_id: None,
             message_id: None,

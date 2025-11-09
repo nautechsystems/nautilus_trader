@@ -19,7 +19,6 @@ use nautilus_model::identifiers::{AccountId, InstrumentId};
 use pyo3::prelude::*;
 
 use crate::{common::credential::DydxCredential, websocket::client::DydxWebSocketClient};
-
 #[pymethods]
 impl DydxWebSocketClient {
     /// Creates a new public WebSocket client for market data.
@@ -139,9 +138,9 @@ impl DydxWebSocketClient {
         })
     }
 
-    /// Subscribes to candle/kline updates for a specific instrument.
-    #[pyo3(name = "subscribe_candles")]
-    fn py_subscribe_candles<'py>(
+    /// Subscribes to bar updates for a specific instrument.
+    #[pyo3(name = "subscribe_bars")]
+    fn py_subscribe_bars<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -156,9 +155,9 @@ impl DydxWebSocketClient {
         })
     }
 
-    /// Unsubscribes from candle/kline updates for a specific instrument.
-    #[pyo3(name = "unsubscribe_candles")]
-    fn py_unsubscribe_candles<'py>(
+    /// Unsubscribes from bar updates for a specific instrument.
+    #[pyo3(name = "unsubscribe_bars")]
+    fn py_unsubscribe_bars<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,

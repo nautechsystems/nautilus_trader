@@ -15,10 +15,11 @@
 
 //! WebSocket content type definitions for dYdX channels.
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-use crate::common::enums::DydxOrderSide;
+use chrono::{DateTime, Utc};
+use nautilus_model::enums::OrderSide;
+use serde::{Deserialize, Serialize};
 
 /// Trade message from v4_trades channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,7 +28,7 @@ pub struct DydxTrade {
     /// Trade ID.
     pub id: String,
     /// Order side (BUY/SELL).
-    pub side: DydxOrderSide,
+    pub side: OrderSide,
     /// Trade size.
     pub size: String,
     /// Trade price.
@@ -131,5 +132,5 @@ pub struct DydxOraclePriceMarket {
 pub struct DydxMarketsContents {
     /// Oracle prices by market symbol.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub oracle_prices: Option<std::collections::HashMap<String, DydxOraclePriceMarket>>,
+    pub oracle_prices: Option<HashMap<String, DydxOraclePriceMarket>>,
 }

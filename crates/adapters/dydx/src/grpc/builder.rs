@@ -18,7 +18,7 @@
 //! This module provides utilities for building and signing Cosmos SDK transactions
 //! for the dYdX v4 protocol.
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 use cosmrs::{
     Any, Coin,
@@ -154,7 +154,7 @@ impl TxBuilder {
 }
 
 impl Debug for TxBuilder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TxBuilder")
             .field("chain_id", &self.chain_id)
             .field("fee_denom", &self.fee_denom)

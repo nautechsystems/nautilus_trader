@@ -29,6 +29,8 @@ use nautilus_model::enums::OrderSide;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
+use std::collections::HashMap;
+use ustr::Ustr;
 
 use crate::common::enums::{
     DydxCandleResolution, DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderStatus,
@@ -43,7 +45,7 @@ use crate::common::enums::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketsResponse {
     /// Map of market ticker to perpetual market data.
-    pub markets: std::collections::HashMap<String, PerpetualMarket>,
+    pub markets: HashMap<String, PerpetualMarket>,
 }
 
 /// Perpetual market definition.
@@ -246,10 +248,10 @@ pub struct Subaccount {
     pub free_collateral: Decimal,
     /// Open perpetual positions.
     #[serde(default)]
-    pub open_perpetual_positions: std::collections::HashMap<String, PerpetualPosition>,
+    pub open_perpetual_positions: HashMap<String, PerpetualPosition>,
     /// Asset positions (e.g., USDC).
     #[serde(default)]
-    pub asset_positions: std::collections::HashMap<String, AssetPosition>,
+    pub asset_positions: HashMap<String, AssetPosition>,
     /// Margin enabled flag.
     #[serde(default)]
     pub margin_enabled: bool,
@@ -313,7 +315,7 @@ pub struct PerpetualPosition {
 #[serde(rename_all = "camelCase")]
 pub struct AssetPosition {
     /// Asset symbol.
-    pub symbol: String,
+    pub symbol: Ustr,
     /// Position side (always LONG for assets).
     pub side: OrderSide,
     /// Asset size (balance).

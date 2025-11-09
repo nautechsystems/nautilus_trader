@@ -15,7 +15,10 @@
 
 //! Live execution client implementation for the dYdX adapter.
 
-use std::{cell::Ref, sync::Mutex};
+use std::{
+    cell::Ref,
+    sync::{Mutex, atomic::AtomicU64},
+};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -25,7 +28,8 @@ use nautilus_common::{
         ExecutionEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GeneratePositionReports,
+            GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount,
+            QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
     runner::get_exec_event_sender,
@@ -69,7 +73,7 @@ pub struct DydxExecutionClient {
     // wallet: Arc<tokio::sync::RwLock<Option<Wallet>>>,
     // order_builders: DashMap<InstrumentId, OrderBuilder>,
     instruments: DashMap<InstrumentId, InstrumentAny>,
-    block_height: std::sync::atomic::AtomicU64,
+    block_height: AtomicU64,
     oracle_prices: DashMap<InstrumentId, Decimal>,
     client_id_to_int: DashMap<String, u32>,
     int_to_client_id: DashMap<u32, String>,
@@ -117,7 +121,7 @@ impl DydxExecutionClient {
             // wallet: Arc::new(tokio::sync::RwLock::new(None)),
             // order_builders: DashMap::new(),
             instruments: DashMap::new(),
-            block_height: std::sync::atomic::AtomicU64::new(0),
+            block_height: AtomicU64::new(0),
             oracle_prices: DashMap::new(),
             client_id_to_int: DashMap::new(),
             int_to_client_id: DashMap::new(),
@@ -236,24 +240,15 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    fn submit_order(
-        &self,
-        _cmd: &nautilus_common::messages::execution::SubmitOrder,
-    ) -> anyhow::Result<()> {
+    fn submit_order(&self, _cmd: &SubmitOrder) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn submit_order_list(
-        &self,
-        _cmd: &nautilus_common::messages::execution::SubmitOrderList,
-    ) -> anyhow::Result<()> {
+    fn submit_order_list(&self, _cmd: &SubmitOrderList) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn modify_order(
-        &self,
-        _cmd: &nautilus_common::messages::execution::ModifyOrder,
-    ) -> anyhow::Result<()> {
+    fn modify_order(&self, _cmd: &ModifyOrder) -> anyhow::Result<()> {
         anyhow::bail!("modify_order not supported by dYdX")
     }
 
@@ -269,17 +264,11 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    fn query_account(
-        &self,
-        _cmd: &nautilus_common::messages::execution::QueryAccount,
-    ) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn query_order(
-        &self,
-        _cmd: &nautilus_common::messages::execution::QueryOrder,
-    ) -> anyhow::Result<()> {
+    fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
         Ok(())
     }
 }

@@ -19,7 +19,7 @@
 
 use std::{
     collections::HashMap,
-    fmt::Debug,
+    fmt::{Debug, Formatter},
     num::NonZeroU32,
     sync::{
         Arc, LazyLock,
@@ -128,7 +128,7 @@ impl Default for BybitRawHttpClient {
 }
 
 impl Debug for BybitRawHttpClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BybitRawHttpClient")
             .field("base_url", &self.base_url)
             .field("has_credentials", &self.credential.is_some())
@@ -857,7 +857,7 @@ impl Default for BybitHttpClient {
 }
 
 impl Debug for BybitHttpClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BybitHttpClient")
             .field("inner", &self.inner)
             .finish()

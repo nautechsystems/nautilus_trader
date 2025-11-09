@@ -35,7 +35,7 @@
 
 use std::{
     collections::HashMap,
-    fmt::Debug,
+    fmt::{Debug, Formatter},
     num::NonZeroU32,
     str::FromStr,
     sync::{
@@ -160,7 +160,7 @@ impl Default for OKXRawHttpClient {
 }
 
 impl Debug for OKXRawHttpClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let credential = self.credential.as_ref().map(|_| "<redacted>");
         f.debug_struct(stringify!(OKXRawHttpClient))
             .field("base_url", &self.base_url)

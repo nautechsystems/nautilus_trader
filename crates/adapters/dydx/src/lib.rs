@@ -69,8 +69,8 @@ pub mod python;
 pub use crate::{
     common::{
         enums::{
-            DydxCandleResolution, DydxMarketStatus, DydxOrderSide, DydxOrderStatus, DydxOrderType,
-            DydxTickerType, DydxTimeInForce,
+            DydxCandleResolution, DydxMarketStatus, DydxOrderStatus, DydxOrderType, DydxTickerType,
+            DydxTimeInForce,
         },
         models::DydxAccount,
     },
