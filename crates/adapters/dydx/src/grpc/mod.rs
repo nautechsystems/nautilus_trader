@@ -67,6 +67,15 @@ impl DydxGrpcClient {
     pub async fn new(_endpoint: String) -> anyhow::Result<Self> {
         Ok(Self)
     }
+
+    /// Creates a new dYdX gRPC client with fallback endpoints.
+    ///
+    /// # Errors
+    ///
+    /// This is a stub that currently never fails. Will return connection errors when implemented.
+    pub async fn new_with_fallback(_endpoints: &[String]) -> anyhow::Result<Self> {
+        Ok(Self)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
