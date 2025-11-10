@@ -29,6 +29,12 @@ use pyo3::prelude::*;
 #[pymodule]
 pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__package__", "nautilus_trader.core.nautilus_pyo3.dydx")?;
+    m.add_class::<crate::common::enums::DydxOrderStatus>()?;
+    m.add_class::<crate::common::enums::DydxTimeInForce>()?;
+    m.add_class::<crate::common::enums::DydxOrderType>()?;
+    m.add_class::<crate::common::enums::DydxOrderExecution>()?;
+    m.add_class::<crate::common::enums::DydxOrderFlags>()?;
+    m.add_class::<crate::common::enums::DydxConditionType>()?;
     m.add_class::<crate::http::client::DydxHttpClient>()?;
     m.add_class::<crate::websocket::client::DydxWebSocketClient>()?;
     Ok(())

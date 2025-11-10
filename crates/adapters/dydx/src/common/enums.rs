@@ -15,7 +15,7 @@
 
 //! Enumerations mapping dYdX v4 concepts onto idiomatic Nautilus variants.
 
-use nautilus_model::enums::{LiquiditySide, OrderStatus, PositionSide};
+use nautilus_model::enums::{LiquiditySide, OrderStatus, OrderType, PositionSide};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
@@ -35,6 +35,10 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
     Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxOrderStatus {
     /// Order is open and active.
     Open,
@@ -80,6 +84,10 @@ impl From<DydxOrderStatus> for OrderStatus {
     Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxTimeInForce {
     /// Good-Til-Time (GTT) - order expires at specified time.
     Gtt,
@@ -105,6 +113,10 @@ pub enum DydxTimeInForce {
     Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxOrderType {
     /// Limit order with specified price.
     Limit,
@@ -120,6 +132,135 @@ pub enum DydxOrderType {
     TakeProfitMarket,
     /// Trailing stop order.
     TrailingStop,
+}
+
+impl DydxOrderType {
+    /// Returns true if this is a conditional order type.
+    #[must_use]
+    pub const fn is_conditional(&self) -> bool {
+        matches!(
+            self,
+            Self::StopLimit
+                | Self::StopMarket
+                | Self::TakeProfitLimit
+                | Self::TakeProfitMarket
+                | Self::TrailingStop
+        )
+    }
+
+    /// Returns the condition type for this order type.
+    #[must_use]
+    pub const fn condition_type(&self) -> DydxConditionType {
+        match self {
+            Self::StopLimit | Self::StopMarket => DydxConditionType::StopLoss,
+            Self::TakeProfitLimit | Self::TakeProfitMarket => DydxConditionType::TakeProfit,
+            _ => DydxConditionType::Unspecified,
+        }
+    }
+
+    /// Returns true if this order type should execute as market.
+    #[must_use]
+    pub const fn is_market_execution(&self) -> bool {
+        matches!(
+            self,
+            Self::Market | Self::StopMarket | Self::TakeProfitMarket
+        )
+    }
+}
+
+impl From<DydxOrderType> for OrderType {
+    fn from(value: DydxOrderType) -> Self {
+        match value {
+            DydxOrderType::Market | DydxOrderType::StopMarket | DydxOrderType::TakeProfitMarket => {
+                Self::Market
+            }
+            DydxOrderType::Limit | DydxOrderType::StopLimit | DydxOrderType::TakeProfitLimit => {
+                Self::Limit
+            }
+            DydxOrderType::TrailingStop => Self::TrailingStopMarket,
+        }
+    }
+}
+
+/// dYdX order execution type.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
+pub enum DydxOrderExecution {
+    /// Default execution behavior.
+    Default,
+    /// Immediate-Or-Cancel execution.
+    Ioc,
+    /// Fill-Or-Kill execution.
+    Fok,
+    /// Post-only execution (maker-only).
+    PostOnly,
+}
+
+/// dYdX order flags (bitfield).
+#[derive(
+    Copy, Clone, Debug, Display, PartialEq, Eq, Hash, AsRefStr, EnumIter, Serialize, Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
+pub enum DydxOrderFlags {
+    /// Short-term order (0).
+    ShortTerm = 0,
+    /// Conditional order (32).
+    Conditional = 32,
+    /// Long-term order (64).
+    LongTerm = 64,
+}
+
+/// dYdX condition type for conditional orders.
+///
+/// Determines whether the order is a stop-loss (triggers when price
+/// falls below/rises above trigger for sell/buy) or take-profit
+/// (triggers in opposite direction).
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
+pub enum DydxConditionType {
+    /// No condition (standard order).
+    Unspecified,
+    /// Stop-loss conditional order.
+    StopLoss,
+    /// Take-profit conditional order.
+    TakeProfit,
 }
 
 /// dYdX position status.
@@ -364,6 +505,74 @@ mod tests {
         assert_eq!(
             LiquiditySide::from(DydxLiquidity::Taker),
             LiquiditySide::Taker
+        );
+    }
+
+    #[rstest]
+    fn test_order_type_is_conditional() {
+        assert!(DydxOrderType::StopLimit.is_conditional());
+        assert!(DydxOrderType::StopMarket.is_conditional());
+        assert!(DydxOrderType::TakeProfitLimit.is_conditional());
+        assert!(DydxOrderType::TakeProfitMarket.is_conditional());
+        assert!(DydxOrderType::TrailingStop.is_conditional());
+        assert!(!DydxOrderType::Limit.is_conditional());
+        assert!(!DydxOrderType::Market.is_conditional());
+    }
+
+    #[rstest]
+    fn test_condition_type_mapping() {
+        assert_eq!(
+            DydxOrderType::StopLimit.condition_type(),
+            DydxConditionType::StopLoss
+        );
+        assert_eq!(
+            DydxOrderType::StopMarket.condition_type(),
+            DydxConditionType::StopLoss
+        );
+        assert_eq!(
+            DydxOrderType::TakeProfitLimit.condition_type(),
+            DydxConditionType::TakeProfit
+        );
+        assert_eq!(
+            DydxOrderType::TakeProfitMarket.condition_type(),
+            DydxConditionType::TakeProfit
+        );
+        assert_eq!(
+            DydxOrderType::Limit.condition_type(),
+            DydxConditionType::Unspecified
+        );
+    }
+
+    #[rstest]
+    fn test_is_market_execution() {
+        assert!(DydxOrderType::Market.is_market_execution());
+        assert!(DydxOrderType::StopMarket.is_market_execution());
+        assert!(DydxOrderType::TakeProfitMarket.is_market_execution());
+        assert!(!DydxOrderType::Limit.is_market_execution());
+        assert!(!DydxOrderType::StopLimit.is_market_execution());
+        assert!(!DydxOrderType::TakeProfitLimit.is_market_execution());
+    }
+
+    #[rstest]
+    fn test_order_type_to_nautilus() {
+        assert_eq!(OrderType::from(DydxOrderType::Market), OrderType::Market);
+        assert_eq!(
+            OrderType::from(DydxOrderType::StopMarket),
+            OrderType::Market
+        );
+        assert_eq!(
+            OrderType::from(DydxOrderType::TakeProfitMarket),
+            OrderType::Market
+        );
+        assert_eq!(OrderType::from(DydxOrderType::Limit), OrderType::Limit);
+        assert_eq!(OrderType::from(DydxOrderType::StopLimit), OrderType::Limit);
+        assert_eq!(
+            OrderType::from(DydxOrderType::TakeProfitLimit),
+            OrderType::Limit
+        );
+        assert_eq!(
+            OrderType::from(DydxOrderType::TrailingStop),
+            OrderType::TrailingStopMarket
         );
     }
 }

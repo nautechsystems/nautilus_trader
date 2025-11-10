@@ -59,12 +59,6 @@ impl Debug for DydxCredential {
 impl DydxCredential {
     /// Creates a new [`DydxCredential`] from a mnemonic phrase.
     ///
-    /// # Arguments
-    ///
-    /// * `mnemonic` - BIP-39 mnemonic phrase (12 or 24 words)
-    /// * `account_index` - HD wallet account index (typically 0)
-    /// * `authenticator_ids` - Optional authenticator IDs for permissioned keys
-    ///
     /// # Errors
     ///
     /// Returns an error if the mnemonic is invalid or key derivation fails.
@@ -106,11 +100,6 @@ impl DydxCredential {
     }
 
     /// Creates a new [`DydxCredential`] from a raw private key.
-    ///
-    /// # Arguments
-    ///
-    /// * `private_key_hex` - Hexadecimal-encoded secp256k1 private key
-    /// * `authenticator_ids` - Optional authenticator IDs for permissioned keys
     ///
     /// # Errors
     ///

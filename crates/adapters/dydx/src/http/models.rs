@@ -34,8 +34,8 @@ use serde_with::{DisplayFromStr, serde_as};
 use ustr::Ustr;
 
 use crate::common::enums::{
-    DydxCandleResolution, DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderStatus,
-    DydxPositionStatus, DydxTickerType, DydxTimeInForce,
+    DydxCandleResolution, DydxConditionType, DydxFillType, DydxLiquidity, DydxMarketStatus,
+    DydxOrderExecution, DydxOrderStatus, DydxPositionStatus, DydxTickerType, DydxTimeInForce,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -383,10 +383,20 @@ pub struct Order {
     pub created_at_height: u64,
     /// Client metadata.
     pub client_metadata: u32,
-    /// Trigger price (for stop orders).
+    /// Trigger price (for conditional orders).
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_price: Option<Decimal>,
+    /// Condition type (STOP_LOSS, TAKE_PROFIT, UNSPECIFIED).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub condition_type: Option<DydxConditionType>,
+    /// Conditional order trigger in subticks.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conditional_order_trigger_subticks: Option<u64>,
+    /// Order execution type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<DydxOrderExecution>,
     /// Updated timestamp.
     pub updated_at: DateTime<Utc>,
     /// Updated height.

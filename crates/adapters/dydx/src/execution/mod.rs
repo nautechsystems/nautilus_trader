@@ -41,7 +41,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
@@ -73,6 +73,8 @@ pub struct DydxExecutionClient {
     // wallet: Arc<tokio::sync::RwLock<Option<Wallet>>>,
     // order_builders: DashMap<InstrumentId, OrderBuilder>,
     instruments: DashMap<InstrumentId, InstrumentAny>,
+    market_to_instrument: DashMap<String, InstrumentId>,
+    clob_pair_id_to_instrument: DashMap<u32, InstrumentId>,
     block_height: AtomicU64,
     oracle_prices: DashMap<InstrumentId, Decimal>,
     client_id_to_int: DashMap<String, u32>,
@@ -121,6 +123,8 @@ impl DydxExecutionClient {
             // wallet: Arc::new(tokio::sync::RwLock::new(None)),
             // order_builders: DashMap::new(),
             instruments: DashMap::new(),
+            market_to_instrument: DashMap::new(),
+            clob_pair_id_to_instrument: DashMap::new(),
             block_height: AtomicU64::new(0),
             oracle_prices: DashMap::new(),
             client_id_to_int: DashMap::new(),
@@ -141,7 +145,6 @@ impl DydxExecutionClient {
     /// generates a random value within the valid range [0, MAX_CLIENT_ID).
     #[allow(dead_code)] // TODO: Remove once used in submit_order
     fn generate_client_order_id_int(&self, client_order_id: &str) -> u32 {
-        // Try to parse as integer first
         if let Ok(id) = client_order_id.parse::<u32>() {
             self.client_id_to_int
                 .insert(client_order_id.to_string(), id);
@@ -185,8 +188,21 @@ impl DydxExecutionClient {
             |entry| entry.value().clone(),
         )
     }
-}
 
+    /// Get an instrument by market ticker (e.g., "BTC-USD").
+    fn get_instrument_by_market(&self, market: &str) -> Option<InstrumentAny> {
+        self.market_to_instrument
+            .get(market)
+            .and_then(|id| self.instruments.get(&id).map(|entry| entry.value().clone()))
+    }
+
+    /// Get an instrument by clob_pair_id.
+    fn get_instrument_by_clob_pair_id(&self, clob_pair_id: u32) -> Option<InstrumentAny> {
+        self.clob_pair_id_to_instrument
+            .get(&clob_pair_id)
+            .and_then(|id| self.instruments.get(&id).map(|entry| entry.value().clone()))
+    }
+}
 impl ExecutionClient for DydxExecutionClient {
     fn is_connected(&self) -> bool {
         self.connected
@@ -309,30 +325,283 @@ impl LiveExecutionClient for DydxExecutionClient {
 
     async fn generate_order_status_report(
         &self,
-        _cmd: &GenerateOrderStatusReport,
+        cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        Ok(None)
+        use anyhow::Context;
+
+        // Query single order from dYdX API
+        let response = self
+            .http_client
+            .get_orders(
+                &self.wallet_address,
+                self.subaccount_number,
+                None,    // market filter
+                Some(1), // limit to 1 result
+            )
+            .await
+            .context("failed to fetch order from dYdX API")?;
+
+        if response.orders.is_empty() {
+            return Ok(None);
+        }
+
+        let order = &response.orders[0];
+        let ts_init = UnixNanos::default();
+
+        // Get instrument by clob_pair_id
+        let instrument = match self.get_instrument_by_clob_pair_id(order.clob_pair_id) {
+            Some(inst) => inst,
+            None => {
+                tracing::warn!(
+                    "Instrument for clob_pair_id {} not found in cache",
+                    order.clob_pair_id
+                );
+                return Ok(None);
+            }
+        };
+
+        // Parse to OrderStatusReport
+        let report = crate::http::parse::parse_order_status_report(
+            order,
+            &instrument,
+            self.core.account_id,
+            ts_init,
+        )
+        .context("failed to parse order status report")?;
+
+        // Filter by client_order_id if specified
+        if let Some(client_order_id) = cmd.client_order_id
+            && report.client_order_id != Some(client_order_id)
+        {
+            return Ok(None);
+        }
+
+        // Filter by venue_order_id if specified
+        if let Some(venue_order_id) = cmd.venue_order_id
+            && report.venue_order_id.as_str() != venue_order_id.as_str()
+        {
+            return Ok(None);
+        }
+
+        // Filter by instrument_id if specified
+        if let Some(instrument_id) = cmd.instrument_id
+            && report.instrument_id != instrument_id
+        {
+            return Ok(None);
+        }
+
+        Ok(Some(report))
     }
 
     async fn generate_order_status_reports(
         &self,
-        _cmd: &GenerateOrderStatusReport,
+        cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        Ok(Vec::new())
+        use anyhow::Context;
+
+        // Query orders from dYdX API
+        let response = self
+            .http_client
+            .get_orders(
+                &self.wallet_address,
+                self.subaccount_number,
+                None, // market filter
+                None, // limit
+            )
+            .await
+            .context("failed to fetch orders from dYdX API")?;
+
+        let mut reports = Vec::new();
+        let ts_init = UnixNanos::default();
+
+        for order in response.orders {
+            // Get instrument by clob_pair_id using efficient lookup
+            let instrument = match self.get_instrument_by_clob_pair_id(order.clob_pair_id) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Instrument for clob_pair_id {} not found in cache, skipping order {}",
+                        order.clob_pair_id,
+                        order.id
+                    );
+                    continue;
+                }
+            };
+
+            // Filter by instrument_id if specified
+            if let Some(filter_id) = cmd.instrument_id
+                && instrument.id() != filter_id
+            {
+                continue;
+            }
+
+            // Parse to OrderStatusReport
+            match crate::http::parse::parse_order_status_report(
+                &order,
+                &instrument,
+                self.core.account_id,
+                ts_init,
+            ) {
+                Ok(report) => {
+                    // Filter by client_order_id if specified
+                    if let Some(client_order_id) = cmd.client_order_id
+                        && report.client_order_id != Some(client_order_id)
+                    {
+                        continue;
+                    }
+
+                    // Filter by venue_order_id if specified
+                    if let Some(venue_order_id) = cmd.venue_order_id
+                        && report.venue_order_id.as_str() != venue_order_id.as_str()
+                    {
+                        continue;
+                    }
+
+                    reports.push(report);
+                }
+                Err(e) => tracing::error!("Failed to parse order status report: {e}"),
+            }
+        }
+
+        tracing::info!("Generated {} order status reports", reports.len());
+        Ok(reports)
     }
 
     async fn generate_fill_reports(
         &self,
-        _cmd: GenerateFillReports,
+        cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        Ok(Vec::new())
+        use anyhow::Context;
+
+        // Query fills from dYdX API
+        let response = self
+            .http_client
+            .get_fills(
+                &self.wallet_address,
+                self.subaccount_number,
+                None, // market filter
+                None, // limit
+            )
+            .await
+            .context("failed to fetch fills from dYdX API")?;
+
+        let mut reports = Vec::new();
+        let ts_init = UnixNanos::default();
+
+        for fill in response.fills {
+            // Get instrument by market ticker using efficient lookup
+            let instrument = match self.get_instrument_by_market(&fill.market) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Instrument for market {} not found in cache, skipping fill {}",
+                        fill.market,
+                        fill.id
+                    );
+                    continue;
+                }
+            };
+
+            // Filter by instrument_id if specified
+            if let Some(filter_id) = cmd.instrument_id
+                && instrument.id() != filter_id
+            {
+                continue;
+            }
+
+            // Parse to FillReport
+            match crate::http::parse::parse_fill_report(
+                &fill,
+                &instrument,
+                self.core.account_id,
+                ts_init,
+            ) {
+                Ok(report) => {
+                    // Filter by venue_order_id if specified
+                    if let Some(venue_order_id) = cmd.venue_order_id
+                        && report.venue_order_id.as_str() != venue_order_id.as_str()
+                    {
+                        continue;
+                    }
+
+                    // Filter by time range if specified
+                    if let (Some(start), Some(end)) = (cmd.start, cmd.end) {
+                        if report.ts_event >= start && report.ts_event <= end {
+                            reports.push(report);
+                        }
+                    } else if let Some(start) = cmd.start {
+                        if report.ts_event >= start {
+                            reports.push(report);
+                        }
+                    } else if let Some(end) = cmd.end {
+                        if report.ts_event <= end {
+                            reports.push(report);
+                        }
+                    } else {
+                        reports.push(report);
+                    }
+                }
+                Err(e) => tracing::error!("Failed to parse fill report: {e}"),
+            }
+        }
+
+        tracing::info!("Generated {} fill reports", reports.len());
+        Ok(reports)
     }
 
     async fn generate_position_status_reports(
         &self,
-        _cmd: &GeneratePositionReports,
+        cmd: &GeneratePositionReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        Ok(Vec::new())
+        use anyhow::Context;
+
+        // Query subaccount data from dYdX API to get positions
+        let response = self
+            .http_client
+            .get_subaccount(&self.wallet_address, self.subaccount_number)
+            .await
+            .context("failed to fetch subaccount from dYdX API")?;
+
+        let mut reports = Vec::new();
+        let ts_init = UnixNanos::default();
+
+        // Iterate through open perpetual positions
+        for (market_ticker, position) in response.subaccount.open_perpetual_positions {
+            // Get instrument by market ticker using efficient lookup
+            let instrument = match self.get_instrument_by_market(&market_ticker) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Instrument for market {} not found in cache, skipping position",
+                        market_ticker
+                    );
+                    continue;
+                }
+            };
+
+            // Filter by instrument_id if specified
+            if let Some(filter_id) = cmd.instrument_id
+                && instrument.id() != filter_id
+            {
+                continue;
+            }
+
+            // Parse to PositionStatusReport
+            match crate::http::parse::parse_position_status_report(
+                &position,
+                &instrument,
+                self.core.account_id,
+                ts_init,
+            ) {
+                Ok(report) => reports.push(report),
+                Err(e) => {
+                    tracing::error!("Failed to parse position status report: {e}");
+                }
+            }
+        }
+
+        tracing::info!("Generated {} position status reports", reports.len());
+        Ok(reports)
     }
 
     async fn generate_mass_status(
