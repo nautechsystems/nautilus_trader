@@ -29,7 +29,7 @@ use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
     correctness::{FAILED, check_predicate_true},
-    datetime::{add_n_months, subtract_n_months},
+    datetime::{add_n_months, subtract_n_months, subtract_n_years},
     serialization::Serializable,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -213,7 +213,7 @@ pub fn get_time_bar_start(
             start_time += origin_offset;
 
             if now < start_time {
-                start_time -= Duration::weeks(1);
+                start_time -= Duration::weeks(step);
             }
 
             start_time
@@ -242,6 +242,24 @@ pub fn get_time_bar_start(
 
             start_time =
                 subtract_n_months(start_time, months_step).expect("Failed to subtract months_step");
+            start_time
+        }
+        BarAggregation::Year => {
+            // Set to the first day of the year
+            let mut start_time = DateTime::from_naive_utc_and_offset(
+                chrono::NaiveDate::from_ymd_opt(now.year(), 1, 1)
+                    .expect("valid date")
+                    .and_hms_opt(0, 0, 0)
+                    .expect("valid time"),
+                Utc,
+            );
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time =
+                    subtract_n_years(start_time, step as u32).expect("Failed to subtract years");
+            }
+
             start_time
         }
         _ => panic!(
