@@ -135,7 +135,7 @@ pub struct SimulatedExchange {
     use_message_queue: bool,
     allow_cash_borrowing: bool,
     frozen_account: bool,
-    price_protection_points: Decimal,
+    price_protection_points: u32,
 }
 
 impl Debug for SimulatedExchange {
@@ -181,7 +181,7 @@ impl SimulatedExchange {
         use_message_queue: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
-        price_protection_points: Option<Decimal>,
+        price_protection_points: Option<u32>,
     ) -> anyhow::Result<Self> {
         if starting_balances.is_empty() {
             anyhow::bail!("Starting balances must be provided")
@@ -221,7 +221,7 @@ impl SimulatedExchange {
             use_message_queue: use_message_queue.unwrap_or(true),
             allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
             frozen_account: frozen_account.unwrap_or(false),
-            price_protection_points: price_protection_points.unwrap_or(Decimal::ZERO),
+            price_protection_points: price_protection_points.unwrap_or(0),
         })
     }
 
@@ -276,7 +276,7 @@ impl SimulatedExchange {
 
         self.instruments.insert(instrument.id(), instrument.clone());
 
-        let price_protection = if self.price_protection_points.is_zero() {
+        let price_protection = if self.price_protection_points == 0 {
             None
         } else {
             Some(self.price_protection_points)

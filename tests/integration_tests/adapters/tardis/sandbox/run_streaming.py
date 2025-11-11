@@ -16,8 +16,6 @@
 import os
 from pathlib import Path
 
-import requests
-
 from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.actor import Actor
@@ -25,6 +23,7 @@ from nautilus_trader.common.actor import ActorConfig
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3.network import http_download
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
@@ -101,10 +100,7 @@ def download_tardis_csv(api_key: str, data_dir: Path):
     print(f"Downloading Tardis CSV data from {url}...")
     headers = {"Authorization": f"Bearer {api_key}"}
 
-    with requests.get(url, headers=headers, stream=True, timeout=60) as response:
-        response.raise_for_status()
-        with open(file_path, "wb") as f:
-            f.writelines(response.iter_content(chunk_size=8192))
+    http_download(url, str(file_path), headers=headers, timeout_secs=60)
 
     print(f"Downloaded to {file_path}")
     return file_path

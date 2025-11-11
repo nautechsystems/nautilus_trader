@@ -34,6 +34,11 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
+instrument_ids = [
+    InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID"),
+    # InstrumentId.from_str("ETH-USD-PERP.HYPERLIQUID"),
+]
+
 if __name__ == "__main__":
     # Configure the trading node
     config_node = TradingNodeConfig(
@@ -44,34 +49,35 @@ if __name__ == "__main__":
             use_pyo3=True,
         ),
         exec_engine=LiveExecEngineConfig(
-            reconciliation=True,
-            reconciliation_lookback_mins=1440,
+            reconciliation=False,  # Not required for data testing
         ),
         data_clients={
             HYPERLIQUID: HyperliquidDataClientConfig(
                 instrument_provider=InstrumentProviderConfig(load_all=True),
-                testnet=True,  # If client uses the testnet
+                testnet=False,  # If client uses the testnet
             ),
         },
         timeout_connection=20.0,
         timeout_reconciliation=10.0,
         timeout_portfolio=10.0,
         timeout_disconnection=10.0,
-        timeout_post_stop=5.0,
+        timeout_post_stop=2.0,
     )
 
     # Instantiate the node with a configuration
     node = TradingNode(config=config_node)
 
     # Configure your strategy
-    strat_config = DataTesterConfig(
-        instrument_ids=[InstrumentId.from_str("BTCUSD-PERP.HYPERLIQUID")],
-        subscribe_quotes=True,
-        subscribe_trades=True,
+    config_strat = DataTesterConfig(
+        instrument_ids=instrument_ids,
+        subscribe_book_at_interval=True,
+        book_interval_ms=10,
+        # subscribe_quotes=True,
+        # subscribe_trades=True,
         # subscribe_bars=True,
     )
     # Instantiate your strategy
-    strategy = DataTester(config=strat_config)
+    strategy = DataTester(config=config_strat)
 
     # Add your actors and modules
     node.trader.add_actor(strategy)

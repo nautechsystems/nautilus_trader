@@ -78,6 +78,7 @@ impl BlockchainHttpRpcClient {
             .request(
                 Method::POST,
                 self.http_rpc_url.clone(),
+                None,
                 Some(headers),
                 Some(body_bytes),
                 None,

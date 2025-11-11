@@ -705,12 +705,6 @@ impl HyperliquidAccountState {
     /// This creates a standard Nautilus AccountState from the Hyperliquid-specific account state,
     /// converting balances and handling the margin account type since Hyperliquid supports leverage.
     ///
-    /// # Arguments
-    ///
-    /// * `account_id` - The account identifier for this state
-    /// * `ts_event` - When this state was observed/received
-    /// * `ts_init` - When this state object was created
-    ///
     /// # Returns
     ///
     /// A Nautilus AccountState event that can be processed by the platform

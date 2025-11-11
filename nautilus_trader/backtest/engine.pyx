@@ -571,7 +571,7 @@ cdef class BacktestEngine:
             If cash accounts should allow borrowing (negative balances).
         frozen_account : bool, default False
             If the account for this exchange is frozen (balances will not change).
-        price_protection_points : Decimal, optional
+        price_protection_points : int, optional
             Defines an exchange-calculated price boundary (in points) to prevent
             marketable orders from executing at excessively aggressive prices.
 
@@ -607,11 +607,7 @@ cdef class BacktestEngine:
                 default_leverage = Decimal(1)
 
         # Create exchange
-        normalized_price_protection = (
-            Decimal(price_protection_points)
-            if price_protection_points is not None
-            else None
-        )
+        normalized_price_protection = price_protection_points
 
         exchange = SimulatedExchange(
             venue=venue,
@@ -2427,7 +2423,7 @@ cdef class SimulatedExchange:
         If True, the processing order adapts with the heuristic:
         - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
         - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
-    price_protection_points : Decimal, optional
+    price_protection_points : int, optional
         Defines an exchange-calculated price boundary (in points) to prevent
         marketable orders from executing at excessively aggressive prices.
     trade_execution : bool, default False
@@ -2522,11 +2518,7 @@ cdef class SimulatedExchange:
         self.bar_execution = bar_execution
         self.bar_adaptive_high_low_ordering = bar_adaptive_high_low_ordering
         self.trade_execution = trade_execution
-        self.price_protection_points = (
-            Decimal(price_protection_points)
-            if price_protection_points is not None
-            else Decimal(0)
-        )
+        self.price_protection_points = price_protection_points if price_protection_points is not None else 0
 
         # Execution models
         self.fill_model = fill_model
@@ -3537,11 +3529,7 @@ cdef class OrderMatchingEngine:
         self._bar_execution = bar_execution
         self._bar_adaptive_high_low_ordering = bar_adaptive_high_low_ordering
         self._trade_execution = trade_execution
-        self._price_protection_points = (
-            Decimal(price_protection_points)
-            if price_protection_points is not None
-            else Decimal(0)
-        )
+        self._price_protection_points = price_protection_points if price_protection_points is not None else 0
 
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model

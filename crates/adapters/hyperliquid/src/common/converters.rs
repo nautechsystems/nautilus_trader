@@ -27,16 +27,6 @@ use super::enums::{
 
 /// Converts a Nautilus `OrderType` to a Hyperliquid order type configuration.
 ///
-/// # Arguments
-///
-/// * `order_type` - The Nautilus order type to convert
-/// * `time_in_force` - The time in force for limit orders
-/// * `trigger_price` - Optional trigger price for conditional orders
-///
-/// # Returns
-///
-/// A `HyperliquidOrderType` variant configured for the specified order type.
-///
 /// # Panics
 ///
 /// Panics if a conditional order is specified without a trigger price.
@@ -138,14 +128,6 @@ pub fn nautilus_order_type_to_hyperliquid(
 }
 
 /// Converts a Hyperliquid order type to a Nautilus `OrderType`.
-///
-/// # Arguments
-///
-/// * `hl_order_type` - The Hyperliquid order type to convert
-///
-/// # Returns
-///
-/// The corresponding Nautilus `OrderType`.
 pub fn hyperliquid_order_type_to_nautilus(hl_order_type: &HyperliquidOrderType) -> OrderType {
     match hl_order_type {
         HyperliquidOrderType::Limit { .. } => OrderType::Limit,
@@ -161,14 +143,6 @@ pub fn hyperliquid_order_type_to_nautilus(hl_order_type: &HyperliquidOrderType) 
 }
 
 /// Converts a Hyperliquid conditional order type to a Nautilus `OrderType`.
-///
-/// # Arguments
-///
-/// * `conditional_type` - The Hyperliquid conditional order type
-///
-/// # Returns
-///
-/// The corresponding Nautilus `OrderType`.
 pub fn hyperliquid_conditional_to_nautilus(
     conditional_type: HyperliquidConditionalOrderType,
 ) -> OrderType {
@@ -176,14 +150,6 @@ pub fn hyperliquid_conditional_to_nautilus(
 }
 
 /// Converts a Nautilus `OrderType` to a Hyperliquid conditional order type.
-///
-/// # Arguments
-///
-/// * `order_type` - The Nautilus order type
-///
-/// # Returns
-///
-/// The corresponding Hyperliquid conditional order type.
 ///
 /// # Panics
 ///
@@ -195,14 +161,6 @@ pub fn nautilus_to_hyperliquid_conditional(
 }
 
 /// Converts a Nautilus `TimeInForce` to a Hyperliquid time in force.
-///
-/// # Arguments
-///
-/// * `tif` - The Nautilus time in force
-///
-/// # Returns
-///
-/// The corresponding Hyperliquid time in force.
 pub fn nautilus_time_in_force_to_hyperliquid(tif: TimeInForce) -> HyperliquidTimeInForce {
     match tif {
         TimeInForce::Gtc => HyperliquidTimeInForce::Gtc,
@@ -216,14 +174,6 @@ pub fn nautilus_time_in_force_to_hyperliquid(tif: TimeInForce) -> HyperliquidTim
 }
 
 /// Converts a Hyperliquid time in force to a Nautilus `TimeInForce`.
-///
-/// # Arguments
-///
-/// * `hl_tif` - The Hyperliquid time in force
-///
-/// # Returns
-///
-/// The corresponding Nautilus time in force.
 pub fn hyperliquid_time_in_force_to_nautilus(hl_tif: HyperliquidTimeInForce) -> TimeInForce {
     match hl_tif {
         HyperliquidTimeInForce::Gtc => TimeInForce::Gtc,
@@ -233,15 +183,6 @@ pub fn hyperliquid_time_in_force_to_nautilus(hl_tif: HyperliquidTimeInForce) -> 
 }
 
 /// Determines the TP/SL type based on order type and side.
-///
-/// # Arguments
-///
-/// * `order_type` - The Nautilus order type
-/// * `is_buy` - Whether this is a buy order
-///
-/// # Returns
-///
-/// The appropriate `HyperliquidTpSl` type.
 ///
 /// # Logic
 ///

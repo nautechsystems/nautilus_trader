@@ -126,10 +126,6 @@ name = "hyperliquid-ws-exec"
 path = "bin/ws_exec.rs"
 
 [[bin]]
-name = "hyperliquid-ws-post"
-path = "bin/ws_post.rs"
-
-[[bin]]
 name = "hyperliquid-http-exec"
 path = "bin/http_exec.rs"
 

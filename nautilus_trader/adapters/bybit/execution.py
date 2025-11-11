@@ -55,8 +55,10 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
@@ -961,6 +963,12 @@ class BybitExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"Bybit does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
 
         product_type = nautilus_pyo3.bybit_product_type_from_symbol(

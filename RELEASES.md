@@ -74,10 +74,12 @@ TBD
 - Refactored network crate to modularize `http`, `socket`, and `websocket`
 - Refactored reading of feather files in catalog (#3114), thanks @faysou
 - Refactored processing of historical data (#3038), thanks @faysou
+- Refactored Polymarket instrument provider to use async HttpClient
 - Improved Databento live connection stability and reconnects
 - Improved Polymarket position querying using Gamma API (#3142), thanks @DeirhX
 - Refined timer name validation to accept non-ASCII characters (common for foreign currencies) (#3154), thanks for reporting @woung717
 - Refined support for monthly and yearly bars (#3166), thanks @faysou
+- Refined bar aggregators in Rust (#3170), thanks @faysou
 - Optimized execution reconciliation to avoid quadratic complexity (#3140), thanks @DeirhX
 - Optimized network clients by enabling `TCP_NODELAY` (#3156), thanks @sunlei
 - Optimized build by disabling Cargo incremental compilation when using sccache (#3157), thanks @sunlei

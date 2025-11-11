@@ -54,6 +54,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
@@ -1355,6 +1356,12 @@ class OKXExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"OKX does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         if self._config.use_mm_mass_cancel:
             await self._cancel_all_orders_mass_cancel(command)
         else:

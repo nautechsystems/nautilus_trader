@@ -148,7 +148,7 @@ impl BacktestEngine {
         trade_execution: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
-        price_protection_points: Option<Decimal>,
+        price_protection_points: Option<u32>,
     ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
             if account_type == AccountType::Margin {

@@ -15,9 +15,12 @@
 
 use serde::Serialize;
 
-use crate::http::models::{
-    HyperliquidExecCancelByCloidRequest, HyperliquidExecModifyOrderRequest,
-    HyperliquidExecPlaceOrderRequest,
+use crate::{
+    common::enums::{HyperliquidBarInterval, HyperliquidInfoRequestType},
+    http::models::{
+        HyperliquidExecCancelByCloidRequest, HyperliquidExecGrouping,
+        HyperliquidExecModifyOrderRequest, HyperliquidExecPlaceOrderRequest,
+    },
 };
 
 /// Exchange action types for Hyperliquid.
@@ -55,7 +58,7 @@ impl AsRef<str> for ExchangeActionType {
 #[derive(Debug, Clone, Serialize)]
 pub struct OrderParams {
     pub orders: Vec<HyperliquidExecPlaceOrderRequest>,
-    pub grouping: String,
+    pub grouping: HyperliquidExecGrouping,
 }
 
 /// Parameters for canceling orders.
@@ -125,7 +128,7 @@ pub struct ClearinghouseStateParams {
 #[serde(rename_all = "camelCase")]
 pub struct CandleSnapshotReq {
     pub coin: String,
-    pub interval: String,
+    pub interval: HyperliquidBarInterval,
     pub start_time: u64,
     pub end_time: u64,
 }
@@ -153,7 +156,7 @@ pub enum InfoRequestParams {
 #[derive(Debug, Clone, Serialize)]
 pub struct InfoRequest {
     #[serde(rename = "type")]
-    pub request_type: String,
+    pub request_type: HyperliquidInfoRequestType,
     #[serde(flatten)]
     pub params: InfoRequestParams,
 }
@@ -162,7 +165,7 @@ impl InfoRequest {
     /// Creates a request to get metadata about available markets.
     pub fn meta() -> Self {
         Self {
-            request_type: "meta".to_string(),
+            request_type: HyperliquidInfoRequestType::Meta,
             params: InfoRequestParams::None,
         }
     }
@@ -170,7 +173,7 @@ impl InfoRequest {
     /// Creates a request to get spot metadata (tokens and pairs).
     pub fn spot_meta() -> Self {
         Self {
-            request_type: "spotMeta".to_string(),
+            request_type: HyperliquidInfoRequestType::SpotMeta,
             params: InfoRequestParams::None,
         }
     }
@@ -178,7 +181,7 @@ impl InfoRequest {
     /// Creates a request to get metadata with asset contexts (for price precision).
     pub fn meta_and_asset_ctxs() -> Self {
         Self {
-            request_type: "metaAndAssetCtxs".to_string(),
+            request_type: HyperliquidInfoRequestType::MetaAndAssetCtxs,
             params: InfoRequestParams::None,
         }
     }
@@ -186,7 +189,7 @@ impl InfoRequest {
     /// Creates a request to get spot metadata with asset contexts.
     pub fn spot_meta_and_asset_ctxs() -> Self {
         Self {
-            request_type: "spotMetaAndAssetCtxs".to_string(),
+            request_type: HyperliquidInfoRequestType::SpotMetaAndAssetCtxs,
             params: InfoRequestParams::None,
         }
     }
@@ -194,7 +197,7 @@ impl InfoRequest {
     /// Creates a request to get L2 order book for a coin.
     pub fn l2_book(coin: &str) -> Self {
         Self {
-            request_type: "l2Book".to_string(),
+            request_type: HyperliquidInfoRequestType::L2Book,
             params: InfoRequestParams::L2Book(L2BookParams {
                 coin: coin.to_string(),
             }),
@@ -204,7 +207,7 @@ impl InfoRequest {
     /// Creates a request to get user fills.
     pub fn user_fills(user: &str) -> Self {
         Self {
-            request_type: "userFills".to_string(),
+            request_type: HyperliquidInfoRequestType::UserFills,
             params: InfoRequestParams::UserFills(UserFillsParams {
                 user: user.to_string(),
             }),
@@ -214,7 +217,7 @@ impl InfoRequest {
     /// Creates a request to get order status for a user.
     pub fn order_status(user: &str, oid: u64) -> Self {
         Self {
-            request_type: "orderStatus".to_string(),
+            request_type: HyperliquidInfoRequestType::OrderStatus,
             params: InfoRequestParams::OrderStatus(OrderStatusParams {
                 user: user.to_string(),
                 oid,
@@ -225,7 +228,7 @@ impl InfoRequest {
     /// Creates a request to get all open orders for a user.
     pub fn open_orders(user: &str) -> Self {
         Self {
-            request_type: "openOrders".to_string(),
+            request_type: HyperliquidInfoRequestType::OpenOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
             }),
@@ -235,7 +238,7 @@ impl InfoRequest {
     /// Creates a request to get frontend open orders (includes more detail).
     pub fn frontend_open_orders(user: &str) -> Self {
         Self {
-            request_type: "frontendOpenOrders".to_string(),
+            request_type: HyperliquidInfoRequestType::FrontendOpenOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
             }),
@@ -245,7 +248,7 @@ impl InfoRequest {
     /// Creates a request to get user state (balances, positions, margin).
     pub fn clearinghouse_state(user: &str) -> Self {
         Self {
-            request_type: "clearinghouseState".to_string(),
+            request_type: HyperliquidInfoRequestType::ClearinghouseState,
             params: InfoRequestParams::ClearinghouseState(ClearinghouseStateParams {
                 user: user.to_string(),
             }),
@@ -253,19 +256,18 @@ impl InfoRequest {
     }
 
     /// Creates a request to get candle/bar data.
-    ///
-    /// # Arguments
-    /// * `coin` - The coin symbol (e.g., "BTC")
-    /// * `interval` - The timeframe (e.g., "1m", "5m", "15m", "1h", "4h", "1d")
-    /// * `start_time` - Start timestamp in milliseconds
-    /// * `end_time` - End timestamp in milliseconds
-    pub fn candle_snapshot(coin: &str, interval: &str, start_time: u64, end_time: u64) -> Self {
+    pub fn candle_snapshot(
+        coin: &str,
+        interval: HyperliquidBarInterval,
+        start_time: u64,
+        end_time: u64,
+    ) -> Self {
         Self {
-            request_type: "candleSnapshot".to_string(),
+            request_type: HyperliquidInfoRequestType::CandleSnapshot,
             params: InfoRequestParams::CandleSnapshot(CandleSnapshotParams {
                 req: CandleSnapshotReq {
                     coin: coin.to_string(),
-                    interval: interval.to_string(),
+                    interval,
                     start_time,
                     end_time,
                 },
@@ -311,7 +313,7 @@ impl ExchangeAction {
             action_type: ExchangeActionType::Order,
             params: ExchangeActionParams::Order(OrderParams {
                 orders,
-                grouping: "na".to_string(),
+                grouping: HyperliquidExecGrouping::Na,
             }),
         }
     }
@@ -379,7 +381,7 @@ mod tests {
     fn test_info_request_meta() {
         let req = InfoRequest::meta();
 
-        assert_eq!(req.request_type, "meta");
+        assert_eq!(req.request_type, HyperliquidInfoRequestType::Meta);
         assert!(matches!(req.params, InfoRequestParams::None));
     }
 
@@ -387,7 +389,7 @@ mod tests {
     fn test_info_request_l2_book() {
         let req = InfoRequest::l2_book("BTC");
 
-        assert_eq!(req.request_type, "l2Book");
+        assert_eq!(req.request_type, HyperliquidInfoRequestType::L2Book);
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"coin\":\"BTC\""));
     }

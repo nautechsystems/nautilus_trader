@@ -245,9 +245,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        """
-        Load instruments for the given IDs (base class interface).
-        """
         await self.load_ids_with_return_async(
             instrument_ids,
             filters,
@@ -283,9 +280,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         instrument_id: InstrumentId,
         filters: dict | None = None,
     ) -> None:
-        """
-        Load the instrument for the given instrument ID (base class interface).
-        """
         # Call the auxiliary function that maintains your working logic
         await self.load_with_return_async(instrument_id, filters, force_instrument_update=False)
 

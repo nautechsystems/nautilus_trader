@@ -20,9 +20,12 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
 use crate::{
-    common::enums::HyperliquidBarInterval::{self, OneMinute},
+    common::enums::{
+        HyperliquidBarInterval::{self, OneMinute},
+        HyperliquidSide,
+    },
     websocket::{
-        HyperliquidWsError,
+        HyperliquidWsChannel, HyperliquidWsError,
         messages::{
             HyperliquidWsMessage, HyperliquidWsRequest, PostRequest, SubscriptionRequest,
             WsLevelData,
@@ -102,7 +105,7 @@ pub type TradeSide = Side;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SubArg {
-    pub channel: String, // e.g. "trades" | "l2Book" | "bbo" | "candle"
+    pub channel: HyperliquidWsChannel,
     #[serde(default)]
     pub symbol: Option<Ustr>, // unified symbol (coin in Hyperliquid)
     #[serde(default)]
@@ -205,7 +208,7 @@ pub struct WsBbo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsCandle {
     pub instrument: Ustr,
-    pub interval: String, // "1m", "5m", ...
+    pub interval: HyperliquidBarInterval,
     pub open_ts: i64,
     #[serde(
         serialize_with = "serialize_decimal",
@@ -330,11 +333,11 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
         WsOutbound::Subscribe { args, id: _ } => {
             // Convert first SubArg to Hyperliquid SubscriptionRequest
             if let Some(arg) = args.first() {
-                let subscription = match arg.channel.as_str() {
-                    "trades" => SubscriptionRequest::Trades {
+                let subscription = match arg.channel {
+                    HyperliquidWsChannel::Trades => SubscriptionRequest::Trades {
                         coin: arg.symbol.unwrap_or_default(),
                     },
-                    "l2Book" => SubscriptionRequest::L2Book {
+                    HyperliquidWsChannel::L2Book => SubscriptionRequest::L2Book {
                         coin: arg.symbol.unwrap_or_default(),
                         n_sig_figs: arg
                             .params
@@ -349,10 +352,10 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
                             .and_then(|v| v.as_u64())
                             .map(|u| u as u32),
                     },
-                    "bbo" => SubscriptionRequest::Bbo {
+                    HyperliquidWsChannel::Bbo => SubscriptionRequest::Bbo {
                         coin: arg.symbol.unwrap_or_default(),
                     },
-                    "candle" => SubscriptionRequest::Candle {
+                    HyperliquidWsChannel::Candle => SubscriptionRequest::Candle {
                         coin: arg.symbol.unwrap_or_default(),
                         interval: arg
                             .params
@@ -362,7 +365,7 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
                             .and_then(|s| s.parse::<HyperliquidBarInterval>().ok())
                             .unwrap_or(OneMinute),
                     },
-                    "allMids" => SubscriptionRequest::AllMids {
+                    HyperliquidWsChannel::AllMids => SubscriptionRequest::AllMids {
                         dex: arg
                             .params
                             .as_ref()
@@ -370,7 +373,7 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string()),
                     },
-                    "notification" => SubscriptionRequest::Notification {
+                    HyperliquidWsChannel::Notification => SubscriptionRequest::Notification {
                         user: arg
                             .params
                             .as_ref()
@@ -389,19 +392,19 @@ pub fn encode_outbound(msg: &WsOutbound) -> HyperliquidWsRequest {
         }
         WsOutbound::Unsubscribe { args, id: _ } => {
             if let Some(arg) = args.first() {
-                let subscription = match arg.channel.as_str() {
-                    "trades" => SubscriptionRequest::Trades {
+                let subscription = match arg.channel {
+                    HyperliquidWsChannel::Trades => SubscriptionRequest::Trades {
                         coin: arg.symbol.unwrap_or_default(),
                     },
-                    "l2Book" => SubscriptionRequest::L2Book {
+                    HyperliquidWsChannel::L2Book => SubscriptionRequest::L2Book {
                         coin: arg.symbol.unwrap_or_default(),
                         n_sig_figs: None,
                         mantissa: None,
                     },
-                    "bbo" => SubscriptionRequest::Bbo {
+                    HyperliquidWsChannel::Bbo => SubscriptionRequest::Bbo {
                         coin: arg.symbol.unwrap_or_default(),
                     },
-                    "candle" => SubscriptionRequest::Candle {
+                    HyperliquidWsChannel::Candle => SubscriptionRequest::Candle {
                         coin: arg.symbol.unwrap_or_default(),
                         interval: arg
                             .params
@@ -457,7 +460,10 @@ pub fn decode_inbound(msg: &HyperliquidWsMessage) -> WsInbound {
                     instrument: t.coin,
                     px: Decimal::from_str(&t.px).unwrap_or_default(),
                     qty: Decimal::from_str(&t.sz).unwrap_or_default(),
-                    side: if t.side == "A" { Side::Sell } else { Side::Buy },
+                    side: match t.side {
+                        HyperliquidSide::Sell => Side::Sell,
+                        HyperliquidSide::Buy => Side::Buy,
+                    },
                     ts: t.time as i64,
                     id: Some(t.tid.to_string()),
                 })
@@ -512,19 +518,25 @@ pub fn decode_inbound(msg: &HyperliquidWsMessage) -> WsInbound {
                 ts: data.time as i64,
             })
         }
-        HyperliquidWsMessage::Candle { data } => {
-            let candle = WsCandle {
-                instrument: data.s,
-                interval: data.i.clone(),
-                open_ts: data.t as i64,
-                o: Decimal::from_str(&data.o).unwrap_or_default(),
-                h: Decimal::from_str(&data.h).unwrap_or_default(),
-                l: Decimal::from_str(&data.l).unwrap_or_default(),
-                c: Decimal::from_str(&data.c).unwrap_or_default(),
-                v: Decimal::from_str(&data.v).unwrap_or_default(),
-            };
-            WsInbound::Candle(vec![candle])
-        }
+        HyperliquidWsMessage::Candle { data } => match HyperliquidBarInterval::from_str(&data.i) {
+            Ok(interval) => {
+                let candle = WsCandle {
+                    instrument: data.s,
+                    interval,
+                    open_ts: data.t as i64,
+                    o: Decimal::from_str(&data.o).unwrap_or_default(),
+                    h: Decimal::from_str(&data.h).unwrap_or_default(),
+                    l: Decimal::from_str(&data.l).unwrap_or_default(),
+                    c: Decimal::from_str(&data.c).unwrap_or_default(),
+                    v: Decimal::from_str(&data.v).unwrap_or_default(),
+                };
+                WsInbound::Candle(vec![candle])
+            }
+            Err(e) => {
+                tracing::error!("Failed to parse candle interval '{}': {}", data.i, e);
+                WsInbound::Unknown
+            }
+        },
         HyperliquidWsMessage::Notification { data } => WsInbound::Notification(Notice {
             code: None,
             msg: Some(data.notification.clone()),

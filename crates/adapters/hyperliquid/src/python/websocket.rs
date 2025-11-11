@@ -15,7 +15,7 @@
 
 //! Python bindings for the Hyperliquid WebSocket client.
 
-use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime};
+use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     identifiers::{AccountId, InstrumentId},
@@ -23,23 +23,36 @@ use nautilus_model::{
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use ustr::Ustr;
 
-use crate::websocket::{
-    HyperliquidWebSocketClient,
-    messages::{ExecutionReport, HyperliquidWsMessage, NautilusWsMessage},
-    parse::{
-        parse_ws_candle, parse_ws_order_book_deltas, parse_ws_quote_tick, parse_ws_trade_tick,
+use crate::{
+    common::HyperliquidProductType,
+    websocket::{
+        HyperliquidWebSocketClient,
+        messages::{ExecutionReport, NautilusWsMessage},
     },
 };
 
 #[pymethods]
 impl HyperliquidWebSocketClient {
     #[new]
-    #[pyo3(signature = (url=None, testnet=false, account_id=None))]
-    fn py_new(url: Option<String>, testnet: bool, account_id: Option<String>) -> PyResult<Self> {
+    #[pyo3(signature = (url=None, testnet=false, product_type="PERP", account_id=None))]
+    fn py_new(
+        url: Option<String>,
+        testnet: bool,
+        product_type: &str,
+        account_id: Option<String>,
+    ) -> PyResult<Self> {
+        let product_type = match product_type {
+            "PERP" => HyperliquidProductType::Perp,
+            "SPOT" => HyperliquidProductType::Spot,
+            _ => {
+                return Err(PyRuntimeError::new_err(format!(
+                    "Invalid product type: {product_type}. Must be 'PERP' or 'SPOT'"
+                )));
+            }
+        };
         let account_id = account_id.map(|s| AccountId::from(s.as_str()));
-        Ok(Self::new(url, testnet, account_id))
+        Ok(Self::new(url, testnet, product_type, account_id))
     }
 
     #[getter]
@@ -66,10 +79,14 @@ impl HyperliquidWebSocketClient {
         instruments: Vec<Py<PyAny>>,
         callback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let count = instruments.len();
+        tracing::info!("py_connect called with {} instruments", count);
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
+            tracing::debug!("Caching instrument: {}", inst_any.id());
             self.cache_instrument(inst_any);
         }
+        tracing::info!("Finished caching {} instruments in WebSocket client", count);
 
         let mut client = self.clone();
 
@@ -77,177 +94,53 @@ impl HyperliquidWebSocketClient {
             client.connect().await.map_err(to_pyruntime_err)?;
 
             tokio::spawn(async move {
-                let clock = get_atomic_clock_realtime();
-
                 loop {
                     let event = client.next_event().await;
 
                     match event {
                         Some(msg) => {
-                            tracing::debug!("Received WebSocket message: {:?}", msg);
+                            tracing::trace!("Received WebSocket message: {:?}", msg);
 
                             match msg {
-                                NautilusWsMessage::Data(HyperliquidWsMessage::Trades { data }) => {
-                                    for trade in data {
-                                        if let Some(instrument) =
-                                            client.get_instrument_by_symbol(&trade.coin)
-                                        {
-                                            let ts_init = clock.get_time_ns();
-                                            match parse_ws_trade_tick(&trade, &instrument, ts_init)
-                                            {
-                                                Ok(tick) => {
-                                                    Python::attach(|py| {
-                                                        let py_obj = data_to_pycapsule(
-                                                            py,
-                                                            Data::Trade(tick),
-                                                        );
-                                                        if let Err(e) =
-                                                            callback.bind(py).call1((py_obj,))
-                                                        {
-                                                            tracing::error!(
-                                                                "Error calling Python callback: {}",
-                                                                e
-                                                            );
-                                                        }
-                                                    });
-                                                }
-                                                Err(e) => {
-                                                    tracing::error!(
-                                                        "Error parsing trade tick: {}",
-                                                        e
-                                                    );
-                                                }
-                                            }
-                                        } else {
-                                            tracing::warn!(
-                                                "No instrument found for symbol: {}",
-                                                trade.coin
-                                            );
-                                        }
-                                    }
-                                }
-                                NautilusWsMessage::Data(HyperliquidWsMessage::L2Book { data }) => {
-                                    if let Some(instrument) =
-                                        client.get_instrument_by_symbol(&data.coin)
-                                    {
-                                        let ts_init = clock.get_time_ns();
-                                        match parse_ws_order_book_deltas(
-                                            &data,
-                                            &instrument,
-                                            ts_init,
-                                        ) {
-                                            Ok(deltas) => {
-                                                Python::attach(|py| {
-                                                    let py_obj = data_to_pycapsule(
-                                                        py,
-                                                        Data::Deltas(OrderBookDeltas_API::new(
-                                                            deltas,
-                                                        )),
-                                                    );
-                                                    if let Err(e) =
-                                                        callback.bind(py).call1((py_obj,))
-                                                    {
-                                                        tracing::error!(
-                                                            "Error calling Python callback: {}",
-                                                            e
-                                                        );
-                                                    }
-                                                });
-                                            }
-                                            Err(e) => {
+                                NautilusWsMessage::Trades(trade_ticks) => {
+                                    Python::attach(|py| {
+                                        for tick in trade_ticks {
+                                            let py_obj = data_to_pycapsule(py, Data::Trade(tick));
+                                            if let Err(e) = callback.bind(py).call1((py_obj,)) {
                                                 tracing::error!(
-                                                    "Error parsing order book deltas: {}",
+                                                    "Error calling Python callback: {}",
                                                     e
                                                 );
                                             }
                                         }
-                                    } else {
-                                        tracing::warn!(
-                                            "No instrument found for symbol: {}",
-                                            data.coin
-                                        );
-                                    }
+                                    });
                                 }
-                                NautilusWsMessage::Data(HyperliquidWsMessage::Bbo { data }) => {
-                                    if let Some(instrument) =
-                                        client.get_instrument_by_symbol(&data.coin)
-                                    {
-                                        let ts_init = clock.get_time_ns();
-                                        match parse_ws_quote_tick(&data, &instrument, ts_init) {
-                                            Ok(quote) => {
-                                                Python::attach(|py| {
-                                                    let py_obj =
-                                                        data_to_pycapsule(py, Data::Quote(quote));
-                                                    if let Err(e) =
-                                                        callback.bind(py).call1((py_obj,))
-                                                    {
-                                                        tracing::error!(
-                                                            "Error calling Python callback: {}",
-                                                            e
-                                                        );
-                                                    }
-                                                });
-                                            }
-                                            Err(e) => {
-                                                tracing::error!("Error parsing quote tick: {e}");
-                                            }
+                                NautilusWsMessage::Quote(quote_tick) => {
+                                    Python::attach(|py| {
+                                        let py_obj = data_to_pycapsule(py, Data::Quote(quote_tick));
+                                        if let Err(e) = callback.bind(py).call1((py_obj,)) {
+                                            tracing::error!("Error calling Python callback: {}", e);
                                         }
-                                    } else {
-                                        tracing::warn!(
-                                            "No instrument found for symbol: {}",
-                                            data.coin
-                                        );
-                                    }
+                                    });
                                 }
-                                NautilusWsMessage::Data(HyperliquidWsMessage::Candle { data }) => {
-                                    if let Some(instrument) =
-                                        client.get_instrument_by_symbol(&data.s)
-                                    {
-                                        let ts_init = clock.get_time_ns();
-                                        let bar_type_str =
-                                            format!("{}-{}-LAST-EXTERNAL", instrument.id(), data.i);
-                                        match bar_type_str.parse::<BarType>() {
-                                            Ok(bar_type) => {
-                                                match parse_ws_candle(
-                                                    &data,
-                                                    &instrument,
-                                                    &bar_type,
-                                                    ts_init,
-                                                ) {
-                                                    Ok(bar) => {
-                                                        Python::attach(|py| {
-                                                            let py_obj = data_to_pycapsule(
-                                                                py,
-                                                                Data::Bar(bar),
-                                                            );
-                                                            if let Err(e) =
-                                                                callback.bind(py).call1((py_obj,))
-                                                            {
-                                                                tracing::error!(
-                                                                    "Error calling Python callback: {}",
-                                                                    e
-                                                                );
-                                                            }
-                                                        });
-                                                    }
-                                                    Err(e) => {
-                                                        tracing::error!(
-                                                            "Error parsing candle: {}",
-                                                            e
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                            Err(e) => {
-                                                tracing::error!("Error creating bar type: {e}");
-                                            }
-                                        }
-                                    } else {
-                                        tracing::warn!(
-                                            "No instrument found for symbol: {}",
-                                            data.s
+                                NautilusWsMessage::Deltas(deltas) => {
+                                    Python::attach(|py| {
+                                        let py_obj = data_to_pycapsule(
+                                            py,
+                                            Data::Deltas(OrderBookDeltas_API::new(deltas)),
                                         );
-                                    }
+                                        if let Err(e) = callback.bind(py).call1((py_obj,)) {
+                                            tracing::error!("Error calling Python callback: {}", e);
+                                        }
+                                    });
+                                }
+                                NautilusWsMessage::Candle(bar) => {
+                                    Python::attach(|py| {
+                                        let py_obj = data_to_pycapsule(py, Data::Bar(bar));
+                                        if let Err(e) = callback.bind(py).call1((py_obj,)) {
+                                            tracing::error!("Error calling Python callback: {}", e);
+                                        }
+                                    });
                                 }
                                 NautilusWsMessage::ExecutionReports(reports) => {
                                     Python::attach(|py| {
@@ -372,11 +265,10 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = instrument_id.symbol.inner();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_trades(coin)
+                .subscribe_trades(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -390,11 +282,10 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = instrument_id.symbol.inner();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .unsubscribe_trades(coin)
+                .unsubscribe_trades(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -408,11 +299,10 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = Ustr::from(instrument_id.symbol.as_str());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_book(coin)
+                .subscribe_book(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -426,11 +316,10 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = Ustr::from(instrument_id.symbol.as_str());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .unsubscribe_book(coin)
+                .unsubscribe_book(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -446,11 +335,10 @@ impl HyperliquidWebSocketClient {
         _depth: u64,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = Ustr::from(instrument_id.symbol.as_str());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_book(coin)
+                .subscribe_book(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -464,11 +352,10 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = Ustr::from(instrument_id.symbol.as_str());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .unsubscribe_book(coin)
+                .unsubscribe_book(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -484,11 +371,10 @@ impl HyperliquidWebSocketClient {
         _depth: u64,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = Ustr::from(instrument_id.symbol.as_str());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_book(coin)
+                .subscribe_book(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -502,10 +388,12 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = instrument_id.symbol.inner();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client.subscribe_bbo(coin).await.map_err(to_pyruntime_err)?;
+            client
+                .subscribe_quotes(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
@@ -517,11 +405,10 @@ impl HyperliquidWebSocketClient {
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
-        let coin = instrument_id.symbol.inner();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .unsubscribe_bbo(coin)
+                .unsubscribe_quotes(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

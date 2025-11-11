@@ -128,7 +128,8 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         self._instruments.clear()
         self._currencies.clear()
         self._loaded_instruments.clear()
-        self._instruments_pyo3.clear()
+        # NOTE: Do NOT clear _instruments_pyo3 - it's needed by WebSocket client
+        # and was freshly populated by _load_instruments() just before this call
 
     def _ingest_instruments(
         self,
@@ -206,10 +207,6 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
     ) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         await self.load_ids_async([instrument_id], filters)
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     def _accept_instrument(
         self,

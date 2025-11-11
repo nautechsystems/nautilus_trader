@@ -19,7 +19,6 @@ Provides data loaders for historical Polymarket data from various APIs.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlencode
 
 import msgspec
 import pandas as pd
@@ -287,12 +286,9 @@ class PolymarketDataLoader:
             "archived": str(archived).lower(),
             "limit": str(limit),
         }
-        query_string = urlencode(params)
-        url = f"https://gamma-api.polymarket.com/markets?{query_string}"
-
-        response = await client.request(
-            method=nautilus_pyo3.HttpMethod.GET,
-            url=url,
+        response = await client.get(
+            url="https://gamma-api.polymarket.com/markets",
+            params=params,
         )
 
         if response.status != 200:
@@ -362,10 +358,7 @@ class PolymarketDataLoader:
         client = http_client or nautilus_pyo3.HttpClient()
         url = f"https://clob.polymarket.com/markets/{condition_id}"
 
-        response = await client.request(
-            method=nautilus_pyo3.HttpMethod.GET,
-            url=url,
-        )
+        response = await client.get(url=url)
 
         if response.status != 200:
             raise RuntimeError(
@@ -420,12 +413,9 @@ class PolymarketDataLoader:
             if pagination_key:
                 params["pagination_key"] = pagination_key
 
-            query_string = urlencode(params)
-            url = f"https://api.domeapi.io/v1/polymarket/orderbooks?{query_string}"
-
-            response = await self._http_client.request(
-                method=nautilus_pyo3.HttpMethod.GET,
-                url=url,
+            response = await self._http_client.get(
+                url="https://api.domeapi.io/v1/polymarket/orderbooks",
+                params=params,
             )
 
             if response.status != 200:
@@ -485,12 +475,9 @@ class PolymarketDataLoader:
             "endTs": str(end_time_s),
             "fidelity": str(fidelity),
         }
-        query_string = urlencode(params)
-        url = f"https://clob.polymarket.com/prices-history?{query_string}"
-
-        response = await self._http_client.request(
-            method=nautilus_pyo3.HttpMethod.GET,
-            url=url,
+        response = await self._http_client.get(
+            url="https://clob.polymarket.com/prices-history",
+            params=params,
         )
 
         if response.status != 200:

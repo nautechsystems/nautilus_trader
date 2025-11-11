@@ -208,11 +208,6 @@ impl Secrets {
 
     /// Create secrets from explicit private key and vault address.
     ///
-    /// # Arguments
-    ///
-    /// * `private_key_str` - The private key hex string (with or without 0x prefix)
-    /// * `vault_address_str` - Optional vault address for vault trading
-    ///
     /// # Errors
     ///
     /// Returns an error if the private key or vault address is invalid.

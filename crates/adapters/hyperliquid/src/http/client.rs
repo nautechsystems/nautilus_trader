@@ -52,6 +52,7 @@ use crate::{
     common::{
         consts::{HYPERLIQUID_VENUE, exchange_url, info_url},
         credential::{Secrets, VaultAddress},
+        enums::HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
         parse::{extract_asset_id_from_symbol, orders_to_hyperliquid_requests},
     },
     http::{
@@ -207,13 +208,6 @@ impl HyperliquidHttpClient {
 
     /// Creates a new [`HyperliquidHttpClient`] configured with explicit credentials.
     ///
-    /// # Arguments
-    ///
-    /// * `private_key` - The private key hex string (with or without 0x prefix)
-    /// * `vault_address` - Optional vault address for vault trading
-    /// * `is_testnet` - Whether to use testnet
-    /// * `timeout_secs` - Optional request timeout in seconds
-    ///
     /// # Errors
     ///
     /// Returns [`Error::Auth`] if the private key is invalid or cannot be parsed.
@@ -261,9 +255,6 @@ impl HyperliquidHttpClient {
     ///
     /// This is required for parsing orders, fills, and positions into reports.
     /// Any existing instrument with the same symbol will be replaced.
-    /// Instruments are stored under two keys:
-    /// 1. The Nautilus symbol (e.g., "BTC-USD-PERP")
-    /// 2. The Hyperliquid coin identifier (base currency, e.g., "BTC" or "vntls:vCURSOR")
     ///
     /// # Panics
     ///
@@ -274,16 +265,28 @@ impl HyperliquidHttpClient {
             .write()
             .expect("Failed to acquire write lock");
 
-        // Store by Nautilus symbol
-        let nautilus_symbol = instrument.id().symbol.inner();
-        instruments.insert(nautilus_symbol, instrument.clone());
+        let full_symbol = instrument.symbol().inner();
+        let coin = instrument.raw_symbol().inner();
 
-        // Store by Hyperliquid coin identifier (base currency)
-        // This allows lookup by the "coin" field returned in API responses
-        if let Some(base_currency) = instrument.base_currency() {
-            let coin_key = Ustr::from(base_currency.code.as_str());
-            instruments.insert(coin_key, instrument);
+        // Store by full symbol (primary key - guarantees uniqueness)
+        instruments.insert(full_symbol, instrument.clone());
+
+        // Also store by coin for HTTP response lookups
+        // HTTP responses only include coin strings, so this mapping is required
+        // Check for collision (different instrument already mapped to this coin)
+        if let Some(existing) = instruments.get(&coin)
+            && existing.id() != instrument.id()
+        {
+            tracing::warn!(
+                "Coin '{}' mapping changed from {} to {} - Hyperliquid HTTP responses \
+                only include coin identifiers, so loading both spot and perp for the \
+                same coin will cause collisions. Last cached instrument wins.",
+                coin,
+                existing.id(),
+                instrument.id()
+            );
         }
+        instruments.insert(coin, instrument);
     }
 
     /// Get an instrument from cache, or create a synthetic one for vault tokens.
@@ -302,12 +305,13 @@ impl HyperliquidHttpClient {
     /// - Price increment: 0.00000001
     /// - Size increment: 0.00000001
     fn get_or_create_instrument(&self, coin: &Ustr) -> Option<InstrumentAny> {
-        // Try to get from cache first
+        // Try to find instrument by raw_symbol (coin) - direct O(1) lookup
         {
             let instruments = self
                 .instruments
                 .read()
                 .expect("Failed to acquire read lock");
+
             if let Some(instrument) = instruments.get(coin) {
                 return Some(instrument.clone());
             }
@@ -515,16 +519,10 @@ impl HyperliquidHttpClient {
     }
 
     /// Get candle/bar data for a coin.
-    ///
-    /// # Arguments
-    /// * `coin` - The coin symbol (e.g., "BTC")
-    /// * `interval` - The timeframe (e.g., "1m", "5m", "15m", "1h", "4h", "1d")
-    /// * `start_time` - Start timestamp in milliseconds
-    /// * `end_time` - End timestamp in milliseconds
     pub async fn info_candle_snapshot(
         &self,
         coin: &str,
-        interval: &str,
+        interval: crate::common::enums::HyperliquidBarInterval,
         start_time: u64,
         end_time: u64,
     ) -> Result<crate::http::models::HyperliquidCandleSnapshot> {
@@ -623,6 +621,7 @@ impl HyperliquidHttpClient {
             .request(
                 Method::POST,
                 url.clone(),
+                None,
                 None,
                 Some(body_bytes),
                 None,
@@ -1318,6 +1317,7 @@ impl HyperliquidHttpClient {
                 Method::POST,
                 url.clone(),
                 None,
+                None,
                 Some(body_bytes),
                 None,
                 None,
@@ -1445,12 +1445,12 @@ impl HyperliquidHttpClient {
             }
 
             // Determine status from order data - orders from frontend_open_orders are open
-            let status = "open";
+            let status = HyperliquidOrderStatusEnum::Open;
 
             // Parse to OrderStatusReport
             match crate::http::parse::parse_order_status_report_from_basic(
                 &order,
-                status,
+                &status,
                 &instrument,
                 self.account_id.unwrap_or_default(),
                 ts_init,
@@ -1621,7 +1621,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_add_instrument_dual_key_storage() {
+    fn test_cache_instrument_by_raw_symbol() {
         use nautilus_core::time::get_atomic_clock_realtime;
         use nautilus_model::{
             currencies::CURRENCY_MAP,
@@ -1651,16 +1651,20 @@ mod tests {
         let base_currency = Currency::new(base_code, 8, 0, base_code, CurrencyType::Crypto);
         let quote_currency = Currency::new(quote_code, 6, 0, quote_code, CurrencyType::Crypto);
 
+        // Nautilus symbol is "vntls:vCURSOR-USDC-SPOT"
         let symbol = Symbol::new("vntls:vCURSOR-USDC-SPOT");
         let venue = *crate::common::consts::HYPERLIQUID_VENUE;
         let instrument_id = InstrumentId::new(symbol, venue);
+
+        // raw_symbol is set to the base currency "vntls:vCURSOR" (see parse.rs)
+        let raw_symbol = Symbol::new(base_code);
 
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
 
         let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
             instrument_id,
-            symbol,
+            raw_symbol, // Second parameter is raw_symbol, not symbol
             base_currency,
             quote_currency,
             8,
@@ -1684,24 +1688,15 @@ mod tests {
         ));
 
         // Cache the instrument
-        client.cache_instrument(instrument);
+        client.cache_instrument(instrument.clone());
 
-        // Verify it can be looked up by Nautilus symbol
+        // Verify it can be looked up by raw_symbol (Hyperliquid coin identifier)
         let instruments = client.instruments.read().unwrap();
-        let by_symbol = instruments.get(&Ustr::from("vntls:vCURSOR-USDC-SPOT"));
+        let by_raw_symbol = instruments.get(&Ustr::from("vntls:vCURSOR"));
         assert!(
-            by_symbol.is_some(),
-            "Instrument should be accessible by Nautilus symbol"
+            by_raw_symbol.is_some(),
+            "Instrument should be accessible by raw_symbol (Hyperliquid coin identifier)"
         );
-
-        // Verify it can be looked up by Hyperliquid coin identifier (base currency)
-        let by_coin = instruments.get(&Ustr::from("vntls:vCURSOR"));
-        assert!(
-            by_coin.is_some(),
-            "Instrument should be accessible by Hyperliquid coin identifier"
-        );
-
-        // Verify both lookups return the same instrument
-        assert_eq!(by_symbol.unwrap().id(), by_coin.unwrap().id());
+        assert_eq!(by_raw_symbol.unwrap().id(), instrument.id());
     }
 }

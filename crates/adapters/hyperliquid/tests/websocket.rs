@@ -36,12 +36,13 @@ use axum::{
 };
 use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
-use nautilus_hyperliquid::websocket::client::HyperliquidWebSocketClient;
-use nautilus_model::identifiers::AccountId;
+use nautilus_hyperliquid::{
+    common::HyperliquidProductType, websocket::client::HyperliquidWebSocketClient,
+};
+use nautilus_model::identifiers::{AccountId, InstrumentId};
 use rstest::rstest;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
-use ustr::Ustr;
 
 const TEST_USER_ADDRESS: &str = "0x1234567890123456789012345678901234567890";
 const TEST_PING_PAYLOAD: &[u8] = b"test-server-ping";
@@ -309,7 +310,69 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
 }
 
 async fn connect_client(ws_url: &str, account_id: Option<AccountId>) -> HyperliquidWebSocketClient {
-    HyperliquidWebSocketClient::new(Some(ws_url.to_string()), false, account_id)
+    let mut client = HyperliquidWebSocketClient::new(
+        Some(ws_url.to_string()),
+        false,
+        HyperliquidProductType::Perp,
+        account_id,
+    );
+    cache_test_instruments(&mut client);
+    client
+}
+
+fn cache_test_instruments(client: &mut HyperliquidWebSocketClient) {
+    use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_model::{
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CryptoPerpetual, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let clock = get_atomic_clock_realtime();
+    let ts = clock.get_time_ns();
+
+    // Create stub instruments for testing
+    let instruments = vec![
+        ("BTC", "BTC-USD-PERP"),
+        ("ETH", "ETH-USD-PERP"),
+        ("SOL", "SOL-USD-PERP"),
+    ];
+
+    let mut test_instruments = Vec::new();
+    for (raw_symbol, symbol_str) in instruments {
+        let raw_symbol = Symbol::new(raw_symbol);
+        let instrument_id = InstrumentId::from(format!("{}.HYPERLIQUID", symbol_str));
+
+        let instrument = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+            instrument_id,
+            raw_symbol,
+            Currency::USD(),
+            Currency::USD(),
+            Currency::USD(),
+            false,
+            2, // price_precision
+            3, // size_precision
+            Price::from("0.01"),
+            Quantity::from("0.001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            ts,
+            ts,
+        ));
+        test_instruments.push(instrument);
+    }
+
+    client.cache_instruments(test_instruments);
 }
 
 async fn wait_until_active(
@@ -477,7 +540,9 @@ async fn test_is_active_false_during_reconnection() {
 
     // Trigger disconnect
     state.drop_next_connection.store(true, Ordering::Relaxed);
-    let _ = client.subscribe_trades(Ustr::from("BTC")).await;
+    let _ = client
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -525,7 +590,7 @@ async fn test_subscribe_trades() {
         .expect("client inactive");
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
@@ -561,7 +626,7 @@ async fn test_subscribe_orderbook() {
         .expect("client inactive");
 
     client
-        .subscribe_book(Ustr::from("BTC"))
+        .subscribe_book(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
@@ -585,7 +650,7 @@ async fn test_subscribe_orderbook() {
 
 #[rstest]
 #[tokio::test]
-async fn test_subscribe_bbo() {
+async fn test_subscribe_quotes() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -597,7 +662,7 @@ async fn test_subscribe_bbo() {
         .expect("client inactive");
 
     client
-        .subscribe_bbo(Ustr::from("BTC"))
+        .subscribe_quotes(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
@@ -672,7 +737,7 @@ async fn test_unsubscribe_flow() {
         .expect("client inactive");
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
@@ -686,7 +751,7 @@ async fn test_unsubscribe_flow() {
     .await;
 
     client
-        .unsubscribe_trades(Ustr::from("BTC"))
+        .unsubscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("unsubscribe failed");
 
@@ -716,15 +781,15 @@ async fn test_multiple_subscriptions() {
         .expect("client inactive");
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe BTC trades failed");
     client
-        .subscribe_trades(Ustr::from("ETH"))
+        .subscribe_trades(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe ETH trades failed");
     client
-        .subscribe_bbo(Ustr::from("BTC"))
+        .subscribe_quotes(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe BTC bbo failed");
 
@@ -770,7 +835,7 @@ async fn test_reconnection_scenario() {
         .expect("client inactive");
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
@@ -806,7 +871,7 @@ async fn test_heartbeat_timeout_reconnection() {
         .expect("client inactive");
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
@@ -845,7 +910,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
     .await;
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe call succeeded");
 
@@ -880,11 +945,11 @@ async fn test_subscription_restoration_tracking() {
         .expect("client inactive");
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe BTC trades failed");
     client
-        .subscribe_bbo(Ustr::from("ETH"))
+        .subscribe_quotes(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe ETH bbo failed");
 
@@ -919,7 +984,7 @@ async fn test_true_auto_reconnect_with_verification() {
         .expect("client inactive");
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
@@ -957,7 +1022,7 @@ async fn test_rapid_consecutive_reconnections() {
         .expect("client inactive");
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
@@ -977,7 +1042,9 @@ async fn test_rapid_consecutive_reconnections() {
 
         state.drop_next_connection.store(true, Ordering::Relaxed);
 
-        let _ = client.subscribe_bbo(Ustr::from("ETH")).await;
+        let _ = client
+            .subscribe_quotes(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))
+            .await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
@@ -1002,13 +1069,15 @@ async fn test_reconnection_race_condition() {
         .expect("client inactive");
 
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
     // Trigger disconnect during active connection
     state.drop_next_connection.store(true, Ordering::Relaxed);
-    let _ = client.subscribe_bbo(Ustr::from("ETH")).await;
+    let _ = client
+        .subscribe_quotes(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))
+        .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -1037,15 +1106,15 @@ async fn test_multiple_partial_subscription_failures() {
 
     // Subscribe to multiple channels
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe BTC trades");
     client
-        .subscribe_bbo(Ustr::from("BTC"))
+        .subscribe_quotes(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe BTC bbo");
     client
-        .subscribe_book(Ustr::from("ETH"))
+        .subscribe_book(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe ETH book");
 
@@ -1068,7 +1137,7 @@ async fn test_multiple_partial_subscription_failures() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     client
-        .subscribe_trades(Ustr::from("SOL"))
+        .subscribe_trades(InstrumentId::from("SOL-USD-PERP.HYPERLIQUID"))
         .await
         .expect("trigger disconnect");
 
@@ -1091,7 +1160,7 @@ async fn test_subscribe_after_next_event_call() {
 
     // Subscribe to get some events
     client
-        .subscribe_trades(Ustr::from("BTC"))
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await
         .expect("subscribe failed");
 
@@ -1104,7 +1173,9 @@ async fn test_subscribe_after_next_event_call() {
     }
 
     // Subscribe should still work after next_event
-    let result = client.subscribe_bbo(Ustr::from("ETH")).await;
+    let result = client
+        .subscribe_quotes(InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"))
+        .await;
     assert!(
         result.is_ok(),
         "Subscribe should work after next_event() is called"

@@ -292,7 +292,7 @@ pub struct BacktestVenueConfig {
     leverages: Option<HashMap<Currency, f64>>,
     /// Defines an exchange-calculated price boundary to prevent a market order from being
     /// filled at an extremely aggressive price.
-    price_protection_points: f64,
+    price_protection_points: u32,
 }
 
 impl BacktestVenueConfig {
@@ -318,7 +318,7 @@ impl BacktestVenueConfig {
         base_currency: Option<Currency>,
         default_leverage: Option<f64>,
         leverages: Option<HashMap<Currency, f64>>,
-        price_protection_points: Option<f64>,
+        price_protection_points: Option<u32>,
     ) -> Self {
         Self {
             name,
@@ -340,7 +340,7 @@ impl BacktestVenueConfig {
             base_currency,
             default_leverage,
             leverages,
-            price_protection_points: price_protection_points.unwrap_or(0.0),
+            price_protection_points: price_protection_points.unwrap_or(0),
         }
     }
 }

@@ -20,7 +20,11 @@ use nautilus_model::reports::{FillReport, OrderStatusReport};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::enums::HyperliquidBarInterval;
+use crate::common::enums::{
+    HyperliquidBarInterval, HyperliquidFillDirection, HyperliquidLiquidationMethod,
+    HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide, HyperliquidTpSl,
+    HyperliquidTwapStatus,
+};
 
 /// Represents an outbound WebSocket message from client to Hyperliquid.
 #[derive(Debug, Clone, Serialize)]
@@ -334,6 +338,8 @@ pub enum HyperliquidWsMessage {
     UserTwapHistory { data: WsUserTwapHistoryData },
     /// Best bid/offer
     Bbo { data: WsBboData },
+    /// Error response
+    Error { data: String },
     /// Pong response
     Pong,
 }
@@ -416,7 +422,7 @@ pub struct WsLevelData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTradeData {
     pub coin: Ustr,
-    pub side: String,
+    pub side: HyperliquidSide,
     pub px: String,
     pub sz: String,
     pub hash: String,
@@ -429,7 +435,7 @@ pub struct WsTradeData {
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsOrderData {
     pub order: WsBasicOrderData,
-    pub status: String,
+    pub status: HyperliquidOrderStatusEnum,
     #[serde(rename = "statusTimestamp")]
     pub status_timestamp: u64,
 }
@@ -438,7 +444,7 @@ pub struct WsOrderData {
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsBasicOrderData {
     pub coin: Ustr,
-    pub side: String,
+    pub side: HyperliquidSide,
     #[serde(rename = "limitPx")]
     pub limit_px: String,
     pub sz: String,
@@ -454,7 +460,7 @@ pub struct WsBasicOrderData {
     #[serde(rename = "isMarket")]
     pub is_market: Option<bool>,
     /// Take-profit or stop-loss indicator
-    pub tpsl: Option<String>,
+    pub tpsl: Option<HyperliquidTpSl>,
     /// Whether the trigger has been activated
     #[serde(rename = "triggerActivated")]
     pub trigger_activated: Option<bool>,
@@ -463,14 +469,37 @@ pub struct WsBasicOrderData {
     pub trailing_stop: Option<WsTrailingStopData>,
 }
 
+/// Trailing stop offset type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TrailingOffsetType {
+    /// Price offset
+    Price,
+    /// Percentage offset
+    Percentage,
+    /// Basis points offset
+    BasisPoints,
+}
+
+impl TrailingOffsetType {
+    /// Format the offset value with the appropriate unit.
+    pub fn format_offset(&self, offset: &str) -> String {
+        match self {
+            Self::Price => offset.to_string(),
+            Self::Percentage => format!("{offset}%"),
+            Self::BasisPoints => format!("{offset} bps"),
+        }
+    }
+}
+
 /// Trailing stop data from WebSocket
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsTrailingStopData {
     /// Trailing offset value
     pub offset: String,
-    /// Offset type: "price", "percentage", or "basisPoints"
+    /// Offset type
     #[serde(rename = "offsetType")]
-    pub offset_type: String,
+    pub offset_type: TrailingOffsetType,
     /// Current callback price (highest/lowest price reached)
     #[serde(rename = "callbackPrice")]
     pub callback_price: Option<String>,
@@ -511,11 +540,11 @@ pub struct WsFillData {
     pub coin: Ustr,
     pub px: String,
     pub sz: String,
-    pub side: String,
+    pub side: HyperliquidSide,
     pub time: u64,
     #[serde(rename = "startPosition")]
     pub start_position: String,
-    pub dir: String,
+    pub dir: HyperliquidFillDirection,
     #[serde(rename = "closedPnl")]
     pub closed_pnl: String,
     pub hash: String,
@@ -537,7 +566,7 @@ pub struct FillLiquidationData {
     pub liquidated_user: Option<String>,
     #[serde(rename = "markPx")]
     pub mark_px: f64,
-    pub method: String, // "market" | "backstop"
+    pub method: HyperliquidLiquidationMethod,
 }
 
 /// WebSocket user funding data
@@ -576,7 +605,7 @@ pub struct WsTriggerActivatedData {
     pub time: u64,
     #[serde(rename = "triggerPx")]
     pub trigger_px: String,
-    pub tpsl: String,
+    pub tpsl: HyperliquidTpSl,
 }
 
 /// Trigger order triggered event data
@@ -589,7 +618,7 @@ pub struct WsTriggerTriggeredData {
     pub trigger_px: String,
     #[serde(rename = "marketPx")]
     pub market_px: String,
-    pub tpsl: String,
+    pub tpsl: HyperliquidTpSl,
     /// Order ID of the resulting market/limit order after trigger
     #[serde(rename = "resultingOid")]
     pub resulting_oid: Option<u64>,
@@ -714,7 +743,7 @@ pub struct WsTwapHistoryData {
 pub struct TwapStateData {
     pub coin: Ustr,
     pub user: String,
-    pub side: String,
+    pub side: HyperliquidSide,
     pub sz: f64,
     #[serde(rename = "executedSz")]
     pub executed_sz: f64,
@@ -730,7 +759,7 @@ pub struct TwapStateData {
 /// TWAP status data
 #[derive(Debug, Clone, Deserialize)]
 pub struct TwapStatusData {
-    pub status: String, // "activated" | "terminated" | "finished" | "error"
+    pub status: HyperliquidTwapStatus,
     pub description: String,
 }
 
@@ -814,7 +843,7 @@ mod tests {
 
         let trade: WsTradeData = serde_json::from_str(json).unwrap();
         assert_eq!(trade.coin, "BTC");
-        assert_eq!(trade.side, "B");
+        assert_eq!(trade.side, HyperliquidSide::Buy);
         assert_eq!(trade.px, "50000.0");
     }
 
@@ -849,7 +878,7 @@ mod tests {
 
         let data: WsTrailingStopData = serde_json::from_str(json).unwrap();
         assert_eq!(data.offset, "100.0");
-        assert_eq!(data.offset_type, "price");
+        assert_eq!(data.offset_type, TrailingOffsetType::Price);
         assert_eq!(data.callback_price.unwrap(), "50000.0");
     }
 
@@ -867,7 +896,7 @@ mod tests {
         assert_eq!(data.coin, Ustr::from("BTC"));
         assert_eq!(data.oid, 12345);
         assert_eq!(data.trigger_px, "50000.0");
-        assert_eq!(data.tpsl, "sl");
+        assert_eq!(data.tpsl, HyperliquidTpSl::Sl);
         assert_eq!(data.time, 1704470400000);
     }
 
@@ -888,22 +917,29 @@ mod tests {
         assert_eq!(data.oid, 67890);
         assert_eq!(data.trigger_px, "3000.0");
         assert_eq!(data.market_px, "3001.0");
-        assert_eq!(data.tpsl, "tp");
+        assert_eq!(data.tpsl, HyperliquidTpSl::Tp);
         assert_eq!(data.resulting_oid, Some(99999));
     }
 }
 
 /// Nautilus WebSocket message wrapper for routing to execution engine.
 ///
-/// Similar to OKX adapter, this enum wraps execution-specific messages
-/// that need to be routed through the execution engine rather than
-/// data callbacks.
+/// Wraps parsed messages from the handler.
+///
+/// All parsing happens in the handler layer, with parsed Nautilus domain objects
+/// passed through to the Python layer.
 #[derive(Debug, Clone)]
 pub enum NautilusWsMessage {
     /// Execution reports (order status and fills)
     ExecutionReports(Vec<ExecutionReport>),
-    /// Raw HyperliquidWsMessage for data client processing
-    Data(HyperliquidWsMessage),
+    /// Parsed trade ticks
+    Trades(Vec<nautilus_model::data::TradeTick>),
+    /// Parsed quote tick (from BBO)
+    Quote(nautilus_model::data::QuoteTick),
+    /// Parsed order book deltas
+    Deltas(nautilus_model::data::OrderBookDeltas),
+    /// Parsed candle/bar
+    Candle(nautilus_model::data::Bar),
     /// Error occurred
     Error(String),
     /// WebSocket reconnected

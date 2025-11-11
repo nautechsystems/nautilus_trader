@@ -77,9 +77,6 @@ class DYDXInstrumentProvider(InstrumentProvider):
         self._log_warnings = config.log_warnings if config else True
 
     async def load_all_async(self, filters: dict[str, Any] | None = None) -> None:
-        """
-        Load all instruments asynchronously, optionally applying filters.
-        """
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -90,9 +87,6 @@ class DYDXInstrumentProvider(InstrumentProvider):
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        """
-        Load specific instruments by their IDs.
-        """
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
             return
@@ -115,9 +109,6 @@ class DYDXInstrumentProvider(InstrumentProvider):
             )
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
-        """
-        Load a single instrument by its ID.
-        """
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self._venue, "instrument_id.venue", "BINANCE")
 

@@ -112,13 +112,6 @@ impl HttpClient {
 
     /// Sends an HTTP request.
     ///
-    /// - `method`: The [`Method`] to use (GET, POST, etc.).
-    /// - `url`: The target URL.
-    /// - `headers`: Additional headers for this request.
-    /// - `body`: Optional request body.
-    /// - `keys`: Rate-limit keys to control request frequency.
-    /// - `timeout_secs`: Optional request timeout in seconds.
-    ///
     /// # Errors
     ///
     /// Returns an error if unable to send request or times out.
@@ -131,6 +124,7 @@ impl HttpClient {
         &self,
         method: Method,
         url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
         headers: Option<HashMap<String, String>>,
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
@@ -138,7 +132,36 @@ impl HttpClient {
     ) -> Result<HttpResponse, HttpClientError> {
         let keys = keys.map(into_ustr_vec);
 
-        self.request_with_ustr_keys(method, url, headers, body, timeout_secs, keys)
+        self.request_with_ustr_keys(method, url, params, headers, body, timeout_secs, keys)
+            .await
+    }
+
+    /// Sends an HTTP request with serializable query parameters.
+    ///
+    /// This method accepts any type implementing `Serialize` for query parameters,
+    /// which will be automatically encoded into the URL query string using reqwest's
+    /// `.query()` method, avoiding unnecessary HashMap allocations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn request_with_params<P: serde::Serialize>(
+        &self,
+        method: Method,
+        url: String,
+        params: Option<&P>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+        keys: Option<Vec<String>>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        let keys = keys.map(into_ustr_vec);
+        let rate_limiter = self.rate_limiter.clone();
+        rate_limiter.await_keys_ready(keys).await;
+
+        self.client
+            .send_request_with_query(method, url, params, headers, body, timeout_secs)
             .await
     }
 
@@ -152,6 +175,7 @@ impl HttpClient {
         &self,
         method: Method,
         url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
         headers: Option<HashMap<String, String>>,
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
@@ -161,8 +185,94 @@ impl HttpClient {
         rate_limiter.await_keys_ready(keys).await;
 
         self.client
-            .send_request(method, url, headers, body, timeout_secs)
+            .send_request(method, url, params, headers, body, timeout_secs)
             .await
+    }
+
+    /// Sends an HTTP GET request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    pub async fn get(
+        &self,
+        url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        timeout_secs: Option<u64>,
+        keys: Option<Vec<String>>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        self.request(Method::GET, url, params, headers, None, timeout_secs, keys)
+            .await
+    }
+
+    /// Sends an HTTP POST request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    pub async fn post(
+        &self,
+        url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+        keys: Option<Vec<String>>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        self.request(Method::POST, url, params, headers, body, timeout_secs, keys)
+            .await
+    }
+
+    /// Sends an HTTP PATCH request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    pub async fn patch(
+        &self,
+        url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+        keys: Option<Vec<String>>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        self.request(
+            Method::PATCH,
+            url,
+            params,
+            headers,
+            body,
+            timeout_secs,
+            keys,
+        )
+        .await
+    }
+
+    /// Sends an HTTP DELETE request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    pub async fn delete(
+        &self,
+        url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        timeout_secs: Option<u64>,
+        keys: Option<Vec<String>>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        self.request(
+            Method::DELETE,
+            url,
+            params,
+            headers,
+            None,
+            timeout_secs,
+            keys,
+        )
+        .await
     }
 }
 
@@ -183,12 +293,6 @@ pub struct InnerHttpClient {
 impl InnerHttpClient {
     /// Sends an HTTP request and returns an [`HttpResponse`].
     ///
-    /// - `method`: The HTTP method (e.g. GET, POST).
-    /// - `url`: The target URL.
-    /// - `headers`: Extra headers to send.
-    /// - `body`: Optional request body.
-    /// - `timeout_secs`: Optional request timeout in seconds.
-    ///
     /// # Errors
     ///
     /// Returns an error if unable to send request or times out.
@@ -196,6 +300,47 @@ impl InnerHttpClient {
         &self,
         method: Method,
         url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        let full_url = encode_url_params(&url, params)?;
+        self.send_request_internal(method, full_url, None::<&()>, headers, body, timeout_secs)
+            .await
+    }
+
+    /// Sends an HTTP request with query parameters using reqwest's `.query()` method.
+    ///
+    /// This method accepts any type implementing `Serialize` for query parameters,
+    /// avoiding HashMap conversion overhead.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    pub async fn send_request_with_query<Q: serde::Serialize>(
+        &self,
+        method: Method,
+        url: String,
+        query: Option<&Q>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        self.send_request_internal(method, url, query, headers, body, timeout_secs)
+            .await
+    }
+
+    /// Internal implementation for sending HTTP requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    async fn send_request_internal<Q: serde::Serialize>(
+        &self,
+        method: Method,
+        url: String,
+        query: Option<&Q>,
         headers: Option<HashMap<String, String>>,
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
@@ -219,6 +364,10 @@ impl InnerHttpClient {
         }
 
         let mut request_builder = self.client.request(method, reqwest_url).headers(header_map);
+
+        if let Some(q) = query {
+            request_builder = request_builder.query(q);
+        }
 
         if let Some(timeout_secs) = timeout_secs {
             request_builder = request_builder.timeout(Duration::new(timeout_secs, 0));
@@ -280,6 +429,37 @@ impl Default for InnerHttpClient {
             header_keys: Default::default(),
         }
     }
+}
+
+/// Helper function to encode URL parameters.
+///
+/// Takes a base URL and optional query parameters, returning the full URL with encoded query string.
+/// Parameters can have multiple values per key (for doseq=True behavior).
+/// Preserves existing query strings in the URL by appending with '&' instead of '?'.
+fn encode_url_params(
+    url: &str,
+    params: Option<&HashMap<String, Vec<String>>>,
+) -> Result<String, HttpClientError> {
+    let Some(params) = params else {
+        return Ok(url.to_string());
+    };
+
+    // Flatten HashMap<String, Vec<String>> into Vec<(String, String)> for serde_urlencoded
+    let pairs: Vec<(String, String)> = params
+        .iter()
+        .flat_map(|(key, values)| values.iter().map(move |value| (key.clone(), value.clone())))
+        .collect();
+
+    if pairs.is_empty() {
+        return Ok(url.to_string());
+    }
+
+    let query_string = serde_urlencoded::to_string(pairs)
+        .map_err(|e| HttpClientError::Error(format!("Failed to encode params: {e}")))?;
+
+    // Check if URL already has a query string
+    let separator = if url.contains('?') { '&' } else { '?' };
+    Ok(format!("{}{}{}", url, separator, query_string))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -348,7 +528,14 @@ mod tests {
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(reqwest::Method::GET, format!("{url}/get"), None, None, None)
+            .send_request(
+                reqwest::Method::GET,
+                format!("{url}/get"),
+                None,
+                None,
+                None,
+                None,
+            )
             .await
             .unwrap();
 
@@ -366,6 +553,7 @@ mod tests {
             .send_request(
                 reqwest::Method::POST,
                 format!("{url}/post"),
+                None,
                 None,
                 None,
                 None,
@@ -401,6 +589,7 @@ mod tests {
                 reqwest::Method::POST,
                 format!("{url}/post"),
                 None,
+                None,
                 Some(body_bytes),
                 None,
             )
@@ -420,6 +609,7 @@ mod tests {
             .send_request(
                 reqwest::Method::PATCH,
                 format!("{url}/patch"),
+                None,
                 None,
                 None,
                 None,
@@ -443,6 +633,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -457,7 +648,7 @@ mod tests {
         let client = InnerHttpClient::default();
 
         let response = client
-            .send_request(reqwest::Method::GET, url, None, None, None)
+            .send_request(reqwest::Method::GET, url, None, None, None, None)
             .await
             .unwrap();
 
@@ -473,7 +664,7 @@ mod tests {
 
         // We'll set a 1-second timeout for a route that sleeps 2 seconds
         let result = client
-            .send_request(reqwest::Method::GET, url, None, None, Some(1))
+            .send_request(reqwest::Method::GET, url, None, None, None, Some(1))
             .await;
 
         match result {
@@ -562,5 +753,56 @@ mod tests {
 
         assert!(result.is_err());
         assert!(matches!(result, Err(HttpClientError::InvalidProxy(_))));
+    }
+
+    #[tokio::test]
+    async fn test_http_client_get() {
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{addr}/get");
+
+        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
+        let response = client.get(url, None, None, None, None).await.unwrap();
+
+        assert!(response.status.is_success());
+        assert_eq!(String::from_utf8_lossy(&response.body), "hello-world!");
+    }
+
+    #[tokio::test]
+    async fn test_http_client_post() {
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{addr}/post");
+
+        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
+        let response = client
+            .post(url, None, None, None, None, None)
+            .await
+            .unwrap();
+
+        assert!(response.status.is_success());
+    }
+
+    #[tokio::test]
+    async fn test_http_client_patch() {
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{addr}/patch");
+
+        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
+        let response = client
+            .patch(url, None, None, None, None, None)
+            .await
+            .unwrap();
+
+        assert!(response.status.is_success());
+    }
+
+    #[tokio::test]
+    async fn test_http_client_delete() {
+        let addr = start_test_server().await.unwrap();
+        let url = format!("http://{addr}/delete");
+
+        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
+        let response = client.delete(url, None, None, None, None).await.unwrap();
+
+        assert!(response.status.is_success());
     }
 }

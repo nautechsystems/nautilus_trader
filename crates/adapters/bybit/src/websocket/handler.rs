@@ -947,10 +947,16 @@ impl FeedHandler {
                         && let Some((_, (trader_id, strategy_id, instrument_id))) =
                             self.pending_place_requests.remove(&req_id)
                     {
+                        let Some(account_id) = self.account_id else {
+                            tracing::error!(
+                                request_id = %req_id,
+                                reason = %resp.ret_msg,
+                                "Cannot create OrderRejected event: account_id is None"
+                            );
+                            return result;
+                        };
+
                         let client_order_id = ClientOrderId::from(req_id.as_str());
-                        let account_id = self
-                            .account_id
-                            .expect("Account ID required for rejection events");
                         let rejected = nautilus_model::events::OrderRejected::new(
                             trader_id,
                             strategy_id,

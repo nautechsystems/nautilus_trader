@@ -352,27 +352,52 @@ impl BitmexRawHttpClient {
         Ok(headers)
     }
 
-    async fn send_request<T: DeserializeOwned>(
+    async fn send_request<T: DeserializeOwned, P: Serialize>(
         &self,
         method: Method,
         endpoint: &str,
+        params: Option<&P>,
         body: Option<Vec<u8>>,
         authenticate: bool,
     ) -> Result<T, BitmexHttpError> {
         let endpoint = endpoint.to_string();
-        let url = format!("{}{endpoint}", self.base_url);
         let method_clone = method.clone();
         let body_clone = body.clone();
+
+        // Serialize params before closure to avoid reference lifetime issues
+        // Query params are used with GET and DELETE methods
+        let params_str = if method == Method::GET || method == Method::DELETE {
+            params
+                .map(serde_urlencoded::to_string)
+                .transpose()
+                .map_err(|e| {
+                    BitmexHttpError::JsonError(format!("Failed to serialize params: {e}"))
+                })?
+        } else {
+            None
+        };
+
+        let full_endpoint = if let Some(ref query) = params_str {
+            if query.is_empty() {
+                endpoint.clone()
+            } else {
+                format!("{endpoint}?{query}")
+            }
+        } else {
+            endpoint.clone()
+        };
+
+        let url = format!("{}{}", self.base_url, full_endpoint);
 
         let operation = || {
             let url = url.clone();
             let method = method_clone.clone();
             let body = body_clone.clone();
-            let endpoint = endpoint.clone();
+            let full_endpoint = full_endpoint.clone();
 
             async move {
                 let headers = if authenticate {
-                    Some(self.sign_request(&method, endpoint.as_str(), body.as_deref())?)
+                    Some(self.sign_request(&method, &full_endpoint, body.as_deref())?)
                 } else {
                     None
                 };
@@ -380,7 +405,7 @@ impl BitmexRawHttpClient {
                 let rate_keys = Self::rate_limit_keys();
                 let resp = self
                     .client
-                    .request_with_ustr_keys(method, url, headers, body, None, Some(rate_keys))
+                    .request_with_ustr_keys(method, url, None, headers, body, None, Some(rate_keys))
                     .await?;
 
                 if resp.status.is_success() {
@@ -466,7 +491,8 @@ impl BitmexRawHttpClient {
         } else {
             "/instrument"
         };
-        self.send_request(Method::GET, path, None, false).await
+        self.send_request::<_, ()>(Method::GET, path, None, None, false)
+            .await
     }
 
     /// Requests the current server time from BitMEX.
@@ -479,7 +505,9 @@ impl BitmexRawHttpClient {
     /// Returns an error if the HTTP request fails or if the response body
     /// cannot be parsed into [`BitmexApiInfo`].
     pub async fn get_server_time(&self) -> Result<u64, BitmexHttpError> {
-        let response: BitmexApiInfo = self.send_request(Method::GET, "", None, false).await?;
+        let response: BitmexApiInfo = self
+            .send_request::<_, ()>(Method::GET, "", None, None, false)
+            .await?;
         Ok(response.timestamp)
     }
 
@@ -498,8 +526,9 @@ impl BitmexRawHttpClient {
         symbol: &str,
     ) -> Result<Option<BitmexInstrument>, BitmexHttpError> {
         let path = &format!("/instrument?symbol={symbol}");
-        let instruments: Vec<BitmexInstrument> =
-            self.send_request(Method::GET, path, None, false).await?;
+        let instruments: Vec<BitmexInstrument> = self
+            .send_request::<_, ()>(Method::GET, path, None, None, false)
+            .await?;
 
         Ok(instruments.into_iter().next())
     }
@@ -511,7 +540,8 @@ impl BitmexRawHttpClient {
     /// Returns an error if credentials are missing, the request fails, or the API returns an error.
     pub async fn get_wallet(&self) -> Result<BitmexWallet, BitmexHttpError> {
         let endpoint = "/user/wallet";
-        self.send_request(Method::GET, endpoint, None, true).await
+        self.send_request::<_, ()>(Method::GET, endpoint, None, None, true)
+            .await
     }
 
     /// Get user margin information.
@@ -521,7 +551,8 @@ impl BitmexRawHttpClient {
     /// Returns an error if credentials are missing, the request fails, or the API returns an error.
     pub async fn get_margin(&self, currency: &str) -> Result<BitmexMargin, BitmexHttpError> {
         let path = format!("/user/margin?currency={currency}");
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request::<_, ()>(Method::GET, &path, None, None, true)
+            .await
     }
 
     /// Get historical trades.
@@ -537,11 +568,8 @@ impl BitmexRawHttpClient {
         &self,
         params: GetTradeParams,
     ) -> Result<Vec<BitmexTrade>, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = format!("/trade?{query}");
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(Method::GET, "/trade", Some(&params), None, true)
+            .await
     }
 
     /// Get bucketed (aggregated) trade data.
@@ -553,11 +581,8 @@ impl BitmexRawHttpClient {
         &self,
         params: GetTradeBucketedParams,
     ) -> Result<Vec<BitmexTradeBin>, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = format!("/trade/bucketed?{query}");
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(Method::GET, "/trade/bucketed", Some(&params), None, true)
+            .await
     }
 
     /// Get user orders.
@@ -573,11 +598,8 @@ impl BitmexRawHttpClient {
         &self,
         params: GetOrderParams,
     ) -> Result<Vec<BitmexOrder>, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = format!("/order?{query}");
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(Method::GET, "/order", Some(&params), None, true)
+            .await
     }
 
     /// Place a new order.
@@ -597,7 +619,7 @@ impl BitmexRawHttpClient {
             })?
             .into_bytes();
         let path = "/order";
-        self.send_request(Method::POST, path, Some(body), true)
+        self.send_request::<_, ()>(Method::POST, path, None, Some(body), true)
             .await
     }
 
@@ -618,7 +640,7 @@ impl BitmexRawHttpClient {
             })?
             .into_bytes();
         let path = "/order";
-        self.send_request(Method::DELETE, path, Some(body), true)
+        self.send_request::<_, ()>(Method::DELETE, path, None, Some(body), true)
             .await
     }
 
@@ -639,7 +661,8 @@ impl BitmexRawHttpClient {
             })?
             .into_bytes();
         let path = "/order";
-        self.send_request(Method::PUT, path, Some(body), true).await
+        self.send_request::<_, ()>(Method::PUT, path, None, Some(body), true)
+            .await
     }
 
     /// Cancel all orders.
@@ -659,11 +682,8 @@ impl BitmexRawHttpClient {
         &self,
         params: DeleteAllOrdersParams,
     ) -> Result<Value, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = format!("/order/all?{query}");
-        self.send_request(Method::DELETE, &path, None, true).await
+        self.send_request(Method::DELETE, "/order/all", Some(&params), None, true)
+            .await
     }
 
     /// Get user executions.
@@ -683,7 +703,8 @@ impl BitmexRawHttpClient {
             BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
         })?;
         let path = format!("/execution/tradeHistory?{query}");
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request::<_, ()>(Method::GET, &path, None, None, true)
+            .await
     }
 
     /// Get user positions.
@@ -699,11 +720,8 @@ impl BitmexRawHttpClient {
         &self,
         params: GetPositionParams,
     ) -> Result<Vec<BitmexPosition>, BitmexHttpError> {
-        let query = serde_urlencoded::to_string(&params).map_err(|e| {
-            BitmexHttpError::ValidationError(format!("Failed to serialize parameters: {e}"))
-        })?;
-        let path = format!("/position?{query}");
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(Method::GET, "/position", Some(&params), None, true)
+            .await
     }
 
     /// Update position leverage.
@@ -726,7 +744,7 @@ impl BitmexRawHttpClient {
             })?
             .into_bytes();
         let path = "/position/leverage";
-        self.send_request(Method::POST, path, Some(body), true)
+        self.send_request::<_, ()>(Method::POST, path, None, Some(body), true)
             .await
     }
 }

@@ -1531,10 +1531,12 @@ impl OrderMatchingEngine {
         match order.price() {
             Some(order_price) => {
                 let cached_filled_qty = self.cached_filled_qty.get(&order.client_order_id());
-                if cached_filled_qty.is_some() && *cached_filled_qty.unwrap() >= order.quantity() {
+                if let Some(&qty) = cached_filled_qty
+                    && qty >= order.quantity()
+                {
                     log::debug!(
                         "Ignoring fill as already filled pending pending application of events: {}, {}, {}, {}",
-                        cached_filled_qty.unwrap(),
+                        qty,
                         order.quantity(),
                         order.filled_qty(),
                         order.leaves_qty(),

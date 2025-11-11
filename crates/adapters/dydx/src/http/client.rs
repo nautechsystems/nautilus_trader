@@ -233,6 +233,7 @@ impl DydxRawHttpClient {
                 .request_with_ustr_keys(
                     method.clone(),
                     url.clone(),
+                    None, // No params
                     None, // No additional headers
                     None, // No body for GET requests
                     None, // Use default timeout
@@ -324,6 +325,7 @@ impl DydxRawHttpClient {
                 .request_with_ustr_keys(
                     Method::POST,
                     url.clone(),
+                    None, // No params
                     None, // No additional headers (content-type handled by body)
                     Some(body_bytes.clone()),
                     None, // Use default timeout

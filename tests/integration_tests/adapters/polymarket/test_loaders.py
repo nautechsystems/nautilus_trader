@@ -92,7 +92,7 @@ async def test_fetch_markets(markets_list_data):
     mock_response = Mock()
     mock_response.status = 200
     mock_response.body = msgspec.json.encode(markets_list_data)
-    mock_http_client.request = AsyncMock(return_value=mock_response)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
 
     # Act
     markets = await PolymarketDataLoader.fetch_markets(
@@ -101,7 +101,7 @@ async def test_fetch_markets(markets_list_data):
     )
 
     # Assert
-    mock_http_client.request.assert_called_once()
+    mock_http_client.get.assert_called_once()
     assert len(markets) == 3
     assert markets[0]["slug"] == "fed-rate-hike-in-2025"
     assert markets[0]["conditionId"] == "0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221"
@@ -114,7 +114,7 @@ async def test_find_market_by_slug(markets_list_data):
     mock_response = Mock()
     mock_response.status = 200
     mock_response.body = msgspec.json.encode(markets_list_data)
-    mock_http_client.request = AsyncMock(return_value=mock_response)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
 
     # Act
     market = await PolymarketDataLoader.find_market_by_slug(
@@ -135,7 +135,7 @@ async def test_find_market_by_slug_not_found(markets_list_data):
     mock_response = Mock()
     mock_response.status = 200
     mock_response.body = msgspec.json.encode(markets_list_data)
-    mock_http_client.request = AsyncMock(return_value=mock_response)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
 
     # Act & Assert
     with pytest.raises(ValueError, match="not found in active markets"):
@@ -152,7 +152,7 @@ async def test_fetch_market_details(market_details_data):
     mock_response = Mock()
     mock_response.status = 200
     mock_response.body = msgspec.json.encode(market_details_data)
-    mock_http_client.request = AsyncMock(return_value=mock_response)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
     condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
 
     # Act
@@ -162,7 +162,7 @@ async def test_fetch_market_details(market_details_data):
     )
 
     # Assert
-    mock_http_client.request.assert_called_once()
+    mock_http_client.get.assert_called_once()
     assert details["condition_id"] == condition_id
     assert details["question"] == "Will Donald Trump win the 2024 US Presidential Election?"
     assert len(details["tokens"]) == 2
@@ -175,7 +175,7 @@ async def test_fetch_orderbook_history(test_instrument, orderbook_history_data):
     mock_response = Mock()
     mock_response.status = 200
     mock_response.body = msgspec.json.encode(orderbook_history_data)
-    mock_http_client.request = AsyncMock(return_value=mock_response)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
 
     token_id = "60487116984468020978247225474488676749601001829886755968952521846780452448915"
     start_ms = 1729000000000
@@ -187,7 +187,7 @@ async def test_fetch_orderbook_history(test_instrument, orderbook_history_data):
     snapshots = await loader.fetch_orderbook_history(token_id, start_ms, end_ms)
 
     # Assert
-    mock_http_client.request.assert_called_once()
+    mock_http_client.get.assert_called_once()
     assert len(snapshots) == 3
     assert snapshots[0]["timestamp"] == 1729000000000
     assert len(snapshots[0]["bids"]) == 3
@@ -215,7 +215,7 @@ async def test_fetch_orderbook_history_with_pagination(test_instrument):
     mock_response2.status = 200
     mock_response2.body = msgspec.json.encode(page2_data)
 
-    mock_http_client.request = AsyncMock(side_effect=[mock_response1, mock_response2])
+    mock_http_client.get = AsyncMock(side_effect=[mock_response1, mock_response2])
 
     loader = PolymarketDataLoader(test_instrument, http_client=mock_http_client)
 
@@ -223,7 +223,7 @@ async def test_fetch_orderbook_history_with_pagination(test_instrument):
     snapshots = await loader.fetch_orderbook_history("token123", 1729000000000, 1729000120000)
 
     # Assert
-    assert mock_http_client.request.call_count == 2
+    assert mock_http_client.get.call_count == 2
     assert len(snapshots) == 2
 
 
@@ -234,7 +234,7 @@ async def test_fetch_price_history(test_instrument, price_history_data):
     mock_response = Mock()
     mock_response.status = 200
     mock_response.body = msgspec.json.encode(price_history_data)
-    mock_http_client.request = AsyncMock(return_value=mock_response)
+    mock_http_client.get = AsyncMock(return_value=mock_response)
 
     token_id = "60487116984468020978247225474488676749601001829886755968952521846780452448915"
     start_time_ms = 1729000000000
@@ -246,7 +246,7 @@ async def test_fetch_price_history(test_instrument, price_history_data):
     history = await loader.fetch_price_history(token_id, start_time_ms, end_time_ms)
 
     # Assert
-    mock_http_client.request.assert_called_once()
+    mock_http_client.get.assert_called_once()
     assert len(history) == 10
     assert history[0]["t"] == 1729000000
     assert history[0]["p"] == 0.51

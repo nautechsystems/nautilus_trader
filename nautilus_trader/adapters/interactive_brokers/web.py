@@ -18,9 +18,10 @@ from collections.abc import Generator
 from typing import Any
 from typing import NamedTuple
 
-import requests
 from lxml.etree import _Element
 from lxml.html import fromstring
+
+from nautilus_trader.core.nautilus_pyo3.network import http_get
 
 
 class ProductClass(enum.Enum):
@@ -177,8 +178,8 @@ def load_product_list(
         if debug:
             print(f"Requesting instruments using {params=}")
 
-        response = requests.get(url, params=params, timeout=30)
-        tree = fromstring(response.content)
+        response = http_get(url, params=params, timeout_secs=30)
+        tree = fromstring(response.body)
         tables = tree.xpath('//table[@class="table table-striped table-bordered"]')
 
         if not tables:

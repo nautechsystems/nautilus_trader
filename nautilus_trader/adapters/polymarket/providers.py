@@ -25,12 +25,39 @@ from nautilus_trader.adapters.polymarket.common.gamma_markets import normalize_g
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
+from nautilus_trader.adapters.polymarket.http.errors import PolymarketAPIError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BinaryOption
+
+
+def _check_clob_response(response: dict[str, Any] | str) -> dict[str, Any]:
+    """
+    Check CLOB API response and raise exception if error string returned.
+
+    Parameters
+    ----------
+    response : dict[str, Any] | str
+        The response from the CLOB API.
+
+    Returns
+    -------
+    dict[str, Any]
+        The validated response dictionary.
+
+    Raises
+    ------
+    PolymarketAPIError
+        If response is an error string.
+
+    """
+    if isinstance(response, str):
+        raise PolymarketAPIError(response)
+    return response
 
 
 class PolymarketInstrumentProvider(InstrumentProvider):
@@ -45,6 +72,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         The clock instance.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
+    http_client : HttpClient, optional
+        The HTTP client for Gamma API requests.
 
     """
 
@@ -53,10 +82,12 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         client: ClobClient,
         clock: LiveClock,
         config: InstrumentProviderConfig | None = None,
+        http_client: HttpClient | None = None,
     ) -> None:
         super().__init__(config=config)
         self._clock = clock
         self._client = client
+        self._http_client = http_client or HttpClient(timeout_secs=30)
 
         self._log_warnings = config.log_warnings if config else True
         self._decoder = msgspec.json.Decoder()
@@ -88,7 +119,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         else:
             self._log.info(f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using bulk load of all markets")
 
-        markets = await asyncio.to_thread(list_markets, filters=filters)
+        markets = await list_markets(http_client=self._http_client, filters=filters)
         self._log.info(f"Loaded {len(markets)} markets using Gamma API")
         for market in markets:
             condition_id = market.get("conditionId")
@@ -155,8 +186,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         token_id = get_polymarket_token_id(instrument_id)
 
         response = await asyncio.to_thread(self._client.get_market, condition_id)
-        if isinstance(response, str):
-            raise RuntimeError(f"API error: {response}")  # TBD
+        response = _check_clob_response(response)
 
         for token_info in response["tokens"]:
             if token_id != token_info["token_id"]:
@@ -181,8 +211,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 self._client.get_market,
                 condition_id=get_polymarket_condition_id(instrument_id),
             )
-            if isinstance(response, str):
-                raise RuntimeError(f"API error: {response}")  # TBD
+            response = _check_clob_response(response)
 
             try:
                 active = response["active"]
@@ -207,7 +236,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
             except ValueError as e:
                 self._log.error(f"Unable to parse market: {e}, {response}")
 
-    async def _load_markets(  # noqa: C901 (too complex)
+    async def _load_markets(
         self,
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
@@ -234,8 +263,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 self._client.get_markets,
                 next_cursor=next_cursor,
             )
-            if isinstance(response, str):
-                raise RuntimeError(f"API error: {response}")  # TBD
+            response = _check_clob_response(response)
 
             for market_info in response["data"]:
                 try:

@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use rust_decimal::Decimal;
-
 /// Configuration for `OrderMatchingEngine` instances.
 #[derive(Debug, Clone)]
 pub struct OrderMatchingEngineConfig {
@@ -25,7 +23,7 @@ pub struct OrderMatchingEngineConfig {
     pub use_position_ids: bool,
     pub use_random_ids: bool,
     pub use_reduce_only: bool,
-    pub price_protection_points: Option<Decimal>,
+    pub price_protection_points: Option<u32>,
 }
 
 impl OrderMatchingEngineConfig {
@@ -56,7 +54,7 @@ impl OrderMatchingEngineConfig {
     #[must_use]
     pub const fn with_price_protection_points(
         mut self,
-        price_protection_points: Option<Decimal>,
+        price_protection_points: Option<u32>,
     ) -> Self {
         self.price_protection_points = price_protection_points;
         self

@@ -393,6 +393,25 @@ a separate `PolymarketWebSocketClient` is created for each new instrument (asset
 Polymarket does not support unsubscribing from channel streams once subscribed.
 :::
 
+### Subscription limits
+
+Polymarket enforces a **maximum of 500 instruments per WebSocket connection** (undocumented limitation).
+
+When you attempt to subscribe to 501 or more instruments on a single WebSocket connection:
+
+- You will **not** receive the initial order book snapshot for each instrument.
+- You will only receive subsequent order book updates.
+
+To handle this limitation, NautilusTrader automatically manages WebSocket connections:
+
+- When the subscription count exceeds 500 instruments, the adapter **automatically creates additional WebSocket connections**.
+- Each connection maintains up to 500 instrument subscriptions.
+- This protection ensures you receive complete order book data (including initial snapshots) for all subscribed instruments.
+
+:::tip
+If you need to subscribe to a large number of instruments (e.g., 5000+), the adapter will automatically distribute these subscriptions across multiple WebSocket connections, with each connection handling up to 500 instruments.
+:::
+
 ## Limitations and considerations
 
 The following limitations and considerations are currently known:

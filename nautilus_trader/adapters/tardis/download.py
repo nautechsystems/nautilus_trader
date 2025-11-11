@@ -16,7 +16,7 @@
 import os
 from urllib.parse import urlparse
 
-import requests
+from nautilus_trader.core.nautilus_pyo3.network import http_download
 
 
 def download_file(url: str):
@@ -28,12 +28,8 @@ def download_file(url: str):
         return path
 
     print(f"Downloading from {url}")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
     headers = {"Authorization": f"Bearer {os.environ['TM_API_KEY']}"}
-    with requests.get(url, headers=headers, stream=True, timeout=60) as response:
-        response.raise_for_status()
-        with open(path, "wb") as file:
-            file.writelines(response.iter_content(chunk_size=8192))
+    http_download(url, path, headers=headers, timeout_secs=60)
     return path
 
 

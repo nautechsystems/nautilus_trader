@@ -293,10 +293,11 @@ impl BybitRawHttpClient {
         Ok(headers)
     }
 
-    async fn send_request<T: DeserializeOwned>(
+    async fn send_request<T: DeserializeOwned, P: Serialize>(
         &self,
         method: Method,
         endpoint: &str,
+        params: Option<&P>,
         body: Option<Vec<u8>>,
         authenticate: bool,
     ) -> Result<T, BybitHttpError> {
@@ -305,24 +306,38 @@ impl BybitRawHttpClient {
         let method_clone = method.clone();
         let body_clone = body.clone();
 
+        // Serialize params before closure to avoid reference lifetime issues
+        let params_str = if method == Method::GET {
+            params
+                .map(serde_urlencoded::to_string)
+                .transpose()
+                .map_err(|e| {
+                    BybitHttpError::JsonError(format!("Failed to serialize params: {e}"))
+                })?
+        } else {
+            None
+        };
+
         let operation = || {
             let url = url.clone();
             let method = method_clone.clone();
             let body = body_clone.clone();
             let endpoint = endpoint.clone();
+            let params_str = params_str.clone();
 
             async move {
                 let mut headers = Self::default_headers();
 
                 if authenticate {
                     let timestamp = get_atomic_clock_realtime().get_time_ms().to_string();
-                    let params_str = if method == Method::GET {
-                        endpoint.split('?').nth(1)
+
+                    let sign_payload = if method == Method::GET {
+                        params_str.as_deref()
                     } else {
                         body.as_ref().and_then(|b| std::str::from_utf8(b).ok())
                     };
 
-                    let auth_headers = self.sign_request(&timestamp, params_str)?;
+                    let auth_headers = self.sign_request(&timestamp, sign_payload)?;
                     headers.extend(auth_headers);
                 }
 
@@ -330,13 +345,24 @@ impl BybitRawHttpClient {
                     headers.insert("Content-Type".to_string(), "application/json".to_string());
                 }
 
+                let full_url = if let Some(ref query) = params_str {
+                    if query.is_empty() {
+                        url
+                    } else {
+                        format!("{}?{}", url, query)
+                    }
+                } else {
+                    url
+                };
+
                 let rate_limit_keys = Self::rate_limit_keys(&endpoint);
 
                 let response = self
                     .client
                     .request(
                         method,
-                        url,
+                        full_url,
+                        None,
                         Some(headers),
                         body,
                         None,
@@ -396,6 +422,7 @@ impl BybitRawHttpClient {
             .await
     }
 
+    #[cfg(test)]
     fn build_path<S: Serialize>(base: &str, params: &S) -> Result<String, BybitHttpError> {
         let query = serde_urlencoded::to_string(params)
             .map_err(|e| BybitHttpError::JsonError(e.to_string()))?;
@@ -416,7 +443,7 @@ impl BybitRawHttpClient {
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/time>
     pub async fn get_server_time(&self) -> Result<BybitServerTimeResponse, BybitHttpError> {
-        self.send_request(Method::GET, "/v5/market/time", None, false)
+        self.send_request::<_, ()>(Method::GET, "/v5/market/time", None, None, false)
             .await
     }
 
@@ -433,8 +460,14 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<T, BybitHttpError> {
-        let path = Self::build_path("/v5/market/instruments-info", params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(
+            Method::GET,
+            "/v5/market/instruments-info",
+            Some(params),
+            None,
+            false,
+        )
+        .await
     }
 
     /// Fetches spot instrument information from Bybit.
@@ -514,8 +547,8 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitKlinesParams,
     ) -> Result<BybitKlinesResponse, BybitHttpError> {
-        let path = Self::build_path("/v5/market/kline", params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(Method::GET, "/v5/market/kline", Some(params), None, false)
+            .await
     }
 
     /// Fetches recent trades from Bybit.
@@ -531,8 +564,14 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitTradesParams,
     ) -> Result<BybitTradesResponse, BybitHttpError> {
-        let path = Self::build_path("/v5/market/recent-trade", params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(
+            Method::GET,
+            "/v5/market/recent-trade",
+            Some(params),
+            None,
+            false,
+        )
+        .await
     }
 
     /// Fetches open orders (requires authentication).
@@ -558,8 +597,8 @@ impl BybitRawHttpClient {
         }
 
         let params = Params { category, symbol };
-        let path = Self::build_path("/v5/order/realtime", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(Method::GET, "/v5/order/realtime", Some(&params), None, true)
+            .await
     }
 
     /// Places a new order (requires authentication).
@@ -576,7 +615,7 @@ impl BybitRawHttpClient {
         request: &serde_json::Value,
     ) -> Result<BybitPlaceOrderResponse, BybitHttpError> {
         let body = serde_json::to_vec(request)?;
-        self.send_request(Method::POST, "/v5/order/create", Some(body), true)
+        self.send_request::<_, ()>(Method::POST, "/v5/order/create", None, Some(body), true)
             .await
     }
 
@@ -593,8 +632,14 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitWalletBalanceParams,
     ) -> Result<BybitWalletBalanceResponse, BybitHttpError> {
-        let path = Self::build_path("/v5/account/wallet-balance", params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/v5/account/wallet-balance",
+            Some(params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Fetches trading fee rates for symbols.
@@ -610,8 +655,14 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitFeeRateParams,
     ) -> Result<BybitFeeRateResponse, BybitHttpError> {
-        let path = Self::build_path("/v5/account/fee-rate", params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/v5/account/fee-rate",
+            Some(params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Sets the margin mode for the account.
@@ -640,9 +691,10 @@ impl BybitRawHttpClient {
             .expect("Failed to build BybitSetMarginModeParams");
 
         let body = serde_json::to_vec(&params)?;
-        self.send_request(
+        self.send_request::<_, ()>(
             Method::POST,
             "/v5/account/set-margin-mode",
+            None,
             Some(body),
             true,
         )
@@ -681,8 +733,14 @@ impl BybitRawHttpClient {
             .expect("Failed to build BybitSetLeverageParams");
 
         let body = serde_json::to_vec(&params)?;
-        self.send_request(Method::POST, "/v5/position/set-leverage", Some(body), true)
-            .await
+        self.send_request::<_, ()>(
+            Method::POST,
+            "/v5/position/set-leverage",
+            None,
+            Some(body),
+            true,
+        )
+        .await
     }
 
     /// Switches position mode for a product type.
@@ -724,8 +782,14 @@ impl BybitRawHttpClient {
             .expect("Failed to build BybitSwitchModeParams");
 
         let body = serde_json::to_vec(&params)?;
-        self.send_request(Method::POST, "/v5/position/switch-mode", Some(body), true)
-            .await
+        self.send_request::<_, ()>(
+            Method::POST,
+            "/v5/position/switch-mode",
+            None,
+            Some(body),
+            true,
+        )
+        .await
     }
 
     /// Sets trading stop parameters including trailing stops.
@@ -745,8 +809,14 @@ impl BybitRawHttpClient {
         params: &BybitSetTradingStopParams,
     ) -> Result<BybitSetTradingStopResponse, BybitHttpError> {
         let body = serde_json::to_vec(params)?;
-        self.send_request(Method::POST, "/v5/position/trading-stop", Some(body), true)
-            .await
+        self.send_request::<_, ()>(
+            Method::POST,
+            "/v5/position/trading-stop",
+            None,
+            Some(body),
+            true,
+        )
+        .await
     }
 
     /// Fetches tickers for market data.
@@ -762,8 +832,8 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitTickersParams,
     ) -> Result<T, BybitHttpError> {
-        let path = Self::build_path("/v5/market/tickers", params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(Method::GET, "/v5/market/tickers", Some(params), None, false)
+            .await
     }
 
     /// Fetches trade execution history (requires authentication).
@@ -779,8 +849,8 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitTradeHistoryParams,
     ) -> Result<BybitTradeHistoryResponse, BybitHttpError> {
-        let path = Self::build_path("/v5/execution/list", params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(Method::GET, "/v5/execution/list", Some(params), None, true)
+            .await
     }
 
     /// Fetches position information (requires authentication).
@@ -799,8 +869,8 @@ impl BybitRawHttpClient {
         &self,
         params: &BybitPositionListParams,
     ) -> Result<BybitPositionListResponse, BybitHttpError> {
-        let path = Self::build_path("/v5/position/list", params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(Method::GET, "/v5/position/list", Some(params), None, true)
+            .await
     }
 
     /// Returns the base URL used for requests.
@@ -1538,10 +1608,15 @@ impl BybitHttpClient {
         query_params.order_id(order_id.as_str().to_string());
 
         let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
-        let path = BybitRawHttpClient::build_path("/v5/order/realtime", &query_params)?;
         let order_response: BybitOpenOrdersResponse = self
             .inner
-            .send_request(Method::GET, &path, None, true)
+            .send_request(
+                Method::GET,
+                "/v5/order/realtime",
+                Some(&query_params),
+                None,
+                true,
+            )
             .await?;
 
         let order = order_response
@@ -1606,7 +1681,7 @@ impl BybitHttpClient {
 
         let response: BybitPlaceOrderResponse = self
             .inner
-            .send_request(Method::POST, "/v5/order/cancel", Some(body), true)
+            .send_request::<_, ()>(Method::POST, "/v5/order/cancel", None, Some(body), true)
             .await?;
 
         let order_id = response
@@ -1620,10 +1695,15 @@ impl BybitHttpClient {
         query_params.order_id(order_id.as_str().to_string());
 
         let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
-        let path = BybitRawHttpClient::build_path("/v5/order/history", &query_params)?;
         let order_response: BybitOrderHistoryResponse = self
             .inner
-            .send_request(Method::GET, &path, None, true)
+            .send_request(
+                Method::GET,
+                "/v5/order/history",
+                Some(&query_params),
+                None,
+                true,
+            )
             .await?;
 
         let order = order_response
@@ -1704,7 +1784,13 @@ impl BybitHttpClient {
 
         let _response: BybitPlaceOrderResponse = self
             .inner
-            .send_request(Method::POST, "/v5/order/cancel-batch", Some(body), true)
+            .send_request::<_, ()>(
+                Method::POST,
+                "/v5/order/cancel-batch",
+                None,
+                Some(body),
+                true,
+            )
             .await?;
 
         // Query each order to get full details after cancellation
@@ -1734,10 +1820,15 @@ impl BybitHttpClient {
             }
 
             let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
-            let path = BybitRawHttpClient::build_path("/v5/order/history", &query_params)?;
             let order_response: BybitOrderHistoryResponse = self
                 .inner
-                .send_request(Method::GET, &path, None, true)
+                .send_request(
+                    Method::GET,
+                    "/v5/order/history",
+                    Some(&query_params),
+                    None,
+                    true,
+                )
                 .await?;
 
             if let Some(order) = order_response.result.list.into_iter().next() {
@@ -1776,7 +1867,7 @@ impl BybitHttpClient {
 
         let _response: crate::common::models::BybitListResponse<serde_json::Value> = self
             .inner
-            .send_request(Method::POST, "/v5/order/cancel-all", Some(body), true)
+            .send_request::<_, ()>(Method::POST, "/v5/order/cancel-all", None, Some(body), true)
             .await?;
 
         // Query the order history to get all canceled orders
@@ -1786,10 +1877,15 @@ impl BybitHttpClient {
         query_params.limit(50u32);
 
         let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
-        let path = BybitRawHttpClient::build_path("/v5/order/history", &query_params)?;
         let order_response: BybitOrderHistoryResponse = self
             .inner
-            .send_request(Method::GET, &path, None, true)
+            .send_request(
+                Method::GET,
+                "/v5/order/history",
+                Some(&query_params),
+                None,
+                true,
+            )
             .await?;
 
         let ts_init = self.generate_ts_init();
@@ -1859,7 +1955,7 @@ impl BybitHttpClient {
 
         let response: BybitPlaceOrderResponse = self
             .inner
-            .send_request(Method::POST, "/v5/order/amend", Some(body), true)
+            .send_request::<_, ()>(Method::POST, "/v5/order/amend", None, Some(body), true)
             .await?;
 
         let order_id = response
@@ -1873,10 +1969,15 @@ impl BybitHttpClient {
         query_params.order_id(order_id.as_str().to_string());
 
         let query_params = query_params.build().map_err(|e| anyhow::anyhow!(e))?;
-        let path = BybitRawHttpClient::build_path("/v5/order/realtime", &query_params)?;
         let order_response: BybitOpenOrdersResponse = self
             .inner
-            .send_request(Method::GET, &path, None, true)
+            .send_request(
+                Method::GET,
+                "/v5/order/realtime",
+                Some(&query_params),
+                None,
+                true,
+            )
             .await?;
 
         let order = order_response
@@ -1930,11 +2031,9 @@ impl BybitHttpClient {
         }
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
-        let path = BybitRawHttpClient::build_path("/v5/order/realtime", &params)?;
-
         let mut response: BybitOpenOrdersResponse = self
             .inner
-            .send_request(Method::GET, &path, None, true)
+            .send_request(Method::GET, "/v5/order/realtime", Some(&params), None, true)
             .await?;
 
         if response.result.list.is_empty() {
@@ -1952,11 +2051,15 @@ impl BybitHttpClient {
             }
 
             let stop_params = stop_params.build().map_err(|e| anyhow::anyhow!(e))?;
-            let stop_path = BybitRawHttpClient::build_path("/v5/order/realtime", &stop_params)?;
-
             response = self
                 .inner
-                .send_request(Method::GET, &stop_path, None, true)
+                .send_request(
+                    Method::GET,
+                    "/v5/order/realtime",
+                    Some(&stop_params),
+                    None,
+                    true,
+                )
                 .await?;
         }
 
@@ -1975,12 +2078,16 @@ impl BybitHttpClient {
             }
 
             let history_params = history_params.build().map_err(|e| anyhow::anyhow!(e))?;
-            let history_path =
-                BybitRawHttpClient::build_path("/v5/order/history", &history_params)?;
 
             let mut history_response: BybitOrderHistoryResponse = self
                 .inner
-                .send_request(Method::GET, &history_path, None, true)
+                .send_request(
+                    Method::GET,
+                    "/v5/order/history",
+                    Some(&history_params),
+                    None,
+                    true,
+                )
                 .await?;
 
             if history_response.result.list.is_empty() {
@@ -2000,12 +2107,16 @@ impl BybitHttpClient {
                 let stop_history_params = stop_history_params
                     .build()
                     .map_err(|e| anyhow::anyhow!(e))?;
-                let stop_history_path =
-                    BybitRawHttpClient::build_path("/v5/order/history", &stop_history_params)?;
 
                 history_response = self
                     .inner
-                    .send_request(Method::GET, &stop_history_path, None, true)
+                    .send_request(
+                        Method::GET,
+                        "/v5/order/history",
+                        Some(&stop_history_params),
+                        None,
+                        true,
+                    )
                     .await?;
 
                 if history_response.result.list.is_empty() {
@@ -2573,10 +2684,9 @@ impl BybitHttpClient {
                         p.cursor(c);
                     }
                     let params = p.build().map_err(|e| anyhow::anyhow!(e))?;
-                    let path = BybitRawHttpClient::build_path("/v5/order/realtime", &params)?;
                     let response: BybitOpenOrdersResponse = self
                         .inner
-                        .send_request(Method::GET, &path, None, true)
+                        .send_request(Method::GET, "/v5/order/realtime", Some(&params), None, true)
                         .await?;
 
                     total_orders += response.result.list.len();
@@ -2624,11 +2734,15 @@ impl BybitHttpClient {
                         open_params.cursor(c);
                     }
                     let open_params = open_params.build().map_err(|e| anyhow::anyhow!(e))?;
-                    let open_path =
-                        BybitRawHttpClient::build_path("/v5/order/realtime", &open_params)?;
                     let open_response: BybitOpenOrdersResponse = self
                         .inner
-                        .send_request(Method::GET, &open_path, None, true)
+                        .send_request(
+                            Method::GET,
+                            "/v5/order/realtime",
+                            Some(&open_params),
+                            None,
+                            true,
+                        )
                         .await?;
 
                     total_open_orders += open_response.result.list.len();
@@ -2676,11 +2790,15 @@ impl BybitHttpClient {
                         history_params.cursor(c);
                     }
                     let history_params = history_params.build().map_err(|e| anyhow::anyhow!(e))?;
-                    let history_path =
-                        BybitRawHttpClient::build_path("/v5/order/history", &history_params)?;
                     let history_response: BybitOrderHistoryResponse = self
                         .inner
-                        .send_request(Method::GET, &history_path, None, true)
+                        .send_request(
+                            Method::GET,
+                            "/v5/order/history",
+                            Some(&history_params),
+                            None,
+                            true,
+                        )
                         .await?;
 
                     // Open orders might appear in both realtime and history
@@ -3068,5 +3186,60 @@ mod tests {
         let path = BybitRawHttpClient::build_path("/v5/market/time", &params);
         assert!(path.is_ok());
         assert_eq!(path.unwrap(), "/v5/market/time");
+    }
+
+    #[rstest]
+    fn test_params_serialization_matches_build_path() {
+        // This test ensures our new serialization produces the same result as the old build_path
+        #[derive(Serialize)]
+        struct TestParams {
+            category: String,
+            limit: u32,
+        }
+
+        let params = TestParams {
+            category: "spot".to_string(),
+            limit: 50,
+        };
+
+        // Old way: build_path serialized params
+        let old_path = BybitRawHttpClient::build_path("/v5/order/realtime", &params).unwrap();
+        let old_query = old_path.split('?').nth(1).unwrap_or("");
+
+        // New way: direct serialization
+        let new_query = serde_urlencoded::to_string(&params).unwrap();
+
+        // They must match for signatures to work
+        assert_eq!(old_query, new_query);
+    }
+
+    #[rstest]
+    fn test_params_serialization_order() {
+        // Verify that serialization order is deterministic
+        #[derive(Serialize)]
+        struct OrderParams {
+            category: String,
+            symbol: String,
+            limit: u32,
+        }
+
+        let params = OrderParams {
+            category: "spot".to_string(),
+            symbol: "BTCUSDT".to_string(),
+            limit: 50,
+        };
+
+        // Serialize multiple times to ensure consistent ordering
+        let query1 = serde_urlencoded::to_string(&params).unwrap();
+        let query2 = serde_urlencoded::to_string(&params).unwrap();
+        let query3 = serde_urlencoded::to_string(&params).unwrap();
+
+        assert_eq!(query1, query2);
+        assert_eq!(query2, query3);
+
+        // The query should contain all params
+        assert!(query1.contains("category=spot"));
+        assert!(query1.contains("symbol=BTCUSDT"));
+        assert!(query1.contains("limit=50"));
     }
 }

@@ -70,10 +70,12 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
 from nautilus_trader.model.identifiers import AccountId
@@ -1249,6 +1251,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"Binance does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         open_orders_strategy: list[Order] = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,

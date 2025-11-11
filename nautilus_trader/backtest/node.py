@@ -784,13 +784,13 @@ def get_leverages(config: BacktestVenueConfig) -> dict[InstrumentId, Decimal]:
     )
 
 
-def get_price_protection_points(config: BacktestVenueConfig) -> Decimal | None:
+def get_price_protection_points(config: BacktestVenueConfig) -> int | None:
     value = config.price_protection_points
 
     if value is None:
         return None
 
-    return Decimal(value)
+    return value
 
 
 def get_fill_model(config: BacktestVenueConfig) -> FillModel | None:

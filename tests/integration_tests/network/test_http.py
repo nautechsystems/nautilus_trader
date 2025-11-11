@@ -119,3 +119,8 @@ async def test_client_delete(test_server: Coroutine) -> None:
     # Assert
     assert response.status == 200
     assert len(response.body) > 0
+
+
+# Note: Blocking HTTP functions (http_get, http_post, http_patch, http_delete)
+# are tested in Rust unit tests. They are thin wrappers that spawn threads
+# with isolated runtimes and are intended for simple synchronous scripts.

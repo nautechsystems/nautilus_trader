@@ -352,21 +352,6 @@ impl OKXRawHttpClient {
         headers
     }
 
-    /// Combine a base path with a `serde_urlencoded` query string if one exists.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the query string serialization fails.
-    fn build_path<S: Serialize>(base: &str, params: &S) -> Result<String, OKXHttpError> {
-        let query = serde_urlencoded::to_string(params)
-            .map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
-        if query.is_empty() {
-            Ok(base.to_owned())
-        } else {
-            Ok(format!("{base}?{query}"))
-        }
-    }
-
     /// Signs an OKX request with timestamp, API key, passphrase, and signature.
     ///
     /// # Errors
@@ -417,10 +402,11 @@ impl OKXRawHttpClient {
     /// - Authentication is required but credentials are missing.
     /// - The response cannot be deserialized into the expected type.
     /// - The OKX API returns an error response.
-    async fn send_request<T: DeserializeOwned>(
+    async fn send_request<T: DeserializeOwned, P: Serialize>(
         &self,
         method: Method,
         path: &str,
+        params: Option<&P>,
         body: Option<Vec<u8>>,
         authenticate: bool,
     ) -> Result<Vec<T>, OKXHttpError> {
@@ -436,8 +422,24 @@ impl OKXRawHttpClient {
             let endpoint = endpoint.clone();
 
             async move {
+                // Serialize params to query string for signing (if needed)
+                let query_string = if let Some(p) = params {
+                    serde_urlencoded::to_string(p).map_err(|e| {
+                        OKXHttpError::JsonError(format!("Failed to serialize params: {e}"))
+                    })?
+                } else {
+                    String::new()
+                };
+
+                // Build full path with query string for signing
+                let full_path = if query_string.is_empty() {
+                    endpoint.clone()
+                } else {
+                    format!("{}?{}", endpoint, query_string)
+                };
+
                 let mut headers = if authenticate {
-                    self.sign_request(&method, endpoint.as_str(), body.as_deref())?
+                    self.sign_request(&method, &full_path, body.as_deref())?
                 } else {
                     HashMap::new()
                 };
@@ -447,12 +449,16 @@ impl OKXRawHttpClient {
                     headers.insert("Content-Type".to_string(), "application/json".to_string());
                 }
 
-                let rate_keys = Self::rate_limit_keys(endpoint.as_str());
+                let rate_keys = Self::rate_limit_keys(endpoint.as_str())
+                    .into_iter()
+                    .map(|k| k.to_string())
+                    .collect();
                 let resp = self
                     .client
-                    .request_with_ustr_keys(
+                    .request_with_params(
                         method.clone(),
                         url,
+                        params,
                         Some(headers),
                         body,
                         None,
@@ -557,7 +563,7 @@ impl OKXRawHttpClient {
     ) -> Result<Vec<serde_json::Value>, OKXHttpError> {
         let path = "/api/v5/account/set-position-mode";
         let body = serde_json::to_vec(&params)?;
-        self.send_request(Method::POST, path, Some(body), true)
+        self.send_request::<_, ()>(Method::POST, path, None, Some(body), true)
             .await
     }
 
@@ -575,8 +581,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetPositionTiersParams,
     ) -> Result<Vec<OKXPositionTier>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/public/position-tiers", &params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/public/position-tiers",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
     }
 
     /// Requests a list of instruments with open contracts.
@@ -593,8 +605,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetInstrumentsParams,
     ) -> Result<Vec<OKXInstrument>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/public/instruments", &params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/public/instruments",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
     }
 
     /// Requests the current server time from OKX.
@@ -612,7 +630,7 @@ impl OKXRawHttpClient {
     /// <https://www.okx.com/docs-v5/en/#public-data-rest-api-get-system-time>
     pub async fn get_server_time(&self) -> Result<u64, OKXHttpError> {
         let response: Vec<OKXServerTime> = self
-            .send_request(Method::GET, "/api/v5/public/time", None, false)
+            .send_request::<_, ()>(Method::GET, "/api/v5/public/time", None, None, false)
             .await?;
         response
             .first()
@@ -637,8 +655,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetMarkPriceParams,
     ) -> Result<Vec<OKXMarkPrice>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/public/mark-price", &params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/public/mark-price",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
     }
 
     /// Requests the latest index price.
@@ -654,8 +678,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetIndexTickerParams,
     ) -> Result<Vec<OKXIndexTicker>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/market/index-tickers", &params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/market/index-tickers",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
     }
 
     /// Requests trades history.
@@ -671,8 +701,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetTradesParams,
     ) -> Result<Vec<OKXTrade>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/market/history-trades", &params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/market/history-trades",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
     }
 
     /// Requests recent candlestick data.
@@ -688,8 +724,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetCandlesticksParams,
     ) -> Result<Vec<OKXCandlestick>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/market/candles", &params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/market/candles",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
     }
 
     /// Requests historical candlestick data.
@@ -705,8 +747,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetCandlesticksParams,
     ) -> Result<Vec<OKXCandlestick>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/market/history-candles", &params)?;
-        self.send_request(Method::GET, &path, None, false).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/market/history-candles",
+            Some(&params),
+            None,
+            false,
+        )
+        .await
     }
 
     /// Requests a list of assets (with non-zero balance), remaining balance, and available amount
@@ -721,7 +769,8 @@ impl OKXRawHttpClient {
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-balance>
     pub async fn get_balance(&self) -> Result<Vec<OKXAccount>, OKXHttpError> {
         let path = "/api/v5/account/balance";
-        self.send_request(Method::GET, path, None, true).await
+        self.send_request::<_, ()>(Method::GET, path, None, None, true)
+            .await
     }
 
     /// Requests fee rates for the account.
@@ -739,8 +788,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetTradeFeeParams,
     ) -> Result<Vec<OKXFeeRate>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/account/trade-fee", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/account/trade-fee",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Retrieves a single order’s details.
@@ -756,8 +811,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetOrderParams,
     ) -> Result<Vec<OKXOrderHistory>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/trade/order", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/trade/order",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Requests order list (pending orders).
@@ -773,8 +834,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetOrderListParams,
     ) -> Result<Vec<OKXOrderHistory>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/trade/orders-pending", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/trade/orders-pending",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Requests historical order records.
@@ -790,8 +857,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetOrderHistoryParams,
     ) -> Result<Vec<OKXOrderHistory>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/trade/orders-history", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/trade/orders-history",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Requests pending algo orders.
@@ -803,8 +876,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetAlgoOrdersParams,
     ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/trade/order-algo-pending", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/trade/order-algo-pending",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Requests historical algo orders.
@@ -816,8 +895,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetAlgoOrdersParams,
     ) -> Result<Vec<OKXOrderAlgo>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/trade/order-algo-history", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/trade/order-algo-history",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Requests transaction details (fills) for the given parameters.
@@ -833,8 +918,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetTransactionDetailsParams,
     ) -> Result<Vec<OKXTransactionDetail>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/trade/fills", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/trade/fills",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Requests information on your positions. When the account is in net mode, net positions will
@@ -852,8 +943,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetPositionsParams,
     ) -> Result<Vec<OKXPosition>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/account/positions", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/account/positions",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Requests closed or historical position data.
@@ -869,8 +966,14 @@ impl OKXRawHttpClient {
         &self,
         params: GetPositionsHistoryParams,
     ) -> Result<Vec<OKXPositionHistory>, OKXHttpError> {
-        let path = Self::build_path("/api/v5/account/positions-history", &params)?;
-        self.send_request(Method::GET, &path, None, true).await
+        self.send_request(
+            Method::GET,
+            "/api/v5/account/positions-history",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 }
 
@@ -2747,7 +2850,13 @@ impl OKXHttpClient {
 
         let resp: Vec<OKXPlaceAlgoOrderResponse> = self
             .inner
-            .send_request(Method::POST, "/api/v5/trade/order-algo", Some(body), true)
+            .send_request::<_, ()>(
+                Method::POST,
+                "/api/v5/trade/order-algo",
+                None,
+                Some(body),
+                true,
+            )
             .await?;
 
         resp.into_iter()
@@ -2775,7 +2884,13 @@ impl OKXHttpClient {
 
         let resp: Vec<OKXCancelAlgoOrderResponse> = self
             .inner
-            .send_request(Method::POST, "/api/v5/trade/cancel-algos", Some(body), true)
+            .send_request::<_, ()>(
+                Method::POST,
+                "/api/v5/trade/cancel-algos",
+                None,
+                Some(body),
+                true,
+            )
             .await?;
 
         resp.into_iter()

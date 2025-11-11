@@ -321,11 +321,14 @@ impl HyperliquidHttpClient {
         })
     }
 
-    /// Add an instrument to the internal cache.
+    /// Cache an instrument in the internal instrument cache.
     ///
     /// This is required before calling report generation methods.
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
+    /// Instruments are stored under two keys:
+    /// 1. The Nautilus symbol (e.g., "BTC-USD-PERP")
+    /// 2. The Hyperliquid coin identifier (base currency, e.g., "BTC")
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }

@@ -34,7 +34,7 @@ use nautilus_network::{
 use ustr::Ustr;
 
 use crate::{
-    common::parse::bar_type_to_interval,
+    common::{HyperliquidProductType, parse::bar_type_to_interval},
     websocket::{
         handler::{FeedHandler, HandlerCommand},
         messages::{NautilusWsMessage, SubscriptionRequest},
@@ -52,6 +52,7 @@ use crate::{
 )]
 pub struct HyperliquidWebSocketClient {
     url: String,
+    product_type: HyperliquidProductType,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     signal: Arc<AtomicBool>,
     auth_tracker: AuthTracker,
@@ -68,6 +69,7 @@ impl Clone for HyperliquidWebSocketClient {
     fn clone(&self) -> Self {
         Self {
             url: self.url.clone(),
+            product_type: self.product_type,
             connection_mode: Arc::clone(&self.connection_mode),
             signal: Arc::clone(&self.signal),
             auth_tracker: self.auth_tracker.clone(),
@@ -90,7 +92,12 @@ impl HyperliquidWebSocketClient {
     /// - `testnet=true`: `wss://api.hyperliquid-testnet.xyz/ws`
     ///
     /// The connection will be established when `connect()` is called.
-    pub fn new(url: Option<String>, testnet: bool, account_id: Option<AccountId>) -> Self {
+    pub fn new(
+        url: Option<String>,
+        testnet: bool,
+        product_type: HyperliquidProductType,
+        account_id: Option<AccountId>,
+    ) -> Self {
         let url = url.unwrap_or_else(|| {
             if testnet {
                 "wss://api.hyperliquid-testnet.xyz/ws".to_string()
@@ -104,6 +111,7 @@ impl HyperliquidWebSocketClient {
         ))));
         Self {
             url,
+            product_type,
             connection_mode,
             signal: Arc::new(AtomicBool::new(false)),
             auth_tracker: AuthTracker::new(),
@@ -299,12 +307,36 @@ impl HyperliquidWebSocketClient {
         Ok(())
     }
 
-    /// Subscribe to trades for a specific coin.
-    pub async fn subscribe_trades(&self, coin: Ustr) -> anyhow::Result<()> {
+    /// Subscribe to trades for an instrument.
+    pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        tracing::debug!(
+            "subscribe_trades: instrument_id={}, symbol={}, looking up...",
+            instrument_id,
+            instrument_id.symbol
+        );
+
+        // Debug: print all cached instruments
+        tracing::debug!("Cached instruments count: {}", self.instruments.len());
+        for entry in self.instruments.iter() {
+            tracing::debug!("  Cached: symbol={}", entry.key());
+        }
+
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        tracing::debug!("Mapping coin '{}' to instrument {}", coin, instrument.id());
+
+        let cmd_tx = self.cmd_tx.read().await;
+
+        // Update the handler's coin→instrument mapping for this subscription
+        cmd_tx
+            .send(HandlerCommand::UpdateInstrument(instrument.clone()))
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
+
         let subscription = SubscriptionRequest::Trades { coin };
-        self.cmd_tx
-            .read()
-            .await
+        cmd_tx
             .send(HandlerCommand::Subscribe {
                 subscriptions: vec![subscription],
             })
@@ -312,8 +344,20 @@ impl HyperliquidWebSocketClient {
         Ok(())
     }
 
-    /// Unsubscribe from trades for a specific coin.
-    pub async fn unsubscribe_trades(&self, coin: Ustr) -> anyhow::Result<()> {
+    /// Unsubscribe from trades for an instrument.
+    pub async fn unsubscribe_trades(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        // Remove the mapping when unsubscribing
+        tracing::debug!(
+            "Removed coin '{}' mapping for instrument {}",
+            coin,
+            instrument_id
+        );
+
         let subscription = SubscriptionRequest::Trades { coin };
         self.cmd_tx
             .read()
@@ -325,12 +369,28 @@ impl HyperliquidWebSocketClient {
         Ok(())
     }
 
-    /// Subscribe to best bid/offer (BBO) quotes for a specific coin.
-    pub async fn subscribe_bbo(&self, coin: Ustr) -> anyhow::Result<()> {
+    /// Subscribe to best bid/offer (BBO) quotes for an instrument.
+    pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        tracing::debug!(
+            "Mapping coin '{}' to instrument {} for quote subscription",
+            coin,
+            instrument.id()
+        );
+
+        let cmd_tx = self.cmd_tx.read().await;
+
+        // Update the handler's coin→instrument mapping for this subscription
+        cmd_tx
+            .send(HandlerCommand::UpdateInstrument(instrument.clone()))
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
+
         let subscription = SubscriptionRequest::Bbo { coin };
-        self.cmd_tx
-            .read()
-            .await
+        cmd_tx
             .send(HandlerCommand::Subscribe {
                 subscriptions: vec![subscription],
             })
@@ -338,8 +398,15 @@ impl HyperliquidWebSocketClient {
         Ok(())
     }
 
-    /// Unsubscribe from BBO quotes for a specific coin.
-    pub async fn unsubscribe_bbo(&self, coin: Ustr) -> anyhow::Result<()> {
+    /// Unsubscribe from quote ticks for an instrument.
+    pub async fn unsubscribe_quotes(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        // Remove the mapping from coin to instrument
+
         let subscription = SubscriptionRequest::Bbo { coin };
         self.cmd_tx
             .read()
@@ -351,16 +418,32 @@ impl HyperliquidWebSocketClient {
         Ok(())
     }
 
-    /// Subscribe to L2 order book for a specific coin.
-    pub async fn subscribe_book(&self, coin: Ustr) -> anyhow::Result<()> {
+    /// Subscribe to L2 order book for an instrument.
+    pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        tracing::debug!(
+            "Mapping coin '{}' to instrument {} for book subscription",
+            coin,
+            instrument.id()
+        );
+
+        let cmd_tx = self.cmd_tx.read().await;
+
+        // Update the handler's coin→instrument mapping for this subscription
+        cmd_tx
+            .send(HandlerCommand::UpdateInstrument(instrument.clone()))
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
+
         let subscription = SubscriptionRequest::L2Book {
             coin,
             mantissa: None,
             n_sig_figs: None,
         };
-        self.cmd_tx
-            .read()
-            .await
+        cmd_tx
             .send(HandlerCommand::Subscribe {
                 subscriptions: vec![subscription],
             })
@@ -368,8 +451,15 @@ impl HyperliquidWebSocketClient {
         Ok(())
     }
 
-    /// Unsubscribe from L2 order book for a specific coin.
-    pub async fn unsubscribe_book(&self, coin: Ustr) -> anyhow::Result<()> {
+    /// Unsubscribe from L2 order book for an instrument.
+    pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        // Remove the mapping from coin to instrument
+
         let subscription = SubscriptionRequest::L2Book {
             coin,
             mantissa: None,
@@ -395,13 +485,30 @@ impl HyperliquidWebSocketClient {
         let interval = bar_type_to_interval(&bar_type)?;
         let subscription = SubscriptionRequest::Candle { coin, interval };
 
+        tracing::debug!(
+            "Mapping coin '{}' to instrument {} for bar subscription",
+            coin,
+            instrument.id()
+        );
+
         // Cache the bar type for parsing using canonical key
         let key = format!("candle:{coin}:{interval}");
-        self.bar_types.insert(key, bar_type);
+        self.bar_types.insert(key.clone(), bar_type);
 
-        self.cmd_tx
-            .read()
-            .await
+        let cmd_tx = self.cmd_tx.read().await;
+
+        // Update the handler's coin→instrument mapping for this subscription
+        cmd_tx
+            .send(HandlerCommand::UpdateInstrument(instrument.clone()))
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
+
+        // Send bar type to handler
+        cmd_tx
+            .send(HandlerCommand::AddBarType { key, bar_type })
+            .map_err(|e| anyhow::anyhow!("Failed to send AddBarType command: {e}"))?;
+
+        // Send subscription
+        cmd_tx
             .send(HandlerCommand::Subscribe {
                 subscriptions: vec![subscription],
             })
@@ -423,9 +530,15 @@ impl HyperliquidWebSocketClient {
         let key = format!("candle:{coin}:{interval}");
         self.bar_types.remove(&key);
 
-        self.cmd_tx
-            .read()
-            .await
+        let cmd_tx = self.cmd_tx.read().await;
+
+        // Remove bar type from handler
+        cmd_tx
+            .send(HandlerCommand::RemoveBarType { key })
+            .map_err(|e| anyhow::anyhow!("Failed to send RemoveBarType command: {e}"))?;
+
+        // Send unsubscription
+        cmd_tx
             .send(HandlerCommand::Unsubscribe {
                 subscriptions: vec![subscription],
             })
@@ -436,14 +549,16 @@ impl HyperliquidWebSocketClient {
     /// Caches multiple instruments.
     ///
     /// Clears the existing cache first, then adds all provided instruments.
+    /// Instruments are keyed by their full Nautilus symbol (e.g., "BTC-USD-PERP").
     pub fn cache_instruments(&mut self, instruments: Vec<InstrumentAny>) {
         self.instruments.clear();
         let mut count = 0;
         tracing::debug!("Initializing Hyperliquid instrument cache");
         for inst in instruments {
             let symbol = inst.symbol().inner();
+            let raw_symbol = inst.raw_symbol().inner();
             self.instruments.insert(symbol, inst.clone());
-            tracing::debug!("Cached instrument: {symbol}");
+            tracing::debug!("  Cached: symbol={}, raw_symbol={}", symbol, raw_symbol);
             count += 1;
         }
         tracing::info!("Hyperliquid instrument cache initialized with {count} instruments");
@@ -454,6 +569,7 @@ impl HyperliquidWebSocketClient {
     /// Any existing instrument with the same symbol will be replaced.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
         let symbol = instrument.symbol().inner();
+        let raw_symbol = instrument.raw_symbol().inner();
         self.instruments.insert(symbol, instrument.clone());
         if let Err(e) = self
             .cmd_tx
@@ -462,10 +578,16 @@ impl HyperliquidWebSocketClient {
         {
             tracing::debug!("Failed to send instrument update to handler: {e}");
         }
-        tracing::debug!("Cached instrument {symbol} in WebSocket client");
+        tracing::debug!(
+            "Cached instrument {} (raw_symbol={}) in WebSocket client",
+            symbol,
+            raw_symbol
+        );
     }
 
     /// Gets an instrument from the cache by ID.
+    ///
+    /// Looks up the instrument by its full Nautilus symbol (e.g., "BTC-USD-PERP").
     pub fn get_instrument(&self, id: &InstrumentId) -> Option<InstrumentAny> {
         self.instruments
             .get(&id.symbol.inner())

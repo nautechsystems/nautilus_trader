@@ -211,25 +211,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         instrument_id: InstrumentId,
         filters: dict | None = None,
     ) -> None:
-        """
-        Load the latest instrument definition for the given instrument ID into the
-        provider by requesting the latest instrument definition message from Databento.
-
-        The Databento dataset will be determined from either the filters, or the venue for the
-        instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID to load.
-        filters : dict, optional
-            The optional filters for the instrument definition request.
-
-        Warnings
-        --------
-        Calling this method will incur a cost to your Databento account in USD.
-
-        """
         await self.load_ids_async([instrument_id], filters=filters)
 
     async def get_range(

@@ -16,6 +16,7 @@
 //! Real-time and static `Clock` implementations.
 
 use std::{
+    any::Any,
     collections::{BTreeMap, BinaryHeap, HashMap},
     fmt::Debug,
     ops::Deref,
@@ -49,7 +50,7 @@ use crate::{
 /// # Notes
 ///
 /// An active timer is one which has not expired (`timer.is_expired == False`).
-pub trait Clock: Debug {
+pub trait Clock: Debug + Any {
     /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
     fn utc_now(&self) -> DateTime<Utc> {
         DateTime::from_timestamp_nanos(self.timestamp_ns().as_i64())
@@ -227,6 +228,17 @@ pub trait Clock: Debug {
 
     /// Resets the clock by clearing it's internal state.
     fn reset(&mut self);
+}
+
+impl dyn Clock {
+    /// Returns a reference to this clock as `Any` for downcasting.
+    pub fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    /// Returns a mutable reference to this clock as `Any` for downcasting.
+    pub fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// A static test clock.

@@ -4457,8 +4457,43 @@ class HttpClient:
         self,
         method: HttpMethod,
         url: str,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         body: bytes | None = None,
+        keys: list[str] | None = None,
+        timeout_secs: int | None = None,
+    ) -> HttpResponse: ...
+    async def get(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        keys: list[str] | None = None,
+        timeout_secs: int | None = None,
+    ) -> HttpResponse: ...
+    async def post(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        body: bytes | None = None,
+        keys: list[str] | None = None,
+        timeout_secs: int | None = None,
+    ) -> HttpResponse: ...
+    async def patch(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        body: bytes | None = None,
+        keys: list[str] | None = None,
+        timeout_secs: int | None = None,
+    ) -> HttpResponse: ...
+    async def delete(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         keys: list[str] | None = None,
         timeout_secs: int | None = None,
     ) -> HttpResponse: ...
@@ -4477,6 +4512,40 @@ class HttpResponse:
     def body(self) -> bytes: ...
     @property
     def headers(self) -> dict[str, str]: ...
+
+def http_get(
+    url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout_secs: int | None = None,
+) -> HttpResponse: ...
+def http_post(
+    url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+    timeout_secs: int | None = None,
+) -> HttpResponse: ...
+def http_patch(
+    url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    body: bytes | None = None,
+    timeout_secs: int | None = None,
+) -> HttpResponse: ...
+def http_delete(
+    url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout_secs: int | None = None,
+) -> HttpResponse: ...
+def http_download(
+    url: str,
+    filepath: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout_secs: int | None = None,
+) -> None: ...
 
 class Quota:
     @classmethod
@@ -7298,6 +7367,13 @@ class CancelBroadcaster:
 
 # Hyperliquid
 
+class HyperliquidProductType(Enum):
+    PERP = "PERP"
+    SPOT = "SPOT"
+
+    @classmethod
+    def from_str(cls, value: str) -> HyperliquidProductType: ...
+
 class HyperliquidHttpClient:
     def __init__(
         self,
@@ -7359,7 +7435,7 @@ class HyperliquidHttpClient:
     ) -> list[OrderStatusReport]: ...
     async def get_open_orders(self) -> list[OrderStatusReport]: ...
     async def get_clearinghouse_state(self) -> dict: ...
-    def add_instrument(self, instrument: Instrument) -> None: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
     def set_account_id(self, account_id: str) -> None: ...
     def get_user_address(self) -> str: ...
     async def request_order_status_reports(
@@ -7382,6 +7458,8 @@ class HyperliquidWebSocketClient:
         self,
         url: str | None = None,
         testnet: bool = False,
+        product_type: str = "PERP",
+        account_id: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...
@@ -7413,6 +7491,8 @@ class HyperliquidWebSocketClient:
     async def unsubscribe_book_deltas(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_bars(self, bar_type: BarType) -> None: ...
+
+def hyperliquid_product_type_from_symbol(symbol: str) -> HyperliquidProductType: ...
 
 # Greeks
 

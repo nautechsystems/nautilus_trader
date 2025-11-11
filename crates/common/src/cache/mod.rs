@@ -1181,23 +1181,23 @@ impl Cache {
 
     /// Dispose of the cache which will close any underlying database adapter.
     ///
-    /// # Panics
-    ///
-    /// Panics if closing the database connection fails.
+    /// If closing the database connection fails, an error is logged.
     pub fn dispose(&mut self) {
-        if let Some(database) = &mut self.database {
-            database.close().expect("Failed to close database");
+        if let Some(database) = &mut self.database
+            && let Err(e) = database.close()
+        {
+            log::error!("Failed to close database during dispose: {e}");
         }
     }
 
     /// Flushes the caches database which permanently removes all persisted data.
     ///
-    /// # Panics
-    ///
-    /// Panics if flushing the database connection fails.
+    /// If flushing the database connection fails, an error is logged.
     pub fn flush_db(&mut self) {
-        if let Some(database) = &mut self.database {
-            database.flush().expect("Failed to flush database");
+        if let Some(database) = &mut self.database
+            && let Err(e) = database.flush()
+        {
+            log::error!("Failed to flush database: {e}");
         }
     }
 
@@ -3189,10 +3189,13 @@ impl Cache {
 
                 match (bid_bar, ask_bar) {
                     (Some(bid), Some(ask)) => {
-                        let bid_price = bid.front().unwrap().close;
-                        let ask_price = ask.front().unwrap().close;
-
-                        (bid_price, ask_price)
+                        match (bid.front(), ask.front()) {
+                            (Some(bid_bar), Some(ask_bar)) => (bid_bar.close, ask_bar.close),
+                            _ => {
+                                // Empty bar VecDeques
+                                continue;
+                            }
+                        }
                     }
                     _ => continue,
                 }

@@ -50,6 +50,8 @@ nonzero_ext = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
+serde = { workspace = true }
+serde_urlencoded = { workspace = true }
 rustls-pemfile = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
@@ -58,6 +60,7 @@ tokio-rustls = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+url = { workspace = true }
 ustr = { workspace = true }
 webpki-roots = { workspace = true }
 

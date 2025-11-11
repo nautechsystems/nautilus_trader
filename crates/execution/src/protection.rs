@@ -19,7 +19,6 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     types::Price,
 };
-use rust_decimal::{Decimal, prelude::*};
 
 /// Calculates the protection price for stop limit and stop market orders using best bid or ask price..
 ///
@@ -37,7 +36,7 @@ use rust_decimal::{Decimal, prelude::*};
 pub fn protection_price_calculate(
     price_increment: Price,
     order: &OrderAny,
-    protection_points: Option<Decimal>,
+    protection_points: Option<u32>,
     bid: Option<Price>,
     ask: Option<Price>,
 ) -> anyhow::Result<Price> {
@@ -46,11 +45,9 @@ pub fn protection_price_calculate(
         anyhow::bail!("Invalid `OrderType` {order_type} for protection price calculation");
     }
 
-    let protection_points = protection_points
-        .ok_or_else(|| anyhow::anyhow!("Protection points required"))?
-        .to_f64()
-        .ok_or_else(|| anyhow::anyhow!("Invalid `protection_points` value"))?;
-    let offset = protection_points * price_increment.as_f64();
+    let protection_points =
+        protection_points.ok_or_else(|| anyhow::anyhow!("Protection points required"))?;
+    let offset = f64::from(protection_points) * price_increment.as_f64();
 
     let order_side = order.order_side_specified();
     let protection_price = match order_side {
@@ -80,7 +77,6 @@ mod tests {
         types::Quantity,
     };
     use rstest::rstest;
-    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -109,8 +105,7 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
 
-        let result =
-            protection_price_calculate(Price::new(0.01, 2), &order, Some(dec!(600)), None, None);
+        let result = protection_price_calculate(Price::new(0.01, 2), &order, Some(600), None, None);
 
         assert!(result.is_err());
     }
@@ -143,7 +138,7 @@ mod tests {
             OrderSide::NoOrderSide => panic!("Side is required"),
         };
 
-        let result = protection_price_calculate(price_increment, &order, Some(dec!(25)), bid, ask);
+        let result = protection_price_calculate(price_increment, &order, Some(25), bid, ask);
 
         assert!(result.is_err());
     }
@@ -157,7 +152,7 @@ mod tests {
         let protection_price = protection_price_calculate(
             Price::new(0.01, 2),
             &order,
-            Some(dec!(50)),
+            Some(50),
             Some(Price::new(99.0, 2)),
             Some(Price::new(101.0, 2)),
         )
@@ -175,7 +170,7 @@ mod tests {
         let protection_price = protection_price_calculate(
             Price::new(0.01, 2),
             &order,
-            Some(dec!(50)),
+            Some(50),
             Some(Price::new(99.0, 2)),
             Some(Price::new(101.0, 2)),
         )

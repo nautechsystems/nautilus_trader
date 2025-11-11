@@ -13,30 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings for Hyperliquid URL helper functions.
+//! A common Tokio runtime for network operations.
 
-use pyo3::prelude::*;
+use std::sync::OnceLock;
 
-use crate::common::consts::{info_url, ws_url};
+static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
-/// Get the HTTP base URL for Hyperliquid API (info endpoint).
+/// Returns a reference to the global network Tokio runtime.
 ///
-/// # Returns
+/// The runtime is lazily initialized on the first call and reused thereafter.
 ///
-/// The HTTP base URL string.
-#[pyfunction]
-#[pyo3(name = "get_hyperliquid_http_base_url")]
-pub fn get_hyperliquid_http_base_url(is_testnet: bool) -> String {
-    info_url(is_testnet).to_string()
-}
-
-/// Get the WebSocket URL for Hyperliquid API.
+/// # Panics
 ///
-/// # Returns
-///
-/// The WebSocket URL string.
-#[pyfunction]
-#[pyo3(name = "get_hyperliquid_ws_url")]
-pub fn get_hyperliquid_ws_url(is_testnet: bool) -> String {
-    ws_url(is_testnet).to_string()
+/// Panics if the Tokio runtime fails to build, which should only occur in
+/// extremely rare circumstances such as system resource exhaustion.
+pub fn get_runtime() -> &'static tokio::runtime::Runtime {
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create tokio runtime")
+    })
 }

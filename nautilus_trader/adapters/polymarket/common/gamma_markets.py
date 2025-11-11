@@ -27,10 +27,14 @@ References
 from __future__ import annotations
 
 import os
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
+from math import ceil
 from typing import Any
 
-import requests
+import msgspec
+
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
+from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 
 
 DEFAULT_GAMMA_BASE_URL = os.getenv("GAMMA_API_URL", "https://gamma-api.polymarket.com")
@@ -98,8 +102,8 @@ def build_markets_query(filters: dict[str, Any] | None = None) -> dict[str, Any]
     return params
 
 
-def _request_markets_page(
-    session: requests.Session,
+async def _request_markets_page(
+    http_client: HttpClient,
     base_url: str,
     params: dict[str, Any],
     offset: int,
@@ -112,16 +116,21 @@ def _request_markets_page(
     Returns a list of market dicts.
 
     """
-    url = f"{base_url}/markets"
+    base_endpoint = f"{base_url}/markets"
     effective_params = dict(params)
     effective_params["limit"] = limit
     effective_params["offset"] = offset
 
-    resp = session.get(url, params=effective_params, timeout=timeout)
-    if resp.status_code != 200:
-        raise RuntimeError(f"Gamma Get Markets failed: {resp.status_code} for url {url} with params {effective_params} and body {resp.text}")
+    resp: HttpResponse = await http_client.get(
+        base_endpoint,
+        params=effective_params,
+        timeout_secs=max(1, ceil(timeout)),
+    )
+    if resp.status != 200:
+        body = resp.body.decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gamma Get Markets failed: {resp.status} for url {base_endpoint} with params {effective_params} and body {body}")
 
-    data = resp.json()
+    data = msgspec.json.decode(resp.body)
     if isinstance(data, list):
         return data
     if isinstance(data, dict) and "data" in data:
@@ -130,11 +139,12 @@ def _request_markets_page(
     raise RuntimeError("Unrecognized response schema from Gamma Get Markets")
 
 
-def iter_markets(
+async def iter_markets(
+    http_client: HttpClient,
     filters: dict[str, Any] | None = None,
     base_url: str | None = None,
     timeout: float = 10.0,
-) -> Generator[dict[str, Any]]:
+) -> AsyncGenerator[dict[str, Any]]:
     """
     Iterate markets that pass server-side filters, yielding raw market dicts.
     """
@@ -143,22 +153,22 @@ def iter_markets(
     limit = int(filters.get("limit", 500)) if filters else 500
     offset = int(filters.get("offset", 0)) if filters else 0
 
-    with requests.Session() as session:
-        while True:
-            markets = _request_markets_page(
-                session=session,
-                base_url=base,
-                params=params,
-                offset=offset,
-                limit=limit,
-                timeout=timeout,
-            )
-            if not markets:
-                break
-            yield from markets
-            if len(markets) < limit:
-                break
-            offset += limit
+    while True:
+        markets = await _request_markets_page(
+            http_client=http_client,
+            base_url=base,
+            params=params,
+            offset=offset,
+            limit=limit,
+            timeout=timeout,
+        )
+        if not markets:
+            break
+        for market in markets:
+            yield market
+        if len(markets) < limit:
+            break
+        offset += limit
 
 
 def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[str, Any]:
@@ -179,9 +189,6 @@ def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[
         Market data normalized to CLOB API format with snake_case fields.
 
     """
-    import json
-
-    # Handle rewards field
     rewards = gamma_market.get("clobRewards", [])
     rewards_dict = None
     if rewards and len(rewards) > 0:
@@ -192,27 +199,24 @@ def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[
             "max_spread": gamma_market.get("rewardsMaxSpread"),
         }
 
-    # Build tokens array from clobTokenIds and outcomes
     tokens = []
     clob_token_ids = gamma_market.get("clobTokenIds", [])
     outcomes = gamma_market.get("outcomes", [])
     outcome_prices = gamma_market.get("outcomePrices", [])
 
-    # Parse JSON strings if needed
     if isinstance(clob_token_ids, str):
-        clob_token_ids = json.loads(clob_token_ids)
+        clob_token_ids = msgspec.json.decode(clob_token_ids)
     if isinstance(outcomes, str):
-        outcomes = json.loads(outcomes)
+        outcomes = msgspec.json.decode(outcomes)
     if isinstance(outcome_prices, str):
-        outcome_prices = json.loads(outcome_prices)
+        outcome_prices = msgspec.json.decode(outcome_prices)
 
-    # Create tokens array in CLOB format
     for i, (token_id, outcome) in enumerate(zip(clob_token_ids, outcomes)):
         token_entry = {
             "token_id": token_id,
             "outcome": outcome,
             "price": float(outcome_prices[i]) if i < len(outcome_prices) else 0.5,
-            "winner": False,  # Default value
+            "winner": False,
         }
         tokens.append(token_entry)
 
@@ -223,7 +227,6 @@ def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[
         "question": gamma_market.get("question"),
         "description": gamma_market.get("description"),
         "market_slug": gamma_market.get("slug"),
-
         # Order book and trading settings
         "enable_order_book": gamma_market.get("enableOrderBook", True),
         "minimum_tick_size": gamma_market.get("orderPriceMinTickSize", 0.001),
@@ -231,47 +234,37 @@ def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[
         "accepting_orders": gamma_market.get("acceptingOrders", True),
         "accepting_order_timestamp": gamma_market.get("acceptingOrdersTimestamp"),
         "seconds_delay": gamma_market.get("secondsDelay", 0),
-
         # Market status flags
         "active": gamma_market.get("active", False),
         "closed": gamma_market.get("closed", False),
         "archived": gamma_market.get("archived", False),
-
         # Dates
         "end_date_iso": gamma_market.get("endDateIso"),
         "game_start_time": gamma_market.get("startDateIso"),
-
         # Fee structure
-        "maker_base_fee": 0,  # Gamma API doesn't provide fees directly, use known defaults
-        "taker_base_fee": 0,  # Gamma API doesn't provide fees directly, use known defaults
+        "maker_base_fee": 0,
+        "taker_base_fee": 0,
         "fpmm": gamma_market.get("marketMakerAddress", ""),
-
         # Negative risk settings
         "neg_risk": gamma_market.get("negRisk", False),
         "neg_risk_market_id": gamma_market.get("negRiskMarketID"),
         "neg_risk_request_id": gamma_market.get("negRiskRequestID"),
-
         # Media
         "icon": gamma_market.get("icon"),
         "image": gamma_market.get("image"),
-
         # Rewards and notifications
         "rewards": rewards_dict,
-        "notifications_enabled": True,  # Default value
-
-        # Outcome pricing flag
-        # "is_50_50_outcome": False,  # Gamma API doesn't provide this flag
-
+        "notifications_enabled": True,
         # Tokens array (CLOB API format)
         "tokens": tokens,
-
         # Preserve original data for reference
         "_gamma_original": gamma_market,
     }
     return normalized
 
 
-def list_markets(
+async def list_markets(
+    http_client: HttpClient,
     filters: dict[str, Any] | None = None,
     base_url: str | None = None,
     timeout: float = 10.0,
@@ -284,7 +277,7 @@ def list_markets(
 
     """
     results: list[dict[str, Any]] = []
-    for market in iter_markets(filters=filters, base_url=base_url, timeout=timeout):
+    async for market in iter_markets(http_client=http_client, filters=filters, base_url=base_url, timeout=timeout):
         results.append(market)
         if max_results is not None and len(results) >= max_results:
             break

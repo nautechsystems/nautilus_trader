@@ -22,11 +22,14 @@ backtesting with high-frequency orderbook and trade data.
 """
 
 import ast
+import asyncio
 
-import requests
+import msgspec
+
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
 
 
-def fetch_active_markets(limit: int = 100) -> list[dict]:
+async def fetch_active_markets(http_client: HttpClient, limit: int = 100) -> list[dict]:
     """
     Fetch active markets from Polymarket.
     """
@@ -36,9 +39,14 @@ def fetch_active_markets(limit: int = 100) -> list[dict]:
         "archived": "false",
         "limit": limit,
     }
-    resp = requests.get("https://gamma-api.polymarket.com/markets", params=params, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    base_url = "https://gamma-api.polymarket.com/markets"
+
+    resp = await http_client.get(base_url, params=params, timeout_secs=30)
+
+    if resp.status != 200:
+        raise RuntimeError(f"HTTP error: {resp.status}")
+
+    return msgspec.json.decode(resp.body)
 
 
 def filter_updown_markets(markets: list[dict], asset: str | None = None) -> list[dict]:
@@ -109,13 +117,40 @@ def print_market_info(market: dict) -> None:
     print("-" * 80)
 
 
-def main():
-    print("Fetching active Polymarket markets...\n")
-    markets = fetch_active_markets(limit=200)
-    print(f"Found {len(markets)} total active markets\n")
+def _print_no_updown_found(markets: list[dict]) -> None:
+    """
+    Print message when no UpDown markets found with crypto alternatives.
+    """
+    print(f"{'=' * 80}")
+    print("NO UPDOWN MARKETS FOUND")
+    print(f"{'=' * 80}")
+    print("\nUpDown markets are short-term prediction markets for BTC/ETH price movements.")
+    print("There are currently no active UpDown markets on Polymarket.")
+    print("\nRelated crypto price prediction markets found:")
 
-    # Filter for BTC UpDown markets
-    btc_markets = filter_updown_markets(markets, asset="BTC")
+    crypto_markets = []
+    for market in markets:
+        slug = market.get("slug", "").lower()
+        question = market.get("question", "").lower()
+        if any(term in slug or term in question for term in ["bitcoin", "btc", "ethereum", "eth"]) and any(
+            price_term in question for price_term in ["reach", "hit", "dip", "$"]
+        ):
+            crypto_markets.append(market)
+
+    for market in crypto_markets[:10]:
+        question = market.get("question", "N/A")
+        slug = market.get("slug", "")
+        print(f"\n  • {question}")
+        print(f"    https://polymarket.com/event/{slug}")
+
+    if len(crypto_markets) > 10:
+        print(f"\n  ... and {len(crypto_markets) - 10} more crypto price markets")
+
+
+def _print_updown_results(btc_markets: list[dict], eth_markets: list[dict], other_updown: list[dict]) -> None:
+    """
+    Print UpDown market results.
+    """
     print(f"{'=' * 80}")
     print(f"BTC UPDOWN MARKETS ({len(btc_markets)} found)")
     print(f"{'=' * 80}")
@@ -123,18 +158,12 @@ def main():
         print_market_info(market)
     print()
 
-    # Filter for ETH UpDown markets
-    eth_markets = filter_updown_markets(markets, asset="ETH")
     print(f"{'=' * 80}")
     print(f"ETH UPDOWN MARKETS ({len(eth_markets)} found)")
     print(f"{'=' * 80}")
     for market in eth_markets:
         print_market_info(market)
     print()
-
-    # Show all UpDown markets (including other assets)
-    all_updown = filter_updown_markets(markets)
-    other_updown = [m for m in all_updown if m not in btc_markets and m not in eth_markets]
 
     if other_updown:
         print(f"{'=' * 80}")
@@ -144,5 +173,23 @@ def main():
             print_market_info(market)
 
 
+async def main():
+    http_client = HttpClient(timeout_secs=30)
+
+    print("Fetching active Polymarket markets...\n")
+    markets = await fetch_active_markets(http_client, limit=200)
+    print(f"Found {len(markets)} total active markets\n")
+
+    all_updown = filter_updown_markets(markets)
+    btc_markets = filter_updown_markets(markets, asset="BTC")
+    eth_markets = filter_updown_markets(markets, asset="ETH")
+    other_updown = [m for m in all_updown if m not in btc_markets and m not in eth_markets]
+
+    if not all_updown:
+        _print_no_updown_found(markets)
+    else:
+        _print_updown_results(btc_markets, eth_markets, other_updown)
+
+
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
