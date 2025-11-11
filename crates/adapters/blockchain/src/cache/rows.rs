@@ -213,9 +213,6 @@ pub fn transform_row_to_dex_pool_data(
                 sqrt_price_x96,
                 swap_liquidity,
                 swap_tick,
-                None,
-                None,
-                None,
             );
 
             Ok(DexPoolData::Swap(pool_swap))
