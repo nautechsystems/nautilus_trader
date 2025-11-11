@@ -18,7 +18,7 @@ use alloy_primitives::{U160, U256};
 use super::full_math::FullMath;
 use crate::{
     defi::tick_map::tick_math::get_sqrt_ratio_at_tick,
-    types::{Price, fixed::FIXED_PRECISION},
+    types::{PRICE_RAW_MAX, PRICE_RAW_MIN, Price, fixed::FIXED_PRECISION},
 };
 
 /// Encodes the sqrt ratio of two token amounts as a Q64.96 fixed point number.
@@ -402,6 +402,22 @@ pub fn decode_sqrt_price_x96_to_price_tokens_adjusted(
     let price_raw = numerator
         .try_into()
         .map_err(|_| anyhow::anyhow!("Price overflow: {} exceeds PriceRaw range", numerator))?;
+
+    // Step 5: Validate price is within valid range before creating Price
+    if price_raw > PRICE_RAW_MAX {
+        anyhow::bail!(
+            "Price {} exceeds maximum valid price {}",
+            price_raw,
+            PRICE_RAW_MAX
+        );
+    }
+    if price_raw < PRICE_RAW_MIN {
+        anyhow::bail!(
+            "Price {} is below minimum valid price {}",
+            price_raw,
+            PRICE_RAW_MIN
+        );
+    }
 
     Ok(Price::from_raw(price_raw, FIXED_PRECISION))
 }
