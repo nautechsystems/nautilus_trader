@@ -552,7 +552,7 @@ impl PoolProfiler {
             lp_fee,
             protocol_fee,
             crossed_ticks,
-        )?;
+        );
         Ok(quote)
     }
 

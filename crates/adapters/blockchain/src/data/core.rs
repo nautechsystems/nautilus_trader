@@ -721,7 +721,7 @@ impl BlockchainDataClientCore {
             pool.address,
             timestamp,
         );
-        swap.calculate_trade_info(&pool.token0, &pool.token1)?;
+        swap.calculate_trade_info(&pool.token0, &pool.token1, None)?;
 
         Ok(swap)
     }

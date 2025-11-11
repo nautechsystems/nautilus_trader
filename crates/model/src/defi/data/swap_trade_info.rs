@@ -15,7 +15,7 @@
 
 use std::cmp::max;
 
-use alloy_primitives::U256;
+use alloy_primitives::{U160, U256};
 
 use crate::{
     defi::{
@@ -63,6 +63,62 @@ pub struct SwapTradeInfo {
     pub spot_price: Price,
     /// The average realized execution price for this swap (quote per base).
     pub execution_price: Price,
+    /// Whether the base/quote assignment differs from token0/token1 ordering.
+    pub is_inverted: bool,
+    /// The pool price before that swap executed(optional).
+    pub spot_price_before: Option<Price>,
+}
+
+impl SwapTradeInfo {
+    /// Sets the spot price before the swap for price impact and slippage calculations.
+    pub fn set_spot_price_before(&mut self, price: Price) {
+        self.spot_price_before = Some(price);
+    }
+
+    /// Calculates price impact in basis points (requires token references for decimal adjustment).
+    ///
+    /// Price impact measures the market movement caused by the swap size,
+    /// excluding fees. This is the percentage change in spot price from
+    /// before to after the swap.
+    ///
+    /// # Returns
+    /// Price impact in basis points (10000 = 100%)
+    ///
+    /// # Errors
+    /// Returns error if price calculations fail
+    pub fn get_price_impact_bps(&self) -> anyhow::Result<u32> {
+        if let Some(spot_price_before) = self.spot_price_before {
+            let price_change = self.spot_price - spot_price_before;
+            let price_impact =
+                (price_change.as_f64() / spot_price_before.as_f64()).abs() * 10_000.0;
+
+            Ok(price_impact.round() as u32)
+        } else {
+            anyhow::bail!("Cannot calculate price impact, the spot price before is not set");
+        }
+    }
+
+    /// Calculates slippage in basis points (requires token references for decimal adjustment).
+    ///
+    /// Slippage includes both price impact and fees, representing the total
+    /// deviation from the spot price before the swap. This measures the total
+    /// cost to the trader.
+    ///
+    /// # Returns
+    /// Total slippage in basis points (10000 = 100%)
+    ///
+    /// # Errors
+    /// Returns error if price calculations fail
+    pub fn get_slippage_bps(&self) -> anyhow::Result<u32> {
+        if let Some(spot_price_before) = self.spot_price_before {
+            let price_change = self.execution_price - spot_price_before;
+            let slippage = (price_change.as_f64() / spot_price_before.as_f64()).abs() * 10_000.0;
+
+            Ok(slippage.round() as u32)
+        } else {
+            anyhow::bail!("Cannot calculate slippage, the spot price before is not set")
+        }
+    }
 }
 
 /// Computation engine for deriving market-oriented trade info from raw swap data.
@@ -116,18 +172,37 @@ impl<'a> SwapTradeInfoCalculator<'a> {
     /// Computes all trade information fields and returns a complete [`SwapTradeInfo`].
     ///
     /// Calculates order side, quantities, and prices from the raw swap data,
-    /// applying token priority rules and decimal adjustments.
+    /// applying token priority rules and decimal adjustments. If the price before
+    /// the swap is provided, also computes price impact and slippage metrics.
+    ///
+    /// # Arguments
+    ///
+    /// * `sqrt_price_x96_before` - Optional square root price before the swap (Q96 format).
+    ///   When provided, enables calculation of `spot_price_before`, price impact, and slippage.
     ///
     /// # Errors
     ///
     /// Returns an error if quantity or price calculations fail.
-    pub fn compute(&self) -> anyhow::Result<SwapTradeInfo> {
+    pub fn compute(&self, sqrt_price_x96_before: Option<U160>) -> anyhow::Result<SwapTradeInfo> {
+        let spot_price_before = if let Some(sqrt_price_x96_before) = sqrt_price_x96_before {
+            Some(decode_sqrt_price_x96_to_price_tokens_adjusted(
+                sqrt_price_x96_before,
+                self.token0.decimals,
+                self.token1.decimals,
+                self.is_inverted,
+            )?)
+        } else {
+            None
+        };
+
         Ok(SwapTradeInfo {
             order_side: self.order_side(),
             quantity_base: self.quantity_base()?,
             quantity_quote: self.quantity_quote()?,
             spot_price: self.spot_price()?,
             execution_price: self.execution_price()?,
+            is_inverted: self.is_inverted,
+            spot_price_before,
         })
     }
 
@@ -382,7 +457,7 @@ mod tests {
         );
 
         let calculator = SwapTradeInfoCalculator::new(&weth, &usdc, raw_data);
-        let result = calculator.compute().unwrap();
+        let result = calculator.compute(None).unwrap();
         // Its not inverted first is WETH(base) and second USDC(quote) as stablecoin
         assert!(!calculator.is_inverted);
         // Its buy, as amount0(WETH) < 0 (we received WETH, pool outflow) and amount1 > 0 (USDC sent, pool inflow)
@@ -403,7 +478,7 @@ mod tests {
         );
 
         let calculator = SwapTradeInfoCalculator::new(&weth, &usdc, raw_data);
-        let result = calculator.compute().unwrap();
+        let result = calculator.compute(None).unwrap();
         // Its sell as amount0(WETH) > 0 (we send WETH, pool inflow) and amount1 <0 (USDC received, pool outflow)
         assert_eq!(result.order_side, OrderSide::Sell);
         assert_eq!(result.quantity_base.as_f64(), 0.1934500744610937);
