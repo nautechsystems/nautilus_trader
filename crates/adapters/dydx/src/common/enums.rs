@@ -35,10 +35,6 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
     Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
-)]
 pub enum DydxOrderStatus {
     /// Order is open and active.
     Open,
@@ -84,10 +80,6 @@ impl From<DydxOrderStatus> for OrderStatus {
     Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
-)]
 pub enum DydxTimeInForce {
     /// Good-Til-Time (GTT) - order expires at specified time.
     Gtt,
@@ -113,10 +105,6 @@ pub enum DydxTimeInForce {
     Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
-)]
 pub enum DydxOrderType {
     /// Limit order with specified price.
     Limit,
@@ -198,10 +186,6 @@ impl From<DydxOrderType> for OrderType {
     Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
-)]
 pub enum DydxOrderExecution {
     /// Default execution behavior.
     Default,
@@ -216,10 +200,6 @@ pub enum DydxOrderExecution {
 /// dYdX order flags (bitfield).
 #[derive(
     Copy, Clone, Debug, Display, PartialEq, Eq, Hash, AsRefStr, EnumIter, Serialize, Deserialize,
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
 )]
 pub enum DydxOrderFlags {
     /// Short-term order (0).
@@ -250,10 +230,6 @@ pub enum DydxOrderFlags {
     Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.dydx")
-)]
 pub enum DydxConditionType {
     /// No condition (standard order).
     Unspecified,

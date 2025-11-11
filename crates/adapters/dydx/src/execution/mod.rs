@@ -72,6 +72,7 @@ pub struct DydxExecutionClient {
     // grpc_client: Arc<tokio::sync::RwLock<DydxGrpcClient>>,
     // wallet: Arc<tokio::sync::RwLock<Option<Wallet>>>,
     // order_builders: DashMap<InstrumentId, OrderBuilder>,
+    // NOTE: Currently unpopulated - instrument loading not yet implemented
     instruments: DashMap<InstrumentId, InstrumentAny>,
     market_to_instrument: DashMap<String, InstrumentId>,
     clob_pair_id_to_instrument: DashMap<u32, InstrumentId>,
