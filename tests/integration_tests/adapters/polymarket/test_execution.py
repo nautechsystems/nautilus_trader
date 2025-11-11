@@ -551,10 +551,14 @@ class TestPolymarketExecutionClient:
 
     def test_order_filled_by_polymarket_order_book_balancing_system(self):
         """
-        Polymarket automatically balances the books of token pairs. If a user places a Buy order for a Yes token
-        at 0.4, Polymarket will automatically place a Sell order for a No token at 0.6 on the user's behalf.
-        If another is ready to buy the No token, then Polymarket will mint a pair of tokens and sell the Yes and No
-        to the respective user for a net-zero for Polymarket, but an increased liquidity for its users.
+        Polymarket automatically balances the books of token pairs.
+
+        If a user places a Buy order for a Yes token at 0.4, Polymarket will
+        automatically place a Sell order for a No token at 0.6 on the user's behalf. If
+        another is ready to buy the No token, then Polymarket will mint a pair of tokens
+        and sell the Yes and No to the respective user for a net-zero for Polymarket,
+        but an increased liquidity for its users.
+
         """
         # Arrange
         raw_message = pkgutil.get_data(
@@ -600,12 +604,12 @@ class TestPolymarketExecutionClient:
         first_client_order_id, first_venue_order_id = self._setup_test_order_with_venue_id(
             "0x67b598cab933c71389176573822be763192a35a8c37e49999a11d611a5882e7d",
             use_ws_instrument=True,
-            price=Price.from_str("0.3")
+            price=Price.from_str("0.3"),
         )
         second_client_order_id, second_venue_order_id = self._setup_test_order_with_venue_id(
             "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
             use_ws_instrument=True,
-            price=Price.from_str("0.4")
+            price=Price.from_str("0.4"),
         )
 
         # Act
