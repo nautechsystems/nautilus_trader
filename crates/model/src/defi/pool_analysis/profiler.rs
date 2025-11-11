@@ -349,9 +349,6 @@ impl PoolProfiler {
             self.state.price_sqrt_ratio_x96,
             self.tick_map.liquidity,
             self.state.current_tick,
-            None,
-            None,
-            None,
         );
         Ok(swap_event)
     }

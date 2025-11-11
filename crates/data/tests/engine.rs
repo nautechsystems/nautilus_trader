@@ -57,6 +57,11 @@ use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{AmmType, Dex, DexType, chain::chains};
 #[cfg(feature = "defi")]
+use nautilus_model::defi::{
+    Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolProfiler,
+    PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
+};
+#[cfg(feature = "defi")]
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
     data::{
@@ -68,15 +73,6 @@ use nautilus_model::{
     identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     types::Price,
-};
-#[cfg(feature = "defi")]
-use nautilus_model::{
-    defi::{
-        Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType,
-        PoolProfiler, PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
-    },
-    enums::OrderSide,
-    types::Quantity,
 };
 use rstest::*;
 
@@ -1976,9 +1972,6 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         U160::from(59000000000000u128),
         1000000,
         100,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
 
     let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
@@ -2708,9 +2701,6 @@ fn test_pool_updater_processes_swap_updates_profiler(
         new_price,
         1000u128,
         0i32,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
 
     let mut data_engine = data_engine.borrow_mut();
