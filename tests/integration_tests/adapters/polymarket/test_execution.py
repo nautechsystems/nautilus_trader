@@ -587,7 +587,7 @@ class TestPolymarketExecutionClient:
         assert position.entry == OrderSide.BUY
         assert position.quantity.as_double() == 5
 
-    def test_user_order_fills_correctly_identified(self):
+    def test_multiple_user_order_fills_in_same_trade_message_correctly_identified(self):
         # Arrange
         raw_message = pkgutil.get_data(
             package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
