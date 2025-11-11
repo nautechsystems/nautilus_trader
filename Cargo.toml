@@ -86,6 +86,7 @@ nautilus-bybit = { path = "crates/adapters/bybit", version = "0.52.0" }
 nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.52.0" }
 nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.52.0" }
 nautilus-databento = { path = "crates/adapters/databento", version = "0.52.0" }
+nautilus-dydx = { path = "crates/adapters/dydx", version = "0.52.0" }
 nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.52.0" }
 nautilus-kraken = { path = "crates/adapters/kraken", version = "0.52.0" }
 nautilus-okx = { path = "crates/adapters/okx", version = "0.52.0" }

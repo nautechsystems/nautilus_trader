@@ -15,10 +15,22 @@
 
 //! Python bindings for the dYdX WebSocket client.
 
-use nautilus_model::identifiers::{AccountId, InstrumentId};
+use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::{
+    identifiers::{AccountId, InstrumentId},
+    python::instruments::pyobject_to_instrument_any,
+};
 use pyo3::prelude::*;
 
-use crate::{common::credential::DydxCredential, websocket::client::DydxWebSocketClient};
+use crate::{
+    common::credential::DydxCredential,
+    websocket::{client::DydxWebSocketClient, error::DydxWsError},
+};
+
+fn to_pyvalue_err_dydx(e: DydxWsError) -> PyErr {
+    pyo3::exceptions::PyValueError::new_err(e.to_string())
+}
+
 #[pymethods]
 impl DydxWebSocketClient {
     /// Creates a new public WebSocket client for market data.
@@ -40,7 +52,7 @@ impl DydxWebSocketClient {
         heartbeat: Option<u64>,
     ) -> PyResult<Self> {
         let credential = DydxCredential::from_mnemonic(&mnemonic, account_index, authenticator_ids)
-            .map_err(to_pyvalue_err)?;
+            .map_err(to_pyvalue_err_anyhow)?;
         Ok(Self::new_private(url, credential, account_id, heartbeat))
     }
 
@@ -62,6 +74,160 @@ impl DydxWebSocketClient {
         self.account_id()
     }
 
+    /// Returns the WebSocket URL.
+    #[getter]
+    fn url(&self) -> String {
+        self.url.clone()
+    }
+
+    /// Connects the WebSocket client.
+    #[pyo3(name = "connect")]
+    fn py_connect<'py>(
+        &mut self,
+        py: Python<'py>,
+        instruments: Vec<Py<PyAny>>,
+        callback: Py<PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        // Convert Python instruments to Rust InstrumentAny
+        let mut instruments_any = Vec::new();
+        for inst in instruments {
+            let inst_any = pyobject_to_instrument_any(py, inst)?;
+            instruments_any.push(inst_any);
+        }
+
+        // Cache instruments first
+        self.cache_instruments(instruments_any);
+
+        let mut client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Connect the WebSocket client
+            client.connect().await.map_err(to_pyvalue_err_dydx)?;
+
+            // Take the receiver for messages
+            if let Some(mut rx) = client.take_receiver() {
+                // Spawn task to process messages and call Python callback
+                tokio::spawn(async move {
+                    let _client = client; // Keep client alive in spawned task
+
+                    while let Some(msg) = rx.recv().await {
+                        match msg {
+                            crate::websocket::messages::NautilusWsMessage::Data(items) => {
+                                Python::attach(|py| {
+                                    for data in items {
+                                        use nautilus_model::python::data::data_to_pycapsule;
+                                        let py_obj = data_to_pycapsule(py, data);
+                                        if let Err(e) = callback.call1(py, (py_obj,)) {
+                                            tracing::error!("Error calling Python callback: {e}");
+                                        }
+                                    }
+                                });
+                            }
+                            crate::websocket::messages::NautilusWsMessage::Deltas(deltas) => {
+                                Python::attach(|py| {
+                                    use nautilus_model::data::{Data, OrderBookDeltas_API};
+                                    use nautilus_model::python::data::data_to_pycapsule;
+                                    let data = Data::Deltas(OrderBookDeltas_API::new(*deltas));
+                                    let py_obj = data_to_pycapsule(py, data);
+                                    if let Err(e) = callback.call1(py, (py_obj,)) {
+                                        tracing::error!("Error calling Python callback: {e}");
+                                    }
+                                });
+                            }
+                            crate::websocket::messages::NautilusWsMessage::Error(err) => {
+                                tracing::error!("dYdX WebSocket error: {err}");
+                            }
+                            crate::websocket::messages::NautilusWsMessage::Reconnected => {
+                                tracing::info!("dYdX WebSocket reconnected");
+                            }
+                            _ => {
+                                // Handle other message types if needed
+                            }
+                        }
+                    }
+                });
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Disconnects the WebSocket client.
+    #[pyo3(name = "disconnect")]
+    fn py_disconnect<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let mut client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.disconnect().await.map_err(to_pyvalue_err_dydx)?;
+            Ok(())
+        })
+    }
+
+    /// Waits until the client is in an active state.
+    #[pyo3(name = "wait_until_active")]
+    fn py_wait_until_active<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_secs: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let connection_mode = self.connection_mode.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            use nautilus_network::mode::ConnectionMode;
+            use std::sync::atomic::Ordering;
+
+            let timeout = std::time::Duration::from_secs_f64(timeout_secs);
+            let start = std::time::Instant::now();
+
+            loop {
+                let mode = connection_mode.load();
+                let mode_u8 = mode.load(Ordering::Relaxed);
+                let is_connected = matches!(
+                    mode_u8,
+                    x if x == ConnectionMode::Active as u8 || x == ConnectionMode::Reconnect as u8
+                );
+
+                if is_connected {
+                    break;
+                }
+
+                if start.elapsed() > timeout {
+                    return Err(to_pyvalue_err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("Client did not become active within {timeout_secs}s"),
+                    )));
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Caches a single instrument.
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, instrument: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
+        let inst_any = pyobject_to_instrument_any(py, instrument)?;
+        self.cache_instrument(inst_any);
+        Ok(())
+    }
+
+    /// Caches multiple instruments.
+    #[pyo3(name = "cache_instruments")]
+    fn py_cache_instruments(&self, instruments: Vec<Py<PyAny>>, py: Python<'_>) -> PyResult<()> {
+        let mut instruments_any = Vec::new();
+        for inst in instruments {
+            let inst_any = pyobject_to_instrument_any(py, inst)?;
+            instruments_any.push(inst_any);
+        }
+        self.cache_instruments(instruments_any);
+        Ok(())
+    }
+
+    /// Returns whether the client is closed.
+    #[pyo3(name = "is_closed")]
+    fn py_is_closed(&self) -> bool {
+        !self.is_connected()
+    }
+
     /// Subscribes to public trade updates for a specific instrument.
     #[pyo3(name = "subscribe_trades")]
     fn py_subscribe_trades<'py>(
@@ -69,18 +235,13 @@ impl DydxWebSocketClient {
         py: Python<'py>,
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handler_cmd_tx = self.handler_cmd_tx.clone();
+        let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let ticker = ticker_from_instrument_id(&instrument_id);
-            let sub = crate::websocket::messages::DydxSubscription {
-                op: crate::websocket::enums::DydxWsOperation::Subscribe,
-                channel: crate::websocket::enums::DydxWsChannel::Trades,
-                id: Some(ticker),
-            };
-            let payload = serde_json::to_string(&sub).map_err(to_pyvalue_err)?;
-            handler_cmd_tx
-                .send(crate::websocket::handler::HandlerCommand::SendText(payload))
-                .map_err(|e| to_pyvalue_err(anyhow::anyhow!("{}", e)))
+            client
+                .subscribe_trades(instrument_id)
+                .await
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -91,18 +252,13 @@ impl DydxWebSocketClient {
         py: Python<'py>,
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handler_cmd_tx = self.handler_cmd_tx.clone();
+        let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let ticker = ticker_from_instrument_id(&instrument_id);
-            let sub = crate::websocket::messages::DydxSubscription {
-                op: crate::websocket::enums::DydxWsOperation::Unsubscribe,
-                channel: crate::websocket::enums::DydxWsChannel::Trades,
-                id: Some(ticker),
-            };
-            let payload = serde_json::to_string(&sub).map_err(to_pyvalue_err)?;
-            handler_cmd_tx
-                .send(crate::websocket::handler::HandlerCommand::SendText(payload))
-                .map_err(|e| to_pyvalue_err(anyhow::anyhow!("{}", e)))
+            client
+                .unsubscribe_trades(instrument_id)
+                .await
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -118,7 +274,8 @@ impl DydxWebSocketClient {
             client
                 .subscribe_orderbook(instrument_id)
                 .await
-                .map_err(to_pyvalue_err)
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -134,7 +291,8 @@ impl DydxWebSocketClient {
             client
                 .unsubscribe_orderbook(instrument_id)
                 .await
-                .map_err(to_pyvalue_err)
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -151,7 +309,8 @@ impl DydxWebSocketClient {
             client
                 .subscribe_candles(instrument_id, &resolution)
                 .await
-                .map_err(to_pyvalue_err)
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -168,7 +327,8 @@ impl DydxWebSocketClient {
             client
                 .unsubscribe_candles(instrument_id, &resolution)
                 .await
-                .map_err(to_pyvalue_err)
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -177,7 +337,11 @@ impl DydxWebSocketClient {
     fn py_subscribe_markets<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client.subscribe_markets().await.map_err(to_pyvalue_err)
+            client
+                .subscribe_markets()
+                .await
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -186,7 +350,11 @@ impl DydxWebSocketClient {
     fn py_unsubscribe_markets<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client.unsubscribe_markets().await.map_err(to_pyvalue_err)
+            client
+                .unsubscribe_markets()
+                .await
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -203,7 +371,8 @@ impl DydxWebSocketClient {
             client
                 .subscribe_subaccount(&address, subaccount_number)
                 .await
-                .map_err(to_pyvalue_err)
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -220,7 +389,8 @@ impl DydxWebSocketClient {
             client
                 .unsubscribe_subaccount(&address, subaccount_number)
                 .await
-                .map_err(to_pyvalue_err)
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -232,7 +402,8 @@ impl DydxWebSocketClient {
             client
                 .subscribe_block_height()
                 .await
-                .map_err(to_pyvalue_err)
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 
@@ -244,11 +415,12 @@ impl DydxWebSocketClient {
             client
                 .unsubscribe_block_height()
                 .await
-                .map_err(to_pyvalue_err)
+                .map_err(to_pyvalue_err_dydx)?;
+            Ok(())
         })
     }
 }
 
-fn to_pyvalue_err<E: std::error::Error>(e: E) -> PyErr {
+fn to_pyvalue_err_anyhow(e: anyhow::Error) -> PyErr {
     pyo3::exceptions::PyValueError::new_err(e.to_string())
 }
