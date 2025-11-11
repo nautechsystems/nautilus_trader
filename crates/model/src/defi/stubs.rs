@@ -16,9 +16,10 @@
 use std::sync::Arc;
 
 use alloy_primitives::address;
+use nautilus_core::UnixNanos;
 use rstest::fixture;
 
-use crate::defi::{AmmType, Chain, Dex, DexType, SharedChain, SharedDex, Token};
+use crate::defi::{AmmType, Chain, Dex, DexType, Pool, SharedChain, SharedDex, SharedPool, Token};
 
 #[fixture]
 pub fn arbitrum() -> SharedChain {
@@ -63,4 +64,37 @@ pub fn usdc(arbitrum: SharedChain) -> Token {
         "USDC".to_string(),
         6, // USDC.e on Arbitrum has 6 decimals
     )
+}
+
+#[fixture]
+pub fn rain_token(arbitrum: SharedChain) -> Token {
+    Token::new(
+        arbitrum,
+        address!("0x25118290e6A5f4139381D072181157035864099d"),
+        "RAIN".to_string(),
+        "RAIN".to_string(),
+        18,
+    )
+}
+
+#[fixture]
+pub fn rain_pool(
+    arbitrum: SharedChain,
+    uniswap_v3: SharedDex,
+    rain_token: Token,
+    weth: Token,
+) -> SharedPool {
+    let pool = Pool::new(
+        arbitrum,
+        uniswap_v3,
+        address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245"),
+        0,
+        rain_token,
+        weth,
+        Some(100),
+        Some(1),
+        UnixNanos::default(),
+    );
+
+    Arc::new(pool)
 }

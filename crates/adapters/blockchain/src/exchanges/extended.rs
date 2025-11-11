@@ -16,14 +16,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use hypersync_client::simple_types::Log;
-use nautilus_model::{
-    defi::{
-        dex::{Dex, SharedDex},
-        token::Token,
-    },
-    enums::OrderSide,
-    types::{Price, Quantity},
-};
+use nautilus_model::defi::dex::{Dex, SharedDex};
 
 use crate::events::{
     burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, initialize::InitializeEvent,

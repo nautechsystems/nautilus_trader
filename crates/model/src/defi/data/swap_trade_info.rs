@@ -26,12 +26,7 @@ use crate::{
         },
     },
     enums::OrderSide,
-    types::{
-        Price, Quantity,
-        fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION},
-        price::PriceRaw,
-        quantity::QuantityRaw,
-    },
+    types::{Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw, quantity::QuantityRaw},
 };
 
 /// Trade information derived from raw swap data, normalized to market conventions.
@@ -369,32 +364,26 @@ impl<'a> SwapTradeInfoCalculator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{str::FromStr, sync::Arc};
+    use std::str::FromStr;
 
     use alloy_primitives::{I256, U160};
     use rstest::rstest;
 
     use super::*;
-    use crate::defi::{
-        Token,
-        stubs::{usdc, weth},
-    };
+    use crate::defi::stubs::{usdc, weth};
 
     #[rstest]
     fn test_swap_trade_info_calculator_calculations_buy(weth: Token, usdc: Token) {
         // Real Arbitrum transaction: https://arbiscan.io/tx/0xb9af1fd5eefe82650a5e0f8ff10b3a5e1c7f05f44f255e1335360df97bd1645a
-        let token0 = Arc::new(weth);
-        let token1 = Arc::new(usdc);
         let raw_data = RawSwapData::new(
             I256::from_str("-466341596920355889").unwrap(),
             I256::from_str("1656236893").unwrap(),
             U160::from_str("4720799958938693700000000").unwrap(),
         );
 
-        let calculator = SwapTradeInfoCalculator::new(&token0, &token1, raw_data);
+        let calculator = SwapTradeInfoCalculator::new(&weth, &usdc, raw_data);
         let result = calculator.compute().unwrap();
         // Its not inverted first is WETH(base) and second USDC(quote) as stablecoin
-        assert!(token0.get_token_priority() > token1.get_token_priority());
         assert!(!calculator.is_inverted);
         // Its buy, as amount0(WETH) < 0 (we received WETH, pool outflow) and amount1 > 0 (USDC sent, pool inflow)
         assert_eq!(result.order_side, OrderSide::Buy);
@@ -407,15 +396,13 @@ mod tests {
     #[rstest]
     fn test_swap_trade_info_calculator_calculations_sell(weth: Token, usdc: Token) {
         //Real Arbitrum transaction: https://arbiscan.io/tx/0x1fbedacf4a1cc7f76174d905c93d2f56d42335cadb4a782e2d74e3019107286b
-        let token0 = Arc::new(weth);
-        let token1 = Arc::new(usdc);
         let raw_data = RawSwapData::new(
             I256::from_str("193450074461093702").unwrap(),
             I256::from_str("-691892530").unwrap(),
             U160::from_str("4739235524363817533004858").unwrap(),
         );
 
-        let calculator = SwapTradeInfoCalculator::new(&token0, &token1, raw_data);
+        let calculator = SwapTradeInfoCalculator::new(&weth, &usdc, raw_data);
         let result = calculator.compute().unwrap();
         // Its sell as amount0(WETH) > 0 (we send WETH, pool inflow) and amount1 <0 (USDC received, pool outflow)
         assert_eq!(result.order_side, OrderSide::Sell);

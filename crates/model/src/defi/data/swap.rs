@@ -20,7 +20,7 @@ use nautilus_core::UnixNanos;
 
 use crate::{
     defi::{
-        SharedChain, SharedDex, SharedToken,
+        SharedChain, SharedDex, Token,
         data::swap_trade_info::{SwapTradeInfo, SwapTradeInfoCalculator},
     },
     identifiers::InstrumentId,
@@ -148,21 +148,28 @@ impl PoolSwap {
     /// standard trading terminology (base/quote, buy/sell, execution price). The computation
     /// determines token roles based on priority and handles decimal adjustments.
     ///
+    /// # Arguments
+    ///
+    /// * `token0` - Reference to token0 in the pool
+    /// * `token1` - Reference to token1 in the pool
+    /// * `sqrt_price_x96` - Optional square root price before the swap (Q96 format) for calculating price impact and slippage
+    ///
     /// # Errors
     ///
-    /// Returns an error if the trade info computation fails.
+    /// Returns an error if the trade info computation or price calculations fail.
     ///
     pub fn calculate_trade_info(
         &mut self,
-        token0: &SharedToken,
-        token1: &SharedToken,
+        token0: &Token,
+        token1: &Token,
+        sqrt_price_x96: Option<U160>,
     ) -> anyhow::Result<()> {
         let trade_info_calculator = SwapTradeInfoCalculator::new(
             token0,
             token1,
             RawSwapData::new(self.amount0, self.amount1, self.sqrt_price_x96),
         );
-        self.trade_info = Some(trade_info_calculator.compute()?);
+        self.trade_info = Some(trade_info_calculator.compute(sqrt_price_x96)?);
 
         Ok(())
     }
