@@ -28,10 +28,10 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 
 use crate::defi::{
-    AmmType, Chain, Dex, DexType, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain,
-    SharedDex, Token,
+    Chain, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
     data::{DexPoolData, PoolFeeCollect, block::BlockPosition},
     pool_analysis::{profiler::PoolProfiler, quote::SwapQuote},
+    stubs::{arbitrum, uniswap_v3},
     tick_map::{
         liquidity_math::tick_spacing_to_max_liquidity_per_tick,
         sqrt_price_math::{
@@ -48,26 +48,6 @@ static LOG_INDEX_COUNTER: AtomicU32 = AtomicU32::new(0);
 /// Gets the next log index for test events
 fn next_log_index() -> u32 {
     LOG_INDEX_COUNTER.fetch_add(1, Ordering::SeqCst)
-}
-
-fn arbitrum() -> SharedChain {
-    Arc::new(Chain::from_chain_id(42161).unwrap().clone())
-}
-
-fn uniswap_v3(arbitrum: SharedChain) -> SharedDex {
-    let dex = Dex::new(
-        (*arbitrum).clone(),
-        DexType::UniswapV3,
-        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-        0,
-        AmmType::CLAMM,
-        "PoolCreated",
-        "Swap",
-        "Mint",
-        "Burn",
-        "Collect",
-    );
-    Arc::new(dex)
 }
 
 const TICK_SPACING: i32 = 60;
@@ -87,7 +67,7 @@ pub fn pool_definition(
     initial_sqrt_price_x96: Option<U160>,
 ) -> Pool {
     let arbitrum = arbitrum();
-    let dex = uniswap_v3(arbitrum.clone());
+    let dex = uniswap_v3();
     let weth = Token::new(
         arbitrum.clone(),
         address!("0x37a645648dF29205C6261289983FB04ECD70b4B3"),
@@ -133,7 +113,7 @@ fn create_mint_event(
     );
     PoolLiquidityUpdate::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
         pool_definition.address,
         PoolLiquidityUpdateType::Mint,
@@ -168,7 +148,7 @@ fn create_burn_event(
     );
     PoolLiquidityUpdate::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
         pool_definition.address,
         PoolLiquidityUpdateType::Burn,
@@ -196,7 +176,7 @@ fn create_collect_event(
     let pool_definition = pool_definition(None, None, None);
     PoolFeeCollect::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
         pool_definition.address,
         100000,
@@ -327,7 +307,7 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
     let pool_definition = pool_definition(None, None, None);
     let mint_event = PoolLiquidityUpdate::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
         pool_definition.address,
         PoolLiquidityUpdateType::Mint,
@@ -602,7 +582,7 @@ fn test_execute_swap_equivalence() {
     let swap_quote = profiler1.swap_exact_in(amount0_in, true, None).unwrap();
     let swap_event = swap_quote.to_swap_event(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         &pool_address,
         create_block_position(),
         user_address(),
