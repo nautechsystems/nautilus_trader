@@ -59,6 +59,9 @@ TBD
 - Fixed Polymarket maker fill order side inversion (#3126), thanks for reporting @santivazq
 - Fixed Polymarket instrument provider market filtering (#3133), thanks @MisterMM23
 - Fixed Polymarket websocket client cancellation on concurrent subscriptions (#3169), thanks @DeirhX
+- Fixes Polymarket maker trade fills parsing to enable user fill detection based on API key as fallback, thanks @petioptrv.
+- Fixes Polymarket maker trade fills parsing to determine fill asset ID based on the user fill instead of the taker fill, thanks @petioptrv.
+- Fixes Polymarket maker trade fills parsing to enable detection of multiple user maker fills from a single taker order, thanks @petioptrv.
 
 ### Internal Improvements
 - Added BitMEX submit broadcaster
