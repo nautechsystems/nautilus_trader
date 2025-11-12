@@ -7178,18 +7178,50 @@ fn test_position_flip_with_own_order_book() {
     // Assert
     let cache = execution_engine.cache.borrow();
 
-    // Check that we now have 1 position (the flipped position)
+    // Check that we now have 2 positions (original closed + flipped with 'F' suffix)
     let positions = cache.positions(None, None, None, None);
     assert_eq!(
         positions.len(),
-        1,
-        "Expected 1 position after position flip (position replacement)"
+        2,
+        "Expected 2 positions after position flip (original closed + flipped)"
     );
 
-    // Get the flipped position
-    let flipped_position = &positions[0];
+    // Get the original position - should be closed
+    let original_position = cache
+        .position(&position_id)
+        .expect("Original position should exist");
+    assert!(
+        original_position.is_closed(),
+        "Original position should be closed after flip"
+    );
+    assert_eq!(
+        original_position.quantity,
+        Quantity::from(0),
+        "Original position should have quantity 0 after flip"
+    );
 
-    // Verify position has flipped
+    // Get the flipped position - should have 'F' suffix
+    let open_positions = cache.position_open_ids(None, None, None);
+    assert_eq!(
+        open_positions.len(),
+        1,
+        "Should have exactly 1 open position after flip"
+    );
+
+    let flipped_position_id = open_positions
+        .iter()
+        .next()
+        .expect("Should have a flipped position");
+    let flipped_position = cache
+        .position(flipped_position_id)
+        .expect("Flipped position should exist");
+
+    // Verify position has flipped with new ID ending in 'F'
+    assert!(
+        flipped_position_id.to_string().ends_with('F'),
+        "Flipped position ID should end with 'F' suffix, got: {:?}",
+        flipped_position_id
+    );
     assert!(
         flipped_position.is_open(),
         "Flipped position should be open"
@@ -7203,13 +7235,6 @@ fn test_position_flip_with_own_order_book() {
         flipped_position.quantity,
         Quantity::from(100_000),
         "Flipped position should have correct quantity"
-    );
-
-    // Verify the original position is no longer in the cache (it was replaced)
-    // The position ID remains the same but the side and quantity have changed
-    assert_eq!(
-        flipped_position.id, position_id,
-        "Position ID should remain the same after flip"
     );
 
     // Verify own order book state
