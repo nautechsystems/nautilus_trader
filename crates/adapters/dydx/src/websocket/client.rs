@@ -85,7 +85,7 @@ use crate::common::credential::DydxCredential;
 )]
 pub struct DydxWebSocketClient {
     /// The WebSocket connection URL.
-    pub(crate) url: String,
+    url: String,
     /// Optional credential for private channels (only wallet address is used).
     credential: Option<Arc<DydxCredential>>,
     /// Whether authentication is required for this client.
@@ -97,7 +97,7 @@ pub struct DydxWebSocketClient {
     #[allow(dead_code)]
     subscriptions: SubscriptionState,
     /// Shared connection state (lock-free atomic).
-    pub(crate) connection_mode: Arc<ArcSwap<AtomicU8>>,
+    connection_mode: Arc<ArcSwap<AtomicU8>>,
     /// Manual disconnect signal.
     signal: Arc<AtomicBool>,
     /// Cached instruments for parsing market data (Python-accessible).
@@ -209,6 +209,20 @@ impl DydxWebSocketClient {
             mode_u8,
             x if x == ConnectionMode::Active as u8 || x == ConnectionMode::Reconnect as u8
         )
+    }
+
+    /// Returns the URL of this WebSocket client.
+    #[must_use]
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// Returns a clone of the connection mode atomic reference.
+    ///
+    /// This is primarily used for Python bindings that need to monitor connection state.
+    #[must_use]
+    pub fn connection_mode_atomic(&self) -> Arc<ArcSwap<AtomicU8>> {
+        self.connection_mode.clone()
     }
 
     /// Sets the account ID for account message parsing.

@@ -112,13 +112,13 @@ impl DydxHttpClient {
     /// Returns the number of cached instruments.
     #[pyo3(name = "instrument_count")]
     fn py_instrument_count(&self) -> usize {
-        self.instruments_cache.len()
+        self.instruments().len()
     }
 
     /// Returns all cached instrument symbols.
     #[pyo3(name = "instrument_symbols")]
     fn py_instrument_symbols(&self) -> Vec<String> {
-        self.instruments_cache
+        self.instruments()
             .iter()
             .map(|entry| entry.key().to_string())
             .collect()
@@ -129,7 +129,7 @@ impl DydxHttpClient {
             "DydxHttpClient(base_url='{}', is_testnet={}, cached_instruments={})",
             self.base_url(),
             self.is_testnet(),
-            self.instruments_cache.len()
+            self.instruments().len()
         )
     }
 }

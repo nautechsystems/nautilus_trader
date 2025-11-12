@@ -76,8 +76,8 @@ impl DydxWebSocketClient {
 
     /// Returns the WebSocket URL.
     #[getter]
-    fn url(&self) -> String {
-        self.url.clone()
+    fn py_url(&self) -> String {
+        self.url().to_string()
     }
 
     /// Connects the WebSocket client.
@@ -169,7 +169,7 @@ impl DydxWebSocketClient {
         py: Python<'py>,
         timeout_secs: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let connection_mode = self.connection_mode.clone();
+        let connection_mode = self.connection_mode_atomic();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             use nautilus_network::mode::ConnectionMode;
             use std::sync::atomic::Ordering;

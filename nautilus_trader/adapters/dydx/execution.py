@@ -60,13 +60,13 @@ from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMessageGeneral
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderSubaccountMessageContents
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsSubaccountsChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsSubaccountsSubscribed
+from nautilus_trader.adapters.dydx.websocket.client import DYDXWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
@@ -246,22 +246,18 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._set_account_id(account_id)
         self._connect_account_timeout_secs = 10
 
-        # Configuration for private WebSocket (subaccount updates)
-        mnemonic = config.mnemonic or get_mnemonic(is_testnet=config.is_testnet)
-
-        # WebSocket API - Private client for subaccount updates
-        self._ws_client = nautilus_pyo3.DydxWebSocketClient.new_private(  # type: ignore[attr-defined]
-            url=base_url_ws,
-            mnemonic=mnemonic,
-            account_index=self._subaccount,
-            authenticator_ids=[],  # TODO: Get authenticator IDs from config if needed
-            account_id=account_id,
-            heartbeat=20,
+        # WebSocket API
+        self._ws_client = DYDXWebsocketClient(
+            clock=clock,
+            handler=self._handle_ws_message,
+            handler_reconnect=None,
+            base_url=base_url_ws,
+            loop=loop,
         )
 
         # GRPC API
         self._grpc_account = grpc_account_client
-        self._mnemonic = mnemonic
+        self._mnemonic = config.mnemonic or get_mnemonic(is_testnet=config.is_testnet)
 
         # Initialize the wallet in the connect method
         self._wallet: Wallet | None = None
@@ -308,25 +304,16 @@ class DYDXExecutionClient(LiveExecutionClient):
         # The instruments are used in the first account channel message.
         await self._instrument_provider.load_all_async()
 
-        instruments = self._instrument_provider.instruments_pyo3()  # type: ignore[attr-defined]
-
         self._log.info("Initializing websocket connection")
 
         # Connect to websocket
-        await self._ws_client.connect(
-            instruments=instruments,
-            callback=self._handle_ws_message,
-        )
-
-        # Wait for connection to be established
-        await self._ws_client.wait_until_active(timeout_secs=30.0)
-        self._log.info(f"Connected to websocket {self._ws_client.url}", LogColor.BLUE)
+        await self._ws_client.connect()
 
         # Subscribe account updates
         await self._ws_client.subscribe_markets()
         await self._ws_client.subscribe_block_height()
-        await self._ws_client.subscribe_subaccount(
-            address=self._wallet_address,
+        await self._ws_client.subscribe_account_update(
+            wallet_address=self._wallet_address,
             subaccount_number=self._subaccount,
         )
 
@@ -360,24 +347,14 @@ class DYDXExecutionClient(LiveExecutionClient):
             account.set_leverage(instrument_id, leverage)
 
     async def _disconnect(self) -> None:
-        # Delay to allow websocket to send any unsubscribe messages
-        await asyncio.sleep(1.0)
+        await self._ws_client.unsubscribe_markets()
+        await self._ws_client.unsubscribe_block_height()
+        await self._ws_client.unsubscribe_account_update(
+            wallet_address=self._wallet_address,
+            subaccount_number=self._subaccount,
+        )
 
-        # Shutdown websocket
-        if not self._ws_client.is_closed():
-            self._log.info("Disconnecting websocket")
-            await self._ws_client.unsubscribe_markets()
-            await self._ws_client.unsubscribe_block_height()
-            await self._ws_client.unsubscribe_subaccount(
-                address=self._wallet_address,
-                subaccount_number=self._subaccount,
-            )
-            await self._ws_client.disconnect()
-            self._log.info(
-                f"Disconnected from {self._ws_client.url}",
-                LogColor.BLUE,
-            )
-
+        await self._ws_client.disconnect()
         await self._grpc_account.disconnect()
 
     def _stop(self) -> None:

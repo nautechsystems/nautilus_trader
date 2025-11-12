@@ -86,7 +86,7 @@ impl DydxDataClient {
         let data_sender = get_data_event_sender();
 
         // Clone the instruments cache before moving http_client
-        let instruments_cache = http_client.instruments_cache.clone();
+        let instruments_cache = http_client.instruments().clone();
 
         Ok(Self {
             client_id,
