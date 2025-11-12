@@ -1652,8 +1652,14 @@ cdef class ExecutionEngine(Component):
             return
 
         cdef PositionId position_id_flip = fill.position_id
-        if oms_type == OmsType.HEDGING and fill.position_id.is_virtual_c():
-            # Generate new position ID for flipped virtual position
+        if oms_type == OmsType.NETTING:
+            # Generate new position ID for flipped position (NETTING OMS)
+            position_id_flip = self._pos_id_generator.generate(
+                strategy_id=fill.strategy_id,
+                flipped=True,
+            )
+        elif oms_type == OmsType.HEDGING and fill.position_id.is_virtual_c():
+            # Generate new position ID for flipped virtual position (HEDGING OMS)
             position_id_flip = self._pos_id_generator.generate(
                 strategy_id=fill.strategy_id,
                 flipped=True,

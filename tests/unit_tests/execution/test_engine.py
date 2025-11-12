@@ -2082,6 +2082,123 @@ class TestExecutionEngine:
         assert position_flipped.quantity == Quantity.from_int(100_000)
         assert position_flipped.side == PositionSide.LONG
 
+    def test_flip_position_when_netting_oms_generates_new_position_id(self) -> None:
+        """
+        Test that validates the fix for the bug where flipped positions in NETTING OMS
+        should create a new position_id with 'F' suffix, not reuse the original
+        position_id.
+
+        Expected behavior (matching Rust implementation):
+        1. Open SHORT position with position_id "P-19700101-000000-000-001-1"
+        2. Submit larger opposite BUY order to flip position
+        3. Original position should close (quantity=0)
+        4. New flipped position should open with position_id "P-19700101-000000-000-001-1F"
+
+        Bug: Implementation was reusing the same position_id instead of generating new one.
+
+        """
+        # Arrange
+        self.exec_engine.start()
+
+        config = StrategyConfig(oms_type="NETTING")
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Create first SELL order (100,000) to establish short position
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        # Create second BUY order (200,000) - larger than first order to cause flip
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(200_000),
+        )
+
+        position_id_original = PositionId("P-19700101-000000-000-001-1")
+
+        submit_order1 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Process first order (SELL) to create short position
+        self.risk_engine.execute(submit_order1)
+        self.exec_engine.process(TestEventStubs.order_submitted(order1))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(order1, AUDUSD_SIM, position_id=position_id_original),
+        )
+
+        # Verify initial position exists and is short
+        assert self.cache.position_exists(position_id_original)
+        assert self.cache.is_position_open(position_id_original)
+        position_before_flip = self.cache.position(position_id_original)
+        assert position_before_flip.side == PositionSide.SHORT
+        assert position_before_flip.quantity == Quantity.from_int(100_000)
+
+        # Act - Process second order (BUY) with larger quantity to flip position
+        submit_order2 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=position_id_original,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order2)
+        self.exec_engine.process(TestEventStubs.order_submitted(order2))
+        self.exec_engine.process(
+            TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")),
+        )
+        self.exec_engine.process(
+            TestEventStubs.order_filled(order2, AUDUSD_SIM, position_id=position_id_original),
+        )
+
+        # Assert - After fix, the flipped position should have a NEW position_id with 'F' suffix
+        position_id_flipped = PositionId("P-19700101-000000-000-001-1F")
+
+        # The original position should be closed (quantity = 0)
+        position_original = self.cache.position(position_id_original)
+        assert position_original.is_closed
+        assert position_original.quantity == Quantity.from_int(0)
+
+        # The flipped position should have a new position_id with 'F' suffix
+        assert self.cache.position_exists(position_id_flipped), (
+            "Flipped position with 'F' suffix should exist"
+        )
+
+        position_flipped = self.cache.position(position_id_flipped)
+
+        assert self.cache.is_position_open(position_id_flipped), "Flipped position should be open"
+        assert position_flipped.side == PositionSide.LONG, (
+            "Flipped position should be LONG (opposite of original SHORT)"
+        )
+        assert position_flipped.quantity == Quantity.from_int(100_000), (
+            "Flipped position quantity should be 100,000 (200,000 - 100,000)"
+        )
+
+        # Verify both positions exist in cache
+        all_position_ids = self.cache.position_ids()
+        assert position_id_original in all_position_ids, "Cache should contain original position_id"
+        assert position_id_flipped in all_position_ids, (
+            "Cache should contain flipped position_id with 'F' suffix"
+        )
+
     def test_handle_updated_order_event(self) -> None:
         # Arrange
         self.exec_engine.start()

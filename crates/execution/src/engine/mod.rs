@@ -999,14 +999,17 @@ impl ExecutionEngine {
             return;
         }
 
-        let position_id_flip = if oms_type == OmsType::Hedging
+        let position_id_flip = if oms_type == OmsType::Netting {
+            // Generate new position ID for flipped position (NETTING OMS)
+            Some(self.pos_id_generator.generate(fill.strategy_id, true))
+        } else if oms_type == OmsType::Hedging
             && let Some(position_id) = fill.position_id
             && position_id.is_virtual()
         {
             // Generate new position ID for flipped virtual position (Hedging OMS only)
             Some(self.pos_id_generator.generate(fill.strategy_id, true))
         } else {
-            // Default: use the same position ID as the fill (Python behavior)
+            // Default: use the same position ID as the fill
             fill.position_id
         };
 

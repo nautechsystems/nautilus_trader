@@ -4386,22 +4386,266 @@ fn test_flip_position_when_netting_oms(mut execution_engine: ExecutionEngine) {
     // Assert - Check positions after flipping in Netting OMS
     let cache = execution_engine.cache.borrow();
 
-    let position = cache
+    // After the fix, the original position should be closed
+    let position_original = cache
         .position(&position_id)
-        .expect("flipped position should exist");
-    assert_eq!(
-        position.id, position_id,
-        "flipped position should have correct ID"
+        .expect("original position should exist");
+    assert!(
+        position_original.is_closed(),
+        "original position should be closed after flip"
     );
     assert_eq!(
-        position.quantity,
+        position_original.quantity,
+        Quantity::from(0),
+        "original position should have quantity 0 after flip"
+    );
+
+    // Find the flipped position - it should have 'F' suffix
+    let open_positions = cache.position_open_ids(None, None, None);
+    assert!(
+        !open_positions.is_empty(),
+        "Should have at least one open position after flip"
+    );
+
+    let position_id_flipped = open_positions
+        .iter()
+        .next()
+        .expect("Should have a flipped position");
+    let position_flipped = cache
+        .position(position_id_flipped)
+        .expect("flipped position should exist");
+
+    // Verify the flipped position ID has 'F' suffix
+    assert!(
+        position_id_flipped.to_string().ends_with('F'),
+        "flipped position ID should end with 'F' suffix, got: {:?}",
+        position_id_flipped
+    );
+
+    assert_eq!(
+        position_flipped.quantity,
         Quantity::from(100_000),
         "flipped position should have quantity 100,000 after flip"
     );
     assert_eq!(
-        position.side,
+        position_flipped.side,
         nautilus_model::enums::PositionSide::Long,
         "flipped position should be long"
+    );
+}
+
+#[rstest]
+fn test_flip_position_when_netting_oms_generates_new_position_id(
+    mut execution_engine: ExecutionEngine,
+) {
+    // This test validates the fix for the bug where flipped positions in NETTING OMS
+    // should create a new position_id with 'F' suffix, not reuse the original position_id.
+    //
+    // Expected behavior (matching Python implementation):
+    // 1. Open SHORT position with position_id "P-19700101-000000-000-001-1"
+    // 2. Submit larger opposite BUY order to flip position
+    // 3. Original position should close (quantity=0)
+    // 4. New flipped position should open with position_id "P-19700101-000000-000-001-1F"
+    //
+    // Bug: Rust implementation was reusing the same position_id instead of generating new one
+
+    // Arrange
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let instrument = audusd_sim();
+
+    // Register stub client with Netting OMS
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::from("SIM-001"),
+        Venue::from("SIM"),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Rc::new(stub_client))
+        .unwrap();
+
+    // Add instrument and account to cache
+    execution_engine
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.into())
+        .unwrap();
+
+    let account = nautilus_model::accounts::CashAccount::default();
+    execution_engine
+        .cache
+        .borrow_mut()
+        .add_account(account.into())
+        .unwrap();
+
+    // Create first SELL order (100,000) to establish short position
+    let order1 = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-001-1"))
+        .side(nautilus_model::enums::OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    // Create second BUY order (200,000) - larger than first order to cause flip
+    let order2 = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-20240101-000000-001-001-2"))
+        .side(nautilus_model::enums::OrderSide::Buy)
+        .quantity(Quantity::from(200_000))
+        .build();
+
+    // Add orders to cache
+    execution_engine
+        .cache
+        .borrow_mut()
+        .add_order(order1.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    execution_engine
+        .cache
+        .borrow_mut()
+        .add_order(order2.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    let position_id_original = PositionId::from("P-19700101-000000-001-001-1");
+
+    // Process first order (SELL) to create short position
+    let order1_submitted_event =
+        TestOrderEventStubs::submitted(&order1, AccountId::from("SIM-001"));
+    execution_engine.process(&order1_submitted_event);
+
+    let order1_accepted_event = TestOrderEventStubs::accepted(
+        &order1,
+        AccountId::from("SIM-001"),
+        VenueOrderId::from("V-001"),
+    );
+    execution_engine.process(&order1_accepted_event);
+
+    let order1_filled_event = TestOrderEventStubs::filled(
+        &order1,
+        &instrument.into(),
+        Some(TradeId::new("E-19700101-000000-001-001-1")),
+        Some(position_id_original),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::from("SIM-001")),
+    );
+    execution_engine.process(&order1_filled_event);
+
+    // Verify initial position exists and is short
+    {
+        let cache = execution_engine.cache.borrow();
+        assert!(
+            cache.position_exists(&position_id_original),
+            "Initial position should exist"
+        );
+        assert!(
+            cache.is_position_open(&position_id_original),
+            "Initial position should be open"
+        );
+
+        let position = cache
+            .position(&position_id_original)
+            .expect("Position should exist");
+        assert_eq!(
+            position.side,
+            nautilus_model::enums::PositionSide::Short,
+            "Position should be short"
+        );
+        assert_eq!(
+            position.quantity,
+            Quantity::from(100_000),
+            "Position quantity should be 100,000"
+        );
+    }
+
+    // Act - Process second order (BUY) with larger quantity to flip position
+    let order2_submitted_event =
+        TestOrderEventStubs::submitted(&order2, AccountId::from("SIM-001"));
+    execution_engine.process(&order2_submitted_event);
+
+    let order2_accepted_event = TestOrderEventStubs::accepted(
+        &order2,
+        AccountId::from("SIM-001"),
+        VenueOrderId::from("V-002"),
+    );
+    execution_engine.process(&order2_accepted_event);
+
+    let order2_filled_event = TestOrderEventStubs::filled(
+        &order2,
+        &instrument.into(),
+        Some(TradeId::new("E-19700101-000000-001-001-2")),
+        Some(position_id_original), // Fill against the same position
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::from("SIM-001")),
+    );
+    execution_engine.process(&order2_filled_event);
+
+    // Assert - After fix, the flipped position should have a NEW position_id with 'F' suffix
+    let cache = execution_engine.cache.borrow();
+
+    // The original position should be closed (quantity = 0)
+    let position_original = cache
+        .position(&position_id_original)
+        .expect("Original position should exist");
+    assert!(
+        position_original.is_closed(),
+        "Original position should be closed after flip"
+    );
+    assert_eq!(
+        position_original.quantity,
+        Quantity::from(0),
+        "Original position quantity should be 0 after flip"
+    );
+
+    // The flipped position should have a new position_id with 'F' suffix
+    let position_id_flipped = PositionId::from("P-19700101-000000-001-001-1F");
+    assert!(
+        cache.position_exists(&position_id_flipped),
+        "Flipped position with 'F' suffix should exist"
+    );
+
+    let position_flipped = cache
+        .position(&position_id_flipped)
+        .expect("Flipped position should exist");
+
+    assert!(
+        cache.is_position_open(&position_id_flipped),
+        "Flipped position should be open"
+    );
+    assert_eq!(
+        position_flipped.side,
+        nautilus_model::enums::PositionSide::Long,
+        "Flipped position should be LONG (opposite of original SHORT)"
+    );
+    assert_eq!(
+        position_flipped.quantity,
+        Quantity::from(100_000),
+        "Flipped position quantity should be 100,000 (200,000 - 100,000)"
+    );
+
+    // Verify both positions exist in cache
+    let all_position_ids = cache.position_ids(None, None, None);
+    assert!(
+        all_position_ids.contains(&position_id_original),
+        "Cache should contain original position_id"
+    );
+    assert!(
+        all_position_ids.contains(&position_id_flipped),
+        "Cache should contain flipped position_id with 'F' suffix"
     );
 }
 
