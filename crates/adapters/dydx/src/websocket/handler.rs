@@ -177,8 +177,23 @@ impl FeedHandler {
                                     serde_json::from_value::<DydxWsConnectedMsg>(val)
                                         .map(DydxWsMessage::Connected)
                                 } else if meta.is_subscribed() {
-                                    serde_json::from_value::<DydxWsSubscriptionMsg>(val)
-                                        .map(DydxWsMessage::Subscribed)
+                                    // Check if this is a subaccounts subscription with initial state
+                                    if let Ok(sub_msg) =
+                                        serde_json::from_value::<DydxWsSubscriptionMsg>(val.clone())
+                                    {
+                                        if sub_msg.channel == DydxWsChannel::Subaccounts {
+                                            // Parse as subaccounts-specific subscription message
+                                            serde_json::from_value::<
+                                                crate::schemas::ws::DydxWsSubaccountsSubscribed,
+                                            >(val)
+                                            .map(DydxWsMessage::SubaccountsSubscribed)
+                                        } else {
+                                            Ok(DydxWsMessage::Subscribed(sub_msg))
+                                        }
+                                    } else {
+                                        serde_json::from_value::<DydxWsSubscriptionMsg>(val)
+                                            .map(DydxWsMessage::Subscribed)
+                                    }
                                 } else if meta.is_unsubscribed() {
                                     serde_json::from_value::<DydxWsSubscriptionMsg>(val)
                                         .map(DydxWsMessage::Unsubscribed)
@@ -289,6 +304,10 @@ impl FeedHandler {
             DydxWsMessage::Subscribed(sub) => {
                 tracing::debug!("Subscribed to {} (id: {:?})", sub.channel, sub.id);
                 Ok(None)
+            }
+            DydxWsMessage::SubaccountsSubscribed(msg) => {
+                tracing::debug!("Subaccounts subscribed with initial state");
+                self.parse_subaccounts_subscribed(&msg)
             }
             DydxWsMessage::Unsubscribed(unsub) => {
                 tracing::debug!("Unsubscribed from {} (id: {:?})", unsub.channel, unsub.id);
@@ -797,6 +816,18 @@ impl FeedHandler {
         }
 
         Ok(None)
+    }
+
+    fn parse_subaccounts_subscribed(
+        &self,
+        msg: &crate::schemas::ws::DydxWsSubaccountsSubscribed,
+    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+        // Pass raw subaccount subscription to execution client for parsing
+        // The execution client has access to instruments and oracle prices needed for margin calculations
+        tracing::debug!("Forwarding subaccount subscription to execution client");
+        Ok(Some(NautilusWsMessage::SubaccountSubscribed(Box::new(
+            msg.clone(),
+        ))))
     }
 
     fn parse_instrument_id(&self, symbol: &str) -> DydxWsResult<InstrumentId> {

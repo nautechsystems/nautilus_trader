@@ -38,7 +38,7 @@ use anyhow::Context;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
-    identifiers::Symbol,
+    identifiers::{InstrumentId, Symbol},
     instruments::{CryptoPerpetual, InstrumentAny},
 };
 use rust_decimal::Decimal;
@@ -950,6 +950,183 @@ pub fn parse_position_status_report(
         Some(UUID4::new()),
         venue_position_id,
         Some(avg_px_open),
+    ))
+}
+
+/// Parse a dYdX subaccount info into a Nautilus AccountState.
+///
+/// dYdX provides account-level balances with:
+/// - `equity`: Total account value (total balance)
+/// - `freeCollateral`: Available for new orders (free balance)
+/// - `locked`: equity - freeCollateral (calculated)
+///
+/// Margin calculations per position:
+/// - `initial_margin = margin_init * abs(position_size) * oracle_price`
+/// - `maintenance_margin = margin_maint * abs(position_size) * oracle_price`
+///
+/// # Errors
+///
+/// Returns an error if balance fields cannot be parsed.
+pub fn parse_account_state(
+    subaccount: &crate::schemas::ws::DydxSubaccountInfo,
+    account_id: AccountId,
+    instruments: &std::collections::HashMap<InstrumentId, InstrumentAny>,
+    oracle_prices: &std::collections::HashMap<InstrumentId, Decimal>,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<nautilus_model::events::AccountState> {
+    use nautilus_model::{
+        enums::AccountType,
+        events::AccountState,
+        types::{AccountBalance, MarginBalance},
+    };
+    use std::collections::HashMap;
+
+    let mut balances = Vec::new();
+
+    // Parse equity (total) and freeCollateral (free)
+    let equity_f64 = subaccount.equity.parse::<f64>().context(format!(
+        "Failed to parse equity '{}' as f64",
+        subaccount.equity
+    ))?;
+
+    let free_collateral_f64 = subaccount.free_collateral.parse::<f64>().context(format!(
+        "Failed to parse freeCollateral '{}' as f64",
+        subaccount.free_collateral
+    ))?;
+
+    // dYdX uses USDC as the settlement currency
+    let currency = get_currency("USDC");
+
+    let total = Money::new(equity_f64, currency);
+    let free = Money::new(free_collateral_f64, currency);
+    let locked = total - free;
+
+    let balance = AccountBalance::new_checked(total, locked, free)
+        .context("Failed to create AccountBalance from subaccount data")?;
+    balances.push(balance);
+
+    // Calculate margin balances from open positions
+    let mut margins = Vec::new();
+    let mut initial_margins: HashMap<nautilus_model::types::Currency, Decimal> = HashMap::new();
+    let mut maintenance_margins: HashMap<nautilus_model::types::Currency, Decimal> = HashMap::new();
+
+    if let Some(ref positions) = subaccount.open_perpetual_positions {
+        for position in positions.values() {
+            // Parse instrument ID from market symbol (e.g., "BTC-USD" -> "BTC-USD-PERP")
+            let market_str = position.market.as_str();
+            let instrument_id = parse_instrument_id(market_str);
+
+            // Get instrument to access margin parameters
+            let instrument = match instruments.get(&instrument_id) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Cannot calculate margin for position {}: instrument not found",
+                        market_str
+                    );
+                    continue;
+                }
+            };
+
+            // Get margin parameters from instrument
+            let (margin_init, margin_maint) = match instrument {
+                InstrumentAny::CryptoPerpetual(perp) => (perp.margin_init, perp.margin_maint),
+                _ => {
+                    tracing::warn!(
+                        "Instrument {} is not a CryptoPerpetual, skipping margin calculation",
+                        instrument_id
+                    );
+                    continue;
+                }
+            };
+
+            // Parse position size
+            let position_size = match Decimal::from_str(&position.size) {
+                Ok(size) => size.abs(),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse position size '{}' for {}: {}",
+                        position.size,
+                        market_str,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            // Skip closed positions
+            if position_size.is_zero() {
+                continue;
+            }
+
+            // Get oracle price, fallback to entry price
+            let oracle_price = oracle_prices
+                .get(&instrument_id)
+                .copied()
+                .or_else(|| Decimal::from_str(&position.entry_price).ok())
+                .unwrap_or(Decimal::ZERO);
+
+            if oracle_price.is_zero() {
+                tracing::warn!(
+                    "No valid price for position {}, skipping margin calculation",
+                    market_str
+                );
+                continue;
+            }
+
+            // Calculate margins: margin_fraction * abs(size) * oracle_price
+            let initial_margin = margin_init * position_size * oracle_price;
+
+            let maintenance_margin = margin_maint * position_size * oracle_price;
+
+            // Aggregate margins by currency
+            let quote_currency = instrument.quote_currency();
+            *initial_margins
+                .entry(quote_currency)
+                .or_insert(Decimal::ZERO) += initial_margin;
+            *maintenance_margins
+                .entry(quote_currency)
+                .or_insert(Decimal::ZERO) += maintenance_margin;
+        }
+    }
+
+    // Create MarginBalance objects from aggregated margins
+    for (currency, initial_margin) in initial_margins {
+        let maintenance_margin = maintenance_margins
+            .get(&currency)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+
+        let initial_money = Money::from_decimal(initial_margin, currency).context(format!(
+            "Failed to create initial margin Money for {currency}"
+        ))?;
+        let maintenance_money = Money::from_decimal(maintenance_margin, currency).context(
+            format!("Failed to create maintenance margin Money for {currency}"),
+        )?;
+
+        // Create synthetic instrument ID for account-level margin
+        // Format: ACCOUNT.DYDX (similar to OKX pattern)
+        let margin_instrument_id = InstrumentId::new(
+            Symbol::new("ACCOUNT"),
+            nautilus_model::identifiers::Venue::new("DYDX"),
+        );
+
+        let margin_balance =
+            MarginBalance::new(initial_money, maintenance_money, margin_instrument_id);
+        margins.push(margin_balance);
+    }
+
+    Ok(AccountState::new(
+        account_id,
+        AccountType::Margin, // dYdX uses cross-margin
+        balances,
+        margins,
+        true, // is_reported - comes from venue
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        None, // base_currency - dYdX settles in USDC
     ))
 }
 

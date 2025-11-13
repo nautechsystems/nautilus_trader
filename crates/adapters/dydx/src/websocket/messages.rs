@@ -57,6 +57,8 @@ pub enum DydxWsMessage {
     Subscribed(DydxWsSubscriptionMsg),
     /// Unsubscription acknowledgement.
     Unsubscribed(DydxWsSubscriptionMsg),
+    /// Subaccounts subscription with initial account state.
+    SubaccountsSubscribed(crate::schemas::ws::DydxWsSubaccountsSubscribed),
     /// Connected acknowledgement with connection_id.
     Connected(DydxWsConnectedMsg),
     /// Channel data update.
@@ -91,6 +93,8 @@ pub enum NautilusWsMessage {
     Position(Box<PositionStatusReport>),
     /// Account state updates from subaccount stream.
     AccountState(Box<AccountState>),
+    /// Raw subaccount subscription with full state (for execution client parsing).
+    SubaccountSubscribed(Box<crate::schemas::ws::DydxWsSubaccountsSubscribed>),
     /// Error message.
     Error(DydxWebSocketError),
     /// Reconnection notification.
