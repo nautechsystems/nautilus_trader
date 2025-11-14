@@ -30,6 +30,7 @@ use nautilus_model::{
     },
     identifiers::InstrumentId,
 };
+use rust_decimal::Decimal;
 use sqlx::{PgPool, Row, postgres::PgConnectOptions};
 
 use crate::{
@@ -595,10 +596,10 @@ impl BlockchainCacheDatabase {
         let mut amount0s: Vec<String> = Vec::with_capacity(len);
         let mut amount1s: Vec<String> = Vec::with_capacity(len);
         let mut order_sides: Vec<Option<String>> = Vec::with_capacity(len);
-        let mut base_quantities: Vec<Option<f64>> = Vec::with_capacity(len);
-        let mut quote_quantities: Vec<Option<f64>> = Vec::with_capacity(len);
-        let mut spot_prices: Vec<Option<f64>> = Vec::with_capacity(len);
-        let mut execution_prices: Vec<Option<f64>> = Vec::with_capacity(len);
+        let mut base_quantities: Vec<Option<Decimal>> = Vec::with_capacity(len);
+        let mut quote_quantities: Vec<Option<Decimal>> = Vec::with_capacity(len);
+        let mut spot_prices: Vec<Option<Decimal>> = Vec::with_capacity(len);
+        let mut execution_prices: Vec<Option<Decimal>> = Vec::with_capacity(len);
 
         // Fill vectors from swaps
         for swap in swaps {
@@ -619,10 +620,10 @@ impl BlockchainCacheDatabase {
             // Extract trade_info fields if available
             if let Some(ref trade_info) = swap.trade_info {
                 order_sides.push(Some(trade_info.order_side.to_string()));
-                base_quantities.push(Some(trade_info.quantity_base.as_f64()));
-                quote_quantities.push(Some(trade_info.quantity_quote.as_f64()));
-                spot_prices.push(Some(trade_info.spot_price.as_f64()));
-                execution_prices.push(Some(trade_info.execution_price.as_f64()));
+                base_quantities.push(Some(trade_info.quantity_base.as_decimal()));
+                quote_quantities.push(Some(trade_info.quantity_quote.as_decimal()));
+                spot_prices.push(Some(trade_info.spot_price.as_decimal()));
+                execution_prices.push(Some(trade_info.execution_price.as_decimal()));
             } else {
                 order_sides.push(None);
                 base_quantities.push(None);
@@ -839,10 +840,10 @@ impl BlockchainCacheDatabase {
             if let Some(ref trade_info) = swap.trade_info {
                 (
                     Some(trade_info.order_side.to_string()),
-                    Some(trade_info.quantity_base.as_f64()),
-                    Some(trade_info.quantity_quote.as_f64()),
-                    Some(trade_info.spot_price.as_f64()),
-                    Some(trade_info.execution_price.as_f64()),
+                    Some(trade_info.quantity_base.as_decimal()),
+                    Some(trade_info.quantity_quote.as_decimal()),
+                    Some(trade_info.spot_price.as_decimal()),
+                    Some(trade_info.execution_price.as_decimal()),
                 )
             } else {
                 (None, None, None, None, None)

@@ -567,29 +567,33 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(side_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&side_bytes)?;
 
-            // base_quantity (DOUBLE PRECISION)
-            let base_qty_f64 = trade_info.quantity_base.as_f64();
-            let base_qty_bytes = base_qty_f64.to_be_bytes();
+            // base_quantity (NUMERIC) - convert Decimal to string representation
+            let base_qty_decimal = trade_info.quantity_base.as_decimal();
+            let base_qty_str = base_qty_decimal.to_string();
+            let base_qty_bytes = base_qty_str.as_bytes();
             row_data.write_all(&(base_qty_bytes.len() as i32).to_be_bytes())?;
-            row_data.write_all(&base_qty_bytes)?;
+            row_data.write_all(base_qty_bytes)?;
 
-            // quote_quantity (DOUBLE PRECISION)
-            let quote_qty_f64 = trade_info.quantity_quote.as_f64();
-            let quote_qty_bytes = quote_qty_f64.to_be_bytes();
+            // quote_quantity (NUMERIC) - convert Decimal to string representation
+            let quote_qty_decimal = trade_info.quantity_quote.as_decimal();
+            let quote_qty_str = quote_qty_decimal.to_string();
+            let quote_qty_bytes = quote_qty_str.as_bytes();
             row_data.write_all(&(quote_qty_bytes.len() as i32).to_be_bytes())?;
-            row_data.write_all(&quote_qty_bytes)?;
+            row_data.write_all(quote_qty_bytes)?;
 
-            // spot_price (DOUBLE PRECISION)
-            let spot_price_f64 = trade_info.spot_price.as_f64();
-            let spot_price_bytes = spot_price_f64.to_be_bytes();
+            // spot_price (NUMERIC) - convert Decimal to string representation
+            let spot_price_decimal = trade_info.spot_price.as_decimal();
+            let spot_price_str = spot_price_decimal.to_string();
+            let spot_price_bytes = spot_price_str.as_bytes();
             row_data.write_all(&(spot_price_bytes.len() as i32).to_be_bytes())?;
-            row_data.write_all(&spot_price_bytes)?;
+            row_data.write_all(spot_price_bytes)?;
 
-            // execution_price (DOUBLE PRECISION)
-            let exec_price_f64 = trade_info.execution_price.as_f64();
-            let exec_price_bytes = exec_price_f64.to_be_bytes();
+            // execution_price (NUMERIC) - convert Decimal to string representation
+            let exec_price_decimal = trade_info.execution_price.as_decimal();
+            let exec_price_str = exec_price_decimal.to_string();
+            let exec_price_bytes = exec_price_str.as_bytes();
             row_data.write_all(&(exec_price_bytes.len() as i32).to_be_bytes())?;
-            row_data.write_all(&exec_price_bytes)?;
+            row_data.write_all(exec_price_bytes)?;
         } else {
             // All 5 fields are NULL when trade_info is not available
             row_data.write_all(&(-1i32).to_be_bytes())?; // NULL for order_side

@@ -360,10 +360,10 @@ CREATE TABLE IF NOT EXISTS "pool_swap_event" (
     amount0 I256 NOT NULL,
     amount1 I256 NOT NULL,
     order_side TEXT,
-    base_quantity DOUBLE PRECISION,
-    quote_quantity DOUBLE PRECISION,
-    spot_price DOUBLE PRECISION,
-    execution_price DOUBLE PRECISION,
+    base_quantity NUMERIC,
+    quote_quantity NUMERIC,
+    spot_price NUMERIC,
+    execution_price NUMERIC,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
 --     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number), // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)

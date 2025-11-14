@@ -259,6 +259,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
   "runtime-tokio",
   "json",
   "derive",
+  "rust_decimal",
 ] }
 strum = { version = "0.27.2", features = ["derive"] }
 sysinfo = { version = "0.37.2", default-features = false, features = [
