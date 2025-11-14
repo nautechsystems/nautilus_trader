@@ -642,18 +642,14 @@ impl DydxRawHttpClient {
 )]
 pub struct DydxHttpClient {
     /// Raw HTTP client wrapped in Arc for efficient cloning.
-    inner: Arc<DydxRawHttpClient>,
+    pub(crate) inner: Arc<DydxRawHttpClient>,
     /// Instrument cache shared across the adapter using DashMap for thread-safe access.
-<<<<<<< HEAD
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
-=======
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     /// Cached mapping from CLOB pair ID → InstrumentId for efficient lookups.
     ///
     /// This is populated from HTTP PerpetualMarket metadata (`clob_pair_id`) alongside
     /// instrument creation to avoid re-deriving IDs from symbols or other heuristics.
     pub(crate) clob_pair_id_to_instrument: Arc<DashMap<u32, InstrumentId>>,
->>>>>>> b5d42517a (Add dYdX WebSocket parsing, reconciliation filtering, order stubs, and comprehensive tests)
     /// Tracks whether the instrument cache has been initialized.
     cache_initialized: AtomicBool,
 }
@@ -953,16 +949,12 @@ impl DydxHttpClient {
         self.instruments_cache.len()
     }
 
-<<<<<<< HEAD
     /// Returns a reference to the instruments cache.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the shared instrument cache.
     #[must_use]
     pub fn instruments(&self) -> &Arc<DashMap<Ustr, InstrumentAny>> {
         &self.instruments_cache
-=======
+    }
+
     /// Get the mapping from CLOB pair ID to `InstrumentId`.
     ///
     /// This map is populated when instruments are fetched via `request_instruments` /
@@ -970,7 +962,6 @@ impl DydxHttpClient {
     #[must_use]
     pub fn clob_pair_id_mapping(&self) -> &Arc<DashMap<u32, InstrumentId>> {
         &self.clob_pair_id_to_instrument
->>>>>>> b5d42517a (Add dYdX WebSocket parsing, reconciliation filtering, order stubs, and comprehensive tests)
     }
 }
 
