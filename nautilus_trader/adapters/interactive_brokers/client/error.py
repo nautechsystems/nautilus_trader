@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -114,13 +114,15 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
                     LogColor.BLUE,
                 )
                 self._is_ib_connected.clear()
-        elif error_code in self.CONNECTIVITY_RESTORED_CODES:
-            if not self._is_ib_connected.is_set():
-                self._log.debug(
-                    f"`_is_ib_connected` set by code {error_code} in `_process_error`",
-                    LogColor.BLUE,
-                )
-                self._is_ib_connected.set()
+        elif (
+            error_code in self.CONNECTIVITY_RESTORED_CODES
+            and not self._is_ib_connected.is_set()
+        ):
+            self._log.debug(
+                f"`_is_ib_connected` set by code {error_code} in `_process_error`",
+                LogColor.BLUE,
+            )
+            self._is_ib_connected.set()
 
     async def _handle_subscription_error(
         self,

@@ -55,7 +55,10 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
@@ -240,12 +243,12 @@ class BybitExecutionClient(LiveExecutionClient):
         self._http_client.cancel_all_requests()
 
         # Close private WebSocket
-        if await self._ws_private_client.is_active():
+        if not self._ws_private_client.is_closed():
             self._log.info("Disconnecting private websocket")
             await self._ws_private_client.close()
 
         # Close trade WebSocket
-        if await self._ws_trade_client.is_active():
+        if not self._ws_trade_client.is_closed():
             self._log.info("Disconnecting trade websocket")
             await self._ws_trade_client.close()
 
@@ -271,9 +274,9 @@ class BybitExecutionClient(LiveExecutionClient):
         instruments_pyo3 = self.bybit_instrument_provider.instruments_pyo3()
 
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
-            self._ws_private_client.add_instrument(inst)
-            self._ws_trade_client.add_instrument(inst)
+            self._http_client.cache_instrument(inst)
+            self._ws_private_client.cache_instrument(inst)
+            self._ws_trade_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -556,12 +559,23 @@ class BybitExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+            product_types_to_query = self._product_types
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
                 )
 
-            for product_type in self._product_types:
+                try:
+                    product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+                        command.instrument_id.symbol.value,
+                    )
+                    product_types_to_query = [product_type]
+                except ValueError:
+                    # Symbol lacks suffix, fall back to querying all configured types
+                    pass
+
+            for product_type in product_types_to_query:
                 response = await self._http_client.request_position_status_reports(
                     account_id=self.pyo3_account_id,
                     product_type=product_type,
@@ -660,6 +674,19 @@ class BybitExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
+    def _check_order_validity(
+        self,
+        order: Order,
+        product_type: BybitProductType,
+    ) -> str | None:
+        if order.is_post_only and order.order_type != OrderType.LIMIT:
+            return "UNSUPPORTED_POST_ONLY"
+
+        if order.is_reduce_only and product_type == BybitProductType.SPOT:
+            return "UNSUPPORTED_REDUCE_ONLY_SPOT"
+
+        return None
+
     async def _query_account(self, _command: QueryAccount) -> None:
         await self._update_account_state()
 
@@ -670,6 +697,20 @@ class BybitExecutionClient(LiveExecutionClient):
             self._log.warning(f"Cannot submit already closed order: {order}")
             return
 
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            order.instrument_id.symbol.value,
+        )
+
+        if reason := self._check_order_validity(order, product_type):
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         # Generate OrderSubmitted event
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -678,6 +719,8 @@ class BybitExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
+        pyo3_trader_id = nautilus_pyo3.TraderId(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
         pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
         pyo3_order_side = order_side_to_pyo3(order.side)
@@ -692,24 +735,29 @@ class BybitExecutionClient(LiveExecutionClient):
         if order.has_trigger_price:
             pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 
-        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
-            order.instrument_id.symbol.value,
+        is_leverage = command.params.get("is_leverage", False) if command.params else False
+        is_quote_quantity = (
+            order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
         )
 
         try:
             # Submit via WebSocket
             await self._ws_trade_client.submit_order(
                 product_type=product_type,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 order_side=pyo3_order_side,
                 order_type=pyo3_order_type,
                 quantity=pyo3_quantity,
+                is_quote_quantity=is_quote_quantity,
                 time_in_force=pyo3_time_in_force,
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
+                is_leverage=is_leverage,
             )
         except Exception as e:
             self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
@@ -727,12 +775,28 @@ class BybitExecutionClient(LiveExecutionClient):
         if not command.order_list.orders:
             return
 
+        is_leverage = command.params.get("is_leverage", False) if command.params else False
+
         now_ns = self._clock.timestamp_ns()
         order_params = []
 
         for order in command.order_list.orders:
             if order.is_closed:
                 self._log.warning(f"Cannot submit already closed order: {order}")
+                continue
+
+            product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+                order.instrument_id.symbol.value,
+            )
+
+            if reason := self._check_order_validity(order, product_type):
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=reason,
+                    ts_event=now_ns,
+                )
                 continue
 
             self.generate_order_submitted(
@@ -758,9 +822,8 @@ class BybitExecutionClient(LiveExecutionClient):
 
             post_only = order.is_post_only
             reduce_only = order.is_reduce_only
-
-            product_type = nautilus_pyo3.bybit_product_type_from_symbol(
-                order.instrument_id.symbol.value,
+            is_quote_quantity = (
+                order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
             )
 
             params = self._ws_trade_client.build_place_order_params(
@@ -770,16 +833,24 @@ class BybitExecutionClient(LiveExecutionClient):
                 order_side=pyo3_order_side,
                 order_type=pyo3_order_type,
                 quantity=pyo3_quantity,
+                is_quote_quantity=is_quote_quantity,
                 time_in_force=pyo3_time_in_force,
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
                 post_only=post_only,
                 reduce_only=reduce_only,
+                is_leverage=is_leverage,
             )
             order_params.append(params)
 
         if order_params:
-            await self._ws_trade_client.batch_place_orders(order_params)
+            pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)
+            pyo3_strategy_id = nautilus_pyo3.StrategyId(command.strategy_id.value)
+            await self._ws_trade_client.batch_place_orders(
+                pyo3_trader_id,
+                pyo3_strategy_id,
+                order_params,
+            )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -794,6 +865,8 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
+        pyo3_trader_id = nautilus_pyo3.TraderId(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         pyo3_client_order_id = (
             nautilus_pyo3.ClientOrderId(command.client_order_id.value)
@@ -818,9 +891,11 @@ class BybitExecutionClient(LiveExecutionClient):
             # Modify via WebSocket
             await self._ws_trade_client.modify_order(
                 product_type=product_type,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
                 instrument_id=pyo3_instrument_id,
-                venue_order_id=pyo3_venue_order_id,
                 client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
                 quantity=pyo3_quantity,
                 price=pyo3_price,
             )
@@ -848,6 +923,8 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
+        pyo3_trader_id = nautilus_pyo3.TraderId(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         pyo3_client_order_id = (
             nautilus_pyo3.ClientOrderId(command.client_order_id.value)
@@ -868,9 +945,11 @@ class BybitExecutionClient(LiveExecutionClient):
             # Cancel via WebSocket
             await self._ws_trade_client.cancel_order(
                 product_type=product_type,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
                 instrument_id=pyo3_instrument_id,
-                venue_order_id=pyo3_venue_order_id,
                 client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
             )
         except Exception as e:
             self._log.error(f"Failed to cancel order {command.client_order_id}: {e}")
@@ -884,6 +963,12 @@ class BybitExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"Bybit does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
 
         product_type = nautilus_pyo3.bybit_product_type_from_symbol(
@@ -935,10 +1020,15 @@ class BybitExecutionClient(LiveExecutionClient):
             command.cancels[0].instrument_id.symbol.value,
         )
 
+        pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId(command.strategy_id.value)
+
         try:
             # Batch cancel via WebSocket
             await self._ws_trade_client.batch_cancel_orders(
                 product_type=product_type,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
                 instrument_ids=instrument_ids,
                 venue_order_ids=venue_order_ids,
                 client_order_ids=client_order_ids,

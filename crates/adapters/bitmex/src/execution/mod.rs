@@ -218,12 +218,12 @@ impl BitmexExecutionClient {
         instruments.sort_by_key(|instrument| instrument.id());
 
         for instrument in &instruments {
-            self.http_client.add_instrument(instrument.clone());
-            self._submitter.add_instrument(instrument.clone());
-            self._canceller.add_instrument(instrument.clone());
+            self.http_client.cache_instrument(instrument.clone());
+            self._submitter.cache_instrument(instrument.clone());
+            self._canceller.cache_instrument(instrument.clone());
         }
 
-        self.ws_client.initialize_instruments_cache(instruments);
+        self.ws_client.cache_instruments(instruments);
 
         self.instruments_initialized = true;
         Ok(())
@@ -745,11 +745,16 @@ fn dispatch_ws_message(message: NautilusWsMessage) {
         NautilusWsMessage::OrderUpdated(event) => {
             dispatch_order_event(OrderEventAny::Updated(event));
         }
-        NautilusWsMessage::Data(_) | NautilusWsMessage::FundingRateUpdates(_) => {
+        NautilusWsMessage::Data(_)
+        | NautilusWsMessage::Instruments(_)
+        | NautilusWsMessage::FundingRateUpdates(_) => {
             tracing::debug!("Ignoring BitMEX data message on execution stream");
         }
         NautilusWsMessage::Reconnected => {
             tracing::info!("BitMEX execution websocket reconnected");
+        }
+        NautilusWsMessage::Authenticated => {
+            tracing::debug!("BitMEX execution websocket authenticated");
         }
     }
 }

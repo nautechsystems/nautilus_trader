@@ -2013,7 +2013,7 @@ class TestPosition:
         ]
 
         position = None
-        for i, (side, qty, price) in enumerate(fills_data):
+        for _, (side, qty, price) in enumerate(fills_data):
             order = self.order_factory.market(
                 AUDUSD_SIM.id,
                 side,
@@ -2396,7 +2396,7 @@ class TestPosition:
         ]
 
         position = None
-        for i, (side, qty, price) in enumerate(fills_data):
+        for _, (side, qty, price) in enumerate(fills_data):
             order = self.order_factory.market(
                 AUDUSD_SIM.id,
                 side,

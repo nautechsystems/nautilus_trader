@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -22,6 +23,7 @@ import pytest
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
@@ -29,12 +31,19 @@ from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import eventually
@@ -99,6 +108,7 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
+            config=LiveExecEngineConfig(debug=True),
         )
 
         self.risk_engine = LiveRiskEngine(
@@ -107,6 +117,7 @@ class TestLiveRiskEngine:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
+            config=LiveRiskEngineConfig(debug=True),
         )
 
         self.exec_client = MockExecutionClient(
@@ -567,3 +578,207 @@ class TestLiveRiskEngine:
 
             engine.stop()
             await eventually(lambda: engine.evt_qsize() == 0)
+
+    @pytest.mark.asyncio()
+    async def test_trailing_stop_market_order_uses_quotes_when_no_trade_data(self):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        # Add only quote data (no trade data) to test LAST_OR_BID_ASK fallback
+        quote = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid_price=Price.from_str("0.99900"),
+            ask_price=Price.from_str("1.00100"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        order = self.order_factory.trailing_stop_market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            trailing_offset=Decimal("0.00010"),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+        )
+
+        assert order.trigger_price is None
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.order_factory.strategy_id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.start()
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        await eventually(lambda: self.risk_engine.command_count > 0)
+
+        # Assert - order should pass risk check using quote fallback
+        assert self.risk_engine.command_count == 1
+
+        self.risk_engine.stop()
+
+    @pytest.mark.asyncio()
+    async def test_trailing_stop_market_order_risk_check_without_trigger_price(self):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        trade = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("1"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_trade_tick(trade)
+
+        order = self.order_factory.trailing_stop_market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            trailing_offset=Decimal("0.00010"),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+        )
+
+        assert order.trigger_price is None
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.order_factory.strategy_id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.start()
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        await eventually(lambda: self.risk_engine.command_count > 0)
+
+        # Assert
+        assert self.risk_engine.command_count == 1
+
+        self.risk_engine.stop()
+
+    @pytest.mark.asyncio()
+    async def test_trailing_stop_market_order_denies_unsupported_offset_type(self):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        trade = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("1"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_trade_tick(trade)
+
+        order = self.order_factory.trailing_stop_market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            trailing_offset=Decimal("0.00010"),
+            trailing_offset_type=TrailingOffsetType.PRICE_TIER,
+        )
+
+        assert order.trigger_price is None
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.order_factory.strategy_id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.exec_engine.start()
+        self.risk_engine.start()
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        await eventually(lambda: self.risk_engine.cmd_qsize() == 0)
+
+        # Assert
+        assert len(self.exec_client.commands) == 0
+
+        self.risk_engine.stop()
+        self.exec_engine.stop()
+
+    @pytest.mark.asyncio()
+    @pytest.mark.parametrize(
+        "offset_type",
+        [
+            TrailingOffsetType.PRICE,
+            TrailingOffsetType.BASIS_POINTS,
+            TrailingOffsetType.TICKS,
+        ],
+    )
+    async def test_trailing_stop_market_order_accepts_supported_offset_types(
+        self,
+        offset_type,
+    ):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        trade = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("1"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_trade_tick(trade)
+
+        offset = Decimal("0.00010") if offset_type == TrailingOffsetType.PRICE else Decimal("10")
+        order = self.order_factory.trailing_stop_market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(100_000),
+            trailing_offset=offset,
+            trailing_offset_type=offset_type,
+        )
+
+        assert order.trigger_price is None
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.order_factory.strategy_id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.start()
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        await eventually(lambda: self.risk_engine.command_count > 0)
+
+        # Assert
+        assert self.risk_engine.command_count == 1
+        assert order.status != OrderStatus.DENIED
+
+        self.risk_engine.stop()

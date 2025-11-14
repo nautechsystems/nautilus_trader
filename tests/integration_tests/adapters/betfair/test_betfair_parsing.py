@@ -646,7 +646,7 @@ class TestBetfairParsing:
             side=Side.BACK,
             persistence_type=PersistenceType.LAPSE,
             order_type=OrderType.LIMIT,
-            placed_date=datetime.datetime.now(),
+            placed_date=datetime.datetime.now(tz=datetime.UTC),
             bsp_liability=0.0,
             status=status,
             average_price_matched=3.4211,

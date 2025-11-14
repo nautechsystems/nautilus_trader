@@ -7,6 +7,7 @@ members = [
   "crates/adapters/bybit",
   "crates/adapters/coinbase_intx",
   "crates/adapters/databento",
+  "crates/adapters/dydx",
   "crates/adapters/hyperliquid",
   "crates/adapters/okx",
   "crates/adapters/tardis",
@@ -92,16 +93,17 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
 # Dependencies
 # -----------------------------------------------------------------------------
 ahash = "0.8.12"
-alloy = { version = "1.0.42", default-features = false, features = [
+alloy = { version = "1.1.0", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
 alloy-primitives = { version = "1.4.1", features = ["serde"] }
-alloy-signer = { version = "1.0.42", default-features = false }
-alloy-signer-local = { version = "1.0.42", default-features = false, features = [
+alloy-signer = { version = "1.1.0", default-features = false }
+alloy-signer-local = { version = "1.1.0", default-features = false, features = [
   "mnemonic",
 ] }
 anyhow = "1.0.100"
+arc-swap = "1.7.1"
 arraydeque = "0.5.1"
 # Keep arrow major version in line with datafusion
 arrow = { version = "56.2.0", default-features = false, features = [
@@ -116,6 +118,7 @@ aws-lc-rs = { version = "1.14.1", default-features = false, features = [
 ] }
 base64 = "0.22.1"
 binary-heap-plus = "0.5.0"
+bip32 = "0.5.3"
 bytes = { version = "1.10.1", features = ["serde"] }
 chrono = { version = "0.4.42", default-features = false, features = [
   "serde",
@@ -125,6 +128,7 @@ chrono = { version = "0.4.42", default-features = false, features = [
 chrono-tz = "0.10.4"
 clap = { version = "4.5.51", features = ["derive", "env"] }
 compare = "0.1.0"
+cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
 dashmap = "6.1.0"
 databento = { version = "0.35.0", default-features = false, features = [
@@ -182,6 +186,8 @@ parquet = { version = "56.2.0", default-features = false, features = [
   "async",
 ] }
 pem = "3.0.6"
+prost = { version = "0.14.1", default-features = false, features = ["std"] }
+prost-types = "0.14.1"
 pyo3 = { version = "0.27.1", default-features = false, features = [
   "chrono",
   "hashbrown",
@@ -224,7 +230,7 @@ reqwest = { version = "0.12.24", default-features = false, features = [
 rmp-serde = "1.3.0"
 rust_decimal = "1.39.0"
 rust_decimal_macros = "1.39.0"
-rustls = { version = "0.23.34", default-features = false, features = [
+rustls = { version = "0.23.35", default-features = false, features = [
   "aws-lc-rs",
   "std",
 ] }
@@ -241,6 +247,7 @@ serde_json = { version = "1.0.145", default-features = false, features = [
 ] }
 serde_repr = "0.1.20"
 serde_urlencoded = "0.7.1"
+serde_with = "3.15.1"
 simple_logger = "5.1.0"
 static_assertions = "1.1.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
@@ -280,7 +287,12 @@ tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.28.0", features = [
   "rustls-tls-webpki-roots",
 ] }
-tokio-util = { version = "0.7.16", default-features = false, features = ["io"] }
+tokio-util = { version = "0.7.17", default-features = false, features = ["io"] }
+tonic = { version = "0.14.2", default-features = false, features = [
+  "channel",
+  "tls-aws-lc",
+  "tls-webpki-roots",
+] }
 toml = { version = "0.9.8", default-features = false, features = [
   "parse",
   "serde",
@@ -303,7 +315,7 @@ url = { version = "2.5.7", default-features = false }
 urlencoding = "2.1.3"
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.18.1", features = ["v4", "serde"] }
-webpki-roots = "1.0.3"
+webpki-roots = "1.0.4"
 zeroize = { version = "1.8.2", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
@@ -324,7 +336,7 @@ proptest = "1.9.0"
 rstest = "0.26.1"
 tempfile = "3.23.0"
 tracing-test = "0.2.5"
-turmoil = "0.6.6"
+turmoil = "0.7.0"
 
 # -----------------------------------------------------------------------------
 # Build dependencies
@@ -335,10 +347,10 @@ cbindgen = "0.29.2"
 # Tools (for cargo install, used by Makefile and CI)
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
-cargo-audit = "0.21.2"
+cargo-audit = "0.22.0"
 cargo-deny = "0.18.5"
 cargo-llvm-cov = "0.6.21"
-cargo-nextest = "0.9.108"
+cargo-nextest = "0.9.111"
 lychee = "0.21.0"
 
 # -----------------------------------------------------------------------------

@@ -774,10 +774,10 @@ def _tick_size_to_precision(tick_size: float | Decimal) -> int:
 def decade_digit(last_digit: str, contract: IBContract) -> int:
     if year := contract.lastTradeDateOrContractMonth[:4]:
         return int(year[2:3])
-    elif int(last_digit) > int(repr(datetime.datetime.now().year)[-1]):
-        return int(repr(datetime.datetime.now().year)[-2]) - 1
+    elif int(last_digit) > int(repr(datetime.datetime.now(tz=datetime.UTC).year)[-1]):
+        return int(repr(datetime.datetime.now(tz=datetime.UTC).year)[-2]) - 1
     else:
-        return int(repr(datetime.datetime.now().year)[-2])
+        return int(repr(datetime.datetime.now(tz=datetime.UTC).year)[-2])
 
 
 def ib_contract_to_instrument_id(
@@ -819,9 +819,7 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         symbol = contract.symbol
     elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']}"
-    elif security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol)):
-        symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year'][-1]}"
-    elif security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol)):
+    elif (security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol))) or (security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol))):
         symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year'][-1]}"
     elif security_type == "FOP" and (m := RE_FOP_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']} {m['right']}{m['strike']}"
@@ -914,9 +912,7 @@ def ib_contract_to_instrument_id_raw_symbology(
     contract: IBContract,
     venue: str,
 ) -> InstrumentId:
-    if contract.secType == "CFD":
-        symbol = f"{contract.localSymbol}={contract.secType}"
-    elif contract.secType == "CMDTY":
+    if contract.secType == "CFD" or contract.secType == "CMDTY":
         symbol = f"{contract.localSymbol}={contract.secType}"
     else:
         symbol = f"{contract.localSymbol}={contract.secType}"

@@ -15,6 +15,7 @@
 
 import asyncio
 from collections.abc import Callable
+from contextlib import suppress
 
 
 async def eventually(condition: Callable, timeout: float = 2.0) -> None:
@@ -69,8 +70,6 @@ def ensure_all_tasks_completed() -> None:
 
     gather_all = asyncio.gather(*all_tasks, return_exceptions=True)
 
-    try:
+    # Expected due to task cancellation
+    with suppress(asyncio.CancelledError):
         loop.run_until_complete(gather_all)
-    except asyncio.CancelledError:
-        # Expected due to task cancellation
-        pass

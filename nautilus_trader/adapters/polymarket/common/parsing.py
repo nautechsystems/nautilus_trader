@@ -102,7 +102,7 @@ def parse_order_status(order_status: PolymarketOrderStatus) -> OrderStatus:
             return OrderStatus.FILLED
 
 
-def parse_instrument(
+def parse_polymarket_instrument(
     market_info: dict[str, Any],
     token_id: str,
     outcome: str,

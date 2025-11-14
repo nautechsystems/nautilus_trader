@@ -93,6 +93,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -520,9 +521,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        """
-        Create an order status report for a specific order.
-        """
         self._log.debug("Requesting OrderStatusReport...")
 
         client_order_id = command.client_order_id
@@ -609,9 +607,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
-        """
-        Create an order status report.
-        """
         self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
@@ -691,9 +686,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        """
-        Create an order fill report.
-        """
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
@@ -760,9 +752,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        """
-        Generate position status reports.
-        """
         self._log.debug("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
 
@@ -1464,6 +1453,12 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"dYdX does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         open_orders_strategy: list[Order] = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,

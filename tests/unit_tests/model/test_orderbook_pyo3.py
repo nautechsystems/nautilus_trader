@@ -35,10 +35,7 @@ def populate_book(
     bids: list[tuple] | None = None,
     asks: list[tuple] | None = None,
 ) -> None:
-    bids_counter: int = 0
-    asks_counter: int = 0
-
-    for price, size in bids or []:
+    for bids_counter, (price, size) in enumerate(bids or []):
         order = nautilus_pyo3.BookOrder(
             side=nautilus_pyo3.OrderSide.BUY,
             price=nautilus_pyo3.Price(price, price_precision),
@@ -46,8 +43,7 @@ def populate_book(
             order_id=bids_counter,
         )
         book.add(order, 0, 0, 0)
-        bids_counter += 1
-    for price, size in asks or []:
+    for asks_counter, (price, size) in enumerate(asks or []):
         order = nautilus_pyo3.BookOrder(
             side=nautilus_pyo3.OrderSide.SELL,
             price=nautilus_pyo3.Price(price, price_precision),
@@ -55,7 +51,6 @@ def populate_book(
             order_id=asks_counter,
         )
         book.add(order, 0, 0, 0)
-        asks_counter += 1
 
 
 def test_order_book(book: nautilus_pyo3.OrderBook) -> None:

@@ -21,10 +21,6 @@ use crate::common::consts::{info_url, ws_url};
 
 /// Get the HTTP base URL for Hyperliquid API (info endpoint).
 ///
-/// # Arguments
-///
-/// * `is_testnet` - Whether to use the testnet URL.
-///
 /// # Returns
 ///
 /// The HTTP base URL string.
@@ -35,10 +31,6 @@ pub fn get_hyperliquid_http_base_url(is_testnet: bool) -> String {
 }
 
 /// Get the WebSocket URL for Hyperliquid API.
-///
-/// # Arguments
-///
-/// * `is_testnet` - Whether to use the testnet URL.
 ///
 /// # Returns
 ///

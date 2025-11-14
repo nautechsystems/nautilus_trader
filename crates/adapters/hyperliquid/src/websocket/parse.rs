@@ -21,18 +21,20 @@ use anyhow::Context;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{AggressorSide, BookAction, LiquiditySide, OrderSide, OrderType, TimeInForce},
+    enums::{
+        AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType, RecordFlag,
+        TimeInForce,
+    },
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity, price::PriceRaw, quantity::QuantityRaw},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use super::messages::{CandleData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData};
-use crate::common::{
-    enums::hyperliquid_status_to_order_status,
-    parse::{is_conditional_order_data, parse_trigger_order_type},
+use crate::common::parse::{
+    is_conditional_order_data, parse_millis_to_nanos, parse_trigger_order_type,
 };
 
 /// Helper to parse a price string with instrument precision.
@@ -44,9 +46,15 @@ fn parse_price(
     let decimal = Decimal::from_str(price_str)
         .with_context(|| format!("Failed to parse price from '{price_str}' for {field_name}"))?;
 
-    let raw = decimal.mantissa() as PriceRaw;
+    let value = decimal.to_f64().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Failed to convert price '{}' to f64 for {} (out of range or too much precision)",
+            price_str,
+            field_name
+        )
+    })?;
 
-    Ok(Price::from_raw(raw, instrument.price_precision()))
+    Ok(Price::new(value, instrument.price_precision()))
 }
 
 /// Helper to parse a quantity string with instrument precision.
@@ -59,14 +67,15 @@ fn parse_quantity(
         format!("Failed to parse quantity from '{quantity_str}' for {field_name}")
     })?;
 
-    let raw = decimal.mantissa().unsigned_abs() as QuantityRaw;
+    let value = decimal.abs().to_f64().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Failed to convert quantity '{}' to f64 for {} (out of range or too much precision)",
+            quantity_str,
+            field_name
+        )
+    })?;
 
-    Ok(Quantity::from_raw(raw, instrument.size_precision()))
-}
-
-/// Helper to parse millisecond timestamp to UnixNanos.
-fn parse_millis_to_nanos(millis: u64) -> UnixNanos {
-    UnixNanos::from(millis * 1_000_000)
+    Ok(Quantity::new(value, instrument.size_precision()))
 }
 
 /// Parses a WebSocket trade frame into a [`TradeTick`].
@@ -77,18 +86,9 @@ pub fn parse_ws_trade_tick(
 ) -> anyhow::Result<TradeTick> {
     let price = parse_price(&trade.px, instrument, "trade.px")?;
     let size = parse_quantity(&trade.sz, instrument, "trade.sz")?;
-
-    // Determine aggressor side from the 'side' field
-    // In Hyperliquid: "A" = Ask (sell), "B" = Bid (buy)
-    let aggressor = match trade.side.as_str() {
-        "A" => AggressorSide::Seller, // Sell side was aggressor
-        "B" => AggressorSide::Buyer,  // Buy side was aggressor
-        _ => AggressorSide::NoAggressor,
-    };
-
+    let aggressor = AggressorSide::from(trade.side);
     let trade_id = TradeId::new_checked(trade.tid.to_string())
-        .context("Invalid trade identifier in Hyperliquid trade message")?;
-
+        .context("invalid trade identifier in Hyperliquid trade message")?;
     let ts_event = parse_millis_to_nanos(trade.time);
 
     TradeTick::new_checked(
@@ -100,7 +100,7 @@ pub fn parse_ws_trade_tick(
         ts_event,
         ts_init,
     )
-    .context("Failed to construct TradeTick from Hyperliquid trade message")
+    .context("failed to construct TradeTick from Hyperliquid trade message")
 }
 
 /// Parses a WebSocket L2 order book message into [`OrderBookDeltas`].
@@ -112,29 +112,25 @@ pub fn parse_ws_order_book_deltas(
     let ts_event = parse_millis_to_nanos(book.time);
     let mut deltas = Vec::new();
 
-    // Parse bids (index 0)
+    // Treat every book payload as a snapshot: clear existing depth and rebuild it
+    deltas.push(OrderBookDelta::clear(instrument.id(), 0, ts_event, ts_init));
+
+    // Parse bids
     for level in &book.levels[0] {
         let price = parse_price(&level.px, instrument, "book.bid.px")?;
         let size = parse_quantity(&level.sz, instrument, "book.bid.sz")?;
 
-        let action = if size.raw == 0 {
-            BookAction::Delete
-        } else {
-            BookAction::Update
-        };
+        if !size.is_positive() {
+            continue;
+        }
 
-        let order = BookOrder::new(
-            nautilus_model::enums::OrderSide::Buy,
-            price,
-            size,
-            0, // order_id not provided in Hyperliquid L2 data
-        );
+        let order = BookOrder::new(OrderSide::Buy, price, size, 0);
 
         let delta = OrderBookDelta::new(
             instrument.id(),
-            action,
+            BookAction::Add,
             order,
-            0, // flags
+            RecordFlag::F_LAST as u8,
             0, // sequence
             ts_event,
             ts_init,
@@ -143,29 +139,22 @@ pub fn parse_ws_order_book_deltas(
         deltas.push(delta);
     }
 
-    // Parse asks (index 1)
+    // Parse asks
     for level in &book.levels[1] {
         let price = parse_price(&level.px, instrument, "book.ask.px")?;
         let size = parse_quantity(&level.sz, instrument, "book.ask.sz")?;
 
-        let action = if size.raw == 0 {
-            BookAction::Delete
-        } else {
-            BookAction::Update
-        };
+        if !size.is_positive() {
+            continue;
+        }
 
-        let order = BookOrder::new(
-            nautilus_model::enums::OrderSide::Sell,
-            price,
-            size,
-            0, // order_id not provided in Hyperliquid L2 data
-        );
+        let order = BookOrder::new(OrderSide::Sell, price, size, 0);
 
         let delta = OrderBookDelta::new(
             instrument.id(),
-            action,
+            BookAction::Add,
             order,
-            0, // flags
+            RecordFlag::F_LAST as u8,
             0, // sequence
             ts_event,
             ts_init,
@@ -206,7 +195,7 @@ pub fn parse_ws_quote_tick(
         ts_event,
         ts_init,
     )
-    .context("Failed to construct QuoteTick from Hyperliquid BBO message")
+    .context("failed to construct QuoteTick from Hyperliquid BBO message")
 }
 
 /// Parses a WebSocket candle message into a [`Bar`].
@@ -216,27 +205,26 @@ pub fn parse_ws_candle(
     bar_type: &BarType,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
-    // Get precision from the instrument
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let open_decimal = Decimal::from_str(&candle.o).context("Failed to parse open price")?;
+    let open_decimal = Decimal::from_str(&candle.o).context("failed to parse open price")?;
     let open_raw = open_decimal.mantissa() as PriceRaw;
     let open = Price::from_raw(open_raw, price_precision);
 
-    let high_decimal = Decimal::from_str(&candle.h).context("Failed to parse high price")?;
+    let high_decimal = Decimal::from_str(&candle.h).context("failed to parse high price")?;
     let high_raw = high_decimal.mantissa() as PriceRaw;
     let high = Price::from_raw(high_raw, price_precision);
 
-    let low_decimal = Decimal::from_str(&candle.l).context("Failed to parse low price")?;
+    let low_decimal = Decimal::from_str(&candle.l).context("failed to parse low price")?;
     let low_raw = low_decimal.mantissa() as PriceRaw;
     let low = Price::from_raw(low_raw, price_precision);
 
-    let close_decimal = Decimal::from_str(&candle.c).context("Failed to parse close price")?;
+    let close_decimal = Decimal::from_str(&candle.c).context("failed to parse close price")?;
     let close_raw = close_decimal.mantissa() as PriceRaw;
     let close = Price::from_raw(close_raw, price_precision);
 
-    let volume_decimal = Decimal::from_str(&candle.v).context("Failed to parse volume")?;
+    let volume_decimal = Decimal::from_str(&candle.v).context("failed to parse volume")?;
     let volume_raw = volume_decimal.mantissa().unsigned_abs() as QuantityRaw;
     let volume = Quantity::from_raw(volume_raw, size_precision);
 
@@ -259,21 +247,14 @@ pub fn parse_ws_order_status_report(
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order.order.oid.to_string());
-
-    // Parse order side
-    let order_side: OrderSide = match order.order.side.as_str() {
-        "B" => OrderSide::Buy,
-        "A" => OrderSide::Sell,
-        _ => anyhow::bail!("Unknown order side: {}", order.order.side),
-    };
+    let order_side = OrderSide::from(order.order.side);
 
     // Determine order type based on trigger info
     let order_type = if is_conditional_order_data(
         order.order.trigger_px.as_deref(),
-        order.order.tpsl.as_deref(),
+        order.order.tpsl.as_ref(),
     ) {
-        if let (Some(is_market), Some(tpsl)) = (order.order.is_market, order.order.tpsl.as_deref())
-        {
+        if let (Some(is_market), Some(tpsl)) = (order.order.is_market, order.order.tpsl.as_ref()) {
             parse_trigger_order_type(is_market, tpsl)
         } else {
             OrderType::Limit // fallback
@@ -282,13 +263,8 @@ pub fn parse_ws_order_status_report(
         OrderType::Limit // Regular limit order
     };
 
-    // Parse time in force (assuming GTC for now, could be derived from order data)
     let time_in_force = TimeInForce::Gtc;
-
-    // Parse order status
-    let order_status = hyperliquid_status_to_order_status(&order.status);
-
-    // Parse quantity
+    let order_status = OrderStatus::from(order.status);
     let quantity = parse_quantity(&order.order.sz, instrument, "order.sz")?;
 
     // Calculate filled quantity (orig_sz - sz)
@@ -298,14 +274,11 @@ pub fn parse_ws_order_status_report(
         instrument.size_precision(),
     );
 
-    // Parse price
     let price = parse_price(&order.order.limit_px, instrument, "order.limitPx")?;
 
-    // Parse timestamps
     let ts_accepted = parse_millis_to_nanos(order.order.timestamp);
     let ts_last = parse_millis_to_nanos(order.status_timestamp);
 
-    // Build the report
     let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
@@ -323,15 +296,12 @@ pub fn parse_ws_order_status_report(
         Some(UUID4::new()),
     );
 
-    // Add client order ID if present
     if let Some(ref cloid) = order.order.cloid {
         report = report.with_client_order_id(ClientOrderId::new(cloid.as_str()));
     }
 
-    // Add price
     report = report.with_price(price);
 
-    // Add trigger price for conditional orders
     if let Some(ref trigger_px_str) = order.order.trigger_px {
         let trigger_price = parse_price(trigger_px_str, instrument, "order.triggerPx")?;
         report = report.with_trigger_price(trigger_price);
@@ -352,27 +322,17 @@ pub fn parse_ws_fill_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
     let trade_id = TradeId::new_checked(fill.tid.to_string())
-        .context("Invalid trade identifier in Hyperliquid fill message")?;
+        .context("invalid trade identifier in Hyperliquid fill message")?;
 
-    // Parse order side
-    let order_side: OrderSide = match fill.side.as_str() {
-        "B" => OrderSide::Buy,
-        "A" => OrderSide::Sell,
-        _ => anyhow::bail!("Unknown fill side: {}", fill.side),
-    };
-
-    // Parse quantities and prices
+    let order_side = OrderSide::from(fill.side);
     let last_qty = parse_quantity(&fill.sz, instrument, "fill.sz")?;
     let last_px = parse_price(&fill.px, instrument, "fill.px")?;
-
-    // Parse liquidity side
     let liquidity_side = if fill.crossed {
         LiquiditySide::Taker
     } else {
         LiquiditySide::Maker
     };
 
-    // Parse commission
     let commission_amount = Decimal::from_str(&fill.fee)
         .with_context(|| format!("Failed to parse fee='{}' as decimal", fill.fee))?
         .abs()
@@ -380,7 +340,6 @@ pub fn parse_ws_fill_report(
         .parse::<f64>()
         .unwrap_or(0.0);
 
-    // Determine commission currency from fee_token
     let commission_currency = if fill.fee_token == "USDC" {
         Currency::from("USDC")
     } else {
@@ -389,8 +348,6 @@ pub fn parse_ws_fill_report(
     };
 
     let commission = Money::new(commission_amount, commission_currency);
-
-    // Parse timestamp
     let ts_event = parse_millis_to_nanos(fill.time);
 
     // No client order ID available in fill data directly
@@ -425,9 +382,17 @@ mod tests {
         instruments::CryptoPerpetual,
         types::currency::Currency,
     };
+    use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
+    use crate::{
+        common::enums::{
+            HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
+            HyperliquidSide,
+        },
+        websocket::messages::{WsBookData, WsLevelData},
+    };
 
     fn create_test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-PERP"), Venue::new("HYPERLIQUID"));
@@ -460,7 +425,7 @@ mod tests {
         ))
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_ws_order_status_report_basic() {
         let instrument = create_test_instrument();
         let account_id = AccountId::new("HYPERLIQUID-001");
@@ -469,7 +434,7 @@ mod tests {
         let order_data = WsOrderData {
             order: super::super::messages::WsBasicOrderData {
                 coin: Ustr::from("BTC"),
-                side: "B".to_string(),
+                side: HyperliquidSide::Buy,
                 limit_px: "50000.0".to_string(),
                 sz: "0.5".to_string(),
                 oid: 12345,
@@ -482,7 +447,7 @@ mod tests {
                 trigger_activated: None,
                 trailing_stop: None,
             },
-            status: "open".to_string(),
+            status: HyperliquidOrderStatusEnum::Open,
             status_timestamp: 1704470400000,
         };
 
@@ -498,7 +463,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_ws_fill_report_basic() {
         let instrument = create_test_instrument();
         let account_id = AccountId::new("HYPERLIQUID-001");
@@ -508,10 +473,10 @@ mod tests {
             coin: Ustr::from("BTC"),
             px: "50000.0".to_string(),
             sz: "0.1".to_string(),
-            side: "B".to_string(),
+            side: HyperliquidSide::Buy,
             time: 1704470400000,
             start_position: "0.0".to_string(),
-            dir: "Open Long".to_string(),
+            dir: HyperliquidFillDirection::OpenLong,
             closed_pnl: "0.0".to_string(),
             hash: "0xabc123".to_string(),
             oid: 12345,
@@ -529,5 +494,45 @@ mod tests {
         let report = result.unwrap();
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_book_deltas_snapshot_behavior() {
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        let book = WsBookData {
+            coin: Ustr::from("BTC"),
+            levels: [
+                vec![WsLevelData {
+                    px: "50000.0".to_string(),
+                    sz: "1.0".to_string(),
+                    n: 1,
+                }],
+                vec![WsLevelData {
+                    px: "50001.0".to_string(),
+                    sz: "2.0".to_string(),
+                    n: 1,
+                }],
+            ],
+            time: 1_704_470_400_000,
+        };
+
+        let deltas = parse_ws_order_book_deltas(&book, &instrument, ts_init).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 3); // clear + bid + ask
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+
+        let bid_delta = &deltas.deltas[1];
+        assert_eq!(bid_delta.action, BookAction::Add);
+        assert_eq!(bid_delta.order.side, OrderSide::Buy);
+        assert!(bid_delta.order.size.is_positive());
+        assert_eq!(bid_delta.order.order_id, 0);
+
+        let ask_delta = &deltas.deltas[2];
+        assert_eq!(ask_delta.action, BookAction::Add);
+        assert_eq!(ask_delta.order.side, OrderSide::Sell);
+        assert!(ask_delta.order.size.is_positive());
+        assert_eq!(ask_delta.order.order_id, 0);
     }
 }

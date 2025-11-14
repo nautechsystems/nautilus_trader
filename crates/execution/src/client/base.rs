@@ -300,6 +300,7 @@ impl ExecutionClientCore {
         quantity: Quantity,
         price: Price,
         trigger_price: Option<Price>,
+        protection_price: Option<Price>,
         ts_event: UnixNanos,
         venue_order_id_modified: bool,
     ) {
@@ -329,6 +330,7 @@ impl ExecutionClientCore {
             Some(self.account_id),
             Some(price),
             trigger_price,
+            protection_price,
         );
 
         self.send_order_event(OrderEventAny::Updated(event));

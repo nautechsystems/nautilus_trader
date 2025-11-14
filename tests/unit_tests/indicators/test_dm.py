@@ -41,7 +41,7 @@ class TestDirectionalMovement:
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
         # Arrange, Act
-        for _i in range(20):
+        for _ in range(20):
             self.dm.update_raw(110.08, 109.61)
 
         # Assert
@@ -94,7 +94,7 @@ class TestDirectionalMovement:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(1000):
+        for _ in range(1000):
             self.dm.update_raw(110.08, 109.61)
 
         # Act

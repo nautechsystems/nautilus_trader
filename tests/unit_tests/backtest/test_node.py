@@ -207,3 +207,53 @@ class TestBacktestNode:
 
         # Assert
         node.run()
+
+    def test_backtest_result_total_positions_matches_tearsheet_hedging(self):
+        # Arrange
+        node = BacktestNode(configs=self.backtest_configs)
+
+        # Act
+        results = node.run()
+        result = results[0]
+        engine = node.get_engines()[0]
+
+        positions = list(engine.kernel.cache.positions())
+        snapshots = list(engine.kernel.cache.position_snapshots())
+        tearsheet_total = len(positions) + len(snapshots)
+
+        # Assert
+        assert result.total_positions == tearsheet_total
+        assert result.total_positions == len(positions) + len(snapshots)
+
+    def test_backtest_result_total_positions_matches_tearsheet_netting(self):
+        # Arrange
+        venue_config_netting = BacktestVenueConfig(
+            name="SIM",
+            oms_type="NETTING",
+            account_type="MARGIN",
+            base_currency="USD",
+            starting_balances=["1000000 USD"],
+        )
+        config_netting = BacktestRunConfig(
+            engine=BacktestEngineConfig(
+                strategies=self.strategies,
+                logging=LoggingConfig(bypass_logging=True),
+            ),
+            venues=[venue_config_netting],
+            data=[self.data_config],
+            chunk_size=5_000,
+        )
+        node = BacktestNode(configs=[config_netting])
+
+        # Act
+        results = node.run()
+        result = results[0]
+        engine = node.get_engines()[0]
+
+        positions = list(engine.kernel.cache.positions())
+        snapshots = list(engine.kernel.cache.position_snapshots())
+        tearsheet_total = len(positions) + len(snapshots)
+
+        # Assert
+        assert result.total_positions == tearsheet_total
+        assert result.total_positions == len(positions) + len(snapshots)

@@ -14,6 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
+
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXLiveDataClientFactory
@@ -35,7 +37,7 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # Configuration - Change instrument_type to switch between trading modes
-instrument_type = OKXInstrumentType.SPOT  # SPOT, MARGIN, SWAP, FUTURES, OPTION
+instrument_type = OKXInstrumentType.SWAP  # SPOT, MARGIN, SWAP, FUTURES, OPTION
 token = "ETH"
 
 # Symbol mapping based on instrument type
@@ -79,7 +81,7 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(
         log_level="INFO",
-        log_level_file="DEBUG",
+        # log_level_file="DEBUG",
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
@@ -118,24 +120,27 @@ config_tester = DataTesterConfig(
     ],
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,
-    subscribe_book_at_interval=True,  # Only legacy Cython wrapped book (not PyO3)
+    # subscribe_book_at_interval=True,  # Only legacy Cython wrapped book (not PyO3)
     subscribe_quotes=True,
     subscribe_trades=True,
     subscribe_mark_prices=True,
     subscribe_index_prices=False,  # Only for some derivatives
     subscribe_funding_rates=True,
-    subscribe_bars=True,
-    subscribe_instrument_status=False,
-    subscribe_instrument_close=False,
+    # subscribe_bars=True,
+    # subscribe_instrument=True,
+    # subscribe_instrument_status=True,
+    # subscribe_instrument_close=True,
     # request_bars=True,
     # book_group_size=Decimal("1"),  # Only PyO3 wrapped book (not legacy Cython)
     # book_depth=5,
     # book_levels_to_print=50,
-    book_interval_ms=100,
+    # book_interval_ms=100,
     # manage_book=True,
     # use_pyo3_book=True,
+    # request_instruments=True,
     request_bars=True,
-    # request_trades=True,  # TODO: Needs to be fixed
+    # request_trades=True,
+    requests_start_delta=pd.Timedelta(minutes=60),
 )
 tester = DataTester(config=config_tester)
 

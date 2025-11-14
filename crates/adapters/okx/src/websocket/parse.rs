@@ -1447,7 +1447,7 @@ mod tests {
             testing::load_test_json,
         },
         http::models::OKXAccount,
-        websocket::messages::{OKXWebSocketArg, OKXWebSocketEvent},
+        websocket::messages::{OKXWebSocketArg, OKXWsMessage},
     };
 
     fn create_stub_instrument() -> CryptoPerpetual {
@@ -1524,9 +1524,9 @@ mod tests {
     #[rstest]
     fn test_parse_books_snapshot() {
         let json_data = load_test_json("ws_books_snapshot.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let (okx_books, action): (Vec<OKXBookMsg>, OKXBookAction) = match msg {
-            OKXWebSocketEvent::BookData { data, action, .. } => (data, action),
+            OKXWsMessage::BookData { data, action, .. } => (data, action),
             _ => panic!("Expected a `BookData` variant"),
         };
 
@@ -1568,10 +1568,10 @@ mod tests {
     #[rstest]
     fn test_parse_books_update() {
         let json_data = load_test_json("ws_books_update.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
         let (okx_books, action): (Vec<OKXBookMsg>, OKXBookAction) = match msg {
-            OKXWebSocketEvent::BookData { data, action, .. } => (data, action),
+            OKXWsMessage::BookData { data, action, .. } => (data, action),
             _ => panic!("Expected a `BookData` variant"),
         };
 
@@ -1612,9 +1612,9 @@ mod tests {
     #[rstest]
     fn test_parse_tickers() {
         let json_data = load_test_json("ws_tickers.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let okx_tickers: Vec<OKXTickerMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -1634,9 +1634,9 @@ mod tests {
     #[rstest]
     fn test_parse_quotes() {
         let json_data = load_test_json("ws_bbo_tbt.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let okx_quotes: Vec<OKXBookMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
@@ -1656,9 +1656,9 @@ mod tests {
     #[rstest]
     fn test_parse_trades() {
         let json_data = load_test_json("ws_trades.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let okx_trades: Vec<OKXTradeMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -1678,9 +1678,9 @@ mod tests {
     #[rstest]
     fn test_parse_candle() {
         let json_data = load_test_json("ws_candle.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let okx_candles: Vec<OKXCandleMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -1705,10 +1705,10 @@ mod tests {
     #[rstest]
     fn test_parse_funding_rate() {
         let json_data = load_test_json("ws_funding_rate.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
 
         let okx_funding_rates: Vec<crate::websocket::messages::OKXFundingRateMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -1730,9 +1730,9 @@ mod tests {
     #[rstest]
     fn test_parse_book_vec() {
         let json_data = load_test_json("ws_books_snapshot.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let (msgs, action): (Vec<OKXBookMsg>, OKXBookAction) = match event {
-            OKXWebSocketEvent::BookData { data, action, .. } => (data, action),
+            OKXWsMessage::BookData { data, action, .. } => (data, action),
             _ => panic!("Expected BookData"),
         };
 
@@ -1752,9 +1752,9 @@ mod tests {
     #[rstest]
     fn test_parse_ticker_vec() {
         let json_data = load_test_json("ws_tickers.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let data_val: serde_json::Value = match event {
-            OKXWebSocketEvent::Data { data, .. } => data,
+            OKXWsMessage::Data { data, .. } => data,
             _ => panic!("Expected Data"),
         };
 
@@ -1775,9 +1775,9 @@ mod tests {
     #[rstest]
     fn test_parse_trade_vec() {
         let json_data = load_test_json("ws_trades.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let data_val: serde_json::Value = match event {
-            OKXWebSocketEvent::Data { data, .. } => data,
+            OKXWsMessage::Data { data, .. } => data,
             _ => panic!("Expected Data"),
         };
 
@@ -1797,9 +1797,9 @@ mod tests {
     #[rstest]
     fn test_parse_candle_vec() {
         let json_data = load_test_json("ws_candle.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let data_val: serde_json::Value = match event {
-            OKXWebSocketEvent::Data { data, .. } => data,
+            OKXWsMessage::Data { data, .. } => data,
             _ => panic!("Expected Data"),
         };
 
@@ -1826,11 +1826,9 @@ mod tests {
     #[rstest]
     fn test_parse_book_message() {
         let json_data = load_test_json("ws_bbo_tbt.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let (okx_books, arg): (Vec<OKXBookMsg>, OKXWebSocketArg) = match msg {
-            OKXWebSocketEvent::Data { data, arg, .. } => {
-                (serde_json::from_value(data).unwrap(), arg)
-            }
+            OKXWsMessage::Data { data, arg, .. } => (serde_json::from_value(data).unwrap(), arg),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -2115,9 +2113,9 @@ mod tests {
     #[rstest]
     fn test_parse_book10_msg() {
         let json_data = load_test_json("ws_books_snapshot.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let msgs: Vec<OKXBookMsg> = match event {
-            OKXWebSocketEvent::BookData { data, .. } => data,
+            OKXWsMessage::BookData { data, .. } => data,
             _ => panic!("Expected BookData"),
         };
 
@@ -2164,9 +2162,9 @@ mod tests {
     #[rstest]
     fn test_parse_book10_msg_vec() {
         let json_data = load_test_json("ws_books_snapshot.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let msgs: Vec<OKXBookMsg> = match event {
-            OKXWebSocketEvent::BookData { data, .. } => data,
+            OKXWsMessage::BookData { data, .. } => data,
             _ => panic!("Expected BookData"),
         };
 

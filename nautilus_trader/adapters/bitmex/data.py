@@ -19,7 +19,10 @@ from typing import Any
 from nautilus_trader.adapters.bitmex.config import BitmexDataClientConfig
 from nautilus_trader.adapters.bitmex.constants import BITMEX_VENUE
 from nautilus_trader.adapters.bitmex.providers import BitmexInstrumentProvider
+from nautilus_trader.adapters.bitmex.types import BITMEX_INSTRUMENT_TYPES
+from nautilus_trader.adapters.bitmex.types import BitmexInstrument
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.transformers import transform_instrument_from_pyo3
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
@@ -118,10 +121,6 @@ class BitmexDataClient(LiveMarketDataClient):
         self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
         self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
-        # Periodic updates
-        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
-        self._update_instruments_task: asyncio.Task | None = None
-
         # HTTP API
         self._http_client = client
         self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
@@ -160,24 +159,8 @@ class BitmexDataClient(LiveMarketDataClient):
         await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to websocket {self._ws_client.url}", LogColor.BLUE)
 
-        # Start periodic instrument updates if configured
-        if self._update_instruments_interval_mins:
-            self._update_instruments_task = self.create_task(
-                self._update_instruments(self._update_instruments_interval_mins),
-            )
-
     async def _disconnect(self) -> None:
         self._http_client.cancel_all_requests()
-
-        # Cancel periodic update task if running
-        if self._update_instruments_task:
-            self._log.debug("Canceling update instruments task")
-            self._update_instruments_task.cancel()
-            try:
-                await asyncio.wait_for(self._update_instruments_task, timeout=2.0)
-            except (TimeoutError, asyncio.CancelledError):
-                pass
-            self._update_instruments_task = None
 
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
@@ -215,7 +198,7 @@ class BitmexDataClient(LiveMarketDataClient):
         instruments_pyo3 = self._instrument_provider.instruments_pyo3()  # type: ignore
 
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
+            self._http_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -488,9 +471,21 @@ class BitmexDataClient(LiveMarketDataClient):
                 # to `Data` is still owned and managed by Rust.
                 data = capsule_to_data(msg)
                 self._handle_data(data)
+            elif isinstance(msg, BITMEX_INSTRUMENT_TYPES):
+                self._handle_instrument_update(msg)
             elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
                 self._handle_data(FundingRateUpdate.from_pyo3(msg))
             else:
                 self._log.warning(f"Cannot handle message {msg}, not implemented")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
+
+    def _handle_instrument_update(self, pyo3_instrument: BitmexInstrument) -> None:
+        self._http_client.cache_instrument(pyo3_instrument)
+
+        if self._ws_client is not None:
+            self._ws_client.cache_instrument(pyo3_instrument)
+
+        instrument = transform_instrument_from_pyo3(pyo3_instrument)
+
+        self._handle_data(instrument)

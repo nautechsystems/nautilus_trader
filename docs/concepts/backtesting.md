@@ -340,18 +340,33 @@ granular data such as quotes, trades, or bars (although the simulation will only
 
 :::warning
 When using bars for execution simulation (enabled by default with `bar_execution=True` in venue configurations),
-Nautilus strictly expects the timestamp (`ts_init`) of each bar to represent its **closing time**.
+Nautilus strictly expects the initialization timestamp (`ts_init`) of each bar to represent its **closing time**.
 This ensures accurate chronological processing, prevents look-ahead bias, and aligns market updates (Open → High → Low → Close) with the moment the bar is complete.
+
+The event timestamp (`ts_event`) can represent either the open or close time of the bar:
+
+- If `ts_event` is at the **close**, ensure `ts_init_delta=0` when processing bars (default).
+- If `ts_event` is at the **open**, set `ts_init_delta` equal to the bar's duration to shift `ts_init` to the close.
+
 :::
 
 #### Bar timestamp convention
 
-If your data source provides bars timestamped at the **opening time** (common in some providers), you must adjust them to the closing time before loading into Nautilus.
-Failure to do so can lead to incorrect order fills, event sequencing errors, or unrealistic backtest results.
+If your data source provides bars timestamped at the **opening time** (common in some providers), you need to ensure `ts_init` is set to the closing time for correct execution simulation. There are two approaches:
+
+**Approach 1: Adjust data timestamps (recommended)**
 
 - Use adapter-specific configurations like `bars_timestamp_on_close=True` (e.g., for Bybit or Databento adapters) to handle this automatically during data ingestion.
-- For custom data, manually shift timestamps by the bar duration (e.g., add 1 minute for `1-MINUTE` bars).
-- Always verify your data's timestamp convention with a small sample to avoid simulation inaccuracies.
+- For custom data, manually shift the timestamps by the bar duration before loading (e.g., add 1 minute for `1-MINUTE` bars).
+- This approach is clearest because the data itself reflects the close time.
+
+**Approach 2: Use `ts_init_delta` parameter**
+
+- When calling `BarDataWrangler.process()`, set `ts_init_delta` to the bar's duration in nanoseconds.
+- The wrangler will compute `ts_init = ts_event + ts_init_delta`, shifting execution timing to the close.
+- Use this when you cannot or prefer not to modify source data timestamps.
+
+Always verify your data's timestamp convention with a small sample to avoid simulation inaccuracies. Incorrect timestamp handling can lead to look-ahead bias and unrealistic backtest results.
 
 #### Processing bar data
 
@@ -359,9 +374,20 @@ Even when you provide bar data, Nautilus maintains an internal order book for ea
 
 1. **Time processing**:
    - Nautilus has a specific way of handling the timing of bar data *for execution* that's crucial for accurate simulation.
-   - Bar timestamps (`ts_event`) are expected to represent the close time of the bar. This approach is most logical because it represents the moment when the bar is fully formed and its aggregation is complete.
-   - The initialization time (`ts_init`) can be controlled using the `ts_init_delta` parameter in `BarDataWrangler`, which should typically be set to the bar's step size (timeframe) in nanoseconds.
-   - The platform ensures all events happen in the correct sequence based on these timestamps, preventing any possibility of look-ahead bias in your backtests.
+   - The initialization timestamp (`ts_init`) is used for execution timing and must represent the close time of the bar. This approach is most logical because it represents the moment when the bar is fully formed and its aggregation is complete.
+   - The event timestamp (`ts_event`) represents when the data event occurred and may differ from `ts_init` depending on your data source:
+     - If your bars are timestamped at the **close** (the recommended default), use `ts_init_delta=0` in `BarDataWrangler` so that `ts_init = ts_event`.
+     - If your bars are timestamped at the **open**, set `ts_init_delta` to the bar's duration in nanoseconds (e.g., 60_000_000_000 for 1-minute bars) to shift `ts_init` to the close time.
+   - The platform ensures all events happen in the correct sequence based on `ts_init`, preventing any possibility of look-ahead bias in your backtests.
+
+:::note Exceptions for bar execution
+Bars will **not** be processed for execution (and will not update the order book) in the following cases:
+
+- **Internally aggregated bars**: Bars with `AggregationSource.INTERNAL` are skipped to avoid processing bars that are derived from already-processed tick data.
+- **Non-L1 book types**: When the venue's `book_type` is configured as `L2_MBP` or `L3_MBO`, bar data is ignored for execution processing, as bars are derived from top-of-book prices only.
+
+In these cases, bars will still be received by strategies for analytics and decision-making, but they won't trigger order matching or update the simulated order book.
+:::
 
 2. **Price processing**:
    - The platform converts each bar's OHLC prices into a sequence of market updates.

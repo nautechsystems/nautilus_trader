@@ -175,7 +175,7 @@ def mock_http_client():
     mock.request_position_status_reports = AsyncMock(return_value=[])
 
     # Mock instrument caching
-    mock.add_instrument = MagicMock()
+    mock.cache_instrument = MagicMock()
     mock.request_instruments = AsyncMock(return_value=[])
 
     return mock
@@ -249,7 +249,7 @@ def mock_submitter():
     mock.stop = AsyncMock()
 
     # Mock instrument caching
-    mock.add_instrument = MagicMock()
+    mock.cache_instrument = MagicMock()
 
     # Mock submit operations
     mock.broadcast_submit = AsyncMock()
@@ -269,7 +269,7 @@ def mock_canceller():
     mock.stop = AsyncMock()
 
     # Mock instrument caching
-    mock.add_instrument = MagicMock()
+    mock.cache_instrument = MagicMock()
 
     # Mock cancel operations
     mock.broadcast_cancel = AsyncMock()

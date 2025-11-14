@@ -198,6 +198,7 @@ class TestPolymarketExecutionClient:
         self,
         venue_order_id_str: str,
         use_ws_instrument: bool = False,
+        price: Price | None = None,
     ) -> tuple[ClientOrderId, VenueOrderId]:
         """
         Create test order and add to cache with venue order ID mapping.
@@ -215,7 +216,7 @@ class TestPolymarketExecutionClient:
             instrument_id=instrument_id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_str("5"),
-            price=Price.from_str("0.513"),
+            price=price or Price.from_str("0.513"),
         )
 
         client_order_id = order.client_order_id
@@ -547,6 +548,88 @@ class TestPolymarketExecutionClient:
         assert not wait_task.cancelled()
         # Event should have been cleaned up
         assert venue_order_id not in self.exec_client._ack_events_trade
+
+    def test_order_filled_by_polymarket_order_book_balancing_system(self):
+        """
+        Polymarket automatically balances the books of token pairs.
+
+        If a user places a Buy order for a Yes token at 0.4, Polymarket will
+        automatically place a Sell order for a No token at 0.6 on the user's behalf. If
+        another is ready to buy the No token, then Polymarket will mint a pair of tokens
+        and sell the Yes and No to the respective user for a net-zero for Polymarket,
+        but an increased liquidity for its users.
+
+        """
+        # Arrange
+        raw_message = pkgutil.get_data(
+            package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
+            resource="user_trade3.json",
+        )
+
+        msg = msgspec.json.decode(raw_message)
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
+
+        client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
+            "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
+            use_ws_instrument=True,
+        )
+
+        # Act
+        self.exec_client._handle_ws_trade_msg(msg, wait_for_ack=False)
+
+        assert self.cache.venue_order_id(client_order_id) == venue_order_id
+
+        positions = self.cache.positions()
+
+        assert len(positions) == 1
+
+        position = positions[0]
+        print(position)
+
+        assert client_order_id in position.client_order_ids
+        assert position.avg_px_open == 0.513  # from the json and _setup_test_order_with_venue_id
+        assert position.entry == OrderSide.BUY
+        assert position.quantity.as_double() == 5
+
+    def test_multiple_user_order_fills_in_same_trade_message_correctly_identified(self):
+        # Arrange
+        raw_message = pkgutil.get_data(
+            package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
+            resource="user_trade4.json",
+        )
+
+        msg = msgspec.json.decode(raw_message)
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
+
+        first_client_order_id, first_venue_order_id = self._setup_test_order_with_venue_id(
+            "0x67b598cab933c71389176573822be763192a35a8c37e49999a11d611a5882e7d",
+            use_ws_instrument=True,
+            price=Price.from_str("0.3"),
+        )
+        second_client_order_id, second_venue_order_id = self._setup_test_order_with_venue_id(
+            "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
+            use_ws_instrument=True,
+            price=Price.from_str("0.4"),
+        )
+
+        # Act
+        self.exec_client._handle_ws_trade_msg(msg, wait_for_ack=False)
+
+        assert self.cache.venue_order_id(first_client_order_id) == first_venue_order_id
+        assert self.cache.venue_order_id(second_client_order_id) == second_venue_order_id
+
+        positions = self.cache.positions()
+
+        assert len(positions) == 1
+
+        position = positions[0]
+        print(position)
+
+        assert first_client_order_id in position.client_order_ids
+        assert second_client_order_id in position.client_order_ids
+        assert position.avg_px_open == 0.35
+        assert position.entry == OrderSide.BUY
+        assert position.quantity.as_double() == 10
 
     def test_handle_ws_message_invalid_json(self):
         """

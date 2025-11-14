@@ -302,7 +302,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
             self.calls.append(current_frame.f_code.co_name)
 
         reports = []
-        for _, report in self._order_status_reports.items():
+        for report in self._order_status_reports.values():
             reports.append(report)
 
         if command.instrument_id is not None:

@@ -107,7 +107,7 @@ def run():
     # input("Press Enter to continue...")
 
     # Run the engine (from start to end of data)
-    engine.run(end=datetime(2012, 2, 10))
+    engine.run(end=datetime(2012, 2, 10, tzinfo=datetime.UTC))
 
     # Optionally view reports
     # with pd.option_context(

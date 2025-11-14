@@ -111,7 +111,7 @@ def mock_http_client():
     mock.api_secret = "test_api_secret"
 
     mock.request_instruments = AsyncMock(return_value=[])
-    mock.add_instrument = MagicMock()
+    mock.cache_instrument = MagicMock()
     mock.cancel_all_requests = MagicMock()
     mock.is_initialized = MagicMock(return_value=True)
 
@@ -167,7 +167,7 @@ def _create_ws_mock() -> MagicMock:
     mock.unsubscribe_ticker = AsyncMock()
     mock.unsubscribe_trades = AsyncMock()
     mock.unsubscribe_klines = AsyncMock()
-    mock.add_instrument = MagicMock()
+    mock.cache_instrument = MagicMock()
     mock.subscribe_orders = AsyncMock()
     mock.subscribe_executions = AsyncMock()
     mock.subscribe_positions = AsyncMock()

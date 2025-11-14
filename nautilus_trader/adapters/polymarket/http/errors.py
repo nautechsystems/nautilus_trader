@@ -34,6 +34,18 @@ class PolymarketError(Exception):
         return f"{type(self).__name__}(code={self.code}, message='{self.message}')"
 
 
+class PolymarketAPIError(PolymarketError):
+    """
+    Represents an error response from the Polymarket CLOB API.
+
+    Raised when the API returns an error string instead of expected data.
+
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(code=None, message=message)
+
+
 def should_retry(error: BaseException) -> bool:
     """
     Determine if a retry should be attempted based on the error code.

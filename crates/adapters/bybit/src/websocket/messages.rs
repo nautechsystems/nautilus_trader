@@ -48,7 +48,7 @@ pub struct BybitAuthRequest {
 
 /// High level message emitted by the Bybit WebSocket client.
 #[derive(Debug, Clone)]
-pub enum BybitWebSocketMessage {
+pub enum BybitWsMessage {
     /// Generic response (subscribe/auth acknowledgement).
     Response(BybitWsResponse),
     /// Authentication acknowledgement.
@@ -115,6 +115,8 @@ pub enum NautilusWsMessage {
     Error(BybitWebSocketError),
     /// WebSocket reconnected notification.
     Reconnected,
+    /// Authentication successful notification.
+    Authenticated,
 }
 
 /// Represents an error event surfaced by the WebSocket client.
@@ -230,6 +232,8 @@ pub struct BybitWsPlaceOrderParams {
     pub order_type: BybitOrderType,
     pub qty: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_leverage: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub market_unit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price: Option<String>,
@@ -336,6 +340,8 @@ pub struct BybitWsBatchPlaceItem {
     pub order_type: BybitOrderType,
     pub qty: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_leverage: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub market_unit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price: Option<String>,
@@ -421,7 +427,7 @@ pub struct BybitWsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsOrderResponse {
     /// Operation type (order.create, order.amend, order.cancel).
-    pub op: String,
+    pub op: Ustr,
     /// Connection ID.
     #[serde(default)]
     pub conn_id: Option<String>,
@@ -716,7 +722,7 @@ pub struct BybitWsAccountOrder {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsAccountOrderMsg {
-    pub topic: String,
+    pub topic: Ustr,
     pub id: String,
     pub creation_time: i64,
     pub data: Vec<BybitWsAccountOrder>,
@@ -760,7 +766,7 @@ pub struct BybitWsAccountExecution {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsAccountExecutionMsg {
-    pub topic: String,
+    pub topic: Ustr,
     pub id: String,
     pub creation_time: i64,
     pub data: Vec<BybitWsAccountExecution>,
@@ -809,7 +815,7 @@ pub struct BybitWsAccountWallet {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsAccountWalletMsg {
-    pub topic: String,
+    pub topic: Ustr,
     pub id: String,
     pub creation_time: i64,
     pub data: Vec<BybitWsAccountWallet>,
@@ -819,47 +825,53 @@ pub struct BybitWsAccountWalletMsg {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsAccountPosition {
+    pub category: BybitProductType,
+    pub symbol: Ustr,
+    pub side: Ustr,
+    pub size: String,
     pub position_idx: i32,
+    pub trade_mode: i32,
+    pub position_value: String,
     pub risk_id: i64,
     pub risk_limit_value: String,
-    pub symbol: Ustr,
-    pub side: String,
-    pub size: String,
-    #[serde(default)]
-    pub avg_price: Option<String>,
-    pub position_value: String,
-    pub trade_mode: i32,
-    pub position_status: String,
-    pub auto_add_margin: i32,
-    pub adl_rank_indicator: i32,
+    pub entry_price: String,
+    pub mark_price: String,
     pub leverage: String,
     pub position_balance: String,
-    pub mark_price: String,
-    pub liq_price: String,
-    pub bust_price: String,
-    #[serde(rename = "positionMM")]
-    pub position_mm: String,
+    pub auto_add_margin: i32,
     #[serde(rename = "positionIM")]
     pub position_im: String,
-    pub tpsl_mode: String,
+    #[serde(rename = "positionIMByMp")]
+    pub position_im_by_mp: String,
+    #[serde(rename = "positionMM")]
+    pub position_mm: String,
+    #[serde(rename = "positionMMByMp")]
+    pub position_mm_by_mp: String,
+    pub liq_price: String,
+    pub bust_price: String,
+    pub tpsl_mode: Ustr,
     pub take_profit: String,
     pub stop_loss: String,
     pub trailing_stop: String,
     pub unrealised_pnl: String,
+    pub session_avg_price: String,
     pub cur_realised_pnl: String,
     pub cum_realised_pnl: String,
-    pub seq: i64,
-    #[serde(default)]
-    pub is_reduce_only: bool,
+    pub position_status: Ustr,
+    pub adl_rank_indicator: i32,
     pub created_time: String,
     pub updated_time: String,
+    pub seq: i64,
+    pub is_reduce_only: bool,
+    pub mmr_sys_updated_time: String,
+    pub leverage_sys_updated_time: String,
 }
 
 /// Envelope for position updates on private streams.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsAccountPositionMsg {
-    pub topic: String,
+    pub topic: Ustr,
     pub id: String,
     pub creation_time: i64,
     pub data: Vec<BybitWsAccountPosition>,

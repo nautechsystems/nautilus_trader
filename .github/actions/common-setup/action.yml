@@ -172,6 +172,11 @@ runs:
       run: |
         echo "PYTHON_VERSION=$(bash scripts/python-version.sh)" >> $GITHUB_ENV
 
+    - name: Get pre-commit version
+      shell: bash
+      run: |
+        echo "PRE_COMMIT_VERSION=$(bash scripts/pre-commit-version.sh)" >> $GITHUB_ENV
+
     - name: Cache Python site-packages
       id: cached-site-packages
       # https://github.com/actions/cache
@@ -184,7 +189,7 @@ runs:
 
     - name: Install pre-commit
       shell: bash
-      run: pip install pre-commit==4.2.0
+      run: pip install pre-commit==${{ env.PRE_COMMIT_VERSION }}
 
     # > --------------------------------------------------
     # > UV

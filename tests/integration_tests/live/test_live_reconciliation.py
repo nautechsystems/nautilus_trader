@@ -792,7 +792,7 @@ async def test_targeted_query_limiting(
 
     # Create 10 orders and add them to cache as ACCEPTED
     orders = []
-    for i in range(10):
+    for _ in range(10):
         order = order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
@@ -886,7 +886,7 @@ async def test_targeted_query_limiting_with_retry_accumulation(
 
     # Create 10 orders, all ACCEPTED (missing at venue)
     orders = []
-    for i in range(10):
+    for _ in range(10):
         order = order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,

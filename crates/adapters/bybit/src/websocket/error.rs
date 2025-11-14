@@ -22,7 +22,7 @@ use thiserror::Error;
 pub type BybitWsResult<T> = Result<T, BybitWsError>;
 
 /// Error type for Bybit WebSocket client failures.
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum BybitWsError {
     /// The WebSocket client is not currently connected.
     #[error("WebSocket not connected")]
@@ -64,5 +64,11 @@ impl From<tokio_tungstenite::tungstenite::Error> for BybitWsError {
 impl From<serde_json::Error> for BybitWsError {
     fn from(error: serde_json::Error) -> Self {
         Self::Json(error.to_string())
+    }
+}
+
+impl From<String> for BybitWsError {
+    fn from(msg: String) -> Self {
+        Self::Authentication(msg)
     }
 }

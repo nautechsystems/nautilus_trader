@@ -48,6 +48,7 @@ nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-live = { workspace = true, optional = true }
 nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }

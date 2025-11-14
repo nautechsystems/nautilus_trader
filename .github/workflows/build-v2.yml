@@ -140,7 +140,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test-hypersync
+        run: make cargo-test HYPERSYNC=true
 
       # Update version for dev/nightly branches
       - name: Update version in pyproject.toml

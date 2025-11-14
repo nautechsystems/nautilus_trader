@@ -25,6 +25,9 @@ pub static BYBIT_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from
 
 pub const BYBIT_PONG: &str = "pong";
 
+pub const BYBIT_BASE_COIN: &str = "baseCoin";
+pub const BYBIT_QUOTE_COIN: &str = "quoteCoin";
+
 /// See <https://www.bybit.com/en/broker> for further details.
 pub const BYBIT_NAUTILUS_BROKER_ID: &str = "Qy000878";
 
@@ -36,3 +39,5 @@ pub const BYBIT_WS_PRIVATE_URL: &str = "wss://stream.bybit.com/v5/private";
 
 pub const BYBIT_WS_TESTNET_PUBLIC_URL: &str = "wss://stream-testnet.bybit.com/v5/public/linear";
 pub const BYBIT_WS_TESTNET_PRIVATE_URL: &str = "wss://stream-testnet.bybit.com/v5/private";
+
+pub const BYBIT_WS_TOPIC_DELIMITER: char = '.';

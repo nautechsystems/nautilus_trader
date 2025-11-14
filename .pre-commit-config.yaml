@@ -58,7 +58,7 @@ repos:
         description: Lint Dockerfiles for best practices and errors
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.38.1 # v1.38.1 (reverts to v1 on updates)
+    rev: v1.39.0 # v1.39.0 (reverts to v1 on updates)
     hooks:
       - id: typos
         description: Checks for common typos
@@ -73,12 +73,25 @@ repos:
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.28.0
+    rev: v8.29.0
     hooks:
       - id: gitleaks
         name: gitleaks (secrets scan)
         description: Detects hard-coded secrets prior to commit
         args: ["--staged", "--redact"]
+
+  - repo: https://github.com/google/osv-scanner
+    rev: v2.2.4
+    hooks:
+      - id: osv-scanner
+        name: osv-scanner (dependency vulnerabilities)
+        description: Scans Cargo.lock and uv.lock for known vulnerabilities (defense-in-depth)
+        args:
+          [
+            "--config=osv-scanner.toml",
+            "--lockfile=Cargo.lock",
+            "--lockfile=uv.lock",
+          ]
 
   ##############################################################################
   #  GitHub Actions linting (complementary tools covering different aspects)
@@ -91,7 +104,7 @@ repos:
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.16.1
+    rev: v1.16.3
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -134,6 +147,14 @@ repos:
         types: [text]
         pass_filenames: false
 
+      - id: check-copyright-year
+        name: check copyright year
+        description: Ensures copyright headers have current year
+        entry: .pre-commit-hooks/check_copyright_year.sh
+        language: script
+        types_or: [rust, python]
+        pass_filenames: false
+
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
@@ -141,15 +162,14 @@ repos:
     rev: 0.18.5
     hooks:
       - id: cargo-deny
+        name: cargo deny (dependency vulnerabilities)
         args: ["--all-features", "check"]
 
   - repo: local
     hooks:
       - id: check-anyhow-usage
         name: check anyhow usage
-        description:
-          Enforces anyhow conventions (only import Context, use anyhow::bail! not return
-          Err(anyhow::anyhow!))
+        description: Enforces anyhow conventions
         entry: .pre-commit-hooks/check_anyhow_usage.sh
         language: script
         files: '\.rs$'
@@ -157,9 +177,7 @@ repos:
 
       - id: check-logging-macro-usage
         name: check logging macro usage
-        description:
-          Enforces logging macro conventions (use fully qualified log::debug!, tracing::info!,
-          etc. instead of importing the macros)
+        description: Enforces logging macro conventions
         entry: .pre-commit-hooks/check_logging_macro_usage.sh
         language: script
         files: '\.rs$'
@@ -167,7 +185,7 @@ repos:
 
       - id: check-error-conventions
         name: check error conventions
-        description: Enforces error variable naming conventions (Rust use Err(e), Python use as e:)
+        description: Enforces error variable naming conventions
         entry: .pre-commit-hooks/check_error_conventions.sh
         language: script
         types_or: [rust, python, cython]
@@ -185,37 +203,45 @@ repos:
 
       - id: cargo-clippy
         name: cargo clippy
-        description: Run the Clippy linter on the package
+        description: Run the Clippy linter on the workspace
         entry: cargo clippy
         language: system
-        args:
-          [
-            "--benches",
-            "--no-default-features",
-            "--features",
-            "high-precision,ffi,python,extension-module",
-            "--",
-            "-D",
-            "warnings",
-          ]
+        args: [
+          "--workspace",
+          "--all-targets",
+          "--features",
+          "ffi,python,high-precision,defi",
+          "--profile",
+          "nextest", # Reduce rebuild triggers between testing and linting
+          "--",
+          "-D",
+          "warnings",
+        ]
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
 
-      - id: cargo-doc
-        name: cargo doc
-        description: Check documentation builds without errors or warnings
-        entry:
-          bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --no-default-features
-          --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
-        language: system
-        files: '\.(rs|toml)$'
-        types: [file]
-        pass_filenames: false
+      # TODO: Disabling for now as too slow
+      # - id: cargo-doc
+      #   name: cargo doc
+      #   description: Check documentation builds without errors or warnings
+      #   entry:
+      #     cargo doc --workspace --features "ffi,python,high-precision,defi"
+      #     --profile nextest --no-deps --quiet
+      #   language: system
+      #   files: '\.(rs|toml)$'
+      #   types: [file]
+      #   pass_filenames: false
 
   ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.1
+    hooks:
+      - id: pyupgrade
+        args: ["--py312-plus"]
+
   - repo: https://github.com/asottile/add-trailing-comma
     rev: v4.0.0
     hooks:
@@ -224,7 +250,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
+    rev: v0.14.4
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -274,7 +300,7 @@ repos:
           ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.7 # Must match uv-version file
+    rev: 0.9.8 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

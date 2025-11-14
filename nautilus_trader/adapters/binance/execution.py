@@ -70,10 +70,12 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
 from nautilus_trader.model.identifiers import AccountId
@@ -285,9 +287,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         error_code = get_binance_error_code(exception) if exception else None
 
         match error_code:
-            case (
-                BinanceErrorCode.GTX_ORDER_REJECT
-            ) if not self._log_rejected_due_post_only_as_warning:
+            case BinanceErrorCode.GTX_ORDER_REJECT if (
+                not self._log_rejected_due_post_only_as_warning
+            ):
                 self._log.info(message)
             case code if code in BINANCE_RETRY_WARNINGS:
                 self._log.warning(message)
@@ -403,10 +405,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             # Check if graceful shutdown is configured
             if hasattr(self, "graceful_shutdown_on_exception"):
                 execution_engine = getattr(self, "_execution_engine", None)
-                if execution_engine and hasattr(execution_engine, "graceful_shutdown_on_exception"):
-                    if execution_engine.graceful_shutdown_on_exception:
-                        execution_engine.shutdown_system(f"Listen key recovery failed: {e}")
-                        return
+                if (
+                    execution_engine
+                    and hasattr(execution_engine, "graceful_shutdown_on_exception")
+                    and execution_engine.graceful_shutdown_on_exception
+                ):
+                    execution_engine.shutdown_system(f"Listen key recovery failed: {e}")
+                    return
 
             self._log.error(
                 "Terminating process to prevent operation with invalid authentication",
@@ -826,7 +831,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             self._deny_order_pre_submit(order, str(e))
             return
 
-        # Validate order before submission
         validation_error = self._validate_order_pre_submit(order)
         if validation_error:
             self._deny_order_pre_submit(order, validation_error)
@@ -941,24 +945,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 return "UNSUPPORTED_QUOTE_QUANTITY"
 
         # Stop limit order validations
-        elif isinstance(order, StopLimitOrder):
-            if not self._binance_account_type.is_spot_or_margin:
-                if order.trigger_type not in (
+        elif isinstance(order, (StopLimitOrder, StopMarketOrder)):
+            if (
+                not self._binance_account_type.is_spot_or_margin
+                and order.trigger_type not in (
                     TriggerType.DEFAULT,
                     TriggerType.LAST_PRICE,
                     TriggerType.MARK_PRICE,
-                ):
-                    return f"INVALID_TRIGGER_TYPE: {trigger_type_to_str(order.trigger_type)}"
-
-        # Stop market order validations
-        elif isinstance(order, StopMarketOrder):
-            if not self._binance_account_type.is_spot_or_margin:
-                if order.trigger_type not in (
-                    TriggerType.DEFAULT,
-                    TriggerType.LAST_PRICE,
-                    TriggerType.MARK_PRICE,
-                ):
-                    return f"INVALID_TRIGGER_TYPE: {trigger_type_to_str(order.trigger_type)}"
+                )
+            ):
+                return f"INVALID_TRIGGER_TYPE: {trigger_type_to_str(order.trigger_type)}"
 
         # Trailing stop market order validations
         elif isinstance(order, TrailingStopMarketOrder):
@@ -1255,6 +1251,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"Binance does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         open_orders_strategy: list[Order] = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
@@ -1275,13 +1277,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     symbol=command.instrument_id.symbol.value,
                 )
                 if not retry_manager.result:
-                    if retry_manager.message is not None:
-                        if "Unknown order sent" in retry_manager.message:
-                            self._log.info(
-                                "No open orders to cancel according to Binance",
-                                LogColor.GREEN,
-                            )
-                            return
+                    if (
+                        retry_manager.message is not None
+                        and "Unknown order sent" in retry_manager.message
+                    ):
+                        self._log.info(
+                            "No open orders to cancel according to Binance",
+                            LogColor.GREEN,
+                        )
+                        return
                     for order in open_orders_strategy:
                         if order.is_closed:
                             continue

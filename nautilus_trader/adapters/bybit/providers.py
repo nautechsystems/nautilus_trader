@@ -138,14 +138,42 @@ class BybitInstrumentProvider(InstrumentProvider):
             self._log.warning("No instrument IDs given for loading")
             return
 
-        # Check all instrument IDs
+        # Validate all instrument IDs
         for instrument_id in instrument_ids:
             PyCondition.equal(instrument_id.venue, BYBIT_VENUE, "instrument_id.venue", "BYBIT")
 
+        symbol_product_pairs: set[tuple[str, BybitProductType]] = set()
+
+        for instrument_id in instrument_ids:
+            try:
+                # Parse product type from symbol (requires suffix like -SPOT, -LINEAR, etc.)
+                product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+                    instrument_id.symbol.value,
+                )
+                raw_symbol = nautilus_pyo3.bybit_extract_raw_symbol(instrument_id.symbol.value)
+            except ValueError:
+                # Symbol lacks suffix (e.g., options without -OPTION), try all configured types
+                raw_symbol = instrument_id.symbol.value
+                for product_type in self._product_types:
+                    symbol_product_pairs.add((raw_symbol, product_type))
+                continue
+
+            if product_type not in self._product_types:
+                raise ValueError(
+                    f"Instrument {instrument_id} has product type {product_type} "
+                    f"which is not in configured product types {self._product_types}",
+                )
+
+            symbol_product_pairs.add((raw_symbol, product_type))
+
         all_pyo3_instruments = []
 
-        for product_type in self._product_types:
-            pyo3_instruments = await self._client.request_instruments(product_type, None)
+        # Request specific symbols to avoid pagination issues when loading many instruments
+        for raw_symbol, product_type in symbol_product_pairs:
+            pyo3_instruments = await self._client.request_instruments(
+                product_type,
+                raw_symbol,
+            )
             all_pyo3_instruments.extend(pyo3_instruments)
 
         self._instruments_pyo3 = all_pyo3_instruments

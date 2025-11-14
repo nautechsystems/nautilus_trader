@@ -21,7 +21,7 @@ import pytest
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
@@ -61,7 +61,7 @@ def test_parse_instruments() -> None:
             if not token_id:
                 continue
             outcome = token_info["outcome"]
-            instrument = parse_instrument(market_info, token_id, outcome, 0)
+            instrument = parse_polymarket_instrument(market_info, token_id, outcome, 0)
             instruments.append(instrument)
 
     # Assert
@@ -135,7 +135,7 @@ def test_parse_quote_ticks() -> None:
     # Assert - Test that we can access the new schema fields
     assert len(ws_message.price_changes) == 3
 
-    for i, price_change in enumerate(ws_message.price_changes):
+    for _, price_change in enumerate(ws_message.price_changes):
         assert (
             price_change.asset_id
             == "52114319501245915516055106046884209969926127482827954674443846427813813222426"

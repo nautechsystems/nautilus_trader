@@ -15,8 +15,11 @@
 
 mod common;
 
-use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, str::FromStr, sync::Arc};
+use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc};
+#[cfg(feature = "defi")]
+use std::{str::FromStr, sync::Arc};
 
+#[cfg(feature = "defi")]
 use alloy_primitives::{Address, I256, U160, U256};
 use common::mocks::MockDataClient;
 #[cfg(feature = "defi")]
@@ -51,15 +54,18 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{AmmType, Dex, DexType, chain::chains};
+#[cfg(feature = "defi")]
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
         OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
-    defi::{AmmType, Dex, DexType, chain::chains},
     enums::{BookType, PriceType},
-    identifiers::{ClientId, InstrumentId, TraderId, Venue},
+    identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     types::Price,
 };
@@ -433,7 +439,6 @@ fn test_execute_subscribe_book_deltas(
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
-#[ignore = "Attempt to subtract with overflow"]
 #[rstest]
 fn test_execute_subscribe_book_snapshots(
     audusd_sim: CurrencyPair,

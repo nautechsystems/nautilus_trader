@@ -43,6 +43,8 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 
@@ -124,7 +126,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # price and size precisions when parsing responses
         instruments_pyo3 = self._instrument_provider.instruments_pyo3()
         for inst in instruments_pyo3:
-            self._client.add_instrument(inst)
+            self._client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -294,6 +296,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._log.warning(f"Order cancellation not yet implemented for {command.client_order_id}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"Hyperliquid does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         instrument_str = (
             f" for {command.instrument_id}" if command.instrument_id is not None else ""
         )

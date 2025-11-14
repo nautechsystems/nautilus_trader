@@ -80,6 +80,7 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -115,7 +116,7 @@ def _price_condition_str(self):
 
 
 # Apply the monkey patch
-if hasattr(PriceCondition, "__str__") and not callable(getattr(PriceCondition, "__str__")):
+if hasattr(PriceCondition, "__str__") and not callable(PriceCondition.__str__):
     PriceCondition.__str__ = _price_condition_str
 
 
@@ -486,12 +487,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        """
-        Generate a list of `FillReport`s with optional query filters.
-
-        The returned list may be empty if no executions match the given parameters.
-
-        """
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
@@ -1119,6 +1114,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self._log.error(f"VenueOrderId not found for {command.client_order_id}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"Interactive Brokers does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         for order in self._cache.orders_open(
             instrument_id=command.instrument_id,
         ):

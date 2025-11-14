@@ -130,8 +130,8 @@ class StreamingFeatherWriter:
         self._instrument_writers: dict[tuple[str, str], RecordBatchStreamWriter] = {}
         self._per_instrument_writers = {
             "bar",
-            "order_book_delta",
-            "order_book_depth10",
+            "order_book_deltas",
+            "order_book_depths",
             "quote_tick",
             "trade_tick",
         }
@@ -340,10 +340,7 @@ class StreamingFeatherWriter:
         table_name = class_to_filename(cls)
 
         # Extract identifier: bar_type for bars, instrument_id for other data
-        if isinstance(obj, Bar):
-            identifier_str = str(obj.bar_type)
-        else:
-            identifier_str = obj.instrument_id.value
+        identifier_str = str(obj.bar_type) if isinstance(obj, Bar) else obj.instrument_id.value
 
         key = (table_name, identifier_str)
 
@@ -397,10 +394,7 @@ class StreamingFeatherWriter:
         schema = self._schemas[mapped_cls].with_metadata(metadata)
         table_name = class_to_filename(cls)
 
-        if isinstance(obj, Bar):
-            identifier_str = str(obj.bar_type)
-        else:
-            identifier_str = obj.instrument_id.value
+        identifier_str = str(obj.bar_type) if isinstance(obj, Bar) else obj.instrument_id.value
 
         folder = f"{self.path}/{table_name}/{urisafe_identifier(identifier_str)}"
         key = (table_name, identifier_str)
@@ -426,7 +420,7 @@ class StreamingFeatherWriter:
         if self.include_types is not None and cls not in self.include_types:
             return
 
-        table_name = class_to_filename(cls) if not table_name else table_name
+        table_name = table_name if table_name else class_to_filename(cls)
 
         if table_name in self._writers:
             return

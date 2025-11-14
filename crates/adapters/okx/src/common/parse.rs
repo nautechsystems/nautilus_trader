@@ -74,14 +74,8 @@ use crate::{
 /// OKX frequently represents *null* string fields as an empty string (`""`).
 /// When such a payload is mapped onto `Option<String>` the default behaviour
 /// would yield `Some("")`, which is semantically different from the intended
-/// absence of a value.  Applying this helper via
-///
-/// ```rust
-/// #[serde(deserialize_with = "crate::common::parse::deserialize_empty_string_as_none")]
-/// pub cl_ord_id: Option<String>,
-/// ```
-///
-/// ensures that empty strings are normalised to `None` during deserialization.
+/// absence of a value. This helper ensures that empty strings are normalised
+/// to `None` during deserialization.
 ///
 /// # Errors
 ///

@@ -119,10 +119,7 @@ impl TryFrom<OrderAny> for PassiveOrderAny {
             OrderAny::TrailingStopLimit(_) => Ok(Self::Stop(StopOrderAny::try_from(order)?)),
             OrderAny::TrailingStopMarket(_) => Ok(Self::Stop(StopOrderAny::try_from(order)?)),
             OrderAny::MarketToLimit(_) => Ok(Self::Limit(LimitOrderAny::try_from(order)?)),
-            OrderAny::Market(_) => Err(
-                "Cannot convert Market order to PassiveOrderAny: Market orders are not passive"
-                    .to_string(),
-            ),
+            OrderAny::Market(_) => Ok(Self::Limit(LimitOrderAny::try_from(order)?)),
         }
     }
 }
@@ -177,6 +174,7 @@ impl TryFrom<OrderAny> for LimitOrderAny {
             OrderAny::MarketToLimit(order) => Ok(Self::MarketToLimit(order)),
             OrderAny::StopLimit(order) => Ok(Self::StopLimit(order)),
             OrderAny::TrailingStopLimit(order) => Ok(Self::TrailingStopLimit(order)),
+            OrderAny::Market(order) => Ok(Self::MarketOrderWithProtection(order)),
             _ => Err(format!(
                 "Cannot convert {:?} order to LimitOrderAny: order type does not have a limit price",
                 order.order_type()
@@ -192,6 +190,7 @@ impl From<LimitOrderAny> for OrderAny {
             LimitOrderAny::MarketToLimit(order) => Self::MarketToLimit(order),
             LimitOrderAny::StopLimit(order) => Self::StopLimit(order),
             LimitOrderAny::TrailingStopLimit(order) => Self::TrailingStopLimit(order),
+            LimitOrderAny::MarketOrderWithProtection(order) => Self::Market(order),
         }
     }
 }
@@ -230,6 +229,7 @@ pub enum LimitOrderAny {
     MarketToLimit(MarketToLimitOrder),
     StopLimit(StopLimitOrder),
     TrailingStopLimit(TrailingStopLimitOrder),
+    MarketOrderWithProtection(MarketOrder),
 }
 
 impl LimitOrderAny {
@@ -245,6 +245,9 @@ impl LimitOrderAny {
             Self::MarketToLimit(order) => order.price.expect("MarketToLimit order price not set"),
             Self::StopLimit(order) => order.price,
             Self::TrailingStopLimit(order) => order.price,
+            Self::MarketOrderWithProtection(order) => {
+                order.protection_price.expect("No price for order")
+            }
         }
     }
 }
@@ -256,6 +259,9 @@ impl PartialEq for LimitOrderAny {
             Self::MarketToLimit(order) => order.client_order_id == rhs.client_order_id(),
             Self::StopLimit(order) => order.client_order_id == rhs.client_order_id(),
             Self::TrailingStopLimit(order) => order.client_order_id == rhs.client_order_id(),
+            Self::MarketOrderWithProtection(order) => {
+                order.client_order_id == rhs.client_order_id()
+            }
         }
     }
 }

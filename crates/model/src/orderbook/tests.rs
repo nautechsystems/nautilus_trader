@@ -4952,10 +4952,128 @@ fn orderbook_test_strategy() -> impl Strategy<Value = (BookType, Vec<OrderBookOp
     )
 }
 
+/// Ensures order book operations form a semantically valid sequence.
+///
+/// Tracks live order IDs and filters operations to maintain consistency:
+/// - Add: Skips if order ID already exists (except L1_MBP which allows reuse)
+/// - Update/Delete: Only applies to existing orders
+/// - Clear: Resets tracked state
+/// - L1_MBP: Normalizes all order IDs to side constants (1 for Buy, 2 for Sell)
+///
+/// Duplicate Adds are skipped (except L1) because we cannot disambiguate which
+/// occurrence subsequent Update/Delete operations should target.
+fn sanitize_operations(
+    operations: Vec<OrderBookOperation>,
+    book_type: BookType,
+) -> Vec<OrderBookOperation> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut live_order_ids: HashMap<OrderSide, HashSet<u64>> = HashMap::new();
+    live_order_ids.insert(OrderSide::Buy, HashSet::new());
+    live_order_ids.insert(OrderSide::Sell, HashSet::new());
+
+    let mut sanitized = Vec::new();
+
+    for operation in operations {
+        match operation {
+            OrderBookOperation::Add(order, flags, seq) => {
+                // Skip invalid prices/sizes
+                if order.price.raw <= 0
+                    || order.price.raw == crate::types::price::PRICE_UNDEF
+                    || order.price.raw == crate::types::price::PRICE_ERROR
+                    || !order.size.is_positive()
+                {
+                    continue;
+                }
+
+                let side_set = live_order_ids.get_mut(&order.side).unwrap();
+
+                // For L1_MBP, allow reusing the same order_id (side constant behavior)
+                if book_type == BookType::L1_MBP {
+                    // L1 uses order_id = side as u64, legitimate reuse
+                    let mut l1_order = order;
+                    l1_order.order_id = l1_order.side as u64;
+                    side_set.insert(l1_order.order_id);
+                    sanitized.push(OrderBookOperation::Add(l1_order, flags, seq));
+                } else {
+                    // For L2/L3, skip duplicate order IDs
+                    // We cannot disambiguate which order subsequent operations should target
+                    if side_set.contains(&order.order_id) {
+                        continue; // Skip duplicate Add
+                    }
+
+                    side_set.insert(order.order_id);
+                    sanitized.push(OrderBookOperation::Add(order, flags, seq));
+                }
+            }
+            OrderBookOperation::Update(mut order, flags, seq) => {
+                // Skip invalid prices
+                if order.price.raw <= 0
+                    || order.price.raw == crate::types::price::PRICE_UNDEF
+                    || order.price.raw == crate::types::price::PRICE_ERROR
+                {
+                    continue;
+                }
+
+                // For L1_MBP, normalize order_id to side constant
+                if book_type == BookType::L1_MBP {
+                    order.order_id = order.side as u64;
+                }
+
+                let side_set = live_order_ids.get_mut(&order.side).unwrap();
+
+                // Only update if order exists in book
+                if side_set.contains(&order.order_id) {
+                    // If size is zero, this is effectively a delete
+                    if order.size.raw == 0 {
+                        side_set.remove(&order.order_id);
+                    }
+                    sanitized.push(OrderBookOperation::Update(order, flags, seq));
+                }
+                // If order doesn't exist, skip the update
+            }
+            OrderBookOperation::Delete(mut order, flags, seq) => {
+                // For L1_MBP, normalize order_id to side constant
+                if book_type == BookType::L1_MBP {
+                    order.order_id = order.side as u64;
+                }
+
+                let side_set = live_order_ids.get_mut(&order.side).unwrap();
+
+                // Only delete if order exists in book
+                if side_set.contains(&order.order_id) {
+                    side_set.remove(&order.order_id);
+                    sanitized.push(OrderBookOperation::Delete(order, flags, seq));
+                }
+                // If order doesn't exist, skip the delete
+            }
+            OrderBookOperation::Clear(seq) => {
+                // Clear all orders
+                live_order_ids.get_mut(&OrderSide::Buy).unwrap().clear();
+                live_order_ids.get_mut(&OrderSide::Sell).unwrap().clear();
+                sanitized.push(OrderBookOperation::Clear(seq));
+            }
+            OrderBookOperation::ClearBids(seq) => {
+                live_order_ids.get_mut(&OrderSide::Buy).unwrap().clear();
+                sanitized.push(OrderBookOperation::ClearBids(seq));
+            }
+            OrderBookOperation::ClearAsks(seq) => {
+                live_order_ids.get_mut(&OrderSide::Sell).unwrap().clear();
+                sanitized.push(OrderBookOperation::ClearAsks(seq));
+            }
+        }
+    }
+
+    sanitized
+}
+
 fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBookOperation>) {
     let instrument_id = InstrumentId::from("TEST.VENUE");
     let mut book = OrderBook::new(instrument_id, book_type);
     let mut last_sequence = 0u64;
+
+    // Sanitize operations to ensure semantic validity
+    let operations = sanitize_operations(operations, book_type);
 
     for operation in operations {
         // Ensure monotonic sequence numbers
@@ -4972,26 +5090,6 @@ fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBook
         };
 
         let ts_event = UnixNanos::from(sequence);
-
-        // Skip operations that would cause assertion failures
-        let should_skip = match &operation {
-            OrderBookOperation::Add(order, _, _)
-            | OrderBookOperation::Update(order, _, _)
-            | OrderBookOperation::Delete(order, _, _) => {
-                // Skip invalid prices or orders that might cause cache conflicts
-                order.price.raw == crate::types::price::PRICE_UNDEF
-                    || order.price.raw == crate::types::price::PRICE_ERROR
-                    || order.price.raw <= 0 // Skip zero or negative prices
-                    || order.order_id == 0 // Skip zero order IDs to avoid conflicts
-                    // Allow zero-size orders for Update operations (represent deletions)
-                    || (matches!(operation, OrderBookOperation::Add(_, _, _)) && order.size.raw == 0)
-            }
-            _ => false,
-        };
-
-        if should_skip {
-            continue;
-        }
 
         match operation {
             OrderBookOperation::Add(order, flags, _) => {
@@ -5109,10 +5207,11 @@ fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBook
     }
 }
 
+// Property test verifying order book consistency across random operation sequences.
+//
+// Tests comprehensive invariants including cache consistency, price ordering, positive sizes,
+// and monotonic sequences. Uses sanitize_operations() to ensure valid operation semantics.
 #[rstest]
-// Cache consistency bugs partially fixed, but property test still reveals edge cases
-// Keeping disabled until all edge cases are resolved
-#[ignore = "Cache consistency fixes in progress - multiple edge cases remain"]
 fn prop_test_orderbook_operations() {
     proptest!(|(config in orderbook_test_strategy())| {
         let (book_type, operations) = config;
@@ -5125,6 +5224,9 @@ fn test_orderbook_basic_invariants(book_type: BookType, operations: Vec<OrderBoo
     let instrument_id = InstrumentId::from("TEST.VENUE");
     let mut book = OrderBook::new(instrument_id, book_type);
     let mut last_sequence = 0u64;
+
+    // Sanitize operations to ensure semantic validity
+    let operations = sanitize_operations(operations, book_type);
 
     for operation in operations {
         // Ensure monotonic sequence numbers
@@ -5142,24 +5244,6 @@ fn test_orderbook_basic_invariants(book_type: BookType, operations: Vec<OrderBoo
 
         let ts_event = UnixNanos::from(sequence);
 
-        // Skip operations that would cause assertion failures
-        let should_skip = match &operation {
-            OrderBookOperation::Add(order, _, _)
-            | OrderBookOperation::Update(order, _, _)
-            | OrderBookOperation::Delete(order, _, _) => {
-                order.price.raw == crate::types::price::PRICE_UNDEF
-                    || order.price.raw == crate::types::price::PRICE_ERROR
-                    || order.size.raw == 0
-                    || order.order_id == 0
-            }
-            _ => false,
-        };
-
-        if should_skip {
-            continue;
-        }
-
-        // Temporarily disable cache assertions for this test by not checking them
         match operation {
             OrderBookOperation::Add(order, flags, _) => {
                 book.add(order, flags, sequence, ts_event);
@@ -5256,13 +5340,167 @@ fn test_orderbook_basic_invariants(book_type: BookType, operations: Vec<OrderBoo
     }
 }
 
+// Property test verifying fundamental order book invariants.
+//
+// Tests basic properties: price ordering, positive sizes, monotonic sequences.
 #[rstest]
-#[ignore = "Also hits cache consistency bug - debug assertions are in ladder code"]
 fn prop_test_orderbook_basic_invariants() {
     proptest!(|(config in orderbook_test_strategy())| {
         let (book_type, operations) = config;
         test_orderbook_basic_invariants(book_type, operations);
     });
+}
+
+// Test that sanitize_operations correctly skips duplicate Adds
+#[rstest]
+fn test_sanitize_operations_skips_duplicate_adds() {
+    // Create a sequence where the same order ID is added twice, then deleted twice
+    let operations = vec![
+        OrderBookOperation::Add(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00"),
+                Quantity::from(10),
+                42,
+            ),
+            0,
+            1,
+        ),
+        OrderBookOperation::Add(
+            BookOrder::new(OrderSide::Buy, Price::from("99.00"), Quantity::from(20), 42),
+            0,
+            2,
+        ),
+        OrderBookOperation::Delete(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00"),
+                Quantity::from(10),
+                42,
+            ),
+            0,
+            3,
+        ),
+        OrderBookOperation::Delete(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00"),
+                Quantity::from(10),
+                42,
+            ),
+            0,
+            4,
+        ),
+    ];
+
+    let sanitized = sanitize_operations(operations, BookType::L3_MBO);
+
+    // After sanitization:
+    // - First Add(id=42) is kept
+    // - Second Add(id=42) is SKIPPED (duplicate)
+    // - First Delete(id=42) removes the order
+    // - Second Delete(id=42) is skipped (order doesn't exist)
+    assert_eq!(sanitized.len(), 2, "Should have 1 Add + 1 Delete");
+
+    // Verify only the first add remains
+    if let OrderBookOperation::Add(order, _, _) = &sanitized[0] {
+        assert_eq!(order.order_id, 42);
+        assert_eq!(order.price, Price::from("100.00"));
+    }
+
+    // Apply to order book and verify final state
+    let instrument_id = InstrumentId::from("TEST.VENUE");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    for operation in sanitized {
+        match operation {
+            OrderBookOperation::Add(order, flags, seq) => {
+                book.add(order, flags, seq, UnixNanos::from(seq));
+            }
+            OrderBookOperation::Delete(order, flags, seq) => {
+                book.delete(order, flags, seq, UnixNanos::from(seq));
+            }
+            _ => {}
+        }
+    }
+
+    // After the delete, book should be empty
+    assert_eq!(book.bids(None).count(), 0, "Book should be empty");
+}
+
+// Test that L1_MBP normalizes order IDs for all operations
+#[rstest]
+fn test_sanitize_operations_l1_id_normalization() {
+    // Create L1 operations with random order IDs
+    let operations = vec![
+        OrderBookOperation::Add(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00"),
+                Quantity::from(10),
+                999,
+            ),
+            0,
+            1,
+        ),
+        OrderBookOperation::Update(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.50"),
+                Quantity::from(15),
+                888,
+            ),
+            0,
+            2,
+        ),
+        OrderBookOperation::Delete(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.50"),
+                Quantity::from(15),
+                777,
+            ),
+            0,
+            3,
+        ),
+    ];
+
+    let sanitized = sanitize_operations(operations, BookType::L1_MBP);
+
+    // All operations should be normalized to order_id = 1 (Buy as u64)
+    assert_eq!(sanitized.len(), 3, "All L1 operations should be kept");
+
+    if let OrderBookOperation::Add(order, _, _) = &sanitized[0] {
+        assert_eq!(order.order_id, 1, "L1 Buy Add should use order_id 1");
+    }
+    if let OrderBookOperation::Update(order, _, _) = &sanitized[1] {
+        assert_eq!(order.order_id, 1, "L1 Buy Update should use order_id 1");
+    }
+    if let OrderBookOperation::Delete(order, _, _) = &sanitized[2] {
+        assert_eq!(order.order_id, 1, "L1 Buy Delete should use order_id 1");
+    }
+
+    // Apply to order book and verify
+    let instrument_id = InstrumentId::from("TEST.VENUE");
+    let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
+
+    for operation in sanitized {
+        match operation {
+            OrderBookOperation::Add(order, flags, seq) => {
+                book.add(order, flags, seq, UnixNanos::from(seq));
+            }
+            OrderBookOperation::Update(order, flags, seq) => {
+                book.update(order, flags, seq, UnixNanos::from(seq));
+            }
+            OrderBookOperation::Delete(order, flags, seq) => {
+                book.delete(order, flags, seq, UnixNanos::from(seq));
+            }
+            _ => {}
+        }
+    }
+
+    // After add, update, delete sequence, book should be empty
+    assert_eq!(book.bids(None).count(), 0, "L1 book should be empty");
 }
 
 // Additional property test focusing on L1 quote/trade tick updates

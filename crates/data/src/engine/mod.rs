@@ -1314,7 +1314,69 @@ impl DataEngine {
         }
 
         self.bar_aggregator_handlers.insert(bar_key, handlers);
+
+        // Setup time bar aggregator if needed (matches Cython _setup_bar_aggregator)
+        self.setup_bar_aggregator(bar_type, false)?;
+
         aggregator.borrow_mut().set_is_running(true);
+
+        Ok(())
+    }
+
+    /// Sets up a bar aggregator, matching Cython _setup_bar_aggregator logic.
+    ///
+    /// This method handles historical mode, message bus subscriptions, and time bar aggregator setup.
+    fn setup_bar_aggregator(&mut self, bar_type: BarType, historical: bool) -> anyhow::Result<()> {
+        let bar_key = bar_type.standard();
+        let aggregator = self.bar_aggregators.get(&bar_key).ok_or_else(|| {
+            anyhow::anyhow!("Cannot setup bar aggregator: no aggregator found for {bar_type}")
+        })?;
+
+        // Set historical mode and handler
+        let handler: Box<dyn FnMut(Bar)> = if historical {
+            // Historical handler - process_historical equivalent
+            let cache = self.cache.clone();
+            Box::new(move |bar: Bar| {
+                if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
+                    log_error_on_cache_insert(&e);
+                }
+                // In historical mode, bars are processed but not published to message bus
+            })
+        } else {
+            // Regular handler - process equivalent
+            let cache = self.cache.clone();
+            Box::new(move |bar: Bar| {
+                if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
+                    log_error_on_cache_insert(&e);
+                }
+                let topic = switchboard::get_bars_topic(bar.bar_type);
+                msgbus::publish(topic, &bar as &dyn Any);
+            })
+        };
+
+        aggregator
+            .borrow_mut()
+            .set_historical_mode(historical, handler);
+
+        // For TimeBarAggregator, set clock and start timer
+        if bar_type.spec().is_time_aggregated() {
+            use nautilus_common::clock::TestClock;
+
+            if historical {
+                // Each aggregator gets its own independent clock
+                let test_clock = Rc::new(RefCell::new(TestClock::new()));
+                aggregator.borrow_mut().set_clock(test_clock);
+                // Set weak reference for historical mode (start_timer called later from preprocess_historical_events)
+                // Store weak reference so start_timer can use it when called later
+                let aggregator_weak = Rc::downgrade(aggregator);
+                aggregator.borrow_mut().set_aggregator_weak(aggregator_weak);
+            } else {
+                aggregator.borrow_mut().set_clock(self.clock.clone());
+                aggregator
+                    .borrow_mut()
+                    .start_timer(Some(aggregator.clone()));
+            }
+        }
 
         Ok(())
     }

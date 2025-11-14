@@ -16,6 +16,7 @@
 //! Real-time and static `Clock` implementations.
 
 use std::{
+    any::Any,
     collections::{BTreeMap, BinaryHeap, HashMap},
     fmt::Debug,
     ops::Deref,
@@ -29,7 +30,7 @@ use chrono::{DateTime, Utc};
 use futures::Stream;
 use nautilus_core::{
     AtomicTime, UnixNanos,
-    correctness::{check_positive_u64, check_predicate_true, check_valid_string_ascii},
+    correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
     time::get_atomic_clock_realtime,
 };
 use thousands::Separable;
@@ -49,7 +50,7 @@ use crate::{
 /// # Notes
 ///
 /// An active timer is one which has not expired (`timer.is_expired == False`).
-pub trait Clock: Debug {
+pub trait Clock: Debug + Any {
     /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
     fn utc_now(&self) -> DateTime<Utc> {
         DateTime::from_timestamp_nanos(self.timestamp_ns().as_i64())
@@ -227,6 +228,17 @@ pub trait Clock: Debug {
 
     /// Resets the clock by clearing it's internal state.
     fn reset(&mut self);
+}
+
+impl dyn Clock {
+    /// Returns a reference to this clock as `Any` for downcasting.
+    pub fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    /// Returns a mutable reference to this clock as `Any` for downcasting.
+    pub fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// A static test clock.
@@ -481,7 +493,7 @@ impl Clock for TestClock {
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string_ascii(name, stringify!(name))?;
+        check_valid_string_utf8(name, stringify!(name))?;
 
         let name = Ustr::from(name);
         let allow_past = allow_past.unwrap_or(true);
@@ -548,7 +560,7 @@ impl Clock for TestClock {
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string_ascii(name, stringify!(name))?;
+        check_valid_string_utf8(name, stringify!(name))?;
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
@@ -772,7 +784,7 @@ impl Clock for LiveClock {
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string_ascii(name, stringify!(name))?;
+        check_valid_string_utf8(name, stringify!(name))?;
 
         let name = Ustr::from(name);
         let allow_past = allow_past.unwrap_or(true);
@@ -853,7 +865,7 @@ impl Clock for LiveClock {
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string_ascii(name, stringify!(name))?;
+        check_valid_string_utf8(name, stringify!(name))?;
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),

@@ -1411,9 +1411,11 @@ class LiveExecutionEngine(ExecutionEngine):
                 continue  # Already checked above
 
             # Apply instrument filter
-            if self.reconciliation_instrument_ids:
-                if instrument_id not in self.reconciliation_instrument_ids:
-                    continue
+            if (
+                self.reconciliation_instrument_ids
+                and instrument_id not in self.reconciliation_instrument_ids
+            ):
+                continue
 
             # Venue has a position but we don't - this is a discrepancy
             if venue_report.signed_decimal_qty == 0:
@@ -1834,7 +1836,8 @@ class LiveExecutionEngine(ExecutionEngine):
         final_orders = dict(mass_status._order_reports)
         final_fills = dict(mass_status._fill_reports)
 
-        for instrument_id in mass_status.position_reports.keys():
+        reconciliation_instruments: list[Instrument] = []
+        for instrument_id in mass_status.position_reports:
             # Respect reconciliation_instrument_ids filter
             if not self._consider_for_reconciliation(instrument_id):
                 self._log.debug(
@@ -1843,42 +1846,48 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 continue
 
-            self._log.info(
-                f"Attempting to adjust fills for {instrument_id}",
-                LogColor.BLUE,
-            )
             instrument = self._cache.instrument(instrument_id)
-            if instrument:
-                self._log.info(
-                    f"Calling adjust_fills_for_partial_window for {instrument_id}",
-                    LogColor.BLUE,
+            if not instrument:
+                self._log.debug(
+                    f"Skipping fill adjustment for {instrument_id}: "
+                    f"instrument not found in cache",
                 )
-                adjusted_orders_for_instrument, adjusted_fills_for_instrument = (
-                    adjust_fills_for_partial_window(
-                        mass_status,
-                        instrument,
-                        self._log,
-                    )
-                )
+                continue
 
-                # Remove old orders and fills for this instrument
-                for venue_order_id in list(final_orders.keys()):
-                    order = final_orders[venue_order_id]
-                    if order.instrument_id == instrument_id:
-                        del final_orders[venue_order_id]
+            reconciliation_instruments.append(instrument)
 
-                for venue_order_id in list(final_fills.keys()):
-                    fills = final_fills[venue_order_id]
-                    if fills and fills[0].instrument_id == instrument_id:
-                        del final_fills[venue_order_id]
+        self._log.info(
+            f"Attempting to adjust fills for {len(reconciliation_instruments)} instruments",
+            LogColor.BLUE,
+        )
+        adjusted_results = adjust_fills_for_partial_window(
+            mass_status,
+            reconciliation_instruments,
+            self._log,
+        )
+        self._log.info(
+            f"Updating adjusted fills for {len(reconciliation_instruments)} instruments",
+            LogColor.BLUE,
+        )
 
-                # Add adjusted orders and fills for this instrument
-                final_orders.update(adjusted_orders_for_instrument)
-                final_fills.update(adjusted_fills_for_instrument)
-                self._log.info(
-                    f"Adjusted {len(adjusted_orders_for_instrument)} orders, {len(adjusted_fills_for_instrument)} fills for {instrument_id}",
-                    LogColor.BLUE,
-                )
+        for instrument_id, (
+            adjusted_orders_for_instrument,
+            adjusted_fills_for_instrument,
+        ) in adjusted_results.items():
+            # Remove old orders and fills for this instrument
+            for venue_order_id in list(final_orders.keys()):
+                order = final_orders[venue_order_id]
+                if order.instrument_id == instrument_id:
+                    del final_orders[venue_order_id]
+
+            for venue_order_id in list(final_fills.keys()):
+                fills = final_fills[venue_order_id]
+                if fills and fills[0].instrument_id == instrument_id:
+                    del final_fills[venue_order_id]
+
+            # Add adjusted orders and fills for this instrument
+            final_orders.update(adjusted_orders_for_instrument)
+            final_fills.update(adjusted_fills_for_instrument)
 
         # Apply all adjustments at once
         mass_status._order_reports = final_orders
@@ -1951,18 +1960,14 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._log_skipping_reconciliation_on_instrument_id(order_report)
                 continue
 
-            # Check and handle duplicate client order IDs
             client_order_id = order_report.client_order_id
 
-            if client_order_id is not None:
-                if client_order_id in self.filtered_client_order_ids:
-                    self._log_skipping_reconciliation_on_client_order_id(order_report)
-                    continue
-
-                if client_order_id in reconciled_orders:
-                    self._log.error(f"Duplicate {client_order_id!r} detected: {order_report}")
-                    results.append(False)
-                    continue  # Determine how to handle this
+            if (
+                client_order_id is not None
+                and client_order_id in self.filtered_client_order_ids
+            ):
+                self._log_skipping_reconciliation_on_client_order_id(order_report)
+                continue
 
             # Check for duplicate trade IDs
             for fill_report in trades:
@@ -2264,51 +2269,51 @@ class LiveExecutionEngine(ExecutionEngine):
 
             existing_fill = self._get_existing_fill_for_trade_id(order, report.trade_id)
 
-            if existing_fill:
-                if not self._fill_reports_equal(existing_fill, report):
-                    differences: list[str] = []
+            if existing_fill and not self._fill_reports_equal(existing_fill, report):
+                differences: list[str] = []
 
-                    # Last quantity
-                    if existing_fill.last_qty != report.last_qty:
-                        differences.append(f"qty: {existing_fill.last_qty} vs {report.last_qty}")
+                # Last quantity
+                if existing_fill.last_qty != report.last_qty:
+                    differences.append(f"qty: {existing_fill.last_qty} vs {report.last_qty}")
 
-                    # Last price
-                    if existing_fill.last_px != report.last_px:
-                        differences.append(f"px: {existing_fill.last_px} vs {report.last_px}")
+                # Last price
+                if existing_fill.last_px != report.last_px:
+                    differences.append(f"px: {existing_fill.last_px} vs {report.last_px}")
 
-                    # Commission
-                    if existing_fill.commission is None and report.commission is not None:
-                        differences.append(f"commission: None vs {report.commission}")
-                    elif existing_fill.commission is not None and report.commission is None:
-                        differences.append(f"commission: {existing_fill.commission} vs None")
-                    elif existing_fill.commission is not None and report.commission is not None:
-                        if existing_fill.commission.currency != report.commission.currency:
-                            differences.append(
-                                f"commission currency: {existing_fill.commission.currency} vs {report.commission.currency}",
-                            )
-                        elif existing_fill.commission != report.commission:
-                            differences.append(
-                                f"commission: {existing_fill.commission} vs {report.commission}",
-                            )
-
-                    # Liquidity side
-                    if existing_fill.liquidity_side != report.liquidity_side:
+                # Commission
+                if existing_fill.commission is None and report.commission is not None:
+                    differences.append(f"commission: None vs {report.commission}")
+                elif existing_fill.commission is not None and report.commission is None:
+                    differences.append(f"commission: {existing_fill.commission} vs None")
+                elif existing_fill.commission is not None and report.commission is not None:
+                    if existing_fill.commission.currency != report.commission.currency:
                         differences.append(
-                            f"liquidity: {existing_fill.liquidity_side} vs {report.liquidity_side}",
+                            f"commission currency: {existing_fill.commission.currency} vs {report.commission.currency}",
+                        )
+                    elif existing_fill.commission != report.commission:
+                        differences.append(
+                            f"commission: {existing_fill.commission} vs {report.commission}",
                         )
 
-                    # Timestamp
-                    if existing_fill.ts_event != report.ts_event:
-                        differences.append(
-                            f"ts_event: {existing_fill.ts_event} vs {report.ts_event}",
-                        )
-
-                    self._log.warning(
-                        f"Fill report data differs from existing data for trade_id {report.trade_id}, "
-                        f"differences: {', '.join(differences)}; retaining cached data for consistency",
+                # Liquidity side
+                if existing_fill.liquidity_side != report.liquidity_side:
+                    differences.append(
+                        f"liquidity: {existing_fill.liquidity_side} vs {report.liquidity_side}",
                     )
 
-            return True  # Fill already applied, continue with existing data
+                # Timestamp
+                if existing_fill.ts_event != report.ts_event:
+                    differences.append(
+                        f"ts_event: {existing_fill.ts_event} vs {report.ts_event}",
+                    )
+
+                self._log.warning(
+                    f"Fill report data differs from existing data for trade_id {report.trade_id}, "
+                    f"differences: {', '.join(differences)}; retaining cached data for consistency",
+                )
+
+            if existing_fill:
+                return True  # Fill already applied, continue with existing data
 
         # Check if fill would cause overfill
         potential_filled_qty = order.filled_qty + report.last_qty
@@ -2885,18 +2890,20 @@ class LiveExecutionEngine(ExecutionEngine):
         strategy_id = self.get_external_order_claim(report.instrument_id)
 
         if strategy_id is None:
+            # All unclaimed reconciliation uses EXTERNAL strategy ID
+            # Tags distinguish the source for filtering purposes
+            strategy_id = StrategyId("EXTERNAL")
             if is_external:
-                # Generating from external order
-                strategy_id = StrategyId("EXTERNAL")
-                tags = ["EXTERNAL"]
+                # Actual external order found on venue
+                tags = ["VENUE"]
             else:
-                # Generating from internal position diff alignment
-                strategy_id = StrategyId("INTERNAL-DIFF")
-                tags = ["INTERNAL"]
+                # Internal position diff alignment (synthetic fill)
+                tags = ["RECONCILIATION"]
         else:
             tags = None
 
-        if self.filter_unclaimed_external_orders and strategy_id.is_external():
+        # Filter unclaimed external orders (but not reconciliation fills)
+        if self.filter_unclaimed_external_orders and tags and "VENUE" in tags:
             self._filtered_external_orders_count += 1
 
             if self._filtered_external_orders_count == 1:
@@ -3031,9 +3038,4 @@ class LiveExecutionEngine(ExecutionEngine):
         ):
             return True
 
-        if order.order_type in [OrderType.STOP_LIMIT, OrderType.TRAILING_STOP_LIMIT] and (
-            report.trigger_price != order.trigger_price or report.price != order.price
-        ):
-            return True
-
-        return False
+        return bool(order.order_type in [OrderType.STOP_LIMIT, OrderType.TRAILING_STOP_LIMIT] and (report.trigger_price != order.trigger_price or report.price != order.price))

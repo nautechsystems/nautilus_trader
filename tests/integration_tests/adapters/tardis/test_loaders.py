@@ -515,7 +515,7 @@ binance-futures,BTCUSDT,1640995205000000,1640995205100000,false,bid,49998.5,1.0"
 
         # Test precision inference within chunks
         # Each chunk should have consistent precision within itself
-        for i, chunk in enumerate(chunks):
+        for _, chunk in enumerate(chunks):
             if len(chunk) > 1:
                 # All deltas in a chunk should have same precision
                 first_price_precision = chunk[0].order.price.precision

@@ -269,7 +269,8 @@ pub struct BybitSetTradingStopParams {
     pub sl_trigger_by: Option<BybitTriggerType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_price: Option<String>,
-    pub tpsl_mode: BybitTpSlMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tpsl_mode: Option<BybitTpSlMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tp_size: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

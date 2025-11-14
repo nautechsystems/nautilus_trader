@@ -56,6 +56,7 @@ nautilus-network = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
@@ -109,18 +110,3 @@ path = "bin/ws_data.rs"
 [[bin]]
 name = "okx-ws-exec"
 path = "bin/ws_exec.rs"
-
-[[bench]]
-name = "ws_book_parsing"
-path = "benches/ws_book_parsing.rs"
-harness = false
-
-[[bench]]
-name = "ws_trade_parsing"
-path = "benches/ws_trade_parsing.rs"
-harness = false
-
-[[bench]]
-name = "ws_orders_iai"
-path = "benches/ws_orders_iai.rs"
-harness = false

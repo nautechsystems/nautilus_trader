@@ -52,6 +52,7 @@ pub struct StopMarketOrder {
     pub trigger_instrument_id: Option<InstrumentId>,
     pub is_triggered: bool,
     pub ts_triggered: Option<UnixNanos>,
+    pub protection_price: Option<Price>,
     core: OrderCore,
 }
 
@@ -141,6 +142,7 @@ impl StopMarketOrder {
             trigger_instrument_id,
             is_triggered: false,
             ts_triggered: None,
+            protection_price: None,
         })
     }
 
@@ -292,7 +294,7 @@ impl Order for StopMarketOrder {
     }
 
     fn price(&self) -> Option<Price> {
-        None
+        self.protection_price
     }
 
     fn trigger_price(&self) -> Option<Price> {
@@ -320,7 +322,7 @@ impl Order for StopMarketOrder {
     }
 
     fn has_price(&self) -> bool {
-        false
+        self.protection_price.is_some()
     }
 
     fn display_qty(&self) -> Option<Quantity> {
@@ -469,6 +471,7 @@ impl Order for StopMarketOrder {
             self.trigger_price = trigger_price;
         }
 
+        self.protection_price = event.protection_price;
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
     }
@@ -776,5 +779,36 @@ mod tests {
 
         // Assert that the is_triggered flag is initially false
         assert_eq!(order.is_triggered(), Some(false));
+    }
+
+    #[rstest]
+    fn test_stop_market_order_protection_price_update() {
+        // Create and accept a basic stop market order
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .trigger_price(Price::new(100.0, 2))
+            .build();
+
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+
+        // Update with new values
+        let calculated_protection_price = Price::new(95.0, 2);
+
+        let event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            protection_price: Some(calculated_protection_price),
+            ..Default::default()
+        };
+
+        assert_eq!(accepted_order.price(), None);
+        assert!(!accepted_order.has_price());
+
+        accepted_order.apply(OrderEventAny::Updated(event)).unwrap();
+
+        // Verify updates were applied correctly
+        assert_eq!(accepted_order.price(), Some(calculated_protection_price));
+        assert!(accepted_order.has_price());
     }
 }

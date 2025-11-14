@@ -796,6 +796,16 @@ pub struct BybitSwitchModeResult {}
 /// - <https://bybit-exchange.github.io/docs/v5/position/position-mode>
 pub type BybitSwitchModeResponse = BybitResponse<BybitSwitchModeResult>;
 
+/// Empty result for set trading stop operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BybitSetTradingStopResult {}
+
+/// Response alias for set trading stop requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/position/trading-stop>
+pub type BybitSetTradingStopResponse = BybitResponse<BybitSetTradingStopResult>;
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////

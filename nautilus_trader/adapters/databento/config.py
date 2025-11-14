@@ -50,6 +50,11 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         The instrument IDs to request instrument definitions for on start.
     venue_dataset_map: dict[str, str], optional
         A dictionary to override the default dataset used for a venue.
+    reconnect_timeout_mins : int, optional, default 10
+        The timeout (minutes) for reconnection attempts when the live connection is lost.
+        Set to ``None`` to retry indefinitely (use with caution - see documentation).
+        The client uses rapid initial retries followed by exponential backoff.
+        See the Connection Stability section in the Databento integration guide for details.
 
     """
 
@@ -63,3 +68,4 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     instrument_ids: list[InstrumentId] | None = None
     parent_symbols: dict[str, set[str]] | None = None
     venue_dataset_map: dict[str, str] | None = None
+    reconnect_timeout_mins: int | None = 10

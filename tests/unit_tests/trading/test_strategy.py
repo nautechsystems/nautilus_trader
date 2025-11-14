@@ -39,6 +39,8 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.indicators import ExponentialMovingAverage
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OmsType
@@ -617,7 +619,9 @@ class TestStrategy:
         strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema)
 
         # Act
-        strategy.handle_quote_ticks([])
+        tick: QuoteTick
+        for tick in []:
+            strategy.handle_quote_tick(tick)
 
         # Assert
         assert ema.count == 0
@@ -639,7 +643,8 @@ class TestStrategy:
         tick = TestDataStubs.quote_tick(AUDUSD_SIM)
 
         # Act
-        strategy.handle_quote_ticks([tick])
+        for t in [tick]:
+            strategy.handle_quote_tick(t)
 
         # Assert
         assert ema.count == 1
@@ -684,7 +689,8 @@ class TestStrategy:
         tick = TestDataStubs.trade_tick(AUDUSD_SIM)
 
         # Act
-        strategy.handle_trade_ticks([tick])
+        for t in [tick]:
+            strategy.handle_trade_tick(t)
 
         # Assert
         assert ema.count == 1
@@ -704,7 +710,9 @@ class TestStrategy:
         strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
 
         # Act
-        strategy.handle_trade_ticks([])
+        tick: TradeTick
+        for tick in []:
+            strategy.handle_trade_tick(tick)
 
         # Assert
         assert ema.count == 0
@@ -749,7 +757,8 @@ class TestStrategy:
         bar = TestDataStubs.bar_5decimal()
 
         # Act
-        strategy.handle_bars([bar])
+        for b in [bar]:
+            strategy.handle_bar(b)
 
         # Assert
         assert ema.count == 1
@@ -770,7 +779,9 @@ class TestStrategy:
         strategy.register_indicator_for_bars(bar_type, ema)
 
         # Act
-        strategy.handle_bars([])
+        bar: Bar
+        for bar in []:
+            strategy.handle_bar(bar)
 
         # Assert
         assert ema.count == 0

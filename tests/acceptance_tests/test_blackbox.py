@@ -93,15 +93,17 @@ class MACDStrategy(Strategy):
         self.unsubscribe_trade_ticks(instrument_id=self.config.instrument_id)
 
     def on_order_accepted(self, event: OrderAccepted) -> None:
-        if self._limit_order is not None:
-            if self._limit_order.client_order_id == event.client_order_id:
-                if self.account.is_margin_account:
-                    self.log.info(
-                        f"After limit order accepted with qty {self._limit_order.quantity} balances locked: "
-                        + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
-                        LogColor.MAGENTA,
-                    )
-                    return
+        if (
+            self._limit_order is not None
+            and self._limit_order.client_order_id == event.client_order_id
+            and self.account.is_margin_account
+        ):
+            self.log.info(
+                f"After limit order accepted with qty {self._limit_order.quantity} balances locked: "
+                + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
+                LogColor.MAGENTA,
+            )
+            return
 
         if self.account.is_margin_account:
             self.log.info(

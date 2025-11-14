@@ -74,15 +74,11 @@ where
     E: std::error::Error,
 {
     /// Creates a new retry manager with the given configuration.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the configuration is invalid.
-    pub const fn new(config: RetryConfig) -> anyhow::Result<Self> {
-        Ok(Self {
+    pub const fn new(config: RetryConfig) -> Self {
+        Self {
             config,
             _phantom: PhantomData,
-        })
+        }
     }
 
     /// Executes an operation with retry logic and optional cancellation.
@@ -396,11 +392,7 @@ where
 }
 
 /// Convenience function to create a retry manager with default configuration.
-///
-/// # Errors
-///
-/// Returns an error if the default configuration is invalid.
-pub fn create_default_retry_manager<E>() -> anyhow::Result<RetryManager<E>>
+pub fn create_default_retry_manager<E>() -> RetryManager<E>
 where
     E: std::error::Error,
 {
@@ -408,11 +400,7 @@ where
 }
 
 /// Convenience function to create a retry manager for HTTP operations.
-///
-/// # Errors
-///
-/// Returns an error if the HTTP configuration is invalid.
-pub const fn create_http_retry_manager<E>() -> anyhow::Result<RetryManager<E>>
+pub const fn create_http_retry_manager<E>() -> RetryManager<E>
 where
     E: std::error::Error,
 {
@@ -430,11 +418,7 @@ where
 }
 
 /// Convenience function to create a retry manager for WebSocket operations.
-///
-/// # Errors
-///
-/// Returns an error if the WebSocket configuration is invalid.
-pub const fn create_websocket_retry_manager<E>() -> anyhow::Result<RetryManager<E>>
+pub const fn create_websocket_retry_manager<E>() -> RetryManager<E>
 where
     E: std::error::Error,
 {
@@ -535,7 +519,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_manager_success_first_attempt() {
-        let manager = RetryManager::new(RetryConfig::default()).unwrap();
+        let manager = RetryManager::new(RetryConfig::default());
 
         let result = manager
             .execute_with_retry(
@@ -551,7 +535,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_manager_non_retryable_error() {
-        let manager = RetryManager::new(RetryConfig::default()).unwrap();
+        let manager = RetryManager::new(RetryConfig::default());
 
         let result = manager
             .execute_with_retry(
@@ -578,7 +562,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let result = manager
             .execute_with_retry(
@@ -605,7 +589,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let result = manager
             .execute_with_retry(
@@ -635,7 +619,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: Some(200),
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let start = tokio::time::Instant::now();
         let result = manager
@@ -656,7 +640,7 @@ mod tests {
 
     #[rstest]
     fn test_http_retry_manager_config() {
-        let manager = create_http_retry_manager::<TestError>().unwrap();
+        let manager = create_http_retry_manager::<TestError>();
         assert_eq!(manager.config.max_retries, 3);
         assert!(!manager.config.immediate_first);
         assert_eq!(manager.config.max_elapsed_ms, Some(180_000));
@@ -664,7 +648,7 @@ mod tests {
 
     #[rstest]
     fn test_websocket_retry_manager_config() {
-        let manager = create_websocket_retry_manager::<TestError>().unwrap();
+        let manager = create_websocket_retry_manager::<TestError>();
         assert_eq!(manager.config.max_retries, 5);
         assert!(manager.config.immediate_first);
         assert_eq!(manager.config.max_elapsed_ms, Some(120_000));
@@ -682,7 +666,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         // Test with retry predicate that rejects timeouts
         let should_not_retry_timeouts = |error: &TestError| !matches!(error, TestError::Timeout(_));
@@ -716,7 +700,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         // Test with retry predicate that allows timeouts
         let should_retry_timeouts = |error: &TestError| matches!(error, TestError::Timeout(_));
@@ -755,7 +739,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
         let counter_clone = attempt_counter.clone();
@@ -795,7 +779,7 @@ mod tests {
             immediate_first: true,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let attempt_times = Arc::new(std::sync::Mutex::new(Vec::new()));
         let times_clone = attempt_times.clone();
@@ -855,7 +839,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let start = tokio::time::Instant::now();
         let result = manager
@@ -889,7 +873,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
         let counter_clone = attempt_counter.clone();
@@ -926,7 +910,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let delays = Arc::new(std::sync::Mutex::new(Vec::new()));
         let delays_clone = delays.clone();
@@ -989,7 +973,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: Some(150), // Should stop after ~3 attempts
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
         let counter_clone = attempt_counter.clone();
@@ -1032,7 +1016,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
         let counter_clone = attempt_counter.clone();
@@ -1077,7 +1061,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let token = CancellationToken::new();
         let token_clone = token.clone();
@@ -1137,7 +1121,7 @@ mod tests {
             immediate_first: false,
             max_elapsed_ms: None,
         };
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let token = CancellationToken::new();
         let token_clone = token.clone();
@@ -1179,7 +1163,7 @@ mod tests {
         use tokio_util::sync::CancellationToken;
 
         let config = RetryConfig::default();
-        let manager = RetryManager::new(config).unwrap();
+        let manager = RetryManager::new(config);
 
         let token = CancellationToken::new();
         token.cancel(); // Pre-cancel for immediate cancellation
@@ -1245,8 +1229,7 @@ mod proptest_tests {
             };
 
             // Should always be able to create a RetryManager with valid config
-            let manager = RetryManager::<std::io::Error>::new(config);
-            prop_assert!(manager.is_ok());
+            let _manager = RetryManager::<std::io::Error>::new(config);
         }
 
         #[rstest]
@@ -1271,7 +1254,7 @@ mod proptest_tests {
                 max_elapsed_ms: None,
             };
 
-            let manager = RetryManager::new(config).unwrap();
+            let manager = RetryManager::new(config);
             let attempt_counter = Arc::new(AtomicU32::new(0));
             let counter_clone = attempt_counter.clone();
 
@@ -1315,7 +1298,7 @@ mod proptest_tests {
                 max_elapsed_ms: None,
             };
 
-            let manager = RetryManager::new(config).unwrap();
+            let manager = RetryManager::new(config);
 
             let result = rt.block_on(async {
                 let operation_future = manager.execute_with_retry(
@@ -1362,7 +1345,7 @@ mod proptest_tests {
                 max_elapsed_ms: Some(max_elapsed_ms),
             };
 
-            let manager = RetryManager::new(config).unwrap();
+            let manager = RetryManager::new(config);
             let attempt_counter = Arc::new(AtomicU32::new(0));
             let counter_clone = attempt_counter.clone();
 
@@ -1417,7 +1400,7 @@ mod proptest_tests {
                 max_elapsed_ms: None,
             };
 
-            let manager = RetryManager::new(config).unwrap();
+            let manager = RetryManager::new(config);
             let attempt_times = Arc::new(std::sync::Mutex::new(Vec::new()));
             let attempt_times_for_block = attempt_times.clone();
 
@@ -1509,7 +1492,7 @@ mod proptest_tests {
                 max_elapsed_ms: None,
             };
 
-            let manager = RetryManager::new(config).unwrap();
+            let manager = RetryManager::new(config);
             let attempt_times = Arc::new(std::sync::Mutex::new(Vec::new()));
             let attempt_times_for_block = attempt_times.clone();
 
@@ -1582,7 +1565,7 @@ mod proptest_tests {
                 max_elapsed_ms: None,
             };
 
-            let manager = RetryManager::new(config).unwrap();
+            let manager = RetryManager::new(config);
             let attempt_counter = Arc::new(AtomicU32::new(0));
             let counter_clone = attempt_counter.clone();
 
@@ -1635,7 +1618,7 @@ mod proptest_tests {
                 max_elapsed_ms: None,
             };
 
-            let manager = RetryManager::new(config).unwrap();
+            let manager = RetryManager::new(config);
             let token = CancellationToken::new();
             let token_clone = token.clone();
 
@@ -1690,7 +1673,7 @@ mod proptest_tests {
                 max_elapsed_ms: Some(max_elapsed_ms),
             };
 
-            let manager = RetryManager::new(config).unwrap();
+            let manager = RetryManager::new(config);
 
             let _result = rt.block_on(async {
                 let operation_future = manager.execute_with_retry(
@@ -1734,7 +1717,7 @@ mod proptest_tests {
                 max_elapsed_ms: None,
             };
 
-            let manager = RetryManager::new(config).unwrap();
+            let manager = RetryManager::new(config);
             let attempt_counter = Arc::new(AtomicU32::new(0));
             let counter_clone = attempt_counter.clone();
             let target_k = k;

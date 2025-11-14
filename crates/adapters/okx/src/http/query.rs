@@ -24,19 +24,8 @@
 //! beneficial, links to the exact endpoint section.  All links point to the
 //! English version.
 //!
-//! Example – building a request for historical trades:
-//! ```rust
-//! use nautilus_okx::http::query::{GetTradesParams, GetTradesParamsBuilder};
-//!
-//! let params = GetTradesParamsBuilder::default()
-//!     .inst_id("BTC-USDT")
-//!     .limit(200)
-//!     .build()
-//!     .unwrap();
-//! ```
-//!
-//! Once built these parameter structs are passed to `OKXHttpClient::get`/`post`
-//! where they are automatically serialized.
+//! Parameter structs are built using the builder pattern and then passed to
+//! `OKXHttpClient::get`/`post` where they are automatically serialized.
 
 use derive_builder::Builder;
 use serde::{self, Deserialize, Serialize};
@@ -128,10 +117,14 @@ pub struct GetInstrumentsParams {
 pub struct GetTradesParams {
     /// Instrument ID, e.g. "BTC-USDT".
     pub inst_id: String,
-    /// Pagination: fetch records after this timestamp.
+    /// Pagination type: 1 = trade ID (default), 2 = timestamp.
+    #[serde(rename = "type")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pagination_type: Option<u8>,
+    /// Pagination: fetch records after this cursor (trade ID or timestamp).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
-    /// Pagination: fetch records before this timestamp.
+    /// Pagination: fetch records before this cursor (trade ID or timestamp).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
     /// Maximum number of records to return (default 100, max 1000).
@@ -215,18 +208,20 @@ impl GetCandlesticksParamsBuilder {
         let limit = self.limit;
 
         // ───────── Both cursors validation
-        // OKX API doesn't support both 'after' and 'before' parameters together
-        if after_ms.is_some() && before_ms.is_some() {
-            return Err(BuildError::BothCursors);
-        }
+        // Note: OKX DOES support both 'after' and 'before' together for time range queries
+        // They can only NOT be used together when one is a pagination cursor
+        // For now, we allow both and let the API validate
+        // if after_ms.is_some() && before_ms.is_some() {
+        //     return Err(BuildError::BothCursors);
+        // }
 
         // ───────── Cursor chronological validation
-        // When both after_ms and before_ms are provided as time bounds:
-        // - after_ms represents the start time (older bound)
-        // - before_ms represents the end time (newer bound)
-        // Therefore: after_ms < before_ms for valid time ranges
+        // IMPORTANT: OKX has counter-intuitive parameter semantics:
+        // - before_ms is the START time (lower bound, older) - returns bars > before
+        // - after_ms is the END time (upper bound, newer) - returns bars < after
+        // Therefore: before_ms < after_ms for valid time ranges
         if let (Some(after), Some(before)) = (after_ms, before_ms)
-            && after >= before
+            && before >= after
         {
             return Err(BuildError::InvalidTimeRange {
                 after_ms: after,
@@ -565,13 +560,14 @@ mod tests {
         let mut builder = GetCandlesticksParamsBuilder::default();
         builder.inst_id("BTC-USDT-SWAP");
         builder.bar("1m");
+        // OKX backwards semantics: before=lower bound, after=upper bound
+        // This creates invalid range where before >= after
         builder.after_ms(1725307200000);
         builder.before_ms(1725393600000);
 
-        // Both cursors should be rejected
         let result = builder.build();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("both"));
+        assert!(result.unwrap_err().to_string().contains("time range"));
     }
 
     #[rstest]

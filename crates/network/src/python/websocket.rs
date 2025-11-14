@@ -26,7 +26,10 @@ use crate::{
     RECONNECTED,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
-    websocket::{MessageHandler, PingHandler, WebSocketClient, WebSocketConfig, WriterCommand},
+    websocket::{
+        WebSocketClient, WebSocketConfig,
+        types::{MessageHandler, PingHandler, WriterCommand},
+    },
 };
 
 // Python exception class for websocket errors
@@ -40,7 +43,19 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 impl WebSocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100))]
+    #[pyo3(signature = (
+        url,
+        handler,
+        headers,
+        heartbeat=None,
+        heartbeat_msg=None,
+        ping_handler=None,
+        reconnect_timeout_ms=10_000,
+        reconnect_delay_initial_ms=2_000,
+        reconnect_delay_max_ms=30_000,
+        reconnect_backoff_factor=1.5,
+        reconnect_jitter_ms=100,
+    ))]
     fn py_new(
         url: String,
         handler: Py<PyAny>,
@@ -61,13 +76,12 @@ impl WebSocketConfig {
                 let data = match msg {
                     Message::Binary(data) => data.to_vec(),
                     Message::Text(text) => {
-                        // Disregard the RECONNECTED sentinel message used for Rust flows
                         if text == RECONNECTED {
                             return;
                         }
                         text.as_bytes().to_vec()
                     }
-                    _ => return, // Skip other message types
+                    _ => return,
                 };
                 if let Err(e) = handler_clone.call1(py, (PyBytes::new(py, &data),)) {
                     tracing::error!("Error calling Python message handler: {e}");
@@ -120,7 +134,6 @@ impl WebSocketClient {
         default_quota: Option<Quota>,
         py: Python<'_>,
     ) -> PyResult<Bound<'_, PyAny>> {
-        // Convert Python callback to function pointer
         let post_reconnection_fn = post_reconnection.map(|callback| {
             let callback_clone = clone_py_object(&callback);
             Arc::new(move || {

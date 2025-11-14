@@ -106,7 +106,7 @@ trait CancelExecutor: Send + Sync {
 
 impl CancelExecutor for BitmexHttpClient {
     fn add_instrument(&self, instrument: InstrumentAny) {
-        Self::add_instrument(self, instrument);
+        Self::cache_instrument(self, instrument);
     }
 
     fn health_check(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + '_>> {
@@ -336,7 +336,7 @@ impl TransportClient {
 #[derive(Debug)]
 pub struct CancelBroadcaster {
     config: CancelBroadcasterConfig,
-    transports: Arc<RwLock<Vec<TransportClient>>>,
+    transports: Arc<Vec<TransportClient>>,
     health_check_task: Arc<RwLock<Option<JoinHandle<()>>>>,
     running: Arc<AtomicBool>,
     total_cancels: Arc<AtomicU64>,
@@ -386,7 +386,7 @@ impl CancelBroadcaster {
 
         Ok(Self {
             config,
-            transports: Arc::new(RwLock::new(transports)),
+            transports: Arc::new(transports),
             health_check_task: Arc::new(RwLock::new(None)),
             running: Arc::new(AtomicBool::new(false)),
             total_cancels: Arc::new(AtomicU64::new(0)),
@@ -429,11 +429,7 @@ impl CancelBroadcaster {
                     break;
                 }
 
-                let transports_guard = transports.read().await;
-                let transports_clone: Vec<_> = transports_guard.clone();
-                drop(transports_guard);
-
-                let tasks: Vec<_> = transports_clone
+                let tasks: Vec<_> = transports
                     .iter()
                     .map(|t| t.health_check(timeout_secs))
                     .collect();
@@ -453,7 +449,7 @@ impl CancelBroadcaster {
 
         tracing::info!(
             "CancelBroadcaster started with {} clients",
-            self.transports.read().await.len()
+            self.transports.len()
         );
 
         Ok(())
@@ -475,11 +471,8 @@ impl CancelBroadcaster {
     }
 
     async fn run_health_checks(&self) {
-        let transports_guard = self.transports.read().await;
-        let transports_clone: Vec<_> = transports_guard.clone();
-        drop(transports_guard);
-
-        let tasks: Vec<_> = transports_clone
+        let tasks: Vec<_> = self
+            .transports
             .iter()
             .map(|t| t.health_check(self.config.health_check_timeout_secs))
             .collect();
@@ -622,13 +615,12 @@ impl CancelBroadcaster {
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         self.total_cancels.fetch_add(1, Ordering::Relaxed);
 
-        let transports_guard = self.transports.read().await;
-        let healthy_transports: Vec<TransportClient> = transports_guard
+        let healthy_transports: Vec<TransportClient> = self
+            .transports
             .iter()
             .filter(|t| t.is_healthy())
             .cloned()
             .collect();
-        drop(transports_guard);
 
         if healthy_transports.is_empty() {
             self.failed_cancels.fetch_add(1, Ordering::Relaxed);
@@ -674,13 +666,12 @@ impl CancelBroadcaster {
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         self.total_cancels.fetch_add(1, Ordering::Relaxed);
 
-        let transports_guard = self.transports.read().await;
-        let healthy_transports: Vec<TransportClient> = transports_guard
+        let healthy_transports: Vec<TransportClient> = self
+            .transports
             .iter()
             .filter(|t| t.is_healthy())
             .cloned()
             .collect();
-        drop(transports_guard);
 
         if healthy_transports.is_empty() {
             self.failed_cancels.fetch_add(1, Ordering::Relaxed);
@@ -728,13 +719,12 @@ impl CancelBroadcaster {
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         self.total_cancels.fetch_add(1, Ordering::Relaxed);
 
-        let transports_guard = self.transports.read().await;
-        let healthy_transports: Vec<TransportClient> = transports_guard
+        let healthy_transports: Vec<TransportClient> = self
+            .transports
             .iter()
             .filter(|t| t.is_healthy())
             .cloned()
             .collect();
-        drop(transports_guard);
 
         if healthy_transports.is_empty() {
             self.failed_cancels.fetch_add(1, Ordering::Relaxed);
@@ -769,10 +759,8 @@ impl CancelBroadcaster {
 
     /// Gets broadcaster metrics.
     pub fn get_metrics(&self) -> BroadcasterMetrics {
-        let transports_guard = self.transports.blocking_read();
-        let healthy_clients = transports_guard.iter().filter(|t| t.is_healthy()).count();
-        let total_clients = transports_guard.len();
-        drop(transports_guard);
+        let healthy_clients = self.transports.iter().filter(|t| t.is_healthy()).count();
+        let total_clients = self.transports.len();
 
         BroadcasterMetrics {
             total_cancels: self.total_cancels.load(Ordering::Relaxed),
@@ -787,26 +775,12 @@ impl CancelBroadcaster {
 
     /// Gets broadcaster metrics (async version for use within async context).
     pub async fn get_metrics_async(&self) -> BroadcasterMetrics {
-        let transports_guard = self.transports.read().await;
-        let healthy_clients = transports_guard.iter().filter(|t| t.is_healthy()).count();
-        let total_clients = transports_guard.len();
-        drop(transports_guard);
-
-        BroadcasterMetrics {
-            total_cancels: self.total_cancels.load(Ordering::Relaxed),
-            successful_cancels: self.successful_cancels.load(Ordering::Relaxed),
-            failed_cancels: self.failed_cancels.load(Ordering::Relaxed),
-            expected_rejects: self.expected_rejects.load(Ordering::Relaxed),
-            idempotent_successes: self.idempotent_successes.load(Ordering::Relaxed),
-            healthy_clients,
-            total_clients,
-        }
+        self.get_metrics()
     }
 
     /// Gets per-client statistics.
     pub fn get_client_stats(&self) -> Vec<ClientStats> {
-        let transports = self.transports.blocking_read();
-        transports
+        self.transports
             .iter()
             .map(|t| ClientStats {
                 client_id: t.client_id.clone(),
@@ -819,22 +793,12 @@ impl CancelBroadcaster {
 
     /// Gets per-client statistics (async version for use within async context).
     pub async fn get_client_stats_async(&self) -> Vec<ClientStats> {
-        let transports = self.transports.read().await;
-        transports
-            .iter()
-            .map(|t| ClientStats {
-                client_id: t.client_id.clone(),
-                healthy: t.is_healthy(),
-                cancel_count: t.get_cancel_count(),
-                error_count: t.get_error_count(),
-            })
-            .collect()
+        self.get_client_stats()
     }
 
-    /// Adds an instrument to all HTTP clients in the pool for caching.
-    pub fn add_instrument(&self, instrument: InstrumentAny) {
-        let transports = self.transports.blocking_read();
-        for transport in transports.iter() {
+    /// Caches an instrument in all HTTP clients in the pool.
+    pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        for transport in self.transports.iter() {
             transport.executor.add_instrument(instrument.clone());
         }
     }
@@ -860,7 +824,7 @@ impl CancelBroadcaster {
     ) -> Self {
         Self {
             config,
-            transports: Arc::new(RwLock::new(transports)),
+            transports: Arc::new(transports),
             health_check_task: Arc::new(RwLock::new(None)),
             running: Arc::new(AtomicBool::new(false)),
             total_cancels: Arc::new(AtomicU64::new(0)),

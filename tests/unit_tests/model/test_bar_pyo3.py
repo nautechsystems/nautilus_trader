@@ -85,12 +85,15 @@ class TestBarSpecification:
         assert str(bar_spec) == "1-MINUTE-BID"
         assert repr(bar_spec) == "BarSpecification(1-MINUTE-BID)"
 
-    @pytest.mark.skip(reason="WIP")
     @pytest.mark.parametrize(
         "aggregation",
         [
             BarAggregation.TICK,
+            BarAggregation.VOLUME,
+            BarAggregation.VALUE,
+            BarAggregation.WEEK,
             BarAggregation.MONTH,
+            BarAggregation.YEAR,
         ],
     )
     def test_timedelta_for_unsupported_aggregations_raises_value_error(self, aggregation):

@@ -69,6 +69,8 @@ pub struct DatabentoDataClientConfig {
     pub use_exchange_as_venue: bool,
     /// Whether to timestamp bars on close.
     pub bars_timestamp_on_close: bool,
+    /// Reconnection timeout in minutes (None for infinite retries).
+    pub reconnect_timeout_mins: Option<u64>,
     /// Optional HTTP proxy URL.
     pub http_proxy_url: Option<String>,
     /// Optional WebSocket proxy URL.
@@ -89,6 +91,7 @@ impl DatabentoDataClientConfig {
             publishers_filepath,
             use_exchange_as_venue,
             bars_timestamp_on_close,
+            reconnect_timeout_mins: Some(10), // Default: 10 minutes
             http_proxy_url: None,
             ws_proxy_url: None,
         }
@@ -243,6 +246,7 @@ impl DatabentoDataClient {
             self.symbol_venue_map.clone(),
             self.config.use_exchange_as_venue,
             self.config.bars_timestamp_on_close,
+            self.config.reconnect_timeout_mins,
         );
 
         let cancellation_token = self.cancellation_token.clone();

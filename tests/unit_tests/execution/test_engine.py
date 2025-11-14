@@ -3537,7 +3537,7 @@ class TestExecutionEngine:
 
         # === Test Case 2: Multiple orders at same price level ===
         same_price_orders = []
-        for i in range(3):
+        for _ in range(3):
             order = strategy.order_factory.limit(
                 instrument_id=instrument.id,
                 order_side=OrderSide.SELL,

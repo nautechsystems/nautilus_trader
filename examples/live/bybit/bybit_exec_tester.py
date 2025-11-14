@@ -139,7 +139,11 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            # instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=InstrumentProviderConfig(
+                load_all=False,
+                load_ids=frozenset(reconciliation_instrument_ids),
+            ),
             product_types=product_types,
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
@@ -151,7 +155,11 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             base_url_ws_private=None,  # Override with custom endpoint
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            # instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=InstrumentProviderConfig(
+                load_all=False,
+                load_ids=frozenset(reconciliation_instrument_ids),
+            ),
             product_types=product_types,
             use_spot_position_reports=use_spot_position_reports,
             demo=False,  # If client uses the demo API

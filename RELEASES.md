@@ -10,42 +10,88 @@ This release adds support for Python 3.14 with the following limitations:
 ### Enhancements
 - Added support for Python 3.14
 - Added initial backtest visualization tearsheets with plotly
+- Added price protection support for market orders (#3065), thanks @Antifrajz
+- Added `create_bars_with_fills` to Tearsheet (#3137), thanks @faysou
 - Added `proxy_url` support for HTTP clients
 - Added `CAGR` portfolio statistic
 - Added `CalmarRatio` portfolio statistic
 - Added `MaxDrawdown` portfolio statistic
 - Added `quote_quantity` parameter for `close_position(...)` and `close_all_positions(...)` strategy methods
-- Added PolymarketDataLoader for loading historical data with docs and example
+- Added `PolymarketDataLoader` for loading historical data with docs and example
+- Added Polymarket Gamma API support for instrument loading (#3141), thanks @DeirhX
+- Added OKX historical trades requests
 - Introduced `PositionAdjusted` events for tracking quantity/PnL changes outside normal order fills (base currency commissions, funding payments, manual adjustments)
 - Upgraded continuous reconciliation for execution engine using position reports to detect missed fills
 
 ### Breaking Changes
 - Dropped support for Python 3.11
 - Removed `use_ws_trade_api` config option from Bybit execution client (using WebSocket trade API only)
-- dYdX adapter extras (`[dydx]`) unavailable on Python 3.14 due to upstream `coincurve` compatibility (available on Python 3.12-3.13)
-- Interactive Brokers adapter extras (`[ib]`) unavailable on Python 3.14 due to upstream `nautilus-ibapi` compatibility (available on Python 3.12-3.13)
+- Renamed `parse_instrument` to `parse_polymarket_instrument` in Polymarket adapter for clarity
+- **Standardized data catalog directory naming**: Order book data directory names now use plural forms to align with the Rust catalog and Tardis Machine conventions. This ensures data written by the Python `StreamingFeatherWriter` can be read by the Rust catalog.
+  - `order_book_delta/` → `order_book_deltas/`
+  - `order_book_depth10/` → `order_book_depths/`
+
+  **Migration**: Rename existing data directories to use plural forms:
+  ```bash
+  # If you have existing order book data, rename the directories:
+  mv <your_data_path>/order_book_delta <your_data_path>/order_book_deltas
+  mv <your_data_path>/order_book_depth10 <your_data_path>/order_book_depths
+  ```
 
 ### Security
 TBD
 
 ### Fixes
+- Fixed race condition in InstrumentProvider causing duplicate instrument initialization in shared providers
+- Fixed `BacktestResult.total_positions` to match tearsheet count (#3148), thanks for reporting @2-5
+- Fixed risk engine negative price handling for spread instruments (#3136), thanks for reporting @q351941406
+- Fixed risk engine trailing stop order risk validations (#3160), thanks for reporting @GianC0
 - Fixed spawned order client_id caching in `ExecAlgorithm` (#3122), thanks for reporting @kirill-gr1
 - Fixed parse_dates parameter in CSV loaders (#3132), thanks @maomao9-0
+- Fixed `GreeksCalculator` handling of missing price data (#3116), thanks for reporting @q351941406
+- Fixed active liquidity calculation Pool profiler simulation (#3165), thanks @filipmacek
 - Fixed Binance instrument info dict JSON serialization (#3128), thanks for reporting @woung717
+- Fixed Databento MBO data decoding when `PRICE_UNDEF` appears with non-zero precision
+- Fixed Interactive Brokers quote tick subscriptions to use tick-by-tick data (#3135), thanks for reporting @genliusrocks
 - Fixed OKX pre-open instrument parsing and standardize enum usage (#3134), thanks for reporting @3wtz
+- Fixed OKX `request_bars` pagination halting prematurely in Range mode (#3145), thanks for reporting @3wtz
+- Fixed OKX `request_bars` pagination using correct backwards API semantics (#3145), thanks for reporting @3wtz
 - Fixed Polymarket maker fill order side inversion (#3126), thanks for reporting @santivazq
 - Fixed Polymarket instrument provider market filtering (#3133), thanks @MisterMM23
+- Fixed Polymarket websocket client cancellation on concurrent subscriptions (#3169), thanks @DeirhX
+- Fixes Polymarket maker trade fills parsing to enable user fill detection based on API key as fallback, thanks @petioptrv.
+- Fixes Polymarket maker trade fills parsing to determine fill asset ID based on the user fill instead of the taker fill, thanks @petioptrv.
+- Fixes Polymarket maker trade fills parsing to enable detection of multiple user maker fills from a single taker order, thanks @petioptrv.
 
 ### Internal Improvements
 - Added BitMEX submit broadcaster
 - Added non-mutating swap quote simulation for Pool tickmap profiling (#3123), thanks @filipmacek
+- Added initial dYdX v4 crate (#3138), thanks @nicolad
+- Added initial dYdX v4 WebSocket in Rust (#3158), thanks @nicolad
+- Added initial dYdX v4 DataClient in Rust (#3162), thanks @nicolad
+- Added initial dYdX v4 ExecutionClient in Rust (#3163), thanks @nicolad
 - Ported Bybit integration adapter to Rust
+- Refactored network crate to modularize `http`, `socket`, and `websocket`
 - Refactored reading of feather files in catalog (#3114), thanks @faysou
+- Refactored processing of historical data (#3038), thanks @faysou
+- Refactored Polymarket instrument provider to use async HttpClient
+- Improved Databento live connection stability and reconnects
+- Improved Polymarket position querying using Gamma API (#3142), thanks @DeirhX
+- Refined timer name validation to accept non-ASCII characters (common for foreign currencies) (#3154), thanks for reporting @woung717
+- Refined support for monthly and yearly bars (#3166), thanks @faysou
+- Refined bar aggregators in Rust (#3170), thanks @faysou
+- Optimized execution reconciliation to avoid quadratic complexity (#3140), thanks @DeirhX
+- Optimized network clients by enabling `TCP_NODELAY` (#3156), thanks @sunlei
+- Optimized build by disabling Cargo incremental compilation when using sccache (#3157), thanks @sunlei
+- Optimized BitMEX submit and cancel broadcasters by removing unnecessary lock on internal transport clients
 - Repaired OKX spot margin position reports for borrowing, thanks @sunlei
 - Repaired Bybit docs links in comment (#3125), thanks @sunlei
 - Repaired Bybit HTTP order place (#3127), thanks @sunlei
+- Repaired Bybit `AccountPosition` message parsing (#3147), thanks @sunlei
+- Repaired Bybit conditional order trigger semantics and type
 - Upgraded implied-vol crate (#3115), thanks @faysou
 - Upgraded Rust (MSRV) to 1.91.0
+- Upgraded Cython to v3.2.0
 - Upgraded `pyo3` crate to v0.27.0
 - Upgraded `pyo3-async-runtimes` crate to v0.27.0
 

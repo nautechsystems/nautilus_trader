@@ -29,7 +29,7 @@ use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
     correctness::{FAILED, check_predicate_true},
-    datetime::{add_n_months, subtract_n_months},
+    datetime::{add_n_months, subtract_n_months, subtract_n_years},
     serialization::Serializable,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -157,7 +157,8 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
         BarAggregation::Hour => TimeDelta::hours(spec.step.get() as i64),
         BarAggregation::Day => TimeDelta::days(spec.step.get() as i64),
         BarAggregation::Week => TimeDelta::days(7 * spec.step.get() as i64),
-        BarAggregation::Month => TimeDelta::days(0),
+        BarAggregation::Month => TimeDelta::days(30 * spec.step.get() as i64), // Proxy for comparing bar lengths
+        BarAggregation::Year => TimeDelta::days(365 * spec.step.get() as i64), // Proxy for comparing bar lengths
         _ => panic!("Aggregation not time based"),
     }
 }
@@ -212,7 +213,7 @@ pub fn get_time_bar_start(
             start_time += origin_offset;
 
             if now < start_time {
-                start_time -= Duration::weeks(1);
+                start_time -= Duration::weeks(step);
             }
 
             start_time
@@ -241,6 +242,24 @@ pub fn get_time_bar_start(
 
             start_time =
                 subtract_n_months(start_time, months_step).expect("Failed to subtract months_step");
+            start_time
+        }
+        BarAggregation::Year => {
+            // Set to the first day of the year
+            let mut start_time = DateTime::from_naive_utc_and_offset(
+                chrono::NaiveDate::from_ymd_opt(now.year(), 1, 1)
+                    .expect("valid date")
+                    .and_hms_opt(0, 0, 0)
+                    .expect("valid time"),
+                Utc,
+            );
+            start_time += origin_offset;
+
+            if now < start_time {
+                start_time =
+                    subtract_n_years(start_time, step as u32).expect("Failed to subtract years");
+            }
+
             start_time
         }
         _ => panic!(
@@ -328,9 +347,15 @@ impl BarSpecification {
 
     /// Returns the `TimeDelta` interval for this bar specification.
     ///
+    /// # Notes
+    ///
+    /// For [`BarAggregation::Month`] and [`BarAggregation::Year`], proxy values are used
+    /// (30 days for months, 365 days for years) to estimate their respective durations,
+    /// since months and years have variable lengths.
+    ///
     /// # Panics
     ///
-    /// Panics if the aggregation method is not supported for time duration.
+    /// Panics if the aggregation method is not time-based.
     pub fn timedelta(&self) -> TimeDelta {
         match self.aggregation {
             BarAggregation::Millisecond => Duration::milliseconds(self.step.get() as i64),
@@ -338,6 +363,9 @@ impl BarSpecification {
             BarAggregation::Minute => Duration::minutes(self.step.get() as i64),
             BarAggregation::Hour => Duration::hours(self.step.get() as i64),
             BarAggregation::Day => Duration::days(self.step.get() as i64),
+            BarAggregation::Week => Duration::days(self.step.get() as i64 * 7),
+            BarAggregation::Month => Duration::days(self.step.get() as i64 * 30), // Proxy for comparing bar lengths
+            BarAggregation::Year => Duration::days(self.step.get() as i64 * 365), // Proxy for comparing bar lengths
             _ => panic!(
                 "Timedelta not supported for aggregation type: {:?}",
                 self.aggregation
@@ -489,8 +517,8 @@ impl BarType {
 
     /// Returns the standard bar type component.
     pub fn standard(&self) -> Self {
-        match &self {
-            &&b @ Self::Standard { .. } => b,
+        match self {
+            &b @ Self::Standard { .. } => b,
             Self::Composite {
                 instrument_id,
                 spec,
@@ -502,8 +530,8 @@ impl BarType {
 
     /// Returns any composite bar type component.
     pub fn composite(&self) -> Self {
-        match &self {
-            &&b @ Self::Standard { .. } => b, // case shouldn't be used if is_composite is called before
+        match self {
+            &b @ Self::Standard { .. } => b, // case shouldn't be used if is_composite is called before
             Self::Composite {
                 instrument_id,
                 spec,
@@ -900,6 +928,12 @@ mod tests {
     #[case(BarAggregation::Hour, 4, TimeDelta::hours(4))]
     #[case(BarAggregation::Day, 1, TimeDelta::days(1))]
     #[case(BarAggregation::Day, 2, TimeDelta::days(2))]
+    #[case(BarAggregation::Week, 1, TimeDelta::days(7))]
+    #[case(BarAggregation::Week, 2, TimeDelta::days(14))]
+    #[case(BarAggregation::Month, 1, TimeDelta::days(30))]
+    #[case(BarAggregation::Month, 3, TimeDelta::days(90))]
+    #[case(BarAggregation::Year, 1, TimeDelta::days(365))]
+    #[case(BarAggregation::Year, 2, TimeDelta::days(730))]
     #[should_panic(expected = "Aggregation not time based")]
     #[case(BarAggregation::Tick, 1, TimeDelta::zero())]
     fn test_get_bar_interval(
@@ -928,6 +962,12 @@ mod tests {
     #[case(BarAggregation::Hour, 4, UnixNanos::from(14_400_000_000_000))]
     #[case(BarAggregation::Day, 1, UnixNanos::from(86_400_000_000_000))]
     #[case(BarAggregation::Day, 2, UnixNanos::from(172_800_000_000_000))]
+    #[case(BarAggregation::Week, 1, UnixNanos::from(604_800_000_000_000))]
+    #[case(BarAggregation::Week, 2, UnixNanos::from(1_209_600_000_000_000))]
+    #[case(BarAggregation::Month, 1, UnixNanos::from(2_592_000_000_000_000))]
+    #[case(BarAggregation::Month, 3, UnixNanos::from(7_776_000_000_000_000))]
+    #[case(BarAggregation::Year, 1, UnixNanos::from(31_536_000_000_000_000))]
+    #[case(BarAggregation::Year, 2, UnixNanos::from(63_072_000_000_000_000))]
     #[should_panic(expected = "Aggregation not time based")]
     #[case(BarAggregation::Tick, 1, UnixNanos::from(0))]
     fn test_get_bar_interval_ns(

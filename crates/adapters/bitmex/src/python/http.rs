@@ -510,10 +510,10 @@ impl BitmexHttpClient {
         })
     }
 
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
-        self.add_instrument(inst_any);
+        self.cache_instrument(inst_any);
         Ok(())
     }
 

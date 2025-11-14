@@ -168,7 +168,19 @@ mod serial_tests {
         database.close().unwrap();
     }
 
-    #[ignore = "continue testing and add foreign key constraints"]
+    // Test inserting and loading OrderCancelRejected events from PostgreSQL.
+    //
+    // This test verifies that order cancel rejection events can be persisted to and
+    // retrieved from the PostgreSQL cache. Currently on hold pending schema updates.
+    //
+    // TODO: Complete database schema with proper foreign key constraints:
+    // - Add FK constraint from order_events to orders table
+    // - Add FK constraint to instruments table for instrument_id
+    // - Add FK constraint to accounts table for account_id
+    // - Verify referential integrity with comprehensive integration tests
+    //
+    // Related: Database schema migration for cache persistence layer
+    #[ignore = "Waiting on PostgreSQL schema completion - needs FK constraints"]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_order_cancel_rejected_insert_and_load() {
         let db = get_pg_cache_database().await.expect("connect db");
@@ -221,7 +233,19 @@ mod serial_tests {
         }
     }
 
-    #[ignore = "continue testing and add foreign key constraints"]
+    // Test inserting and loading OrderModifyRejected events from PostgreSQL.
+    //
+    // This test verifies that order modification rejection events can be persisted to and
+    // retrieved from the PostgreSQL cache. Currently on hold pending schema updates.
+    //
+    // TODO: Complete database schema with proper foreign key constraints:
+    // - Add FK constraint from order_events to orders table
+    // - Add FK constraint to instruments table for instrument_id
+    // - Add FK constraint to accounts table for account_id
+    // - Verify referential integrity with comprehensive integration tests
+    //
+    // Related: Database schema migration for cache persistence layer
+    #[ignore = "Waiting on PostgreSQL schema completion - needs FK constraints"]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_order_modify_rejected_insert_and_load() {
         let db = get_pg_cache_database().await.expect("connect db");

@@ -154,10 +154,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.max_rows_per_group = max_rows_per_group
         self.show_query_paths = show_query_paths
 
-        if self.fs_protocol == "file":
-            final_path = str(make_path_posix(str(path)))
-        else:
-            final_path = str(path)
+        final_path = str(make_path_posix(str(path))) if self.fs_protocol == "file" else str(path)
 
         if (
             isinstance(self.fs, MemoryFileSystem)
@@ -541,14 +538,16 @@ class ParquetDataCatalog(BaseDataCatalog):
             for j in range(row_group_metadata.num_columns):
                 col_metadata = row_group_metadata.column(j)
 
-                if col_metadata.path_in_schema == column_name:
-                    if col_metadata.statistics is not None:
-                        min_value = col_metadata.statistics.min
-                        max_value = col_metadata.statistics.max
+                if (
+                    col_metadata.path_in_schema == column_name
+                    and col_metadata.statistics is not None
+                ):
+                    min_value = col_metadata.statistics.min
+                    max_value = col_metadata.statistics.max
 
-                        if overall_min_value is None or min_value < overall_min_value:
-                            overall_min_value = min_value
-                        if overall_max_value is None or max_value > overall_max_value:
+                    if overall_min_value is None or min_value < overall_min_value:
+                        overall_min_value = min_value
+                    if overall_max_value is None or max_value > overall_max_value:
                             overall_max_value = max_value
 
         if overall_min_value is None or overall_max_value is None:
@@ -1847,7 +1846,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
     ) -> str:
         # Build datafusion SQL query
-        query = f"SELECT * FROM {table}"  # noqa (possible SQL injection)
+        query = f"SELECT * FROM {table}"  # noqa: S608
         conditions: list[str] = [] + ([where] if where else [])
 
         if start:
@@ -1894,10 +1893,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if used_end is not None:
             filters.append(pds.field("ts_init") <= used_end.value)
 
-        if filters:
-            combined_filters = combine_filters(*filters)
-        else:
-            combined_filters = None
+        combined_filters = combine_filters(*filters) if filters else None
 
         table = dataset.to_table(filter=combined_filters)
 
@@ -2321,7 +2317,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         instance_id: str,
         data_cls: type | None = None,
         identifiers: list[str] | None = None,
-    ) -> Generator[FeatherFile, None, None]:
+    ) -> Generator[FeatherFile]:
         """
         List feather files for a given instance.
 
@@ -2391,7 +2387,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         instance_id: str,
         data_cls: type,
         identifiers: list[str] | None = None,
-    ) -> Generator[FeatherFile, None, None]:
+    ) -> Generator[FeatherFile]:
         """
         List feather files for a specific data class.
         """
@@ -2495,11 +2491,7 @@ def _are_intervals_contiguous(intervals: list[tuple[int, int]]) -> bool:
     if n <= 1:
         return True
 
-    for i in range(1, n):
-        if intervals[i - 1][1] + 1 != intervals[i][0]:
-            return False
-
-    return True
+    return all(intervals[i - 1][1] + 1 == intervals[i][0] for i in range(1, n))
 
 
 def _query_interval_diff(

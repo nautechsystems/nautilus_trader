@@ -1208,7 +1208,7 @@ class TestDataGenerator:
         bars = [first_bar]
 
         # Generate subsequent bars
-        for i in range(bar_count - 1):  # -1 because we already have the first bar
+        for _ in range(bar_count - 1):  # -1 because we already have the first bar
             prev_bar = bars[-1]  # Get the last bar
             ts_event = prev_bar.ts_event + time_change_nanos
             ts_init = prev_bar.ts_init + time_change_nanos

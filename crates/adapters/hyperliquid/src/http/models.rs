@@ -21,7 +21,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
 use crate::common::enums::{
-    HyperliquidSide, HyperliquidTpSl, HyperliquidTrailingOffsetType, HyperliquidTriggerPriceType,
+    HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
+    HyperliquidPositionType, HyperliquidSide, HyperliquidTpSl, HyperliquidTrailingOffsetType,
+    HyperliquidTriggerPriceType,
 };
 
 /// Represents metadata about available markets from `POST /info`.
@@ -297,8 +299,8 @@ pub struct HyperliquidFill {
     /// Position size before this fill.
     #[serde(rename = "startPosition")]
     pub start_position: String,
-    /// Directory (order book path).
-    pub dir: String,
+    /// Fill direction (open/close).
+    pub dir: HyperliquidFillDirection,
     /// Closed P&L from this fill.
     #[serde(rename = "closedPnl")]
     pub closed_pnl: String,
@@ -324,8 +326,8 @@ pub struct HyperliquidOrderStatus {
 pub struct HyperliquidOrderStatusEntry {
     /// Order information.
     pub order: HyperliquidOrderInfo,
-    /// Current status string.
-    pub status: String,
+    /// Current status.
+    pub status: HyperliquidOrderStatusEnum,
     /// Status timestamp in milliseconds.
     #[serde(rename = "statusTimestamp")]
     pub status_timestamp: u64,
@@ -573,8 +575,8 @@ pub struct HyperliquidCancelTriggerOrderRequest {
 pub struct HyperliquidTriggerOrderStatus {
     /// Order ID.
     pub oid: OrderId,
-    /// Order status string.
-    pub status: String,
+    /// Order status.
+    pub status: HyperliquidOrderStatusEnum,
     /// Timestamp when status was updated (milliseconds).
     #[serde(rename = "statusTimestamp")]
     pub status_timestamp: u64,
@@ -1338,9 +1340,9 @@ pub struct ClearinghouseState {
 pub struct AssetPosition {
     /// Position information.
     pub position: PositionData,
-    /// Type of position (e.g., "oneWay").
+    /// Type of position.
     #[serde(rename = "type")]
-    pub position_type: String,
+    pub position_type: HyperliquidPositionType,
 }
 
 /// Detailed position data for an asset.

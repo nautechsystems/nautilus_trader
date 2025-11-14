@@ -20,7 +20,7 @@ use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
     enums::{OrderSide, OrderType, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
@@ -31,6 +31,7 @@ use crate::{
         credential::Credential,
         enums::{BybitEnvironment, BybitProductType},
     },
+    python::params::{BybitWsAmendOrderParams, BybitWsPlaceOrderParams},
     websocket::{
         client::BybitWebSocketClient,
         messages::{BybitWebSocketError, NautilusWsMessage},
@@ -145,10 +146,13 @@ impl BybitWebSocketClient {
     }
 
     #[pyo3(name = "is_active")]
-    fn py_is_active<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
+    fn py_is_active(&self) -> bool {
+        self.is_active()
+    }
 
-        pyo3_async_runtimes::tokio::future_into_py(py, async move { Ok(client.is_active().await) })
+    #[pyo3(name = "is_closed")]
+    fn py_is_closed(&self) -> bool {
+        self.is_closed()
     }
 
     #[pyo3(name = "subscription_count")]
@@ -162,9 +166,9 @@ impl BybitWebSocketClient {
         self.credential().map(|c| c.masked_api_key())
     }
 
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
-        self.add_instrument(pyobject_to_instrument_any(py, instrument)?);
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
+        self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
 
@@ -261,6 +265,9 @@ impl BybitWebSocketClient {
                         }
                         NautilusWsMessage::Reconnected => {
                             tracing::info!("WebSocket reconnected");
+                        }
+                        NautilusWsMessage::Authenticated => {
+                            tracing::info!("WebSocket authenticated");
                         }
                     }
                 }
@@ -568,32 +575,40 @@ impl BybitWebSocketClient {
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         product_type,
+        trader_id,
+        strategy_id,
         instrument_id,
         client_order_id,
         order_side,
         order_type,
         quantity,
+        is_quote_quantity=false,
         time_in_force=None,
         price=None,
         trigger_price=None,
         post_only=None,
         reduce_only=None,
+        is_leverage=false,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
         product_type: BybitProductType,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
+        is_quote_quantity: bool,
         time_in_force: Option<TimeInForce>,
         price: Option<Price>,
         trigger_price: Option<Price>,
         post_only: Option<bool>,
         reduce_only: Option<bool>,
+        is_leverage: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -601,16 +616,20 @@ impl BybitWebSocketClient {
             client
                 .submit_order(
                     product_type,
+                    trader_id,
+                    strategy_id,
                     instrument_id,
                     client_order_id,
                     order_side,
                     order_type,
                     quantity,
+                    is_quote_quantity,
                     time_in_force,
                     price,
                     trigger_price,
                     post_only,
                     reduce_only,
+                    is_leverage,
                 )
                 .await
                 .map_err(to_pyruntime_err)?;
@@ -621,9 +640,11 @@ impl BybitWebSocketClient {
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
         product_type,
+        trader_id,
+        strategy_id,
         instrument_id,
+        client_order_id,
         venue_order_id=None,
-        client_order_id=None,
         quantity=None,
         price=None,
     ))]
@@ -632,9 +653,11 @@ impl BybitWebSocketClient {
         &self,
         py: Python<'py>,
         product_type: BybitProductType,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
-        client_order_id: Option<ClientOrderId>,
         quantity: Option<Quantity>,
         price: Option<Price>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -644,9 +667,11 @@ impl BybitWebSocketClient {
             client
                 .modify_order(
                     product_type,
+                    trader_id,
+                    strategy_id,
                     instrument_id,
-                    venue_order_id,
                     client_order_id,
+                    venue_order_id,
                     quantity,
                     price,
                 )
@@ -659,40 +684,110 @@ impl BybitWebSocketClient {
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (
         product_type,
+        trader_id,
+        strategy_id,
         instrument_id,
+        client_order_id,
         venue_order_id=None,
-        client_order_id=None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn py_cancel_order<'py>(
         &self,
         py: Python<'py>,
         product_type: BybitProductType,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
-        client_order_id: Option<ClientOrderId>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .cancel_order_by_id(product_type, instrument_id, venue_order_id, client_order_id)
+                .cancel_order_by_id(
+                    product_type,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                )
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
 
+    #[pyo3(name = "build_place_order_params")]
+    #[pyo3(signature = (
+        product_type,
+        instrument_id,
+        client_order_id,
+        order_side,
+        order_type,
+        quantity,
+        is_quote_quantity=false,
+        time_in_force=None,
+        price=None,
+        trigger_price=None,
+        post_only=None,
+        reduce_only=None,
+        is_leverage=false,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_build_place_order_params(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        is_quote_quantity: bool,
+        time_in_force: Option<TimeInForce>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        post_only: Option<bool>,
+        reduce_only: Option<bool>,
+        is_leverage: bool,
+    ) -> PyResult<BybitWsPlaceOrderParams> {
+        let params = self
+            .build_place_order_params(
+                product_type,
+                instrument_id,
+                client_order_id,
+                order_side,
+                order_type,
+                quantity,
+                is_quote_quantity,
+                time_in_force,
+                price,
+                trigger_price,
+                post_only,
+                reduce_only,
+                is_leverage,
+            )
+            .map_err(to_pyruntime_err)?;
+        Ok(params.into())
+    }
+
     #[pyo3(name = "batch_cancel_orders")]
     #[pyo3(signature = (
         product_type,
+        trader_id,
+        strategy_id,
         instrument_ids,
         venue_order_ids,
         client_order_ids,
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn py_batch_cancel_orders<'py>(
         &self,
         py: Python<'py>,
         product_type: BybitProductType,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_ids: Vec<InstrumentId>,
         venue_order_ids: Vec<Option<VenueOrderId>>,
         client_order_ids: Vec<Option<ClientOrderId>>,
@@ -703,6 +798,8 @@ impl BybitWebSocketClient {
             client
                 .batch_cancel_orders_by_id(
                     product_type,
+                    trader_id,
+                    strategy_id,
                     instrument_ids,
                     venue_order_ids,
                     client_order_ids,
@@ -711,40 +808,6 @@ impl BybitWebSocketClient {
                 .map_err(to_pyruntime_err)?;
             Ok(())
         })
-    }
-
-    #[pyo3(name = "build_place_order_params")]
-    #[allow(clippy::too_many_arguments)]
-    fn py_build_place_order_params(
-        &self,
-        product_type: BybitProductType,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        order_side: OrderSide,
-        order_type: OrderType,
-        quantity: Quantity,
-        time_in_force: Option<TimeInForce>,
-        price: Option<Price>,
-        trigger_price: Option<Price>,
-        post_only: Option<bool>,
-        reduce_only: Option<bool>,
-    ) -> PyResult<crate::python::params::BybitWsPlaceOrderParams> {
-        let params = self
-            .build_place_order_params(
-                product_type,
-                instrument_id,
-                client_order_id,
-                order_side,
-                order_type,
-                quantity,
-                time_in_force,
-                price,
-                trigger_price,
-                post_only,
-                reduce_only,
-            )
-            .map_err(to_pyruntime_err)?;
-        Ok(params.into())
     }
 
     #[pyo3(name = "build_amend_order_params")]
@@ -771,11 +834,13 @@ impl BybitWebSocketClient {
         Ok(params.into())
     }
 
-    #[pyo3(name = "batch_place_orders")]
-    fn py_batch_place_orders<'py>(
+    #[pyo3(name = "batch_modify_orders")]
+    fn py_batch_modify_orders<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<crate::python::params::BybitWsPlaceOrderParams>,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        orders: Vec<BybitWsAmendOrderParams>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -787,7 +852,7 @@ impl BybitWebSocketClient {
                 .map_err(to_pyruntime_err)?;
 
             client
-                .batch_place_orders(order_params)
+                .batch_amend_orders(trader_id, strategy_id, order_params)
                 .await
                 .map_err(to_pyruntime_err)?;
 
@@ -795,11 +860,13 @@ impl BybitWebSocketClient {
         })
     }
 
-    #[pyo3(name = "batch_modify_orders")]
-    fn py_batch_modify_orders<'py>(
+    #[pyo3(name = "batch_place_orders")]
+    fn py_batch_place_orders<'py>(
         &self,
         py: Python<'py>,
-        orders: Vec<crate::python::params::BybitWsAmendOrderParams>,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        orders: Vec<BybitWsPlaceOrderParams>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -811,7 +878,7 @@ impl BybitWebSocketClient {
                 .map_err(to_pyruntime_err)?;
 
             client
-                .batch_amend_orders(order_params)
+                .batch_place_orders(trader_id, strategy_id, order_params)
                 .await
                 .map_err(to_pyruntime_err)?;
 

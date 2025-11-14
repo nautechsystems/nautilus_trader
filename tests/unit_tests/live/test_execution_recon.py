@@ -691,64 +691,6 @@ class TestReconciliationEdgeCases:
         exec_engine.register_client(client)
         return exec_engine
 
-    @pytest.mark.skip(reason="Duplicates now automatically removed during reconciliation")
-    @pytest.mark.asyncio()
-    async def test_duplicate_client_order_id_fails_validation(self, live_exec_engine):
-        """
-        Test that duplicate client order IDs cause reconciliation failure.
-        """
-        # Arrange
-        client_order_id = ClientOrderId("O-123")
-
-        report1 = OrderStatusReport(
-            instrument_id=AUDUSD_SIM.id,
-            account_id=TestIdStubs.account_id(),
-            client_order_id=client_order_id,
-            venue_order_id=VenueOrderId("V-1"),
-            order_side=OrderSide.BUY,
-            order_type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY,
-            order_status=OrderStatus.FILLED,
-            quantity=Quantity.from_int(100),
-            filled_qty=Quantity.from_int(100),
-            report_id=UUID4(),
-            ts_accepted=0,
-            ts_last=0,
-            ts_init=0,
-        )
-
-        report2 = OrderStatusReport(
-            instrument_id=AUDUSD_SIM.id,
-            account_id=TestIdStubs.account_id(),
-            client_order_id=client_order_id,
-            venue_order_id=VenueOrderId("V-2"),
-            order_side=OrderSide.SELL,
-            order_type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY,
-            order_status=OrderStatus.FILLED,
-            quantity=Quantity.from_int(50),
-            filled_qty=Quantity.from_int(50),
-            report_id=UUID4(),
-            ts_accepted=0,
-            ts_last=0,
-            ts_init=0,
-        )
-
-        mass_status = ExecutionMassStatus(
-            client_id=ClientId("TEST"),
-            venue=Venue("TEST"),
-            account_id=TestIdStubs.account_id(),
-            report_id=UUID4(),
-            ts_init=0,
-        )
-        mass_status.add_order_reports([report1, report2])
-
-        # Act
-        result = live_exec_engine._reconcile_execution_mass_status(mass_status)
-
-        # Assert
-        assert result is False
-
     @pytest.mark.asyncio()
     async def test_mass_status_failure_preserves_position_results(self, live_exec_engine):
         """
@@ -1102,8 +1044,8 @@ class TestReconciliationEdgeCases:
         Test reconciliation when internal long position exists but external position is
         FLAT.
 
-        This tests the critical scenario from issue #3023 where a position is closed
-        externally (via the client/exchange directly) but remains open in the cache.
+        Tests scenario from issue #3023 where a position is closed externally (via the
+        client/exchange directly) but remains open in the cache.
 
         """
         # Arrange
@@ -1164,8 +1106,8 @@ class TestReconciliationEdgeCases:
         Test reconciliation when internal short position exists but external position is
         FLAT.
 
-        This tests the critical scenario from issue #3023 where a position is closed
-        externally (via the client/exchange directly) but remains open in the cache.
+        Tests scenario from issue #3023 where a position is closed externally (via the
+        client/exchange directly) but remains open in the cache.
 
         """
         # Arrange
@@ -2193,11 +2135,11 @@ class TestReconciliationEdgeCases:
         live_exec_engine,
     ):
         """
-        Test that INTERNAL-DIFF orders are not filtered out when
+        Test that internal reconciliation orders are not filtered out when
         filter_unclaimed_external_orders is enabled.
 
-        This ensures that position reconciliation orders are generated even when
-        external order filtering is active.
+        This ensures that position reconciliation orders (tagged RECONCILIATION) are
+        generated even when external order filtering is active.
 
         """
         # Arrange
@@ -2244,12 +2186,17 @@ class TestReconciliationEdgeCases:
         orders_after = self.cache.orders()
         assert len(orders_after) == orders_before + 1
 
-        # Find the newly generated order
-        new_orders = [o for o in orders_after if o.strategy_id.value == "INTERNAL-DIFF"]
+        # Find the newly generated order (should have EXTERNAL strategy ID but RECONCILIATION tag)
+        new_orders = [
+            o
+            for o in orders_after
+            if o.strategy_id.value == "EXTERNAL" and o.tags == ["RECONCILIATION"]
+        ]
         assert len(new_orders) == 1
 
         generated_order = new_orders[0]
-        assert generated_order.strategy_id.value == "INTERNAL-DIFF"
+        assert generated_order.strategy_id.value == "EXTERNAL"
+        assert generated_order.tags == ["RECONCILIATION"]
         assert generated_order.side == OrderSide.BUY
         assert generated_order.quantity == Quantity.from_int(50)
         assert generated_order.status == OrderStatus.FILLED
@@ -2307,6 +2254,179 @@ class TestReconciliationEdgeCases:
         assert result is True
         orders_after = self.cache.orders()
         assert len(orders_after) == orders_before  # No new orders added due to filtering
+
+    @pytest.mark.asyncio()
+    async def test_multiple_reconciliation_cycles_update_same_external_position(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that multiple reconciliation cycles use the SAME EXTERNAL strategy ID.
+
+        Prevents position fragmentation by ensuring all reconciliation fills use
+        EXTERNAL strategy ID to net into one position.
+
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+        live_exec_engine.generate_missing_orders = True
+
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades, is_external=True):
+            reconcile_calls.append((order_report, trades, is_external))
+            return original_reconcile(order_report, trades, is_external)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # First reconciliation: venue has LONG 100
+        report1 = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        result1 = live_exec_engine._reconcile_position_report(report1)
+        assert result1 is True
+        assert len(reconcile_calls) == 1
+
+        # Verify first reconciliation created EXTERNAL order with RECONCILIATION tag
+        order_report1, _, is_external1 = reconcile_calls[0]
+        assert order_report1.order_side == OrderSide.BUY
+        assert order_report1.quantity == Quantity.from_int(100)
+        assert is_external1 is False  # Internal reconciliation
+
+        # Check the generated order uses EXTERNAL strategy ID
+        orders_after_1st = self.cache.orders()
+        assert len(orders_after_1st) == 1
+        assert orders_after_1st[0].strategy_id.value == "EXTERNAL"
+        assert orders_after_1st[0].tags == ["RECONCILIATION"]
+
+        # Simulate the first order being processed by creating a position
+        # (In real flow, this would happen automatically via execution engine)
+        first_order = orders_after_1st[0]
+        fill_1 = TestEventStubs.order_filled(
+            first_order,
+            instrument=instrument,
+            position_id=PositionId("AUDUSD.SIM-EXTERNAL"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.0"),
+            trade_id=TradeId("RECON-TRADE-1"),
+        )
+        position_1 = Position(instrument=instrument, fill=fill_1)
+        self.cache.add_position(position_1, OmsType.NETTING)
+
+        # Second reconciliation: venue now has LONG 150 (manual trade on exchange)
+        report2 = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(150),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        result2 = live_exec_engine._reconcile_position_report(report2)
+        assert result2 is True
+        assert len(reconcile_calls) == 2
+
+        # Second reconciliation also uses EXTERNAL strategy ID
+        order_report2, _, is_external2 = reconcile_calls[1]
+        assert order_report2.order_side == OrderSide.BUY
+        assert order_report2.quantity == Quantity.from_int(50)  # Incremental from 100 to 150
+        assert is_external2 is False
+
+        # Verify both orders use EXTERNAL strategy ID
+        orders_after_second = self.cache.orders()
+        assert len(orders_after_second) == 2
+
+        for order in orders_after_second:
+            assert order.strategy_id.value == "EXTERNAL"
+            assert order.tags == ["RECONCILIATION"]
+
+    @pytest.mark.asyncio()
+    async def test_reconciliation_with_existing_position_uses_external_strategy_id(
+        self,
+        live_exec_engine,
+    ):
+        """
+        Test that reconciliation with existing user strategy position generates
+        reconciliation order with EXTERNAL strategy ID.
+
+        Verifies that all unclaimed reconciliation uses consistent EXTERNAL strategy ID
+        to enable proper netting in strategy-level netting mode.
+
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+        live_exec_engine.generate_missing_orders = True
+
+        # User strategy creates position
+        order = TestExecStubs.limit_order(
+            instrument=instrument,
+            order_side=OrderSide.BUY,
+        )
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=instrument,
+            position_id=PositionId("P-1"),
+            last_qty=Quantity.from_int(50),
+            last_px=Price.from_str("1.0"),
+        )
+        user_position = Position(instrument=instrument, fill=fill)
+        self.cache.add_position(user_position, OmsType.NETTING)
+
+        reconcile_calls = []
+        original_reconcile = live_exec_engine._reconcile_order_report
+
+        def spy_reconcile(order_report, trades, is_external=True):
+            reconcile_calls.append((order_report, trades, is_external))
+            return original_reconcile(order_report, trades, is_external)
+
+        live_exec_engine._reconcile_order_report = spy_reconcile
+
+        # Venue reports LONG 100 (50 from user + 50 external)
+        report = PositionStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_position_report(report)
+
+        # Assert
+        assert result is True
+        assert len(reconcile_calls) == 1
+
+        # Verify reconciliation order generated with correct quantity
+        order_report, _, is_external = reconcile_calls[0]
+        assert order_report.order_side == OrderSide.BUY
+        assert order_report.quantity == Quantity.from_int(50)  # Difference
+        assert is_external is False  # Internal reconciliation
+
+        # Verify generated order uses EXTERNAL strategy ID
+        generated_orders = [
+            o for o in self.cache.orders()
+            if o.client_order_id == order_report.client_order_id
+        ]
+        assert len(generated_orders) == 1
+
+        generated_order = generated_orders[0]
+        assert generated_order.strategy_id.value == "EXTERNAL"
+        assert generated_order.tags == ["RECONCILIATION"]
 
     @pytest.mark.asyncio()
     async def test_position_reconciliation_fallback_to_market_order_when_no_price_available(
@@ -2373,12 +2493,14 @@ class TestReconciliationEdgeCases:
         assert order_report.order_status == OrderStatus.FILLED
         assert is_external is False  # Internal reconciliation order
 
-        # Verify the order was added to cache with INTERNAL-DIFF strategy
+        # Verify the order was added to cache with EXTERNAL strategy and RECONCILIATION tag
         orders = self.cache.orders()
-        internal_diff_orders = [o for o in orders if o.strategy_id.value == "INTERNAL-DIFF"]
-        assert len(internal_diff_orders) == 1
+        internal_recon_orders = [
+            o for o in orders if o.strategy_id.value == "EXTERNAL" and o.tags == ["RECONCILIATION"]
+        ]
+        assert len(internal_recon_orders) == 1
 
-        generated_order = internal_diff_orders[0]
+        generated_order = internal_recon_orders[0]
         assert generated_order.order_type == OrderType.MARKET
         assert generated_order.side == OrderSide.BUY
         assert generated_order.quantity == Quantity.from_int(100)
@@ -2450,12 +2572,14 @@ class TestReconciliationEdgeCases:
         assert order_report.order_status == OrderStatus.FILLED
         assert is_external is False  # Internal reconciliation order
 
-        # Verify the order was added to cache
+        # Verify the order was added to cache with EXTERNAL strategy and RECONCILIATION tag
         orders = self.cache.orders()
-        internal_diff_orders = [o for o in orders if o.strategy_id.value == "INTERNAL-DIFF"]
-        assert len(internal_diff_orders) == 1
+        internal_recon_orders = [
+            o for o in orders if o.strategy_id.value == "EXTERNAL" and o.tags == ["RECONCILIATION"]
+        ]
+        assert len(internal_recon_orders) == 1
 
-        generated_order = internal_diff_orders[0]
+        generated_order = internal_recon_orders[0]
         assert generated_order.order_type == OrderType.LIMIT
         assert generated_order.side == OrderSide.BUY
         assert generated_order.quantity == Quantity.from_int(100)

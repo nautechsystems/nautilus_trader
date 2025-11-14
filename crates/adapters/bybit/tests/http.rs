@@ -1146,7 +1146,7 @@ async fn test_request_order_status_reports_calls_both_endpoints() {
         .unwrap();
 
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1208,7 +1208,7 @@ async fn test_request_order_status_reports_requires_settle_coin_for_linear() {
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1251,7 +1251,7 @@ async fn test_order_deduplication_by_order_id() {
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1309,7 +1309,7 @@ async fn test_request_order_status_reports_linear_queries_all_settle_coins() {
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1365,7 +1365,7 @@ async fn test_request_order_status_reports_respects_limit_across_settle_coins() 
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1418,7 +1418,7 @@ async fn test_request_order_status_reports_stops_before_next_coin() {
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1475,7 +1475,7 @@ async fn test_request_order_status_reports_combines_orders_from_each_settle_coin
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");

@@ -35,8 +35,8 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
-from nautilus_trader.adapters.polymarket.loaders import PolymarketDataLoader
+from nautilus_trader.adapters.polymarket import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket import PolymarketDataLoader
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance

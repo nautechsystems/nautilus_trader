@@ -816,3 +816,252 @@ async def test_cancel_order_rejection(exec_client_builder, monkeypatch, instrume
         await client._cancel_order(command)
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_denied_reduce_only_spot(
+    exec_client_builder,
+    monkeypatch,
+    msgbus,
+):
+    # Arrange - Use SPOT instrument
+    from decimal import Decimal
+
+    from nautilus_trader.model.currencies import BTC
+    from nautilus_trader.model.currencies import USDT
+    from nautilus_trader.model.instruments import CryptoPerpetual
+    from nautilus_trader.model.objects import Money
+
+    spot_instrument = CryptoPerpetual(
+        instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        max_quantity=Quantity.from_str("1000"),
+        min_quantity=Quantity.from_str("0.000001"),
+        max_notional=None,
+        min_notional=Money(1.00, USDT),
+        max_price=Price.from_str("1000000.00"),
+        min_price=Price.from_str("0.01"),
+        margin_init=Decimal("0"),
+        margin_maint=Decimal("0"),
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+
+    await client._connect()
+
+    # Create a LIMIT order with REDUCE_ONLY on SPOT (invalid)
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=spot_instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        reduce_only=True,  # Invalid for SPOT
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert - Order should be denied, not submitted to WebSocket
+        ws_trade_client.submit_order.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_is_leverage(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange - Use SPOT instrument
+    from decimal import Decimal
+
+    from nautilus_trader.model.currencies import BTC
+    from nautilus_trader.model.currencies import USDT
+    from nautilus_trader.model.instruments import CryptoPerpetual
+    from nautilus_trader.model.objects import Money
+
+    spot_instrument = CryptoPerpetual(
+        instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        max_quantity=Quantity.from_str("1000"),
+        min_quantity=Quantity.from_str("0.000001"),
+        max_notional=None,
+        min_notional=Money(1.00, USDT),
+        max_price=Price.from_str("1000000.00"),
+        min_price=Price.from_str("0.01"),
+        margin_init=Decimal("0"),
+        margin_maint=Decimal("0"),
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+
+    await client._connect()
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=spot_instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"is_leverage": True},
+    )
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert - is_leverage=True should be passed through
+        ws_trade_client.submit_order.assert_awaited_once()
+        call_kwargs = ws_trade_client.submit_order.call_args[1]
+        assert call_kwargs["is_leverage"] is True
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_is_quote_quantity(
+    exec_client_builder,
+    monkeypatch,
+):
+    # Arrange - Use SPOT instrument
+    from decimal import Decimal
+
+    from nautilus_trader.model.currencies import BTC
+    from nautilus_trader.model.currencies import USDT
+    from nautilus_trader.model.instruments import CryptoPerpetual
+    from nautilus_trader.model.objects import Money
+
+    spot_instrument = CryptoPerpetual(
+        instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        max_quantity=Quantity.from_str("1000"),
+        min_quantity=Quantity.from_str("0.000001"),
+        max_notional=None,
+        min_notional=Money(1.00, USDT),
+        max_price=Price.from_str("1000000.00"),
+        min_price=Price.from_str("0.01"),
+        margin_init=Decimal("0"),
+        margin_maint=Decimal("0"),
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+
+    await client._connect()
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=spot_instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=True,  # This should be passed through
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._submit_order(command)
+
+        # Assert - is_quote_quantity=True should be passed through
+        ws_trade_client.submit_order.assert_awaited_once()
+        call_kwargs = ws_trade_client.submit_order.call_args[1]
+        assert call_kwargs["is_quote_quantity"] is True
+    finally:
+        await client._disconnect()

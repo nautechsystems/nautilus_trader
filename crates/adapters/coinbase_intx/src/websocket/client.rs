@@ -166,8 +166,9 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Initialize the instruments cache with the given `instruments`.
-    pub fn initialize_instruments_cache(&mut self, instruments: Vec<InstrumentAny>) {
+    pub fn cache_instruments(&mut self, instruments: Vec<InstrumentAny>) {
         let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
+
         for inst in instruments {
             instruments_cache.insert(inst.symbol().inner(), inst.clone());
         }

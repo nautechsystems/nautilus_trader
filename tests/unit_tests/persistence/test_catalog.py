@@ -57,7 +57,7 @@ def test_list_data_types(catalog_betfair: ParquetDataCatalog) -> None:
         "custom_betfair_sequence_completed",
         "custom_betfair_ticker",
         "instrument_status",
-        "order_book_delta",
+        "order_book_deltas",
         "trade_tick",
     ]
     assert data_types == expected
@@ -75,7 +75,7 @@ def test_catalog_query_filtered(
     trades = catalog_betfair.trade_ticks(start=1576875378384999936)
     assert len(trades) == 121
 
-    trades = catalog_betfair.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18))
+    trades = catalog_betfair.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18, tzinfo=datetime.UTC))
     assert len(trades) == 121
 
     deltas = catalog_betfair.order_book_deltas()
@@ -730,17 +730,19 @@ class TestConsolidateDataByPeriod:
         request_end = pd.Timestamp("1970-01-01 00:00:00.000004", tz="UTC")  # 4000 ns
 
         # Mock the filesystem exists check to return False (no existing target files)
-        with patch.object(self.catalog.fs, "exists", return_value=False):
-            with patch.object(self.catalog, "_make_path", return_value="/test/path"):
-                queries = self.catalog._prepare_consolidation_queries(
-                    intervals=intervals,
-                    period=period,
-                    start=request_start,
-                    end=request_end,
-                    ensure_contiguous_files=False,
-                    data_cls=QuoteTick,
-                    identifier="EURUSD.SIM",
-                )
+        with (
+            patch.object(self.catalog.fs, "exists", return_value=False),
+            patch.object(self.catalog, "_make_path", return_value="/test/path"),
+        ):
+            queries = self.catalog._prepare_consolidation_queries(
+                intervals=intervals,
+                period=period,
+                start=request_start,
+                end=request_end,
+                ensure_contiguous_files=False,
+                data_cls=QuoteTick,
+                identifier="EURUSD.SIM",
+            )
 
         # Should have 3 queries: split before, split after, and consolidation
         assert len(queries) == 3

@@ -21,6 +21,7 @@ checks during live trading.
 """
 
 import asyncio
+import contextlib
 from decimal import Decimal
 
 import pytest
@@ -553,10 +554,9 @@ async def test_open_check_periodic_execution(exec_engine_open_check):
     async def counting_check():
         nonlocal check_count
         check_count += 1
-        if check_count >= 2:
-            # Cancel the task after 2 checks
-            if exec_engine._reconciliation_task:
-                exec_engine._reconciliation_task.cancel()
+        # Cancel the task after 2 checks
+        if check_count >= 2 and exec_engine._reconciliation_task:
+            exec_engine._reconciliation_task.cancel()
         return await original_check()
 
     exec_engine._check_orders_consistency = counting_check
@@ -568,10 +568,8 @@ async def test_open_check_periodic_execution(exec_engine_open_check):
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=0.5)
-    except asyncio.CancelledError:
-        pass
 
     # Assert
     assert check_count >= 2
@@ -843,10 +841,9 @@ async def test_inflight_check_periodic_execution(exec_engine_inflight_check):
     async def counting_check():
         nonlocal check_count
         check_count += 1
-        if check_count >= 2:
-            # Cancel the task after 2 checks
-            if exec_engine._reconciliation_task:
-                exec_engine._reconciliation_task.cancel()
+        # Cancel the task after 2 checks
+        if check_count >= 2 and exec_engine._reconciliation_task:
+            exec_engine._reconciliation_task.cancel()
 
     exec_engine._check_inflight_orders = counting_check
 
@@ -857,10 +854,8 @@ async def test_inflight_check_periodic_execution(exec_engine_inflight_check):
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=0.5)
-    except asyncio.CancelledError:
-        pass
 
     # Assert
     assert check_count >= 2
@@ -880,9 +875,8 @@ async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
         check_count += 1
         if check_count == 1:
             raise RuntimeError("Test error")
-        elif check_count >= 2:
-            if exec_engine._reconciliation_task:
-                exec_engine._reconciliation_task.cancel()
+        elif check_count >= 2 and exec_engine._reconciliation_task:
+            exec_engine._reconciliation_task.cancel()
 
     exec_engine._check_inflight_orders = failing_check
 
@@ -893,10 +887,8 @@ async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=0.5)
-    except asyncio.CancelledError:
-        pass
 
     # Assert
     assert check_count >= 2
@@ -1269,10 +1261,9 @@ async def test_reconciliation_loop_runs_both_checks(
     async def counting_consistency_check():
         nonlocal consistency_check_count
         consistency_check_count += 1
-        if consistency_check_count >= 2:
-            # Stop after 2 consistency checks
-            if exec_engine._reconciliation_task:
-                exec_engine._reconciliation_task.cancel()
+        # Stop after 2 consistency checks
+        if consistency_check_count >= 2 and exec_engine._reconciliation_task:
+            exec_engine._reconciliation_task.cancel()
 
     exec_engine._check_inflight_orders = counting_problematic_check
     exec_engine._check_orders_consistency = counting_consistency_check
@@ -1284,10 +1275,8 @@ async def test_reconciliation_loop_runs_both_checks(
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=0.5)
-    except asyncio.CancelledError:
-        pass
 
     # Assert
     # Problematic checks should run more frequently (50ms interval)

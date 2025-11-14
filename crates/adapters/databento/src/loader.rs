@@ -107,7 +107,7 @@ impl DatabentoDataLoader {
 
         loader
             .load_publishers(publishers_filepath)
-            .context("Error loading publishers.json")?;
+            .context("error loading publishers.json")?;
 
         Ok(loader)
     }
@@ -305,7 +305,7 @@ impl DatabentoDataLoader {
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
                         )
-                        .context("Failed to decode instrument id")?
+                        .context("failed to decode instrument id")?
                     };
                     let (item1, item2) = decode_record(
                         &record,
@@ -1053,5 +1053,83 @@ mod tests {
             ONE_SECOND_NS,
             "Timestamp difference should be exactly 1 second for 1s bars"
         );
+    }
+
+    #[rstest]
+    fn test_load_status_records(loader: DatabentoDataLoader) {
+        let path = test_data_path().join("test_data.status.dbn.zst");
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let statuses = loader
+            .load_status_records::<dbn::StatusMsg>(&path, Some(instrument_id))
+            .unwrap()
+            .collect::<anyhow::Result<Vec<_>>>()
+            .unwrap();
+
+        // Assert total count matches Python test expectations
+        assert_eq!(statuses.len(), 4, "Should load exactly 4 status records");
+
+        // Assert first record fields match Python test expectations
+        let first = &statuses[0];
+        assert_eq!(first.instrument_id, instrument_id);
+        assert_eq!(first.ts_event.as_u64(), 1609110000000000000);
+        assert_eq!(first.ts_init.as_u64(), 1609113600000000000);
+    }
+
+    #[rstest]
+    fn test_read_imbalance_records(loader: DatabentoDataLoader) {
+        let path = test_data_path().join("test_data.imbalance.dbn.zst");
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let imbalances = loader
+            .read_imbalance_records::<dbn::ImbalanceMsg>(&path, Some(instrument_id), None)
+            .unwrap()
+            .collect::<anyhow::Result<Vec<_>>>()
+            .unwrap();
+
+        // Assert total count
+        assert_eq!(
+            imbalances.len(),
+            2,
+            "Should load exactly 2 imbalance records"
+        );
+
+        // Assert first record has required fields
+        let first = &imbalances[0];
+        assert_eq!(first.instrument_id, instrument_id);
+        assert!(
+            first.ref_price.as_f64() > 0.0,
+            "ref_price should be positive"
+        );
+        assert!(first.ts_event.as_u64() > 0, "ts_event should be set");
+        assert!(first.ts_recv.as_u64() > 0, "ts_recv should be set");
+        assert!(first.ts_init.as_u64() > 0, "ts_init should be set");
+    }
+
+    #[rstest]
+    fn test_read_statistics_records(loader: DatabentoDataLoader) {
+        let path = test_data_path().join("test_data.statistics.dbn.zst");
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let statistics = loader
+            .read_statistics_records::<dbn::StatMsg>(&path, Some(instrument_id), None)
+            .unwrap()
+            .collect::<anyhow::Result<Vec<_>>>()
+            .unwrap();
+
+        // Assert total count
+        assert_eq!(
+            statistics.len(),
+            2,
+            "Should load exactly 2 statistics records"
+        );
+
+        // Assert first record has required fields
+        let first = &statistics[0];
+        assert_eq!(first.instrument_id, instrument_id);
+        assert!(first.ts_event.as_u64() > 0, "ts_event should be set");
+        assert!(first.ts_recv.as_u64() > 0, "ts_recv should be set");
+        assert!(first.ts_init.as_u64() > 0, "ts_init should be set");
+        assert!(first.sequence > 0, "sequence should be positive");
     }
 }

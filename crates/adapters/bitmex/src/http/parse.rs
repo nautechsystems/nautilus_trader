@@ -858,10 +858,8 @@ pub fn parse_fill_report(
     // Map BitMEX currency to standard currency code
     let settlement_currency_str = exec.settl_currency.unwrap_or(Ustr::from("XBT")).as_str();
     let mapped_currency = map_bitmex_currency(settlement_currency_str);
-    let commission = Money::new(
-        exec.commission.unwrap_or(0.0),
-        Currency::from(mapped_currency.as_str()),
-    );
+    let currency = get_currency(&mapped_currency);
+    let commission = Money::new(exec.commission.unwrap_or(0.0), currency);
     let liquidity_side = parse_liquidity_side(&exec.last_liquidity_ind);
     let client_order_id = exec.cl_ord_id.map(ClientOrderId::new);
     let venue_position_id = None; // Not applicable on BitMEX
@@ -924,7 +922,7 @@ pub fn parse_position_report(
 ///
 /// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
 /// which automatically registers newly listed BitMEX assets.
-fn get_currency(code: &str) -> Currency {
+pub fn get_currency(code: &str) -> Currency {
     Currency::get_or_create_crypto(code)
 }
 

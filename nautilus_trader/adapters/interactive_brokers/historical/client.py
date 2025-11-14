@@ -154,7 +154,7 @@ class HistoricInteractiveBrokersClient:
 
         return list(instrument_provider._instruments.values())
 
-    async def request_bars(  # noqa C901
+    async def request_bars(  # noqa: C901
         self,
         bar_specifications: list[str],
         end_date_time: datetime.datetime,

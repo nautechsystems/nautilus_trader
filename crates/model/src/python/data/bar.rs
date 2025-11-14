@@ -78,6 +78,22 @@ impl BarSpecification {
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(BarSpecification))
     }
+
+    #[getter]
+    #[pyo3(name = "timedelta")]
+    fn py_timedelta(&self) -> PyResult<chrono::TimeDelta> {
+        match self.aggregation {
+            BarAggregation::Millisecond
+            | BarAggregation::Second
+            | BarAggregation::Minute
+            | BarAggregation::Hour
+            | BarAggregation::Day => Ok(self.timedelta()),
+            _ => Err(to_pyvalue_err(format!(
+                "Timedelta not supported for aggregation type: {:?}",
+                self.aggregation
+            ))),
+        }
+    }
 }
 
 #[pymethods]

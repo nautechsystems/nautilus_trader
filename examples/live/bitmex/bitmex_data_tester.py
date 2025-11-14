@@ -23,7 +23,6 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_data import DataTester
@@ -72,18 +71,18 @@ config_tester = DataTesterConfig(
     instrument_ids=[InstrumentId.from_str(f"{symbol}.{BITMEX}")],
     bar_types=[BarType.from_str(f"{symbol}.{BITMEX}-1-MINUTE-LAST-EXTERNAL")],
     subscribe_instrument=True,
-    # subscribe_quotes=True,
-    # subscribe_trades=True,
-    # subscribe_mark_prices=True,
-    # subscribe_index_prices=True,
-    # subscribe_funding_rates=True,
-    # subscribe_bars=True,
+    subscribe_quotes=True,
+    subscribe_trades=True,
+    subscribe_mark_prices=True,
+    subscribe_index_prices=True,
+    subscribe_funding_rates=True,
+    subscribe_bars=True,
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,  # Not yet supported
-    subscribe_book_at_interval=True,
-    book_type=BookType.L2_MBP,
-    book_depth=25,
-    book_interval_ms=10,
+    # subscribe_book_at_interval=True,
+    # book_type=BookType.L2_MBP,
+    # book_depth=25,
+    # book_interval_ms=10,
     # request_trades=True,
     # request_bars=True,
 )

@@ -124,7 +124,7 @@ async def test_connect_success(exec_client_builder, monkeypatch):
     try:
         # Assert
         instrument_provider.initialize.assert_awaited_once()
-        http_client.add_instrument.assert_called_once_with(
+        http_client.cache_instrument.assert_called_once_with(
             instrument_provider.instruments_pyo3.return_value[0],
         )
         http_client.request_account_state.assert_awaited_once()
@@ -1279,7 +1279,7 @@ async def test_spot_margin_market_buy_quote_quantity_handles_partial_fills(
     # Assert - Second fill should NOT generate OrderUpdated (already converted)
     assert not any(isinstance(event, OrderUpdated) for event in emitted_events)
 
-    # CRITICAL: Second fill should ALSO have net last_qty (adjusted for commission)
+    # Second fill should also have net last_qty (adjusted for commission)
     filled_events = [e for e in emitted_events if isinstance(e, OrderFilled)]
     assert len(filled_events) == 1
     # This should be NET (0.002615 - 0.00000261 = 0.00261239 ≈ 0.002612)
