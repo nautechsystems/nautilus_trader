@@ -47,6 +47,7 @@ use nautilus_network::{
     retry::{RetryConfig, RetryManager},
 };
 use reqwest::{Method, header::USER_AGENT};
+use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -1396,10 +1397,6 @@ impl BybitHttpClient {
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        use std::str::FromStr;
-
-        use rust_decimal::Decimal;
-
         let params = BybitWalletBalanceParams {
             account_type: BybitAccountType::Unified,
             coin: None,
@@ -1408,13 +1405,11 @@ impl BybitHttpClient {
         let response = self.inner.get_wallet_balance(&params).await?;
         let ts_init = self.generate_ts_init();
 
-        // Build lookup table of wallet balances by coin
         let mut wallet_by_coin: HashMap<Ustr, Decimal> = HashMap::new();
 
         for wallet in &response.result.list {
             for coin_balance in &wallet.coin {
-                let balance =
-                    Decimal::from_str(&coin_balance.wallet_balance).unwrap_or(Decimal::ZERO);
+                let balance = coin_balance.wallet_balance;
                 *wallet_by_coin
                     .entry(coin_balance.coin)
                     .or_insert(Decimal::ZERO) += balance;
@@ -1424,7 +1419,6 @@ impl BybitHttpClient {
         let mut reports = Vec::new();
 
         if let Some(instrument_id) = instrument_id {
-            // Generate report for specific instrument
             if let Some(instrument) = self.instruments_cache.get(&instrument_id.symbol.inner()) {
                 let base_currency = instrument
                     .base_currency()

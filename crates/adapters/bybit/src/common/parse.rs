@@ -18,7 +18,7 @@
 use std::{convert::TryFrom, str::FromStr};
 
 use anyhow::Context;
-use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
+use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
@@ -36,11 +36,16 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use serde::{Deserialize, Deserializer};
 use ustr::Ustr;
 
 use crate::{
     common::{
-        enums::{BybitContractType, BybitKlineInterval, BybitOptionType, BybitProductType},
+        enums::{
+            BybitContractType, BybitKlineInterval, BybitOptionType, BybitOrderSide,
+            BybitOrderStatus, BybitOrderType, BybitPositionSide, BybitProductType,
+            BybitStopOrderType, BybitTimeInForce, BybitTriggerDirection,
+        },
         symbol::BybitSymbol,
     },
     http::models::{
@@ -52,6 +57,50 @@ use crate::{
 
 const BYBIT_MINUTE_INTERVALS: &[u64] = &[1, 3, 5, 15, 30, 60, 120, 240, 360, 720];
 const BYBIT_HOUR_INTERVALS: &[u64] = &[1, 2, 4, 6, 12];
+
+/// Deserializes an optional Decimal from a string field.
+/// Returns `None` if the string is empty or "0", otherwise parses to `Decimal`.
+pub fn deserialize_optional_decimal<'de, D>(deserializer: D) -> Result<Option<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    if s.is_empty() || s == "0" {
+        Ok(None)
+    } else {
+        Decimal::from_str(&s)
+            .map(Some)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// Deserializes a Decimal from an optional string field, defaulting to zero.
+/// Handles Bybit's edge cases: None, empty string "", or "0" all become Decimal::ZERO.
+pub fn deserialize_optional_decimal_or_zero<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Deserialize::deserialize(deserializer)?;
+    match opt {
+        None => Ok(Decimal::ZERO),
+        Some(s) if s.is_empty() || s == "0" => Ok(Decimal::ZERO),
+        Some(s) => Decimal::from_str(&s).map_err(serde::de::Error::custom),
+    }
+}
+
+/// Deserializes a Decimal from a string field that might be empty.
+/// Handles Bybit's edge case where empty string "" becomes Decimal::ZERO.
+pub fn deserialize_decimal_or_zero<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    if s.is_empty() || s == "0" {
+        Ok(Decimal::ZERO)
+    } else {
+        Decimal::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
 
 /// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
 ///
@@ -704,15 +753,15 @@ pub fn parse_position_status_report(
 
     // Determine position side and quantity
     let (position_side, quantity) = match position.side {
-        crate::common::enums::BybitPositionSide::Buy => {
+        BybitPositionSide::Buy => {
             let qty = Quantity::new(size_f64, instrument.size_precision());
             (PositionSideSpecified::Long, qty)
         }
-        crate::common::enums::BybitPositionSide::Sell => {
+        BybitPositionSide::Sell => {
             let qty = Quantity::new(size_f64, instrument.size_precision());
             (PositionSideSpecified::Short, qty)
         }
-        crate::common::enums::BybitPositionSide::Flat => {
+        BybitPositionSide::Flat => {
             let qty = Quantity::new(0.0, instrument.size_precision());
             (PositionSideSpecified::Flat, qty)
         }
@@ -759,26 +808,13 @@ pub fn parse_account_state(
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
 
-    // Parse each coin balance
     for coin in &wallet_balance.coin {
-        let wallet_balance_f64 = if coin.wallet_balance.is_empty() {
-            0.0
-        } else {
-            coin.wallet_balance.parse::<f64>()?
-        };
-
-        let spot_borrow_f64 = parse_optional_balance_field(&coin.spot_borrow)?;
-        let total_f64 = wallet_balance_f64 - spot_borrow_f64;
-
-        let locked_f64 = if coin.locked.is_empty() {
-            0.0
-        } else {
-            coin.locked.parse::<f64>()?
-        };
+        let total_dec = coin.wallet_balance - coin.spot_borrow;
+        let locked_dec = coin.locked;
 
         let currency = get_currency(&coin.coin);
-        let total = Money::new(total_f64, currency);
-        let locked = Money::new(locked_f64, currency);
+        let total = Money::from_decimal(total_dec, currency)?;
+        let locked = Money::from_decimal(locked_dec, currency)?;
         let free = Money::from_raw(total.raw - locked.raw, currency);
 
         balances.push(AccountBalance::new(total, locked, free));
@@ -786,7 +822,6 @@ pub fn parse_account_state(
 
     let mut margins = Vec::new();
 
-    // Parse margin balances for each coin with position margin data
     for coin in &wallet_balance.coin {
         let initial_margin_f64 = match &coin.total_position_im {
             Some(im) if !im.is_empty() => im.parse::<f64>()?,
@@ -821,7 +856,7 @@ pub fn parse_account_state(
 
     let account_type = AccountType::Margin;
     let is_reported = true;
-    let event_id = nautilus_core::uuid::UUID4::new();
+    let event_id = UUID4::new();
 
     // Use current time as ts_event since Bybit doesn't provide this in wallet balance
     let ts_event = ts_init;
@@ -922,19 +957,6 @@ fn extract_strike_from_symbol(symbol: &str) -> anyhow::Result<Price> {
     parse_price(strike, "option strike")
 }
 
-fn parse_optional_balance_field(value: &Option<String>) -> anyhow::Result<f64> {
-    if let Some(s) = value {
-        if s.is_empty() {
-            Ok(0.0)
-        } else {
-            s.parse::<f64>()
-                .with_context(|| format!("Failed to parse balance field '{s}'"))
-        }
-    } else {
-        Ok(0.0)
-    }
-}
-
 /// Parses a Bybit order into a Nautilus OrderStatusReport.
 pub fn parse_order_status_report(
     order: &crate::http::models::BybitOrder,
@@ -942,18 +964,12 @@ pub fn parse_order_status_report(
     account_id: nautilus_model::identifiers::AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<nautilus_model::reports::OrderStatusReport> {
-    use crate::common::enums::{
-        BybitOrderStatus, BybitOrderType, BybitStopOrderType, BybitTimeInForce,
-        BybitTriggerDirection,
-    };
-
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order.order_id);
 
     let order_side: OrderSide = order.side.into();
 
     // Bybit represents conditional orders using orderType + stopOrderType + triggerDirection + side
-    use crate::common::enums::BybitOrderSide;
     let order_type: OrderType = match (
         order.order_type,
         order.stop_order_type,
@@ -1092,7 +1108,7 @@ pub fn parse_order_status_report(
         ts_accepted,
         ts_last,
         ts_init,
-        Some(nautilus_core::uuid::UUID4::new()),
+        Some(UUID4::new()),
     );
 
     if !order.order_link_id.is_empty() {
@@ -1307,10 +1323,7 @@ mod tests {
         // Get the short position (ETHUSDT, side="Sell", size="5.0")
         let short_position = &response.result.list[1];
         assert_eq!(short_position.symbol.as_str(), "ETHUSDT");
-        assert_eq!(
-            short_position.side,
-            crate::common::enums::BybitPositionSide::Sell
-        );
+        assert_eq!(short_position.side, BybitPositionSide::Sell);
 
         // Create ETHUSDT instrument for parsing
         let eth_json = load_test_json("http_get_instruments_linear.json");

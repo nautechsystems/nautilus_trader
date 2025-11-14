@@ -81,10 +81,10 @@ use crate::{
         },
         parse::{
             okx_instrument_type, parse_account_state, parse_client_order_id,
-            parse_millisecond_timestamp, parse_price, parse_quantity,
+            parse_millisecond_timestamp, parse_position_status_report, parse_price, parse_quantity,
         },
     },
-    http::models::OKXAccount,
+    http::models::{OKXAccount, OKXPosition},
     websocket::client::{
         OKX_RATE_LIMIT_KEY_AMEND, OKX_RATE_LIMIT_KEY_CANCEL, OKX_RATE_LIMIT_KEY_ORDER,
         OKX_RATE_LIMIT_KEY_SUBSCRIPTION,
@@ -678,13 +678,12 @@ impl OKXWsFeedHandler {
                                             // base quantity without the fill price, so we skip the
                                             // synthetic OrderAccepted and rely on the orders channel
                                             tracing::info!(
-                                                "Skipping synthetic OrderAccepted for {} quote-sized order: client_order_id={client_order_id}, venue_order_id={:?}",
+                                                "Skipping synthetic OrderAccepted for {} quote-sized order: client_order_id={client_order_id}, venue_order_id={venue_order_id:?}",
                                                 if is_explicit_quote_sized {
                                                     "explicit"
                                                 } else {
                                                     "implicit"
                                                 },
-                                                venue_order_id
                                             );
                                             continue;
                                         }
@@ -1060,6 +1059,66 @@ impl OKXWsFeedHandler {
                                     }
                                 }
                                 Err(e) => tracing::error!("Failed to parse account data: {e}"),
+                            }
+                            continue;
+                        }
+                        OKXWsChannel::Positions => {
+                            match serde_json::from_value::<Vec<OKXPosition>>(data) {
+                                Ok(positions) => {
+                                    tracing::debug!("Received {} position update(s)", positions.len());
+
+                                    for position in positions {
+                                        let instrument_id = match InstrumentId::from_as_ref(format!(
+                                            "{}.OKX",
+                                            position.inst_id
+                                        )) {
+                                            Ok(id) => id,
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Failed to parse instrument ID from {}: {e}",
+                                                    position.inst_id
+                                                );
+                                                continue;
+                                            }
+                                        };
+
+                                        let instrument = match self.instruments_cache.get(&position.inst_id) {
+                                            Some(inst) => inst,
+                                            None => {
+                                                tracing::warn!(
+                                                    "Received position update for unknown instrument {}, skipping",
+                                                    instrument_id
+                                                );
+                                                continue;
+                                            }
+                                        };
+
+                                        let size_precision = instrument.size_precision();
+
+                                        match parse_position_status_report(
+                                            position,
+                                            self.account_id,
+                                            instrument_id,
+                                            size_precision,
+                                            ts_init,
+                                        ) {
+                                            Ok(position_report) => {
+                                                self.pending_messages.push_back(
+                                                    NautilusWsMessage::PositionUpdate(position_report),
+                                                );
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Failed to parse position status report for {}: {e}",
+                                                    instrument_id
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to parse positions data: {e}");
+                                }
                             }
                             continue;
                         }

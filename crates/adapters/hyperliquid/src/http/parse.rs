@@ -29,6 +29,7 @@ use nautilus_model::{
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use super::models::{HyperliquidFill, PerpMeta, SpotMeta};
 use crate::{
@@ -57,11 +58,11 @@ pub enum HyperliquidMarketType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidInstrumentDef {
     /// Human-readable symbol (e.g., "BTC-USD-PERP", "PURR-USDC-SPOT").
-    pub symbol: String,
+    pub symbol: Ustr,
     /// Base currency/asset (e.g., "BTC", "PURR").
-    pub base: String,
+    pub base: Ustr,
     /// Quote currency (e.g., "USD" for perps, "USDC" for spot).
-    pub quote: String,
+    pub quote: Ustr,
     /// Market type (perpetual or spot).
     pub market_type: HyperliquidMarketType,
     /// Number of decimal places for price precision.
@@ -109,9 +110,9 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
         let symbol = format!("{}-USD-PERP", asset.name);
 
         let def = HyperliquidInstrumentDef {
-            symbol,
-            base: asset.name.clone(),
-            quote: "USD".to_string(), // Hyperliquid perps are USD-quoted (USDC settled)
+            symbol: symbol.into(),
+            base: asset.name.clone().into(),
+            quote: "USD".into(), // Hyperliquid perps are USD-quoted (USDC settled)
             market_type: HyperliquidMarketType::Perp,
             price_decimals,
             size_decimals: asset.sz_decimals,
@@ -166,9 +167,9 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
         let symbol = format!("{}-{}-SPOT", base_token.name, quote_token.name);
 
         let def = HyperliquidInstrumentDef {
-            symbol,
-            base: base_token.name.clone(),
-            quote: quote_token.name.clone(),
+            symbol: symbol.into(),
+            base: base_token.name.clone().into(),
+            quote: quote_token.name.clone().into(),
             market_type: HyperliquidMarketType::Spot,
             price_decimals,
             size_decimals: base_token.sz_decimals,
@@ -212,24 +213,17 @@ pub fn get_currency(code: &str) -> Currency {
 ///
 /// Returns `None` if the conversion fails (e.g., unsupported market type).
 #[must_use]
-pub fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<InstrumentAny> {
-    let clock = get_atomic_clock_realtime();
-    let ts_event = clock.get_time_ns();
-    let ts_init = ts_event;
-
-    let symbol = Symbol::new(&def.symbol);
+pub fn create_instrument_from_def(
+    def: &HyperliquidInstrumentDef,
+    ts_init: UnixNanos,
+) -> Option<InstrumentAny> {
+    let symbol = Symbol::new(def.symbol);
     let venue = *HYPERLIQUID_VENUE;
     let instrument_id = InstrumentId::new(symbol, venue);
 
     // Use base currency as raw_symbol (e.g., "BTC" not "BTC-USD-PERP")
     // This is what Hyperliquid expects in WebSocket subscriptions
-    let raw_symbol = Symbol::new(&def.base);
-    log::warn!(
-        "DEBUG create_instrument: symbol={}, base={}, raw_symbol={}",
-        def.symbol,
-        def.base,
-        raw_symbol
-    );
+    let raw_symbol = Symbol::new(def.base);
     let base_currency = get_currency(&def.base);
     let quote_currency = get_currency(&def.quote);
     let price_increment = Price::from(&def.tick_size.to_string());
@@ -257,7 +251,7 @@ pub fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<Inst
             None,
             None,
             None,
-            ts_event,
+            ts_init, // Identical to ts_init for now
             ts_init,
         ))),
         HyperliquidMarketType::Perp => {
@@ -286,7 +280,7 @@ pub fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<Inst
                 None,
                 None,
                 None,
-                ts_event,
+                ts_init, // Identical to ts_init for now
                 ts_init,
             )))
         }
@@ -296,15 +290,23 @@ pub fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<Inst
 /// Convert a collection of Hyperliquid instrument definitions into Nautilus instruments,
 /// discarding any definitions that fail to convert.
 #[must_use]
-pub fn instruments_from_defs(defs: &[HyperliquidInstrumentDef]) -> Vec<InstrumentAny> {
-    defs.iter().filter_map(create_instrument_from_def).collect()
+pub fn instruments_from_defs(
+    defs: &[HyperliquidInstrumentDef],
+    ts_init: UnixNanos,
+) -> Vec<InstrumentAny> {
+    defs.iter()
+        .filter_map(|def| create_instrument_from_def(def, ts_init))
+        .collect()
 }
 
 /// Convert owned definitions into Nautilus instruments, consuming the input vector.
 #[must_use]
 pub fn instruments_from_defs_owned(defs: Vec<HyperliquidInstrumentDef>) -> Vec<InstrumentAny> {
+    let clock = get_atomic_clock_realtime();
+    let ts_init = clock.get_time_ns();
+
     defs.into_iter()
-        .filter_map(|def| create_instrument_from_def(&def))
+        .filter_map(|def| create_instrument_from_def(&def, ts_init))
         .collect()
 }
 
@@ -676,7 +678,7 @@ mod tests {
     where
         T: serde::de::DeserializeOwned,
     {
-        let path = format!("test_data/{}", filename);
+        let path = format!("test_data/{filename}");
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
     }

@@ -1,4 +1,4 @@
-# Release Notes Guide
+# Release Notes
 
 This guide documents the standards for writing release notes in `RELEASES.md`.
 

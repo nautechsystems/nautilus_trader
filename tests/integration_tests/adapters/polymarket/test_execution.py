@@ -17,11 +17,13 @@ import asyncio
 import pkgutil
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import Mock
 
 import msgspec
 import pytest
 from py_clob_client.client import ClobClient
 
+from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
@@ -45,6 +47,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import AccountBalance
@@ -272,6 +275,12 @@ class TestPolymarketExecutionClient:
     def test_handle_ws_trade_message_maker_flow(self):
         """
         Test handling websocket trade message for maker order fill.
+
+        This test exercises the full integration path through _handle_ws_message to
+        ensure proper message routing, decoding, and trade caching. The fill processing
+        happens asynchronously, so this test verifies dispatch rather than the final
+        fill state.
+
         """
         # Arrange - using user_trade1.json which has trader_side: MAKER
         raw_message = pkgutil.get_data(
@@ -279,16 +288,24 @@ class TestPolymarketExecutionClient:
             resource="user_trade1.json",
         )
 
+        msg_data = msgspec.json.decode(raw_message)
+        trade_id = msg_data["id"]
+        taker_order_id = msg_data["taker_order_id"]
+
         client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
-            "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
+            "0xab679e56242324e15e59cfd488cd0f12e4fd71b153b9bfb57518898b9983145e",
+            price=Price.from_str("0.518"),
         )
 
         # Act
         self.exec_client._handle_ws_message(raw_message)
 
-        # Assert - should complete without raising exception
-        # The actual processing happens asynchronously in _wait_for_ack_trade
-        assert True
+        # Assert
+        cache_key = get_polymarket_trades_key(taker_order_id, trade_id)
+        cached_trade = self.cache.get(cache_key)
+
+        assert cached_trade is not None, "Trade should be cached after _handle_ws_message"
+        assert cached_trade == raw_message, "Cached trade should match original message"
 
     def test_handle_ws_trade_message_taker_flow(self):
         """
@@ -300,16 +317,28 @@ class TestPolymarketExecutionClient:
             resource="user_trade2.json",
         )
 
+        msg = msgspec.json.decode(raw_message)
+        msg = self.exec_client._decoder_user_msg.decode(msgspec.json.encode(msg))
+
         client_order_id, venue_order_id = self._setup_test_order_with_venue_id(
             "0x5b605a0e8e40f3402d3cb3bc19edad6733ed23fbc079d2a09ee399c3487ace81",
+            price=Price.from_str("0.52"),
         )
 
         # Act
-        self.exec_client._handle_ws_message(raw_message)
+        self.exec_client._handle_ws_trade_msg(msg, wait_for_ack=False)
 
-        # Assert - should complete without raising exception
-        # The actual processing happens asynchronously in _wait_for_ack_trade
-        assert True
+        # Assert
+        assert self.cache.venue_order_id(client_order_id) == venue_order_id
+
+        positions = self.cache.positions()
+        assert len(positions) == 1
+
+        position = positions[0]
+        assert client_order_id in position.client_order_ids
+        assert position.avg_px_open == 0.52
+        assert position.entry == OrderSide.BUY
+        assert position.quantity.as_double() == 5
 
     @pytest.mark.asyncio()
     async def test_wait_for_ack_order_success(self):
@@ -584,7 +613,6 @@ class TestPolymarketExecutionClient:
         assert len(positions) == 1
 
         position = positions[0]
-        print(position)
 
         assert client_order_id in position.client_order_ids
         assert position.avg_px_open == 0.513  # from the json and _setup_test_order_with_venue_id
@@ -623,13 +651,76 @@ class TestPolymarketExecutionClient:
         assert len(positions) == 1
 
         position = positions[0]
-        print(position)
 
         assert first_client_order_id in position.client_order_ids
         assert second_client_order_id in position.client_order_ids
         assert position.avg_px_open == 0.35
         assert position.entry == OrderSide.BUY
         assert position.quantity.as_double() == 10
+
+    def test_parse_trades_response_handles_multiple_user_fills(self):
+        """
+        Test REST API fill parsing with multiple user orders in same trade.
+
+        This tests the _parse_trades_response_object method used by
+        generate_fill_reports to ensure it correctly handles multiple user maker orders
+        filled by a single taker (same trade_id).
+
+        """
+        # Arrange
+        raw_ws_message = pkgutil.get_data(
+            package="tests.integration_tests.adapters.polymarket.resources.ws_messages",
+            resource="user_trade4.json",
+        )
+        ws_data = msgspec.json.decode(raw_ws_message)
+
+        # Convert WS format to REST format
+        rest_data = {k: v for k, v in ws_data.items() if k not in ["event_type", "type", "timestamp", "trade_owner"]}
+        rest_data["transaction_hash"] = "0x16527181ac3c2dfb8ab81457aadc40cd9671a2b5f54f511a35b3d60736fb32e3"
+
+        first_client_order_id, first_venue_order_id = self._setup_test_order_with_venue_id(
+            "0x67b598cab933c71389176573822be763192a35a8c37e49999a11d611a5882e7d",
+            use_ws_instrument=True,
+            price=Price.from_str("0.3"),
+        )
+        second_client_order_id, second_venue_order_id = self._setup_test_order_with_venue_id(
+            "0x3ad09f225ebe141dfbdb3824f31cb457e8e0301ca4e0a06311e543f5328b9dea",
+            use_ws_instrument=True,
+            price=Price.from_str("0.4"),
+        )
+
+        # Act
+        command = Mock()
+        command.venue_order_id = None
+
+        parsed_fill_keys: set[tuple[TradeId, VenueOrderId]] = set()
+        reports: list = []
+
+        self.exec_client._parse_trades_response_object(
+            command=command,
+            json_obj=rest_data,
+            parsed_fill_keys=parsed_fill_keys,
+            reports=reports,
+        )
+
+        # Assert
+        assert len(reports) == 2
+        assert len(parsed_fill_keys) == 2
+
+        trade_ids = {report.trade_id for report in reports}
+        venue_order_ids = {report.venue_order_id for report in reports}
+        client_order_ids = {report.client_order_id for report in reports}
+
+        assert len(trade_ids) == 1
+        assert len(venue_order_ids) == 2
+        assert len(client_order_ids) == 2
+
+        assert first_venue_order_id in venue_order_ids
+        assert second_venue_order_id in venue_order_ids
+
+        # Guards cache lookup regression
+        assert first_client_order_id in client_order_ids
+        assert second_client_order_id in client_order_ids
 
     def test_handle_ws_message_invalid_json(self):
         """

@@ -24,7 +24,7 @@ use serde::{
 struct BoolVisitor;
 use serde::{Deserialize, Serialize};
 
-/// Represents types which are serializable for JSON and `MsgPack` specifications.
+/// Represents types which are serializable for JSON specifications.
 pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// Deserialize an object from JSON encoded bytes.
     ///
@@ -35,15 +35,6 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
         serde_json::from_slice(data)
     }
 
-    /// Deserialize an object from `MsgPack` encoded bytes.
-    ///
-    /// # Errors
-    ///
-    /// Returns serialization errors.
-    fn from_msgpack_bytes(data: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_slice(data)
-    }
-
     /// Serialize an object to JSON encoded bytes.
     ///
     /// # Errors
@@ -52,15 +43,54 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     fn to_json_bytes(&self) -> Result<Bytes, serde_json::Error> {
         serde_json::to_vec(self).map(Bytes::from)
     }
+}
 
-    /// Serialize an object to `MsgPack` encoded bytes.
-    ///
-    /// # Errors
-    ///
-    /// Returns serialization errors.
-    fn to_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
-        rmp_serde::to_vec_named(self).map(Bytes::from)
+pub use self::msgpack::{FromMsgPack, MsgPackSerializable, ToMsgPack};
+
+/// Provides MsgPack serialization support for types implementing [`Serializable`].
+///
+/// This module contains traits for MsgPack serialization and deserialization,
+/// separated from the core [`Serializable`] trait to allow independent opt-in.
+pub mod msgpack {
+    use bytes::Bytes;
+    use serde::{Deserialize, Serialize};
+
+    use super::Serializable;
+
+    /// Provides deserialization from MsgPack encoded bytes.
+    pub trait FromMsgPack: for<'de> Deserialize<'de> + Sized {
+        /// Deserialize an object from MsgPack encoded bytes.
+        ///
+        /// # Errors
+        ///
+        /// Returns serialization errors.
+        fn from_msgpack_bytes(data: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
+            rmp_serde::from_slice(data)
+        }
     }
+
+    /// Provides serialization to MsgPack encoded bytes.
+    pub trait ToMsgPack: Serialize {
+        /// Serialize an object to MsgPack encoded bytes.
+        ///
+        /// # Errors
+        ///
+        /// Returns serialization errors.
+        fn to_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
+            rmp_serde::to_vec_named(self).map(Bytes::from)
+        }
+    }
+
+    /// Marker trait combining [`Serializable`], [`FromMsgPack`], and [`ToMsgPack`].
+    ///
+    /// This trait is automatically implemented for all types that implement [`Serializable`].
+    pub trait MsgPackSerializable: Serializable + FromMsgPack + ToMsgPack {}
+
+    impl<T> FromMsgPack for T where T: Serializable {}
+
+    impl<T> ToMsgPack for T where T: Serializable {}
+
+    impl<T> MsgPackSerializable for T where T: Serializable {}
 }
 
 impl Visitor<'_> for BoolVisitor {
@@ -114,7 +144,10 @@ mod tests {
     use rstest::*;
     use serde::{Deserialize, Serialize};
 
-    use super::{Serializable, from_bool_as_u8};
+    use super::{
+        Serializable, from_bool_as_u8,
+        msgpack::{FromMsgPack, ToMsgPack},
+    };
 
     #[derive(Deserialize)]
     pub struct TestStruct {

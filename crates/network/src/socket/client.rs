@@ -1063,6 +1063,17 @@ mod tests {
         let (port, listener) = bind_test_server().await;
         drop(listener); // We drop it immediately -> no server is listening
 
+        // Wait until port is truly unavailable (OS has released it)
+        wait_until_async(
+            || async {
+                TcpStream::connect(format!("127.0.0.1:{port}"))
+                    .await
+                    .is_err()
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
         let config = SocketConfig {
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
@@ -1254,6 +1265,7 @@ mod tests {
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
 mod rust_tests {
+    use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -1300,8 +1312,12 @@ mod rust_tests {
             .await
             .unwrap();
 
-        // Allow server to drop connection and client to notice
-        sleep(Duration::from_millis(100)).await;
+        // Wait for client to detect dropped connection and enter reconnect state
+        wait_until_async(
+            || async { client.is_reconnecting() },
+            Duration::from_secs(2),
+        )
+        .await;
 
         // Now close the client
         client.close().await;
@@ -1342,16 +1358,11 @@ mod rust_tests {
             .await
             .unwrap();
 
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if client.is_reconnecting() {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("client did not enter RECONNECT state");
+        wait_until_async(
+            || async { client.is_reconnecting() },
+            Duration::from_secs(2),
+        )
+        .await;
 
         client.close().await;
         server.abort();

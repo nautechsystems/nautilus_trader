@@ -9,6 +9,7 @@ members = [
   "crates/adapters/databento",
   "crates/adapters/dydx",
   "crates/adapters/hyperliquid",
+  "crates/adapters/kraken",
   "crates/adapters/okx",
   "crates/adapters/tardis",
   "crates/analysis",
@@ -37,7 +38,7 @@ members = [
 [workspace.package]
 version = "0.52.0"
 edition = "2024"
-rust-version = "1.91.0"
+rust-version = "1.91.1"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
 readme = "README.md"
@@ -85,7 +86,9 @@ nautilus-bybit = { path = "crates/adapters/bybit", version = "0.52.0" }
 nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.52.0" }
 nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.52.0" }
 nautilus-databento = { path = "crates/adapters/databento", version = "0.52.0" }
+nautilus-dydx = { path = "crates/adapters/dydx", version = "0.52.0" }
 nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.52.0" }
+nautilus-kraken = { path = "crates/adapters/kraken", version = "0.52.0" }
 nautilus-okx = { path = "crates/adapters/okx", version = "0.52.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
 
@@ -93,7 +96,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
 # Dependencies
 # -----------------------------------------------------------------------------
 ahash = "0.8.12"
-alloy = { version = "1.1.0", default-features = false, features = [
+alloy = { version = "1.1.1", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
@@ -113,13 +116,14 @@ arrow = { version = "56.2.0", default-features = false, features = [
 ] }
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-aws-lc-rs = { version = "1.14.1", default-features = false, features = [
+aws-lc-rs = { version = "1.15.0", default-features = false, features = [
   "non-fips",
 ] }
 base64 = "0.22.1"
 binary-heap-plus = "0.5.0"
 bip32 = "0.5.3"
 bytes = { version = "1.10.1", features = ["serde"] }
+capnp = "0.23.0"
 chrono = { version = "0.4.42", default-features = false, features = [
   "serde",
   "std",
@@ -341,7 +345,9 @@ turmoil = "0.7.0"
 # -----------------------------------------------------------------------------
 # Build dependencies
 # -----------------------------------------------------------------------------
+capnpc = "0.23.2"
 cbindgen = "0.29.2"
+walkdir = "2.5.0"
 
 # -----------------------------------------------------------------------------
 # Tools (for cargo install, used by Makefile and CI)

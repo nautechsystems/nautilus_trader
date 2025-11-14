@@ -897,6 +897,7 @@ mod tests {
     use std::str::FromStr;
 
     use chrono::TimeZone;
+    use nautilus_core::serialization::msgpack::{FromMsgPack, ToMsgPack};
     use rstest::rstest;
 
     use super::*;

@@ -102,7 +102,7 @@ use crate::{
             okx_instrument_type, okx_instrument_type_from_symbol, parse_account_state,
             parse_candlestick, parse_fill_report, parse_index_price_update, parse_instrument_any,
             parse_mark_price_update, parse_order_status_report, parse_position_status_report,
-            parse_trade_tick,
+            parse_spot_margin_position_from_balance, parse_trade_tick,
         },
     },
     http::{
@@ -2827,6 +2827,84 @@ impl OKXHttpClient {
                     continue;
                 }
             };
+        }
+
+        Ok(reports)
+    }
+
+    /// Requests spot margin position status reports from account balance.
+    ///
+    /// Spot margin positions appear in `/api/v5/account/balance` as balance sheet items
+    /// with non-zero `liab` (liability) or `spotInUseAmt` fields, rather than in the
+    /// positions endpoint. This method fetches the balance and converts any margin
+    /// positions into position status reports.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-balance>
+    pub async fn request_spot_margin_position_reports(
+        &self,
+        account_id: AccountId,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let accounts = self
+            .inner
+            .get_balance()
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::new();
+
+        for account in accounts {
+            for balance in account.details {
+                let ccy_str = balance.ccy.as_str();
+
+                // Try to find instrument by constructing potential spot pair symbols
+                let potential_symbols = [
+                    format!("{ccy_str}-USDT"),
+                    format!("{ccy_str}-USD"),
+                    format!("{ccy_str}-USDC"),
+                ];
+
+                let instrument_result = potential_symbols.iter().find_map(|symbol| {
+                    self.instrument_from_cache(Ustr::from(symbol))
+                        .ok()
+                        .map(|inst| (inst.id(), inst.size_precision()))
+                });
+
+                let (instrument_id, size_precision) = match instrument_result {
+                    Some((id, prec)) => (id, prec),
+                    None => {
+                        tracing::debug!(
+                            "Skipping balance for {} - no matching instrument in cache",
+                            ccy_str
+                        );
+                        continue;
+                    }
+                };
+
+                match parse_spot_margin_position_from_balance(
+                    &balance,
+                    account_id,
+                    instrument_id,
+                    size_precision,
+                    ts_init,
+                ) {
+                    Ok(Some(report)) => reports.push(report),
+                    Ok(None) => {} // No margin position for this currency
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to parse spot margin position from balance for {}: {e}",
+                            ccy_str
+                        );
+                        continue;
+                    }
+                };
+            }
         }
 
         Ok(reports)

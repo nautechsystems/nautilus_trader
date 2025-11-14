@@ -85,7 +85,7 @@ class Strat_mre(Strategy):
                 self.clock.set_time_alert(
                     "sl",
                     self.clock.utc_now() + pd.Timedelta(seconds=10),
-                    lambda event: self.modify_sl(instrument.id, instrument.make_price(6600)),
+                    lambda event, instrument=instrument: self.modify_sl(instrument.id, instrument.make_price(6600)),
                 )
 
     def buy_bracket(self, instrument_id, low):

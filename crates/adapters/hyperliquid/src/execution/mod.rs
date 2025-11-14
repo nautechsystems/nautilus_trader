@@ -1095,7 +1095,10 @@ impl HyperliquidExecutionClient {
                             NautilusWsMessage::Trades(_)
                             | NautilusWsMessage::Quote(_)
                             | NautilusWsMessage::Deltas(_)
-                            | NautilusWsMessage::Candle(_) => {}
+                            | NautilusWsMessage::Candle(_)
+                            | NautilusWsMessage::MarkPrice(_)
+                            | NautilusWsMessage::IndexPrice(_)
+                            | NautilusWsMessage::FundingRate(_) => {}
                         }
                     }
                     None => {

@@ -38,16 +38,26 @@ else
 FAIL_FAST_FLAG := --no-fail-fast
 endif
 
-# HYPERSYNC controls whether hypersync feature is included in cargo features.
-# When set to `true` the hypersync feature is included. When `false` (the default)
-# the feature is excluded. Can be overridden: make check-code HYPERSYNC=true
-HYPERSYNC ?= false
+# EXTRA_FEATURES allows adding optional features to cargo builds/tests.
+# Can be set directly: make cargo-test EXTRA_FEATURES="capnp hypersync"
+# Or use convenience flags below for backwards compatibility.
+EXTRA_FEATURES ?=
 
-# Select cargo features based on HYPERSYNC flag (can be overridden with CARGO_FEATURES=...)
+# HYPERSYNC is a convenience flag that adds hypersync to EXTRA_FEATURES.
+# Can be overridden: make check-code HYPERSYNC=true
+HYPERSYNC ?= false
 ifeq ($(HYPERSYNC),true)
-CARGO_FEATURES ?= ffi,python,high-precision,defi,hypersync
+EXTRA_FEATURES += hypersync
+endif
+
+# Base cargo features (always included)
+BASE_FEATURES := ffi,python,high-precision,defi
+
+# Combine base features with extra features
+ifneq ($(strip $(EXTRA_FEATURES)),)
+CARGO_FEATURES := $(BASE_FEATURES),$(EXTRA_FEATURES)
 else
-CARGO_FEATURES ?= ffi,python,high-precision,defi
+CARGO_FEATURES := $(BASE_FEATURES)
 endif
 
 # > Colors
@@ -372,12 +382,30 @@ check-edit-installed:  #-- Verify cargo-edit is installed
 check-features: check-hack-installed
 	cargo hack check --each-feature
 
+.PHONY: check-capnp-schemas  #-- Verify Cap'n Proto schemas are up-to-date
+check-capnp-schemas:
+	$(info $(M) Checking if Cap'n Proto schemas are up-to-date...)
+	@bash scripts/regen_capnp.sh > /dev/null 2>&1 || true
+	@if ! git diff --quiet crates/serialization/generated/capnp; then \
+		echo "$(RED)Error: Cap'n Proto generated files are out of date$(RESET)"; \
+		echo "Please run: ./scripts/regen_capnp.sh"; \
+		echo "Or: make regen-capnp"; \
+		exit 1; \
+	else \
+		echo "$(GREEN)✓ Cap'n Proto schemas are up-to-date$(RESET)"; \
+	fi
+
+.PHONY: regen-capnp  #-- Regenerate Cap'n Proto schema files
+regen-capnp:
+	$(info $(M) Regenerating Cap'n Proto schemas...)
+	@bash scripts/regen_capnp.sh
+
 #== Rust Testing
 
 .PHONY: cargo-test
 cargo-test: export RUST_BACKTRACE=1
 cargo-test: check-nextest-installed
-cargo-test:  #-- Run all Rust tests (use HYPERSYNC=true to include hypersync feature)
+cargo-test:  #-- Run all Rust tests (use EXTRA_FEATURES="feature1 feature2" or HYPERSYNC=true)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Running Rust tests with verbose output...)
 	cargo nextest run --workspace --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --cargo-profile nextest --verbose

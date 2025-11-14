@@ -114,6 +114,7 @@ BTCUSDT_PERP_BINANCE = TestInstrumentProvider.btcusdt_perp_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
+@pytest.mark.xdist_group(name="databento_catalog")
 class TestDataEngine:
     @pytest.fixture(autouse=True)
     def setup_method(self, tmp_path):

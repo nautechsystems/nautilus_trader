@@ -1036,6 +1036,11 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         cdef str position_id_str = position.id.to_str()
         cdef str key = f"{_POSITIONS}:{position_id_str}"
+
+        # In NETTING mode, position flips reuse the same position_id
+        # Delete existing data to prevent appending to closed position events
+        self._backing.delete(key, None)
+
         cdef list payload = [self._serializer.serialize(position.last_event_c())]
         self._backing.insert(key, payload)
 

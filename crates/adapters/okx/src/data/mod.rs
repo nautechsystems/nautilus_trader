@@ -295,6 +295,7 @@ impl OKXDataClient {
                 upsert_instrument(instruments, *instrument);
             }
             NautilusWsMessage::AccountUpdate(_)
+            | NautilusWsMessage::PositionUpdate(_)
             | NautilusWsMessage::OrderRejected(_)
             | NautilusWsMessage::OrderCancelRejected(_)
             | NautilusWsMessage::OrderModifyRejected(_)

@@ -79,6 +79,10 @@ use crate::common::credential::DydxCredential;
 /// - Commands flow from client → handler via `handler_cmd_tx`
 /// - Parsed events flow from handler → client via `out_rx`
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub struct DydxWebSocketClient {
     /// The WebSocket connection URL.
     url: String,
@@ -108,6 +112,26 @@ pub struct DydxWebSocketClient {
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     /// Background handler task handle.
     handler_task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Clone for DydxWebSocketClient {
+    fn clone(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            credential: self.credential.clone(),
+            requires_auth: self.requires_auth,
+            auth_tracker: AuthTracker::new(),
+            subscriptions: SubscriptionState::new(':'),
+            connection_mode: self.connection_mode.clone(),
+            signal: self.signal.clone(),
+            instruments_cache: self.instruments_cache.clone(),
+            account_id: self.account_id,
+            heartbeat: self.heartbeat,
+            handler_cmd_tx: self.handler_cmd_tx.clone(),
+            out_rx: None,       // Cannot clone receiver - only one owner allowed
+            handler_task: None, // Cannot clone task handle
+        }
+    }
 }
 
 impl DydxWebSocketClient {
@@ -185,6 +209,20 @@ impl DydxWebSocketClient {
             mode_u8,
             x if x == ConnectionMode::Active as u8 || x == ConnectionMode::Reconnect as u8
         )
+    }
+
+    /// Returns the URL of this WebSocket client.
+    #[must_use]
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// Returns a clone of the connection mode atomic reference.
+    ///
+    /// This is primarily used for Python bindings that need to monitor connection state.
+    #[must_use]
+    pub fn connection_mode_atomic(&self) -> Arc<ArcSwap<AtomicU8>> {
+        self.connection_mode.clone()
     }
 
     /// Sets the account ID for account message parsing.

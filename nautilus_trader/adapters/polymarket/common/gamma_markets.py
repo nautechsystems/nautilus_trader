@@ -211,7 +211,7 @@ def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[
     if isinstance(outcome_prices, str):
         outcome_prices = msgspec.json.decode(outcome_prices)
 
-    for i, (token_id, outcome) in enumerate(zip(clob_token_ids, outcomes)):
+    for i, (token_id, outcome) in enumerate(zip(clob_token_ids, outcomes, strict=False)):
         token_entry = {
             "token_id": token_id,
             "outcome": outcome,

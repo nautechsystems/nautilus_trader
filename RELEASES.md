@@ -9,6 +9,7 @@ This release adds support for Python 3.14 with the following limitations:
 
 ### Enhancements
 - Added support for Python 3.14
+- Added Cap'n Proto (`capnp`) serialization for efficient zero-copy data interchange (opt-in via `capnp` feature flag in `nautilus-serialization` crate)
 - Added initial backtest visualization tearsheets with plotly
 - Added price protection support for market orders (#3065), thanks @Antifrajz
 - Added `create_bars_with_fills` to Tearsheet (#3137), thanks @faysou
@@ -50,6 +51,7 @@ TBD
 - Fixed parse_dates parameter in CSV loaders (#3132), thanks @maomao9-0
 - Fixed `GreeksCalculator` handling of missing price data (#3116), thanks for reporting @q351941406
 - Fixed active liquidity calculation Pool profiler simulation (#3165), thanks @filipmacek
+- Fixed Betfair datetime encoding error in order status reports
 - Fixed Binance instrument info dict JSON serialization (#3128), thanks for reporting @woung717
 - Fixed Databento MBO data decoding when `PRICE_UNDEF` appears with non-zero precision
 - Fixed Interactive Brokers quote tick subscriptions to use tick-by-tick data (#3135), thanks for reporting @genliusrocks
@@ -59,9 +61,7 @@ TBD
 - Fixed Polymarket maker fill order side inversion (#3126), thanks for reporting @santivazq
 - Fixed Polymarket instrument provider market filtering (#3133), thanks @MisterMM23
 - Fixed Polymarket websocket client cancellation on concurrent subscriptions (#3169), thanks @DeirhX
-- Fixes Polymarket maker trade fills parsing to enable user fill detection based on API key as fallback, thanks @petioptrv.
-- Fixes Polymarket maker trade fills parsing to determine fill asset ID based on the user fill instead of the taker fill, thanks @petioptrv.
-- Fixes Polymarket maker trade fills parsing to enable detection of multiple user maker fills from a single taker order, thanks @petioptrv.
+- Fixed Polymarket maker fills parsing for cross-asset matching and multiple concurrent fills (#3172), thanks @petioptrv
 
 ### Internal Improvements
 - Added BitMEX submit broadcaster
@@ -77,6 +77,7 @@ TBD
 - Refactored Polymarket instrument provider to use async HttpClient
 - Improved Databento live connection stability and reconnects
 - Improved Polymarket position querying using Gamma API (#3142), thanks @DeirhX
+- Standardized dYdX WebSocket architecture (#3173), thanks @nicolad
 - Refined timer name validation to accept non-ASCII characters (common for foreign currencies) (#3154), thanks for reporting @woung717
 - Refined support for monthly and yearly bars (#3166), thanks @faysou
 - Refined bar aggregators in Rust (#3170), thanks @faysou
@@ -90,7 +91,7 @@ TBD
 - Repaired Bybit `AccountPosition` message parsing (#3147), thanks @sunlei
 - Repaired Bybit conditional order trigger semantics and type
 - Upgraded implied-vol crate (#3115), thanks @faysou
-- Upgraded Rust (MSRV) to 1.91.0
+- Upgraded Rust (MSRV) to 1.91.1
 - Upgraded Cython to v3.2.0
 - Upgraded `pyo3` crate to v0.27.0
 - Upgraded `pyo3-async-runtimes` crate to v0.27.0

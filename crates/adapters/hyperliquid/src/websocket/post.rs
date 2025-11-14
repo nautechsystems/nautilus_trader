@@ -309,7 +309,7 @@ impl Grouping {
     }
 }
 
-/// Parameters for creating a limit order
+/// Parameters for creating a limit order.
 #[derive(Debug, Clone, Builder)]
 pub struct LimitOrderParams {
     pub asset: u32,
@@ -321,7 +321,7 @@ pub struct LimitOrderParams {
     pub cloid: Option<String>,
 }
 
-/// Parameters for creating a trigger order
+/// Parameters for creating a trigger order.
 #[derive(Debug, Clone, Builder)]
 pub struct TriggerOrderParams {
     pub asset: u32,

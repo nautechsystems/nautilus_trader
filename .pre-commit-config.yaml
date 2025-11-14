@@ -13,6 +13,7 @@ repos:
       - id: debug-statements
       - id: detect-private-key
       - id: check-added-large-files
+        exclude: ^crates/serialization/generated/capnp/
       - id: check-case-conflict
       - id: check-executables-have-shebangs
       - id: check-illegal-windows-names
@@ -250,7 +251,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.4
+    rev: v0.14.5
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -300,7 +301,7 @@ repos:
           ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.8 # Must match uv-version file
+    rev: 0.9.9 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$
@@ -314,7 +315,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.18.1
+    rev: v0.19.0
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

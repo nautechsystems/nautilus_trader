@@ -52,6 +52,8 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISIO
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.common import min_fill_size
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -554,6 +556,10 @@ def order_to_trade_id(uo: BetfairOrder) -> TradeId:
 
 
 def current_order_summary_to_trade_id(order: CurrentOrderSummary) -> TradeId:
+    placed_date_ms = nanos_to_millis(dt_to_unix_nanos(order.placed_date))
+    matched_date_ns = maybe_dt_to_unix_nanos(order.matched_date)
+    matched_date_ms = nanos_to_millis(matched_date_ns) if matched_date_ns else None
+
     return hashed_trade_id(
         bet_id=order.bet_id,
         price=order.price_size.price,
@@ -561,8 +567,8 @@ def current_order_summary_to_trade_id(order: CurrentOrderSummary) -> TradeId:
         side=order.side.value[0],
         persistence_type=order.persistence_type.value,
         order_type=order.order_type.value,
-        placed_date=order.placed_date,
-        matched_date=order.matched_date,
+        placed_date=placed_date_ms,
+        matched_date=matched_date_ms,
         average_price_matched=order.average_price_matched,
         size_matched=order.size_matched,
     )

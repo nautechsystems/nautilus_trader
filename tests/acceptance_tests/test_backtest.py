@@ -893,6 +893,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
         assert account.balance_total(GBP) == Money(-19_351.96, GBP)
 
 
+@pytest.mark.xdist_group(name="databento_catalog")
 class TestBacktestNodeWithBacktestDataIterator:
     def test_backtest_same_with_and_without_data_configs(self) -> None:
         # Arrange
@@ -1043,7 +1044,7 @@ class TestBacktestNodeWithBacktestDataIterator:
                 assert ask > 0, f"Ask price should be positive: {ask}"
                 assert ask >= bid, f"Ask ({ask}) should be >= bid ({bid})"
             except (ValueError, IndexError) as e:
-                assert False, f"Invalid quote format: {quote_part}, error: {e}"
+                raise AssertionError(f"Invalid quote format: {quote_part}, error: {e}")
 
 
 def run_backtest(test_callback=None, with_data=True, log_path=None):
@@ -2045,6 +2046,7 @@ class TestBacktestPnLAlignmentAcceptance:
         # We don't assert equality here since portfolio calculation has different behavior
 
 
+@pytest.mark.xdist_group(name="databento_catalog")
 @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBarsWithFillsVisualization:
     """

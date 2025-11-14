@@ -63,8 +63,8 @@ use crate::{
         models::OKXInstrument,
     },
     http::models::{
-        OKXAccount, OKXCandlestick, OKXIndexTicker, OKXMarkPrice, OKXOrderHistory, OKXPosition,
-        OKXTrade, OKXTransactionDetail,
+        OKXAccount, OKXBalanceDetail, OKXCandlestick, OKXIndexTicker, OKXMarkPrice,
+        OKXOrderHistory, OKXPosition, OKXTrade, OKXTransactionDetail,
     },
     websocket::{enums::OKXWsChannel, messages::OKXFundingRateMsg},
 };
@@ -753,6 +753,83 @@ pub fn parse_order_status_report(
     }
 
     Ok(report)
+}
+
+/// Parses spot margin position from OKX balance detail.
+///
+/// Spot margin positions appear in `/api/v5/account/balance` as balance sheet items
+/// rather than in `/api/v5/account/positions`. This function converts balance details
+/// with non-zero liability (`liab`) or spot in use amount (`spotInUseAmt`) into position reports.
+///
+/// # Position Determination
+///
+/// - `liab` > 0 and `spotInUseAmt` < 0 → Short position (borrowed and sold)
+/// - `liab` > 0 and `spotInUseAmt` > 0 → Long position (borrowed to buy)
+/// - `liab` == 0 → No margin position (regular spot balance)
+///
+/// # Errors
+///
+/// Returns an error if numeric fields cannot be parsed.
+pub fn parse_spot_margin_position_from_balance(
+    balance: &OKXBalanceDetail,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<PositionStatusReport>> {
+    // OKX returns empty strings for zero values, normalize to "0" before parsing
+    let liab_str = if balance.liab.trim().is_empty() {
+        "0"
+    } else {
+        balance.liab.trim()
+    };
+    let spot_in_use_str = if balance.spot_in_use_amt.trim().is_empty() {
+        "0"
+    } else {
+        balance.spot_in_use_amt.trim()
+    };
+
+    let liab_dec = Decimal::from_str(liab_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse liab '{liab_str}': {e}"))?;
+    let spot_in_use_dec = Decimal::from_str(spot_in_use_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse spotInUseAmt '{spot_in_use_str}': {e}"))?;
+
+    // Skip if no margin position (no liability and no spot in use)
+    if liab_dec.is_zero() && spot_in_use_dec.is_zero() {
+        return Ok(None);
+    }
+
+    // Check if spotInUseAmt is zero first
+    if spot_in_use_dec.is_zero() {
+        // No position if spotInUseAmt is zero (regardless of liability)
+        return Ok(None);
+    }
+
+    // Position side based on spotInUseAmt sign
+    let (position_side, quantity_dec) = if spot_in_use_dec.is_sign_negative() {
+        // Negative spotInUseAmt = sold (short position)
+        (PositionSide::Short, spot_in_use_dec.abs())
+    } else {
+        // Positive spotInUseAmt = bought (long position)
+        (PositionSide::Long, spot_in_use_dec)
+    };
+
+    let quantity = Quantity::from_decimal(quantity_dec, size_precision)
+        .map_err(|e| anyhow::anyhow!("Failed to create quantity from {quantity_dec}: {e}"))?;
+
+    let ts_last = parse_millisecond_timestamp(balance.u_time);
+
+    Ok(Some(PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        position_side.as_specified(),
+        quantity,
+        ts_last,
+        ts_init,
+        None, // report_id
+        None, // venue_position_id is None for net mode margin positions
+        None, // avg_px_open not available from balance
+    )))
 }
 
 /// Parses an OKX position into a Nautilus [`PositionStatusReport`].
@@ -3947,5 +4024,390 @@ mod tests {
             parse_option_instrument(&instrument, None, None, None, None, UnixNanos::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Empty underlying"));
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_short_usdt() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("ENA"),
+            liab: "130047.3610487126".to_string(),
+            spot_in_use_amt: "-129950".to_string(),
+            cross_liab: "130047.3610487126".to_string(),
+            eq: "-130047.3610487126".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "0".to_string(),
+            avail_eq: "0".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "0".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "0".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "0".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 2;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_some());
+        let report = result.unwrap();
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id.to_string(), "ENA-USDT.OKX".to_string());
+        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.quantity.to_string(), "129950.00");
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_long() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("BTC"),
+            liab: "1.5".to_string(),
+            spot_in_use_amt: "1.2".to_string(),
+            cross_liab: "1.5".to_string(),
+            eq: "1.2".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "0".to_string(),
+            avail_eq: "0".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "0".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "0".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "0".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 8;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_some());
+        let report = result.unwrap();
+        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.quantity.to_string(), "1.20000000");
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_usdc_quote() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("ETH"),
+            liab: "10.5".to_string(),
+            spot_in_use_amt: "-10.0".to_string(),
+            cross_liab: "10.5".to_string(),
+            eq: "-10.0".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "0".to_string(),
+            avail_eq: "0".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "0".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "0".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "0".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 6;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_some());
+        let report = result.unwrap();
+        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.quantity.to_string(), "10.000000");
+        assert!(report.instrument_id.to_string().contains("ETH-"));
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_no_position() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("USDT"),
+            liab: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            cross_liab: "0".to_string(),
+            eq: "1000.5".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "1000.5".to_string(),
+            avail_eq: "1000.5".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "1000.5".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "1000.5".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "1000.5".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 2;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_liability_no_spot_in_use() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("BTC"),
+            liab: "0.5".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            cross_liab: "0.5".to_string(),
+            eq: "0".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "0".to_string(),
+            avail_eq: "0".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "0".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "0".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "0".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 8;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_empty_strings() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("USDT"),
+            liab: "".to_string(),
+            spot_in_use_amt: "".to_string(),
+            cross_liab: "".to_string(),
+            eq: "5000.25".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "5000.25".to_string(),
+            avail_eq: "5000.25".to_string(),
+            borrow_froz: "".to_string(),
+            cash_bal: "5000.25".to_string(),
+            dis_eq: "".to_string(),
+            eq_usd: "5000.25".to_string(),
+            smt_sync_eq: "".to_string(),
+            spot_copy_trading_eq: "".to_string(),
+            fixed_bal: "".to_string(),
+            frozen_bal: "".to_string(),
+            imr: "".to_string(),
+            interest: "".to_string(),
+            iso_eq: "".to_string(),
+            iso_liab: "".to_string(),
+            iso_upl: "".to_string(),
+            max_loan: "".to_string(),
+            mgn_ratio: "".to_string(),
+            mmr: "".to_string(),
+            notional_lever: "".to_string(),
+            ord_frozen: "".to_string(),
+            reward_bal: "".to_string(),
+            cl_spot_in_use_amt: "".to_string(),
+            max_spot_in_use_amt: "".to_string(),
+            spot_iso_bal: "".to_string(),
+            stgy_eq: "".to_string(),
+            twap: "".to_string(),
+            upl: "".to_string(),
+            upl_liab: "".to_string(),
+            spot_bal: "5000.25".to_string(),
+            open_avg_px: "".to_string(),
+            acc_avg_px: "".to_string(),
+            spot_upl: "".to_string(),
+            spot_upl_ratio: "".to_string(),
+            total_pnl: "".to_string(),
+            total_pnl_ratio: "".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 2;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        // Empty strings should be treated as zero, returning None (no margin position)
+        assert!(result.is_none());
     }
 }

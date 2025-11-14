@@ -729,34 +729,7 @@ pub fn parse_ws_position_status_report(
         PositionSideSpecified::Flat
     };
 
-    let avg_px_open = position.entry_price.parse::<f64>().with_context(|| {
-        format!(
-            "Failed to parse entryPrice='{}' as f64",
-            position.entry_price
-        )
-    })?;
-
-    let _unrealized_pnl = position.unrealised_pnl.parse::<f64>().with_context(|| {
-        format!(
-            "Failed to parse unrealisedPnl='{}' as f64",
-            position.unrealised_pnl
-        )
-    })?;
-
-    let _realized_pnl = position.cum_realised_pnl.parse::<f64>().with_context(|| {
-        format!(
-            "Failed to parse cumRealisedPnl='{}' as f64",
-            position.cum_realised_pnl
-        )
-    })?;
-
     let ts_last = parse_millis_timestamp(&position.updated_time, "position.updatedTime")?;
-
-    let avg_px_open_decimal = if avg_px_open != 0.0 {
-        Some(Decimal::try_from(avg_px_open).context("failed to convert avg_px_open to Decimal")?)
-    } else {
-        None
-    };
 
     Ok(PositionStatusReport::new(
         account_id,
@@ -765,9 +738,9 @@ pub fn parse_ws_position_status_report(
         quantity,
         ts_last,
         ts_init,
-        None, // report_id
-        None, // venue_position_id
-        avg_px_open_decimal,
+        None,                 // report_id
+        None,                 // venue_position_id
+        position.entry_price, // avg_px_open
     ))
 }
 
@@ -786,50 +759,14 @@ pub fn parse_ws_account_state(
 
     for coin_data in &wallet.coin {
         let currency = get_currency(coin_data.coin.as_str());
+        let total_dec = coin_data.wallet_balance - coin_data.spot_borrow;
+        let locked_dec = coin_data.total_order_im + coin_data.total_position_im;
 
-        let wallet_balance_amount = coin_data.wallet_balance.parse::<f64>().with_context(|| {
-            format!(
-                "Failed to parse walletBalance='{}' as f64",
-                coin_data.wallet_balance
-            )
-        })?;
+        let total = Money::from_decimal(total_dec, currency)?;
+        let locked = Money::from_decimal(locked_dec, currency)?;
+        let free = Money::from_raw(total.raw - locked.raw, currency);
 
-        let spot_borrow_amount = if let Some(ref spot_borrow) = coin_data.spot_borrow {
-            if spot_borrow.is_empty() {
-                0.0
-            } else {
-                spot_borrow.parse::<f64>().with_context(|| {
-                    format!("Failed to parse spotBorrow='{}' as f64", spot_borrow)
-                })?
-            }
-        } else {
-            0.0
-        };
-
-        let total_amount = wallet_balance_amount - spot_borrow_amount;
-
-        let free_amount = if coin_data.available_to_withdraw.is_empty() {
-            0.0
-        } else {
-            coin_data
-                .available_to_withdraw
-                .parse::<f64>()
-                .with_context(|| {
-                    format!(
-                        "Failed to parse availableToWithdraw='{}' as f64",
-                        coin_data.available_to_withdraw
-                    )
-                })?
-        };
-
-        let locked_amount = total_amount - free_amount;
-
-        let total = Money::new(total_amount, currency);
-        let locked = Money::new(locked_amount, currency);
-        let free = Money::new(free_amount, currency);
-
-        let balance = AccountBalance::new_checked(total, locked, free)
-            .context("failed to create AccountBalance from wallet data")?;
+        let balance = AccountBalance::new(total, locked, free);
         balances.push(balance);
     }
 
@@ -1251,6 +1188,40 @@ mod tests {
 
         assert_eq!(state.ts_event, ts_event);
         assert_eq!(state.ts_init, TS);
+    }
+
+    #[rstest]
+    fn parse_ws_wallet_with_small_order_calculates_free_correctly() {
+        // Regression test for issue where availableToWithdraw=0 caused all funds to appear locked
+        // When a small order is placed, Bybit may report availableToWithdraw=0 due to margin calculations,
+        // but totalOrderIM correctly shows only the margin locked for the order
+        let json = load_test_json("ws_account_wallet_small_order.json");
+        let msg: crate::websocket::messages::BybitWsAccountWalletMsg =
+            serde_json::from_str(&json).unwrap();
+        let wallet = &msg.data[0];
+        let account_id = AccountId::new("BYBIT-UNIFIED");
+        let ts_event = UnixNanos::new(1_762_960_669_000_000_000);
+
+        let state = parse_ws_account_state(wallet, account_id, ts_event, TS).unwrap();
+
+        assert_eq!(state.account_id, account_id);
+        assert_eq!(state.balances.len(), 1);
+
+        // Check USDT balance
+        let usdt_balance = &state.balances[0];
+        assert_eq!(usdt_balance.currency.code.as_str(), "USDT");
+
+        // Wallet has 51,333.82 USDT total
+        assert!((usdt_balance.total.as_f64() - 51333.82543837).abs() < 1e-6);
+
+        // Only 50.028 USDT should be locked (for the order), not all funds
+        assert!((usdt_balance.locked.as_f64() - 50.028).abs() < 1e-6);
+
+        // Free should be total - locked = 51,333.82 - 50.028 = 51,283.79
+        assert!((usdt_balance.free.as_f64() - 51283.79743837).abs() < 1e-6);
+
+        // The bug would have calculated: locked = total - availableToWithdraw = 51,333.82 - 0 = 51,333.82 (all locked!)
+        // This test verifies that we now correctly use totalOrderIM instead of deriving from availableToWithdraw
     }
 
     #[rstest]

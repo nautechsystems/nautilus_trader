@@ -37,6 +37,9 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
+      - name: Verify Cap'n Proto schemas are up-to-date
+        run: make check-capnp-schemas
+
   cargo-deny:
     runs-on: ubuntu-22.04
     steps:
@@ -135,7 +138,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test HYPERSYNC=true
+        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -232,7 +235,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test HYPERSYNC=true
+        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -290,7 +293,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test HYPERSYNC=true
+        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build

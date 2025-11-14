@@ -843,3 +843,121 @@ This ensures you're using the same Rust and clippy versions as CI.
 - [The Rust Reference – Unsafety](https://doc.rust-lang.org/stable/reference/unsafety.html).
 - [Safe Bindings in Rust – Russell Johnston](https://www.abubalay.com/blog/2020/08/22/safe-bindings-in-rust).
 - [Google – Rust and C interoperability](https://www.chromium.org/Home/chromium-security/memory-safety/rust-and-c-interoperability/).
+
+## Cap'n Proto serialization
+
+The `nautilus-serialization` crate provides optional Cap'n Proto serialization support for efficient data interchange.
+This feature is opt-in to avoid requiring the Cap'n Proto compiler for standard builds.
+
+### Installing Cap'n Proto
+
+Install the Cap'n Proto compiler before working with schemas:
+
+**macOS:**
+
+```bash
+brew install capnp
+```
+
+**Linux (Debian/Ubuntu):**
+
+```bash
+sudo apt-get install capnproto
+```
+
+**Windows:**
+See the [Cap'n Proto installation guide](https://capnproto.org/install.html).
+
+Verify installation:
+
+```bash
+capnp --version  # Should show version 1.0.0 or later
+```
+
+### Schema development workflow
+
+Schema files live in `crates/serialization/schemas/capnp/`:
+
+- `common/` - Base types, identifiers, enums.
+- `commands/` - Trading commands.
+- `events/` - Order and position events.
+- `data/` - Market data types.
+
+When modifying schemas:
+
+1. Edit the `.capnp` schema file in the appropriate subdirectory.
+2. Regenerate Rust bindings:
+
+   ```bash
+   make regen-capnp
+   # or
+   ./scripts/regen_capnp.sh
+   ```
+
+3. Review changes:
+
+   ```bash
+   git diff crates/serialization/generated/capnp
+   ```
+
+4. Update conversions in `crates/serialization/src/capnp/conversions.rs` if needed.
+5. Run tests:
+
+   ```bash
+   make cargo-test EXTRA_FEATURES="capnp"
+   ```
+
+### Generated code
+
+Generated Rust files are checked into `crates/serialization/generated/capnp/` for these reasons:
+
+- **docs.rs compatibility**: The documentation build environment lacks the Cap'n Proto
+  compiler.
+- **Contributor convenience**: Most developers don't need to install capnp for standard
+  development.
+- **Build reproducibility**: Ensures consistent code generation across environments.
+
+The generated files are automatically created during builds via `build.rs` when the `capnp`
+feature is enabled, but we commit them to the repository to support builds without the
+compiler installed.
+
+### Verifying schema consistency
+
+Before committing schema changes, ensure generated files are up-to-date:
+
+```bash
+make check-capnp-schemas
+```
+
+This target:
+
+1. Regenerates all schema files.
+2. Verifies no uncommitted changes exist.
+3. Fails if schemas are out of sync.
+
+CI runs this check automatically to catch drift.
+
+### Testing with capnp feature
+
+```bash
+# Run workspace tests with capnp
+make cargo-test EXTRA_FEATURES="capnp"
+
+# Run specific crate tests with capnp
+make cargo-test-crate-nautilus-serialization FEATURES="capnp"
+
+# Run specific test
+cargo test -p nautilus-serialization --features capnp test_price_roundtrip
+```
+
+### Schema evolution guidelines
+
+When evolving schemas:
+
+- **Additive changes only**: Add new fields at the end.
+- **Never remove fields**: Mark deprecated fields in comments.
+- **Never reuse field numbers**: Even after deprecation.
+- **Test roundtrip compatibility**: Ensure old and new versions interoperate.
+
+Cap'n Proto's evolution rules allow schema changes without breaking binary compatibility, but
+you must follow these constraints to maintain forward/backward compatibility.

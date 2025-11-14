@@ -629,12 +629,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
             if response:
                 # Uncomment for development
                 # self._log.info(f"Processing {len(response)} trades", LogColor.MAGENTA)
-                trade_ids: set[TradeId] = set()
+                parsed_fill_keys: set[tuple[TradeId, VenueOrderId]] = set()
                 for json_obj in response:
                     self._parse_trades_response_object(
                         command=command,
                         json_obj=json_obj,
-                        parsed_trade_ids=trade_ids,
+                        parsed_fill_keys=parsed_fill_keys,
                         reports=reports,
                     )
         finally:
@@ -689,8 +689,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
         return reports
 
     def _parse_trades_response_object(
-        self, command: GenerateFillReports, json_obj: JSON, parsed_trade_ids: set[TradeId], reports: list[FillReport],
-    ):
+        self,
+        command: GenerateFillReports,
+        json_obj: JSON,
+        parsed_fill_keys: set[tuple[TradeId, VenueOrderId]],
+        reports: list[FillReport],
+    ) -> None:
         raw = msgspec.json.encode(json_obj)
         polymarket_trade = self._decoder_trade_report.decode(raw)
 
@@ -729,8 +733,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 ts_init=self._clock.timestamp_ns(),
                 filled_user_order_id=order_id,
             )
-            assert report.trade_id not in parsed_trade_ids, "trade IDs should be unique"
-            parsed_trade_ids.add(report.trade_id)
+            fill_key = (report.trade_id, report.venue_order_id)
+            assert fill_key not in parsed_fill_keys, "duplicate (trade_id, venue_order_id)"
+            parsed_fill_keys.add(fill_key)
             reports.append(report)
 
     async def _fetch_quantities_from_gamma_api(

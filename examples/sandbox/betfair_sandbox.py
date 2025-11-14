@@ -109,7 +109,8 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
     finally:
         await node.stop_async()
         await asyncio.sleep(1)
-        return node
+
+    return node
 
 
 if __name__ == "__main__":

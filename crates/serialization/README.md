@@ -9,7 +9,7 @@
 Data serialization and format conversion for [NautilusTrader](http://nautilustrader.io).
 
 The `nautilus-serialization` crate provides comprehensive data serialization capabilities for converting
-trading data between different formats including Apache Arrow, Parquet, and custom schemas.
+trading data between different formats including Apache Arrow, Parquet, and Cap'n Proto.
 This enables efficient data storage, retrieval, and interoperability across different systems:
 
 - **Apache Arrow integration**: Schema definitions and encoding/decoding for market data types.
@@ -17,6 +17,7 @@ This enables efficient data storage, retrieval, and interoperability across diff
 - **Record batch processing**: Efficient batch operations for time-series data.
 - **Schema management**: Type-safe schema definitions with metadata preservation.
 - **Cross-format conversion**: Seamless data interchange between Arrow, Parquet, and native types.
+- **Cap'n Proto serialization**: Zero-copy, schema-based serialization for efficient data interchange.
 
 ## Platform
 
@@ -38,6 +39,102 @@ or as part of a Rust only build.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module (used with `python`).
 - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+- `capnp`: Enables Cap'n Proto serialization support. Requires the Cap'n Proto compiler (`capnp`) to be installed and available on your PATH during build.
+
+### Building with Cap'n Proto support
+
+To build with Cap'n Proto serialization enabled:
+
+```bash
+cargo build -p nautilus-serialization --features capnp
+```
+
+The Cap'n Proto compiler can be installed from [capnproto.org](https://capnproto.org/install.html).
+
+## Cap'n Proto schemas
+
+When the `capnp` feature is enabled, this crate provides zero-copy serialization using Cap'n Proto schemas.
+
+### Schema location
+
+Cap'n Proto schemas are bundled with the crate in `schemas/capnp/`:
+
+- `common/identifiers.capnp` - Identifier types (TraderId, InstrumentId, etc.)
+- `common/types.capnp` - Value types (Price, Quantity, Money, etc.)
+- `common/enums.capnp` - Trading enumerations
+- `commands/trading.capnp` - Trading commands
+- `commands/data.capnp` - Data subscription/request commands
+- `events/order.capnp` - Order events
+- `events/position.capnp` - Position events
+- `events/account.capnp` - Account events
+- `data/market.capnp` - Market data types (quotes, trades, bars, order books)
+
+### Generated modules
+
+During build, schemas are compiled to Rust code and made available as:
+
+- `nautilus_serialization::identifiers_capnp`
+- `nautilus_serialization::types_capnp`
+- `nautilus_serialization::enums_capnp`
+- `nautilus_serialization::trading_capnp`
+- `nautilus_serialization::data_capnp`
+- `nautilus_serialization::order_capnp`
+- `nautilus_serialization::position_capnp`
+- `nautilus_serialization::account_capnp`
+- `nautilus_serialization::market_capnp`
+
+### Usage example
+
+```rust
+use nautilus_model::types::Price;
+use nautilus_serialization::capnp::{ToCapnp, FromCapnp};
+
+// Serialize a Price
+let price = Price::from("123.45");
+let bytes = nautilus_serialization::capnp::conversions::serialize_price(&price).unwrap();
+
+// Deserialize back
+let decoded = nautilus_serialization::capnp::conversions::deserialize_price(&bytes).unwrap();
+assert_eq!(price, decoded);
+```
+
+See the `conversions` module for trait-based serialization patterns:
+
+```rust
+use nautilus_model::identifiers::InstrumentId;
+use nautilus_serialization::capnp::{ToCapnp, FromCapnp, identifiers_capnp};
+
+let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+
+// Using traits
+let mut message = capnp::message::Builder::new_default();
+let builder = message.init_root::<identifiers_capnp::instrument_id::Builder>();
+instrument_id.to_capnp(builder);
+
+// Serialize to bytes
+let mut bytes = Vec::new();
+capnp::serialize::write_message(&mut bytes, &message).unwrap();
+
+// Deserialize
+let reader = capnp::serialize::read_message(
+    &mut &bytes[..],
+    capnp::message::ReaderOptions::new()
+).unwrap();
+let root = reader.get_root::<identifiers_capnp::instrument_id::Reader>().unwrap();
+let decoded = InstrumentId::from_capnp(root).unwrap();
+```
+
+### Contributing schemas
+
+When adding or modifying schemas:
+
+1. Edit schema files in the appropriate subdirectory under `schemas/capnp/`
+2. Use lowerCamelCase for field names to match Cap'n Proto conventions
+3. Generate a unique schema ID using: `capnp id`
+4. Implement `ToCapnp` and `FromCapnp` traits in `src/capnp/conversions.rs`
+5. Add integration tests in `tests/` to verify roundtrip serialization
+
+The build script (`build.rs`) automatically discovers and compiles all `.capnp` files during build.
 
 ## Documentation
 

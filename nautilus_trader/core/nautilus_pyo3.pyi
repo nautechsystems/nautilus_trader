@@ -7367,6 +7367,8 @@ class CancelBroadcaster:
 
 # Hyperliquid
 
+def hyperliquid_product_type_from_symbol(symbol: str) -> HyperliquidProductType: ...
+
 class HyperliquidProductType(Enum):
     PERP = "PERP"
     SPOT = "SPOT"
@@ -7458,7 +7460,7 @@ class HyperliquidWebSocketClient:
         self,
         url: str | None = None,
         testnet: bool = False,
-        product_type: str = "PERP",
+        product_type: HyperliquidProductType = ...,
         account_id: str | None = None,
     ) -> None: ...
     @property
@@ -7484,6 +7486,9 @@ class HyperliquidWebSocketClient:
     ) -> None: ...
     async def subscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
     async def subscribe_bars(self, bar_type: BarType) -> None: ...
+    async def subscribe_mark_prices(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_index_prices(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_funding_rates(self, instrument_id: InstrumentId) -> None: ...
     async def subscribe_order_updates(self, user: str) -> None: ...
     async def subscribe_user_events(self, user: str) -> None: ...
     async def unsubscribe_trades(self, instrument_id: InstrumentId) -> None: ...
@@ -7491,8 +7496,172 @@ class HyperliquidWebSocketClient:
     async def unsubscribe_book_deltas(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_bars(self, bar_type: BarType) -> None: ...
+    async def unsubscribe_mark_prices(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_index_prices(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_funding_rates(self, instrument_id: InstrumentId) -> None: ...
 
-def hyperliquid_product_type_from_symbol(symbol: str) -> HyperliquidProductType: ...
+# Kraken
+
+class KrakenEnvironment(Enum):
+    MAINNET = "mainnet"
+    TESTNET = "testnet"
+
+class KrakenProductType(Enum):
+    SPOT = "spot"
+    FUTURES = "futures"
+
+class KrakenOrderType(Enum):
+    MARKET = "market"
+    LIMIT = "limit"
+    STOP_LOSS = "stop-loss"
+    TAKE_PROFIT = "take-profit"
+    STOP_LOSS_LIMIT = "stop-loss-limit"
+    TAKE_PROFIT_LIMIT = "take-profit-limit"
+    SETTLE_POSITION = "settle-position"
+
+class KrakenOrderSide(Enum):
+    BUY = "buy"
+    SELL = "sell"
+
+class KrakenTimeInForce(Enum):
+    GTC = "GTC"
+    IOC = "IOC"
+    GTD = "GTD"
+
+class KrakenOrderStatus(Enum):
+    PENDING = "pending"
+    OPEN = "open"
+    CLOSED = "closed"
+    CANCELED = "canceled"
+    EXPIRED = "expired"
+
+class KrakenPositionSide(Enum):
+    LONG = "long"
+    SHORT = "short"
+
+class KrakenPairStatus(Enum):
+    ONLINE = "online"
+    CANCEL_ONLY = "cancel_only"
+    POST_ONLY = "post_only"
+    LIMIT_ONLY = "limit_only"
+    REDUCE_ONLY = "reduce_only"
+
+class KrakenSystemStatus(Enum):
+    ONLINE = "online"
+    MAINTENANCE = "maintenance"
+    CANCEL_ONLY = "cancel_only"
+    POST_ONLY = "post_only"
+
+class KrakenAssetClass(Enum):
+    CURRENCY = "currency"
+
+class KrakenWsMethod(Enum):
+    SUBSCRIBE = "subscribe"
+    UNSUBSCRIBE = "unsubscribe"
+    PING = "ping"
+    PONG = "pong"
+
+class KrakenWsChannel(Enum):
+    TICKER = "ticker"
+    TRADE = "trade"
+    BOOK = "book"
+    OHLC = "ohlc"
+    SPREAD = "spread"
+    EXECUTIONS = "executions"
+    BALANCES = "balances"
+
+class KrakenWsEventType(Enum):
+    HEARTBEAT = "heartbeat"
+    STATUS = "status"
+    SUBSCRIBE = "subscribe"
+    UNSUBSCRIBE = "unsubscribe"
+    UPDATE = "update"
+    SNAPSHOT = "snapshot"
+    ERROR = "error"
+
+class KrakenHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
+    ) -> None: ...
+    @property
+    def base_url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
+    def cancel_all_requests(self) -> None: ...
+    async def get_server_time(self) -> str: ...
+    async def get_system_status(self) -> str: ...
+    async def get_asset_pairs(self, pairs: list[str] | None = None) -> str: ...
+    async def get_ticker(self, pairs: list[str]) -> str: ...
+    async def get_ohlc(
+        self,
+        pair: str,
+        interval: int | None = None,
+        since: int | None = None,
+    ) -> str: ...
+    async def get_order_book(
+        self,
+        pair: str,
+        count: int | None = None,
+    ) -> str: ...
+    async def get_trades(
+        self,
+        pair: str,
+        since: str | None = None,
+    ) -> str: ...
+    async def request_instruments(
+        self,
+        pairs: list[str] | None = None,
+    ) -> list[Instrument]: ...
+    async def request_trades(
+        self,
+        instrument_id: InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[TradeTick]: ...
+    async def request_bars(
+        self,
+        bar_type: BarType,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[Bar]: ...
+
+class KrakenWebSocketClient:
+    def __init__(self, url: str) -> None: ...
+    @property
+    def url(self) -> str: ...
+    def is_connected(self) -> bool: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
+    def get_subscriptions(self) -> list[str]: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
+    async def connect(self, instruments: list[Instrument], callback: Callable) -> None: ...
+    async def wait_until_active(self, timeout_secs: float) -> None: ...
+    async def disconnect(self) -> None: ...
+    async def close(self) -> None: ...
+    async def subscribe_book(
+        self,
+        instrument_id: InstrumentId,
+        depth: int | None = None,
+    ) -> None: ...
+    async def subscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_trades(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_bars(self, bar_type: BarType) -> None: ...
+    async def unsubscribe_book(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_trades(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_bars(self, bar_type: BarType) -> None: ...
+    async def send_ping(self) -> None: ...
 
 # Greeks
 

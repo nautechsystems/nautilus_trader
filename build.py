@@ -381,9 +381,9 @@ def _get_clang_version() -> str:
         output = (
             result.stdout.decode()
             .splitlines()[0]
-            .lstrip("Apple ")
-            .lstrip("Ubuntu ")
-            .lstrip("clang version ")
+            .removeprefix("Apple ")
+            .removeprefix("Ubuntu ")
+            .removeprefix("clang version ")
         )
         return output
     except (subprocess.CalledProcessError, FileNotFoundError) as e:

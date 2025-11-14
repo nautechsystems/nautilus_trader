@@ -15,6 +15,7 @@
 
 //! Data transfer objects for deserializing Bybit HTTP API payloads.
 
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -31,6 +32,7 @@ use crate::common::{
         LinearLotSizeFilter, LinearPriceFilter, OptionLotSizeFilter, SpotLotSizeFilter,
         SpotPriceFilter,
     },
+    parse::{deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero},
 };
 
 /// Response payload returned by `GET /v5/market/time`.
@@ -517,17 +519,19 @@ pub struct BybitCoinBalance {
     pub total_position_mm: Option<String>,
     #[serde(default, rename = "totalPositionIM")]
     pub total_position_im: Option<String>,
-    pub wallet_balance: String,
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub wallet_balance: Decimal,
     pub unrealised_pnl: String,
     pub cum_realised_pnl: String,
-    pub locked: String,
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub locked: Decimal,
     pub collateral_switch: bool,
     pub margin_collateral: bool,
     pub coin: Ustr,
     #[serde(default)]
     pub spot_hedging_qty: Option<String>,
-    #[serde(default)]
-    pub spot_borrow: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_or_zero")]
+    pub spot_borrow: Decimal,
 }
 
 /// Wallet balance snapshot containing per-coin balances.
@@ -815,6 +819,8 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::identifiers::AccountId;
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::common::testing::load_test_json;
@@ -928,12 +934,12 @@ mod tests {
         // Check USDT coin (without optional IM/MM fields)
         let usdt = &wallet.coin[1];
         assert_eq!(usdt.coin.as_str(), "USDT");
-        assert_eq!(usdt.wallet_balance, "1000.50");
+        assert_eq!(usdt.wallet_balance, dec!(1000.50));
         assert_eq!(usdt.total_order_im, None);
         assert_eq!(usdt.total_position_mm, None);
         assert_eq!(usdt.total_position_im, None);
-        assert_eq!(btc.spot_borrow, Some("0".to_string()));
-        assert_eq!(usdt.spot_borrow, Some("0".to_string()));
+        assert_eq!(btc.spot_borrow, Decimal::ZERO);
+        assert_eq!(usdt.spot_borrow, Decimal::ZERO);
     }
 
     #[rstest]
@@ -946,8 +952,8 @@ mod tests {
         let usdt = &wallet.coin[0];
 
         assert_eq!(usdt.coin.as_str(), "USDT");
-        assert_eq!(usdt.wallet_balance, "1200.00");
-        assert_eq!(usdt.spot_borrow, Some("200.00".to_string()));
+        assert_eq!(usdt.wallet_balance, dec!(1200.00));
+        assert_eq!(usdt.spot_borrow, dec!(200.00));
         assert_eq!(usdt.borrow_amount, "200.00");
 
         // Verify calculation: actual_balance = walletBalance - spotBorrow = 1200 - 200 = 1000

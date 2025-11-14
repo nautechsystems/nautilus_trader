@@ -102,7 +102,7 @@ dev = [
   "mypy==1.18.2,<2.0.0", # Pinned to 1.18.2 (keep in line with pre-commit)
   "pandas-stubs>=2.3.2,<3.0.0",
   "pre-commit>=4.4.0,<5.0.0",
-  "ruff==0.14.4", # Pinned to 0.14.4 (keep in line with pre-commit)
+  "ruff==0.14.5", # Pinned to 0.14.5 (keep in line with pre-commit)
   "types-pytz>=2025.2,<2026.0",
   "types-toml>=0.10.2,<1.0.0",
 ]
@@ -184,22 +184,8 @@ select = [
   # "I",  # Disabled - using isort instead
   "RSE",
   "TID",
-  # "SIM",  # Partially enabled below:
-  "SIM101", # - Multiple isinstance calls, merge into single call
-  "SIM102", # - Use single if statement instead of nested if statements
-  "SIM103", # - Return the condition directly
-  "SIM105", # - Use contextlib.suppress() instead of try-except-pass
-  "SIM109", # - Use tuple to compare value against multiple values
-  "SIM110", # - Use any()/all() instead of for loops
-  "SIM113", # - Use enumerate() for index variables
-  "SIM114", # - Combine if branches using logical or operator
-  "SIM117", # - Use combined with statement
-  "SIM118", # - Remove redundant .keys() calls
-  "SIM211", # - Use `not x` instead of `False if x else True`
-  "SIM212", # - Simplify twisted ternary expressions
-  "SIM300", # - Yoda conditions
-  "B007", # - Unused loop control variable
-  "B009", # - Do not call getattr with a constant attribute value
+  "SIM", # flake8-simplify
+  "B", # flake8-bugbear
   "PERF102", # - When using only dict values use the values() method
   "FURB122", # - Use writelines instead of write in a loop
   "FURB166", # - int() on sliced str
@@ -239,6 +225,12 @@ ignore = [
   "S101", # Use of assert detected (OK in test suite)
   "S105", # Use of hardcoded password (spurious)
   "S106", # Use of hardcoded password (spurious)
+  "SIM108", # Use ternary operator instead of if-else-block (opinionated style)
+  "B017", # pytest.raises(Exception) is too broad (we need broad catches for now)
+  "B018", # Useless expression (OK in notebooks for displaying figures)
+  "B008", # Function call in default argument (OK for immutable objects like pd.Timedelta, Money)
+  "B024", # Abstract class without abstract methods (intentional for base class pattern)
+  "B904", # raise without from clause (fix later for better exception chaining)
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided

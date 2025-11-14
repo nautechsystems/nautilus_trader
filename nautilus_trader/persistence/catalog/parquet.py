@@ -548,7 +548,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     if overall_min_value is None or min_value < overall_min_value:
                         overall_min_value = min_value
                     if overall_max_value is None or max_value > overall_max_value:
-                            overall_max_value = max_value
+                        overall_max_value = max_value
 
         if overall_min_value is None or overall_max_value is None:
             print(f"Column '{column_name}' not found or has no statistics in any row group.")

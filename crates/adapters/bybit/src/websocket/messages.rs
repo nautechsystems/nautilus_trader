@@ -19,15 +19,22 @@ use nautilus_model::{
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
 
 use crate::{
-    common::enums::{
-        BybitCancelType, BybitCreateType, BybitExecType, BybitOrderSide, BybitOrderStatus,
-        BybitOrderType, BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode,
-        BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
+    common::{
+        enums::{
+            BybitCancelType, BybitCreateType, BybitExecType, BybitOrderSide, BybitOrderStatus,
+            BybitOrderType, BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode,
+            BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
+        },
+        parse::{
+            deserialize_decimal_or_zero, deserialize_optional_decimal,
+            deserialize_optional_decimal_or_zero,
+        },
     },
     websocket::enums::BybitWsOperation,
 };
@@ -777,19 +784,28 @@ pub struct BybitWsAccountExecutionMsg {
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsAccountWalletCoin {
     pub coin: Ustr,
-    pub wallet_balance: String,
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub wallet_balance: Decimal,
     pub available_to_withdraw: String,
     pub available_to_borrow: String,
     pub accrued_interest: String,
-    #[serde(default, rename = "totalOrderIM")]
-    pub total_order_im: Option<String>,
-    #[serde(default, rename = "totalPositionIM")]
-    pub total_position_im: Option<String>,
+    #[serde(
+        default,
+        rename = "totalOrderIM",
+        deserialize_with = "deserialize_optional_decimal_or_zero"
+    )]
+    pub total_order_im: Decimal,
+    #[serde(
+        default,
+        rename = "totalPositionIM",
+        deserialize_with = "deserialize_optional_decimal_or_zero"
+    )]
+    pub total_position_im: Decimal,
     #[serde(default, rename = "totalPositionMM")]
     pub total_position_mm: Option<String>,
     pub equity: String,
-    #[serde(default)]
-    pub spot_borrow: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_or_zero")]
+    pub spot_borrow: Decimal,
 }
 
 /// Wallet summary payload covering all coins.
@@ -834,7 +850,8 @@ pub struct BybitWsAccountPosition {
     pub position_value: String,
     pub risk_id: i64,
     pub risk_limit_value: String,
-    pub entry_price: String,
+    #[serde(deserialize_with = "deserialize_optional_decimal")]
+    pub entry_price: Option<Decimal>,
     pub mark_price: String,
     pub leverage: String,
     pub position_balance: String,

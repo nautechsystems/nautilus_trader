@@ -1019,7 +1019,7 @@ class TestConsolidateDataByPeriod:
         # Verify data values are preserved
         for original_bar, retrieved_bar in zip(
             sorted(test_bars, key=lambda x: x.ts_init),
-            sorted(all_bars, key=lambda x: x.ts_init),
+            sorted(all_bars, key=lambda x: x.ts_init), strict=False,
         ):
             assert original_bar.open == retrieved_bar.open
             assert original_bar.high == retrieved_bar.high
@@ -1063,7 +1063,7 @@ class TestConsolidateDataByPeriod:
         retrieved_sorted = sorted(all_bars, key=lambda x: x.ts_init)
 
         # Verify each bar's timestamp is exactly preserved
-        for i, (original, retrieved) in enumerate(zip(original_sorted, retrieved_sorted)):
+        for i, (original, retrieved) in enumerate(zip(original_sorted, retrieved_sorted, strict=False)):
             assert original.ts_init == retrieved.ts_init, f"Timestamp mismatch at index {i}"
 
     def test_consolidate_mixed_data_types_integration(self):

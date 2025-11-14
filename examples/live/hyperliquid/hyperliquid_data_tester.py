@@ -36,7 +36,8 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 
 instrument_ids = [
     InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID"),
-    # InstrumentId.from_str("ETH-USD-PERP.HYPERLIQUID"),
+    InstrumentId.from_str("ETH-USD-PERP.HYPERLIQUID"),
+    InstrumentId.from_str("HYPE-USDC-SPOT.HYPERLIQUID"),
 ]
 
 if __name__ == "__main__":
@@ -45,7 +46,7 @@ if __name__ == "__main__":
         trader_id=TraderId("TESTER-001"),
         logging=LoggingConfig(
             log_level="INFO",
-            log_level_file="DEBUG",
+            # log_level_file="DEBUG",
             use_pyo3=True,
         ),
         exec_engine=LiveExecEngineConfig(
@@ -70,11 +71,14 @@ if __name__ == "__main__":
     # Configure your strategy
     config_strat = DataTesterConfig(
         instrument_ids=instrument_ids,
-        subscribe_book_at_interval=True,
-        book_interval_ms=10,
-        # subscribe_quotes=True,
-        # subscribe_trades=True,
-        # subscribe_bars=True,
+        # subscribe_book_at_interval=True,
+        # book_interval_ms=10,
+        subscribe_quotes=True,
+        subscribe_trades=True,
+        subscribe_bars=True,
+        subscribe_mark_prices=True,
+        subscribe_index_prices=True,
+        subscribe_funding_rates=True,
     )
     # Instantiate your strategy
     strategy = DataTester(config=config_strat)

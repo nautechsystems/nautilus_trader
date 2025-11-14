@@ -16,7 +16,13 @@
 use std::collections::HashMap;
 
 use derive_builder::Builder;
-use nautilus_model::reports::{FillReport, OrderStatusReport};
+use nautilus_model::{
+    data::{
+        Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick,
+        TradeTick,
+    },
+    reports::{FillReport, OrderStatusReport},
+};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -62,16 +68,16 @@ pub enum SubscriptionRequest {
         #[serde(skip_serializing_if = "Option::is_none")]
         dex: Option<String>,
     },
-    /// Notifications for a user
+    /// Notifications for a user.
     Notification { user: String },
-    /// Web data for frontend
+    /// Web data for frontend.
     WebData2 { user: String },
-    /// Candlestick data
+    /// Candlestick data.
     Candle {
         coin: Ustr,
         interval: HyperliquidBarInterval,
     },
-    /// Level 2 order book
+    /// Level 2 order book.
     L2Book {
         coin: Ustr,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,47 +86,49 @@ pub enum SubscriptionRequest {
         #[serde(skip_serializing_if = "Option::is_none")]
         mantissa: Option<u32>,
     },
-    /// Trade updates
+    /// Trade updates.
     Trades { coin: Ustr },
-    /// Order updates for a user
+    /// Order updates for a user.
     OrderUpdates { user: String },
-    /// User events (fills, funding, liquidations)
+    /// User events (fills, funding, liquidations).
     UserEvents { user: String },
-    /// User fill history
+    /// User fill history.
     UserFills {
         user: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         #[serde(rename = "aggregateByTime")]
         aggregate_by_time: Option<bool>,
     },
-    /// User funding payments
+    /// User funding payments.
     UserFundings { user: String },
-    /// User ledger updates (non-funding)
+    /// User ledger updates (non-funding).
     UserNonFundingLedgerUpdates { user: String },
-    /// Active asset context
+    /// Active asset context (for perpetuals).
     ActiveAssetCtx { coin: Ustr },
-    /// Active asset data for user
+    /// Active spot asset context.
+    ActiveSpotAssetCtx { coin: Ustr },
+    /// Active asset data for user.
     ActiveAssetData { user: String, coin: String },
-    /// TWAP slice fills
+    /// TWAP slice fills.
     UserTwapSliceFills { user: String },
-    /// TWAP history
+    /// TWAP history.
     UserTwapHistory { user: String },
-    /// Best bid/offer updates
+    /// Best bid/offer updates.
     Bbo { coin: Ustr },
 }
 
-/// Post request wrapper for info and action requests
+/// Post request wrapper for info and action requests.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "lowercase")]
 pub enum PostRequest {
-    /// Info request (no signature required)
+    /// Info request (no signature required).
     Info { payload: serde_json::Value },
-    /// Action request (requires signature)
+    /// Action request (requires signature).
     Action { payload: ActionPayload },
 }
 
-/// Action payload with signature
+/// Action payload with signature.
 #[derive(Debug, Clone, Serialize)]
 pub struct ActionPayload {
     pub action: ActionRequest,
@@ -131,7 +139,7 @@ pub struct ActionPayload {
     pub vault_address: Option<String>,
 }
 
-/// Signature data
+/// Signature data.
 #[derive(Debug, Clone, Serialize)]
 pub struct SignatureData {
     pub r: String,
@@ -139,21 +147,21 @@ pub struct SignatureData {
     pub v: String,
 }
 
-/// Action request types
+/// Action request types.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "lowercase")]
 pub enum ActionRequest {
-    /// Place orders
+    /// Place orders.
     Order {
         orders: Vec<OrderRequest>,
         grouping: String,
     },
-    /// Cancel orders
+    /// Cancel orders.
     Cancel { cancels: Vec<CancelRequest> },
-    /// Cancel orders by client order ID
+    /// Cancel orders by client order ID.
     CancelByCloid { cancels: Vec<CancelByCloidRequest> },
-    /// Modify orders
+    /// Modify orders.
     Modify { modifies: Vec<ModifyRequest> },
 }
 
@@ -209,27 +217,27 @@ impl ActionRequest {
     }
 }
 
-/// Order placement request
+/// Order placement request.
 #[derive(Debug, Clone, Serialize, Builder)]
 pub struct OrderRequest {
-    /// Asset ID
+    /// Asset ID.
     pub a: u32,
-    /// Buy side (true = buy, false = sell)
+    /// Buy side (true = buy, false = sell).
     pub b: bool,
-    /// Price
+    /// Price.
     pub p: String,
-    /// Size
+    /// Size.
     pub s: String,
-    /// Reduce only
+    /// Reduce only.
     pub r: bool,
-    /// Order type
+    /// Order type.
     pub t: OrderTypeRequest,
-    /// Client order ID (optional)
+    /// Client order ID (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub c: Option<String>,
 }
 
-/// Order type in request format
+/// Order type in request format.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "lowercase")]
@@ -246,7 +254,7 @@ pub enum OrderTypeRequest {
     },
 }
 
-/// Time in force in request format
+/// Time in force in request format.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum TimeInForceRequest {
@@ -255,7 +263,7 @@ pub enum TimeInForceRequest {
     Gtc,
 }
 
-/// TP/SL in request format
+/// TP/SL in request format.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TpSlRequest {
@@ -263,95 +271,97 @@ pub enum TpSlRequest {
     Sl,
 }
 
-/// Cancel order request
+/// Cancel order request.
 #[derive(Debug, Clone, Serialize)]
 pub struct CancelRequest {
-    /// Asset ID
+    /// Asset ID.
     pub a: u32,
-    /// Order ID
+    /// Order ID.
     pub o: u64,
 }
 
-/// Cancel by client order ID request
+/// Cancel by client order ID request.
 #[derive(Debug, Clone, Serialize)]
 pub struct CancelByCloidRequest {
-    /// Asset ID
+    /// Asset ID.
     pub asset: u32,
-    /// Client order ID
+    /// Client order ID.
     pub cloid: String,
 }
 
-/// Modify order request
+/// Modify order request.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModifyRequest {
-    /// Order ID
+    /// Order ID.
     pub oid: u64,
-    /// New order details
+    /// New order details.
     pub order: OrderRequest,
 }
 
-/// Subscription response data wrapper
+/// Subscription response data wrapper.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SubscriptionResponseData {
     pub method: String,
     pub subscription: SubscriptionRequest,
 }
 
-/// Inbound WebSocket message from Hyperliquid server
+/// Inbound WebSocket message from Hyperliquid server.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "channel")]
 #[serde(rename_all = "camelCase")]
 pub enum HyperliquidWsMessage {
-    /// Subscription confirmation
+    /// Subscription confirmation.
     SubscriptionResponse { data: SubscriptionResponseData },
-    /// Post request response
+    /// Post request response.
     Post { data: PostResponse },
-    /// All mid prices
+    /// All mid prices.
     AllMids { data: AllMidsData },
-    /// Notifications
+    /// Notifications.
     Notification { data: NotificationData },
-    /// Web data
+    /// Web data.
     WebData2 { data: serde_json::Value },
-    /// Candlestick data
+    /// Candlestick data.
     Candle { data: CandleData },
-    /// Level 2 order book
+    /// Level 2 order book.
     L2Book { data: WsBookData },
-    /// Trade updates
+    /// Trade updates.
     Trades { data: Vec<WsTradeData> },
-    /// Order updates
+    /// Order updates.
     OrderUpdates { data: Vec<WsOrderData> },
-    /// User events
+    /// User events.
     UserEvents { data: WsUserEventData },
-    /// User fills
+    /// User fills.
     UserFills { data: WsUserFillsData },
-    /// User funding payments
+    /// User funding payments.
     UserFundings { data: WsUserFundingsData },
-    /// User ledger updates
+    /// User ledger updates.
     UserNonFundingLedgerUpdates { data: serde_json::Value },
-    /// Active asset context
+    /// Active asset context.
     ActiveAssetCtx { data: WsActiveAssetCtxData },
-    /// Active asset data
+    /// Active spot asset context (same data as ActiveAssetCtx, different channel name).
+    ActiveSpotAssetCtx { data: WsActiveAssetCtxData },
+    /// Active asset data.
     ActiveAssetData { data: WsActiveAssetData },
-    /// TWAP slice fills
+    /// TWAP slice fills.
     UserTwapSliceFills { data: WsUserTwapSliceFillsData },
-    /// TWAP history
+    /// TWAP history.
     UserTwapHistory { data: WsUserTwapHistoryData },
-    /// Best bid/offer
+    /// Best bid/offer.
     Bbo { data: WsBboData },
-    /// Error response
+    /// Error response.
     Error { data: String },
-    /// Pong response
+    /// Pong response.
     Pong,
 }
 
-/// Post response data
+/// Post response data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PostResponse {
     pub id: u64,
     pub response: PostResponsePayload,
 }
 
-/// Post response payload
+/// Post response payload.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "lowercase")]
@@ -361,45 +371,45 @@ pub enum PostResponsePayload {
     Error { payload: String },
 }
 
-/// All mid prices data
+/// All mid prices data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AllMidsData {
     pub mids: HashMap<String, String>,
 }
 
-/// Notification data
+/// Notification data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct NotificationData {
     pub notification: String,
 }
 
-/// Candlestick data
+/// Candlestick data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CandleData {
-    /// Open time (millis)
+    /// Open time (millis).
     pub t: u64,
-    /// Close time (millis)
+    /// Close time (millis).
     #[serde(rename = "T")]
     pub close_time: u64,
-    /// Symbol
+    /// Symbol.
     pub s: Ustr,
-    /// Interval
+    /// Interval.
     pub i: String,
-    /// Open price
+    /// Open price.
     pub o: String,
-    /// Close price
+    /// Close price.
     pub c: String,
-    /// High price
+    /// High price.
     pub h: String,
-    /// Low price
+    /// Low price.
     pub l: String,
-    /// Volume
+    /// Volume.
     pub v: String,
-    /// Number of trades
+    /// Number of trades.
     pub n: u32,
 }
 
-/// WebSocket book data
+/// WebSocket book data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsBookData {
     pub coin: Ustr,
@@ -407,18 +417,18 @@ pub struct WsBookData {
     pub time: u64,
 }
 
-/// WebSocket level data
+/// WebSocket level data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsLevelData {
-    /// Price
+    /// Price.
     pub px: String,
-    /// Size
+    /// Size.
     pub sz: String,
-    /// Number of orders
+    /// Number of orders.
     pub n: u32,
 }
 
-/// WebSocket trade data
+/// WebSocket trade data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsTradeData {
     pub coin: Ustr,
@@ -431,7 +441,7 @@ pub struct WsTradeData {
     pub users: [String; 2], // [buyer, seller]
 }
 
-/// WebSocket order data
+/// WebSocket order data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsOrderData {
     pub order: WsBasicOrderData,
@@ -440,7 +450,7 @@ pub struct WsOrderData {
     pub status_timestamp: u64,
 }
 
-/// Basic order data
+/// Basic order data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsBasicOrderData {
     pub coin: Ustr,
@@ -453,31 +463,31 @@ pub struct WsBasicOrderData {
     #[serde(rename = "origSz")]
     pub orig_sz: String,
     pub cloid: Option<String>,
-    /// Trigger price for conditional orders (stop/take-profit)
+    /// Trigger price for conditional orders (stop/take-profit).
     #[serde(rename = "triggerPx")]
     pub trigger_px: Option<String>,
-    /// Whether this is a market or limit trigger order
+    /// Whether this is a market or limit trigger order.
     #[serde(rename = "isMarket")]
     pub is_market: Option<bool>,
-    /// Take-profit or stop-loss indicator
+    /// Take-profit or stop-loss indicator.
     pub tpsl: Option<HyperliquidTpSl>,
-    /// Whether the trigger has been activated
+    /// Whether the trigger has been activated.
     #[serde(rename = "triggerActivated")]
     pub trigger_activated: Option<bool>,
-    /// Trailing stop parameters if applicable
+    /// Trailing stop parameters if applicable.
     #[serde(rename = "trailingStop")]
     pub trailing_stop: Option<WsTrailingStopData>,
 }
 
-/// Trailing stop offset type
+/// Trailing stop offset type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TrailingOffsetType {
-    /// Price offset
+    /// Price offset.
     Price,
-    /// Percentage offset
+    /// Percentage offset.
     Percentage,
-    /// Basis points offset
+    /// Basis points offset.
     BasisPoints,
 }
 
@@ -492,20 +502,20 @@ impl TrailingOffsetType {
     }
 }
 
-/// Trailing stop data from WebSocket
+/// Trailing stop data from WebSocket.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsTrailingStopData {
-    /// Trailing offset value
+    /// Trailing offset value.
     pub offset: String,
-    /// Offset type
+    /// Offset type.
     #[serde(rename = "offsetType")]
     pub offset_type: TrailingOffsetType,
-    /// Current callback price (highest/lowest price reached)
+    /// Current callback price (highest/lowest price reached).
     #[serde(rename = "callbackPrice")]
     pub callback_price: Option<String>,
 }
 
-/// WebSocket user event data
+/// WebSocket user event data.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum WsUserEventData {
@@ -522,19 +532,19 @@ pub enum WsUserEventData {
         #[serde(rename = "nonUserCancel")]
         non_user_cancel: Vec<WsNonUserCancelData>,
     },
-    /// Trigger order activated (moved from pending to active)
+    /// Trigger order activated (moved from pending to active).
     TriggerActivated {
         #[serde(rename = "triggerActivated")]
         trigger_activated: WsTriggerActivatedData,
     },
-    /// Trigger order executed (trigger price reached, order placed)
+    /// Trigger order executed (trigger price reached, order placed).
     TriggerTriggered {
         #[serde(rename = "triggerTriggered")]
         trigger_triggered: WsTriggerTriggeredData,
     },
 }
 
-/// WebSocket fill data
+/// WebSocket fill data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsFillData {
     pub coin: Ustr,
@@ -559,7 +569,7 @@ pub struct WsFillData {
     pub builder_fee: Option<String>,
 }
 
-/// Fill liquidation data
+/// Fill liquidation data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FillLiquidationData {
     #[serde(rename = "liquidatedUser")]
@@ -569,7 +579,7 @@ pub struct FillLiquidationData {
     pub method: HyperliquidLiquidationMethod,
 }
 
-/// WebSocket user funding data
+/// WebSocket user funding data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsUserFundingData {
     pub time: u64,
@@ -580,7 +590,7 @@ pub struct WsUserFundingData {
     pub funding_rate: String,
 }
 
-/// WebSocket liquidation data
+/// WebSocket liquidation data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsLiquidationData {
     pub lid: u64,
@@ -590,14 +600,14 @@ pub struct WsLiquidationData {
     pub liquidated_account_value: String,
 }
 
-/// WebSocket non-user cancel data
+/// WebSocket non-user cancel data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsNonUserCancelData {
     pub coin: Ustr,
     pub oid: u64,
 }
 
-/// Trigger order activated event data
+/// Trigger order activated event data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsTriggerActivatedData {
     pub coin: Ustr,
@@ -608,7 +618,7 @@ pub struct WsTriggerActivatedData {
     pub tpsl: HyperliquidTpSl,
 }
 
-/// Trigger order triggered event data
+/// Trigger order triggered event data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsTriggerTriggeredData {
     pub coin: Ustr,
@@ -619,12 +629,12 @@ pub struct WsTriggerTriggeredData {
     #[serde(rename = "marketPx")]
     pub market_px: String,
     pub tpsl: HyperliquidTpSl,
-    /// Order ID of the resulting market/limit order after trigger
+    /// Order ID of the resulting market/limit order after trigger.
     #[serde(rename = "resultingOid")]
     pub resulting_oid: Option<u64>,
 }
 
-/// WebSocket user fills data
+/// WebSocket user fills data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsUserFillsData {
     #[serde(rename = "isSnapshot")]
@@ -633,7 +643,7 @@ pub struct WsUserFillsData {
     pub fills: Vec<WsFillData>,
 }
 
-/// WebSocket user fundings data
+/// WebSocket user fundings data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsUserFundingsData {
     #[serde(rename = "isSnapshot")]
@@ -642,7 +652,7 @@ pub struct WsUserFundingsData {
     pub fundings: Vec<WsUserFundingData>,
 }
 
-/// WebSocket active asset context data
+/// WebSocket active asset context data.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum WsActiveAssetCtxData {
@@ -650,41 +660,46 @@ pub enum WsActiveAssetCtxData {
     Spot { coin: Ustr, ctx: SpotAssetCtx },
 }
 
-/// Shared asset context fields
+/// Shared asset context fields.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SharedAssetCtx {
     #[serde(rename = "dayNtlVlm")]
-    pub day_ntl_vlm: f64,
+    pub day_ntl_vlm: String,
     #[serde(rename = "prevDayPx")]
-    pub prev_day_px: f64,
+    pub prev_day_px: String,
     #[serde(rename = "markPx")]
-    pub mark_px: f64,
+    pub mark_px: String,
     #[serde(rename = "midPx")]
-    pub mid_px: Option<f64>,
+    pub mid_px: Option<String>,
+    #[serde(rename = "impactPxs")]
+    pub impact_pxs: Option<Vec<String>>,
+    #[serde(rename = "dayBaseVlm")]
+    pub day_base_vlm: Option<String>,
 }
 
-/// Perps asset context
+/// Perps asset context.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PerpsAssetCtx {
     #[serde(flatten)]
     pub shared: SharedAssetCtx,
-    pub funding: f64,
+    pub funding: String,
     #[serde(rename = "openInterest")]
-    pub open_interest: f64,
+    pub open_interest: String,
     #[serde(rename = "oraclePx")]
-    pub oracle_px: f64,
+    pub oracle_px: String,
+    pub premium: Option<String>,
 }
 
-/// Spot asset context
+/// Spot asset context.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SpotAssetCtx {
     #[serde(flatten)]
     pub shared: SharedAssetCtx,
     #[serde(rename = "circulatingSupply")]
-    pub circulating_supply: f64,
+    pub circulating_supply: String,
 }
 
-/// WebSocket active asset data
+/// WebSocket active asset data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsActiveAssetData {
     pub user: String,
@@ -696,14 +711,14 @@ pub struct WsActiveAssetData {
     pub available_to_trade: [f64; 2],
 }
 
-/// Leverage data
+/// Leverage data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LeverageData {
     pub value: f64,
     pub type_: String,
 }
 
-/// WebSocket TWAP slice fills data
+/// WebSocket TWAP slice fills data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsUserTwapSliceFillsData {
     #[serde(rename = "isSnapshot")]
@@ -713,7 +728,7 @@ pub struct WsUserTwapSliceFillsData {
     pub twap_slice_fills: Vec<WsTwapSliceFillData>,
 }
 
-/// TWAP slice fill data
+/// TWAP slice fill data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsTwapSliceFillData {
     pub fill: WsFillData,
@@ -721,7 +736,7 @@ pub struct WsTwapSliceFillData {
     pub twap_id: u64,
 }
 
-/// WebSocket TWAP history data
+/// WebSocket TWAP history data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsUserTwapHistoryData {
     #[serde(rename = "isSnapshot")]
@@ -730,7 +745,7 @@ pub struct WsUserTwapHistoryData {
     pub history: Vec<WsTwapHistoryData>,
 }
 
-/// TWAP history data
+/// TWAP history data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsTwapHistoryData {
     pub state: TwapStateData,
@@ -738,7 +753,7 @@ pub struct WsTwapHistoryData {
     pub time: u64,
 }
 
-/// TWAP state data
+/// TWAP state data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TwapStateData {
     pub coin: Ustr,
@@ -756,14 +771,14 @@ pub struct TwapStateData {
     pub timestamp: u64,
 }
 
-/// TWAP status data
+/// TWAP status data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TwapStatusData {
     pub status: HyperliquidTwapStatus,
     pub description: String,
 }
 
-/// WebSocket BBO data
+/// WebSocket BBO data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsBboData {
     pub coin: Ustr,
@@ -926,35 +941,41 @@ mod tests {
 ///
 /// Wraps parsed messages from the handler.
 ///
-/// All parsing happens in the handler layer, with parsed Nautilus domain objects
+/// All parsing happens in the handler layer, with parsed Nautilus domain objects.
 /// passed through to the Python layer.
 #[derive(Debug, Clone)]
 pub enum NautilusWsMessage {
-    /// Execution reports (order status and fills)
+    /// Execution reports (order status and fills).
     ExecutionReports(Vec<ExecutionReport>),
-    /// Parsed trade ticks
-    Trades(Vec<nautilus_model::data::TradeTick>),
-    /// Parsed quote tick (from BBO)
-    Quote(nautilus_model::data::QuoteTick),
-    /// Parsed order book deltas
-    Deltas(nautilus_model::data::OrderBookDeltas),
-    /// Parsed candle/bar
-    Candle(nautilus_model::data::Bar),
-    /// Error occurred
+    /// Parsed trade ticks.
+    Trades(Vec<TradeTick>),
+    /// Parsed quote tick (from BBO).
+    Quote(QuoteTick),
+    /// Parsed order book deltas.
+    Deltas(OrderBookDeltas),
+    /// Parsed candle/bar.
+    Candle(Bar),
+    /// Mark price update.
+    MarkPrice(MarkPriceUpdate),
+    /// Index price update.
+    IndexPrice(IndexPriceUpdate),
+    /// Funding rate update.
+    FundingRate(FundingRateUpdate),
+    /// Error occurred.
     Error(String),
-    /// WebSocket reconnected
+    /// WebSocket reconnected.
     Reconnected,
 }
 
 /// Execution report wrapper for order status and fill reports.
 ///
-/// This enum allows both order status updates and fill reports
+/// This enum allows both order status updates and fill reports.
 /// to be sent through the execution engine.
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum ExecutionReport {
-    /// Order status report
+    /// Order status report.
     Order(OrderStatusReport),
-    /// Fill report
+    /// Fill report.
     Fill(FillReport),
 }

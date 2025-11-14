@@ -138,7 +138,7 @@ def test_parse_clob_token_ids_and_outcomes() -> None:
     assert outcomes[1] == "No"
 
     # Test zipping them together
-    token_outcome_pairs = list(zip(clob_token_ids, outcomes))
+    token_outcome_pairs = list(zip(clob_token_ids, outcomes, strict=False))
     assert len(token_outcome_pairs) == 2
     assert token_outcome_pairs[0] == (
         "60487116984468020978247225474488676749601001829886755968952521846780452448915",

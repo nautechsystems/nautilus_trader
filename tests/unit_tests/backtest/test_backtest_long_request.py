@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+import pytest
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.databento.data_utils import databento_data
@@ -37,6 +38,7 @@ from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.trading.strategy import Strategy
 
 
+@pytest.mark.xdist_group(name="databento_catalog")
 class TestBacktestLongRequest:
     def test_long_request_with_time_range_generator(self) -> None:
         # Arrange
@@ -227,6 +229,7 @@ class LongRequestStrategy(Strategy):
         self.msgbus.publish(topic="test", msg=str(msg))
 
 
+@pytest.mark.xdist_group(name="databento_catalog")
 class TestBacktestRequestJoin:
     def test_request_join_with_multiple_instruments(self) -> None:
         # Arrange

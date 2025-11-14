@@ -639,9 +639,9 @@ impl DydxRawHttpClient {
 )]
 pub struct DydxHttpClient {
     /// Raw HTTP client wrapped in Arc for efficient cloning.
-    pub(crate) inner: Arc<DydxRawHttpClient>,
+    inner: Arc<DydxRawHttpClient>,
     /// Instrument cache shared across the adapter using DashMap for thread-safe access.
-    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     /// Tracks whether the instrument cache has been initialized.
     cache_initialized: AtomicBool,
 }
@@ -900,6 +900,16 @@ impl DydxHttpClient {
     #[must_use]
     pub fn cached_instruments_count(&self) -> usize {
         self.instruments_cache.len()
+    }
+
+    /// Returns a reference to the instruments cache.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the shared instrument cache.
+    #[must_use]
+    pub fn instruments(&self) -> &Arc<DashMap<Ustr, InstrumentAny>> {
+        &self.instruments_cache
     }
 }
 

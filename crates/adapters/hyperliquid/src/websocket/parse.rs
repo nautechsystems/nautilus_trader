@@ -20,7 +20,10 @@ use std::str::FromStr;
 use anyhow::Context;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
+    data::{
+        Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+    },
     enums::{
         AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType, RecordFlag,
         TimeInForce,
@@ -30,9 +33,14 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity, price::PriceRaw, quantity::QuantityRaw},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::{
+    Decimal,
+    prelude::{FromPrimitive, ToPrimitive},
+};
 
-use super::messages::{CandleData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData};
+use super::messages::{
+    CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
+};
 use crate::common::parse::{
     is_conditional_order_data, parse_millis_to_nanos, parse_trigger_order_type,
 };
@@ -371,6 +379,92 @@ pub fn parse_ws_fill_report(
     ))
 }
 
+/// Parses a WebSocket ActiveAssetCtx message into mark price, index price, and funding rate updates.
+///
+/// This converts Hyperliquid asset context data into Nautilus price and funding rate updates.
+/// Returns a tuple of (MarkPriceUpdate, Option<IndexPriceUpdate>, Option<FundingRateUpdate>).
+/// Index price and funding rate are only present for perpetual contracts.
+pub fn parse_ws_asset_context(
+    ctx: &WsActiveAssetCtxData,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<(
+    MarkPriceUpdate,
+    Option<IndexPriceUpdate>,
+    Option<FundingRateUpdate>,
+)> {
+    let instrument_id = instrument.id();
+
+    match ctx {
+        WsActiveAssetCtxData::Perp { coin: _, ctx } => {
+            let mark_px_f64 = ctx
+                .shared
+                .mark_px
+                .parse::<f64>()
+                .context("Failed to parse mark_px as f64")?;
+            let mark_price = parse_f64_price(mark_px_f64, instrument, "ctx.mark_px")?;
+            let mark_price_update =
+                MarkPriceUpdate::new(instrument_id, mark_price, ts_init, ts_init);
+
+            let oracle_px_f64 = ctx
+                .oracle_px
+                .parse::<f64>()
+                .context("Failed to parse oracle_px as f64")?;
+            let index_price = parse_f64_price(oracle_px_f64, instrument, "ctx.oracle_px")?;
+            let index_price_update =
+                IndexPriceUpdate::new(instrument_id, index_price, ts_init, ts_init);
+
+            let funding_f64 = ctx
+                .funding
+                .parse::<f64>()
+                .context("Failed to parse funding as f64")?;
+            let funding_rate_decimal = Decimal::from_f64(funding_f64)
+                .context("Failed to convert funding rate to Decimal")?;
+            let funding_rate_update = FundingRateUpdate::new(
+                instrument_id,
+                funding_rate_decimal,
+                None, // Hyperliquid doesn't provide next funding time in this message
+                ts_init,
+                ts_init,
+            );
+
+            Ok((
+                mark_price_update,
+                Some(index_price_update),
+                Some(funding_rate_update),
+            ))
+        }
+        WsActiveAssetCtxData::Spot { coin: _, ctx } => {
+            let mark_px_f64 = ctx
+                .shared
+                .mark_px
+                .parse::<f64>()
+                .context("Failed to parse mark_px as f64")?;
+            let mark_price = parse_f64_price(mark_px_f64, instrument, "ctx.mark_px")?;
+            let mark_price_update =
+                MarkPriceUpdate::new(instrument_id, mark_price, ts_init, ts_init);
+
+            Ok((mark_price_update, None, None))
+        }
+    }
+}
+
+/// Helper to parse an f64 price into a Price with instrument precision.
+fn parse_f64_price(
+    price: f64,
+    instrument: &InstrumentAny,
+    field_name: &str,
+) -> anyhow::Result<Price> {
+    if !price.is_finite() {
+        anyhow::bail!(
+            "Invalid price value for {}: {} (must be finite)",
+            field_name,
+            price
+        );
+    }
+    Ok(Price::new(price, instrument.price_precision()))
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -391,7 +485,9 @@ mod tests {
             HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
             HyperliquidSide,
         },
-        websocket::messages::{WsBookData, WsLevelData},
+        websocket::messages::{
+            PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx, WsBasicOrderData, WsBookData, WsLevelData,
+        },
     };
 
     fn create_test_instrument() -> InstrumentAny {
@@ -432,7 +528,7 @@ mod tests {
         let ts_init = UnixNanos::default();
 
         let order_data = WsOrderData {
-            order: super::super::messages::WsBasicOrderData {
+            order: WsBasicOrderData {
                 coin: Ustr::from("BTC"),
                 side: HyperliquidSide::Buy,
                 limit_px: "50000.0".to_string(),
@@ -469,7 +565,7 @@ mod tests {
         let account_id = AccountId::new("HYPERLIQUID-001");
         let ts_init = UnixNanos::default();
 
-        let fill_data = super::super::messages::WsFillData {
+        let fill_data = WsFillData {
             coin: Ustr::from("BTC"),
             px: "50000.0".to_string(),
             sz: "0.1".to_string(),
@@ -534,5 +630,78 @@ mod tests {
         assert_eq!(ask_delta.order.side, OrderSide::Sell);
         assert!(ask_delta.order.size.is_positive());
         assert_eq!(ask_delta.order.order_id, 0);
+    }
+
+    #[rstest]
+    fn test_parse_ws_asset_context_perp() {
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        let ctx_data = WsActiveAssetCtxData::Perp {
+            coin: Ustr::from("BTC"),
+            ctx: PerpsAssetCtx {
+                shared: SharedAssetCtx {
+                    day_ntl_vlm: "1000000.0".to_string(),
+                    prev_day_px: "49000.0".to_string(),
+                    mark_px: "50000.0".to_string(),
+                    mid_px: Some("50001.0".to_string()),
+                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    day_base_vlm: Some("100.0".to_string()),
+                },
+                funding: "0.0001".to_string(),
+                open_interest: "100000.0".to_string(),
+                oracle_px: "50005.0".to_string(),
+                premium: Some("-0.0001".to_string()),
+            },
+        };
+
+        let result = parse_ws_asset_context(&ctx_data, &instrument, ts_init);
+        assert!(result.is_ok());
+
+        let (mark_price, index_price, funding_rate) = result.unwrap();
+
+        assert_eq!(mark_price.instrument_id, instrument.id());
+        assert_eq!(mark_price.value.as_f64(), 50_000.0);
+
+        assert!(index_price.is_some());
+        let index = index_price.unwrap();
+        assert_eq!(index.instrument_id, instrument.id());
+        assert_eq!(index.value.as_f64(), 50_005.0);
+
+        assert!(funding_rate.is_some());
+        let funding = funding_rate.unwrap();
+        assert_eq!(funding.instrument_id, instrument.id());
+        assert_eq!(funding.rate.to_string(), "0.0001");
+    }
+
+    #[rstest]
+    fn test_parse_ws_asset_context_spot() {
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        let ctx_data = WsActiveAssetCtxData::Spot {
+            coin: Ustr::from("BTC"),
+            ctx: SpotAssetCtx {
+                shared: SharedAssetCtx {
+                    day_ntl_vlm: "1000000.0".to_string(),
+                    prev_day_px: "49000.0".to_string(),
+                    mark_px: "50000.0".to_string(),
+                    mid_px: Some("50001.0".to_string()),
+                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    day_base_vlm: Some("100.0".to_string()),
+                },
+                circulating_supply: "19000000.0".to_string(),
+            },
+        };
+
+        let result = parse_ws_asset_context(&ctx_data, &instrument, ts_init);
+        assert!(result.is_ok());
+
+        let (mark_price, index_price, funding_rate) = result.unwrap();
+
+        assert_eq!(mark_price.instrument_id, instrument.id());
+        assert_eq!(mark_price.value.as_f64(), 50_000.0);
+        assert!(index_price.is_none());
+        assert!(funding_rate.is_none());
     }
 }

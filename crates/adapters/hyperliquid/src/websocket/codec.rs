@@ -35,7 +35,7 @@ use crate::{
 
 /// Codec for encoding and decoding Hyperliquid WebSocket messages.
 ///
-/// This struct provides methods to validate URLs and serialize/deserialize messages
+/// This struct provides methods to validate URLs and serialize/deserialize messages,
 /// according to the Hyperliquid WebSocket protocol.
 #[derive(Debug, Default)]
 pub struct HyperliquidCodec;

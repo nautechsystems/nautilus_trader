@@ -797,7 +797,7 @@ async def test_various_betfair_order_fill_scenarios(
         await asyncio.sleep(0)
 
     # Assert
-    for msg, _, last_qty in zip(fill_events, updates, last_qtys):
+    for msg, _, last_qty in zip(fill_events, updates, last_qtys, strict=False):
         assert isinstance(msg, OrderFilled)
         assert msg.last_qty == last_qty
 

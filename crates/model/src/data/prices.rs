@@ -191,7 +191,10 @@ mod tests {
         hash::{Hash, Hasher},
     };
 
-    use nautilus_core::serialization::Serializable;
+    use nautilus_core::serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    };
     use rstest::{fixture, rstest};
     use serde_json;
 

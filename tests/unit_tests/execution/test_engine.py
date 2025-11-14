@@ -3387,7 +3387,7 @@ class TestExecutionEngine:
             status={OrderStatus.ACCEPTED},
         )
         assert len(accepted_orders) == 3
-        for price, order in zip(prices, orders):
+        for price, order in zip(prices, orders, strict=False):
             assert Decimal(price) in accepted_orders
             assert order.client_order_id in [
                 o.client_order_id for o in accepted_orders[Decimal(price)]
