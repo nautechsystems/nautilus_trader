@@ -299,4 +299,55 @@ def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
         ]
         details_copy["secIdList"] = tag_values
 
+    # Deserialize Decimal fields from strings back to Decimal objects
+    # These fields are known to be Decimal type in IBContractDetails
+    decimal_fields = ["minSize", "sizeIncrement", "suggestedSizeIncrement"]
+    for field in decimal_fields:
+        if field in details_copy and isinstance(details_copy[field], str):
+            try:
+                decimal_value = Decimal(details_copy[field])
+
+                # Check if this is the UNSET_DECIMAL value
+                if decimal_value == UNSET_DECIMAL:
+                    details_copy[field] = UNSET_DECIMAL
+                else:
+                    details_copy[field] = decimal_value
+            except (ValueError, TypeError):
+                # If conversion fails, keep the original value
+                pass
+
+    # Deserialize Enum fields from their values back to Enum members
+    # These fields are known to be Enum type in IBContractDetails
+    if "fundDistributionPolicyIndicator" in details_copy:
+        details_copy["fundDistributionPolicyIndicator"] = _deserialize_enum_from_value(
+            FundDistributionPolicyIndicator,
+            details_copy["fundDistributionPolicyIndicator"],
+        )
+
+    if "fundAssetType" in details_copy:
+        details_copy["fundAssetType"] = _deserialize_enum_from_value(
+            FundAssetType,
+            details_copy["fundAssetType"],
+        )
+
     return IBContractDetails(**details_copy)
+
+
+def _deserialize_enum_from_value(enum_class, value):
+    """
+    Convert an enum value (tuple or string) back to the enum member.
+    """
+    if value is None:
+        return None
+
+    # If already an enum member, return as-is
+    if isinstance(value, enum_class):
+        return value
+
+    # Try to find enum member by matching value
+    for member in enum_class:
+        if member.value == value:
+            return member
+
+    # If not found, return the original value (might be invalid)
+    return value
