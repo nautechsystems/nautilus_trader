@@ -19,15 +19,22 @@ use nautilus_model::{
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
 
 use crate::{
-    common::enums::{
-        BybitCancelType, BybitCreateType, BybitExecType, BybitOrderSide, BybitOrderStatus,
-        BybitOrderType, BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode,
-        BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
+    common::{
+        enums::{
+            BybitCancelType, BybitCreateType, BybitExecType, BybitOrderSide, BybitOrderStatus,
+            BybitOrderType, BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode,
+            BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
+        },
+        parse::{
+            deserialize_decimal_or_zero, deserialize_optional_decimal,
+            deserialize_optional_decimal_or_zero,
+        },
     },
     websocket::enums::BybitWsOperation,
 };
@@ -194,7 +201,11 @@ impl BybitWebSocketError {
 
 /// Generic WebSocket request for Bybit trading commands.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BybitWsRequest<T> {
+    /// Request ID for correlation (will be echoed back in response).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub req_id: Option<String>,
     /// Operation type (order.create, order.amend, order.cancel, etc.).
     pub op: BybitWsOrderRequestOp,
     /// Request header containing timestamp and other metadata.
@@ -438,12 +449,48 @@ pub struct BybitWsOrderResponse {
     /// Response data (usually empty for errors, may contain order details for success).
     #[serde(default)]
     pub data: Value,
+    /// Request ID for correlation (echoed back if provided in request).
+    #[serde(default)]
+    pub req_id: Option<String>,
     /// Request header containing timestamp and rate limit info.
     #[serde(default)]
     pub header: Option<Value>,
     /// Extended info for errors.
     #[serde(default)]
     pub ret_ext_info: Option<Value>,
+}
+
+impl BybitWsOrderResponse {
+    /// Extracts individual order errors from retExtInfo for batch operations.
+    ///
+    /// For batch operations, even when ret_code is 0, individual orders may fail.
+    /// These failures are reported in retExtInfo.list as an array of {code, msg} objects.
+    #[must_use]
+    pub fn extract_batch_errors(&self) -> Vec<BybitBatchOrderError> {
+        self.ret_ext_info
+            .as_ref()
+            .and_then(|ext| ext.get("list"))
+            .and_then(|list| list.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| {
+                        let code = item.get("code")?.as_i64()?;
+                        let msg = item.get("msg")?.as_str()?.to_string();
+                        Some(BybitBatchOrderError { code, msg })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+/// Error information for individual orders in a batch operation.
+#[derive(Clone, Debug)]
+pub struct BybitBatchOrderError {
+    /// Error code (0 = success, non-zero = error).
+    pub code: i64,
+    /// Error message.
+    pub msg: String,
 }
 
 /// Authentication acknowledgement for private channels.
@@ -777,19 +824,28 @@ pub struct BybitWsAccountExecutionMsg {
 #[serde(rename_all = "camelCase")]
 pub struct BybitWsAccountWalletCoin {
     pub coin: Ustr,
-    pub wallet_balance: String,
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub wallet_balance: Decimal,
     pub available_to_withdraw: String,
     pub available_to_borrow: String,
     pub accrued_interest: String,
-    #[serde(default, rename = "totalOrderIM")]
-    pub total_order_im: Option<String>,
-    #[serde(default, rename = "totalPositionIM")]
-    pub total_position_im: Option<String>,
+    #[serde(
+        default,
+        rename = "totalOrderIM",
+        deserialize_with = "deserialize_optional_decimal_or_zero"
+    )]
+    pub total_order_im: Decimal,
+    #[serde(
+        default,
+        rename = "totalPositionIM",
+        deserialize_with = "deserialize_optional_decimal_or_zero"
+    )]
+    pub total_position_im: Decimal,
     #[serde(default, rename = "totalPositionMM")]
     pub total_position_mm: Option<String>,
     pub equity: String,
-    #[serde(default)]
-    pub spot_borrow: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_or_zero")]
+    pub spot_borrow: Decimal,
 }
 
 /// Wallet summary payload covering all coins.
@@ -834,7 +890,8 @@ pub struct BybitWsAccountPosition {
     pub position_value: String,
     pub risk_id: i64,
     pub risk_limit_value: String,
-    pub entry_price: String,
+    #[serde(deserialize_with = "deserialize_optional_decimal")]
+    pub entry_price: Option<Decimal>,
     pub mark_price: String,
     pub leverage: String,
     pub position_balance: String,

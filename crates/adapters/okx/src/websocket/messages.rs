@@ -20,7 +20,7 @@ use nautilus_model::{
     data::{Data, FundingRateUpdate, OrderBookDeltas},
     events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
     instruments::InstrumentAny,
-    reports::{FillReport, OrderStatusReport},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -48,6 +48,7 @@ pub enum NautilusWsMessage {
     FundingRates(Vec<FundingRateUpdate>),
     Instrument(Box<InstrumentAny>),
     AccountUpdate(AccountState),
+    PositionUpdate(PositionStatusReport),
     OrderRejected(OrderRejected),
     OrderCancelRejected(OrderCancelRejected),
     OrderModifyRejected(OrderModifyRejected),

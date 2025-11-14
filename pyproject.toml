@@ -102,7 +102,7 @@ dev = [
   "mypy==1.18.2,<2.0.0", # Pinned to 1.18.2 (keep in line with pre-commit)
   "pandas-stubs>=2.3.2,<3.0.0",
   "pre-commit>=4.4.0,<5.0.0",
-  "ruff==0.14.4", # Pinned to 0.14.4 (keep in line with pre-commit)
+  "ruff==0.14.5", # Pinned to 0.14.5 (keep in line with pre-commit)
   "types-pytz>=2025.2,<2026.0",
   "types-toml>=0.10.2,<1.0.0",
 ]

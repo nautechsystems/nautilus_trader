@@ -15,7 +15,9 @@
 
 import asyncio
 from collections import defaultdict
+from datetime import datetime
 
+import pandas as pd
 from betfair_parser.exceptions import BetfairError
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.betting.enums import ExecutionReportStatus
@@ -60,6 +62,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import as_utc_timestamp
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -320,9 +323,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(
             f"Listing current orders for {command.venue_order_id=} {command.client_order_id=}",
         )
-        assert (
-            command.venue_order_id is not None or command.client_order_id is not None
-        ), "Require one of venue_order_id or client_order_id"
+        assert command.venue_order_id is not None or command.client_order_id is not None, (
+            "Require one of venue_order_id or client_order_id"
+        )
 
         try:
             if command.venue_order_id is not None:
@@ -344,9 +347,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             return None
 
         # We have a response, check list length and grab first entry
-        assert (
-            len(orders) == 1
-        ), f"More than one order found for {command.venue_order_id=} {command.client_order_id=}"
+        assert len(orders) == 1, (
+            f"More than one order found for {command.venue_order_id=} {command.client_order_id=}"
+        )
         order: CurrentOrderSummary = orders[0]
         venue_order_id = VenueOrderId(str(order.bet_id))
 
@@ -372,8 +375,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 OrderProjection.EXECUTABLE if command.open_only else OrderProjection.ALL
             ),
             date_range=TimeRange(
-                from_=ensure_pydatetime_utc(command.start),
-                to=ensure_pydatetime_utc(command.end),
+                from_=_to_utc_datetime(command.start),
+                to=_to_utc_datetime(command.end),
             ),
             market_ids=self._market_ids_filter(),
         )
@@ -381,6 +384,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         ts_init = self._clock.timestamp_ns()
 
         order_status_reports: list[OrderStatusReport] = []
+
         for order in current_orders:
             instrument_id = betfair_instrument_id(
                 market_id=order.market_id,
@@ -409,8 +413,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         cleared_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
             order_projection=OrderProjection.ALL,
             date_range=TimeRange(
-                from_=ensure_pydatetime_utc(command.start),
-                to=ensure_pydatetime_utc(command.end),
+                from_=_to_utc_datetime(command.start),
+                to=_to_utc_datetime(command.end),
             ),
             market_ids=self._market_ids_filter(),
         )
@@ -418,6 +422,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         ts_init = self._clock.timestamp_ns()
 
         fill_reports: list[FillReport] = []
+
         for order in cleared_orders:
             if order.size_matched == 0.0:
                 # No executions, skip
@@ -1239,3 +1244,13 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _get_cancel_quantity(self, unmatched_order: UnmatchedOrder) -> float:
         return (unmatched_order.sc or 0) + (unmatched_order.sl or 0) + (unmatched_order.sv or 0)
+
+
+def _to_utc_datetime(timestamp: datetime | pd.Timestamp | None) -> datetime | None:
+    if timestamp is None:
+        return None
+
+    if isinstance(timestamp, pd.Timestamp):
+        return ensure_pydatetime_utc(timestamp)
+
+    return as_utc_timestamp(timestamp)

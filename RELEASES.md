@@ -52,6 +52,7 @@ TBD
 - Fixed `GreeksCalculator` handling of missing price data (#3116), thanks for reporting @q351941406
 - Fixed active liquidity calculation Pool profiler simulation (#3165), thanks @filipmacek
 - Fixed Betfair datetime encoding error in order status reports
+- Fixed Betfair login race condition during concurrent connections
 - Fixed Binance instrument info dict JSON serialization (#3128), thanks for reporting @woung717
 - Fixed Databento MBO data decoding when `PRICE_UNDEF` appears with non-zero precision
 - Fixed Interactive Brokers quote tick subscriptions to use tick-by-tick data (#3135), thanks for reporting @genliusrocks
@@ -91,7 +92,7 @@ TBD
 - Repaired Bybit `AccountPosition` message parsing (#3147), thanks @sunlei
 - Repaired Bybit conditional order trigger semantics and type
 - Upgraded implied-vol crate (#3115), thanks @faysou
-- Upgraded Rust (MSRV) to 1.91.0
+- Upgraded Rust (MSRV) to 1.91.1
 - Upgraded Cython to v3.2.0
 - Upgraded `pyo3` crate to v0.27.0
 - Upgraded `pyo3-async-runtimes` crate to v0.27.0

@@ -846,11 +846,24 @@ class BybitExecutionClient(LiveExecutionClient):
         if order_params:
             pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)
             pyo3_strategy_id = nautilus_pyo3.StrategyId(command.strategy_id.value)
-            await self._ws_trade_client.batch_place_orders(
-                pyo3_trader_id,
-                pyo3_strategy_id,
-                order_params,
-            )
+
+            try:
+                await self._ws_trade_client.batch_place_orders(
+                    pyo3_trader_id,
+                    pyo3_strategy_id,
+                    order_params,
+                )
+            except Exception as e:
+                self._log.error(f"Failed to batch place orders: {e}")
+                for order in command.order_list.orders:
+                    if not order.is_closed:
+                        self.generate_order_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            reason=str(e),
+                            ts_event=self._clock.timestamp_ns(),
+                        )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -1035,6 +1048,17 @@ class BybitExecutionClient(LiveExecutionClient):
             )
         except Exception as e:
             self._log.error(f"Failed to batch cancel orders: {e}")
+            for cancel in command.cancels:
+                order = self._cache.order(cancel.client_order_id)
+                if order and not order.is_closed:
+                    self.generate_order_cancel_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                        reason=str(e),
+                        ts_event=self._clock.timestamp_ns(),
+                    )
 
     # -- MESSAGE HANDLERS -------------------------------------------------------------------------
 

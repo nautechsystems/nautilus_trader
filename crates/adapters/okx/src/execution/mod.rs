@@ -577,7 +577,7 @@ impl LiveExecutionClient for OKXExecutionClient {
 
         for inst_type in self.instrument_types() {
             tracing::info!(
-                "Subscribing to orders channel for instrument type: {:?}",
+                "Subscribing to channels for instrument type: {:?}",
                 inst_type
             );
             self.ws_private.subscribe_orders(inst_type).await?;
@@ -771,6 +771,7 @@ impl LiveExecutionClient for OKXExecutionClient {
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let mut reports = Vec::new();
 
+        // Query derivative positions (SWAP/FUTURES/OPTION) from /api/v5/account/positions
         if let Some(instrument_id) = cmd.instrument_id {
             let mut fetched = self
                 .http_client
@@ -786,6 +787,20 @@ impl LiveExecutionClient for OKXExecutionClient {
                 reports.append(&mut fetched);
             }
         }
+
+        // Query spot margin positions from /api/v5/account/balance
+        // Spot margin positions appear as balance sheet items (liab/spotInUseAmt fields)
+        let mut margin_reports = self
+            .http_client
+            .request_spot_margin_position_reports(self.core.account_id)
+            .await?;
+
+        // Filter margin reports by instrument_id if specified
+        if let Some(instrument_id) = cmd.instrument_id {
+            margin_reports.retain(|report| report.instrument_id == instrument_id);
+        }
+
+        reports.append(&mut margin_reports);
 
         let _ = nanos_to_datetime(cmd.start);
         let _ = nanos_to_datetime(cmd.end);
@@ -855,6 +870,7 @@ impl OKXExecutionClient {
 fn dispatch_ws_message(message: NautilusWsMessage) {
     match message {
         NautilusWsMessage::AccountUpdate(state) => dispatch_account_state(state),
+        NautilusWsMessage::PositionUpdate(report) => dispatch_position_status_report(report),
         NautilusWsMessage::ExecutionReports(reports) => {
             for report in reports {
                 dispatch_execution_report(report);
@@ -898,6 +914,14 @@ fn dispatch_account_state(state: AccountState) {
         "Portfolio.update_account".into(),
         &state as &dyn std::any::Any,
     );
+}
+
+fn dispatch_position_status_report(report: PositionStatusReport) {
+    let sender = get_exec_event_sender();
+    let exec_report = nautilus_common::messages::ExecutionReport::Position(Box::new(report));
+    if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
+        tracing::warn!("Failed to send position status report: {e}");
+    }
 }
 
 fn dispatch_execution_report(report: ExecutionReport) {

@@ -30,7 +30,7 @@ use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::runtime::get_runtime;
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -1197,8 +1197,8 @@ impl BybitWebSocketClient {
     /// <https://bybit-exchange.github.io/docs/v5/websocket/trade/guideline>
     pub async fn batch_place_orders(
         &self,
-        #[allow(unused_variables)] trader_id: TraderId,
-        #[allow(unused_variables)] strategy_id: StrategyId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         orders: Vec<BybitWsPlaceOrderParams>,
     ) -> BybitWsResult<()> {
         if !self.is_authenticated.load(Ordering::Relaxed) {
@@ -1217,10 +1217,41 @@ impl BybitWebSocketClient {
             ));
         }
 
-        // Get category from first order (all orders in a batch must have same category)
         let category = orders[0].category;
 
-        // Convert BybitWsPlaceOrderParams to BybitWsBatchPlaceItem (removing category field)
+        let batch_req_id = UUID4::new().to_string();
+
+        // Extract order tracking data before consuming orders to register with handler
+        let mut batch_order_data = Vec::new();
+        for order in &orders {
+            if let Some(order_link_id_str) = &order.order_link_id {
+                let client_order_id = ClientOrderId::from(order_link_id_str.as_str());
+                let instrument_id = self
+                    .instruments_cache
+                    .get(&order.symbol)
+                    .map(|inst| inst.id())
+                    .ok_or_else(|| {
+                        BybitWsError::ClientError(format!(
+                            "Instrument {} not found in cache",
+                            order.symbol
+                        ))
+                    })?;
+                batch_order_data.push((client_order_id, (trader_id, strategy_id, instrument_id)));
+            }
+        }
+
+        if !batch_order_data.is_empty() {
+            let cmd = HandlerCommand::RegisterBatchPlace {
+                req_id: batch_req_id.clone(),
+                orders: batch_order_data,
+            };
+            let cmd_tx = self.cmd_tx.read().await;
+            if let Err(e) = cmd_tx.send(cmd) {
+                tracing::error!("Failed to send RegisterBatchPlace command: {e}");
+            }
+        }
+
+        // Convert params to batch items (category moved to args level)
         let request_items: Vec<BybitWsBatchPlaceItem> = orders
             .into_iter()
             .map(|order| BybitWsBatchPlaceItem {
@@ -1258,6 +1289,7 @@ impl BybitWebSocketClient {
         };
 
         let request = BybitWsRequest {
+            req_id: Some(batch_req_id),
             op: BybitWsOrderRequestOp::CreateBatch,
             header: BybitWsHeader::now(),
             args: vec![args],
@@ -1292,6 +1324,7 @@ impl BybitWebSocketClient {
         }
 
         let request = BybitWsRequest {
+            req_id: None,
             op: BybitWsOrderRequestOp::AmendBatch,
             header: BybitWsHeader::now(),
             args: orders,
@@ -1345,6 +1378,7 @@ impl BybitWebSocketClient {
         };
 
         let request = BybitWsRequest {
+            req_id: None,
             op: BybitWsOrderRequestOp::CancelBatch,
             header: BybitWsHeader::now(),
             args: vec![args],
@@ -1639,8 +1673,8 @@ impl BybitWebSocketClient {
     pub async fn batch_cancel_orders_by_id(
         &self,
         product_type: BybitProductType,
-        #[allow(unused_variables)] trader_id: TraderId,
-        #[allow(unused_variables)] strategy_id: StrategyId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         instrument_ids: Vec<InstrumentId>,
         venue_order_ids: Vec<Option<VenueOrderId>>,
         client_order_ids: Vec<Option<ClientOrderId>>,
@@ -1654,7 +1688,10 @@ impl BybitWebSocketClient {
             ));
         }
 
+        let batch_req_id = UUID4::new().to_string();
+
         let mut params_vec = Vec::new();
+        let mut batch_cancel_data = Vec::new();
 
         for ((instrument_id, venue_order_id), client_order_id) in instrument_ids
             .into_iter()
@@ -1669,13 +1706,83 @@ impl BybitWebSocketClient {
                 category: product_type,
                 symbol: raw_symbol,
                 order_id: venue_order_id.map(|id| id.to_string()),
-                order_link_id: client_order_id.map(|id| id.to_string()),
+                order_link_id: client_order_id.as_ref().map(|id| id.to_string()),
             };
 
             params_vec.push(params);
+
+            if let Some(coid) = client_order_id {
+                batch_cancel_data.push((
+                    coid,
+                    (trader_id, strategy_id, instrument_id, venue_order_id),
+                ));
+            }
         }
 
-        self.batch_cancel_orders(params_vec).await
+        if !batch_cancel_data.is_empty() {
+            let cmd = HandlerCommand::RegisterBatchCancel {
+                req_id: batch_req_id.clone(),
+                cancels: batch_cancel_data,
+            };
+            let cmd_tx = self.cmd_tx.read().await;
+            if let Err(e) = cmd_tx.send(cmd) {
+                tracing::error!("Failed to send RegisterBatchCancel command: {e}");
+            }
+        }
+
+        self.batch_cancel_orders_with_req_id(params_vec, batch_req_id)
+            .await
+    }
+
+    /// Internal method to batch cancel with a specific request ID.
+    async fn batch_cancel_orders_with_req_id(
+        &self,
+        orders: Vec<BybitWsCancelOrderParams>,
+        req_id: String,
+    ) -> BybitWsResult<()> {
+        if !self.is_authenticated.load(Ordering::Relaxed) {
+            return Err(BybitWsError::Authentication(
+                "Must be authenticated to cancel orders".to_string(),
+            ));
+        }
+
+        if orders.is_empty() {
+            return Ok(());
+        }
+
+        if orders.len() > 20 {
+            return Err(BybitWsError::ClientError(
+                "Batch cancel limit is 20 orders per request".to_string(),
+            ));
+        }
+
+        // Extract category from first order (all orders must have the same category)
+        let category = orders[0].category;
+
+        let request_items: Vec<BybitWsBatchCancelItem> = orders
+            .into_iter()
+            .map(|order| BybitWsBatchCancelItem {
+                symbol: order.symbol,
+                order_id: order.order_id,
+                order_link_id: order.order_link_id,
+            })
+            .collect();
+
+        let args = BybitWsBatchCancelOrderArgs {
+            category,
+            request: request_items,
+        };
+
+        let request = BybitWsRequest {
+            req_id: Some(req_id),
+            op: BybitWsOrderRequestOp::CancelBatch,
+            header: BybitWsHeader::now(),
+            args: vec![args],
+        };
+
+        let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
+
+        self.send_text(&payload).await
     }
 
     /// Builds order params for placing an order.

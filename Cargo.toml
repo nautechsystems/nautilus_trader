@@ -38,7 +38,7 @@ members = [
 [workspace.package]
 version = "0.52.0"
 edition = "2024"
-rust-version = "1.91.0"
+rust-version = "1.91.1"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
 readme = "README.md"
@@ -96,7 +96,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
 # Dependencies
 # -----------------------------------------------------------------------------
 ahash = "0.8.12"
-alloy = { version = "1.1.0", default-features = false, features = [
+alloy = { version = "1.1.1", default-features = false, features = [
   "sol-types",
   "contract",
 ] }

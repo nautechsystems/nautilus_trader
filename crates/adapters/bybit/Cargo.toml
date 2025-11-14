@@ -88,6 +88,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
 tracing-test = { workspace = true }
 url = { workspace = true }
 axum = { workspace = true }

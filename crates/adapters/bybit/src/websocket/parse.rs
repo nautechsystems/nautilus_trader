@@ -729,34 +729,7 @@ pub fn parse_ws_position_status_report(
         PositionSideSpecified::Flat
     };
 
-    let avg_px_open = position.entry_price.parse::<f64>().with_context(|| {
-        format!(
-            "Failed to parse entryPrice='{}' as f64",
-            position.entry_price
-        )
-    })?;
-
-    let _unrealized_pnl = position.unrealised_pnl.parse::<f64>().with_context(|| {
-        format!(
-            "Failed to parse unrealisedPnl='{}' as f64",
-            position.unrealised_pnl
-        )
-    })?;
-
-    let _realized_pnl = position.cum_realised_pnl.parse::<f64>().with_context(|| {
-        format!(
-            "Failed to parse cumRealisedPnl='{}' as f64",
-            position.cum_realised_pnl
-        )
-    })?;
-
     let ts_last = parse_millis_timestamp(&position.updated_time, "position.updatedTime")?;
-
-    let avg_px_open_decimal = if avg_px_open != 0.0 {
-        Some(Decimal::try_from(avg_px_open).context("failed to convert avg_px_open to Decimal")?)
-    } else {
-        None
-    };
 
     Ok(PositionStatusReport::new(
         account_id,
@@ -765,9 +738,9 @@ pub fn parse_ws_position_status_report(
         quantity,
         ts_last,
         ts_init,
-        None, // report_id
-        None, // venue_position_id
-        avg_px_open_decimal,
+        None,                 // report_id
+        None,                 // venue_position_id
+        position.entry_price, // avg_px_open
     ))
 }
 
@@ -786,67 +759,14 @@ pub fn parse_ws_account_state(
 
     for coin_data in &wallet.coin {
         let currency = get_currency(coin_data.coin.as_str());
+        let total_dec = coin_data.wallet_balance - coin_data.spot_borrow;
+        let locked_dec = coin_data.total_order_im + coin_data.total_position_im;
 
-        let wallet_balance_amount = coin_data.wallet_balance.parse::<f64>().with_context(|| {
-            format!(
-                "Failed to parse walletBalance='{}' as f64",
-                coin_data.wallet_balance
-            )
-        })?;
+        let total = Money::from_decimal(total_dec, currency)?;
+        let locked = Money::from_decimal(locked_dec, currency)?;
+        let free = Money::from_raw(total.raw - locked.raw, currency);
 
-        let spot_borrow_amount = if let Some(ref spot_borrow) = coin_data.spot_borrow {
-            if spot_borrow.is_empty() {
-                0.0
-            } else {
-                spot_borrow.parse::<f64>().with_context(|| {
-                    format!("Failed to parse spotBorrow='{}' as f64", spot_borrow)
-                })?
-            }
-        } else {
-            0.0
-        };
-
-        let total_amount = wallet_balance_amount - spot_borrow_amount;
-
-        // Calculate locked amount from explicit margin fields provided by Bybit
-        // totalOrderIM: margin locked for active orders
-        // totalPositionIM: margin locked for open positions
-        let order_im = if let Some(ref total_order_im) = coin_data.total_order_im {
-            if total_order_im.is_empty() || total_order_im == "0" {
-                0.0
-            } else {
-                total_order_im.parse::<f64>().with_context(|| {
-                    format!("Failed to parse totalOrderIM='{}' as f64", total_order_im)
-                })?
-            }
-        } else {
-            0.0
-        };
-
-        let position_im = if let Some(ref total_position_im) = coin_data.total_position_im {
-            if total_position_im.is_empty() || total_position_im == "0" {
-                0.0
-            } else {
-                total_position_im.parse::<f64>().with_context(|| {
-                    format!(
-                        "Failed to parse totalPositionIM='{}' as f64",
-                        total_position_im
-                    )
-                })?
-            }
-        } else {
-            0.0
-        };
-
-        let locked_amount = order_im + position_im;
-        let free_amount = (total_amount - locked_amount).max(0.0);
-
-        let total = Money::new(total_amount, currency);
-        let locked = Money::new(locked_amount, currency);
-        let free = Money::new(free_amount, currency);
-
-        let balance = AccountBalance::new_checked(total, locked, free)
-            .context("failed to create AccountBalance from wallet data")?;
+        let balance = AccountBalance::new(total, locked, free);
         balances.push(balance);
     }
 
