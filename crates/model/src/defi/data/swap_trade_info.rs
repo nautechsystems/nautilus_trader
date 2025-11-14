@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::max;
-
 use alloy_primitives::{U160, U256};
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal_macros::dec;
 
 use crate::{
     defi::{
@@ -26,7 +26,7 @@ use crate::{
         },
     },
     enums::OrderSide,
-    types::{Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw, quantity::QuantityRaw},
+    types::{Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
 };
 
 /// Trade information derived from raw swap data, normalized to market conventions.
@@ -90,9 +90,9 @@ impl SwapTradeInfo {
         if let Some(spot_price_before) = self.spot_price_before {
             let price_change = self.spot_price - spot_price_before;
             let price_impact =
-                (price_change.as_f64() / spot_price_before.as_f64()).abs() * 10_000.0;
+                (price_change.as_decimal() / spot_price_before.as_decimal()).abs() * dec!(10_000);
 
-            Ok(price_impact.round() as u32)
+            Ok(price_impact.round().to_u32().unwrap_or(0))
         } else {
             anyhow::bail!("Cannot calculate price impact, the spot price before is not set");
         }
@@ -112,9 +112,10 @@ impl SwapTradeInfo {
     pub fn get_slippage_bps(&self) -> anyhow::Result<u32> {
         if let Some(spot_price_before) = self.spot_price_before {
             let price_change = self.execution_price - spot_price_before;
-            let slippage = (price_change.as_f64() / spot_price_before.as_f64()).abs() * 10_000.0;
+            let slippage =
+                (price_change.as_decimal() / spot_price_before.as_decimal()).abs() * dec!(10_000);
 
-            Ok(slippage.round() as u32)
+            Ok(slippage.round().to_u32().unwrap_or(0))
         } else {
             anyhow::bail!("Cannot calculate slippage, the spot price before is not set")
         }
@@ -254,7 +255,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
     ///
     /// Returns an error if the amount cannot be converted to a valid `Quantity`.
     pub fn quantity_base(&self) -> anyhow::Result<Quantity> {
-        let (amount, token_decimals) = if self.is_inverted {
+        let (amount, precision) = if self.is_inverted {
             (
                 self.raw_swap_data.amount1.unsigned_abs(),
                 self.token1.decimals,
@@ -266,24 +267,17 @@ impl<'a> SwapTradeInfoCalculator<'a> {
             )
         };
 
-        // Cap precision at FIXED_PRECISION (16) for safe f64 conversion
-        let precision = token_decimals.min(FIXED_PRECISION);
-
-        // Scale directly to FIXED_PRECISION based on diff between token_decimals and FIXED_PRECISION
-        let decimal_diff = i32::from(token_decimals) - i32::from(FIXED_PRECISION);
-        let raw_value = if decimal_diff > 0 {
-            // Token has >16 decimals: scale DOWN
-            amount / U256::from(10u128.pow(decimal_diff as u32))
-        } else if decimal_diff < 0 {
-            // Token has <16 decimals: scale UP
-            amount * U256::from(10u128.pow((-decimal_diff) as u32))
+        // Quantity expects raw values scaled to at least FIXED_PRECISION or higher(WEI)
+        let scaled_amount = if precision < FIXED_PRECISION {
+            amount
+                .checked_mul(U256::from(10u128.pow((FIXED_PRECISION - precision) as u32)))
+                .ok_or_else(|| anyhow::anyhow!("Base quantity overflow during scaling"))?
         } else {
-            // Exactly 16 decimals: no scaling
             amount
         };
 
-        let raw = QuantityRaw::try_from(raw_value).map_err(|_| {
-            anyhow::anyhow!("Base quantity {} exceeds QuantityRaw range", raw_value)
+        let raw = QuantityRaw::try_from(scaled_amount).map_err(|_| {
+            anyhow::anyhow!("Base quantity {} exceeds QuantityRaw range", scaled_amount)
         })?;
 
         Ok(Quantity::from_raw(raw, precision))
@@ -301,7 +295,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
     ///
     /// Returns an error if the amount cannot be converted to a valid `Quantity`.
     pub fn quantity_quote(&self) -> anyhow::Result<Quantity> {
-        let (amount, token_decimals) = if self.is_inverted {
+        let (amount, precision) = if self.is_inverted {
             (
                 self.raw_swap_data.amount0.unsigned_abs(),
                 self.token0.decimals,
@@ -313,24 +307,17 @@ impl<'a> SwapTradeInfoCalculator<'a> {
             )
         };
 
-        // Cap precision at FIXED_PRECISION (16) for safe f64 conversion
-        let precision = token_decimals.min(FIXED_PRECISION);
-
-        // Scale directly to FIXED_PRECISION based on diff between token_decimals and FIXED_PRECISION
-        let decimal_diff = i32::from(token_decimals) - i32::from(FIXED_PRECISION);
-        let raw_value = if decimal_diff > 0 {
-            // Token has >16 decimals: scale DOWN
-            amount / U256::from(10u128.pow(decimal_diff as u32))
-        } else if decimal_diff < 0 {
-            // Token has <16 decimals: scale UP
-            amount * U256::from(10u128.pow((-decimal_diff) as u32))
+        // Quantity expects raw values scaled to at least FIXED_PRECISION or higher(WEI)
+        let scaled_amount = if precision < FIXED_PRECISION {
+            amount
+                .checked_mul(U256::from(10u128.pow((FIXED_PRECISION - precision) as u32)))
+                .ok_or_else(|| anyhow::anyhow!("Quote quantity overflow during scaling"))?
         } else {
-            // Exactly 16 decimals: no scaling
             amount
         };
 
-        let raw = QuantityRaw::try_from(raw_value).map_err(|_| {
-            anyhow::anyhow!("Quote quantity {} exceeds QuantityRaw range", raw_value)
+        let raw = QuantityRaw::try_from(scaled_amount).map_err(|_| {
+            anyhow::anyhow!("Quote quantity {} exceeds QuantityRaw range", scaled_amount)
         })?;
 
         Ok(Quantity::from_raw(raw, precision))
@@ -373,6 +360,17 @@ impl<'a> SwapTradeInfoCalculator<'a> {
     /// # Returns
     /// Price in quote/base direction (market convention), adjusted for token decimals.
     ///
+    /// # Formula
+    /// ```text
+    /// price = (quote_amount / 10^quote_decimals) / (base_amount / 10^base_decimals)
+    ///       = (quote_amount * 10^base_decimals) / (base_amount * 10^quote_decimals)
+    /// ```
+    ///
+    /// To preserve precision in U256 arithmetic, we scale by 10^FIXED_PRECISION:
+    /// ```text
+    /// price_raw = (quote_amount * 10^base_decimals * 10^FIXED_PRECISION) / (base_amount * 10^quote_decimals)
+    /// ```
+    ///
     /// # Base/Quote Logic
     /// - When is_inverted=false: quote=token1, base=token0 → price = amount1/amount0
     /// - When is_inverted=true: quote=token0, base=token1 → price = amount0/amount1
@@ -386,7 +384,6 @@ impl<'a> SwapTradeInfoCalculator<'a> {
         let amount0 = self.raw_swap_data.amount0.unsigned_abs();
         let amount1 = self.raw_swap_data.amount1.unsigned_abs();
 
-        // Ensure we have amounts to work with
         if amount0.is_zero() || amount1.is_zero() {
             anyhow::bail!("Cannot calculate execution price with zero amounts");
         }
@@ -400,40 +397,37 @@ impl<'a> SwapTradeInfoCalculator<'a> {
             (amount1, amount0, self.token1.decimals, self.token0.decimals)
         };
 
-        let calc_precision = max(max(base_decimals, quote_decimals), FIXED_PRECISION);
+        // Create decimal scalars
+        let base_decimals_scalar = U256::from(10u128.pow(base_decimals as u32));
+        let quote_decimals_scalar = U256::from(10u128.pow(quote_decimals as u32));
+        let fixed_scalar = U256::from(10u128.pow(FIXED_PRECISION as u32));
 
-        // price = quote_amount / base_amount (quote per base)
-        let price_scaled = FullMath::mul_div(
-            quote_amount,
-            U256::from(10u128.pow(calc_precision as u32)),
-            base_amount,
-        )?;
+        // Calculate: (quote_amount * 10^base_decimals * 10^FIXED_PRECISION) / (base_amount * 10^quote_decimals)
+        // Use FullMath::mul_div to handle large intermediate values safely
 
-        // Adjust for token decimals: multiply by 10^(base_decimals - quote_decimals)
-        let decimal_diff = i32::from(base_decimals) - i32::from(quote_decimals);
-        let price_adjusted = if decimal_diff > 0 {
-            price_scaled
-                .checked_mul(U256::from(10u128.pow(decimal_diff as u32)))
-                .ok_or_else(|| anyhow::anyhow!("Price overflow"))?
-        } else if decimal_diff < 0 {
-            price_scaled
-                .checked_div(U256::from(10u128.pow((-decimal_diff) as u32)))
-                .ok_or_else(|| anyhow::anyhow!("Price underflow"))?
-        } else {
-            price_scaled
-        };
+        // Step 1: numerator = quote_amount * 10^base_decimals
+        let numerator_step1 = FullMath::mul_div(quote_amount, base_decimals_scalar, U256::from(1))?;
 
-        // Scale down if precision exceeds FIXED_PRECISION
-        let (scaled_price, final_precision) = if calc_precision > FIXED_PRECISION {
-            let scale_factor = 10u128.pow((calc_precision - FIXED_PRECISION) as u32);
-            let scaled = price_adjusted / U256::from(scale_factor);
-            (scaled, FIXED_PRECISION)
-        } else {
-            (price_adjusted, calc_precision)
-        };
+        // Step 2: numerator = (quote_amount * 10^base_decimals) * 10^FIXED_PRECISION
+        let numerator_final = FullMath::mul_div(numerator_step1, fixed_scalar, U256::from(1))?;
 
-        let raw = PriceRaw::try_from(scaled_price)?;
-        Ok(Price::from_raw(raw, final_precision))
+        // Step 3: denominator = base_amount * 10^quote_decimals
+        let denominator = FullMath::mul_div(base_amount, quote_decimals_scalar, U256::from(1))?;
+
+        // Step 4: Final division
+        let price_raw_u256 = FullMath::mul_div(numerator_final, U256::from(1), denominator)?;
+
+        // Convert to PriceRaw (i128)
+        anyhow::ensure!(
+            price_raw_u256 <= U256::from(i128::MAX as u128),
+            "Price overflow: {} exceeds i128::MAX",
+            price_raw_u256
+        );
+
+        let price_raw = price_raw_u256.to::<i128>();
+
+        // price_raw is at FIXED_PRECISION scale, which is what Price expects
+        Ok(Price::from_raw(price_raw, FIXED_PRECISION))
     }
 }
 
@@ -443,6 +437,7 @@ mod tests {
 
     use alloy_primitives::{I256, U160};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::defi::stubs::{usdc, weth};
@@ -462,10 +457,16 @@ mod tests {
         assert!(!calculator.is_inverted);
         // Its buy, as amount0(WETH) < 0 (we received WETH, pool outflow) and amount1 > 0 (USDC sent, pool inflow)
         assert_eq!(result.order_side, OrderSide::Buy);
-        assert_eq!(result.quantity_base.as_f64(), 0.4663415969203558);
-        assert_eq!(result.quantity_quote.as_f64(), 1656.236893);
-        assert_eq!(result.spot_price.as_f64(), 3550.3570265047993);
-        assert_eq!(result.execution_price.as_f64(), 3551.55299);
+        assert_eq!(
+            result.quantity_base.as_decimal(),
+            dec!(0.466341596920355889)
+        );
+        assert_eq!(result.quantity_quote.as_decimal(), dec!(1656.236893));
+        assert_eq!(result.spot_price.as_decimal(), dec!(3550.3570265047994091));
+        assert_eq!(
+            result.execution_price.as_decimal(),
+            dec!(3551.5529902061477063)
+        );
     }
 
     #[rstest]
@@ -481,9 +482,15 @@ mod tests {
         let result = calculator.compute(None).unwrap();
         // Its sell as amount0(WETH) > 0 (we send WETH, pool inflow) and amount1 <0 (USDC received, pool outflow)
         assert_eq!(result.order_side, OrderSide::Sell);
-        assert_eq!(result.quantity_base.as_f64(), 0.1934500744610937);
-        assert_eq!(result.quantity_quote.as_f64(), 691.89253);
-        assert_eq!(result.spot_price.as_f64(), 3578.140725165161);
-        assert_eq!(result.execution_price.as_f64(), 3576.594798);
+        assert_eq!(
+            result.quantity_base.as_decimal(),
+            dec!(0.193450074461093702)
+        );
+        assert_eq!(result.quantity_quote.as_decimal(), dec!(691.89253));
+        assert_eq!(result.spot_price.as_decimal(), dec!(3578.1407251651610105));
+        assert_eq!(
+            result.execution_price.as_decimal(),
+            dec!(3576.5947980503469024)
+        );
     }
 }

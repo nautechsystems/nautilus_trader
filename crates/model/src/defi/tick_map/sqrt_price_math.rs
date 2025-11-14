@@ -399,7 +399,7 @@ pub fn decode_sqrt_price_x96_to_price_tokens_adjusted(
         FullMath::mul_div(price_x192, fixed_scalar, divisor_adjusted)?
     };
 
-    let price_raw = numerator
+    let price_raw: i128 = numerator
         .try_into()
         .map_err(|_| anyhow::anyhow!("Price overflow: {} exceeds PriceRaw range", numerator))?;
 

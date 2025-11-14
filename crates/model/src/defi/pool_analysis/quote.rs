@@ -298,6 +298,7 @@ mod tests {
     use std::str::FromStr;
 
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -335,29 +336,20 @@ mod tests {
             assert_eq!(swap_quote.get_input_amount(), amount0.unsigned_abs());
             assert_eq!(swap_quote.get_output_amount(), amount1.unsigned_abs());
             // Check with DexScreener to get their trade data calculations
-            assert_eq!(swap_trade_info.quantity_base.as_f64(), 287175.3566849982);
-            assert_eq!(swap_trade_info.quantity_quote.as_f64(), 0.2701575378081886);
-            assert_eq!(swap_trade_info.spot_price.as_f64(), 0.0000009399386483);
-            // Check if expected price impatct bps is matching
-            let expected_price_impact_bps = ((swap_trade_info.spot_price.as_f64()
-                - swap_trade_info.spot_price_before.unwrap().as_f64())
-                / swap_trade_info.spot_price_before.unwrap().as_f64())
-            .abs()
-                * 10000.0;
             assert_eq!(
-                swap_trade_info.get_price_impact_bps().unwrap(),
-                expected_price_impact_bps.round() as u32
+                swap_trade_info.quantity_base.as_decimal(),
+                dec!(287175.356684998201516914)
             );
-            // Check if expected slippage is matching
-            let expected_slippage_bps = ((swap_trade_info.execution_price.as_f64()
-                - swap_trade_info.spot_price_before.unwrap().as_f64())
-                / swap_trade_info.spot_price_before.unwrap().as_f64())
-            .abs()
-                * 10000.0;
             assert_eq!(
-                swap_trade_info.get_slippage_bps().unwrap(),
-                expected_slippage_bps.round() as u32
+                swap_trade_info.quantity_quote.as_decimal(),
+                dec!(0.270157537808188649)
             );
+            assert_eq!(
+                swap_trade_info.spot_price.as_decimal(),
+                dec!(0.0000009399386483)
+            );
+            assert_eq!(swap_trade_info.get_price_impact_bps().unwrap(), 36);
+            assert_eq!(swap_trade_info.get_slippage_bps().unwrap(), 28);
         } else {
             panic!("Trade info is None");
         }
@@ -393,30 +385,24 @@ mod tests {
             assert_eq!(swap_quote.get_input_amount(), amount1.unsigned_abs());
             assert_eq!(swap_quote.get_output_amount(), amount0.unsigned_abs());
             // Check with DexScreener to get their trade data calculations
-            assert_eq!(swap_trade_info.quantity_base.as_f64(), 117180.62824824287);
-            assert_eq!(swap_trade_info.quantity_quote.as_f64(), 0.1102410203997886);
-            assert_eq!(swap_trade_info.spot_price.as_f64(), 0.000000941050309);
-            assert_eq!(swap_trade_info.execution_price.as_f64(), 0.0000009407785403);
-            // Check if expected price impact bps is matching
-            let expected_price_impact_bps = ((swap_trade_info.spot_price.as_f64()
-                - swap_trade_info.spot_price_before.unwrap().as_f64())
-                / swap_trade_info.spot_price_before.unwrap().as_f64())
-            .abs()
-                * 10000.0;
             assert_eq!(
-                swap_trade_info.get_price_impact_bps().unwrap(),
-                expected_price_impact_bps.round() as u32
+                swap_trade_info.quantity_base.as_decimal(),
+                dec!(117180.628248242869089291)
             );
-            // Check if expected slippage is matching
-            let expected_slippage_bps = ((swap_trade_info.execution_price.as_f64()
-                - swap_trade_info.spot_price_before.unwrap().as_f64())
-                / swap_trade_info.spot_price_before.unwrap().as_f64())
-            .abs()
-                * 10000.0;
             assert_eq!(
-                swap_trade_info.get_slippage_bps().unwrap(),
-                expected_slippage_bps.round() as u32
+                swap_trade_info.quantity_quote.as_decimal(),
+                dec!(0.110241020399788696)
             );
+            assert_eq!(
+                swap_trade_info.spot_price.as_decimal(),
+                dec!(0.000000941050309)
+            );
+            assert_eq!(
+                swap_trade_info.execution_price.as_decimal(),
+                dec!(0.0000009407785403)
+            );
+            assert_eq!(swap_trade_info.get_price_impact_bps().unwrap(), 8);
+            assert_eq!(swap_trade_info.get_slippage_bps().unwrap(), 5);
         } else {
             panic!("Trade info is None");
         }
