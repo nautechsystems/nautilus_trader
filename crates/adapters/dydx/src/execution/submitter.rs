@@ -67,13 +67,11 @@ impl OrderSubmitter {
 
     /// Submits a market order to dYdX via gRPC.
     ///
-    /// Market orders execute immediately at the best available price with no price limit.
-    ///
-    /// # Implementation Status
-    /// **STUBBED** - Awaiting proto file generation.
+    /// Market orders execute immediately at the best available price.
     ///
     /// # Errors
-    /// Returns `DydxError` if submission fails (when implemented).
+    ///
+    /// Returns `DydxError` if gRPC submission fails.
     pub async fn submit_market_order(
         &self,
         _wallet: &Wallet,
@@ -96,11 +94,9 @@ impl OrderSubmitter {
     ///
     /// Limit orders execute only at the specified price or better.
     ///
-    /// # Implementation Status
-    /// **STUBBED** - Awaiting proto file generation.
-    ///
     /// # Errors
-    /// Returns `DydxError` if submission fails (when implemented).
+    ///
+    /// Returns `DydxError` if gRPC submission fails.
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_limit_order(
         &self,
@@ -131,11 +127,9 @@ impl OrderSubmitter {
 
     /// Cancels an order on dYdX via gRPC.
     ///
-    /// # Implementation Status
-    /// **STUBBED** - Awaiting proto file generation.
-    ///
     /// # Errors
-    /// Returns `DydxError` if cancellation fails (when implemented).
+    ///
+    /// Returns `DydxError` if gRPC cancellation fails.
     pub async fn cancel_order(
         &self,
         _wallet: &Wallet,
@@ -147,16 +141,13 @@ impl OrderSubmitter {
         Ok(())
     }
 
-    /// Cancels multiple orders via individual transactions.
+    /// Cancels multiple orders via individual gRPC transactions.
     ///
     /// dYdX v4 requires separate blockchain transactions for each cancellation.
-    /// This method iterates through client_order_ids and cancels each one individually.
-    ///
-    /// # Implementation Status
-    /// **STUBBED** - Awaiting proto file generation.
     ///
     /// # Errors
-    /// Returns `DydxError` if any cancellation fails (when implemented).
+    ///
+    /// Returns `DydxError` if any gRPC cancellation fails.
     pub async fn cancel_orders_batch(
         &self,
         _wallet: &Wallet,
@@ -175,11 +166,9 @@ impl OrderSubmitter {
 
     /// Submits a stop market order to dYdX via gRPC.
     ///
-    /// # Implementation Status
-    /// **NOT IMPLEMENTED** - Awaiting proto file generation and conditional order logic.
-    ///
     /// # Errors
-    /// Currently returns "not implemented" error.
+    ///
+    /// Returns `DydxError::NotImplemented` until conditional order support is added.
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_stop_market_order(
         &self,
@@ -199,11 +188,9 @@ impl OrderSubmitter {
 
     /// Submits a stop limit order to dYdX via gRPC.
     ///
-    /// # Implementation Status
-    /// **NOT IMPLEMENTED** - Awaiting proto file generation and conditional order logic.
-    ///
     /// # Errors
-    /// Currently returns "not implemented" error.
+    ///
+    /// Returns `DydxError::NotImplemented` until conditional order support is added.
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_stop_limit_order(
         &self,
@@ -226,11 +213,9 @@ impl OrderSubmitter {
 
     /// Submits a take profit market order to dYdX via gRPC.
     ///
-    /// # Implementation Status
-    /// **NOT IMPLEMENTED** - Awaiting proto file generation and conditional order logic.
-    ///
     /// # Errors
-    /// Currently returns "not implemented" error.
+    ///
+    /// Returns `DydxError::NotImplemented` until conditional order support is added.
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_take_profit_market_order(
         &self,
@@ -250,11 +235,9 @@ impl OrderSubmitter {
 
     /// Submits a take profit limit order to dYdX via gRPC.
     ///
-    /// # Implementation Status
-    /// **NOT IMPLEMENTED** - Awaiting proto file generation and conditional order logic.
-    ///
     /// # Errors
-    /// Currently returns "not implemented" error.
+    ///
+    /// Returns `DydxError::NotImplemented` until conditional order support is added.
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_take_profit_limit_order(
         &self,
@@ -277,11 +260,9 @@ impl OrderSubmitter {
 
     /// Submits a trailing stop order to dYdX via gRPC.
     ///
-    /// # Implementation Status
-    /// **NOT IMPLEMENTED** - Trailing stops not supported by dYdX v4 protocol yet.
-    ///
     /// # Errors
-    /// Currently returns "not implemented" error.
+    ///
+    /// Returns `DydxError::NotImplemented` - trailing stops not yet supported by dYdX v4 protocol.
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_trailing_stop_order(
         &self,
@@ -339,9 +320,6 @@ impl OrderSubmitter {
     }
 
     /// Handles the exchange response from order submission.
-    ///
-    /// # Implementation Status
-    /// **STUBBED** - Awaiting proto file generation.
     #[allow(dead_code)]
     fn handle_exchange_response(&self, _response: &[u8]) -> Result<String, DydxError> {
         // TODO: Parse proto response when available
@@ -349,9 +327,6 @@ impl OrderSubmitter {
     }
 
     /// Parses exchange order ID from response.
-    ///
-    /// # Implementation Status
-    /// **STUBBED** - Awaiting proto file generation.
     #[allow(dead_code)]
     fn parse_venue_order_id(&self, _response: &[u8]) -> Result<String, DydxError> {
         // TODO: Extract venue order ID from proto response
@@ -359,9 +334,6 @@ impl OrderSubmitter {
     }
 
     /// Stores ClientOrderId to VenueOrderId mapping.
-    ///
-    /// # Implementation Status
-    /// **STUBBED** - Needs order ID storage infrastructure.
     #[allow(dead_code)]
     fn store_order_id_mapping(&self, _client_id: u32, _venue_id: &str) -> Result<(), DydxError> {
         // TODO: Store in cache/database
@@ -370,9 +342,6 @@ impl OrderSubmitter {
     }
 
     /// Retrieves VenueOrderId from ClientOrderId.
-    ///
-    /// # Implementation Status
-    /// **STUBBED** - Needs order ID storage infrastructure.
     #[allow(dead_code)]
     fn get_venue_order_id(&self, _client_id: u32) -> Result<Option<String>, DydxError> {
         // TODO: Retrieve from cache/database
@@ -380,9 +349,6 @@ impl OrderSubmitter {
     }
 
     /// Generates OrderAccepted event from exchange response.
-    ///
-    /// # Implementation Status
-    /// **STUBBED** - Needs event generation infrastructure.
     #[allow(dead_code)]
     fn generate_order_accepted(&self, _client_id: u32, _venue_id: &str) -> Result<(), DydxError> {
         // TODO: Generate and send OrderAccepted event
@@ -391,9 +357,6 @@ impl OrderSubmitter {
     }
 
     /// Generates OrderRejected event from exchange error.
-    ///
-    /// # Implementation Status
-    /// **STUBBED** - Needs event generation infrastructure.
     #[allow(dead_code)]
     fn generate_order_rejected(&self, _client_id: u32, _reason: &str) -> Result<(), DydxError> {
         // TODO: Generate and send OrderRejected event

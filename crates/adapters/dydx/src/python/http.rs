@@ -102,7 +102,8 @@ impl DydxHttpClient {
     /// The instrument as a Python object, or None if not found.
     #[pyo3(name = "get_instrument")]
     fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
-        let instrument = self.get_instrument(Ustr::from(symbol));
+        let symbol_ustr = Ustr::from(symbol);
+        let instrument = self.get_instrument(&symbol_ustr);
         match instrument {
             Some(inst) => Ok(Some(instrument_any_to_pyobject(py, inst)?)),
             None => Ok(None),

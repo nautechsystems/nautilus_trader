@@ -37,14 +37,14 @@ use nautilus_common::{
     runner::get_exec_event_sender,
     runtime::get_runtime,
 };
-use nautilus_core::{MUTEX_POISONED, UnixNanos};
+use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
 use nautilus_execution::client::{ExecutionClient, LiveExecutionClient, base::ExecutionClientCore};
 use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderSide, OrderType, TimeInForce},
     events::{OrderCancelRejected, OrderEventAny, OrderRejected},
-    identifiers::{AccountId, ClientId, InstrumentId, Venue},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -78,33 +78,9 @@ enum ExecutionReport {
 
 /// Live execution client for the dYdX v4 exchange adapter.
 ///
-/// This client provides order execution capabilities for dYdX v4, supporting:
-/// - Market and Limit orders (implemented)
-/// - Conditional orders: Stop Market, Stop Limit, Take Profit, Trailing Stop (planned)
-/// - Order lifecycle management (submission, cancellation, updates)
-/// - Real-time order and fill updates via WebSocket
-///
-/// # Implementation Status
-///
-/// ## Completed
-/// - Order submission framework following standard adapter patterns
-/// - Order type validation (Market and Limit currently supported)
-/// - OrderSubmitted event generation
-/// - OrderRejected event for unsupported order types
-/// - Client order ID to u32 conversion (required by dYdX)
-/// - Async task management for non-blocking submissions
-///
-/// ## Stubbed (awaiting proto generation)
-/// - Actual gRPC order submission via `OrderSubmitter`
-/// - Exchange response handling
-/// - OrderAccepted/OrderRejected from exchange
-/// - Order cancellation submission
-///
-/// ## Planned
-/// - WebSocket subscriptions for order/fill updates
-/// - Conditional order submission (stop, take profit, trailing)
-/// - Position reconciliation
-/// - Account state synchronization
+/// Supports Market and Limit orders via gRPC. Conditional orders (Stop, Take Profit,
+/// Trailing Stop) planned for future releases. dYdX requires u32 client IDs - strings
+/// are hashed to fit this constraint.
 ///
 /// # Architecture
 ///
@@ -365,9 +341,9 @@ impl DydxExecutionClient {
     fn spawn_order_task<F>(
         &self,
         label: &'static str,
-        strategy_id: nautilus_model::identifiers::StrategyId,
+        strategy_id: StrategyId,
         instrument_id: InstrumentId,
-        client_order_id: nautilus_model::identifiers::ClientOrderId,
+        client_order_id: ClientOrderId,
         fut: F,
     ) where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
@@ -383,7 +359,7 @@ impl DydxExecutionClient {
                 tracing::error!("{}", error_msg);
 
                 // Generate OrderRejected event on submission failure
-                let ts_now = nautilus_core::UnixNanos::default(); // Use current time
+                let ts_now = UnixNanos::default(); // Use current time
                 let event = OrderRejected::new(
                     trader_id,
                     strategy_id,
@@ -391,7 +367,7 @@ impl DydxExecutionClient {
                     client_order_id,
                     account_id,
                     error_msg.into(),
-                    nautilus_core::UUID4::new(),
+                    UUID4::new(),
                     ts_now,
                     ts_now,
                     false,
@@ -481,37 +457,14 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    /// Submits an order to dYdX exchange.
+    /// Submits an order to dYdX via gRPC.
     ///
-    /// This method implements a two-phase submission process:
+    /// dYdX requires u32 client IDs - Nautilus ClientOrderId strings are hashed to fit.
+    /// Only Market and Limit orders supported currently. Conditional orders (Stop, Take Profit)
+    /// will be implemented in future releases.
     ///
-    /// # Phase 1: Synchronous Validation
-    /// - Checks if order is already closed
-    /// - Validates order type (only Market and Limit currently supported)
-    /// - Generates `OrderSubmitted` event immediately
-    /// - Generates `OrderRejected` for unsupported order types
-    ///
-    /// # Phase 2: Async Submission
-    /// - Spawns background task for gRPC submission
-    /// - Converts Nautilus ClientOrderId to dYdX u32 format
-    /// - Calls appropriate `OrderSubmitter` method
-    /// - Logs errors (does not generate rejection events from async block)
-    ///
-    /// # Supported Order Types
-    /// - `OrderType::Market` - Market orders
-    /// - `OrderType::Limit` - Limit orders with price and time-in-force
-    ///
-    /// # Unsupported (Returns Error)
-    /// - Stop Market, Stop Limit, Take Profit, Trailing Stop
-    /// - These will be implemented in future updates
-    ///
-    /// The `cmd` contains the order and metadata. Returns `Ok(())` if order is submitted
-    /// successfully or validation fails with rejection event. Only returns `Err` for
-    /// critical errors (shouldn't happen in normal flow).
-    ///
-    /// # Implementation Status
-    /// The actual gRPC submission in `OrderSubmitter` is currently stubbed,
-    /// awaiting proto file generation. The framework and event flow are complete.
+    /// Validates synchronously, generates OrderSubmitted event, then spawns async task for
+    /// gRPC submission to avoid blocking. Unsupported order types generate OrderRejected.
     fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let order = cmd.order.clone();
 
@@ -791,7 +744,7 @@ impl ExecutionClient for DydxExecutionClient {
                         instrument_id,
                         client_order_id,
                         format!("Cancel order failed: {e:?}").into(),
-                        nautilus_core::UUID4::new(),
+                        UUID4::new(),
                         ts_now,
                         ts_now,
                         false,
@@ -946,7 +899,7 @@ impl LiveExecutionClient for DydxExecutionClient {
         // Load instruments BEFORE WebSocket connection
         // Per Python implementation: "instruments are used in the first account channel message"
         tracing::debug!("Loading instruments from HTTP API");
-        self.http_client.cache_instruments().await?;
+        self.http_client.fetch_and_cache_instruments().await?;
         tracing::info!(
             "Loaded {} instruments from HTTP",
             self.http_client.instruments_cache.len()

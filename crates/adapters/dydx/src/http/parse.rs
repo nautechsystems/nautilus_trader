@@ -40,6 +40,7 @@ use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoPerpetual, InstrumentAny},
+    types::Currency,
 };
 use rust_decimal::Decimal;
 
@@ -1008,8 +1009,8 @@ pub fn parse_account_state(
 
     // Calculate margin balances from open positions
     let mut margins = Vec::new();
-    let mut initial_margins: HashMap<nautilus_model::types::Currency, Decimal> = HashMap::new();
-    let mut maintenance_margins: HashMap<nautilus_model::types::Currency, Decimal> = HashMap::new();
+    let mut initial_margins: HashMap<Currency, Decimal> = HashMap::new();
+    let mut maintenance_margins: HashMap<Currency, Decimal> = HashMap::new();
 
     if let Some(ref positions) = subaccount.open_perpetual_positions {
         for position in positions.values() {

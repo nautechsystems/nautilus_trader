@@ -713,24 +713,15 @@ impl DydxHttpClient {
         })
     }
 
-    /// Requests instruments and returns Nautilus domain types.
+    /// Requests instruments from the dYdX Indexer API and returns Nautilus domain types.
     ///
-    /// This is the primary method for fetching instrument definitions from the
-    /// dYdX Indexer API. Results are automatically cached in `instruments_cache`
-    /// for subsequent lookups using `get_instrument()`.
-    ///
-    /// # Returns
-    ///
-    /// A vector of [`InstrumentAny`] domain objects representing dYdX perpetual markets.
+    /// This method does NOT automatically cache results. Use `fetch_and_cache_instruments()`
+    /// for automatic caching, or call `cache_instruments()` manually with the results.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - The HTTP request to dYdX Indexer API fails.
-    /// - The response cannot be parsed.
-    ///
-    /// Individual instrument parsing errors are logged as warnings and do not fail the entire request.
-    ///
+    /// Returns an error if the HTTP request or parsing fails.
+    /// Individual instrument parsing errors are logged as warnings.
     pub async fn request_instruments(
         &self,
         symbol: Option<String>,
@@ -756,13 +747,57 @@ impl DydxHttpClient {
             // Parse using http/parse.rs
             match super::parse::parse_instrument_any(&market, maker_fee, taker_fee, ts_init) {
                 Ok(instrument) => {
-                    // Cache the instrument
-                    let instrument_id = instrument.id();
-                    let symbol_ustr = instrument_id.symbol.inner();
-                    self.instruments_cache
-                        .insert(symbol_ustr, instrument.clone());
+                    instruments.push(instrument);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse instrument {ticker}: {e}");
+                    skipped += 1;
+                }
+            }
+        }
 
-                    // Persist CLOB pair ID mapping alongside the instrument for robust lookups
+        if skipped > 0 {
+            tracing::info!(
+                "Parsed {} instruments, skipped {} (inactive or invalid)",
+                instruments.len(),
+                skipped
+            );
+        } else {
+            tracing::debug!("Parsed {} instruments", instruments.len());
+        }
+
+        Ok(instruments)
+    }
+
+    /// Fetches instruments from the API and caches them.
+    ///
+    /// This is a convenience method that fetches instruments and populates both
+    /// the symbol-based and CLOB pair ID-based caches.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request or parsing fails.
+    pub async fn fetch_and_cache_instruments(&self) -> anyhow::Result<()> {
+        use nautilus_core::time::get_atomic_clock_realtime;
+
+        self.instruments_cache.clear();
+        self.clob_pair_id_to_instrument.clear();
+
+        let markets_response = self.inner.get_markets().await?;
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        let mut instruments = Vec::new();
+        let mut skipped = 0;
+
+        for (ticker, market) in markets_response.markets {
+            // Parse using http/parse.rs
+            match super::parse::parse_instrument_any(&market, None, None, ts_init) {
+                Ok(instrument) => {
+                    let instrument_id = instrument.id();
+                    let symbol = instrument_id.symbol.inner();
+                    self.instruments_cache.insert(symbol, instrument.clone());
+
+                    // Also cache by clob_pair_id for efficient WebSocket lookups
                     self.clob_pair_id_to_instrument
                         .insert(market.clob_pair_id, instrument_id);
 
@@ -781,63 +816,58 @@ impl DydxHttpClient {
 
         if skipped > 0 {
             tracing::info!(
-                "Parsed {} instruments, skipped {} (inactive or invalid)",
+                "Cached {} instruments, skipped {} (inactive or invalid)",
                 instruments.len(),
                 skipped
             );
         } else {
-            tracing::debug!("Parsed {} instruments", instruments.len());
+            tracing::info!("Cached {} instruments", instruments.len());
         }
 
-        Ok(instruments)
-    }
-
-    /// Standard cache_instruments() method - bulk replace cache.
-    ///
-    /// This method clears the existing cache and fetches all available instruments
-    /// from the dYdX Indexer API, repopulating the cache. This is typically called
-    /// during initialization and periodically for refreshing instrument definitions.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the HTTP request fails or instrument parsing fails.
-    ///
-    pub async fn cache_instruments(&self) -> anyhow::Result<()> {
-        self.instruments_cache.clear();
-        self.clob_pair_id_to_instrument.clear();
-        self.request_instruments(None, None, None).await?;
-        tracing::info!("Cached {} instruments", self.instruments_cache.len());
         Ok(())
     }
 
-    /// Standard cache_instrument() method - upsert single instrument.
+    /// Caches multiple instruments.
     ///
-    /// This method inserts or updates a single instrument in the cache. If an
-    /// instrument with the same symbol already exists, it will be replaced.
-    /// This is useful for dynamically updating instrument definitions without
-    /// fetching the entire market list.
+    /// Any existing instruments with the same symbols will be replaced.
+    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
+        for inst in instruments {
+            let symbol = inst.id().symbol.inner();
+            self.instruments_cache.insert(symbol, inst);
+        }
+        self.cache_initialized.store(true, Ordering::Release);
+    }
+
+    /// Caches a single instrument.
     ///
+    /// Any existing instrument with the same symbol will be replaced.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
         let symbol = instrument.id().symbol.inner();
         self.instruments_cache.insert(symbol, instrument);
         self.cache_initialized.store(true, Ordering::Release);
     }
 
-    /// Standard get_instrument() method - retrieve by symbol.
-    ///
-    /// This method retrieves a cached instrument by its symbol. Returns `None`
-    /// if the instrument is not found in the cache. The cache must be initialized
-    /// either by calling `cache_instruments()` or `request_instruments()` first.
-    ///
-    /// # Returns
-    ///
-    /// `Some(InstrumentAny)` if found, `None` otherwise.
-    ///
+    /// Gets an instrument from the cache by symbol.
     #[must_use]
-    pub fn get_instrument(&self, symbol: Ustr) -> Option<InstrumentAny> {
+    pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
         self.instruments_cache
-            .get(&symbol)
+            .get(symbol)
             .map(|entry| entry.clone())
+    }
+
+    /// Gets an instrument by CLOB pair ID.
+    ///
+    /// This uses the internal clob_pair_id mapping populated during `fetch_and_cache_instruments()`.
+    #[must_use]
+    pub fn get_instrument_by_clob_id(&self, clob_pair_id: u32) -> Option<InstrumentAny> {
+        // First get the InstrumentId from clob_pair_id mapping
+        let instrument_id = self
+            .clob_pair_id_to_instrument
+            .get(&clob_pair_id)
+            .map(|entry| *entry)?;
+
+        // Then look up the full instrument by symbol
+        self.get_instrument(&instrument_id.symbol.inner())
     }
 
     /// Helper to get instrument or fetch if not cached.
@@ -854,7 +884,7 @@ impl DydxHttpClient {
     ///
     #[allow(dead_code)]
     async fn instrument_or_fetch(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
-        if let Some(instrument) = self.get_instrument(symbol) {
+        if let Some(instrument) = self.get_instrument(&symbol) {
             return Ok(instrument);
         }
 
@@ -1080,7 +1110,7 @@ mod tests {
 
         // Retrieve it
         let btc_usd = Ustr::from("BTC-USD");
-        let cached = client.get_instrument(btc_usd);
+        let cached = client.get_instrument(&btc_usd);
         assert!(cached.is_some());
     }
 
@@ -1088,7 +1118,7 @@ mod tests {
     fn test_domain_client_get_instrument_not_found() {
         let client = DydxHttpClient::default();
         let eth_usd = Ustr::from("ETH-USD");
-        let result = client.get_instrument(eth_usd);
+        let result = client.get_instrument(&eth_usd);
         assert!(result.is_none());
     }
 }
