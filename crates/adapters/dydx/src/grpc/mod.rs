@@ -64,7 +64,8 @@ impl DydxGrpcClient {
     /// # Errors
     ///
     /// This is a stub that currently never fails. Will return connection errors when implemented.
-    pub async fn new(_endpoint: String) -> anyhow::Result<Self> {
+    pub async fn new(endpoint: String) -> anyhow::Result<Self> {
+        tracing::info!("Initialized stub dYdX gRPC client for endpoint: {endpoint}");
         Ok(Self)
     }
 
@@ -73,8 +74,30 @@ impl DydxGrpcClient {
     /// # Errors
     ///
     /// This is a stub that currently never fails. Will return connection errors when implemented.
-    pub async fn new_with_fallback(_endpoints: &[String]) -> anyhow::Result<Self> {
-        Ok(Self)
+    pub async fn new_with_fallback(endpoints: &[String]) -> anyhow::Result<Self> {
+        if endpoints.is_empty() {
+            anyhow::bail!("No dYdX gRPC endpoints provided");
+        }
+
+        // In stub mode we don't perform real network connections, but we still
+        // honour the fallback configuration and log which node would be used.
+        for (idx, url) in endpoints.iter().enumerate() {
+            tracing::info!(
+                "Attempting to initialize dYdX gRPC client (attempt {}/{}) with endpoint: {url}",
+                idx + 1,
+                endpoints.len()
+            );
+
+            // Treat the first endpoint as successful to mirror the real client's
+            // behaviour where the first reachable node is selected.
+            if idx == 0 {
+                tracing::info!("Selected dYdX gRPC endpoint: {url}");
+                return Self::new(url.clone()).await;
+            }
+        }
+
+        // Fallback (should not be reached with non-empty endpoints).
+        Self::new(endpoints[0].clone()).await
     }
 }
 

@@ -95,6 +95,10 @@ pub enum NautilusWsMessage {
     AccountState(Box<AccountState>),
     /// Raw subaccount subscription with full state (for execution client parsing).
     SubaccountSubscribed(Box<crate::schemas::ws::DydxWsSubaccountsSubscribed>),
+    /// Raw subaccounts channel data (orders/fills) for execution client parsing.
+    SubaccountsChannelData(Box<crate::schemas::ws::DydxWsSubaccountsChannelData>),
+    /// Oracle price updates from markets channel (for execution client).
+    OraclePrices(HashMap<String, crate::websocket::types::DydxOraclePriceMarket>),
     /// Error message.
     Error(DydxWebSocketError),
     /// Reconnection notification.

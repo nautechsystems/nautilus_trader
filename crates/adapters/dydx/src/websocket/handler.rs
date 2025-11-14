@@ -770,15 +770,14 @@ impl FeedHandler {
         let contents: DydxMarketsContents = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse markets contents: {e}")))?;
 
-        // Markets channel is primarily for oracle price updates
-        // Python implementation publishes custom DYDXOraclePrice data type
-        // For now, we just log the update
+        // Markets channel provides oracle price updates needed for margin calculations
+        // Forward to execution client to update oracle_prices map
         if let Some(oracle_prices) = contents.oracle_prices {
             tracing::debug!(
-                "Received oracle price updates for {} markets",
+                "Forwarding oracle price updates for {} markets to execution client",
                 oracle_prices.len()
             );
-            // TODO: Implement custom oracle price data type if needed
+            return Ok(Some(NautilusWsMessage::OraclePrices(oracle_prices)));
         }
 
         Ok(None)
@@ -788,31 +787,39 @@ impl FeedHandler {
         &self,
         data: &DydxWsChannelDataMsg,
     ) -> DydxWsResult<Option<NautilusWsMessage>> {
-        use crate::schemas::ws::DydxWsSubaccountsChannelContents;
+        use crate::schemas::ws::{DydxWsSubaccountsChannelContents, DydxWsSubaccountsChannelData};
 
         let contents: DydxWsSubaccountsChannelContents =
             serde_json::from_value(data.contents.clone()).map_err(|e| {
                 DydxWsError::Parse(format!("Failed to parse subaccounts contents: {e}"))
             })?;
 
-        // Handle orders
-        if let Some(orders) = contents.orders
-            && !orders.is_empty()
-        {
-            tracing::debug!("Received {} order update(s)", orders.len());
-            // Orders are handled by execution client, not data client
-            // For now, log and skip
-            return Ok(None);
-        }
+        // Check if we have any orders or fills
+        let has_orders = contents.orders.as_ref().is_some_and(|o| !o.is_empty());
+        let has_fills = contents.fills.as_ref().is_some_and(|f| !f.is_empty());
 
-        // Handle fills
-        if let Some(fills) = contents.fills
-            && !fills.is_empty()
-        {
-            tracing::debug!("Received {} fill update(s)", fills.len());
-            // Fills are handled by execution client, not data client
-            // For now, log and skip
-            return Ok(None);
+        if has_orders || has_fills {
+            // Forward raw channel data to execution client for parsing
+            // The execution client has the clob_pair_id and instrument mappings needed
+            tracing::debug!(
+                "Received {} order(s), {} fill(s) - forwarding to execution client",
+                contents.orders.as_ref().map_or(0, |o| o.len()),
+                contents.fills.as_ref().map_or(0, |f| f.len())
+            );
+
+            let channel_data = DydxWsSubaccountsChannelData {
+                msg_type: data.msg_type,
+                connection_id: data.connection_id.clone(),
+                message_id: data.message_id,
+                id: data.id.clone().unwrap_or_default(),
+                channel: data.channel,
+                version: data.version.clone().unwrap_or_default(),
+                contents,
+            };
+
+            return Ok(Some(NautilusWsMessage::SubaccountsChannelData(Box::new(
+                channel_data,
+            ))));
         }
 
         Ok(None)

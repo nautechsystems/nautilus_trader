@@ -147,6 +147,32 @@ impl OrderSubmitter {
         Ok(())
     }
 
+    /// Cancels multiple orders via individual transactions.
+    ///
+    /// dYdX v4 requires separate blockchain transactions for each cancellation.
+    /// This method iterates through client_order_ids and cancels each one individually.
+    ///
+    /// # Implementation Status
+    /// **STUBBED** - Awaiting proto file generation.
+    ///
+    /// # Errors
+    /// Returns `DydxError` if any cancellation fails (when implemented).
+    pub async fn cancel_orders_batch(
+        &self,
+        _wallet: &Wallet,
+        client_order_ids: &[u32],
+        _block_height: u32,
+    ) -> Result<(), DydxError> {
+        // TODO: Implement when proto is generated
+        // Note: Each order requires a separate gRPC transaction
+        tracing::info!(
+            "[STUB] Batch cancelling {} orders: ids={:?}",
+            client_order_ids.len(),
+            client_order_ids
+        );
+        Ok(())
+    }
+
     /// Submits a stop market order to dYdX via gRPC.
     ///
     /// # Implementation Status
@@ -276,17 +302,39 @@ impl OrderSubmitter {
     #[allow(dead_code)]
     fn extract_market_params(
         &self,
-        _instrument: &dyn Instrument,
+        instrument: &dyn Instrument,
     ) -> Result<OrderMarketParams, DydxError> {
-        // TODO: Extract from instrument once we have proper metadata handling
-        // For now, return placeholder values
+        // NOTE:
+        // dYdX-specific quantization parameters (atomic_resolution, quantum_conversion_exponent,
+        // step_base_quantums, subticks_per_tick and clob_pair_id) ultimately come from the
+        // PerpetualMarket metadata exposed by the Indexer API.
+        //
+        // The full wiring from HTTP market metadata → instrument → gRPC order builder is not yet
+        // implemented in Rust. Until proto files are generated and that plumbing is in place, we
+        // derive a best-effort set of parameters from the instrument itself so that:
+        // - Values are at least instrument-specific (not hard-coded placeholders).
+        // - Future work can replace this logic with exact dYdX metadata without changing callers.
+        //
+        // Mapping strategy (stub until proto):
+        // - atomic_resolution: negative of the instrument size precision.
+        // - quantum_conversion_exponent: negative of the instrument price precision.
+        // - step_base_quantums / subticks_per_tick: minimal non-zero values (1) so that
+        //   quantization code has valid, non-zero divisors without assuming dYdX-specific scales.
+        //
+        // clob_pair_id and oracle_price still require venue metadata and remain stubbed.
+        let size_precision = instrument.size_precision() as i32;
+        let price_precision = instrument.price_precision() as i32;
+
+        let atomic_resolution = -size_precision;
+        let quantum_conversion_exponent = -price_precision;
+
         Ok(OrderMarketParams {
-            atomic_resolution: -10,
+            atomic_resolution,
             clob_pair_id: 0, // Will be set from instrument metadata
             oracle_price: None,
-            quantum_conversion_exponent: -9,
-            step_base_quantums: 1_000_000,
-            subticks_per_tick: 100_000,
+            quantum_conversion_exponent,
+            step_base_quantums: 1,
+            subticks_per_tick: 1,
         })
     }
 

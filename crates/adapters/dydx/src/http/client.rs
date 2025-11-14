@@ -62,7 +62,10 @@ use std::{
 
 use dashmap::DashMap;
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
-use nautilus_model::instruments::{Instrument, InstrumentAny};
+use nautilus_model::{
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+};
 use nautilus_network::{
     http::HttpClient,
     ratelimiter::quota::Quota,
@@ -641,7 +644,16 @@ pub struct DydxHttpClient {
     /// Raw HTTP client wrapped in Arc for efficient cloning.
     inner: Arc<DydxRawHttpClient>,
     /// Instrument cache shared across the adapter using DashMap for thread-safe access.
+<<<<<<< HEAD
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+=======
+    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    /// Cached mapping from CLOB pair ID → InstrumentId for efficient lookups.
+    ///
+    /// This is populated from HTTP PerpetualMarket metadata (`clob_pair_id`) alongside
+    /// instrument creation to avoid re-deriving IDs from symbols or other heuristics.
+    pub(crate) clob_pair_id_to_instrument: Arc<DashMap<u32, InstrumentId>>,
+>>>>>>> b5d42517a (Add dYdX WebSocket parsing, reconciliation filtering, order stubs, and comprehensive tests)
     /// Tracks whether the instrument cache has been initialized.
     cache_initialized: AtomicBool,
 }
@@ -657,6 +669,7 @@ impl Clone for DydxHttpClient {
         Self {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
+            clob_pair_id_to_instrument: self.clob_pair_id_to_instrument.clone(),
             cache_initialized,
         }
     }
@@ -695,6 +708,7 @@ impl DydxHttpClient {
                 retry_config,
             )?),
             instruments_cache: Arc::new(DashMap::new()),
+            clob_pair_id_to_instrument: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
         })
     }
@@ -743,9 +757,15 @@ impl DydxHttpClient {
             match super::parse::parse_instrument_any(&market, maker_fee, taker_fee, ts_init) {
                 Ok(instrument) => {
                     // Cache the instrument
-                    let symbol_ustr = instrument.id().symbol.inner();
+                    let instrument_id = instrument.id();
+                    let symbol_ustr = instrument_id.symbol.inner();
                     self.instruments_cache
                         .insert(symbol_ustr, instrument.clone());
+
+                    // Persist CLOB pair ID mapping alongside the instrument for robust lookups
+                    self.clob_pair_id_to_instrument
+                        .insert(market.clob_pair_id, instrument_id);
+
                     instruments.push(instrument);
                 }
                 Err(e) => {
@@ -784,6 +804,7 @@ impl DydxHttpClient {
     ///
     pub async fn cache_instruments(&self) -> anyhow::Result<()> {
         self.instruments_cache.clear();
+        self.clob_pair_id_to_instrument.clear();
         self.request_instruments(None, None, None).await?;
         tracing::info!("Cached {} instruments", self.instruments_cache.len());
         Ok(())
@@ -902,6 +923,7 @@ impl DydxHttpClient {
         self.instruments_cache.len()
     }
 
+<<<<<<< HEAD
     /// Returns a reference to the instruments cache.
     ///
     /// # Returns
@@ -910,6 +932,15 @@ impl DydxHttpClient {
     #[must_use]
     pub fn instruments(&self) -> &Arc<DashMap<Ustr, InstrumentAny>> {
         &self.instruments_cache
+=======
+    /// Get the mapping from CLOB pair ID to `InstrumentId`.
+    ///
+    /// This map is populated when instruments are fetched via `request_instruments` /
+    /// `cache_instruments()` using the Indexer `PerpetualMarket.clob_pair_id` field.
+    #[must_use]
+    pub fn clob_pair_id_mapping(&self) -> &Arc<DashMap<u32, InstrumentId>> {
+        &self.clob_pair_id_to_instrument
+>>>>>>> b5d42517a (Add dYdX WebSocket parsing, reconciliation filtering, order stubs, and comprehensive tests)
     }
 }
 

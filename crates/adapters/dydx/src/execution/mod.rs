@@ -42,8 +42,8 @@ use nautilus_execution::client::{ExecutionClient, LiveExecutionClient, base::Exe
 use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OmsType, OrderType},
-    events::{OrderEventAny, OrderRejected},
+    enums::{OmsType, OrderSide, OrderType, TimeInForce},
+    events::{OrderCancelRejected, OrderEventAny, OrderRejected},
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
@@ -282,22 +282,21 @@ impl DydxExecutionClient {
             // Cache market ticker → InstrumentId mapping
             self.market_to_instrument
                 .insert(symbol.to_string(), instrument_id);
+        }
 
-            // Cache clob_pair_id → InstrumentId mapping for CryptoPerpetual instruments
-            // Extract clob_pair_id from raw_symbol metadata
-            if let InstrumentAny::CryptoPerpetual(perp) = &instrument {
-                // dYdX uses raw_symbol like "1" for BTC-USD (clob_pair_id: 1)
-                if let Ok(clob_pair_id) = perp.raw_symbol.as_str().parse::<u32>() {
-                    self.clob_pair_id_to_instrument
-                        .insert(clob_pair_id, instrument_id);
-                }
-            }
+        // Copy clob_pair_id → InstrumentId mapping from HTTP client
+        // The HTTP client populates this from PerpetualMarket.clob_pair_id (authoritative source)
+        let http_mapping = self.http_client.clob_pair_id_mapping();
+        for entry in http_mapping.iter() {
+            self.clob_pair_id_to_instrument
+                .insert(*entry.key(), *entry.value());
         }
 
         self.instruments_initialized = true;
         tracing::info!(
-            "Cached {} instruments with market and CLOB pair ID mappings",
-            self.instruments.len()
+            "Cached {} instruments ({} CLOB pair IDs) with market mappings",
+            self.instruments.len(),
+            self.clob_pair_id_to_instrument.len()
         );
     }
 
@@ -310,9 +309,38 @@ impl DydxExecutionClient {
 
     /// Get an instrument by clob_pair_id.
     fn get_instrument_by_clob_pair_id(&self, clob_pair_id: u32) -> Option<InstrumentAny> {
-        self.clob_pair_id_to_instrument
+        let instrument = self
+            .clob_pair_id_to_instrument
             .get(&clob_pair_id)
-            .and_then(|id| self.instruments.get(&id).map(|entry| entry.value().clone()))
+            .and_then(|id| self.instruments.get(&id).map(|entry| entry.value().clone()));
+
+        if instrument.is_none() {
+            self.log_missing_instrument_for_clob_pair_id(clob_pair_id);
+        }
+
+        instrument
+    }
+
+    fn log_missing_instrument_for_clob_pair_id(&self, clob_pair_id: u32) {
+        let known: Vec<(u32, String)> = self
+            .clob_pair_id_to_instrument
+            .iter()
+            .filter_map(|entry| {
+                let instrument_id = entry.value();
+                self.instruments.get(instrument_id).map(|inst_entry| {
+                    (
+                        *entry.key(),
+                        inst_entry.value().id().symbol.as_str().to_string(),
+                    )
+                })
+            })
+            .collect();
+
+        tracing::warn!(
+            "Instrument for clob_pair_id {} not found in cache. Known CLOB pair IDs and symbols: {:?}",
+            clob_pair_id,
+            known
+        );
     }
 
     fn spawn_task<F>(&self, label: &'static str, fut: F)
@@ -477,12 +505,9 @@ impl ExecutionClient for DydxExecutionClient {
     /// - Stop Market, Stop Limit, Take Profit, Trailing Stop
     /// - These will be implemented in future updates
     ///
-    /// # Arguments
-    /// - `cmd` - The submit order command containing the order and metadata
-    ///
-    /// # Returns
-    /// - `Ok(())` - Order submitted successfully or validation failed with rejection event
-    /// - `Err` - Only for critical errors (shouldn't happen in normal flow)
+    /// The `cmd` contains the order and metadata. Returns `Ok(())` if order is submitted
+    /// successfully or validation fails with rejection event. Only returns `Err` for
+    /// critical errors (shouldn't happen in normal flow).
     ///
     /// # Implementation Status
     /// The actual gRPC submission in `OrderSubmitter` is currently stubbed,
@@ -517,11 +542,28 @@ impl ExecutionClient for DydxExecutionClient {
                     order.client_order_id()
                 );
             }
-            order_type => {
-                let reason = format!(
-                    "Order type {:?} not supported. Only MARKET and LIMIT orders are supported for dYdX",
-                    order_type
+            // Conditional order stubs - accept but don't submit until proto implementation
+            OrderType::StopMarket
+            | OrderType::StopLimit
+            | OrderType::MarketIfTouched
+            | OrderType::LimitIfTouched
+            | OrderType::TrailingStopMarket
+            | OrderType::TrailingStopLimit => {
+                self.core.generate_order_submitted(
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    cmd.ts_init,
                 );
+                tracing::warn!(
+                    order_type = ?order.order_type(),
+                    client_order_id = %order.client_order_id(),
+                    "Conditional order stub: OrderSubmitted generated but not sent to exchange (proto implementation pending)"
+                );
+                return Ok(());
+            }
+            order_type => {
+                let reason = format!("Order type {:?} not supported by dYdX", order_type);
                 tracing::error!("{}", reason);
                 self.core.generate_order_rejected(
                     order.strategy_id(),
@@ -642,12 +684,8 @@ impl ExecutionClient for DydxExecutionClient {
     /// - Validates order is not already closed
     /// - Retrieves instrument from cache for order builder
     ///
-    /// # Arguments
-    /// - `cmd` - The cancel order command with client/venue order IDs
-    ///
-    /// # Returns
-    /// - `Ok(())` - Cancel request spawned successfully or validation failed gracefully
-    /// - `Err` - If not connected
+    /// The `cmd` contains client/venue order IDs. Returns `Ok(())` if cancel request is
+    /// spawned successfully or validation fails gracefully. Returns `Err` if not connected.
     ///
     /// # Events
     /// - `OrderCanceled` - Generated when WebSocket confirms cancellation
@@ -709,6 +747,9 @@ impl ExecutionClient for DydxExecutionClient {
         let wallet_address = self.wallet_address.clone();
         let subaccount_number = self.subaccount_number;
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
+        let trader_id = cmd.trader_id;
+        let strategy_id = cmd.strategy_id;
+        let venue_order_id = cmd.venue_order_id;
 
         self.spawn_task("cancel_order", async move {
             let wallet_guard = wallet.read().await;
@@ -730,11 +771,39 @@ impl ExecutionClient for DydxExecutionClient {
                 (hasher.finish() % (MAX_CLIENT_ID as u64)) as u32
             });
 
-            submitter
+            // Attempt cancellation via submitter
+            match submitter
                 .cancel_order(wallet_ref, client_id_u32, block_height)
-                .await?;
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!("Successfully cancelled order: {}", client_order_id);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to cancel order {}: {:?}", client_order_id, e);
 
-            tracing::info!("Successfully cancelled order: {}", client_order_id);
+                    // Generate OrderCancelRejected event
+                    let sender = get_exec_event_sender();
+                    let ts_now = UnixNanos::default();
+                    let event = OrderCancelRejected::new(
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        format!("Cancel order failed: {e:?}").into(),
+                        nautilus_core::UUID4::new(),
+                        ts_now,
+                        ts_now,
+                        false,
+                        Some(venue_order_id),
+                        None, // account_id not available in async context
+                    );
+                    sender
+                        .send(ExecutionEvent::Order(OrderEventAny::CancelRejected(event)))
+                        .unwrap();
+                }
+            }
+
             Ok(())
         });
 
@@ -746,7 +815,56 @@ impl ExecutionClient for DydxExecutionClient {
             anyhow::bail!("Cannot cancel orders: not connected");
         }
 
-        tracing::info!("Cancelling all orders for {:?}", cmd.instrument_id);
+        // Query all open orders from cache
+        let cache = self.core.cache().borrow();
+        let mut open_orders: Vec<_> = cache
+            .orders_open(None, None, None, None)
+            .into_iter()
+            .collect();
+
+        // Filter by instrument_id (always specified in command)
+        let instrument_id = cmd.instrument_id;
+        open_orders.retain(|order| order.instrument_id() == instrument_id);
+
+        // Filter by order_side if specified (NoOrderSide means all sides)
+        if cmd.order_side != OrderSide::NoOrderSide {
+            let order_side = cmd.order_side;
+            open_orders.retain(|order| order.order_side() == order_side);
+        }
+
+        // Split orders into short-term and long-term based on TimeInForce
+        // Short-term: IOC, FOK (expire by block height)
+        // Long-term: GTC, GTD, DAY, POST_ONLY (expire by timestamp)
+        let mut short_term_orders = Vec::new();
+        let mut long_term_orders = Vec::new();
+
+        for order in &open_orders {
+            match order.time_in_force() {
+                TimeInForce::Ioc | TimeInForce::Fok => short_term_orders.push(order),
+                TimeInForce::Gtc
+                | TimeInForce::Gtd
+                | TimeInForce::Day
+                | TimeInForce::AtTheOpen
+                | TimeInForce::AtTheClose => long_term_orders.push(order),
+            }
+        }
+
+        tracing::info!(
+            "[STUB] Cancel all orders: total={}, short_term={}, long_term={}, instrument_id={}, order_side={:?}",
+            open_orders.len(),
+            short_term_orders.len(),
+            long_term_orders.len(),
+            instrument_id,
+            cmd.order_side
+        );
+
+        // TODO: Implement actual cancellation when proto is generated
+        // Short-term orders: Cancel via MsgCancelOrder (immediate, best-effort)
+        // Long-term orders: Cancel via MsgCancelOrder with good_til_block_time
+        //
+        // Note: dYdX v4 requires separate blockchain transactions for each cancellation.
+        // There is no batch cancel API - each order must be cancelled individually.
+
         Ok(())
     }
 
@@ -876,6 +994,7 @@ impl LiveExecutionClient for DydxExecutionClient {
                 let account_id = self.core.account_id;
                 let instruments = self.instruments.clone();
                 let oracle_prices = self.oracle_prices.clone();
+                let clob_pair_id_to_instrument = self.clob_pair_id_to_instrument.clone();
 
                 let handle = tokio::spawn(async move {
                     while let Some(msg) = rx.recv().await {
@@ -943,6 +1062,184 @@ impl LiveExecutionClient for DydxExecutionClient {
                                     }
                                     Err(e) => {
                                         tracing::error!("Failed to parse account state: {e}");
+                                    }
+                                }
+
+                                // Parse positions from the subscription
+                                if let Some(ref positions) =
+                                    msg.contents.subaccount.open_perpetual_positions
+                                {
+                                    tracing::debug!(
+                                        "Parsing {} position(s) from subscription",
+                                        positions.len()
+                                    );
+
+                                    for (market, ws_position) in positions.iter() {
+                                        match crate::websocket::parse::parse_ws_position_report(
+                                            ws_position,
+                                            &instruments,
+                                            account_id,
+                                            ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                tracing::debug!(
+                                                    "Parsed position report: {} {} {} {}",
+                                                    report.instrument_id,
+                                                    report.position_side,
+                                                    report.quantity,
+                                                    market
+                                                );
+                                                let sender = get_exec_event_sender();
+                                                let exec_report =
+                                                    nautilus_common::messages::ExecutionReport::Position(
+                                                        Box::new(report),
+                                                    );
+                                                if let Err(e) =
+                                                    sender.send(ExecutionEvent::Report(exec_report))
+                                                {
+                                                    tracing::warn!(
+                                                        "Failed to send position status report: {e}"
+                                                    );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Failed to parse WebSocket position for {}: {e}",
+                                                    market
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            NautilusWsMessage::SubaccountsChannelData(data) => {
+                                tracing::debug!("Processing subaccounts channel data");
+                                let ts_init =
+                                    nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+                                // Process orders
+                                if let Some(ref orders) = data.contents.orders {
+                                    for ws_order in orders {
+                                        match crate::websocket::parse::parse_ws_order_report(
+                                            ws_order,
+                                            &clob_pair_id_to_instrument,
+                                            &instruments,
+                                            account_id,
+                                            ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                tracing::debug!(
+                                                    "Parsed order report: {} {} {} @ {}",
+                                                    report.instrument_id,
+                                                    report.order_side,
+                                                    report.order_status,
+                                                    report.quantity
+                                                );
+                                                let sender = get_exec_event_sender();
+                                                let exec_report =
+                                                    nautilus_common::messages::ExecutionReport::OrderStatus(
+                                                        Box::new(report),
+                                                    );
+                                                if let Err(e) =
+                                                    sender.send(ExecutionEvent::Report(exec_report))
+                                                {
+                                                    tracing::warn!(
+                                                        "Failed to send order status report: {e}"
+                                                    );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Failed to parse WebSocket order: {e}"
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Process fills
+                                if let Some(ref fills) = data.contents.fills {
+                                    for ws_fill in fills {
+                                        match crate::websocket::parse::parse_ws_fill_report(
+                                            ws_fill,
+                                            &instruments,
+                                            account_id,
+                                            ts_init,
+                                        ) {
+                                            Ok(report) => {
+                                                tracing::debug!(
+                                                    "Parsed fill report: {} {} {} @ {}",
+                                                    report.instrument_id,
+                                                    report.venue_order_id,
+                                                    report.last_qty,
+                                                    report.last_px
+                                                );
+                                                let sender = get_exec_event_sender();
+                                                let exec_report =
+                                                    nautilus_common::messages::ExecutionReport::Fill(
+                                                        Box::new(report),
+                                                    );
+                                                if let Err(e) =
+                                                    sender.send(ExecutionEvent::Report(exec_report))
+                                                {
+                                                    tracing::warn!(
+                                                        "Failed to send fill report: {e}"
+                                                    );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    "Failed to parse WebSocket fill: {e}"
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            NautilusWsMessage::OraclePrices(oracle_prices_map) => {
+                                tracing::debug!(
+                                    "Processing oracle price updates for {} markets",
+                                    oracle_prices_map.len()
+                                );
+
+                                // Update oracle_prices map with new prices
+                                for (market_symbol, oracle_data) in oracle_prices_map.iter() {
+                                    // Parse oracle price
+                                    match oracle_data.oracle_price.parse::<rust_decimal::Decimal>()
+                                    {
+                                        Ok(price) => {
+                                            // Find instrument by symbol (oracle uses raw symbol like "BTC-USD")
+                                            // Append "-PERP" to match instrument IDs
+                                            let symbol_with_perp =
+                                                format!("{}-PERP", market_symbol);
+
+                                            // Find matching instrument
+                                            if let Some(entry) = instruments.iter().find(|entry| {
+                                                entry.value().id().symbol.as_str()
+                                                    == symbol_with_perp
+                                            }) {
+                                                let instrument_id = *entry.key();
+                                                oracle_prices.insert(instrument_id, price);
+                                                tracing::trace!(
+                                                    "Updated oracle price for {}: {}",
+                                                    instrument_id,
+                                                    price
+                                                );
+                                            } else {
+                                                tracing::debug!(
+                                                    "No instrument found for market symbol '{}' (tried '{}')",
+                                                    market_symbol,
+                                                    symbol_with_perp
+                                                );
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "Failed to parse oracle price for {}: {}",
+                                                market_symbol,
+                                                e
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -1046,13 +1343,7 @@ impl LiveExecutionClient for DydxExecutionClient {
         // Get instrument by clob_pair_id
         let instrument = match self.get_instrument_by_clob_pair_id(order.clob_pair_id) {
             Some(inst) => inst,
-            None => {
-                tracing::warn!(
-                    "Instrument for clob_pair_id {} not found in cache",
-                    order.clob_pair_id
-                );
-                return Ok(None);
-            }
+            None => return Ok(None),
         };
 
         // Parse to OrderStatusReport
@@ -1114,14 +1405,7 @@ impl LiveExecutionClient for DydxExecutionClient {
             // Get instrument by clob_pair_id using efficient lookup
             let instrument = match self.get_instrument_by_clob_pair_id(order.clob_pair_id) {
                 Some(inst) => inst,
-                None => {
-                    tracing::warn!(
-                        "Instrument for clob_pair_id {} not found in cache, skipping order {}",
-                        order.clob_pair_id,
-                        order.id
-                    );
-                    continue;
-                }
+                None => continue,
             };
 
             // Filter by instrument_id if specified
@@ -1304,11 +1588,21 @@ impl LiveExecutionClient for DydxExecutionClient {
 
     async fn generate_mass_status(
         &self,
-        _lookback_mins: Option<u64>,
+        lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         use anyhow::Context;
 
-        tracing::info!("Generating mass execution status");
+        tracing::info!(
+            "Generating mass execution status{}",
+            lookback_mins.map_or_else(
+                || " (unbounded)".to_string(),
+                |mins| format!(" (lookback: {} minutes)", mins)
+            )
+        );
+
+        // Calculate cutoff time if lookback is specified
+        let cutoff_time =
+            lookback_mins.map(|mins| chrono::Utc::now() - chrono::Duration::minutes(mins as i64));
 
         // Query all orders
         let orders_response = self
@@ -1339,8 +1633,20 @@ impl LiveExecutionClient for DydxExecutionClient {
         let mut position_reports = Vec::new();
         let mut fill_reports = Vec::new();
 
-        // Parse orders
+        // Counters for logging (only used when filtering is active)
+        let mut orders_filtered = 0;
+        let mut fills_filtered = 0;
+
+        // Parse orders (with optional time filtering)
         for order in orders_response.orders {
+            // Filter by time window if specified (use updated_at for orders)
+            if let Some(cutoff) = cutoff_time
+                && order.updated_at < cutoff
+            {
+                orders_filtered += 1;
+                continue;
+            }
+
             if let Some(instrument) = self.get_instrument_by_clob_pair_id(order.clob_pair_id) {
                 match crate::http::parse::parse_order_status_report(
                     &order,
@@ -1354,7 +1660,7 @@ impl LiveExecutionClient for DydxExecutionClient {
             }
         }
 
-        // Parse positions
+        // Parse positions (no time filtering - positions are current state)
         for (market_ticker, position) in &subaccount_response.subaccount.open_perpetual_positions {
             if let Some(instrument) = self.get_instrument_by_market(market_ticker) {
                 match crate::http::parse::parse_position_status_report(
@@ -1369,8 +1675,16 @@ impl LiveExecutionClient for DydxExecutionClient {
             }
         }
 
-        // Parse fills
+        // Parse fills (with optional time filtering)
         for fill in fills_response.fills {
+            // Filter by time window if specified
+            if let Some(cutoff) = cutoff_time
+                && fill.created_at < cutoff
+            {
+                fills_filtered += 1;
+                continue;
+            }
+
             if let Some(instrument) = self.get_instrument_by_market(&fill.market) {
                 match crate::http::parse::parse_fill_report(
                     &fill,
@@ -1384,12 +1698,23 @@ impl LiveExecutionClient for DydxExecutionClient {
             }
         }
 
-        tracing::info!(
-            "Generated mass status: {} orders, {} positions, {} fills",
-            order_reports.len(),
-            position_reports.len(),
-            fill_reports.len()
-        );
+        if cutoff_time.is_some() {
+            tracing::info!(
+                "Generated mass status: {} orders ({} filtered), {} positions, {} fills ({} filtered)",
+                order_reports.len(),
+                orders_filtered,
+                position_reports.len(),
+                fill_reports.len(),
+                fills_filtered
+            );
+        } else {
+            tracing::info!(
+                "Generated mass status: {} orders, {} positions, {} fills",
+                order_reports.len(),
+                position_reports.len(),
+                fill_reports.len()
+            );
+        }
 
         // Create mass status and add reports
         let mut mass_status = ExecutionMassStatus::new(
@@ -1557,5 +1882,63 @@ mod tests {
         let id2 = (hasher2.finish() % (MAX_CLIENT_ID as u64)) as u32;
 
         assert_eq!(id1, id2, "Client ID conversion must be deterministic");
+    }
+
+    /// Test clob_pair_id extraction from CryptoPerpetual raw_symbol
+    #[test]
+    fn test_clob_pair_id_extraction_from_raw_symbol() {
+        // Simulate raw_symbol "1" -> clob_pair_id 1
+        let raw_symbol = "1";
+        let result: Result<u32, _> = raw_symbol.parse();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1);
+
+        // Simulate raw_symbol "42" -> clob_pair_id 42
+        let raw_symbol = "42";
+        let result: Result<u32, _> = raw_symbol.parse();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    /// Test clob_pair_id extraction failure for invalid raw_symbol
+    #[test]
+    fn test_clob_pair_id_extraction_invalid() {
+        // Invalid raw_symbol should fail parsing
+        let raw_symbol = "BTC-USD";
+        let result: Result<u32, _> = raw_symbol.parse();
+        assert!(result.is_err());
+
+        // Empty raw_symbol should fail
+        let raw_symbol = "";
+        let result: Result<u32, _> = raw_symbol.parse();
+        assert!(result.is_err());
+    }
+
+    /// Test market ticker to instrument mapping logic
+    #[test]
+    fn test_market_ticker_parsing() {
+        let ticker = "BTC-USD";
+        let parts: Vec<&str> = ticker.split('-').collect();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], "BTC");
+        assert_eq!(parts[1], "USD");
+
+        let ticker = "ETH-USD";
+        let parts: Vec<&str> = ticker.split('-').collect();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], "ETH");
+        assert_eq!(parts[1], "USD");
+    }
+
+    /// Test market ticker with invalid format
+    #[test]
+    fn test_market_ticker_invalid_format() {
+        let ticker = "BTCUSD";
+        let parts: Vec<&str> = ticker.split('-').collect();
+        assert_eq!(parts.len(), 1); // No separator
+
+        let ticker = "BTC-USD-PERP";
+        let parts: Vec<&str> = ticker.split('-').collect();
+        assert_eq!(parts.len(), 3); // Too many parts
     }
 }

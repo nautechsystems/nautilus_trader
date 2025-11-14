@@ -1418,4 +1418,212 @@ mod reconciliation_tests {
         assert_eq!(report.position_side, PositionSide::Flat.as_specified());
         assert_eq!(report.quantity.as_f64(), 0.0);
     }
+
+    /// Test external order detection (orders not created by this client)
+    #[rstest]
+    fn test_parse_order_external_detection() {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let ts_init = UnixNanos::default();
+
+        // External order: created by different client (e.g., web UI)
+        let order = Order {
+            id: "external-order-123".to_string(),
+            subaccount_id: "dydx1test/0".to_string(),
+            client_id: "99999".to_string(),
+            clob_pair_id: 1,
+            side: OrderSide::Buy,
+            size: dec!(0.5),
+            remaining_size: dec!(0.5),
+            price: dec!(50000.0),
+            status: DydxOrderStatus::Open,
+            order_type: "Limit".to_string(),
+            time_in_force: DydxTimeInForce::Gtt,
+            reduce_only: false,
+            post_only: false,
+            order_flags: 0,
+            good_til_block: Some(1000),
+            good_til_block_time: None,
+            created_at_height: 900,
+            client_metadata: 0,
+            trigger_price: None,
+            condition_type: None,
+            conditional_order_trigger_subticks: None,
+            execution: None,
+            updated_at: Utc::now(),
+            updated_at_height: 900,
+        };
+
+        let result = parse_order_status_report(&order, &instrument, account_id, ts_init);
+        assert!(result.is_ok());
+
+        let report = result.unwrap();
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        // External orders should still be reconciled correctly
+        assert_eq!(report.filled_qty.as_f64(), 0.0);
+    }
+
+    /// Test order reconciliation with partial fills
+    #[rstest]
+    fn test_parse_order_partial_fill_reconciliation() {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let ts_init = UnixNanos::default();
+
+        let order = Order {
+            id: "partial-order-123".to_string(),
+            subaccount_id: "dydx1test/0".to_string(),
+            client_id: "12345".to_string(),
+            clob_pair_id: 1,
+            side: OrderSide::Buy,
+            size: dec!(2.0),
+            remaining_size: dec!(1.25), // 0.75 filled = 1.25 remaining
+            price: dec!(50000.0),
+            status: DydxOrderStatus::PartiallyFilled,
+            order_type: "Limit".to_string(),
+            time_in_force: DydxTimeInForce::Gtt,
+            reduce_only: false,
+            post_only: false,
+            order_flags: 0,
+            good_til_block: Some(2000),
+            good_til_block_time: None,
+            created_at_height: 1500,
+            client_metadata: 0,
+            trigger_price: None,
+            condition_type: None,
+            conditional_order_trigger_subticks: None,
+            execution: None,
+            updated_at: Utc::now(),
+            updated_at_height: 1600,
+        };
+
+        let result = parse_order_status_report(&order, &instrument, account_id, ts_init);
+        assert!(result.is_ok());
+
+        let report = result.unwrap();
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(report.filled_qty.as_f64(), 0.75);
+        assert_eq!(report.quantity.as_f64(), 2.0);
+    }
+
+    /// Test reconciliation with multiple positions (long and short)
+    #[rstest]
+    fn test_parse_multiple_positions() {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let ts_init = UnixNanos::default();
+
+        // Position 1: Long position
+        let long_position = PerpetualPosition {
+            market: "BTC-USD".to_string(),
+            status: crate::common::enums::DydxPositionStatus::Open,
+            side: OrderSide::Buy,
+            size: dec!(1.5),
+            max_size: dec!(1.5),
+            entry_price: dec!(49000.0),
+            exit_price: None,
+            realized_pnl: dec!(0.0),
+            created_at_height: 1000,
+            created_at: Utc::now(),
+            sum_open: dec!(1.5),
+            sum_close: dec!(0.0),
+            net_funding: dec!(-1.0),
+            unrealized_pnl: dec!(150.0),
+            closed_at: None,
+        };
+
+        let result1 =
+            parse_position_status_report(&long_position, &instrument, account_id, ts_init);
+        assert!(result1.is_ok());
+        let report1 = result1.unwrap();
+        assert_eq!(report1.position_side, PositionSide::Long.as_specified());
+
+        // Position 2: Short position (should be handled separately if from different market)
+        let short_position = PerpetualPosition {
+            market: "BTC-USD".to_string(),
+            status: crate::common::enums::DydxPositionStatus::Open,
+            side: OrderSide::Sell,
+            size: dec!(-2.0),
+            max_size: dec!(2.0),
+            entry_price: dec!(51000.0),
+            exit_price: None,
+            realized_pnl: dec!(0.0),
+            created_at_height: 1100,
+            created_at: Utc::now(),
+            sum_open: dec!(2.0),
+            sum_close: dec!(0.0),
+            net_funding: dec!(0.5),
+            unrealized_pnl: dec!(-200.0),
+            closed_at: None,
+        };
+
+        let result2 =
+            parse_position_status_report(&short_position, &instrument, account_id, ts_init);
+        assert!(result2.is_ok());
+        let report2 = result2.unwrap();
+        assert_eq!(report2.position_side, PositionSide::Short.as_specified());
+    }
+
+    /// Test fill reconciliation with zero fee
+    #[rstest]
+    fn test_parse_fill_zero_fee() {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let ts_init = UnixNanos::default();
+
+        let fill = Fill {
+            id: "fill-zero-fee".to_string(),
+            side: OrderSide::Sell,
+            liquidity: DydxLiquidity::Maker,
+            fill_type: crate::common::enums::DydxFillType::Limit,
+            market: "BTC-USD".to_string(),
+            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            price: dec!(50000.0),
+            size: dec!(0.1),
+            fee: dec!(0.0), // Zero fee (e.g., fee rebate or promotional period)
+            created_at: Utc::now(),
+            created_at_height: 1000,
+            order_id: "order-zero-fee".to_string(),
+            client_metadata: 0,
+        };
+
+        let result = parse_fill_report(&fill, &instrument, account_id, ts_init);
+        assert!(result.is_ok());
+
+        let report = result.unwrap();
+        assert_eq!(report.commission.as_f64(), 0.0);
+    }
+
+    /// Test fill reconciliation with maker rebate (negative fee)
+    #[rstest]
+    fn test_parse_fill_maker_rebate() {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("DYDX-001");
+        let ts_init = UnixNanos::default();
+
+        let fill = Fill {
+            id: "fill-maker-rebate".to_string(),
+            side: OrderSide::Buy,
+            liquidity: DydxLiquidity::Maker,
+            fill_type: crate::common::enums::DydxFillType::Limit,
+            market: "BTC-USD".to_string(),
+            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            price: dec!(50000.0),
+            size: dec!(1.0),
+            fee: dec!(-2.5), // Negative fee = rebate
+            created_at: Utc::now(),
+            created_at_height: 1000,
+            order_id: "order-maker-rebate".to_string(),
+            client_metadata: 0,
+        };
+
+        let result = parse_fill_report(&fill, &instrument, account_id, ts_init);
+        assert!(result.is_ok());
+
+        let report = result.unwrap();
+        // Commission should be absolute value of fee
+        assert_eq!(report.commission.as_f64(), 2.5);
+        assert_eq!(report.liquidity_side, LiquiditySide::Maker);
+    }
 }

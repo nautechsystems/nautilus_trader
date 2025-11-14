@@ -463,6 +463,78 @@ mod tests {
     }
 
     #[rstest]
+    fn test_quantize_price_rounding_up() {
+        let market = sample_market_params();
+        // Price slightly above 50000 should round to next tick
+        let price = dec!(50000.6);
+        let subticks = market.quantize_price(price).unwrap();
+        assert_eq!(subticks, 5_000_100_000);
+    }
+
+    #[rstest]
+    fn test_quantize_price_rounding_down() {
+        let market = sample_market_params();
+        // Price slightly below 50000 should round down
+        let price = dec!(49999.4);
+        let subticks = market.quantize_price(price).unwrap();
+        assert_eq!(subticks, 4_999_900_000);
+    }
+
+    #[rstest]
+    fn test_quantize_quantity_rounding_up() {
+        let market = sample_market_params();
+        // Quantity slightly above 0.01 should round to next quantum
+        let quantity = dec!(0.0100001);
+        let quantums = market.quantize_quantity(quantity).unwrap();
+        assert_eq!(quantums, 101_000_000);
+    }
+
+    #[rstest]
+    fn test_quantize_quantity_rounding_down() {
+        let market = sample_market_params();
+        // Quantity slightly below 0.01 should round down
+        let quantity = dec!(0.0099999);
+        let quantums = market.quantize_quantity(quantity).unwrap();
+        assert_eq!(quantums, 100_000_000);
+    }
+
+    #[rstest]
+    fn test_quantize_price_minimum_tick() {
+        let market = sample_market_params();
+        // Very small price should round to minimum (subticks_per_tick)
+        let price = dec!(0.001);
+        let subticks = market.quantize_price(price).unwrap();
+        assert_eq!(subticks, market.subticks_per_tick as u64);
+    }
+
+    #[rstest]
+    fn test_quantize_quantity_minimum_quantum() {
+        let market = sample_market_params();
+        // Very small quantity should round to minimum (step_base_quantums)
+        let quantity = dec!(0.00000001);
+        let quantums = market.quantize_quantity(quantity).unwrap();
+        assert_eq!(quantums, market.step_base_quantums);
+    }
+
+    #[rstest]
+    fn test_quantize_price_large_values() {
+        let market = sample_market_params();
+        // Test large price values don't overflow
+        let price = dec!(100000);
+        let subticks = market.quantize_price(price).unwrap();
+        assert_eq!(subticks, 10_000_000_000);
+    }
+
+    #[rstest]
+    fn test_quantize_quantity_large_values() {
+        let market = sample_market_params();
+        // Test large quantity values don't overflow
+        let quantity = dec!(10);
+        let quantums = market.quantize_quantity(quantity).unwrap();
+        assert_eq!(quantums, 100_000_000_000);
+    }
+
+    #[rstest]
     fn test_order_builder_market_buy() {
         let market = sample_market_params();
         let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 1);
