@@ -962,8 +962,9 @@ mod tests {
     use nautilus_model::identifiers::{
         ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
     };
+    use rstest::rstest;
 
-    #[test]
+    #[rstest]
     fn test_batch_cancel_orders_builds_payload() {
         use nautilus_model::identifiers::ClientId;
 
@@ -1026,7 +1027,7 @@ mod tests {
         assert_eq!(payload[1].2, Some(venue_order_id2));
     }
 
-    #[test]
+    #[rstest]
     fn test_batch_cancel_orders_with_empty_cancels() {
         use nautilus_model::identifiers::ClientId;
 

@@ -419,7 +419,7 @@ impl FeedHandler {
                     }
                 }
             } else {
-                tracing::warn!("No instrument found for coin: {}", order_update.order.coin);
+                tracing::debug!("No instrument found for coin: {}", order_update.order.coin);
             }
         }
 
@@ -449,7 +449,7 @@ impl FeedHandler {
                     }
                 }
             } else {
-                tracing::warn!("No instrument found for coin: {}", fill.coin);
+                tracing::debug!("No instrument found for coin: {}", fill.coin);
             }
         }
 
@@ -476,7 +476,7 @@ impl FeedHandler {
                     }
                 }
             } else {
-                tracing::warn!("No instrument found for coin: {}", trade.coin);
+                tracing::debug!("No instrument found for coin: {}", trade.coin);
             }
         }
 
@@ -501,7 +501,7 @@ impl FeedHandler {
                 }
             }
         } else {
-            tracing::warn!("No instrument found for coin: {}", data.coin);
+            tracing::debug!("No instrument found for coin: {}", data.coin);
             None
         }
     }
@@ -520,7 +520,7 @@ impl FeedHandler {
                 }
             }
         } else {
-            tracing::warn!("No instrument found for coin: {}", data.coin);
+            tracing::debug!("No instrument found for coin: {}", data.coin);
             None
         }
     }
@@ -543,11 +543,11 @@ impl FeedHandler {
                     }
                 }
             } else {
-                tracing::warn!("No instrument found for coin: {}", data.s);
+                tracing::debug!("No instrument found for coin: {}", data.s);
                 None
             }
         } else {
-            tracing::warn!("No bar type found for key: {key}");
+            tracing::debug!("No bar type found for key: {key}");
             None
         }
     }
@@ -624,7 +624,7 @@ impl FeedHandler {
                 }
             }
         } else {
-            tracing::warn!("No instrument found for coin: {coin}");
+            tracing::debug!("No instrument found for coin: {coin}");
         }
 
         result
@@ -643,7 +643,9 @@ fn subscription_to_key(sub: &SubscriptionRequest) -> String {
         }
         SubscriptionRequest::Notification { user } => format!("notification:{user}"),
         SubscriptionRequest::WebData2 { user } => format!("webData2:{user}"),
-        SubscriptionRequest::Candle { coin, interval } => format!("candle:{coin}:{interval:?}"),
+        SubscriptionRequest::Candle { coin, interval } => {
+            format!("candle:{coin}:{}", interval.as_str())
+        }
         SubscriptionRequest::L2Book { coin, .. } => format!("l2Book:{coin}"),
         SubscriptionRequest::Trades { coin } => format!("trades:{coin}"),
         SubscriptionRequest::OrderUpdates { user } => format!("orderUpdates:{user}"),

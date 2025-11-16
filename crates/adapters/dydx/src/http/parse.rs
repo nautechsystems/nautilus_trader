@@ -307,7 +307,7 @@ mod tests {
         assert!(
             error_msg.contains("Invalid ticker format")
                 || error_msg.contains("Failed to parse ticker"),
-            "Expected ticker format error, got: {}",
+            "Expected ticker format error, was: {}",
             error_msg
         );
     }

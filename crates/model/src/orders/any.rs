@@ -75,6 +75,22 @@ impl OrderAny {
             }
         }
     }
+
+    /// Returns a reference to the [`crate::events::OrderInitialized`] event.
+    ///
+    /// This is always the first event in the order's event list (invariant).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the first event is not `OrderInitialized` (violates invariant).
+    #[must_use]
+    pub fn init_event(&self) -> &crate::events::OrderInitialized {
+        // SAFETY: Unwrap safe as Order specification guarantees at least one event (OrderInitialized)
+        match self.events().first().unwrap() {
+            OrderEventAny::Initialized(init) => init,
+            _ => panic!("First event must be OrderInitialized"),
+        }
+    }
 }
 
 impl PartialEq for OrderAny {
@@ -312,6 +328,7 @@ impl PartialEq for StopOrderAny {
 mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -513,7 +530,7 @@ mod tests {
         assert_eq!(order_any.order_type(), OrderType::TrailingStopMarket);
         assert_eq!(order_any.quantity(), Quantity::from(10));
         assert_eq!(order_any.trigger_price(), Some(Price::new(100.0, 2)));
-        assert_eq!(order_any.trailing_offset(), Some(Decimal::new(5, 1)));
+        assert_eq!(order_any.trailing_offset(), Some(dec!(0.5)));
         assert_eq!(
             order_any.trailing_offset_type(),
             Some(TrailingOffsetType::NoTrailingOffset)
@@ -547,7 +564,7 @@ mod tests {
         assert_eq!(order_any.quantity(), Quantity::from(10));
         assert_eq!(order_any.price(), Some(Price::new(99.0, 2)));
         assert_eq!(order_any.trigger_price(), Some(Price::new(100.0, 2)));
-        assert_eq!(order_any.trailing_offset(), Some(Decimal::new(5, 1)));
+        assert_eq!(order_any.trailing_offset(), Some(dec!(0.5)));
     }
 
     #[rstest]

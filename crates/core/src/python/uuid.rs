@@ -145,6 +145,7 @@ mod tests {
     use std::sync::Once;
 
     use pyo3::Python;
+    use rstest::rstest;
 
     use super::*;
 
@@ -155,7 +156,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_setstate_rejects_invalid_uuid_bytes() {
         ensure_python_initialized();
         Python::with_gil(|py| {
@@ -170,7 +171,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_setstate_rejects_missing_null_terminator() {
         ensure_python_initialized();
         Python::with_gil(|py| {
@@ -188,7 +189,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_setstate_accepts_valid_state() {
         ensure_python_initialized();
         Python::with_gil(|py| {

@@ -270,6 +270,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load(&pool).await;
             match result {
@@ -296,6 +297,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_currencies(&pool).await;
             match result {
@@ -322,6 +324,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_instruments(&pool).await;
             match result {
@@ -352,6 +355,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_accounts(&pool).await;
             match result {
@@ -378,6 +382,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_orders(&pool).await;
             match result {
@@ -412,6 +417,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_distinct_order_event_client_ids(&pool).await;
             match result {
@@ -435,6 +441,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let code = code.to_owned(); // Clone the code
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_currency(&pool, &code).await;
             match result {
@@ -461,6 +468,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let instrument_id = instrument_id.to_owned(); // Clone the instrument_id
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_instrument(&pool, &instrument_id).await;
             match result {
@@ -491,6 +499,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let account_id = account_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_account(&pool, &account_id).await;
             match result {
@@ -517,6 +526,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let client_order_id = client_order_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_order(&pool, &client_order_id).await;
             match result {
@@ -646,6 +656,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let instrument_id = instrument_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_quotes(&pool, &instrument_id).await;
             match result {
@@ -678,6 +689,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let instrument_id = instrument_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_trades(&pool, &instrument_id).await;
             match result {
@@ -710,6 +722,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let instrument_id = instrument_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_bars(&pool, &instrument_id).await;
             match result {
@@ -742,6 +755,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let name = name.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_signals(&pool, &name).await;
             match result {
@@ -772,6 +786,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let data_type = data_type.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_custom_data(&pool, &data_type).await;
             match result {
@@ -798,6 +813,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let client_order_id = client_order_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_order_snapshot(&pool, &client_order_id).await;
             match result {
@@ -826,6 +842,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let position_id = position_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
+
         tokio::spawn(async move {
             let result = DatabaseQueries::load_position_snapshot(&pool, &position_id).await;
             match result {

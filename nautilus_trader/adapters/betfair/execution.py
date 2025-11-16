@@ -41,6 +41,7 @@ from betfair_parser.spec.streaming import stream_decode
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import OrderSideParser
+from nautilus_trader.adapters.betfair.common import is_session_error
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
@@ -253,7 +254,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:
-        if "INVALID_SESSION_INFORMATION" in error.args[0] or "NO_SESSION" in error.args[0]:
+        if is_session_error(error):
             if self._is_reconnecting:
                 # Avoid multiple reconnection attempts when multiple INVALID_SESSION_INFORMATION errors
                 # are received at "the same time" from the Betfair API. Simultaneous reconnection attempts
@@ -267,6 +268,9 @@ class BetfairExecutionClient(LiveExecutionClient):
                 await self._reconnect()
             except Exception as e:
                 self._log.exception("Reconnection failed", e)
+        else:
+            # Other Betfair API errors (PERMISSION_DENIED, INSUFFICIENT_FUNDS, etc.)
+            self._log.error(f"Betfair API error: {error}")
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
@@ -278,10 +282,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     account_state = await self.request_account_state()
                     self._send_account_state(account_state)
                 except BetfairError as e:
-                    self._log.warning(str(e))
-                    if "INVALID_SESSION_INFORMATION" in str(e):
-                        self._log.warning("Invalid session error, reconnecting...")
-                        await self._reconnect()
+                    await self.on_api_exception(error=e)
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_account_state'")
         except Exception as e:
@@ -320,6 +321,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
+        return await self._generate_order_status_report_impl(command, retry=True)
+
+    async def _generate_order_status_report_impl(
+        self,
+        command: GenerateOrderStatusReport,
+        retry: bool,
+    ) -> OrderStatusReport | None:
         self._log.debug(
             f"Listing current orders for {command.venue_order_id=} {command.client_order_id=}",
         )
@@ -337,8 +345,12 @@ class BetfairExecutionClient(LiveExecutionClient):
                     customer_order_refs={customer_order_ref},
                 )
         except BetfairError as e:
-            self._log.warning(str(e))
-            return None
+            await self.on_api_exception(error=e)
+            # Retry once after session reconnection
+            if retry and is_session_error(e):
+                return await self._generate_order_status_report_impl(command, retry=False)
+            # Non-session errors or retry exhausted - re-raise
+            raise
 
         if not orders:
             self._log.warning(
@@ -370,16 +382,31 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
-        current_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
-            order_projection=(
-                OrderProjection.EXECUTABLE if command.open_only else OrderProjection.ALL
-            ),
-            date_range=TimeRange(
-                from_=_to_utc_datetime(command.start),
-                to=_to_utc_datetime(command.end),
-            ),
-            market_ids=self._market_ids_filter(),
-        )
+        return await self._generate_order_status_reports_impl(command, retry=True)
+
+    async def _generate_order_status_reports_impl(
+        self,
+        command: GenerateOrderStatusReports,
+        retry: bool,
+    ) -> list[OrderStatusReport]:
+        try:
+            current_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
+                order_projection=(
+                    OrderProjection.EXECUTABLE if command.open_only else OrderProjection.ALL
+                ),
+                date_range=TimeRange(
+                    from_=_to_utc_datetime(command.start),
+                    to=_to_utc_datetime(command.end),
+                ),
+                market_ids=self._market_ids_filter(),
+            )
+        except BetfairError as e:
+            await self.on_api_exception(error=e)
+            # Retry once after session reconnection
+            if retry and is_session_error(e):
+                return await self._generate_order_status_reports_impl(command, retry=False)
+            # Non-session errors or retry exhausted - re-raise
+            raise
 
         ts_init = self._clock.timestamp_ns()
 
@@ -410,14 +437,29 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        cleared_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
-            order_projection=OrderProjection.ALL,
-            date_range=TimeRange(
-                from_=_to_utc_datetime(command.start),
-                to=_to_utc_datetime(command.end),
-            ),
-            market_ids=self._market_ids_filter(),
-        )
+        return await self._generate_fill_reports_impl(command, retry=True)
+
+    async def _generate_fill_reports_impl(
+        self,
+        command: GenerateFillReports,
+        retry: bool,
+    ) -> list[FillReport]:
+        try:
+            cleared_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
+                order_projection=OrderProjection.ALL,
+                date_range=TimeRange(
+                    from_=_to_utc_datetime(command.start),
+                    to=_to_utc_datetime(command.end),
+                ),
+                market_ids=self._market_ids_filter(),
+            )
+        except BetfairError as e:
+            await self.on_api_exception(error=e)
+            # Retry once after session reconnection
+            if retry and is_session_error(e):
+                return await self._generate_fill_reports_impl(command, retry=False)
+            # Non-session errors or retry exhausted - re-raise
+            raise
 
         ts_init = self._clock.timestamp_ns()
 
@@ -458,9 +500,13 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    async def _query_account(self, _command: QueryAccount) -> None:
-        account_state = await self.request_account_state()
-        self._send_account_state(account_state)
+    async def _query_account(self, command: QueryAccount) -> None:
+        try:
+            account_state = await self.request_account_state()
+            self._send_account_state(account_state)
+        except BetfairError as e:
+            await self.on_api_exception(error=e)
+            # User command - no retry needed, they can manually retry if needed
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         instrument = self._cache.instrument(command.instrument_id)

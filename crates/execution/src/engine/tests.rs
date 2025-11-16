@@ -44,6 +44,7 @@ use nautilus_model::{
 };
 use rstest::*;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 use crate::{
     client::ExecutionClient,
@@ -5624,7 +5625,7 @@ fn test_submit_order_adds_to_own_book_bid() {
     );
 
     // Check the specific price level
-    let price_key = Decimal::from_str("10.0").unwrap();
+    let price_key = dec!(10.0);
     assert!(
         bids.contains_key(&price_key),
         "Own order book should contain bid orders at price 10.0"
@@ -5645,7 +5646,7 @@ fn test_submit_order_adds_to_own_book_bid() {
     );
     assert_eq!(
         own_order.price.as_decimal(),
-        Decimal::from_str("10.0").unwrap(),
+        dec!(10.0),
         "Own order should have price 10.0"
     );
     assert_eq!(
@@ -5788,7 +5789,7 @@ fn test_submit_order_adds_to_own_book_ask() {
     );
 
     // Check the specific price level
-    let price_key = Decimal::from_str("11.0").unwrap();
+    let price_key = dec!(11.0);
     assert!(
         asks.contains_key(&price_key),
         "Own order book should contain ask orders at price 11.0"
@@ -5809,7 +5810,7 @@ fn test_submit_order_adds_to_own_book_ask() {
     );
     assert_eq!(
         own_order.price.as_decimal(),
-        Decimal::from_str("11.0").unwrap(),
+        dec!(11.0),
         "Own order should have price 11.0"
     );
     assert_eq!(
@@ -7130,8 +7131,8 @@ fn test_own_book_with_crossed_orders() {
     assert_eq!(asks.len(), 1, "Expected 1 ask order in own book");
 
     // Verify by price
-    let bid_price = Decimal::from_str("1.05").unwrap();
-    let ask_price = Decimal::from_str("1.04").unwrap();
+    let bid_price = dec!(1.05);
+    let ask_price = dec!(1.04);
 
     assert!(
         bids.contains_key(&bid_price),
@@ -7337,7 +7338,7 @@ fn test_own_book_with_contingent_orders() {
     // Entry order should be in the book as a bid
     let bids = own_book.bids_as_map(None, None, None);
     assert_eq!(bids.len(), 1, "Expected 1 bid order in own book");
-    let bid_price = Decimal::from_str("1.00").unwrap();
+    let bid_price = dec!(1.00);
     assert!(bids.contains_key(&bid_price), "Expected bid at price 1.00");
     assert_eq!(
         bids[&bid_price].len(),
@@ -7348,7 +7349,7 @@ fn test_own_book_with_contingent_orders() {
     // TP order should be in the book as an ask (submitted)
     let asks = own_book.asks_as_map(None, None, None);
     assert_eq!(asks.len(), 1, "Expected 1 ask order in own book");
-    let ask_price = Decimal::from_str("1.10").unwrap();
+    let ask_price = dec!(1.10);
     assert!(asks.contains_key(&ask_price), "Expected ask at price 1.10");
     assert_eq!(
         asks[&ask_price].len(),
@@ -7408,7 +7409,7 @@ fn test_own_book_with_contingent_orders() {
     // TP should still be in the book
     let asks = own_book.asks_as_map(None, None, None);
     assert_eq!(asks.len(), 1, "Expected 1 ask order in own book");
-    let tp_price = Decimal::from_str("1.10").unwrap();
+    let tp_price = dec!(1.10);
     assert!(
         asks.contains_key(&tp_price),
         "Expected TP order at price 1.10"
@@ -7880,8 +7881,8 @@ fn test_own_book_combined_status_filtering() {
         "Expected 2 orders with INITIALIZED or SUBMITTED status"
     );
 
-    let price_100 = Decimal::from_str("1.00").unwrap();
-    let price_101 = Decimal::from_str("1.01").unwrap();
+    let price_100 = dec!(1.00);
+    let price_101 = dec!(1.01);
     assert!(
         early_orders.contains_key(&price_100),
         "Expected order at price 1.00 in early statuses"
@@ -7900,8 +7901,8 @@ fn test_own_book_combined_status_filtering() {
         "Expected 2 orders with ACCEPTED or PARTIALLY_FILLED status"
     );
 
-    let price_102 = Decimal::from_str("1.02").unwrap();
-    let price_103 = Decimal::from_str("1.03").unwrap();
+    let price_102 = dec!(1.02);
+    let price_103 = dec!(1.03);
     assert!(
         active_orders.contains_key(&price_102),
         "Expected order at price 1.02 in active statuses"
@@ -8100,7 +8101,7 @@ fn test_own_book_status_integrity_during_transitions() {
             "Expected 1 partially filled order"
         );
 
-        let price_101 = Decimal::from_str("1.01").unwrap();
+        let price_101 = dec!(1.01);
         assert!(
             partially_filled_orders.contains_key(&price_101),
             "Expected partially filled order at price 1.01"
@@ -8148,7 +8149,7 @@ fn test_own_book_status_integrity_during_transitions() {
             "Expected 1 accepted order after cancellation"
         );
 
-        let price_102 = Decimal::from_str("1.02").unwrap();
+        let price_102 = dec!(1.02);
         assert!(
             !accepted_after_cancel.contains_key(&price_102),
             "Canceled order should not be in accepted status"
@@ -8195,7 +8196,7 @@ fn test_own_book_status_integrity_during_transitions() {
             "Expected 2 partially filled orders"
         );
 
-        let price_100 = Decimal::from_str("1.00").unwrap();
+        let price_100 = dec!(1.00);
         assert!(
             partially_after_first.contains_key(&price_100),
             "Expected partially filled order at price 1.00"
@@ -8270,7 +8271,7 @@ fn test_own_book_status_integrity_during_transitions() {
 
         // Check if order exists in own book with any status (no filter)
         let all_orders = own_book.bids_as_map(None, None, None);
-        let price_101 = Decimal::from_str("1.01").unwrap();
+        let price_101 = dec!(1.01);
         assert!(
             all_orders.contains_key(&price_101),
             "Order at price 1.01 should exist in own book"

@@ -16,10 +16,12 @@
 from decimal import Decimal
 
 import pytest
+from betfair_parser.exceptions import BetfairError
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import MAX_BET_PRICE
 from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
+from nautilus_trader.adapters.betfair.common import is_session_error
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.core import create_sequence_completed
@@ -118,3 +120,41 @@ def test_betfair_sequence_completed_str_repr() -> None:
         repr(completed)
         == "CustomData(data_type=BetfairSequenceCompleted, data=BetfairSequenceCompleted(ts_event=1970-01-01T00:00:00.000000002Z, ts_init=1970-01-01T00:00:00.000000001Z))"
     )
+
+
+@pytest.mark.parametrize(
+    "error_msg",
+    [
+        "NO_SESSION: A session token is required for this operation",
+        "INVALID_SESSION_INFORMATION: The session token has expired",
+        "Error occurred: NO_SESSION detected in request",
+    ],
+)
+def test_is_session_error_returns_true(error_msg):
+    # Arrange
+    error = BetfairError(error_msg)
+
+    # Act
+    result = is_session_error(error)
+
+    # Assert
+    assert result is True
+
+
+@pytest.mark.parametrize(
+    "error_arg",
+    [
+        "PERMISSION_DENIED: Business rules do not allow order to be placed",
+        "INSUFFICIENT_FUNDS: Not enough funds available",
+        "",
+    ],
+)
+def test_is_session_error_returns_false(error_arg):
+    # Arrange
+    error = BetfairError(error_arg) if error_arg else BetfairError()
+
+    # Act
+    result = is_session_error(error)
+
+    # Assert
+    assert result is False

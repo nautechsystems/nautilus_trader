@@ -54,7 +54,7 @@ use crate::{
         },
     },
     config::HyperliquidExecClientConfig,
-    http::{client::HyperliquidHttpClient, query::ExchangeAction},
+    http::{client::HyperliquidHttpClient, models::ClearinghouseState, query::ExchangeAction},
     websocket::{ExecutionReport, NautilusWsMessage, client::HyperliquidWebSocketClient},
 };
 
@@ -246,9 +246,8 @@ impl HyperliquidExecutionClient {
             .context("failed to fetch clearinghouse state")?;
 
         // Deserialize the response
-        let state: crate::http::models::ClearinghouseState =
-            serde_json::from_value(clearinghouse_state)
-                .context("failed to deserialize clearinghouse state")?;
+        let state: ClearinghouseState = serde_json::from_value(clearinghouse_state)
+            .context("failed to deserialize clearinghouse state")?;
 
         tracing::debug!(
             "Received clearinghouse state: cross_margin_summary={:?}, asset_positions={}",

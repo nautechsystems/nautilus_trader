@@ -13,13 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::sync::Arc;
 
 use ahash::AHashMap;
 use alloy::primitives::Address;
 use futures_util::Stream;
 use hypersync_client::{
-    net_types::{BlockSelection, FieldSelection, Query},
+    net_types::{BlockField, BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
 use nautilus_common::runtime::get_runtime;
@@ -69,7 +69,10 @@ impl HyperSyncClient {
     ///
     /// # Panics
     ///
-    /// Panics if the chain's `hypersync_url` is invalid or if the underlying client cannot be initialized.
+    /// Panics if:
+    /// - The chain's `hypersync_url` is invalid.
+    /// - The `ENVIO_API_TOKEN` environment variable is not set or invalid.
+    /// - The underlying client cannot be initialized.
     #[must_use]
     pub fn new(
         chain: SharedChain,
@@ -79,8 +82,11 @@ impl HyperSyncClient {
         let mut config = hypersync_client::ClientConfig::default();
         let hypersync_url =
             Url::parse(chain.hypersync_url.as_str()).expect("Invalid HyperSync URL");
-        config.url = Some(hypersync_url);
-        let client = hypersync_client::Client::new(config).unwrap();
+        config.url = hypersync_url.to_string();
+        config.api_token = std::env::var("ENVIO_API_TOKEN")
+            .expect("ENVIO_API_TOKEN environment variable must be set");
+        let client = hypersync_client::Client::new(config)
+            .expect("Failed to create HyperSync client - check ENVIO_API_TOKEN is a valid UUID");
 
         Self {
             chain,
@@ -438,18 +444,12 @@ impl HyperSyncClient {
 
     /// Constructs a HyperSync query for fetching blocks with all available fields within the specified range.
     fn construct_block_query(from_block: u64, to_block: Option<u64>) -> Query {
-        let all_block_fields: BTreeSet<String> = hypersync_schema::block_header()
-            .fields
-            .iter()
-            .map(|x| x.name.clone())
-            .collect();
-
         Query {
             from_block,
             to_block,
             blocks: vec![BlockSelection::default()],
             field_selection: FieldSelection {
-                block: all_block_fields,
+                block: BlockField::all(),
                 ..Default::default()
             },
             ..Default::default()

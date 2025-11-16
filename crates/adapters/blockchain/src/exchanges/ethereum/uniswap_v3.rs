@@ -42,7 +42,6 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
 
     dex_extended.set_pool_created_event_parsing(uniswap_v3::pool_created::parse_pool_created_event);
     dex_extended.set_swap_event_parsing(uniswap_v3::swap::parse_swap_event);
-    dex_extended.set_convert_trade_data(uniswap_v3::trade_data::convert_to_trade_data);
     dex_extended.set_mint_event_parsing(uniswap_v3::mint::parse_mint_event);
     dex_extended.set_burn_event_parsing(uniswap_v3::burn::parse_burn_event);
     dex_extended.set_collect_event_parsing(uniswap_v3::collect::parse_collect_event);

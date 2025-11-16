@@ -260,6 +260,7 @@ impl BitmexExecutionClient {
         }
 
         let stream = self.ws_client.stream();
+
         let handle = tokio::spawn(async move {
             pin_mut!(stream);
             while let Some(message) = stream.next().await {

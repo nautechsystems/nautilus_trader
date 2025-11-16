@@ -247,15 +247,17 @@ pub fn py_is_within_last_24_hours(timestamp_ns: u64) -> PyResult<bool> {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_py_unix_nanos_to_iso8601_errors_on_out_of_range_timestamp() {
         let result = py_unix_nanos_to_iso8601((i64::MAX as u64) + 1, Some(true));
         assert!(result.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_py_unix_nanos_to_iso8601_formats_valid_timestamp() {
         let output = py_unix_nanos_to_iso8601(0, Some(false)).unwrap();
         assert_eq!(output, "1970-01-01T00:00:00.000Z");

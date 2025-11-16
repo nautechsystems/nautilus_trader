@@ -39,7 +39,10 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_hyperliquid::{
     common::HyperliquidProductType, websocket::client::HyperliquidWebSocketClient,
 };
-use nautilus_model::identifiers::{AccountId, InstrumentId};
+use nautilus_model::{
+    data::BarType,
+    identifiers::{AccountId, InstrumentId},
+};
 use rstest::rstest;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -1206,6 +1209,173 @@ async fn test_sends_pong_for_control_ping() {
         Duration::from_secs(2),
     )
     .await;
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_unsubscribed_channel_not_resubscribed_after_disconnect() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("subscribe trades failed");
+    client
+        .subscribe_quotes(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("subscribe quotes failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let subscriptions = state.subscriptions.lock().await;
+                let trades_count = subscriptions.iter().filter(|(t, _)| t == "trades").count();
+                let quotes_count = subscriptions.iter().filter(|(t, _)| t == "bbo").count();
+                trades_count >= 1 && quotes_count >= 1
+            }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    client
+        .unsubscribe_quotes(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("unsubscribe quotes failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.unsubscriptions.lock().await.iter().any(|value| {
+                    value
+                        .get("type")
+                        .and_then(|t| t.as_str())
+                        .is_some_and(|t| t == "bbo")
+                })
+            }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    state.clear_subscription_events().await;
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.subscription_events().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+
+    client
+        .subscribe_book(InstrumentId::from("SOL-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("subscribe book (triggers disconnect) failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().filter(|(t, _)| t == "trades").count() >= 1
+            }
+        },
+        Duration::from_secs(3),
+    )
+    .await;
+
+    let subscriptions = state.subscriptions.lock().await;
+    let quotes_count = subscriptions.iter().filter(|(t, _)| t == "bbo").count();
+    let trades_count = subscriptions.iter().filter(|(t, _)| t == "trades").count();
+
+    assert_eq!(
+        quotes_count, 0,
+        "quotes channel was resubscribed unexpectedly"
+    );
+    assert!(
+        trades_count >= 1,
+        "expected trades channel to be restored on reconnect"
+    );
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_candle_subscription_survives_reconnection() {
+    let state = Arc::new(TestServerState::default());
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let bar_type = BarType::from("BTC-USD-PERP.HYPERLIQUID-1-HOUR-LAST-EXTERNAL");
+    client
+        .subscribe_bars(bar_type)
+        .await
+        .expect("subscribe bars failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let subscriptions = state.subscriptions.lock().await;
+                subscriptions.iter().any(|(t, _)| t == "candle")
+            }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().filter(|(t, _)| t == "candle").count() >= 2
+            }
+        },
+        Duration::from_secs(3),
+    )
+    .await;
+
+    let subscriptions = state.subscriptions.lock().await;
+    let candle_subs: Vec<_> = subscriptions
+        .iter()
+        .filter(|(t, _)| t == "candle")
+        .collect();
+
+    assert!(
+        !candle_subs.is_empty(),
+        "expected candle subscription to be restored on reconnect"
+    );
+
+    for (_, sub) in &candle_subs {
+        let has_btc = sub.get("coin").is_some_and(|c| c.as_str() == Some("BTC"));
+        assert!(has_btc, "expected candle subscription for BTC coin");
+    }
 
     client.disconnect().await.expect("close failed");
 }

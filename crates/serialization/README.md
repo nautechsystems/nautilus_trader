@@ -39,7 +39,7 @@ or as part of a Rust only build.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module (used with `python`).
 - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
-- `capnp`: Enables Cap'n Proto serialization support. Requires the Cap'n Proto compiler (`capnp`) to be installed and available on your PATH during build.
+- `capnp`: Enables [Cap'n Proto](https://capnproto.org/) serialization support.
 
 ### Building with Cap'n Proto support
 
@@ -128,13 +128,111 @@ let decoded = InstrumentId::from_capnp(root).unwrap();
 
 When adding or modifying schemas:
 
-1. Edit schema files in the appropriate subdirectory under `schemas/capnp/`
-2. Use lowerCamelCase for field names to match Cap'n Proto conventions
-3. Generate a unique schema ID using: `capnp id`
-4. Implement `ToCapnp` and `FromCapnp` traits in `src/capnp/conversions.rs`
-5. Add integration tests in `tests/` to verify roundtrip serialization
+1. Edit schema files in the appropriate subdirectory under `schemas/capnp/`.
+2. Use lowerCamelCase for field names to match Cap'n Proto conventions.
+3. Generate a unique schema ID using: `capnp id`.
+4. Implement `ToCapnp` and `FromCapnp` traits in `src/capnp/conversions.rs`.
+5. Add integration tests in `tests/` to verify roundtrip serialization.
 
 The build script (`build.rs`) automatically discovers and compiles all `.capnp` files during build.
+
+## Serialization format comparison
+
+This crate supports three serialization formats for market data types. Choose the format based on your use case:
+
+| Format       | Serialize | Deserialize | Size      | Use case                                    |
+|--------------|-----------|-------------|-----------|---------------------------------------------|
+| Cap'n Proto  | ~267ns    | ~530ns      | 264 bytes | High-frequency data streams, IPC, caching.  |
+| JSON         | ~332ns    | ~779ns      | 174 bytes | Human-readable output, debugging, APIs.     |
+| MsgPack      | ~375ns    | ~634ns      | 134 bytes | Compact storage, network transmission.      |
+| Arrow        | TBD       | TBD         | Columnar  | Batch processing, Parquet, IPC, analytics.  |
+
+Performance numbers shown for `QuoteTick` serialization (measured on AMD Ryzen 9 7950X). Cap'n Proto provides the
+fastest serialization and deserialization, while MsgPack offers the smallest size. Arrow is optimized for batch
+processing rather than individual messages.
+
+**Note:** Cap'n Proto performance can be further optimized through zero-copy techniques and direct buffer manipulation
+for specialized use cases.
+
+### Usage examples
+
+#### JSON serialization
+
+```rust
+use nautilus_core::serialization::Serializable;
+use nautilus_model::data::QuoteTick;
+
+let quote = QuoteTick { /* ... */ };
+
+// Serialize to JSON
+let json_bytes = quote.to_json_bytes()?;
+
+// Deserialize from JSON
+let decoded = QuoteTick::from_json_bytes(&json_bytes)?;
+```
+
+#### MsgPack serialization
+
+```rust
+use nautilus_core::serialization::{ToMsgPack, FromMsgPack};
+use nautilus_model::data::QuoteTick;
+
+let quote = QuoteTick { /* ... */ };
+
+// Serialize to MsgPack
+let msgpack_bytes = quote.to_msgpack_bytes()?;
+
+// Deserialize from MsgPack
+let decoded = QuoteTick::from_msgpack_bytes(&msgpack_bytes)?;
+```
+
+#### Cap'n Proto serialization
+
+```rust
+use nautilus_model::data::QuoteTick;
+use nautilus_serialization::capnp::{ToCapnp, FromCapnp, market_capnp};
+
+let quote = QuoteTick { /* ... */ };
+
+// Serialize to Cap'n Proto
+let mut message = capnp::message::Builder::new_default();
+let builder = message.init_root::<market_capnp::quote_tick::Builder>();
+quote.to_capnp(builder);
+
+let mut bytes = Vec::new();
+capnp::serialize::write_message(&mut bytes, &message)?;
+
+// Deserialize from Cap'n Proto
+let reader = capnp::serialize::read_message(
+    &mut &bytes[..],
+    capnp::message::ReaderOptions::new()
+)?;
+let root = reader.get_root::<market_capnp::quote_tick::Reader>()?;
+let decoded = QuoteTick::from_capnp(root)?;
+```
+
+## Benchmarking
+
+Run benchmarks to compare serialization performance across formats:
+
+```bash
+# Compare all formats for QuoteTick
+cargo bench -p nautilus-serialization --features capnp --bench serialization_comparison -- QuoteTick
+
+# Compare all formats for TradeTick
+cargo bench -p nautilus-serialization --features capnp --bench serialization_comparison -- TradeTick
+
+# Compare all formats for Bar
+cargo bench -p nautilus-serialization --features capnp --bench serialization_comparison -- Bar
+
+# Run all Cap'n Proto benchmarks (including OrderBookDeltas with varying sizes)
+cargo bench -p nautilus-serialization --features capnp --bench capnp_serialization
+
+# Run all comparison benchmarks
+cargo bench -p nautilus-serialization --features capnp --bench serialization_comparison
+```
+
+Benchmark results include serialization and deserialization times for each format.
 
 ## Documentation
 

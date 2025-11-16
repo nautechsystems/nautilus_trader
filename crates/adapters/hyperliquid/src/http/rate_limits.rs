@@ -290,7 +290,7 @@ mod tests {
         // Should take at least some time to refill (allow some jitter/timing variance)
         assert!(
             elapsed.as_millis() >= 500,
-            "Expected significant delay, got {}ms",
+            "Expected significant delay, was {}ms",
             elapsed.as_millis()
         );
     }

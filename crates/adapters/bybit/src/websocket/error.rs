@@ -72,3 +72,25 @@ impl From<String> for BybitWsError {
         Self::Authentication(msg)
     }
 }
+
+/// Determines if a Bybit WebSocket error should trigger a retry.
+pub(crate) fn should_retry_bybit_error(error: &BybitWsError) -> bool {
+    match error {
+        BybitWsError::Transport(_) => true,
+        BybitWsError::Send(_) => true,
+        BybitWsError::ClientError(msg) => {
+            let msg_lower = msg.to_lowercase();
+            msg_lower.contains("timeout")
+                || msg_lower.contains("timed out")
+                || msg_lower.contains("connection")
+                || msg_lower.contains("network")
+        }
+        BybitWsError::NotConnected => true,
+        BybitWsError::Authentication(_) | BybitWsError::Json(_) => false,
+    }
+}
+
+/// Creates a timeout error for Bybit operations.
+pub(crate) fn create_bybit_timeout_error(msg: String) -> BybitWsError {
+    BybitWsError::ClientError(msg)
+}

@@ -94,7 +94,7 @@ struct InstrumentStatus {
 # Funding rate update
 struct FundingRateUpdate {
     instrumentId @0 :Identifiers.InstrumentId;
-    rate @1 :Text;  # Decimal as string for arbitrary precision
+    rate @1 :Types.Decimal;  # Decimal as binary (optimized)
     nextFundingTime @2 :Base.UnixNanos;  # Optional - 0 means None
     tsEvent @3 :Base.UnixNanos;
     tsInit @4 :Base.UnixNanos;

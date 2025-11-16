@@ -61,30 +61,6 @@
 //! Future enhancement: Add support for mark/index price triggers if Hyperliquid API adds this feature.
 //! See OKX's `OKXTriggerType` and Bybit's `BybitTriggerType` for reference implementations.
 //!
-//! ## Examples
-//!
-//! ### Stop Loss Order
-//! ```ignore
-//! // Long position at $100, stop loss at $95
-//! let order = StopMarket {
-//!     side: Sell,
-//!     trigger_price: $95,
-//!     // ... other fields
-//! };
-//! // Maps to: Trigger { is_market: true, trigger_px: $95, tpsl: Sl }
-//! ```
-//!
-//! ### Take Profit Order
-//! ```ignore
-//! // Long position at $100, take profit at $110
-//! let order = MarketIfTouched {
-//!     side: Sell,
-//!     trigger_price: $110,
-//!     // ... other fields
-//! };
-//! // Maps to: Trigger { is_market: true, trigger_px: $110, tpsl: Tp }
-//! ```
-//!
 //! ## Integration with Other Adapters
 //!
 //! This implementation reuses patterns from:

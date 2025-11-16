@@ -76,7 +76,7 @@ pub fn parse_kline_topic(topic: &str) -> anyhow::Result<(&str, &str)> {
     let parts = parse_topic(topic)?;
     if parts.len() != 3 || parts[0] != "kline" {
         anyhow::bail!(
-            "Invalid kline topic format: expected 'kline.{{interval}}.{{symbol}}', got '{topic}'"
+            "Invalid kline topic format: expected 'kline.{{interval}}.{{symbol}}', was '{topic}'"
         );
     }
     Ok((parts[1], parts[2]))
@@ -794,6 +794,7 @@ mod tests {
         enums::{AggregationSource, BarAggregation, PositionSide, PriceType},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -1029,7 +1030,7 @@ mod tests {
         assert_eq!(report.quantity, instrument.make_qty(0.100, None));
         assert_eq!(report.filled_qty, instrument.make_qty(0.100, None));
         assert_eq!(report.price, Some(instrument.make_price(30000.50)));
-        assert_eq!(report.avg_px, Some(Decimal::try_from(30000.50).unwrap()));
+        assert_eq!(report.avg_px, Some(dec!(30000.50)));
         assert_eq!(
             report.client_order_id.as_ref().unwrap().to_string(),
             "test-client-order-001"
@@ -1236,7 +1237,7 @@ mod tests {
             parse_ticker_linear_funding(&msg.data, instrument.id(), ts_event, TS).unwrap();
 
         assert_eq!(funding.instrument_id, instrument.id());
-        assert_eq!(funding.rate, Decimal::new(-212, 6)); // -0.000212
+        assert_eq!(funding.rate, dec!(-0.000212)); // -0.000212
         assert_eq!(
             funding.next_funding_ns,
             Some(UnixNanos::new(1_673_280_000_000_000_000))

@@ -3596,7 +3596,7 @@ pub mod funding_rate_update {
       !self.reader.get_pointer_field(0).is_null()
     }
     #[inline]
-    pub fn get_rate(self) -> ::capnp::Result<::capnp::text::Reader<'a>> {
+    pub fn get_rate(self) -> ::capnp::Result<crate::types_capnp::decimal::Reader<'a>> {
       ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(1), ::core::option::Option::None)
     }
     #[inline]
@@ -3698,16 +3698,16 @@ pub mod funding_rate_update {
       !self.builder.is_pointer_field_null(0)
     }
     #[inline]
-    pub fn get_rate(self) -> ::capnp::Result<::capnp::text::Builder<'a>> {
+    pub fn get_rate(self) -> ::capnp::Result<crate::types_capnp::decimal::Builder<'a>> {
       ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(1), ::core::option::Option::None)
     }
     #[inline]
-    pub fn set_rate(&mut self, value: impl ::capnp::traits::SetterInput<::capnp::text::Owned>)  {
-      ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(1), value, false).unwrap()
+    pub fn set_rate(&mut self, value: crate::types_capnp::decimal::Reader<'_>) -> ::capnp::Result<()> {
+      ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(1), value, false)
     }
     #[inline]
-    pub fn init_rate(self, size: u32) -> ::capnp::text::Builder<'a> {
-      self.builder.get_pointer_field(1).init_text(size)
+    pub fn init_rate(self, ) -> crate::types_capnp::decimal::Builder<'a> {
+      ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(1), 0)
     }
     #[inline]
     pub fn has_rate(&self) -> bool {
@@ -3772,6 +3772,9 @@ pub mod funding_rate_update {
   impl Pipeline  {
     pub fn get_instrument_id(&self) -> crate::identifiers_capnp::instrument_id::Pipeline {
       ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(0))
+    }
+    pub fn get_rate(&self) -> crate::types_capnp::decimal::Pipeline {
+      ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(1))
     }
     pub fn get_next_funding_time(&self) -> crate::base_capnp::unix_nanos::Pipeline {
       ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(2))
@@ -3849,11 +3852,11 @@ pub mod funding_rate_update {
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(114, 97, 116, 101, 0, 0, 0, 0),
-      ::capnp::word(12, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(116, 218, 20, 176, 247, 158, 26, 163),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(12, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(110, 101, 120, 116, 70, 117, 110, 100),
@@ -3885,7 +3888,7 @@ pub mod funding_rate_update {
     pub fn get_field_types(index: u16) -> ::capnp::introspect::Type {
       match index {
         0 => <crate::identifiers_capnp::instrument_id::Owned as ::capnp::introspect::Introspect>::introspect(),
-        1 => <::capnp::text::Owned as ::capnp::introspect::Introspect>::introspect(),
+        1 => <crate::types_capnp::decimal::Owned as ::capnp::introspect::Introspect>::introspect(),
         2 => <crate::base_capnp::unix_nanos::Owned as ::capnp::introspect::Introspect>::introspect(),
         3 => <crate::base_capnp::unix_nanos::Owned as ::capnp::introspect::Introspect>::introspect(),
         4 => <crate::base_capnp::unix_nanos::Owned as ::capnp::introspect::Introspect>::introspect(),

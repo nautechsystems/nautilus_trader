@@ -20,8 +20,6 @@
 
 use std::fmt::Display;
 
-use serde::{Deserialize, Serialize};
-
 use crate::{
     defi::{Pool, pool_analysis::snapshot::PoolSnapshot},
     identifiers::InstrumentId,
@@ -32,6 +30,7 @@ pub mod collect;
 pub mod flash;
 pub mod liquidity;
 pub mod swap;
+pub mod swap_trade_info;
 pub mod transaction;
 
 // Re-exports
@@ -42,7 +41,7 @@ pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
 pub use swap::PoolSwap;
 pub use transaction::Transaction;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DexPoolData {
     Swap(PoolSwap),
     LiquidityUpdate(PoolLiquidityUpdate),
@@ -91,7 +90,7 @@ impl DexPoolData {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DefiData {
     /// A block completion in a blockchain network.
     Block(Block),

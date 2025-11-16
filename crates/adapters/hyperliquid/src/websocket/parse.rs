@@ -382,7 +382,7 @@ pub fn parse_ws_fill_report(
 /// Parses a WebSocket ActiveAssetCtx message into mark price, index price, and funding rate updates.
 ///
 /// This converts Hyperliquid asset context data into Nautilus price and funding rate updates.
-/// Returns a tuple of (MarkPriceUpdate, Option<IndexPriceUpdate>, Option<FundingRateUpdate>).
+/// Returns a tuple of (`MarkPriceUpdate`, `Option<IndexPriceUpdate>`, `Option<FundingRateUpdate>`).
 /// Index price and funding rate are only present for perpetual contracts.
 pub fn parse_ws_asset_context(
     ctx: &WsActiveAssetCtxData,

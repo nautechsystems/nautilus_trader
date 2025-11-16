@@ -777,15 +777,17 @@ impl KrakenHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_raw_client_creation() {
         let client = KrakenRawHttpClient::default();
         assert!(client.credential.is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_raw_client_with_credentials() {
         let client = KrakenRawHttpClient::with_credentials(
             "test_key".to_string(),
@@ -801,13 +803,13 @@ mod tests {
         assert!(client.credential.is_some());
     }
 
-    #[test]
+    #[rstest]
     fn test_client_creation() {
         let client = KrakenHttpClient::default();
         assert!(client.instruments_cache.is_empty());
     }
 
-    #[test]
+    #[rstest]
     fn test_client_with_credentials() {
         let client = KrakenHttpClient::with_credentials(
             "test_key".to_string(),

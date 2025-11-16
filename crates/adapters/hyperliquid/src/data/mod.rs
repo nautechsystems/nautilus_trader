@@ -857,14 +857,13 @@ impl DataClient for HyperliquidDataClient {
     }
 }
 
-/// Convert HyperliquidCandle to Nautilus Bar.
-fn candle_to_bar(
+pub(crate) fn candle_to_bar(
     candle: &HyperliquidCandle,
     bar_type: BarType,
     price_precision: u8,
     size_precision: u8,
 ) -> anyhow::Result<Bar> {
-    let ts_init = UnixNanos::from(candle.timestamp * 1_000_000); // Convert ms to ns
+    let ts_init = UnixNanos::from(candle.timestamp * 1_000_000);
     let ts_event = ts_init;
 
     let open = candle.open.parse::<f64>().context("parse open price")?;
@@ -915,10 +914,9 @@ async fn request_bars_from_http(
         .next()
         .context("invalid instrument symbol")?;
 
-    // Convert bar type to Hyperliquid interval
     let interval = bar_type_to_interval(&bar_type)?;
 
-    // Calculate time range (Hyperliquid uses milliseconds)
+    // Hyperliquid uses millisecond timestamps
     let now = Utc::now();
     let end_time = end.unwrap_or(now).timestamp_millis() as u64;
     let start_time = if let Some(start) = start {
@@ -930,20 +928,17 @@ async fn request_bars_from_http(
             BarAggregation::Minute => spec.step.get() as u64 * 60_000,
             BarAggregation::Hour => spec.step.get() as u64 * 3_600_000,
             BarAggregation::Day => spec.step.get() as u64 * 86_400_000,
-            _ => 60_000, // Default to 1 minute
+            _ => 60_000,
         };
         end_time.saturating_sub(1000 * step_ms)
     };
 
-    // Fetch candles from API
-    let response = http_client
+    let candles = http_client
         .info_candle_snapshot(coin, interval, start_time, end_time)
         .await
         .context("failed to fetch candle snapshot from Hyperliquid")?;
 
-    // Convert candles to bars
-    let mut bars: Vec<Bar> = response
-        .data
+    let mut bars: Vec<Bar> = candles
         .iter()
         .filter_map(|candle| {
             candle_to_bar(candle, bar_type, price_precision, size_precision)
@@ -955,7 +950,6 @@ async fn request_bars_from_http(
         })
         .collect();
 
-    // Apply limit if specified
     if let Some(limit) = limit
         && bars.len() > limit as usize
     {

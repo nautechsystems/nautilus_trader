@@ -211,7 +211,7 @@ impl OrderStatusReport {
     pub fn with_avg_px(mut self, avg_px: f64) -> anyhow::Result<Self> {
         if !avg_px.is_finite() {
             anyhow::bail!(
-                "avg_px must be finite, got: {} (is_nan: {}, is_infinite: {})",
+                "avg_px must be finite, was: {} (is_nan: {}, is_infinite: {})",
                 avg_px,
                 avg_px.is_nan(),
                 avg_px.is_infinite()

@@ -199,7 +199,7 @@ def register_chart(name: str, func: Callable | None = None) -> Callable | None:
 
         def decorator(f: Callable) -> Callable:
             if not callable(f):
-                raise ValueError(f"Chart function must be callable, got {type(f)}")
+                raise ValueError(f"Chart function must be callable, was {type(f)}")
             _CHART_REGISTRY[name] = f
             return f
 
@@ -207,7 +207,7 @@ def register_chart(name: str, func: Callable | None = None) -> Callable | None:
 
     # Used directly: register_chart("name", func)
     if not callable(func):
-        raise ValueError(f"Chart function must be callable, got {type(func)}")
+        raise ValueError(f"Chart function must be callable, was {type(func)}")
 
     _CHART_REGISTRY[name] = func
     return None

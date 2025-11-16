@@ -567,6 +567,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
+
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http_with_config(
                 &filepath_clone,
@@ -619,6 +620,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
+
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http_with_config(
                 &filepath_clone,
@@ -667,6 +669,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
+
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http_with_config(
                 &filepath_clone,

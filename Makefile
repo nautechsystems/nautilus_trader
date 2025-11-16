@@ -414,6 +414,10 @@ else
 	cargo nextest run --workspace --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --cargo-profile nextest --status-level fail --final-status-level flaky
 endif
 
+.PHONY: cargo-test-extras
+cargo-test-extras:  #-- Run all Rust tests with capnp and hypersync features (convenience shortcut)
+	$(MAKE) cargo-test EXTRA_FEATURES="capnp,hypersync"
+
 .PHONY: cargo-test-lib
 cargo-test-lib: export RUST_BACKTRACE=1
 cargo-test-lib: check-nextest-installed

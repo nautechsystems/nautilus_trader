@@ -168,26 +168,6 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 /// - The string format is not a valid ISO 8601 format
 /// - The timestamp is out of range for `UnixNanos`
 /// - The date/time values are invalid
-///
-/// # Examples
-///
-/// ```rust
-/// use nautilus_core::datetime::iso8601_to_unix_nanos;
-/// use nautilus_core::UnixNanos;
-///
-/// // Full RFC 3339 format
-/// let nanos = iso8601_to_unix_nanos("2024-02-10T14:58:43.456789Z".to_string())?;
-/// assert_eq!(nanos, UnixNanos::from(1_707_577_123_456_789_000));
-///
-/// // Without fractional seconds
-/// let nanos = iso8601_to_unix_nanos("2024-02-10T14:58:43Z".to_string())?;
-/// assert_eq!(nanos, UnixNanos::from(1_707_577_123_000_000_000));
-///
-/// // Simple date format (midnight UTC)
-/// let nanos = iso8601_to_unix_nanos("2024-02-10".to_string())?;
-/// assert_eq!(nanos, UnixNanos::from(1_707_523_200_000_000_000));
-/// # Ok::<(), anyhow::Error>(())
-/// ```
 #[inline]
 pub fn iso8601_to_unix_nanos(date_string: String) -> anyhow::Result<UnixNanos> {
     date_string

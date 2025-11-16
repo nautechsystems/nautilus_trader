@@ -30,12 +30,13 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
+use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{BarAggregation, OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    orders::Order,
+    orders::{Order, OrderAny},
+    reports::{FillReport, OrderStatusReport},
     types::{Price, Quantity},
 };
 use nautilus_network::{
@@ -52,15 +53,22 @@ use crate::{
     common::{
         consts::{HYPERLIQUID_VENUE, exchange_url, info_url},
         credential::{Secrets, VaultAddress},
-        enums::{HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidProductType},
-        parse::{extract_asset_id_from_symbol, orders_to_hyperliquid_requests},
+        enums::{
+            HyperliquidBarInterval, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
+            HyperliquidProductType,
+        },
+        parse::{
+            bar_type_to_interval, extract_asset_id_from_symbol, orders_to_hyperliquid_requests,
+        },
     },
     http::{
         error::{Error, Result},
         models::{
-            Cloid, HyperliquidExchangeRequest, HyperliquidExchangeResponse, HyperliquidExecAction,
+            Cloid, HyperliquidCandleSnapshot, HyperliquidExchangeRequest,
+            HyperliquidExchangeResponse, HyperliquidExecAction,
             HyperliquidExecCancelByCloidRequest, HyperliquidExecCancelOrderRequest,
             HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
+            HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
             HyperliquidExecTriggerParams, HyperliquidFills, HyperliquidL2Book, HyperliquidMeta,
             HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
@@ -426,7 +434,6 @@ impl HyperliquidHttpClient {
             ("Content-Type".to_string(), "application/json".to_string()),
         ])
     }
-    // ---------------- INFO ENDPOINTS --------------------------------------------
 
     /// Get metadata about available markets.
     pub async fn info_meta(&self) -> Result<HyperliquidMeta> {
@@ -548,12 +555,19 @@ impl HyperliquidHttpClient {
     pub async fn info_candle_snapshot(
         &self,
         coin: &str,
-        interval: crate::common::enums::HyperliquidBarInterval,
+        interval: HyperliquidBarInterval,
         start_time: u64,
         end_time: u64,
-    ) -> Result<crate::http::models::HyperliquidCandleSnapshot> {
+    ) -> Result<HyperliquidCandleSnapshot> {
         let request = InfoRequest::candle_snapshot(coin, interval, start_time, end_time);
         let response = self.send_info_request(&request).await?;
+
+        tracing::trace!(
+            "Candle snapshot raw response (len={}): {:?}",
+            response.as_array().map_or(0, |a| a.len()),
+            response
+        );
+
         serde_json::from_value(response).map_err(Error::Serde)
     }
 
@@ -884,7 +898,7 @@ impl HyperliquidHttpClient {
         trigger_price: Option<Price>,
         post_only: bool,
         reduce_only: bool,
-    ) -> Result<nautilus_model::reports::OrderStatusReport> {
+    ) -> Result<OrderStatusReport> {
         let symbol = instrument_id.symbol.as_str();
         let asset = extract_asset_id_from_symbol(symbol)
             .map_err(|e| Error::bad_request(format!("Failed to extract asset ID: {e}")))?;
@@ -987,19 +1001,18 @@ impl HyperliquidHttpClient {
         };
 
         // Build the order request
-        let hyperliquid_order = HyperliquidExecPlaceOrderRequest {
-            asset,
-            is_buy,
-            price: price_decimal,
-            size: size_decimal,
-            reduce_only,
-            kind,
-            cloid: Some(
-                crate::http::models::Cloid::from_hex(client_order_id).map_err(|e| {
+        let hyperliquid_order =
+            HyperliquidExecPlaceOrderRequest {
+                asset,
+                is_buy,
+                price: price_decimal,
+                size: size_decimal,
+                reduce_only,
+                kind,
+                cloid: Some(Cloid::from_hex(client_order_id).map_err(|e| {
                     Error::bad_request(format!("Invalid client order ID format: {e}"))
-                })?,
-            ),
-        };
+                })?),
+            };
 
         // Create action
         let action = HyperliquidExecAction::Order {
@@ -1023,7 +1036,7 @@ impl HyperliquidHttpClient {
                     response_data
                 };
 
-                let order_response: crate::http::models::HyperliquidExecOrderResponseData =
+                let order_response: HyperliquidExecOrderResponseData =
                     serde_json::from_value(data_value).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
@@ -1051,7 +1064,7 @@ impl HyperliquidHttpClient {
                 let ts_init = nautilus_core::UnixNanos::default();
 
                 match order_status {
-                    crate::http::models::HyperliquidExecOrderStatus::Resting { resting } => self
+                    HyperliquidExecOrderStatus::Resting { resting } => self
                         .create_order_status_report(
                             instrument_id,
                             Some(client_order_id),
@@ -1068,7 +1081,7 @@ impl HyperliquidHttpClient {
                             account_id,
                             ts_init,
                         ),
-                    crate::http::models::HyperliquidExecOrderStatus::Filled { filled } => {
+                    HyperliquidExecOrderStatus::Filled { filled } => {
                         let filled_qty = nautilus_model::types::Quantity::new(
                             filled.total_sz.to_string().parse::<f64>().unwrap_or(0.0),
                             instrument.size_precision(),
@@ -1090,7 +1103,7 @@ impl HyperliquidHttpClient {
                             ts_init,
                         )
                     }
-                    crate::http::models::HyperliquidExecOrderStatus::Error { error } => {
+                    HyperliquidExecOrderStatus::Error { error } => {
                         Err(Error::bad_request(format!("Order rejected: {error}")))
                     }
                 }
@@ -1105,10 +1118,7 @@ impl HyperliquidHttpClient {
     /// Submit an order using an OrderAny object.
     ///
     /// This is a convenience method that wraps submit_order.
-    pub async fn submit_order_from_order_any(
-        &self,
-        order: &nautilus_model::orders::any::OrderAny,
-    ) -> Result<nautilus_model::reports::OrderStatusReport> {
+    pub async fn submit_order_from_order_any(&self, order: &OrderAny) -> Result<OrderStatusReport> {
         self.submit_order(
             order.instrument_id(),
             order.client_order_id(),
@@ -1142,13 +1152,13 @@ impl HyperliquidHttpClient {
         _instrument: &nautilus_model::instruments::InstrumentAny,
         account_id: nautilus_model::identifiers::AccountId,
         ts_init: nautilus_core::UnixNanos,
-    ) -> Result<nautilus_model::reports::OrderStatusReport> {
+    ) -> Result<OrderStatusReport> {
         let clock = get_atomic_clock_realtime();
         let ts_accepted = clock.get_time_ns();
         let ts_last = ts_accepted;
-        let report_id = nautilus_core::UUID4::new();
+        let report_id = UUID4::new();
 
-        let mut report = nautilus_model::reports::OrderStatusReport::new(
+        let mut report = OrderStatusReport::new(
             account_id,
             instrument_id,
             client_order_id,
@@ -1189,18 +1199,15 @@ impl HyperliquidHttpClient {
     ///
     /// Returns an error if credentials are missing, order validation fails, serialization fails,
     /// or the API returns an error.
-    pub async fn submit_orders(
-        &self,
-        orders: &[&nautilus_model::orders::any::OrderAny],
-    ) -> Result<Vec<nautilus_model::reports::OrderStatusReport>> {
+    pub async fn submit_orders(&self, orders: &[&OrderAny]) -> Result<Vec<OrderStatusReport>> {
         // Use the existing parsing function from common::parse
         let hyperliquid_orders = orders_to_hyperliquid_requests(orders)
             .map_err(|e| Error::bad_request(format!("Failed to convert orders: {e}")))?;
 
         // Create typed action using HyperliquidExecAction (same as working Rust binary)
-        let action = crate::http::models::HyperliquidExecAction::Order {
+        let action = HyperliquidExecAction::Order {
             orders: hyperliquid_orders,
-            grouping: crate::http::models::HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExecGrouping::Na,
             builder: None,
         };
 
@@ -1222,7 +1229,7 @@ impl HyperliquidHttpClient {
                 };
 
                 // Parse the response data to extract order statuses
-                let order_response: crate::http::models::HyperliquidExecOrderResponseData =
+                let order_response: HyperliquidExecOrderResponseData =
                     serde_json::from_value(data_value).map_err(|e| {
                         Error::bad_request(format!("Failed to parse order response: {e}"))
                     })?;
@@ -1259,7 +1266,7 @@ impl HyperliquidHttpClient {
 
                     // Create OrderStatusReport based on the order status
                     let report = match order_status {
-                        crate::http::models::HyperliquidExecOrderStatus::Resting { resting } => {
+                        HyperliquidExecOrderStatus::Resting { resting } => {
                             // Order is resting on the order book
                             self.create_order_status_report(
                                 order.instrument_id(),
@@ -1283,7 +1290,7 @@ impl HyperliquidHttpClient {
                                 ts_init,
                             )?
                         }
-                        crate::http::models::HyperliquidExecOrderStatus::Filled { filled } => {
+                        HyperliquidExecOrderStatus::Filled { filled } => {
                             // Order was filled immediately
                             let filled_qty = nautilus_model::types::Quantity::new(
                                 filled.total_sz.to_string().parse::<f64>().unwrap_or(0.0),
@@ -1308,7 +1315,7 @@ impl HyperliquidHttpClient {
                                 ts_init,
                             )?
                         }
-                        crate::http::models::HyperliquidExecOrderStatus::Error { error } => {
+                        HyperliquidExecOrderStatus::Error { error } => {
                             return Err(Error::bad_request(format!(
                                 "Order {} rejected: {error}",
                                 order.client_order_id()
@@ -1439,7 +1446,7 @@ impl HyperliquidHttpClient {
         &self,
         user: &str,
         instrument_id: Option<nautilus_model::identifiers::InstrumentId>,
-    ) -> Result<Vec<nautilus_model::reports::OrderStatusReport>> {
+    ) -> Result<Vec<OrderStatusReport>> {
         let response = self.info_frontend_open_orders(user).await?;
 
         // Parse the JSON response into a vector of orders
@@ -1507,7 +1514,7 @@ impl HyperliquidHttpClient {
         &self,
         user: &str,
         instrument_id: Option<nautilus_model::identifiers::InstrumentId>,
-    ) -> Result<Vec<nautilus_model::reports::FillReport>> {
+    ) -> Result<Vec<FillReport>> {
         let fills_response = self.info_user_fills(user).await?;
 
         let mut reports = Vec::new();
@@ -1607,6 +1614,114 @@ impl HyperliquidHttpClient {
         Ok(reports)
     }
 
+    /// Request historical bars for an instrument.
+    ///
+    /// Fetches candle data from the Hyperliquid API and converts it to Nautilus bars.
+    /// Incomplete bars (where end_timestamp >= current time) are filtered out.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The bar aggregation is unsupported by Hyperliquid.
+    /// - The API request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint#candles-snapshot>
+    pub async fn request_bars(
+        &self,
+        bar_type: nautilus_model::data::BarType,
+        start: Option<chrono::DateTime<chrono::Utc>>,
+        end: Option<chrono::DateTime<chrono::Utc>>,
+        limit: Option<u32>,
+    ) -> Result<Vec<nautilus_model::data::bar::Bar>> {
+        let instrument_id = bar_type.instrument_id();
+        let symbol = instrument_id.symbol;
+
+        let coin = Ustr::from(
+            symbol
+                .as_str()
+                .split('-')
+                .next()
+                .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?,
+        );
+
+        let product_type = HyperliquidProductType::from_symbol(symbol.as_str()).ok();
+        let instrument = self
+            .get_or_create_instrument(&coin, product_type)
+            .ok_or_else(|| {
+                Error::bad_request(format!("Instrument not found in cache: {instrument_id}"))
+            })?;
+
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+
+        let interval =
+            bar_type_to_interval(&bar_type).map_err(|e| Error::bad_request(e.to_string()))?;
+
+        // Hyperliquid uses millisecond timestamps
+        let now = chrono::Utc::now();
+        let end_time = end.unwrap_or(now).timestamp_millis() as u64;
+        let start_time = if let Some(start) = start {
+            start.timestamp_millis() as u64
+        } else {
+            // Default to 1000 bars before end_time
+            let spec = bar_type.spec();
+            let step_ms = match spec.aggregation {
+                BarAggregation::Minute => spec.step.get() as u64 * 60_000,
+                BarAggregation::Hour => spec.step.get() as u64 * 3_600_000,
+                BarAggregation::Day => spec.step.get() as u64 * 86_400_000,
+                BarAggregation::Week => spec.step.get() as u64 * 604_800_000,
+                BarAggregation::Month => spec.step.get() as u64 * 2_592_000_000,
+                _ => 60_000,
+            };
+            end_time.saturating_sub(1000 * step_ms)
+        };
+
+        let candles = self
+            .info_candle_snapshot(coin.as_str(), interval, start_time, end_time)
+            .await?;
+
+        // Filter out incomplete bars where end_timestamp >= current time
+        let now_ms = now.timestamp_millis() as u64;
+
+        let mut bars: Vec<nautilus_model::data::bar::Bar> = candles
+            .iter()
+            .filter(|candle| candle.end_timestamp < now_ms)
+            .enumerate()
+            .filter_map(|(i, candle)| {
+                crate::data::candle_to_bar(candle, bar_type, price_precision, size_precision)
+                    .map_err(|e| {
+                        tracing::error!(
+                            "Failed to convert candle {} to bar: {:?} error: {e}",
+                            i,
+                            candle
+                        );
+                        e
+                    })
+                    .ok()
+            })
+            .collect();
+
+        // 0 means no limit
+        if let Some(limit) = limit
+            && limit > 0
+            && bars.len() > limit as usize
+        {
+            bars.truncate(limit as usize);
+        }
+
+        tracing::debug!(
+            "Received {} bars for {} (filtered {} incomplete)",
+            bars.len(),
+            bar_type,
+            candles.len() - bars.len()
+        );
+        Ok(bars)
+    }
+
     /// Best-effort gauge for diagnostics/metrics
     pub async fn rest_limiter_snapshot(&self) -> RateLimitSnapshot {
         self.rest_limiter.snapshot().await
@@ -1627,7 +1742,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::HyperliquidHttpClient;
-    use crate::http::query::InfoRequest;
+    use crate::{common::enums::HyperliquidProductType, http::query::InfoRequest};
 
     #[rstest]
     fn stable_json_roundtrips() {
@@ -1693,7 +1808,7 @@ mod tests {
 
         let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
             instrument_id,
-            raw_symbol, // Second parameter is raw_symbol, not symbol
+            raw_symbol,
             base_currency,
             quote_currency,
             8,
@@ -1739,10 +1854,8 @@ mod tests {
 
         // Verify it can be looked up by composite key (coin, product_type)
         let instruments_by_coin = client.instruments_by_coin.read().unwrap();
-        let by_coin = instruments_by_coin.get(&(
-            Ustr::from("vntls:vCURSOR"),
-            crate::common::enums::HyperliquidProductType::Spot,
-        ));
+        let by_coin =
+            instruments_by_coin.get(&(Ustr::from("vntls:vCURSOR"), HyperliquidProductType::Spot));
         assert!(
             by_coin.is_some(),
             "Instrument should be accessible by coin and product type"
@@ -1753,7 +1866,7 @@ mod tests {
         // Verify get_or_create_instrument works with product type
         let retrieved_with_type = client.get_or_create_instrument(
             &Ustr::from("vntls:vCURSOR"),
-            Some(crate::common::enums::HyperliquidProductType::Spot),
+            Some(HyperliquidProductType::Spot),
         );
         assert!(retrieved_with_type.is_some());
         assert_eq!(retrieved_with_type.unwrap().id(), instrument.id());

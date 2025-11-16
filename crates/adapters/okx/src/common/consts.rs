@@ -42,16 +42,18 @@ pub const OKX_WS_DEMO_BUSINESS_URL: &str = "wss://wspap.okx.com:8443/ws/v5/busin
 
 pub const OKX_WS_TOPIC_DELIMITER: char = ':';
 
-/// OKX supported order time in force for market orders.
+/// OKX supported order time in force.
 ///
 /// # Notes
 ///
 /// - OKX implements IOC and FOK as order types rather than separate time-in-force parameters.
+/// - FOK is only supported with Limit orders (Market + FOK is not supported).
+/// - IOC with Market orders uses OptimalLimitIoc, with Limit orders uses Ioc.
 /// - GTD is supported via expire_time parameter.
 pub const OKX_SUPPORTED_TIME_IN_FORCE: &[TimeInForce] = &[
     TimeInForce::Gtc, // Good Till Cancel (default)
-    TimeInForce::Ioc, // Immediate or Cancel (mapped to OKXOrderType::Ioc)
-    TimeInForce::Fok, // Fill or Kill (mapped to OKXOrderType::Fok)
+    TimeInForce::Ioc, // Immediate or Cancel (mapped to OKXOrderType::Ioc or OptimalLimitIoc)
+    TimeInForce::Fok, // Fill or Kill (only with Limit orders, mapped to OKXOrderType::Fok)
 ];
 
 /// OKX supported order types.

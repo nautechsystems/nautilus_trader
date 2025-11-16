@@ -426,12 +426,11 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_cancel() {
-        use crate::http::models::HyperliquidExecCancelByCloidRequest;
+        use crate::http::models::{Cloid, HyperliquidExecCancelByCloidRequest};
 
         let cancel = HyperliquidExecCancelByCloidRequest {
             asset: 0,
-            cloid: crate::http::models::Cloid::from_hex("0x00000000000000000000000000000000")
-                .unwrap(),
+            cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
         };
 
         let action = ExchangeAction::cancel(vec![cancel]);

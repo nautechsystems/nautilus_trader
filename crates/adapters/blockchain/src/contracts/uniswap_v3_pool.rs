@@ -164,7 +164,7 @@ impl UniswapV3PoolContract {
             return Err(UniswapV3PoolError::CallFailed {
                 field: "global_state_multicall".to_string(),
                 pool: *pool_address,
-                reason: format!("Expected 4 results, got {}", results.len()),
+                reason: format!("Expected 4 results, received {}", results.len()),
             });
         }
 

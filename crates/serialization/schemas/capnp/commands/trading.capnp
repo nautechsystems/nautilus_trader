@@ -5,6 +5,7 @@ using Identifiers = import "../common/identifiers.capnp";
 using Types = import "../common/types.capnp";
 using Enums = import "../common/enums.capnp";
 using Base = import "../common/base.capnp";
+using OrderEvents = import "../events/order.capnp";
 
 # Common header for trading commands
 struct TradingCommandHeader {
@@ -169,13 +170,13 @@ struct TradingCommand {
 
 struct SubmitOrder {
     header @0 :TradingCommandHeader;
-    order @1 :Order;
+    orderInit @1 :OrderEvents.OrderInitialized;
     positionId @2 :Identifiers.PositionId;
 }
 
 struct SubmitOrderList {
     header @0 :TradingCommandHeader;
-    orderList @1 :OrderList;
+    orderInits @1 :List(OrderEvents.OrderInitialized);
     positionId @2 :Identifiers.PositionId;
 }
 

@@ -252,12 +252,12 @@ def test_round_does_not_accept_values_half_tick_off():
 
     result = round_down(value, base)
     expected = 10_000_000.000001
-    assert abs(result - expected) < 1e-10, f"Expected {expected}, got {result}"
+    assert abs(result - expected) < 1e-10, f"Expected {expected}, was {result}"
 
     value2 = 10_000_000.0000005
     result2 = round_up(value2, base)
     expected2 = 10_000_000.000001
-    assert abs(result2 - expected2) < 1e-10, f"Expected {expected2}, got {result2}"
+    assert abs(result2 - expected2) < 1e-10, f"Expected {expected2}, was {result2}"
 
 
 def test_round_base_validation():

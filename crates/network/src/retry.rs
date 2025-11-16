@@ -81,6 +81,16 @@ where
         }
     }
 
+    /// Formats a retry budget exceeded error message with attempt context.
+    #[inline(always)]
+    fn budget_exceeded_msg(&self, attempt: u32) -> String {
+        format!(
+            "Retry budget exceeded ({}/{})",
+            attempt.saturating_add(1),
+            self.config.max_retries.saturating_add(1)
+        )
+    }
+
     /// Executes an operation with retry logic and optional cancellation.
     ///
     /// Cancellation is checked at three points:
@@ -133,14 +143,7 @@ where
             if let Some(max_elapsed_ms) = self.config.max_elapsed_ms {
                 let elapsed = start_time.elapsed();
                 if elapsed.as_millis() >= u128::from(max_elapsed_ms) {
-                    let e = create_error("Budget exceeded".to_string());
-                    tracing::trace!(
-                        operation = %operation_name,
-                        attempts = attempt + 1,
-                        budget_ms = max_elapsed_ms,
-                        "Retry budget exceeded"
-                    );
-                    return Err(e);
+                    return Err(create_error(self.budget_exceeded_msg(attempt)));
                 }
             }
 
@@ -214,14 +217,7 @@ where
                             Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
 
                         if remaining.is_zero() {
-                            let e = create_error("Budget exceeded".to_string());
-                            tracing::trace!(
-                                operation = %operation_name,
-                                attempts = attempt + 1,
-                                budget_ms = max_elapsed_ms,
-                                "Retry budget exceeded"
-                            );
-                            return Err(e);
+                            return Err(create_error(self.budget_exceeded_msg(attempt)));
                         }
 
                         delay = delay.min(remaining);
@@ -292,14 +288,7 @@ where
                             Duration::from_millis(max_elapsed_ms).saturating_sub(elapsed);
 
                         if remaining.is_zero() {
-                            let e = create_error("Budget exceeded".to_string());
-                            tracing::trace!(
-                                operation = %operation_name,
-                                attempts = attempt + 1,
-                                budget_ms = max_elapsed_ms,
-                                "Retry budget exceeded"
-                            );
-                            return Err(e);
+                            return Err(create_error(self.budget_exceeded_msg(attempt)));
                         }
 
                         delay = delay.min(remaining);
@@ -636,6 +625,132 @@ mod tests {
         assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
         assert!(elapsed.as_millis() >= 150);
         assert!(elapsed.as_millis() < 1000);
+    }
+
+    #[tokio::test]
+    async fn test_budget_exceeded_message_format() {
+        let config = RetryConfig {
+            max_retries: 5,
+            initial_delay_ms: 10,
+            max_delay_ms: 20,
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: Some(35),
+        };
+        let manager = RetryManager::new(config);
+
+        let result = manager
+            .execute_with_retry(
+                "test_budget_msg",
+                || async { Err::<i32, TestError>(TestError::Retryable("test".to_string())) },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await;
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+
+        assert!(error_msg.contains("Retry budget exceeded"));
+        assert!(error_msg.contains("/6)"));
+
+        if let Some(captures) = error_msg.strip_prefix("Timeout error: Retry budget exceeded (")
+            && let Some(nums) = captures.strip_suffix(")")
+        {
+            let parts: Vec<&str> = nums.split('/').collect();
+            assert_eq!(parts.len(), 2);
+            let current: u32 = parts[0].parse().unwrap();
+            let total: u32 = parts[1].parse().unwrap();
+
+            assert_eq!(total, 6, "Total should be max_retries + 1");
+            assert!(current <= total, "Current attempt should not exceed total");
+            assert!(current >= 1, "Current attempt should be at least 1");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_budget_exceeded_edge_cases() {
+        let config = RetryConfig {
+            max_retries: 2,
+            initial_delay_ms: 50,
+            max_delay_ms: 100,
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: Some(100),
+        };
+        let manager = RetryManager::new(config);
+
+        let attempt_count = Arc::new(AtomicU32::new(0));
+        let count_clone = attempt_count.clone();
+
+        let handle = tokio::spawn(async move {
+            manager
+                .execute_with_retry(
+                    "test_first_attempt",
+                    move || {
+                        let count = count_clone.clone();
+                        async move {
+                            count.fetch_add(1, Ordering::SeqCst);
+                            Err::<i32, TestError>(TestError::Retryable("test".to_string()))
+                        }
+                    },
+                    should_retry_test_error,
+                    create_test_error,
+                )
+                .await
+        });
+
+        // Wait for first attempt
+        yield_until(|| attempt_count.load(Ordering::SeqCst) >= 1).await;
+
+        // Advance past budget to trigger check at loop start before second attempt
+        tokio::time::advance(Duration::from_millis(101)).await;
+        tokio::task::yield_now().await;
+
+        let result = handle.await.unwrap();
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+
+        // Budget check happens at loop start, so shows (2/3) = "starting 2nd of 3 attempts"
+        assert!(
+            error_msg.contains("(2/3)"),
+            "Expected (2/3) but got: {error_msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_budget_exceeded_no_overflow() {
+        let config = RetryConfig {
+            max_retries: u32::MAX,
+            initial_delay_ms: 10,
+            max_delay_ms: 20,
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: Some(1),
+        };
+        let manager = RetryManager::new(config);
+
+        let result = manager
+            .execute_with_retry(
+                "test_overflow",
+                || async { Err::<i32, TestError>(TestError::Retryable("test".to_string())) },
+                should_retry_test_error,
+                create_test_error,
+            )
+            .await;
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+
+        // Should saturate at u32::MAX instead of wrapping to 0
+        assert!(error_msg.contains("Retry budget exceeded"));
+        assert!(error_msg.contains(&format!("/{}", u32::MAX)));
     }
 
     #[rstest]

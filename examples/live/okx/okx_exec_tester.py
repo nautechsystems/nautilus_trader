@@ -30,6 +30,7 @@ from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -219,7 +220,7 @@ config_tester = ExecTesterConfig(
     enable_buys=True,
     enable_sells=enable_sells,
     open_position_on_start_qty=order_qty,
-    # open_position_time_in_force=TimeInForce.FOK,
+    open_position_time_in_force=TimeInForce.IOC,
     tob_offset_ticks=100,
     # stop_offset_ticks=1,
     order_qty=order_qty,

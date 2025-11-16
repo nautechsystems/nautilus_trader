@@ -87,9 +87,11 @@ impl KrakenCredential {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_credential_creation() {
         let cred = KrakenCredential::new("test_key", "test_secret");
         assert_eq!(cred.api_key(), "test_key");

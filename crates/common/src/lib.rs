@@ -41,6 +41,7 @@
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
 //! - `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
+//! - `capnp`: Enables [Cap'n Proto](https://capnproto.org/) serialization support.
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
@@ -80,3 +81,6 @@ pub mod ffi;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(feature = "capnp")]
+pub mod serialization;

@@ -797,7 +797,7 @@ mod tests {
 
     // --- Builder Pattern Tests -----------------------------------------------------------------
 
-    #[test]
+    #[rstest]
     fn test_order_request_builder() {
         // Test OrderRequestBuilder derived from #[derive(Builder)]
         let order = OrderRequestBuilder::default()
@@ -821,7 +821,7 @@ mod tests {
         assert_eq!(order.c, Some("test-order-1".to_string()));
     }
 
-    #[test]
+    #[rstest]
     fn test_limit_order_params_builder() {
         // Test LimitOrderParamsBuilder
         let params = LimitOrderParamsBuilder::default()
@@ -843,7 +843,7 @@ mod tests {
         assert_eq!(params.cloid, Some("test-limit-1".to_string()));
     }
 
-    #[test]
+    #[rstest]
     fn test_trigger_order_params_builder() {
         // Test TriggerOrderParamsBuilder
         let params = TriggerOrderParamsBuilder::default()
@@ -866,7 +866,7 @@ mod tests {
         assert_eq!(params.trigger_px, "39500.0");
     }
 
-    #[test]
+    #[rstest]
     fn test_order_builder_single_limit_convenience() {
         // Test OrderBuilder::single_limit_order convenience method
         let params = LimitOrderParamsBuilder::default()
@@ -893,7 +893,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_order_builder_single_trigger_convenience() {
         // Test OrderBuilder::single_trigger_order convenience method
         let params = TriggerOrderParamsBuilder::default()
@@ -922,7 +922,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_order_builder_batch_orders() {
         // Test existing batch order functionality still works
         let params1 = LimitOrderParams {
@@ -962,7 +962,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_action_request_constructors() {
         // Test ActionRequest::order() constructor
         let order1 = mk_limit_gtc(0);

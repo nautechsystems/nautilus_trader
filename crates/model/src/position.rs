@@ -2731,7 +2731,7 @@ mod tests {
         let total_commission: f64 = position.commissions().iter().map(|c| c.as_f64()).sum();
         assert!(
             (total_commission - 1.0).abs() < 1e-10,
-            "Commission accumulation should be accurate: expected 1.0, got {}",
+            "Commission accumulation should be accurate: expected 1.0, was {}",
             total_commission
         );
 
@@ -2862,7 +2862,7 @@ mod tests {
         let realized = position.realized_pnl.unwrap().as_f64();
         assert!(
             (realized - (-1.0)).abs() < 1e-10,
-            "Realized PnL should be exactly -1.0 USD (commissions), got {}",
+            "Realized PnL should be exactly -1.0 USD (commissions), was {}",
             realized
         );
     }
@@ -2898,14 +2898,14 @@ mod tests {
         // Position quantity should be 1.0 - 0.001 = 0.999 BTC
         assert!(
             (position.quantity.as_f64() - 0.999).abs() < 1e-9,
-            "Position quantity should be 0.999 BTC (1.0 - 0.001 commission), got {}",
+            "Position quantity should be 0.999 BTC (1.0 - 0.001 commission), was {}",
             position.quantity.as_f64()
         );
 
         // Signed qty should also be 0.999
         assert!(
             (position.signed_qty - 0.999).abs() < 1e-9,
-            "Signed qty should be 0.999, got {}",
+            "Signed qty should be 0.999, was {}",
             position.signed_qty
         );
 
@@ -2959,14 +2959,14 @@ mod tests {
         // (you sold 1.0 and paid 0.001 commission, so total short exposure is 1.001)
         assert!(
             (position.quantity.as_f64() - 1.001).abs() < 1e-9,
-            "Position quantity should be 1.001 BTC (1.0 + 0.001 commission), got {}",
+            "Position quantity should be 1.001 BTC (1.0 + 0.001 commission), was {}",
             position.quantity.as_f64()
         );
 
         // Signed qty should be -1.001 (short position)
         assert!(
             (position.signed_qty - (-1.001)).abs() < 1e-9,
-            "Signed qty should be -1.001, got {}",
+            "Signed qty should be -1.001, was {}",
             position.signed_qty
         );
 
@@ -3020,7 +3020,7 @@ mod tests {
         // Position quantity should be exactly 1.0 BTC (no adjustment)
         assert!(
             (position.quantity.as_f64() - 1.0).abs() < 1e-9,
-            "Position quantity should be 1.0 BTC (no adjustment for quote currency commission), got {}",
+            "Position quantity should be 1.0 BTC (no adjustment for quote currency commission), was {}",
             position.quantity.as_f64()
         );
 
@@ -3376,14 +3376,14 @@ mod tests {
         // buy_qty tracks order fills (1.0 BTC), adjustments tracked separately
         assert!(
             (position.buy_qty.as_f64() - 1.0).abs() < 1e-9,
-            "buy_qty should be 1.0 (order fill amount), got {}",
+            "buy_qty should be 1.0 (order fill amount), was {}",
             position.buy_qty.as_f64()
         );
 
         // Position quantity reflects both order fill and commission adjustment
         assert!(
             (position.quantity.as_f64() - 0.999).abs() < 1e-9,
-            "position.quantity should be 0.999 (1.0 - 0.001 commission), got {}",
+            "position.quantity should be 0.999 (1.0 - 0.001 commission), was {}",
             position.quantity.as_f64()
         );
 
@@ -3426,14 +3426,14 @@ mod tests {
         // Position quantity should be exactly 1.0 (NO adjustment for derivatives)
         assert!(
             (position.quantity.as_f64() - 1.0).abs() < 1e-9,
-            "Perpetual position should be 1.0 contracts (no adjustment), got {}",
+            "Perpetual position should be 1.0 contracts (no adjustment), was {}",
             position.quantity.as_f64()
         );
 
         // Signed qty should also be 1.0
         assert!(
             (position.signed_qty - 1.0).abs() < 1e-9,
-            "Signed qty should be 1.0, got {}",
+            "Signed qty should be 1.0, was {}",
             position.signed_qty
         );
     }

@@ -18,6 +18,7 @@
 use chrono::{DateTime, Utc};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
+    data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
@@ -375,7 +376,7 @@ impl BybitHttpClient {
         &self,
         py: Python<'py>,
         product_type: BybitProductType,
-        bar_type: nautilus_model::data::BarType,
+        bar_type: BarType,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,

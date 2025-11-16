@@ -349,9 +349,6 @@ impl PoolProfiler {
             self.state.price_sqrt_ratio_x96,
             self.tick_map.liquidity,
             self.state.current_tick,
-            None,
-            None,
-            None,
         );
         Ok(swap_event)
     }
@@ -543,6 +540,7 @@ impl PoolProfiler {
         };
 
         let quote = SwapQuote::new(
+            self.pool.instrument_id,
             amount0,
             amount1,
             self.state.price_sqrt_ratio_x96,

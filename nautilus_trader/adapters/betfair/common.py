@@ -15,6 +15,7 @@
 
 from typing import Final
 
+from betfair_parser.exceptions import BetfairError
 from betfair_parser.spec.betting.enums import PersistenceType
 from betfair_parser.spec.betting.enums import Side
 from betfair_parser.spec.betting.enums import TimeInForce as BetfairTimeInForce
@@ -112,3 +113,27 @@ BETFAIR_FLOAT_TO_PRICE = {price.as_double(): price for price in BETFAIR_TICK_SCH
 MAX_BET_PRICE = max(BETFAIR_TICK_SCHEME.ticks)
 MIN_BET_PRICE = min(BETFAIR_TICK_SCHEME.ticks)
 register_tick_scheme(BETFAIR_TICK_SCHEME)
+
+
+def is_session_error(error: BetfairError) -> bool:
+    """
+    Check if a BetfairError is a session expiry error.
+
+    Session errors (NO_SESSION, INVALID_SESSION_INFORMATION) are expected to occur
+    every 12-24 hours and should trigger automatic reconnection.
+
+    Parameters
+    ----------
+    error : BetfairError
+        The error to check.
+
+    Returns
+    -------
+    bool
+        True if the error is a session expiry error.
+
+    """
+    if not error.args:
+        return False
+    msg = str(error.args[0])
+    return "NO_SESSION" in msg or "INVALID_SESSION_INFORMATION" in msg

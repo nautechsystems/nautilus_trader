@@ -67,5 +67,17 @@ walkdir = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+criterion = { workspace = true }
 pretty_assertions = { workspace = true }
 rstest = { workspace = true }
+
+[[bench]]
+name = "capnp_serialization"
+path = "benches/capnp_serialization.rs"
+harness = false
+required-features = ["capnp"]
+
+[[bench]]
+name = "serialization_comparison"
+path = "benches/serialization_comparison.rs"
+harness = false

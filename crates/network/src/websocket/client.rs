@@ -1829,7 +1829,7 @@ mod rust_tests {
         );
         assert!(
             matches!(send_result, Err(crate::error::SendError::Timeout)),
-            "Send should return Timeout error, got: {:?}",
+            "Send should return Timeout error, was: {:?}",
             send_result
         );
         // Verify timeout respects configured value (2s), but don't check upper bound
@@ -2011,7 +2011,7 @@ mod rust_tests {
         // Should succeed after both rate limit AND reconnection
         assert!(
             send_result.is_ok(),
-            "Send should succeed after rate limit + reconnection, got: {:?}",
+            "Send should succeed after rate limit + reconnection, was: {:?}",
             send_result
         );
         // Total wait should be at least rate limit time (~1s)

@@ -310,15 +310,6 @@ impl From<UnixNanos> for u64 {
 ///
 /// For error handling without panicking, use [`str::parse::<UnixNanos>()`] which returns
 /// a [`Result`].
-///
-/// # Examples
-///
-/// ```
-/// use nautilus_core::UnixNanos;
-///
-/// let nanos = UnixNanos::from("1234567890");
-/// assert_eq!(nanos.as_u64(), 1234567890);
-/// ```
 impl From<&str> for UnixNanos {
     fn from(value: &str) -> Self {
         value
@@ -520,7 +511,7 @@ impl<'de> Deserialize<'de> for UnixNanos {
             {
                 if !value.is_finite() {
                     return Err(E::custom(format!(
-                        "Unix timestamp must be finite, got {value}"
+                        "Unix timestamp must be finite, was {value}"
                     )));
                 }
                 if value < 0.0 {

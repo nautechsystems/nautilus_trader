@@ -52,16 +52,20 @@ TBD
 - Fixed `GreeksCalculator` handling of missing price data (#3116), thanks for reporting @q351941406
 - Fixed active liquidity calculation Pool profiler simulation (#3165), thanks @filipmacek
 - Fixed Betfair datetime encoding error in order status reports
+- Fixed Betfair login race condition during concurrent connections
 - Fixed Binance instrument info dict JSON serialization (#3128), thanks for reporting @woung717
 - Fixed Databento MBO data decoding when `PRICE_UNDEF` appears with non-zero precision
 - Fixed Interactive Brokers quote tick subscriptions to use tick-by-tick data (#3135), thanks for reporting @genliusrocks
+- Fixed Interactive Brokers serialization of `IBContractDetails` (#3181), thanks @faysou
 - Fixed OKX pre-open instrument parsing and standardize enum usage (#3134), thanks for reporting @3wtz
 - Fixed OKX `request_bars` pagination halting prematurely in Range mode (#3145), thanks for reporting @3wtz
 - Fixed OKX `request_bars` pagination using correct backwards API semantics (#3145), thanks for reporting @3wtz
+- Fixed OKX FOK/IOC order type preservation across parsers (#3182), thanks @CuBeof
 - Fixed Polymarket maker fill order side inversion (#3126), thanks for reporting @santivazq
 - Fixed Polymarket instrument provider market filtering (#3133), thanks @MisterMM23
 - Fixed Polymarket websocket client cancellation on concurrent subscriptions (#3169), thanks @DeirhX
 - Fixed Polymarket maker fills parsing for cross-asset matching and multiple concurrent fills (#3172), thanks @petioptrv
+- Fixed Polymarket account balance update timing issue (#3161), thanks for reporting @santivazq
 
 ### Internal Improvements
 - Added BitMEX submit broadcaster
@@ -70,6 +74,7 @@ TBD
 - Added initial dYdX v4 WebSocket in Rust (#3158), thanks @nicolad
 - Added initial dYdX v4 DataClient in Rust (#3162), thanks @nicolad
 - Added initial dYdX v4 ExecutionClient in Rust (#3163), thanks @nicolad
+- Integrated trade analytics across DeFi pools swaps and simulated quotes (#3174), thanks @filipmacek
 - Ported Bybit integration adapter to Rust
 - Refactored network crate to modularize `http`, `socket`, and `websocket`
 - Refactored reading of feather files in catalog (#3114), thanks @faysou
@@ -85,6 +90,7 @@ TBD
 - Optimized network clients by enabling `TCP_NODELAY` (#3156), thanks @sunlei
 - Optimized build by disabling Cargo incremental compilation when using sccache (#3157), thanks @sunlei
 - Optimized BitMEX submit and cancel broadcasters by removing unnecessary lock on internal transport clients
+- Optimized full math division for DeFi calculations (#3179), thanks @filipmacek
 - Repaired OKX spot margin position reports for borrowing, thanks @sunlei
 - Repaired Bybit docs links in comment (#3125), thanks @sunlei
 - Repaired Bybit HTTP order place (#3127), thanks @sunlei
@@ -92,7 +98,7 @@ TBD
 - Repaired Bybit conditional order trigger semantics and type
 - Upgraded implied-vol crate (#3115), thanks @faysou
 - Upgraded Rust (MSRV) to 1.91.1
-- Upgraded Cython to v3.2.0
+- Upgraded Cython to v3.2.1
 - Upgraded `pyo3` crate to v0.27.0
 - Upgraded `pyo3-async-runtimes` crate to v0.27.0
 

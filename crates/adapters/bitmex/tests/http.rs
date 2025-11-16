@@ -596,7 +596,7 @@ async fn test_get_positions_requires_credentials() {
     let error_str = format!("{}", result.unwrap_err());
     assert!(
         error_str.contains("credentials") || error_str.contains("Missing credentials"),
-        "Expected credentials error, got: {error_str}"
+        "Expected credentials error, was: {error_str}"
     );
 }
 
@@ -664,6 +664,6 @@ async fn test_http_500_internal_server_error() {
     let error_str = format!("{}", result.unwrap_err());
     assert!(
         error_str.contains("500") || error_str.contains("Internal Server Error"),
-        "Expected 500 error, got: {error_str}"
+        "Expected 500 error, was: {error_str}"
     );
 }

@@ -1721,12 +1721,12 @@ mod rust_tests {
 
         assert!(
             send_result.is_err(),
-            "Send should fail when client stuck in RECONNECT, got: {:?}",
+            "Send should fail when client stuck in RECONNECT, was: {:?}",
             send_result
         );
         assert!(
             matches!(send_result, Err(crate::error::SendError::Timeout)),
-            "Send should return Timeout error, got: {:?}",
+            "Send should return Timeout error, was: {:?}",
             send_result
         );
         // Verify timeout respects configured value (1s), but don't check upper bound

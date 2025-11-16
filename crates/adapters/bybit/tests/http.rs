@@ -1379,7 +1379,7 @@ async fn test_request_order_status_reports_respects_limit_across_settle_coins() 
 
     assert!(
         reports.len() <= 3,
-        "Should return at most 3 reports, got {}",
+        "Should return at most 3 reports, was {}",
         reports.len()
     );
 
@@ -1512,7 +1512,7 @@ async fn test_request_order_status_reports_combines_orders_from_each_settle_coin
     assert_eq!(
         reports.len(),
         4,
-        "Should get exactly 4 orders (2 from USDT + 2 from USDC), got {}",
+        "Should get exactly 4 orders (2 from USDT + 2 from USDC), was {}",
         reports.len()
     );
 

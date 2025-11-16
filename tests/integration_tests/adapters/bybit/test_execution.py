@@ -1065,3 +1065,113 @@ async def test_submit_order_with_is_quote_quantity(
         assert call_kwargs["is_quote_quantity"] is True
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_handle_order_rejected_pyo3_conversion(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    msgbus,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+    await client._connect()
+
+    pyo3_event = nautilus_pyo3.OrderRejected(
+        trader_id=nautilus_pyo3.TraderId(TestIdStubs.trader_id().value),
+        strategy_id=nautilus_pyo3.StrategyId(TestIdStubs.strategy_id().value),
+        instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
+        client_order_id=nautilus_pyo3.ClientOrderId("O-123456"),
+        account_id=nautilus_pyo3.AccountId(TestIdStubs.account_id().value),
+        reason="InsufficientMargin",
+        event_id=nautilus_pyo3.UUID4(),
+        ts_event=123456789,
+        ts_init=123456789,
+        reconciliation=False,
+    )
+
+    try:
+        # Act - Should not raise AttributeError about 'from_pyo3'
+        client._handle_order_rejected_pyo3(pyo3_event)
+
+        # Assert - Event should be converted and sent
+        assert msgbus.sent_count > 0
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_handle_order_cancel_rejected_pyo3_conversion(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    msgbus,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+    await client._connect()
+
+    pyo3_event = nautilus_pyo3.OrderCancelRejected(
+        trader_id=nautilus_pyo3.TraderId(TestIdStubs.trader_id().value),
+        strategy_id=nautilus_pyo3.StrategyId(TestIdStubs.strategy_id().value),
+        instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
+        client_order_id=nautilus_pyo3.ClientOrderId("O-123456"),
+        venue_order_id=nautilus_pyo3.VenueOrderId("BYBIT-12345"),
+        reason="OrderNotFound",
+        event_id=nautilus_pyo3.UUID4(),
+        ts_event=123456789,
+        ts_init=123456789,
+        reconciliation=False,
+        account_id=nautilus_pyo3.AccountId(TestIdStubs.account_id().value),
+    )
+
+    try:
+        # Act - Should not raise AttributeError about 'from_pyo3'
+        client._handle_order_cancel_rejected_pyo3(pyo3_event)
+
+        # Assert - Event should be converted and sent
+        assert msgbus.sent_count > 0
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_handle_order_modify_rejected_pyo3_conversion(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    msgbus,
+):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+    )
+    await client._connect()
+
+    pyo3_event = nautilus_pyo3.OrderModifyRejected(
+        trader_id=nautilus_pyo3.TraderId(TestIdStubs.trader_id().value),
+        strategy_id=nautilus_pyo3.StrategyId(TestIdStubs.strategy_id().value),
+        instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
+        client_order_id=nautilus_pyo3.ClientOrderId("O-123456"),
+        reason="OrderNotFound",
+        event_id=nautilus_pyo3.UUID4(),
+        ts_event=123456789,
+        ts_init=123456789,
+        reconciliation=False,
+        venue_order_id=nautilus_pyo3.VenueOrderId("BYBIT-12345"),
+        account_id=nautilus_pyo3.AccountId(TestIdStubs.account_id().value),
+    )
+
+    try:
+        # Act - Should not raise AttributeError about 'from_pyo3'
+        client._handle_order_modify_rejected_pyo3(pyo3_event)
+
+        # Assert - Event should be converted and sent
+        assert msgbus.sent_count > 0
+    finally:
+        await client._disconnect()

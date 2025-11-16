@@ -2344,9 +2344,6 @@ mod tests {
             U160::from(59000000000000u128),
             1000000,
             100,
-            Some(nautilus_model::enums::OrderSide::Buy),
-            Some(Quantity::from("1000")),
-            Some(Price::from("1.0")),
         );
 
         assert!(rust_actor.on_pool_swap(&swap).is_ok());

@@ -1242,7 +1242,7 @@ async fn test_true_auto_reconnect_with_verification() {
             // Allow for multiple reconnections in case of race conditions
             assert!(
                 final_auth_calls > initial_auth_calls,
-                "Should have at least one additional auth call, got {} (initial: {})",
+                "Should have at least one additional auth call, was {} (initial: {})",
                 final_auth_calls,
                 initial_auth_calls
             );
@@ -1793,7 +1793,7 @@ async fn test_rapid_consecutive_reconnections() {
     let final_auth_calls = *state.auth_calls.lock().await;
     assert!(
         final_auth_calls >= 4,
-        "Should have at least 4 total auth calls (1 initial + 3 reconnects), got {final_auth_calls}"
+        "Should have at least 4 total auth calls (1 initial + 3 reconnects), was {final_auth_calls}"
     );
 
     client.close().await.unwrap();

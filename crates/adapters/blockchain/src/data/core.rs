@@ -531,7 +531,7 @@ impl BlockchainDataClientCore {
                     let event_sig_bytes = extract_event_signature_bytes(&log)?;
             if event_sig_bytes == swap_sig_bytes.as_slice() {
                 let swap_event = dex_extended.parse_swap_event(log)?;
-                match self.process_pool_swap_event(&swap_event, &pool, &dex_extended) {
+                match self.process_pool_swap_event(&swap_event, &pool) {
                     Ok(swap) => swap_batch.push(swap),
                     Err(e) => tracing::error!("Failed to process swap event: {e}"),
                 }
@@ -710,26 +710,18 @@ impl BlockchainDataClientCore {
         &self,
         swap_event: &SwapEvent,
         pool: &SharedPool,
-        dex_extended: &DexExtended,
     ) -> anyhow::Result<PoolSwap> {
         let timestamp = self
             .cache
             .get_block_timestamp(swap_event.block_number)
             .copied();
-        let (side, size, price) =
-            dex_extended.convert_to_trade_data(&pool.token0, &pool.token1, swap_event)?;
-        let swap = swap_event.to_pool_swap(
+        let mut swap = swap_event.to_pool_swap(
             self.chain.clone(),
             pool.instrument_id,
             pool.address,
-            Some(side),
-            Some(size),
-            Some(price),
             timestamp,
         );
-
-        // TODO add caching and persisting of swaps, resolve block timestamps sync
-        // self.cache.add_pool_swap(&swap).await?;
+        swap.calculate_trade_info(&pool.token0, &pool.token1, None)?;
 
         Ok(swap)
     }

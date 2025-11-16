@@ -156,6 +156,14 @@ repos:
         types_or: [rust, python]
         pass_filenames: false
 
+      - id: check-error-conventions
+        name: check error conventions
+        description: Enforces error variable naming conventions
+        entry: .pre-commit-hooks/check_error_conventions.sh
+        language: script
+        types_or: [rust, python, cython]
+        pass_filenames: false
+
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
@@ -184,12 +192,12 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
-      - id: check-error-conventions
-        name: check error conventions
-        description: Enforces error variable naming conventions
-        entry: .pre-commit-hooks/check_error_conventions.sh
+      - id: check-testing-conventions
+        name: check testing conventions
+        description: Enforces testing standardizations and conventions
+        entry: .pre-commit-hooks/check_testing_conventions.sh
         language: script
-        types_or: [rust, python, cython]
+        types_or: [rust]
         pass_filenames: false
 
       - id: fmt

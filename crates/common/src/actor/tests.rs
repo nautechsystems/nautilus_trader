@@ -1640,9 +1640,6 @@ fn test_subscribe_and_receive_pool_swaps(
         U160::from(59000000000000u128),
         1000000,
         100,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
 
     actor.subscribe_pool_swaps(instrument_id, None, None);
@@ -1706,9 +1703,6 @@ fn test_unsubscribe_pool_swaps(
         U160::from(59000000000000u128),
         1000000,
         100,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
     msgbus::publish(topic, &swap1);
 
@@ -1732,9 +1726,6 @@ fn test_unsubscribe_pool_swaps(
         U160::from(59000000000000u128),
         1000000,
         100,
-        Some(OrderSide::Sell),
-        Some(Quantity::from("2000")),
-        Some(Price::from("1000")),
     );
     msgbus::publish(topic, &swap2);
 

@@ -49,7 +49,7 @@ requires = [
   "setuptools>=80",
   "poetry-core==2.2.1", # Pinned to 2.2.1 for stability
   "numpy>=1.26.4",
-  "cython==3.2.0", # Pinned to 3.2.0 for stability
+  "cython==3.2.1", # Pinned to 3.2.1 for stability
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -75,7 +75,7 @@ script = "build.py"
 generate-setup-file = false
 
 [project.optional-dependencies]
-betfair = ["betfair-parser==0.17.2"] # Pinned to 0.17.2 for stability
+betfair = ["betfair-parser==0.17.4"] # Pinned to 0.17.4 for stability
 ib = [
   "defusedxml>=0.7.1,<1.0.0; python_version < '3.14'",
   "nautilus-ibapi==10.30.1; python_version < '3.14'",
@@ -97,7 +97,7 @@ visualization = ["plotly>=6.3.1,<7.0.0"]
 
 [dependency-groups]
 dev = [
-  "cython==3.2.0", # Pinned to 3.2.0 for stability
+  "cython==3.2.1", # Pinned to 3.2.1 for stability
   "setuptools>=75",
   "mypy==1.18.2,<2.0.0", # Pinned to 1.18.2 (keep in line with pre-commit)
   "pandas-stubs>=2.3.2,<3.0.0",
