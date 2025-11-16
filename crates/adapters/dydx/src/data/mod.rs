@@ -61,6 +61,20 @@ use crate::{
     websocket::client::DydxWebSocketClient,
 };
 
+/// Context struct for WebSocket message handling.
+///
+/// Groups related dependencies to avoid excessive function parameters.
+struct WsMessageContext<'a> {
+    data_sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instruments: &'a Arc<DashMap<Ustr, InstrumentAny>>,
+    order_books: &'a Arc<DashMap<InstrumentId, OrderBook>>,
+    last_quotes: &'a Arc<DashMap<InstrumentId, QuoteTick>>,
+    ws_client: &'a Option<DydxWebSocketClient>,
+    active_orderbook_subs: &'a Arc<DashMap<InstrumentId, ()>>,
+    active_trade_subs: &'a Arc<DashMap<InstrumentId, ()>>,
+    active_bar_subs: &'a Arc<DashMap<(InstrumentId, String), BarType>>,
+}
+
 /// dYdX data client for live market data streaming and historical data requests.
 ///
 /// This client integrates with the Nautilus DataEngine to provide:
@@ -104,6 +118,10 @@ pub struct DydxDataClient {
     bar_type_mappings: Arc<DashMap<String, BarType>>,
     /// Active orderbook subscriptions for periodic snapshot refresh.
     active_orderbook_subs: Arc<DashMap<InstrumentId, ()>>,
+    /// Active trade subscriptions for reconnection recovery.
+    active_trade_subs: Arc<DashMap<InstrumentId, ()>>,
+    /// Active bar/candle subscriptions for reconnection recovery (maps instrument+resolution to BarType).
+    active_bar_subs: Arc<DashMap<(InstrumentId, String), BarType>>,
 }
 
 impl DydxDataClient {
@@ -169,6 +187,8 @@ impl DydxDataClient {
             incomplete_bars: Arc::new(DashMap::new()),
             bar_type_mappings: Arc::new(DashMap::new()),
             active_orderbook_subs: Arc::new(DashMap::new()),
+            active_trade_subs: Arc::new(DashMap::new()),
+            active_bar_subs: Arc::new(DashMap::new()),
         })
     }
 
@@ -310,19 +330,23 @@ impl DataClient for DydxDataClient {
                 let last_quotes = self.last_quotes.clone();
                 let ws_client = self.ws_client.clone();
                 let active_orderbook_subs = self.active_orderbook_subs.clone();
+                let active_trade_subs = self.active_trade_subs.clone();
+                let active_bar_subs = self.active_bar_subs.clone();
 
                 let task = tokio::spawn(async move {
                     let mut rx = rx;
                     while let Some(msg) = rx.recv().await {
-                        Self::handle_ws_message(
-                            msg,
-                            &data_tx,
-                            &instruments,
-                            &order_books,
-                            &last_quotes,
-                            &ws_client,
-                            &active_orderbook_subs,
-                        );
+                        let ctx = WsMessageContext {
+                            data_sender: &data_tx,
+                            instruments: &instruments,
+                            order_books: &order_books,
+                            last_quotes: &last_quotes,
+                            ws_client: &ws_client,
+                            active_orderbook_subs: &active_orderbook_subs,
+                            active_trade_subs: &active_trade_subs,
+                            active_bar_subs: &active_bar_subs,
+                        };
+                        Self::handle_ws_message(msg, &ctx);
                     }
                 });
                 self.tasks.push(task);
@@ -407,6 +431,9 @@ impl DataClient for DydxDataClient {
             .context("WebSocket client not initialized")?
             .clone();
         let instrument_id = cmd.instrument_id;
+
+        // Track active subscription for reconnection recovery
+        self.active_trade_subs.insert(instrument_id, ());
 
         self.spawn_ws(
             async move {
@@ -565,6 +592,11 @@ impl DataClient for DydxDataClient {
             }
         };
 
+        // Track active subscription for reconnection recovery
+        let bar_type = cmd.bar_type;
+        self.active_bar_subs
+            .insert((instrument_id, resolution.to_string()), bar_type);
+
         self.spawn_ws(
             async move {
                 ws.subscribe_candles(instrument_id, resolution)
@@ -578,6 +610,9 @@ impl DataClient for DydxDataClient {
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        // Remove from active subscription tracking
+        self.active_trade_subs.remove(&cmd.instrument_id);
+
         let ws = self
             .ws_client
             .as_ref()
@@ -715,6 +750,10 @@ impl DataClient for DydxDataClient {
                 anyhow::bail!("Unsupported bar step: {step}");
             }
         };
+
+        // Remove from active subscription tracking
+        self.active_bar_subs
+            .remove(&(instrument_id, resolution.to_string()));
 
         self.spawn_ws(
             async move {
@@ -1705,28 +1744,23 @@ impl DydxDataClient {
 
     fn handle_ws_message(
         message: crate::websocket::messages::NautilusWsMessage,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        instruments: &Arc<DashMap<Ustr, InstrumentAny>>,
-        order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
-        last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
-        _ws_client: &Option<DydxWebSocketClient>,
-        active_orderbook_subs: &Arc<DashMap<InstrumentId, ()>>,
+        ctx: &WsMessageContext,
     ) {
         match message {
             crate::websocket::messages::NautilusWsMessage::Data(payloads) => {
-                Self::handle_data_message(payloads, data_sender);
+                Self::handle_data_message(payloads, ctx.data_sender);
             }
             crate::websocket::messages::NautilusWsMessage::Deltas(deltas) => {
                 Self::handle_deltas_message(
                     *deltas,
-                    data_sender,
-                    order_books,
-                    last_quotes,
-                    instruments,
+                    ctx.data_sender,
+                    ctx.order_books,
+                    ctx.last_quotes,
+                    ctx.instruments,
                 );
             }
             crate::websocket::messages::NautilusWsMessage::OraclePrices(oracle_prices) => {
-                Self::handle_oracle_prices(oracle_prices, instruments, data_sender);
+                Self::handle_oracle_prices(oracle_prices, ctx.instruments, ctx.data_sender);
             }
             crate::websocket::messages::NautilusWsMessage::Error(err) => {
                 tracing::error!("dYdX WS error: {err}");
@@ -1734,16 +1768,79 @@ impl DydxDataClient {
             crate::websocket::messages::NautilusWsMessage::Reconnected => {
                 tracing::info!("dYdX WS reconnected - re-subscribing to active subscriptions");
 
-                // Edge case: WS reconnection - re-subscribe to all active orderbook subscriptions
-                // Note: Re-subscription happens asynchronously in the WebSocket client's reconnection handler
-                // This is just a notification that reconnection occurred
-                if !active_orderbook_subs.is_empty() {
+                // Re-subscribe to all active subscriptions after WebSocket reconnection
+                if let Some(ws) = ctx.ws_client {
+                    let total_subs = ctx.active_orderbook_subs.len()
+                        + ctx.active_trade_subs.len()
+                        + ctx.active_bar_subs.len();
+
+                    if total_subs == 0 {
+                        tracing::debug!("No active subscriptions to restore");
+                        return;
+                    }
+
                     tracing::info!(
-                        "Active orderbook subscriptions will be restored: {} instruments",
-                        active_orderbook_subs.len()
+                        "Restoring {} subscriptions (orderbook={}, trades={}, bars={})",
+                        total_subs,
+                        ctx.active_orderbook_subs.len(),
+                        ctx.active_trade_subs.len(),
+                        ctx.active_bar_subs.len()
                     );
+
+                    // Re-subscribe to orderbook channels
+                    for entry in ctx.active_orderbook_subs.iter() {
+                        let instrument_id = *entry.key();
+                        let ws_clone = ws.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = ws_clone.subscribe_orderbook(instrument_id).await {
+                                tracing::error!(
+                                    "Failed to re-subscribe to orderbook for {instrument_id}: {e:?}"
+                                );
+                            } else {
+                                tracing::debug!("Re-subscribed to orderbook for {instrument_id}");
+                            }
+                        });
+                    }
+
+                    // Re-subscribe to trade channels
+                    for entry in ctx.active_trade_subs.iter() {
+                        let instrument_id = *entry.key();
+                        let ws_clone = ws.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = ws_clone.subscribe_trades(instrument_id).await {
+                                tracing::error!(
+                                    "Failed to re-subscribe to trades for {instrument_id}: {e:?}"
+                                );
+                            } else {
+                                tracing::debug!("Re-subscribed to trades for {instrument_id}");
+                            }
+                        });
+                    }
+
+                    // Re-subscribe to candle/bar channels
+                    for entry in ctx.active_bar_subs.iter() {
+                        let (instrument_id, resolution) = entry.key();
+                        let instrument_id = *instrument_id;
+                        let resolution = resolution.clone();
+                        let ws_clone = ws.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) =
+                                ws_clone.subscribe_candles(instrument_id, &resolution).await
+                            {
+                                tracing::error!(
+                                    "Failed to re-subscribe to candles for {instrument_id} ({resolution}): {e:?}"
+                                );
+                            } else {
+                                tracing::debug!(
+                                    "Re-subscribed to candles for {instrument_id} ({resolution})"
+                                );
+                            }
+                        });
+                    }
+
+                    tracing::info!("Completed re-subscription requests after reconnection");
                 } else {
-                    tracing::debug!("No active orderbook subscriptions to restore");
+                    tracing::warn!("WebSocket client not available for re-subscription");
                 }
             }
             crate::websocket::messages::NautilusWsMessage::Order(_)
@@ -2236,14 +2333,51 @@ mod tests {
         let last_quotes = Arc::new(DashMap::new());
         let ws_client: Option<DydxWebSocketClient> = None;
         let active_orderbook_subs = Arc::new(DashMap::new());
+        let active_trade_subs = Arc::new(DashMap::new());
+        let active_bar_subs = Arc::new(DashMap::new());
 
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
         let bar_ts = get_atomic_clock_realtime().get_time_ns();
 
+        // Add a test instrument to the cache (required for crossed book resolution)
+        use nautilus_model::{identifiers::Symbol, instruments::CryptoPerpetual, types::Currency};
+        let symbol = Symbol::from("BTC-USD-PERP");
+        let instrument = CryptoPerpetual::new(
+            instrument_id,
+            symbol,
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::USD(),
+            false,
+            2,
+            4,
+            Price::from("0.01"),
+            Quantity::from("0.0001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            bar_ts,
+            bar_ts,
+        );
+        instruments.insert(
+            Ustr::from("BTC-USD-PERP"),
+            InstrumentAny::CryptoPerpetual(instrument),
+        );
+
         let price = Price::from("100.00");
         let size = Quantity::from("1.0");
 
-        let delta = OrderBookDelta::new(
+        // Create both bid and ask deltas to generate a quote
+        let bid_delta = OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
             nautilus_model::data::order::BookOrder::new(
@@ -2257,19 +2391,35 @@ mod tests {
             bar_ts,
             bar_ts,
         );
-        let deltas = OrderBookDeltas::new(instrument_id, vec![delta]);
+        let ask_delta = OrderBookDelta::new(
+            instrument_id,
+            BookAction::Add,
+            nautilus_model::data::order::BookOrder::new(
+                nautilus_model::enums::OrderSide::Sell,
+                Price::from("101.00"),
+                size,
+                1,
+            ),
+            0,
+            1,
+            bar_ts,
+            bar_ts,
+        );
+        let deltas = OrderBookDeltas::new(instrument_id, vec![bid_delta, ask_delta]);
 
         let message = crate::websocket::messages::NautilusWsMessage::Deltas(Box::new(deltas));
 
-        DydxDataClient::handle_ws_message(
-            message,
-            &sender,
-            &instruments,
-            &order_books,
-            &last_quotes,
-            &ws_client,
-            &active_orderbook_subs,
-        );
+        let ctx = WsMessageContext {
+            data_sender: &sender,
+            instruments: &instruments,
+            order_books: &order_books,
+            last_quotes: &last_quotes,
+            ws_client: &ws_client,
+            active_orderbook_subs: &active_orderbook_subs,
+            active_trade_subs: &active_trade_subs,
+            active_bar_subs: &active_bar_subs,
+        };
+        DydxDataClient::handle_ws_message(message, &ctx);
 
         // Ensure order book was created and top-of-book quote cached.
         assert!(order_books.get(&instrument_id).is_some());
@@ -2331,6 +2481,86 @@ mod tests {
         assert!(client.request_bars(&request).is_ok());
     }
 
+    #[tokio::test]
+    async fn test_request_bars_partitioning_months_range_does_not_overflow() {
+        setup_test_env();
+
+        // Prepare a simple candles response served by a local Axum HTTP server.
+        let now = chrono::Utc::now();
+        let candle = crate::http::models::Candle {
+            started_at: now - chrono::Duration::minutes(1),
+            ticker: "BTC-USD".to_string(),
+            resolution: crate::common::enums::DydxCandleResolution::OneMinute,
+            open: dec!(100.0),
+            high: dec!(101.0),
+            low: dec!(99.0),
+            close: dec!(100.5),
+            base_token_volume: dec!(1.0),
+            usd_volume: dec!(100.0),
+            trades: 10,
+            starting_open_interest: dec!(1000.0),
+        };
+        let candles_response = crate::http::models::CandlesResponse {
+            candles: vec![candle],
+        };
+        let state = CandlesTestState {
+            response: Arc::new(candles_response),
+        };
+        let addr = start_candles_test_server(state).await;
+        let base_url = format!("http://{}", addr);
+
+        let client_id = ClientId::from("DYDX-BARS-MONTHS");
+        let config = DydxDataClientConfig {
+            base_url_http: Some(base_url),
+            is_testnet: true,
+            ..Default::default()
+        };
+
+        let http_client = DydxHttpClient::new(
+            config.base_url_http.clone(),
+            config.http_timeout_secs,
+            config.http_proxy_url.clone(),
+            config.is_testnet,
+            None,
+        )
+        .unwrap();
+
+        let client = DydxDataClient::new(client_id, config, http_client, None).unwrap();
+
+        // Seed instrument cache so request_bars can resolve precision.
+        let instrument = create_test_instrument_any();
+        let instrument_id = instrument.id();
+        let symbol_key = Ustr::from(instrument_id.symbol.as_str());
+        client.instruments.insert(symbol_key, instrument);
+
+        let spec = BarSpecification {
+            step: std::num::NonZeroUsize::new(1).unwrap(),
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
+
+        // Use a date range spanning multiple months to exercise partitioning math.
+        let start = Some(now - chrono::Duration::days(90));
+        let end = Some(now);
+
+        // Limit the total number of bars so the test completes quickly.
+        let limit = Some(std::num::NonZeroUsize::new(10).unwrap());
+
+        let request = RequestBars::new(
+            bar_type,
+            start,
+            end,
+            limit,
+            Some(client_id),
+            UUID4::new(),
+            get_atomic_clock_realtime().get_time_ns(),
+            None,
+        );
+
+        assert!(client.request_bars(&request).is_ok());
+    }
+
     #[derive(Clone)]
     struct OrderbookTestState {
         snapshot: Arc<crate::http::models::OrderbookResponse>,
@@ -2341,6 +2571,11 @@ mod tests {
         response: Arc<crate::http::models::TradesResponse>,
         last_ticker: Arc<tokio::sync::Mutex<Option<String>>>,
         last_limit: Arc<tokio::sync::Mutex<Option<Option<u32>>>>,
+    }
+
+    #[derive(Clone)]
+    struct CandlesTestState {
+        response: Arc<crate::http::models::CandlesResponse>,
     }
 
     async fn start_orderbook_test_server(state: OrderbookTestState) -> SocketAddr {
@@ -2394,6 +2629,33 @@ mod tests {
         let router = Router::new().route(
             "/v4/trades/perpetualMarket/{ticker}",
             get(handle_trades).with_state(state),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            axum::serve(listener, router.into_make_service())
+                .await
+                .unwrap();
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        addr
+    }
+
+    async fn start_candles_test_server(state: CandlesTestState) -> SocketAddr {
+        async fn handle_candles(
+            Path(_ticker): Path<String>,
+            Query(_params): Query<HashMap<String, String>>,
+            State(state): State<CandlesTestState>,
+        ) -> Json<crate::http::models::CandlesResponse> {
+            Json((*state.response).clone())
+        }
+
+        let router = Router::new().route(
+            "/v4/candles/perpetualMarkets/{ticker}",
+            get(handle_candles).with_state(state),
         );
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

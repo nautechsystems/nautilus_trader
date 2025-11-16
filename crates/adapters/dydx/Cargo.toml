@@ -100,3 +100,7 @@ indexmap = { workspace = true }
 [[bin]]
 name = "dydx-http-public"
 path = "bin/http_public.rs"
+
+[[bin]]
+name = "dydx-ws-data"
+path = "bin/ws_data.rs"
