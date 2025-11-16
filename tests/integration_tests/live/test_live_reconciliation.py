@@ -2059,3 +2059,149 @@ async def test_position_reconciliation_handles_generate_fill_reports_exception(
     # Cleanup
     exec_engine.stop()
     await eventually(lambda: exec_engine.is_stopped)
+
+
+@pytest.mark.asyncio()
+async def test_position_flip_cache_reload_netting_mode(
+    event_loop,
+    msgbus,
+    cache,
+    clock,
+    order_factory,
+    exec_client,
+    account_id,
+    trader_id,
+):
+    database = CacheDatabaseAdapter(
+        trader_id=trader_id,
+        instance_id=UUID4(),
+        serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
+        config=CacheConfig(
+            database=DatabaseConfig(
+                type='redis',
+                host='localhost',
+                port=6379,
+            ),
+            buffer_interval_ms=10,
+        ),
+    )
+
+    cache = Cache(
+        database=database,
+        config=CacheConfig(
+            buffer_interval_ms=10,
+        ),
+    )
+    cache.add_instrument(AUDUSD_SIM)
+
+    account = AccountFactory.create(TestEventStubs.cash_account_state(account_id=account_id))
+    cache.add_account(account)
+
+    exec_engine = LiveExecutionEngine(
+        loop=event_loop,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        config=LiveExecEngineConfig(
+            reconciliation=True,
+            inflight_check_interval_ms=100,
+            inflight_check_threshold_ms=200,
+            inflight_check_retries=2,  # Low retries for testing
+            open_check_interval_secs=0.5,
+            reconciliation_startup_delay_secs=0,  # No delay for testing
+            snapshot_positions=True,
+        ),
+    )
+
+    exec_client = MockLiveExecutionClient(
+        loop=event_loop,
+        client_id=ClientId(SIM.value),
+        venue=SIM,
+        account_type=AccountType.CASH,
+        base_currency=USD,
+        instrument_provider=InstrumentProvider(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        oms_type=OmsType.NETTING
+    )
+
+    exec_engine.register_client(exec_client)
+    exec_engine.start()
+    exec_engine._startup_reconciliation_event.set()
+    await asyncio.sleep(0.1)  # Give continuous loop time to start
+
+
+
+    # ENTER
+    order_entry = order_factory.market(
+        AUDUSD_SIM.id,
+        OrderSide.BUY,
+        Quantity.from_int(100_000),
+    )
+    cache.add_order( order_entry )
+    exec_engine.process(
+        TestEventStubs.order_submitted(
+            order_entry,
+            ts_event=clock.timestamp_ns()
+        )
+    )
+    exec_engine.process(
+        TestEventStubs.order_accepted(
+            order_entry,
+            ts_event=clock.timestamp_ns()
+        )
+    )
+
+    fill_entry = TestEventStubs.order_filled(
+        order_entry,
+        instrument=AUDUSD_SIM,
+        account_id=account_id,
+        last_px=Price.from_str("1.00000"),
+        trade_id=TradeId("1"),
+        ts_event=clock.timestamp_ns()
+    )
+    exec_engine.process(fill_entry)
+
+    await asyncio.sleep(0.1)
+
+
+
+    # FLIP - Simulate position flip
+    order_flip = order_factory.market(
+        AUDUSD_SIM.id,
+        OrderSide.SELL,
+        Quantity.from_int(150_000),
+    )
+    cache.add_order( order_flip )
+    exec_engine.process(
+        TestEventStubs.order_submitted(
+            order_flip,
+            ts_event=clock.timestamp_ns()
+        )
+    )
+    exec_engine.process(
+        TestEventStubs.order_accepted(
+            order_flip,
+            ts_event=clock.timestamp_ns()
+        )
+    )
+    exec_engine.process(
+        TestEventStubs.order_filled(
+            order_flip,
+            instrument=AUDUSD_SIM,
+            account_id=account_id,
+            # position_id=position_id,
+            last_qty=Quantity.from_int(150_000),
+            last_px=Price.from_str("1.00010"),
+            trade_id=TradeId("2"),
+        )
+    )
+    await asyncio.sleep(0.1)
+
+    assert cache.position(position_id).event_count == 1, "After the flip a new position should be created with only 1 event"
+
+
+    exec_engine.stop()
+    await eventually(lambda: exec_engine.is_stopped)
+    database.close()

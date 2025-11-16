@@ -182,12 +182,13 @@ class MockLiveExecutionClient(LiveExecutionClient):
         msgbus,
         cache,
         clock,
+        oms_type=OmsType.HEDGING,
     ) -> None:
         super().__init__(
             loop=loop,
             client_id=client_id,
             venue=venue,
-            oms_type=OmsType.HEDGING,
+            oms_type=oms_type,
             account_type=account_type,
             base_currency=base_currency,
             instrument_provider=instrument_provider,
