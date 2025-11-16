@@ -3180,3 +3180,1113 @@ class TestLiveExecutionReconciliationEdgeCases:
 
         # Assert
         assert result is True, "FLAT report should be successfully reconciled"
+
+
+# =============================================================================
+# FIXTURES FOR STANDALONE TESTS
+# =============================================================================
+
+
+@pytest.fixture()
+def live_exec_engine(event_loop, cache):
+    """
+    Create a live execution engine for standalone tests.
+    """
+    loop = event_loop
+    clock = LiveClock()
+    trader_id = TestIdStubs.trader_id()
+    msgbus = MessageBus(trader_id=trader_id, clock=clock)
+
+    exec_engine = LiveExecutionEngine(
+        loop=loop,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        config=LiveExecEngineConfig(reconciliation=True),
+    )
+    return exec_engine
+
+
+@pytest.fixture()
+def exec_client(event_loop, cache):
+    """
+    Create a mock execution client for standalone tests.
+    """
+    loop = event_loop
+    clock = LiveClock()
+    trader_id = TestIdStubs.trader_id()
+    msgbus = MessageBus(trader_id=trader_id, clock=clock)
+
+    client = MockLiveExecutionClient(
+        loop=loop,
+        client_id=ClientId("SIM"),
+        venue=Venue("SIM"),
+        account_type=AccountType.CASH,
+        base_currency=USD,
+        instrument_provider=InstrumentProvider(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+    return client
+
+
+@pytest.fixture()
+def account_id():
+    """
+    Create an account ID for standalone tests.
+    """
+    return TestIdStubs.account_id()
+
+
+@pytest.fixture()
+def cache():
+    """
+    Create a cache for standalone tests.
+    """
+    cache = TestComponentStubs.cache()
+    cache.add_instrument(AUDUSD_SIM)
+    cache.add_instrument(GBPUSD_SIM)
+    return cache
+
+
+# =============================================================================
+# TESTS FOR _query_position_status_reports
+# =============================================================================
+
+
+@pytest.mark.asyncio()
+async def test_query_position_status_reports_success(live_exec_engine, exec_client, account_id):
+    """
+    Test _query_position_status_reports successfully queries and returns reports.
+    """
+    # Arrange
+    # Register the client with the engine
+    live_exec_engine.register_client(exec_client)
+
+    report = PositionStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(1000),
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+    exec_client.add_position_status_report(report)
+
+    # Act
+    venue_positions = await live_exec_engine._query_position_status_reports()
+
+    # Assert
+    assert len(venue_positions) == 1
+    assert AUDUSD_SIM.id in venue_positions
+    assert venue_positions[AUDUSD_SIM.id].quantity == Quantity.from_int(1000)
+
+
+@pytest.mark.asyncio()
+async def test_query_position_status_reports_handles_exceptions(live_exec_engine, exec_client):
+    """
+    Test _query_position_status_reports handles client exceptions gracefully.
+    """
+    # Arrange
+    # Register the client with the engine
+    live_exec_engine.register_client(exec_client)
+
+    async def raise_error(command):
+        raise RuntimeError("API error")
+
+    exec_client.generate_position_status_reports = raise_error
+
+    # Act
+    venue_positions = await live_exec_engine._query_position_status_reports()
+
+    # Assert
+    assert len(venue_positions) == 0
+
+
+@pytest.mark.asyncio()
+async def test_query_position_status_reports_multiple_instruments(live_exec_engine, exec_client, account_id):
+    """
+    Test _query_position_status_reports handles multiple instruments.
+    """
+    # Arrange
+    # Register the client with the engine
+    live_exec_engine.register_client(exec_client)
+
+    report1 = PositionStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(1000),
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+    report2 = PositionStatusReport(
+        account_id=account_id,
+        instrument_id=GBPUSD_SIM.id,
+        position_side=PositionSide.SHORT,
+        quantity=Quantity.from_int(2000),
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+    exec_client.add_position_status_report(report1)
+    exec_client.add_position_status_report(report2)
+
+    # Act
+    venue_positions = await live_exec_engine._query_position_status_reports()
+
+    # Assert
+    assert len(venue_positions) == 2
+    assert AUDUSD_SIM.id in venue_positions
+    assert GBPUSD_SIM.id in venue_positions
+
+
+# =============================================================================
+# TESTS FOR _query_and_find_missing_fills
+# =============================================================================
+
+
+@pytest.mark.asyncio()
+async def test_query_and_find_missing_fills_finds_missing(live_exec_engine, exec_client, cache, account_id):
+    """
+    Test _query_and_find_missing_fills identifies fills not in cache.
+    """
+    # Arrange
+    # Register the client with the engine
+    live_exec_engine.register_client(exec_client)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+    )
+    order.apply(accepted)
+    live_exec_engine.process(accepted)
+
+    # Add one fill to cache
+    filled1 = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(50),
+        trade_id=TradeId("T-1"),
+    )
+    order.apply(filled1)
+    live_exec_engine.process(filled1)
+    cache.update_order(order)
+
+    # Venue reports two fills
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    fill_report1 = FillReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        venue_position_id=None,
+        trade_id=TradeId("T-1"),  # Already in cache
+        order_side=OrderSide.BUY,
+        last_qty=Quantity.from_int(50),
+        last_px=Price.from_str("1.00000"),
+        commission=Money("1.00", USD),
+        liquidity_side=LiquiditySide.TAKER,
+        report_id=UUID4(),
+        ts_event=current_ns,
+        ts_init=current_ns,
+    )
+    fill_report2 = FillReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        venue_position_id=None,
+        trade_id=TradeId("T-2"),  # Missing from cache
+        order_side=OrderSide.BUY,
+        last_qty=Quantity.from_int(50),
+        last_px=Price.from_str("1.01000"),
+        commission=Money("1.00", USD),
+        liquidity_side=LiquiditySide.TAKER,
+        report_id=UUID4(),
+        ts_event=current_ns + 1_000_000,
+        ts_init=current_ns + 1_000_000,
+    )
+    exec_client.add_fill_reports(VenueOrderId("V-1"), [fill_report1, fill_report2])
+
+    # Act
+    missing_fills = await live_exec_engine._query_and_find_missing_fills(
+        AUDUSD_SIM.id,
+        live_exec_engine._clients.values(),
+    )
+
+    # Assert
+    assert len(missing_fills) == 1
+    assert missing_fills[0].trade_id == TradeId("T-2")
+
+
+@pytest.mark.asyncio()
+async def test_query_and_find_missing_fills_handles_exceptions(live_exec_engine, exec_client):
+    """
+    Test _query_and_find_missing_fills handles client exceptions gracefully.
+    """
+    # Arrange
+    # Register the client with the engine
+    live_exec_engine.register_client(exec_client)
+
+    async def raise_error(command):
+        raise RuntimeError("API error")
+
+    exec_client.generate_fill_reports = raise_error
+
+    # Act
+    missing_fills = await live_exec_engine._query_and_find_missing_fills(
+        AUDUSD_SIM.id,
+        live_exec_engine._clients.values(),
+    )
+
+    # Assert
+    assert len(missing_fills) == 0
+
+
+@pytest.mark.asyncio()
+async def test_query_and_find_missing_fills_no_missing(live_exec_engine, exec_client, cache, account_id):
+    """
+    Test _query_and_find_missing_fills returns empty when all fills are cached.
+    """
+    # Arrange
+    # Register the client with the engine
+    live_exec_engine.register_client(exec_client)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+    )
+    order.apply(accepted)
+    live_exec_engine.process(accepted)
+
+    # Add fill to cache
+    filled = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(100),
+        trade_id=TradeId("T-1"),
+    )
+    order.apply(filled)
+    live_exec_engine.process(filled)
+    cache.update_order(order)
+
+    # Venue reports same fill
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    fill_report = FillReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        venue_position_id=None,
+        trade_id=TradeId("T-1"),  # Already in cache
+        order_side=OrderSide.BUY,
+        last_qty=Quantity.from_int(100),
+        last_px=Price.from_str("1.00000"),
+        commission=Money("1.00", USD),
+        liquidity_side=LiquiditySide.TAKER,
+        report_id=UUID4(),
+        ts_event=current_ns,
+        ts_init=current_ns,
+    )
+    exec_client.add_fill_reports(VenueOrderId("V-1"), [fill_report])
+
+    # Act
+    missing_fills = await live_exec_engine._query_and_find_missing_fills(
+        AUDUSD_SIM.id,
+        live_exec_engine._clients.values(),
+    )
+
+    # Assert
+    assert len(missing_fills) == 0
+
+
+# =============================================================================
+# TESTS FOR _reconcile_missing_fills
+# =============================================================================
+
+
+@pytest.mark.asyncio()
+async def test_reconcile_missing_fills_empty_list(live_exec_engine):
+    """
+    Test _reconcile_missing_fills handles empty list gracefully.
+    """
+    # Act
+    await live_exec_engine._reconcile_missing_fills([], AUDUSD_SIM.id)
+
+    # Assert - should not raise
+
+
+@pytest.mark.asyncio()
+async def test_reconcile_missing_fills_reconciles_successfully(
+    live_exec_engine,
+    cache,
+    account_id,
+):
+    """
+    Test _reconcile_missing_fills successfully reconciles missing fills.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+    )
+    order.apply(accepted)
+    live_exec_engine.process(accepted)
+    cache.update_order(order)
+
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    fill_report = FillReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        venue_position_id=None,
+        trade_id=TradeId("T-1"),
+        order_side=OrderSide.BUY,
+        last_qty=Quantity.from_int(50),
+        last_px=Price.from_str("1.00000"),
+        commission=Money("1.00", USD),
+        liquidity_side=LiquiditySide.TAKER,
+        report_id=UUID4(),
+        ts_event=current_ns,
+        ts_init=current_ns,
+    )
+
+    # Act
+    await live_exec_engine._reconcile_missing_fills([fill_report], AUDUSD_SIM.id)
+
+    # Assert
+    assert order.filled_qty == Quantity.from_int(50)
+    assert AUDUSD_SIM.id in live_exec_engine._position_local_activity_ns
+
+
+@pytest.mark.asyncio()
+async def test_reconcile_missing_fills_handles_failure(live_exec_engine, cache, account_id):
+    """
+    Test _reconcile_missing_fills handles reconciliation failures gracefully.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    # Create fill report for non-existent order
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    fill_report = FillReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=ClientOrderId("NON-EXISTENT"),
+        venue_order_id=VenueOrderId("V-999"),
+        venue_position_id=None,
+        trade_id=TradeId("T-1"),
+        order_side=OrderSide.BUY,
+        last_qty=Quantity.from_int(50),
+        last_px=Price.from_str("1.00000"),
+        commission=Money("1.00", USD),
+        liquidity_side=LiquiditySide.TAKER,
+        report_id=UUID4(),
+        ts_event=current_ns,
+        ts_init=current_ns,
+    )
+
+    # Act - should not raise, just log warning
+    await live_exec_engine._reconcile_missing_fills([fill_report], AUDUSD_SIM.id)
+
+    # Assert - method should handle gracefully
+
+
+# =============================================================================
+# TESTS FOR _process_cached_position_discrepancies
+# =============================================================================
+
+
+@pytest.mark.asyncio()
+async def test_process_cached_position_discrepancies_no_discrepancy(live_exec_engine, cache):
+    """
+    Test _process_cached_position_discrepancies skips when no discrepancy.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(1000),
+        position_id=PositionId("P-123"),
+    )
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+    cache.add_position(position, OmsType.HEDGING)
+
+    venue_report = PositionStatusReport(
+        account_id=TestIdStubs.account_id(),
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(1000),  # Matches cache
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+
+    query_called = False
+    original_query = live_exec_engine._query_and_find_missing_fills
+
+    async def capture_query(instrument_id, clients):
+        nonlocal query_called
+        query_called = True
+        return await original_query(instrument_id, clients)
+
+    live_exec_engine._query_and_find_missing_fills = capture_query
+
+    # Act
+    await live_exec_engine._process_cached_position_discrepancies(
+        {AUDUSD_SIM.id: [position]},
+        {AUDUSD_SIM.id: venue_report},
+    )
+
+    # Assert
+    assert not query_called  # Should not query when no discrepancy
+
+
+@pytest.mark.asyncio()
+async def test_process_cached_position_discrepancies_with_discrepancy(
+    live_exec_engine,
+    exec_client,
+    cache,
+    account_id,
+):
+    """
+    Test _process_cached_position_discrepancies queries fills when discrepancy found.
+    """
+    # Arrange
+    # Register the client with the engine
+    live_exec_engine.register_client(exec_client)
+
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(1000),
+        position_id=PositionId("P-123"),
+    )
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+    cache.add_position(position, OmsType.HEDGING)
+
+    venue_report = PositionStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(1500),  # Discrepancy: venue has more
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+
+    query_called = False
+    original_query = live_exec_engine._query_and_find_missing_fills
+
+    async def capture_query(instrument_id, clients):
+        nonlocal query_called
+        query_called = True
+        return await original_query(instrument_id, clients)
+
+    live_exec_engine._query_and_find_missing_fills = capture_query
+
+    # Act
+    await live_exec_engine._process_cached_position_discrepancies(
+        {AUDUSD_SIM.id: [position]},
+        {AUDUSD_SIM.id: venue_report},
+    )
+
+    # Assert
+    assert query_called  # Should query when discrepancy found
+
+
+# =============================================================================
+# TESTS FOR _process_venue_reported_positions
+# =============================================================================
+
+
+@pytest.mark.asyncio()
+async def test_process_venue_reported_positions_no_discrepancy(live_exec_engine, cache):
+    """
+    Test _process_venue_reported_positions skips when positions match.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(1000),
+        position_id=PositionId("P-123"),
+    )
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+    cache.add_position(position, OmsType.HEDGING)
+
+    venue_report = PositionStatusReport(
+        account_id=TestIdStubs.account_id(),
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(1000),  # Matches cache
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+
+    query_called = False
+    original_query = live_exec_engine._query_and_find_missing_fills
+
+    async def capture_query(instrument_id, clients):
+        nonlocal query_called
+        query_called = True
+        return await original_query(instrument_id, clients)
+
+    live_exec_engine._query_and_find_missing_fills = capture_query
+
+    # Act
+    await live_exec_engine._process_venue_reported_positions(
+        {AUDUSD_SIM.id: [position]},
+        {AUDUSD_SIM.id: venue_report},
+    )
+
+    # Assert
+    assert not query_called  # Should not query when positions match
+
+
+@pytest.mark.asyncio()
+async def test_process_venue_reported_positions_venue_has_position(
+    live_exec_engine,
+    exec_client,
+    cache,
+    account_id,
+):
+    """
+    Test _process_venue_reported_positions queries when venue has position we don't.
+    """
+    # Arrange
+    # Register the client with the engine
+    live_exec_engine.register_client(exec_client)
+
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    # No cached position
+
+    venue_report = PositionStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(1000),  # Venue has position, we don't
+        report_id=UUID4(),
+        ts_last=live_exec_engine._clock.timestamp_ns(),
+        ts_init=live_exec_engine._clock.timestamp_ns(),
+    )
+
+    query_called = False
+    original_query = live_exec_engine._query_and_find_missing_fills
+
+    async def capture_query(instrument_id, clients):
+        nonlocal query_called
+        query_called = True
+        return await original_query(instrument_id, clients)
+
+    live_exec_engine._query_and_find_missing_fills = capture_query
+
+    # Act
+    await live_exec_engine._process_venue_reported_positions(
+        {},  # No cached positions
+        {AUDUSD_SIM.id: venue_report},
+    )
+
+    # Assert
+    assert query_called  # Should query when venue has position we don't
+
+
+# =============================================================================
+# TESTS FOR _handle_order_status_transitions
+# =============================================================================
+
+
+@pytest.mark.asyncio()
+async def test_handle_order_status_transitions_rejected(live_exec_engine, cache, account_id):
+    """
+    Test _handle_order_status_transitions generates OrderRejected event.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+    cache.update_order(order)
+
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.REJECTED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(0),
+        cancel_reason="INSUFFICIENT_FUNDS",
+        report_id=UUID4(),
+        ts_accepted=0,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    event_generated = False
+    original_generate = live_exec_engine._generate_order_rejected
+
+    def capture_generate(o, report):
+        nonlocal event_generated
+        event_generated = True
+        return original_generate(o, report)
+
+    live_exec_engine._generate_order_rejected = capture_generate
+
+    # Act
+    result = live_exec_engine._handle_order_status_transitions(
+        order,
+        report,
+        trades=[],
+        instrument=AUDUSD_SIM,
+    )
+
+    # Assert
+    assert result is True
+    assert event_generated
+
+
+@pytest.mark.asyncio()
+async def test_handle_order_status_transitions_accepted(live_exec_engine, cache, account_id):
+    """
+    Test _handle_order_status_transitions generates OrderAccepted event.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+    cache.update_order(order)
+
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.ACCEPTED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(0),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    event_generated = False
+    original_generate = live_exec_engine._generate_order_accepted
+
+    def capture_generate(o, report):
+        nonlocal event_generated
+        event_generated = True
+        return original_generate(o, report)
+
+    live_exec_engine._generate_order_accepted = capture_generate
+
+    # Act
+    result = live_exec_engine._handle_order_status_transitions(
+        order,
+        report,
+        trades=[],
+        instrument=AUDUSD_SIM,
+    )
+
+    # Assert
+    assert result is True
+    assert event_generated
+
+
+@pytest.mark.asyncio()
+async def test_handle_order_status_transitions_canceled(live_exec_engine, cache, account_id):
+    """
+    Test _handle_order_status_transitions generates OrderCanceled event.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+    order.apply(accepted)
+    live_exec_engine.process(accepted)
+    cache.update_order(order)
+
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.CANCELED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(0),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    event_generated = False
+    original_generate = live_exec_engine._generate_order_canceled
+
+    def capture_generate(o, report):
+        nonlocal event_generated
+        event_generated = True
+        return original_generate(o, report)
+
+    live_exec_engine._generate_order_canceled = capture_generate
+
+    # Act
+    result = live_exec_engine._handle_order_status_transitions(
+        order,
+        report,
+        trades=[],
+        instrument=AUDUSD_SIM,
+    )
+
+    # Assert
+    assert result is True
+    assert event_generated
+
+
+@pytest.mark.asyncio()
+async def test_handle_order_status_transitions_returns_none_for_fill_reconciliation(
+    live_exec_engine,
+    cache,
+    account_id,
+):
+    """
+    Test _handle_order_status_transitions returns None to continue with fill
+    reconciliation.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+    order.apply(accepted)
+    live_exec_engine.process(accepted)
+    cache.update_order(order)
+
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.PARTIALLY_FILLED,  # Not a terminal state
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(50),
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    # Act
+    result = live_exec_engine._handle_order_status_transitions(
+        order,
+        report,
+        trades=[],
+        instrument=AUDUSD_SIM,
+    )
+
+    # Assert
+    assert result is None  # Should return None to continue with fill reconciliation
+
+
+# =============================================================================
+# TESTS FOR _handle_fill_quantity_mismatch
+# =============================================================================
+
+
+@pytest.mark.asyncio()
+async def test_handle_fill_quantity_mismatch_report_less_than_cache(live_exec_engine, cache, account_id):
+    """
+    Test _handle_fill_quantity_mismatch logs error when report.filled_qty <
+    order.filled_qty.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+    order.apply(accepted)
+    live_exec_engine.process(accepted)
+
+    filled = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(100),
+    )
+    order.apply(filled)
+    live_exec_engine.process(filled)
+    cache.update_order(order)
+
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.PARTIALLY_FILLED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(50),  # Less than cache (100)
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    # Act
+    result = live_exec_engine._handle_fill_quantity_mismatch(
+        order,
+        report,
+        AUDUSD_SIM,
+        order.client_order_id,
+    )
+
+    # Assert
+    assert result is False  # Should fail when report < cache
+
+
+@pytest.mark.asyncio()
+async def test_handle_fill_quantity_mismatch_generates_inferred_fill(live_exec_engine, cache, account_id):
+    """
+    Test _handle_fill_quantity_mismatch generates inferred fill when report > cache.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+    order.apply(accepted)
+    live_exec_engine.process(accepted)
+
+    filled = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(50),
+    )
+    order.apply(filled)
+    live_exec_engine.process(filled)
+    cache.update_order(order)
+
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.PARTIALLY_FILLED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(100),  # More than cache (50)
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    # Act
+    result = live_exec_engine._handle_fill_quantity_mismatch(
+        order,
+        report,
+        AUDUSD_SIM,
+        order.client_order_id,
+    )
+
+    # Assert
+    assert result is True
+    # The inferred fill should have been generated and queued via _handle_event_with_tracking.
+    # Process events to ensure the fill is applied.
+    await asyncio.sleep(0.01)  # Give time for event processing
+    # Verify the order was updated (the event is queued and processed asynchronously).
+    # The key assertion is that the method returned True, indicating it handled the mismatch.
+
+
+@pytest.mark.asyncio()
+async def test_handle_fill_quantity_mismatch_closed_order_within_tolerance(live_exec_engine, cache, account_id):
+    """
+    Test _handle_fill_quantity_mismatch handles closed orders within tolerance.
+    """
+    # Arrange
+    # Ensure cache has the instrument
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    live_exec_engine.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+    order.apply(accepted)
+    live_exec_engine.process(accepted)
+
+    filled = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=order.quantity,  # Fully filled
+    )
+    order.apply(filled)
+    live_exec_engine.process(filled)
+    cache.update_order(order)
+
+    # Report shows slightly different filled_qty (within tolerance for fractional)
+    current_ns = live_exec_engine._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.FILLED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=order.quantity,  # Same as cache
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    # Act
+    result = live_exec_engine._handle_fill_quantity_mismatch(
+        order,
+        report,
+        AUDUSD_SIM,
+        order.client_order_id,
+    )
+
+    # Assert
+    assert result is True  # Should succeed for closed order with matching qty

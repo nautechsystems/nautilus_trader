@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
 def instrument_setup(data_client, instrument, contract_details):
-    data_client.instrument_provider.contract_details[instrument.id.value] = contract_details
+    data_client.instrument_provider.contract_details[instrument.id] = contract_details
     data_client.instrument_provider.contract_id_to_instrument_id[
         contract_details.contract.conId
     ] = instrument.id

@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -17,7 +17,6 @@
 # Note: Use the jupytext python extension to be able to open this python file in jupyter as a notebook
 
 # %%
-
 import os
 import threading
 import time
@@ -33,6 +32,8 @@ from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
@@ -230,7 +231,7 @@ class DemoStrategy(Strategy):
 # Tested instrument id
 instrument_id = "YMZ5.XCBT"  # "^SPX.XCBO", "ES.XCME", "AAPL.XNAS", "YMU5.XCBT"
 
-instrument_provider = InteractiveBrokersInstrumentProviderConfig(
+instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
     symbology_method=SymbologyMethod.IB_SIMPLIFIED,
     convert_exchange_to_mic_venue=True,
     build_futures_chain=False,
@@ -244,39 +245,53 @@ instrument_provider = InteractiveBrokersInstrumentProviderConfig(
     ),
 )
 
+ib_data_client_config = InteractiveBrokersDataClientConfig(
+    ibg_port=7497,
+    handle_revised_bars=False,
+    use_regular_trading_hours=False,
+    instrument_provider=instrument_provider_config,
+    market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
+)
+
+ib_exec_client_config = InteractiveBrokersExecClientConfig(
+    ibg_port=7497,
+    instrument_provider=instrument_provider_config,
+    routing=RoutingConfig(default=True),
+    account_id=os.environ.get("TWS_ACCOUNT"),
+)
+
+database_config = DatabaseConfig(
+    host="localhost",
+    port=6379,
+)
+
+cache_config = CacheConfig(
+    database=database_config,
+    encoding="json",
+)
+
+data_engine_config = LiveDataEngineConfig(
+    time_bars_timestamp_on_close=False,  # Will use opening time as `ts_event` (same as IB)
+    validate_data_sequence=True,  # Will make sure DataEngine discards any Bars received out of sequence
+)
+
+logging_config = LoggingConfig(log_level="INFO")
+
 # Configure the trading node
-# IMPORTANT: you must use the imported IB string so this client works properly
+# IMPORTANT: you must use the imported IB variable so this client works properly
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    logging=LoggingConfig(log_level="INFO"),
-    data_clients={
-        IB: InteractiveBrokersDataClientConfig(
-            ibg_port=7497,
-            handle_revised_bars=False,
-            use_regular_trading_hours=False,
-            instrument_provider=instrument_provider,
-            market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
-        ),
-    },
-    exec_clients={
-        IB: InteractiveBrokersExecClientConfig(
-            ibg_port=7497,
-            instrument_provider=instrument_provider,
-            routing=RoutingConfig(default=True),
-            account_id=os.environ.get("TWS_ACCOUNT"),
-        ),
-    },
-    data_engine=LiveDataEngineConfig(
-        time_bars_timestamp_on_close=False,  # Will use opening time as `ts_event` (same as IB)
-        validate_data_sequence=True,  # Will make sure DataEngine discards any Bars received out of sequence
-    ),
+    logging=logging_config,
+    cache=cache_config,
+    data_clients={IB: ib_data_client_config},
+    exec_clients={IB: ib_exec_client_config},
+    data_engine=data_engine_config,
     timeout_connection=90.0,
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
     timeout_disconnection=5.0,
     timeout_post_stop=2.0,
 )
-
 
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
@@ -327,9 +342,9 @@ node.run()
 #     node.dispose()
 
 # %%
-node.trader.strategies()[0].on_bar(2)
+# node.trader.strategies()[0].on_bar(2)
 
 # %%
-# ?node.*
+# # ?node.*
 
 # %%

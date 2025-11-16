@@ -28,7 +28,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 def instrument_setup(exec_client, cache, instrument=None, contract_details=None):
     instrument = instrument or IBTestContractStubs.aapl_instrument()
     contract_details = contract_details or IBTestContractStubs.aapl_equity_contract_details()
-    exec_client._instrument_provider.contract_details[instrument.id.value] = contract_details
+    exec_client._instrument_provider.contract_details[instrument.id] = contract_details
     exec_client._instrument_provider.contract_id_to_instrument_id[
         contract_details.contract.conId
     ] = instrument.id

@@ -88,6 +88,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
@@ -704,9 +705,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 side = PositionSide.FLAT
 
             # Convert avg_cost to Price if available
-            avg_px_open = None
-            if position.avg_cost and position.avg_cost > 0:
-                avg_px_open = Decimal(f"{position.avg_cost:.{instrument.price_precision}f}")
+            avg_px_open = self._convert_ib_avg_cost_to_price(position.avg_cost, instrument)
 
             position_status = PositionStatusReport(
                 account_id=self.account_id,
@@ -1343,7 +1342,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 f"Order status is 'Inactive' because it is invalid or triggered an error for {order_ref=}",
             )
             return
-        elif order_status in ["PreSubmitted", "Submitted"]:
+        elif order_status in ["PendingSubmit", "PreSubmitted", "Submitted"]:
             self._log.debug(
                 f"Ignoring `_on_order_status` event for {order_status=} is handled in `_on_open_order`",
             )
@@ -1397,8 +1396,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self._log.warning(f"ClientOrderId not available, execution={execution.__dict__}")
             return
 
-        if not (nautilus_order := self._cache.order(ClientOrderId(order_ref))):
-            self._log.warning(f"ClientOrderId not found in Cache, execution={execution.__dict__}")
+        client_order_id = ClientOrderId(order_ref)
+        venue_order_id = VenueOrderId(str(execution.orderId))
+
+        # Find order by client_order_id or venue_order_id
+        nautilus_order = self._find_order_for_execution(client_order_id, venue_order_id)
+
+        if not nautilus_order:
+            # Order not found - execution engine will handle this during reconciliation
+            # Log and return early to avoid processing incomplete execution details
+            self._log.debug(
+                f"Order not found in cache for execution (order_ref={order_ref}, "
+                f"venue_order_id={venue_order_id}, execId={execution.execId}). "
+                f"Will be processed during reconciliation.",
+            )
             return
 
         instrument = self.instrument_provider.find(nautilus_order.instrument_id)
@@ -1456,6 +1467,30 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Update position tracking to avoid duplicate processing
         self._update_position_tracking_from_execution(contract, execution)
+
+    def _find_order_for_execution(
+        self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId | None,
+    ) -> Order | None:
+        # Try client_order_id first
+        order = self._cache.order(client_order_id)
+        if order:
+            return order
+
+        # Fallback to venue_order_id lookup
+        if venue_order_id:
+            matched_client_id = self._cache.client_order_id(venue_order_id)
+            if matched_client_id:
+                order = self._cache.order(matched_client_id)
+                if order:
+                    self._log.debug(
+                        f"Found order by venue_order_id {venue_order_id} "
+                        f"for client_order_id {client_order_id}",
+                    )
+                    return order
+
+        return None
 
     def _handle_spread_execution(
         self,
@@ -1765,9 +1800,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             side = PositionSide.LONG if new_quantity > 0 else PositionSide.SHORT
 
             # Convert avg_cost to Price if available
-            avg_px_open = None
-            if ib_position.avg_cost and ib_position.avg_cost > 0:
-                avg_px_open = Decimal(f"{ib_position.avg_cost:.{instrument.price_precision}f}")
+            avg_px_open = self._convert_ib_avg_cost_to_price(ib_position.avg_cost, instrument)
 
             # Create position status report
             position_report = PositionStatusReport(
@@ -1793,3 +1826,31 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self._known_positions[contract_id] = new_quantity
         except Exception as e:
             self._log.error(f"Error handling position update: {e}")
+
+    def _convert_ib_avg_cost_to_price(
+        self,
+        avg_cost: float,
+        instrument: Instrument,
+    ) -> Decimal | None:
+        """
+        Convert IB avg_cost to Nautilus Price, accounting for price magnifier and
+        multiplier.
+
+        Returns None if avg_cost is invalid (<= 0 or None).
+
+        """
+        if not avg_cost or avg_cost <= 0:
+            return None
+
+        contract_details = self.instrument_provider.contract_details.get(instrument.id)
+        if contract_details is None:
+            self._log.warning(
+                f"No contract details found for {instrument.id}, cannot convert avg_cost",
+            )
+            return None
+
+        price_magnifier = contract_details.priceMagnifier
+        multiplier = instrument.multiplier.as_double()
+        converted_avg_cost = avg_cost / (multiplier * price_magnifier)
+
+        return Decimal(f"{converted_avg_cost:.{instrument.price_precision}f}")
