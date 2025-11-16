@@ -53,10 +53,6 @@ impl DydxHttpClient {
     }
 
     /// Requests all available instruments from the dYdX Indexer API.
-    ///
-    /// # Returns
-    ///
-    /// List of instruments as Python objects.
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(
         &self,
@@ -96,10 +92,6 @@ impl DydxHttpClient {
     }
 
     /// Gets a cached instrument by symbol.
-    ///
-    /// # Returns
-    ///
-    /// The instrument as a Python object, or None if not found.
     #[pyo3(name = "get_instrument")]
     fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
         let symbol_ustr = Ustr::from(symbol);

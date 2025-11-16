@@ -901,14 +901,6 @@ impl DydxHttpClient {
     /// Fetches candle data from the dYdX Indexer API's `/v4/candles/perpetualMarkets/:ticker` endpoint.
     /// Results are ordered by start time ascending (oldest first).
     ///
-    /// # Arguments
-    ///
-    /// - `symbol`: Market ticker (e.g., "BTC-USD")
-    /// - `resolution`: Candle resolution (OneMinute, FiveMinutes, etc.)
-    /// - `limit`: Optional maximum number of candles (default: 100, max: 10,000)
-    /// - `from_iso`: Optional start time filter (ISO8601 format)
-    /// - `to_iso`: Optional end time filter (ISO8601 format)
-    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or response cannot be parsed.
@@ -960,50 +952,30 @@ impl DydxHttpClient {
     /// This provides access to the underlying [`DydxRawHttpClient`] for cases
     /// where low-level API access is needed. Most users should use the domain
     /// client methods instead.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the Arc-wrapped raw HTTP client.
     #[must_use]
     pub fn raw_client(&self) -> &Arc<DydxRawHttpClient> {
         &self.inner
     }
 
     /// Check if this client is configured for testnet.
-    ///
-    /// # Returns
-    ///
-    /// `true` if using testnet, `false` if using mainnet.
     #[must_use]
     pub fn is_testnet(&self) -> bool {
         self.inner.is_testnet()
     }
 
     /// Get the base URL being used by this client.
-    ///
-    /// # Returns
-    ///
-    /// The base URL string (either mainnet or testnet).
     #[must_use]
     pub fn base_url(&self) -> &str {
         self.inner.base_url()
     }
 
     /// Check if the instrument cache has been initialized.
-    ///
-    /// # Returns
-    ///
-    /// `true` if cache contains instruments, `false` otherwise.
     #[must_use]
     pub fn is_cache_initialized(&self) -> bool {
         self.cache_initialized.load(Ordering::Acquire)
     }
 
     /// Get the number of instruments currently cached.
-    ///
-    /// # Returns
-    ///
-    /// The count of cached instruments.
     #[must_use]
     pub fn cached_instruments_count(&self) -> usize {
         self.instruments_cache.len()

@@ -103,13 +103,9 @@ pub fn validate_market_active(ticker: &str, status: &DydxMarketStatus) -> anyhow
 
 /// Calculate time-in-force for conditional orders.
 ///
-/// # Returns
-///
-/// The calculated Nautilus `TimeInForce` enum value
-///
 /// # Errors
 ///
-/// Returns an error if the combination of parameters is invalid
+/// Returns an error if the combination of parameters is invalid.
 pub fn calculate_time_in_force(
     order_type: DydxOrderType,
     base_tif: DydxTimeInForce,
@@ -150,10 +146,6 @@ pub fn calculate_time_in_force(
 ///
 /// Ensures that trigger prices are set correctly relative to limit prices
 /// based on order type and side.
-///
-/// # Returns
-///
-/// Ok(()) if validation passes
 ///
 /// # Errors
 ///
@@ -219,10 +211,6 @@ pub fn validate_conditional_order(
 /// [`CryptoPerpetual`] instrument with the appropriate fields mapped from
 /// the dYdX market definition.
 ///
-/// # Returns
-///
-/// Returns an [`InstrumentAny::CryptoPerpetual`] on success.
-///
 /// # Errors
 ///
 /// Returns an error if:
@@ -232,7 +220,6 @@ pub fn validate_conditional_order(
 /// - Price or quantity values cannot be parsed.
 /// - Currency parsing fails.
 /// - Margin fractions are out of valid range.
-///
 pub fn parse_instrument_any(
     definition: &PerpetualMarket,
     maker_fee: Option<rust_decimal::Decimal>,
