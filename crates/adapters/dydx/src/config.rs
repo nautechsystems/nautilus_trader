@@ -133,6 +133,12 @@ pub struct DydxDataClientConfig {
     pub http_proxy_url: Option<String>,
     /// WebSocket proxy URL.
     pub ws_proxy_url: Option<String>,
+    /// Orderbook snapshot refresh interval in seconds (prevents stale books from missed messages).
+    /// Set to None to disable periodic refresh. Default: 60 seconds.
+    pub orderbook_refresh_interval_secs: Option<u64>,
+    /// Instrument refresh interval in seconds (updates instrument definitions periodically).
+    /// Set to None to disable periodic refresh. Default: 3600 seconds (60 minutes).
+    pub instrument_refresh_interval_secs: Option<u64>,
 }
 
 impl Default for DydxDataClientConfig {
@@ -147,6 +153,8 @@ impl Default for DydxDataClientConfig {
             is_testnet: false,
             http_proxy_url: None,
             ws_proxy_url: None,
+            orderbook_refresh_interval_secs: Some(60),
+            instrument_refresh_interval_secs: Some(3600),
         }
     }
 }

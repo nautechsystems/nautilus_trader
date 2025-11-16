@@ -60,6 +60,7 @@ use std::{
     },
 };
 
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
 use nautilus_model::{
@@ -491,11 +492,19 @@ impl DydxRawHttpClient {
         ticker: &str,
         resolution: DydxCandleResolution,
         limit: Option<u32>,
+        from_iso: Option<DateTime<Utc>>,
+        to_iso: Option<DateTime<Utc>>,
     ) -> Result<super::models::CandlesResponse, DydxHttpError> {
         let endpoint = format!("/v4/candles/perpetualMarkets/{ticker}");
         let mut query_parts = vec![format!("resolution={}", resolution)];
         if let Some(l) = limit {
             query_parts.push(format!("limit={l}"));
+        }
+        if let Some(from) = from_iso {
+            query_parts.push(format!("fromISO={}", from.to_rfc3339()));
+        }
+        if let Some(to) = to_iso {
+            query_parts.push(format!("toISO={}", to.to_rfc3339()));
         }
         let query = query_parts.join("&");
         self.send_request(Method::GET, &endpoint, Some(&query))

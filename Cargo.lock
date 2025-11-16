@@ -5265,6 +5265,7 @@ dependencies = [
  "dashmap",
  "derive_builder",
  "hex",
+ "indexmap 2.12.0",
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",

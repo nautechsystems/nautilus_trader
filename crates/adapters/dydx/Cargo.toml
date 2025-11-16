@@ -93,3 +93,4 @@ rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tracing-test = { workspace = true }
 url = { workspace = true }
+indexmap = { workspace = true }

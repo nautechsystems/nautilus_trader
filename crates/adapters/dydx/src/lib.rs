@@ -59,6 +59,7 @@ pub mod grpc;
 pub mod http;
 // pub mod proto;
 pub mod schemas;
+pub mod types;
 pub mod websocket;
 
 #[cfg(feature = "python")]
@@ -80,6 +81,7 @@ pub use crate::{
         error::DydxHttpError,
         models::{MarketsResponse, PerpetualMarket},
     },
+    types::DydxOraclePrice,
     websocket::{
         client::DydxWebSocketClient,
         enums::{DydxWsChannel, DydxWsOperation},
