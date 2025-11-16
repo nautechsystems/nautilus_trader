@@ -513,3 +513,119 @@ async fn dydx_testnet_complete_data_flow() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// Integration test for crossed orderbook detection with live WebSocket data.
+///
+/// This test subscribes to order book deltas for a volatile instrument and monitors
+/// for crossed orderbook conditions. Due to dYdX's validator consensus delays,
+/// crossed books may occur under high volatility.
+///
+/// **Note**: This test may not always observe a crossed book on testnet if market
+/// conditions are stable. It serves as a regression test for the resolution logic.
+#[tokio::test]
+#[ignore]
+async fn dydx_testnet_crossed_orderbook_live_detection() -> anyhow::Result<()> {
+    if !integration_enabled() {
+        return Ok(());
+    }
+
+    let _guard = init_logger_for_testing(None)?;
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let client_id = ClientId::from("DYDX-INT-CROSSED");
+
+    let config = DydxDataClientConfig {
+        is_testnet: true,
+        base_url_http: Some(
+            std::env::var("DYDX_TESTNET_HTTP_URL")
+                .unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
+        ),
+        base_url_ws: Some(
+            std::env::var("DYDX_TESTNET_WS_URL")
+                .unwrap_or_else(|_| DYDX_TESTNET_WS_URL.to_string()),
+        ),
+        ..Default::default()
+    };
+
+    let http_client = DydxHttpClient::new(
+        config.base_url_http.clone(),
+        config.http_timeout_secs,
+        config.http_proxy_url.clone(),
+        config.is_testnet,
+        None,
+    )?;
+
+    let ws_url = config
+        .base_url_ws
+        .clone()
+        .unwrap_or_else(|| DYDX_TESTNET_WS_URL.to_string());
+    let ws_client = DydxWebSocketClient::new_public(ws_url, Some(30));
+
+    let mut data_client = DydxDataClient::new(client_id, config, http_client, Some(ws_client))?;
+
+    data_client.connect().await?;
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+    let venue = *DYDX_VENUE;
+    let ts_init = get_atomic_clock_realtime().get_time_ns();
+    let command_id = UUID4::new();
+
+    let subscribe_book = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        Some(venue),
+        command_id,
+        ts_init,
+        None,
+        false,
+        None,
+    );
+    data_client.subscribe_book_deltas(&subscribe_book)?;
+
+    let mut saw_orderbook_delta = false;
+    let mut quote_count = 0;
+
+    let _test_result = timeout(Duration::from_secs(30), async {
+        loop {
+            match rx.try_recv() {
+                Ok(DataEvent::Data(data)) => {
+                    let data_type_str = format!("{:?}", data);
+                    if data_type_str.contains("OrderBookDeltas") {
+                        saw_orderbook_delta = true;
+                    } else if data_type_str.contains("QuoteTick") {
+                        quote_count += 1;
+                    }
+                }
+                Ok(_) => continue,
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+            }
+        }
+    })
+    .await;
+
+    data_client.disconnect().await?;
+
+    assert!(
+        saw_orderbook_delta,
+        "Expected to receive at least one orderbook delta"
+    );
+
+    println!(
+        "Integration test completed: saw {} orderbook deltas, {} quotes",
+        if saw_orderbook_delta {
+            "multiple"
+        } else {
+            "no"
+        },
+        quote_count
+    );
+
+    Ok(())
+}

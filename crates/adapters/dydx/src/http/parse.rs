@@ -864,11 +864,13 @@ pub fn parse_fill_report(
     );
 
     // Parse commission (fee)
+    //
+    // Negate dYdX fee to match Nautilus conventions:
+    // - dYdX: negative fee = rebate, positive fee = cost
+    // - Nautilus: positive commission = rebate, negative commission = cost
+    // Reference: OKX and Bybit adapters also negate venue fees
     let commission = Money::new(
-        fill.fee
-            .abs()
-            .to_f64()
-            .context("failed to convert fee to f64")?,
+        -fill.fee.to_f64().context("failed to convert fee to f64")?,
         instrument.quote_currency(),
     );
 
@@ -1627,7 +1629,7 @@ mod reconciliation_tests {
         assert!(result.is_ok());
 
         let report = result.unwrap();
-        // Commission should be absolute value of fee
+        // Commission should be negated: -(-2.5) = 2.5 (positive = rebate)
         assert_eq!(report.commission.as_f64(), 2.5);
         assert_eq!(report.liquidity_side, LiquiditySide::Maker);
     }

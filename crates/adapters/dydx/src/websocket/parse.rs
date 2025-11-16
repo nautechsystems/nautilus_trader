@@ -84,7 +84,25 @@ pub fn parse_ws_order_report(
     let http_order = convert_ws_order_to_http(ws_order)?;
 
     // Delegate to existing HTTP parser
-    crate::http::parse::parse_order_status_report(&http_order, &instrument, account_id, ts_init)
+    let mut report = crate::http::parse::parse_order_status_report(
+        &http_order,
+        &instrument,
+        account_id,
+        ts_init,
+    )?;
+
+    // For untriggered conditional orders with an explicit trigger price we
+    // surface `PendingUpdate` to match Nautilus semantics and existing dYdX
+    // enum mapping.
+    if matches!(
+        ws_order.status,
+        crate::common::enums::DydxOrderStatus::Untriggered
+    ) && ws_order.trigger_price.is_some()
+    {
+        report.order_status = nautilus_model::enums::OrderStatus::PendingUpdate;
+    }
+
+    Ok(report)
 }
 
 /// Converts a WebSocket order message to HTTP Order format.
@@ -681,8 +699,8 @@ mod tests {
         assert_eq!(fill_report.venue_order_id.as_str(), "order999");
         assert_eq!(fill_report.last_qty.as_f64(), 0.5);
         assert_eq!(fill_report.last_px.as_f64(), 49500.0);
-        // Commission precision is limited by Nautilus (2 decimals for USD)
-        assert!((fill_report.commission.as_f64() - 12.38).abs() < 0.01);
+        // Commission should be negative (cost to trader) after negating positive fee
+        assert!((fill_report.commission.as_f64() + 12.38).abs() < 0.01);
     }
 
     #[rstest]
@@ -960,13 +978,14 @@ mod tests {
         // Verify status conversion
         use nautilus_model::enums::OrderStatus;
         let expected_status = match status {
-            DydxOrderStatus::Open | DydxOrderStatus::BestEffortOpened => OrderStatus::Accepted,
+            DydxOrderStatus::Open
+            | DydxOrderStatus::BestEffortOpened
+            | DydxOrderStatus::Untriggered => OrderStatus::Accepted,
             DydxOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
             DydxOrderStatus::Filled => OrderStatus::Filled,
             DydxOrderStatus::Canceled | DydxOrderStatus::BestEffortCanceled => {
                 OrderStatus::Canceled
             }
-            DydxOrderStatus::Untriggered => OrderStatus::PendingUpdate,
         };
         assert_eq!(report.order_status, expected_status);
     }
@@ -1209,8 +1228,8 @@ mod tests {
             fill_report.liquidity_side,
             nautilus_model::enums::LiquiditySide::Maker
         );
-        // Commission should be negative (rebate)
-        assert!(fill_report.commission.as_f64() < 0.0);
+        // Commission should be positive (rebate) after negating dYdX's negative fee
+        assert!(fill_report.commission.as_f64() > 0.0);
     }
 
     #[rstest]
@@ -1255,7 +1274,7 @@ mod tests {
             nautilus_model::enums::LiquiditySide::Taker
         );
         assert_eq!(fill_report.order_side, OrderSide::Sell);
-        // Commission should be positive (fee paid)
-        assert!(fill_report.commission.as_f64() > 0.0);
+        // Commission should be negative (cost to trader) after negating positive fee
+        assert!(fill_report.commission.as_f64() < 0.0);
     }
 }

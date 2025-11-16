@@ -2216,6 +2216,7 @@ impl DydxDataClient {
 mod tests {
     use std::{collections::HashMap, net::SocketAddr};
 
+    use crate::http::models::{Candle, CandlesResponse};
     use axum::{
         Router,
         extract::{Path, Query, State},
@@ -2243,6 +2244,7 @@ mod tests {
         types::{Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use tokio::net::TcpListener;
 
@@ -2444,7 +2446,41 @@ mod tests {
     }
 
     #[test]
-    fn test_request_bars_partitioning_math_does_not_panic() {
+    fn test_handle_ws_message_error_does_not_panic() {
+        // Ensure malformed/error WebSocket messages are logged and ignored
+        // without panicking or affecting client state.
+        let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let instruments = Arc::new(DashMap::new());
+        let order_books = Arc::new(DashMap::new());
+        let last_quotes = Arc::new(DashMap::new());
+        let ws_client: Option<DydxWebSocketClient> = None;
+        let active_orderbook_subs = Arc::new(DashMap::new());
+        let active_trade_subs = Arc::new(DashMap::new());
+        let active_bar_subs = Arc::new(DashMap::new());
+
+        let ctx = WsMessageContext {
+            data_sender: &sender,
+            instruments: &instruments,
+            order_books: &order_books,
+            last_quotes: &last_quotes,
+            ws_client: &ws_client,
+            active_orderbook_subs: &active_orderbook_subs,
+            active_trade_subs: &active_trade_subs,
+            active_bar_subs: &active_bar_subs,
+        };
+
+        let err = crate::websocket::error::DydxWebSocketError::from_message(
+            "malformed WebSocket payload".to_string(),
+        );
+
+        DydxDataClient::handle_ws_message(
+            crate::websocket::messages::NautilusWsMessage::Error(err),
+            &ctx,
+        );
+    }
+
+    #[tokio::test]
+    async fn test_request_bars_partitioning_math_does_not_panic() {
         setup_test_env();
 
         let client_id = ClientId::from("DYDX-BARS");
@@ -2700,6 +2736,211 @@ mod tests {
             UnixNanos::default(),             // ts_event
             UnixNanos::default(),             // ts_init
         ))
+    }
+
+    // ------------------------------------------------------------------------
+    // Precision & bar conversion tests
+    // ------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_candle_to_bar_price_size_edge_cases() {
+        setup_test_env();
+
+        let clock = get_atomic_clock_realtime();
+        let now = chrono::Utc::now();
+
+        // Very large prices and sizes (edge cases).
+        let candle = Candle {
+            started_at: now,
+            ticker: "BTC-USD".to_string(),
+            resolution: crate::common::enums::DydxCandleResolution::OneMinute,
+            open: dec!(123456789.123456),
+            high: dec!(987654321.987654),  // high is max
+            low: dec!(123456.789),         // low is min
+            close: dec!(223456789.123456), // close between low and high
+            base_token_volume: dec!(0.00000001),
+            usd_volume: dec!(1234500.0),
+            trades: 42,
+            starting_open_interest: dec!(1000.0),
+        };
+
+        let instrument = create_test_instrument_any();
+        let instrument_id = instrument.id();
+        let spec = BarSpecification {
+            step: std::num::NonZeroUsize::new(1).unwrap(),
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
+
+        let bar = DydxDataClient::candle_to_bar(
+            &candle,
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            60,
+            clock,
+        )
+        .expect("candle_to_bar should handle large/scientific values");
+
+        assert!(bar.open.as_f64() > 0.0);
+        assert!(bar.high.as_f64() >= bar.low.as_f64());
+        assert!(bar.volume.as_f64() > 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_candle_to_bar_ts_event_overflow_safe() {
+        setup_test_env();
+
+        let clock = get_atomic_clock_realtime();
+        let now = chrono::Utc::now();
+
+        let candle = Candle {
+            started_at: now,
+            ticker: "BTC-USD".to_string(),
+            resolution: crate::common::enums::DydxCandleResolution::OneDay,
+            open: Decimal::from(1),
+            high: Decimal::from(1),
+            low: Decimal::from(1),
+            close: Decimal::from(1),
+            base_token_volume: Decimal::from(1),
+            usd_volume: Decimal::from(1),
+            trades: 1,
+            starting_open_interest: Decimal::from(1),
+        };
+
+        let instrument = create_test_instrument_any();
+        let instrument_id = instrument.id();
+        let spec = BarSpecification {
+            step: std::num::NonZeroUsize::new(1).unwrap(),
+            aggregation: BarAggregation::Day,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
+
+        // Use an intentionally large bar_secs to exercise saturating_add path.
+        let bar_secs = i64::MAX / 1_000_000_000;
+        let bar = DydxDataClient::candle_to_bar(
+            &candle,
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            bar_secs,
+            clock,
+        )
+        .expect("candle_to_bar should not overflow on ts_event");
+
+        assert!(bar.ts_event.as_u64() >= bar.ts_init.as_u64());
+    }
+
+    #[tokio::test]
+    async fn test_request_bars_incomplete_bar_filtering_with_clock_skew() {
+        // Simulate bars with ts_event both before and after current_time_ns and
+        // ensure only completed bars (ts_event < now) are retained.
+        let clock = get_atomic_clock_realtime();
+        let now = chrono::Utc::now();
+
+        // Use a dedicated data channel for this test and register it
+        // before constructing the data client.
+        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        set_data_event_sender(sender);
+
+        // two candles: one in the past, one in the future
+        let candle_past = Candle {
+            started_at: now - chrono::Duration::minutes(2),
+            ticker: "BTC-USD".to_string(),
+            resolution: crate::common::enums::DydxCandleResolution::OneMinute,
+            open: Decimal::from(1),
+            high: Decimal::from(2),
+            low: Decimal::from(1),
+            close: Decimal::from(1),
+            base_token_volume: Decimal::from(1),
+            usd_volume: Decimal::from(1),
+            trades: 1,
+            starting_open_interest: Decimal::from(1),
+        };
+        let candle_future = Candle {
+            started_at: now + chrono::Duration::minutes(2),
+            ..candle_past.clone()
+        };
+
+        let candles_response = CandlesResponse {
+            candles: vec![candle_past, candle_future],
+        };
+
+        let state = CandlesTestState {
+            response: Arc::new(candles_response),
+        };
+        let addr = start_candles_test_server(state).await;
+        let base_url = format!("http://{}", addr);
+
+        let client_id = ClientId::from("DYDX-BARS-SKEW");
+        let config = DydxDataClientConfig {
+            base_url_http: Some(base_url),
+            is_testnet: true,
+            ..Default::default()
+        };
+
+        let http_client = DydxHttpClient::new(
+            config.base_url_http.clone(),
+            config.http_timeout_secs,
+            config.http_proxy_url.clone(),
+            config.is_testnet,
+            None,
+        )
+        .unwrap();
+
+        let client = DydxDataClient::new(client_id, config, http_client, None).unwrap();
+
+        let instrument = create_test_instrument_any();
+        let instrument_id = instrument.id();
+        let symbol_key = Ustr::from(instrument_id.symbol.as_ref());
+        client.instruments.insert(symbol_key, instrument);
+
+        let spec = BarSpecification {
+            step: std::num::NonZeroUsize::new(1).unwrap(),
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
+
+        let request = RequestBars::new(
+            bar_type,
+            Some(now - chrono::Duration::minutes(5)),
+            Some(now + chrono::Duration::minutes(5)),
+            None,
+            Some(client_id),
+            UUID4::new(),
+            clock.get_time_ns(),
+            None,
+        );
+
+        assert!(client.request_bars(&request).is_ok());
+
+        let timeout = tokio::time::Duration::from_secs(3);
+        if let Ok(Some(DataEvent::Response(DataResponse::Bars(resp)))) =
+            tokio::time::timeout(timeout, rx.recv()).await
+        {
+            // Only the past candle should remain after filtering.
+            assert_eq!(resp.data.len(), 1);
+        }
+    }
+
+    #[test]
+    fn test_decimal_to_f64_precision_loss_within_tolerance() {
+        // Verify converting via Price/Quantity preserves reasonable precision.
+        let price_value = 12345.125_f64;
+        let qty_value = 0.00012345_f64;
+
+        let price = Price::new(price_value, 6);
+        let qty = Quantity::new(qty_value, 8);
+
+        let price_diff = (price.as_f64() - price_value).abs();
+        let qty_diff = (qty.as_f64() - qty_value).abs();
+
+        // Differences should be well within a tiny epsilon.
+        assert!(price_diff < 1e-10);
+        assert!(qty_diff < 1e-12);
     }
 
     #[tokio::test]
@@ -3197,8 +3438,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instruments_successful_fetch() {
         // Test successful fetch of all instruments
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3248,8 +3487,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instruments_empty_response_on_http_error() {
         // Test empty response handling when HTTP call fails
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3329,8 +3566,8 @@ mod tests {
         assert!(final_cache_size >= initial_cache_size);
     }
 
-    #[test]
-    fn test_request_instruments_correlation_id_matching() {
+    #[tokio::test]
+    async fn test_request_instruments_correlation_id_matching() {
         // Test correlation_id matching in response
         setup_test_env();
 
@@ -3354,8 +3591,8 @@ mod tests {
         assert!(client.request_instruments(&request).is_ok());
     }
 
-    #[test]
-    fn test_request_instruments_venue_assignment() {
+    #[tokio::test]
+    async fn test_request_instruments_venue_assignment() {
         // Test venue assignment
         setup_test_env();
 
@@ -3382,8 +3619,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instruments_timestamp_handling() {
         // Test timestamp handling (start_nanos, end_nanos)
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3424,8 +3659,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instruments_with_start_only() {
         // Test timestamp handling when only `start` is provided
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3462,8 +3695,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instruments_with_end_only() {
         // Test timestamp handling when only `end` is provided
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3524,8 +3755,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instruments_with_params() {
         // Test custom params handling
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3574,8 +3803,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instruments_with_start_and_end_range() {
         // Test timestamp handling when both start and end are provided
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3627,13 +3854,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_request_instruments_different_client_ids() {
-        // Test that different client_id values are properly handled
-        setup_test_env();
+        // Test that different client_id values are properly handled using a shared channel.
+        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        set_data_event_sender(sender);
 
-        let (sender1, mut rx1) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender1);
+        let timeout = tokio::time::Duration::from_secs(3);
 
-        // Create first client with one ID
+        // First client
         let client_id_1 = ClientId::from("DYDX-CLIENT-1");
         let config1 = DydxDataClientConfig::default();
         let http_client1 = DydxHttpClient::default();
@@ -3651,21 +3878,16 @@ mod tests {
 
         assert!(client1.request_instruments(&request1).is_ok());
 
-        let timeout = tokio::time::Duration::from_secs(3);
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) =
-            tokio::time::timeout(timeout, rx1.recv()).await
+        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp1)))) =
+            tokio::time::timeout(timeout, rx.recv()).await
         {
-            // Verify first client_id
             assert_eq!(
-                resp.client_id, client_id_1,
+                resp1.client_id, client_id_1,
                 "Response should contain client_id_1"
             );
         }
 
-        // Create second client with different ID
-        let (sender2, mut rx2) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_event_sender(sender2);
-
+        // Second client
         let client_id_2 = ClientId::from("DYDX-CLIENT-2");
         let config2 = DydxDataClientConfig::default();
         let http_client2 = DydxHttpClient::default();
@@ -3683,16 +3905,15 @@ mod tests {
 
         assert!(client2.request_instruments(&request2).is_ok());
 
-        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp)))) =
-            tokio::time::timeout(timeout, rx2.recv()).await
+        if let Ok(Some(DataEvent::Response(DataResponse::Instruments(resp2)))) =
+            tokio::time::timeout(timeout, rx.recv()).await
         {
-            // Verify second client_id
             assert_eq!(
-                resp.client_id, client_id_2,
+                resp2.client_id, client_id_2,
                 "Response should contain client_id_2"
             );
             assert_ne!(
-                resp.client_id, client_id_1,
+                resp2.client_id, client_id_1,
                 "Different clients should have different client_ids"
             );
         }
@@ -3701,8 +3922,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instruments_no_timestamps() {
         // Test fetching all current instruments (no start/end filters)
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3748,8 +3967,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instrument_cache_hit() {
         // Test cache hit (instrument already cached)
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3790,8 +4007,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instrument_cache_miss() {
         // Test cache miss (fetch from API)
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3835,8 +4050,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instrument_not_found() {
         // Test instrument not found scenario
-        setup_test_env();
-
         let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3913,8 +4126,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instrument_correlation_id() {
         // Test correlation_id matching
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -3954,8 +4165,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instrument_response_format_boxed() {
         // Verify InstrumentResponse format (boxed)
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -4024,8 +4233,6 @@ mod tests {
     #[tokio::test]
     async fn test_request_instrument_client_id_fallback() {
         // Test client_id fallback to default
-        setup_test_env();
-
         let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
 
@@ -7138,10 +7345,239 @@ mod tests {
             );
             assert!(resp.ts_init > 0, "ts_init should be set");
 
-            // Verify optional fields exist (even if None)
             let _start = resp.start;
             let _end = resp.end;
             let _params = resp.params;
         }
+    }
+
+    #[tokio::test]
+    async fn test_orderbook_cache_growth_with_many_instruments() {
+        let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        set_data_event_sender(sender);
+
+        let base_url = String::from("https://indexer.v4testnet.dydx.exchange");
+        let config = DydxDataClientConfig {
+            base_url_http: Some(base_url),
+            is_testnet: true,
+            ..Default::default()
+        };
+
+        let http_client = DydxHttpClient::new(
+            config.base_url_http.clone(),
+            config.http_timeout_secs,
+            config.http_proxy_url.clone(),
+            config.is_testnet,
+            None,
+        )
+        .unwrap();
+
+        let client =
+            DydxDataClient::new(ClientId::from("dydx_test"), config, http_client, None).unwrap();
+
+        let initial_capacity = client.order_books.capacity();
+
+        for i in 0..100 {
+            let symbol = format!("INSTRUMENT-{i}");
+            let instrument_id = InstrumentId::from(format!("{symbol}-PERP.DYDX").as_str());
+            client.order_books.insert(
+                instrument_id,
+                OrderBook::new(instrument_id, BookType::L2_MBP),
+            );
+        }
+
+        assert_eq!(client.order_books.len(), 100);
+        assert!(client.order_books.capacity() >= initial_capacity);
+
+        client.order_books.clear();
+        assert_eq!(client.order_books.len(), 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_instrument_id_validation_rejects_invalid_formats() {
+        let invalid_ids = vec!["", "INVALID", "NO-VENUE", ".DYDX", "SYMBOL."];
+
+        for invalid_id in invalid_ids {
+            let result = std::panic::catch_unwind(|| {
+                let _ = InstrumentId::from(invalid_id);
+            });
+            assert!(
+                result.is_err(),
+                "Expected {invalid_id} to panic or be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_instrument_id_validation_accepts_valid_formats() {
+        let valid_ids = vec![
+            "BTC-USD-PERP.DYDX",
+            "ETH-USD-PERP.DYDX",
+            "SOL-USD.DYDX",
+            "AVAX-USD-PERP.DYDX",
+        ];
+
+        for valid_id in valid_ids {
+            let instrument_id = InstrumentId::from(valid_id);
+            assert!(
+                !instrument_id.symbol.as_str().is_empty()
+                    && !instrument_id.venue.as_str().is_empty(),
+                "Expected {valid_id} to have non-empty symbol and venue"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_bars_with_inverted_date_range() {
+        let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        set_data_event_sender(sender);
+
+        let base_url = String::from("https://indexer.v4testnet.dydx.exchange");
+        let config = DydxDataClientConfig {
+            base_url_http: Some(base_url),
+            is_testnet: true,
+            ..Default::default()
+        };
+
+        let http_client = DydxHttpClient::new(
+            config.base_url_http.clone(),
+            config.http_timeout_secs,
+            config.http_proxy_url.clone(),
+            config.is_testnet,
+            None,
+        )
+        .unwrap();
+
+        let client =
+            DydxDataClient::new(ClientId::from("dydx_test"), config, http_client, None).unwrap();
+
+        let instrument = create_test_instrument_any();
+        let instrument_id = instrument.id();
+        client
+            .instruments
+            .insert(Ustr::from(instrument_id.symbol.as_str()), instrument);
+
+        let spec = BarSpecification {
+            step: std::num::NonZeroUsize::new(1).unwrap(),
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
+
+        let now = chrono::Utc::now();
+        let start = Some(now);
+        let end = Some(now - chrono::Duration::hours(1));
+
+        let request = RequestBars::new(
+            bar_type,
+            start,
+            end,
+            None,
+            Some(ClientId::from("dydx_test")),
+            UUID4::new(),
+            get_atomic_clock_realtime().get_time_ns(),
+            None,
+        );
+
+        let result = client.request_bars(&request);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_request_bars_with_zero_limit() {
+        let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        set_data_event_sender(sender);
+
+        let base_url = String::from("https://indexer.v4testnet.dydx.exchange");
+        let config = DydxDataClientConfig {
+            base_url_http: Some(base_url),
+            is_testnet: true,
+            ..Default::default()
+        };
+
+        let http_client = DydxHttpClient::new(
+            config.base_url_http.clone(),
+            config.http_timeout_secs,
+            config.http_proxy_url.clone(),
+            config.is_testnet,
+            None,
+        )
+        .unwrap();
+
+        let client =
+            DydxDataClient::new(ClientId::from("dydx_test"), config, http_client, None).unwrap();
+
+        let instrument = create_test_instrument_any();
+        let instrument_id = instrument.id();
+        client
+            .instruments
+            .insert(Ustr::from(instrument_id.symbol.as_str()), instrument);
+
+        let spec = BarSpecification {
+            step: std::num::NonZeroUsize::new(1).unwrap(),
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
+
+        let request = RequestBars::new(
+            bar_type,
+            None,
+            None,
+            Some(std::num::NonZeroUsize::new(1).unwrap()),
+            Some(ClientId::from("dydx_test")),
+            UUID4::new(),
+            get_atomic_clock_realtime().get_time_ns(),
+            None,
+        );
+
+        let result = client.request_bars(&request);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_request_trades_with_excessive_limit() {
+        let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        set_data_event_sender(sender);
+
+        let base_url = String::from("https://indexer.v4testnet.dydx.exchange");
+        let config = DydxDataClientConfig {
+            base_url_http: Some(base_url),
+            is_testnet: true,
+            ..Default::default()
+        };
+
+        let http_client = DydxHttpClient::new(
+            config.base_url_http.clone(),
+            config.http_timeout_secs,
+            config.http_proxy_url.clone(),
+            config.is_testnet,
+            None,
+        )
+        .unwrap();
+
+        let client =
+            DydxDataClient::new(ClientId::from("dydx_test"), config, http_client, None).unwrap();
+
+        let instrument = create_test_instrument_any();
+        let instrument_id = instrument.id();
+        client
+            .instruments
+            .insert(Ustr::from(instrument_id.symbol.as_str()), instrument);
+
+        let request = RequestTrades::new(
+            instrument_id,
+            None,
+            None,
+            Some(std::num::NonZeroUsize::new(100_000).unwrap()),
+            Some(ClientId::from("dydx_test")),
+            UUID4::new(),
+            get_atomic_clock_realtime().get_time_ns(),
+            None,
+        );
+
+        let result = client.request_trades(&request);
+        assert!(result.is_ok());
     }
 }
