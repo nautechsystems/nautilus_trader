@@ -80,6 +80,7 @@ tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true } # Needed for bin scripts
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
@@ -94,3 +95,7 @@ rust_decimal_macros = { workspace = true }
 tracing-test = { workspace = true }
 url = { workspace = true }
 indexmap = { workspace = true }
+
+[[bin]]
+name = "dydx-http-public"
+path = "bin/http_public.rs"

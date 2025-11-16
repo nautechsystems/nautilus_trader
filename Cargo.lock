@@ -5293,6 +5293,7 @@ dependencies = [
  "tokio-util",
  "tonic",
  "tracing",
+ "tracing-subscriber",
  "tracing-test",
  "url",
  "ustr",
