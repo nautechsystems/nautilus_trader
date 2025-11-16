@@ -267,15 +267,19 @@ pub fn parse_instrument_any(
             definition.step_size, definition.ticker
         ))?;
 
-    // Parse min order size with context
-    let min_quantity = Some(
-        parse_quantity(&definition.min_order_size.to_string(), "min_order_size").context(
-            format!(
-                "Failed to parse min_order_size '{}' for market '{}'",
-                definition.min_order_size, definition.ticker
-            ),
-        )?,
-    );
+    // Parse min order size with context (use step_size as fallback if not provided)
+    let min_quantity = Some(if let Some(min_size) = &definition.min_order_size {
+        parse_quantity(&min_size.to_string(), "min_order_size").context(format!(
+            "Failed to parse min_order_size '{}' for market '{}'",
+            min_size, definition.ticker
+        ))?
+    } else {
+        // Use step_size as minimum quantity if min_order_size not provided
+        parse_quantity(&definition.step_size.to_string(), "step_size").context(format!(
+            "Failed to parse step_size as min_quantity for market '{}'",
+            definition.ticker
+        ))?
+    });
 
     // Parse margin fractions with validation
     let margin_init = Some(
@@ -355,23 +359,23 @@ mod tests {
             clob_pair_id: 1,
             ticker: "BTC-USD".to_string(),
             status: DydxMarketStatus::Active,
-            base_asset: "BTC".to_string(),
-            quote_asset: "USD".to_string(),
+            base_asset: Some("BTC".to_string()),
+            quote_asset: Some("USD".to_string()),
             step_size: Decimal::from_str("0.001").unwrap(),
             tick_size: Decimal::from_str("1").unwrap(),
-            index_price: Decimal::from_str("50000").unwrap(),
+            index_price: Some(Decimal::from_str("50000").unwrap()),
             oracle_price: Decimal::from_str("50000").unwrap(),
             price_change_24h: Decimal::ZERO,
             next_funding_rate: Decimal::ZERO,
-            next_funding_at: Utc::now(),
-            min_order_size: Decimal::from_str("0.001").unwrap(),
-            market_type: DydxTickerType::Perpetual,
+            next_funding_at: Some(Utc::now()),
+            min_order_size: Some(Decimal::from_str("0.001").unwrap()),
+            market_type: Some(DydxTickerType::Perpetual),
             initial_margin_fraction: Decimal::from_str("0.05").unwrap(),
             maintenance_margin_fraction: Decimal::from_str("0.03").unwrap(),
-            base_position_notional: Decimal::from_str("10000").unwrap(),
-            incremental_position_size: Decimal::from_str("10000").unwrap(),
-            incremental_initial_margin_fraction: Decimal::from_str("0.01").unwrap(),
-            max_position_size: Decimal::from_str("100").unwrap(),
+            base_position_notional: Some(Decimal::from_str("10000").unwrap()),
+            incremental_position_size: Some(Decimal::from_str("10000").unwrap()),
+            incremental_initial_margin_fraction: Some(Decimal::from_str("0.01").unwrap()),
+            max_position_size: Some(Decimal::from_str("100").unwrap()),
             open_interest: Decimal::from_str("1000000").unwrap(),
             atomic_resolution: -10,
             quantum_conversion_exponent: -10,

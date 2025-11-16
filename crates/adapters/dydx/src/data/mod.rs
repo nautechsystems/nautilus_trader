@@ -3817,7 +3817,7 @@ mod tests {
             price: dec!(100.25),
             created_at,
             created_at_height: 1,
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            trade_type: crate::common::enums::DydxTradeType::Limit,
         };
 
         let trades_response = crate::http::models::TradesResponse {
@@ -3990,7 +3990,7 @@ mod tests {
             price: dec!(100.0),
             created_at: now - chrono::Duration::seconds(60),
             created_at_height: 1,
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            trade_type: crate::common::enums::DydxTradeType::Limit,
         };
         let trade_inside = crate::http::models::Trade {
             id: "inside".to_string(),
@@ -3999,7 +3999,7 @@ mod tests {
             price: dec!(101.0),
             created_at: now,
             created_at_height: 2,
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            trade_type: crate::common::enums::DydxTradeType::Limit,
         };
         let trade_after = crate::http::models::Trade {
             id: "after".to_string(),
@@ -4008,7 +4008,7 @@ mod tests {
             price: dec!(102.0),
             created_at: now + chrono::Duration::seconds(60),
             created_at_height: 3,
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            trade_type: crate::common::enums::DydxTradeType::Limit,
         };
 
         let trades_response = crate::http::models::TradesResponse {
@@ -4159,7 +4159,7 @@ mod tests {
             price: dec!(200.0),
             created_at,
             created_at_height: 100,
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            trade_type: crate::common::enums::DydxTradeType::Limit,
         };
 
         let trades_response = crate::http::models::TradesResponse {
@@ -6409,7 +6409,7 @@ mod tests {
                 price: dec!(100.0),
                 created_at,
                 created_at_height: 100,
-                market_type: crate::common::enums::DydxTickerType::Perpetual,
+                trade_type: crate::common::enums::DydxTradeType::Limit,
             },
             crate::http::models::Trade {
                 id: "trade-2".to_string(),
@@ -6418,7 +6418,7 @@ mod tests {
                 price: dec!(101.0),
                 created_at: created_at + chrono::Duration::seconds(1),
                 created_at_height: 101,
-                market_type: crate::common::enums::DydxTickerType::Perpetual,
+                trade_type: crate::common::enums::DydxTradeType::Limit,
             },
         ];
 
@@ -6500,7 +6500,7 @@ mod tests {
             price: dec!(100.0),
             created_at,
             created_at_height: 100,
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            trade_type: crate::common::enums::DydxTradeType::Limit,
         };
 
         let trades_response = crate::http::models::TradesResponse {
@@ -6587,7 +6587,7 @@ mod tests {
                 price: dec!(100.0),
                 created_at: base_time,
                 created_at_height: 100,
-                market_type: crate::common::enums::DydxTickerType::Perpetual,
+                trade_type: crate::common::enums::DydxTradeType::Limit,
             },
             crate::http::models::Trade {
                 id: "trade-middle".to_string(),
@@ -6596,7 +6596,7 @@ mod tests {
                 price: dec!(101.0),
                 created_at: base_time + chrono::Duration::seconds(1),
                 created_at_height: 101,
-                market_type: crate::common::enums::DydxTickerType::Perpetual,
+                trade_type: crate::common::enums::DydxTradeType::Limit,
             },
             crate::http::models::Trade {
                 id: "trade-newest".to_string(),
@@ -6605,7 +6605,7 @@ mod tests {
                 price: dec!(102.0),
                 created_at: base_time + chrono::Duration::seconds(2),
                 created_at_height: 102,
-                market_type: crate::common::enums::DydxTickerType::Perpetual,
+                trade_type: crate::common::enums::DydxTradeType::Limit,
             },
         ];
 
@@ -6700,7 +6700,7 @@ mod tests {
             price: dec!(12345.67),
             created_at,
             created_at_height: 999,
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            trade_type: crate::common::enums::DydxTradeType::Limit,
         };
 
         let trades_response = crate::http::models::TradesResponse {
@@ -6807,7 +6807,7 @@ mod tests {
             price: dec!(100.0),
             created_at,
             created_at_height: 100,
-            market_type: crate::common::enums::DydxTickerType::Perpetual,
+            trade_type: crate::common::enums::DydxTradeType::Limit,
         };
 
         let trades_response = crate::http::models::TradesResponse {

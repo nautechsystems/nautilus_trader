@@ -36,6 +36,7 @@ use ustr::Ustr;
 use crate::common::enums::{
     DydxCandleResolution, DydxConditionType, DydxFillType, DydxLiquidity, DydxMarketStatus,
     DydxOrderExecution, DydxOrderStatus, DydxPositionStatus, DydxTickerType, DydxTimeInForce,
+    DydxTradeType,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -61,54 +62,64 @@ pub struct PerpetualMarket {
     pub ticker: String,
     /// Market status (ACTIVE, PAUSED, etc.).
     pub status: DydxMarketStatus,
-    /// Base asset symbol.
-    pub base_asset: String,
-    /// Quote asset symbol.
-    pub quote_asset: String,
+    /// Base asset symbol (optional, not always returned by API).
+    #[serde(default)]
+    pub base_asset: Option<String>,
+    /// Quote asset symbol (optional, not always returned by API).
+    #[serde(default)]
+    pub quote_asset: Option<String>,
     /// Step size for order quantities (minimum increment).
     #[serde_as(as = "DisplayFromStr")]
     pub step_size: Decimal,
     /// Tick size for order prices (minimum increment).
     #[serde_as(as = "DisplayFromStr")]
     pub tick_size: Decimal,
-    /// Index price for the market.
-    #[serde_as(as = "DisplayFromStr")]
-    pub index_price: Decimal,
+    /// Index price for the market (optional, not always returned by API).
+    #[serde(default)]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub index_price: Option<Decimal>,
     /// Oracle price for the market.
     #[serde_as(as = "DisplayFromStr")]
     pub oracle_price: Decimal,
     /// Price change over 24 hours.
+    #[serde(rename = "priceChange24H")]
     #[serde_as(as = "DisplayFromStr")]
     pub price_change_24h: Decimal,
     /// Next funding rate.
     #[serde_as(as = "DisplayFromStr")]
     pub next_funding_rate: Decimal,
-    /// Next funding time (ISO8601).
-    pub next_funding_at: DateTime<Utc>,
-    /// Minimum order size in base currency.
-    #[serde_as(as = "DisplayFromStr")]
-    pub min_order_size: Decimal,
-    /// Market type (always PERPETUAL for dYdX v4).
-    #[serde(rename = "type")]
-    pub market_type: DydxTickerType,
+    /// Next funding time (ISO8601, optional).
+    #[serde(default)]
+    pub next_funding_at: Option<DateTime<Utc>>,
+    /// Minimum order size in base currency (optional).
+    #[serde(default)]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub min_order_size: Option<Decimal>,
+    /// Market type (always PERPETUAL for dYdX v4, optional).
+    #[serde(rename = "type", default)]
+    pub market_type: Option<DydxTickerType>,
     /// Initial margin fraction.
     #[serde_as(as = "DisplayFromStr")]
     pub initial_margin_fraction: Decimal,
     /// Maintenance margin fraction.
     #[serde_as(as = "DisplayFromStr")]
     pub maintenance_margin_fraction: Decimal,
-    /// Base position notional value.
-    #[serde_as(as = "DisplayFromStr")]
-    pub base_position_notional: Decimal,
-    /// Incremental position size for margin scaling.
-    #[serde_as(as = "DisplayFromStr")]
-    pub incremental_position_size: Decimal,
-    /// Incremental initial margin fraction.
-    #[serde_as(as = "DisplayFromStr")]
-    pub incremental_initial_margin_fraction: Decimal,
-    /// Maximum position size.
-    #[serde_as(as = "DisplayFromStr")]
-    pub max_position_size: Decimal,
+    /// Base position notional value (optional).
+    #[serde(default)]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub base_position_notional: Option<Decimal>,
+    /// Incremental position size for margin scaling (optional).
+    #[serde(default)]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub incremental_position_size: Option<Decimal>,
+    /// Incremental initial margin fraction (optional).
+    #[serde(default)]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub incremental_initial_margin_fraction: Option<Decimal>,
+    /// Maximum position size (optional).
+    #[serde(default)]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub max_position_size: Option<Decimal>,
     /// Open interest in base currency.
     #[serde_as(as = "DisplayFromStr")]
     pub open_interest: Decimal,
@@ -173,9 +184,9 @@ pub struct Trade {
     /// Height of block containing this trade.
     #[serde_as(as = "DisplayFromStr")]
     pub created_at_height: u64,
-    /// Market ticker.
+    /// Trade type (LIMIT, MARKET, LIQUIDATED, etc.).
     #[serde(rename = "type")]
-    pub market_type: DydxTickerType,
+    pub trade_type: DydxTradeType,
 }
 
 /// Response wrapper for candles endpoint.

@@ -488,6 +488,39 @@ pub enum DydxTickerType {
     Perpetual,
 }
 
+/// dYdX trade type.
+///
+/// Represents the type of trade execution on dYdX.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DydxTradeType {
+    /// Standard limit order.
+    Limit,
+    /// Market order.
+    Market,
+    /// Liquidation trade.
+    Liquidated,
+    /// Sub-order from a TWAP execution.
+    TwapSuborder,
+    /// Stop limit order.
+    StopLimit,
+    /// Take profit limit order.
+    TakeProfitLimit,
+}
+
 /// dYdX candlestick resolution.
 #[derive(
     Copy,

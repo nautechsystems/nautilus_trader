@@ -81,6 +81,7 @@ tokio-util = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true } # Needed for bin scripts
+urlencoding = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }

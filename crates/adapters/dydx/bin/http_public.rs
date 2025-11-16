@@ -15,20 +15,8 @@
 
 //! Manual verification script for dYdX HTTP public endpoints.
 //!
-//! **NOTE**: This script currently demonstrates the API but requires public
-//! wrapper methods to be added to `DydxHttpClient` to fully function.
-//! Currently `get_trades` and `get_candles` are only available on the inner
-//! `DydxRawHttpClient` which is marked `pub(crate)`.
-//!
-//! **TODO**: Add public wrapper methods to `DydxHttpClient`:
-//! - `pub async fn request_trades(&self, symbol: &str, limit: Option<u32>) -> Result<TradesResponse>`
-//! - `pub async fn request_candles(&self, ...) -> Result<CandlesResponse>`
-//!
-//! Tests historical request methods:
-//! - `request_instruments` ✅ (public API available)
-//! - `get_instrument` ✅ (public API available)
-//! - `get_trades` ❌ (needs public wrapper)
-//! - `get_candles` ❌ (needs public wrapper)
+//! Tests all historical request methods including direct access to inner HTTP client
+//! for trades and candles endpoints.
 //!
 //! Usage:
 //! ```bash
@@ -39,7 +27,11 @@
 //! DYDX_HTTP_URL=https://indexer.dydx.trade cargo run --bin dydx-http-public -p nautilus-dydx
 //! ```
 
-use nautilus_dydx::{common::consts::DYDX_TESTNET_HTTP_URL, http::client::DydxHttpClient};
+use chrono::{Duration, Utc};
+use nautilus_dydx::{
+    common::{consts::DYDX_TESTNET_HTTP_URL, enums::DydxCandleResolution},
+    http::client::DydxHttpClient,
+};
 use nautilus_model::instruments::Instrument;
 use ustr::Ustr;
 
@@ -53,32 +45,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string());
     let is_testnet = base_url.contains("testnet");
 
-    tracing::info!("🔗 Connecting to dYdX HTTP API: {}", base_url);
+    tracing::info!("Connecting to dYdX HTTP API: {}", base_url);
     tracing::info!(
-        "🌐 Environment: {}",
+        "Environment: {}",
         if is_testnet { "TESTNET" } else { "MAINNET" }
     );
     tracing::info!("");
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, is_testnet, None)?;
 
-    // ============================================================================
-    // TEST 1: Request all instruments ✅
-    // ============================================================================
-    tracing::info!("📋 TEST 1: Request all instruments");
-    tracing::info!("─────────────────────────────────────");
+    tracing::info!("TEST 1: Request all instruments");
+    tracing::info!("-------------------------------------");
 
     let start = std::time::Instant::now();
     let instruments = client.request_instruments(None, None, None).await?;
     let elapsed = start.elapsed();
 
     tracing::info!(
-        "✅ Fetched {} instruments in {:.2}s",
+        "SUCCESS: Fetched {} instruments in {:.2}s",
         instruments.len(),
         elapsed.as_secs_f64()
     );
 
-    // Show sample instruments
     if !instruments.is_empty() {
         tracing::info!("   Sample instruments:");
         for inst in instruments.iter().take(5) {
@@ -89,16 +77,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Cache instruments for subsequent tests
     client.cache_instruments(instruments.clone());
-    tracing::info!("✅ Cached {} instruments", instruments.len());
+    tracing::info!("Cached {} instruments", instruments.len());
     tracing::info!("");
 
-    // ============================================================================
-    // TEST 2: Request single instrument (cache hit) ✅
-    // ============================================================================
-    tracing::info!("🔍 TEST 2: Request single instrument (cache hit)");
-    tracing::info!("─────────────────────────────────────");
+    tracing::info!("TEST 2: Request single instrument (cache hit)");
+    tracing::info!("-------------------------------------");
 
     let symbol = Ustr::from("BTC-USD");
     let start = std::time::Instant::now();
@@ -108,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match instrument {
         Some(inst) => {
             tracing::info!(
-                "✅ Found {} in cache in {:.4}ms",
+                "SUCCESS: Found {} in cache in {:.4}ms",
                 inst.id(),
                 elapsed.as_micros() as f64 / 1000.0
             );
@@ -117,46 +101,151 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::info!("   Size precision: {}", inst.size_precision());
         }
         None => {
-            tracing::warn!("❌ Instrument {} not found in cache", symbol);
+            tracing::warn!("FAILED: Instrument {} not found in cache", symbol);
         }
     }
     tracing::info!("");
 
-    // ============================================================================
-    // TEST 3: Request trades ❌ (Blocked - needs public API)
-    // ============================================================================
-    tracing::info!("📊 TEST 3: Request historical trades");
-    tracing::info!("─────────────────────────────────────");
-    tracing::warn!("⚠️  SKIPPED: get_trades() not available on public API");
-    tracing::warn!("   TODO: Add `pub async fn request_trades(...)` to DydxHttpClient");
+    tracing::info!("TEST 3: Request historical trades");
+    tracing::info!("-------------------------------------");
+
+    let symbol = "BTC-USD";
+    let limit = Some(100);
+
+    let start = std::time::Instant::now();
+    let trades = client.request_trades(symbol, limit).await?;
+    let elapsed = start.elapsed();
+
+    tracing::info!(
+        "SUCCESS: Fetched {} trades for {} in {:.2}s",
+        trades.trades.len(),
+        symbol,
+        elapsed.as_secs_f64()
+    );
+
+    if !trades.trades.is_empty() {
+        let first = &trades.trades[0];
+        let last = &trades.trades[trades.trades.len() - 1];
+        tracing::info!(
+            "   First trade: {} @ {} ({})",
+            first.size,
+            first.price,
+            first.side
+        );
+        tracing::info!(
+            "   Last trade:  {} @ {} ({})",
+            last.size,
+            last.price,
+            last.side
+        );
+        tracing::info!("   Time range: {} to {}", first.created_at, last.created_at);
+    }
     tracing::info!("");
 
-    // ============================================================================
-    // TEST 4: Request bars (small range) ❌ (Blocked - needs public API)
-    // ============================================================================
-    tracing::info!("📈 TEST 4: Request historical bars (small range)");
-    tracing::info!("─────────────────────────────────────");
-    tracing::warn!("⚠️  SKIPPED: get_candles() not available on public API");
-    tracing::warn!("   TODO: Add `pub async fn request_candles(...)` to DydxHttpClient");
+    tracing::info!("TEST 4: Request historical bars (small range)");
+    tracing::info!("-------------------------------------");
+
+    let resolution = DydxCandleResolution::OneMinute;
+    let end_time = Utc::now();
+    let start_time = end_time - Duration::hours(2); // 2 hours = ~120 bars
+
+    let start = std::time::Instant::now();
+    let candles = client
+        .request_candles(symbol, resolution, None, Some(start_time), Some(end_time))
+        .await?;
+    let elapsed = start.elapsed();
+
+    tracing::info!(
+        "SUCCESS: Fetched {} candles for {} ({:?}) in {:.2}s",
+        candles.candles.len(),
+        symbol,
+        resolution,
+        elapsed.as_secs_f64()
+    );
+
+    if !candles.candles.is_empty() {
+        let first = &candles.candles[0];
+        let last = &candles.candles[candles.candles.len() - 1];
+        tracing::info!(
+            "   First candle: O={} H={} L={} C={} V={}",
+            first.open,
+            first.high,
+            first.low,
+            first.close,
+            first.base_token_volume
+        );
+        tracing::info!(
+            "   Last candle:  O={} H={} L={} C={} V={}",
+            last.open,
+            last.high,
+            last.low,
+            last.close,
+            last.base_token_volume
+        );
+        tracing::info!("   Time range: {} to {}", first.started_at, last.started_at);
+    }
     tracing::info!("");
 
-    // ============================================================================
-    // Summary
-    // ============================================================================
-    tracing::info!("✅ COMPLETED AVAILABLE TESTS");
+    tracing::info!("TEST 5: Request historical bars (large range)");
+    tracing::info!("-------------------------------------");
+
+    let end_time = Utc::now();
+    let start_time = end_time - Duration::days(7); // 7 days
+
+    tracing::info!(
+        "   Requesting {:?} bars from {} to {}",
+        resolution,
+        start_time,
+        end_time
+    );
+
+    let start = std::time::Instant::now();
+    let candles_large = client
+        .request_candles(symbol, resolution, None, Some(start_time), Some(end_time))
+        .await?;
+    let elapsed = start.elapsed();
+
+    let expected_bars_large = ((end_time - start_time).num_minutes() as usize).min(10_080);
+    let coverage_large = (candles_large.candles.len() as f64 / expected_bars_large as f64) * 100.0;
+
+    tracing::info!(
+        "SUCCESS: Fetched {} candles in {:.2}s ({:.0} bars/sec)",
+        candles_large.candles.len(),
+        elapsed.as_secs_f64(),
+        candles_large.candles.len() as f64 / elapsed.as_secs_f64()
+    );
+
+    if !candles_large.candles.is_empty() {
+        tracing::info!("   Coverage: {:.1}% of expected bars", coverage_large);
+        tracing::info!(
+            "   Time range: {} to {}",
+            candles_large.candles[0].started_at,
+            candles_large.candles[candles_large.candles.len() - 1].started_at
+        );
+    }
+    tracing::info!("");
+
+    tracing::info!("ALL TESTS COMPLETED SUCCESSFULLY");
     tracing::info!("");
     tracing::info!("Summary:");
     tracing::info!(
-        "  ✅ get_markets → request_instruments: {} instruments",
+        "  [PASS] request_instruments: {} instruments",
         instruments.len()
     );
-    tracing::info!("  ✅ get_instrument (cache): Cache lookup works");
-    tracing::info!("  ⚠️  get_trades: Needs public wrapper method");
-    tracing::info!("  ⚠️  get_candles: Needs public wrapper method");
-    tracing::info!("");
-    tracing::info!("Next steps:");
-    tracing::info!("  1. Add public wrapper methods to DydxHttpClient");
-    tracing::info!("  2. Re-run this script to test full API");
+    tracing::info!("  [PASS] get_instrument: Cache lookup works");
+    tracing::info!(
+        "  [PASS] get_trades: {} trades fetched",
+        trades.trades.len()
+    );
+    tracing::info!(
+        "  [PASS] get_candles (small): {} candles",
+        candles.candles.len()
+    );
+    tracing::info!(
+        "  [PASS] get_candles (large): {} candles with {:.1}% coverage",
+        candles_large.candles.len(),
+        coverage_large
+    );
 
     Ok(())
 }

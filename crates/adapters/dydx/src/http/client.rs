@@ -501,10 +501,12 @@ impl DydxRawHttpClient {
             query_parts.push(format!("limit={l}"));
         }
         if let Some(from) = from_iso {
-            query_parts.push(format!("fromISO={}", from.to_rfc3339()));
+            let from_str = from.to_rfc3339();
+            query_parts.push(format!("fromISO={}", urlencoding::encode(&from_str)));
         }
         if let Some(to) = to_iso {
-            query_parts.push(format!("toISO={}", to.to_rfc3339()));
+            let to_str = to.to_rfc3339();
+            query_parts.push(format!("toISO={}", urlencoding::encode(&to_str)));
         }
         let query = query_parts.join("&");
         self.send_request(Method::GET, &endpoint, Some(&query))
@@ -873,6 +875,55 @@ impl DydxHttpClient {
 
         // Then look up the full instrument by symbol
         self.get_instrument(&instrument_id.symbol.inner())
+    }
+
+    /// Requests historical trades for a symbol.
+    ///
+    /// Fetches trade data from the dYdX Indexer API's `/v4/trades/perpetualMarket/:ticker` endpoint.
+    /// Results are ordered by creation time descending (newest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response cannot be parsed.
+    pub async fn request_trades(
+        &self,
+        symbol: &str,
+        limit: Option<u32>,
+    ) -> anyhow::Result<super::models::TradesResponse> {
+        self.inner
+            .get_trades(symbol, limit)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Requests historical candles for a symbol.
+    ///
+    /// Fetches candle data from the dYdX Indexer API's `/v4/candles/perpetualMarkets/:ticker` endpoint.
+    /// Results are ordered by start time ascending (oldest first).
+    ///
+    /// # Arguments
+    ///
+    /// - `symbol`: Market ticker (e.g., "BTC-USD")
+    /// - `resolution`: Candle resolution (OneMinute, FiveMinutes, etc.)
+    /// - `limit`: Optional maximum number of candles (default: 100, max: 10,000)
+    /// - `from_iso`: Optional start time filter (ISO8601 format)
+    /// - `to_iso`: Optional end time filter (ISO8601 format)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response cannot be parsed.
+    pub async fn request_candles(
+        &self,
+        symbol: &str,
+        resolution: DydxCandleResolution,
+        limit: Option<u32>,
+        from_iso: Option<DateTime<Utc>>,
+        to_iso: Option<DateTime<Utc>>,
+    ) -> anyhow::Result<super::models::CandlesResponse> {
+        self.inner
+            .get_candles(symbol, resolution, limit, from_iso, to_iso)
+            .await
+            .map_err(Into::into)
     }
 
     /// Helper to get instrument or fetch if not cached.
