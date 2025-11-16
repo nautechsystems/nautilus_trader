@@ -30,10 +30,10 @@
 //!
 //! ## Key Responsibilities
 //!
-//! • Rate-limiting based on the public dYdX specification.
-//! • Zero-copy deserialization of large JSON payloads into domain models.
-//! • Conversion of raw exchange errors into the rich [`DydxHttpError`] enum.
-//! • Instrument caching with standard methods: `cache_instruments()`, `cache_instrument()`, `get_instrument()`.
+//! - Rate-limiting based on the public dYdX specification.
+//! - Zero-copy deserialization of large JSON payloads into domain models.
+//! - Conversion of raw exchange errors into the rich [`DydxHttpError`] enum.
+//! - Instrument caching with standard methods: `cache_instruments()`, `cache_instrument()`, `get_instrument()`.
 //!
 //! # Important Note
 //!

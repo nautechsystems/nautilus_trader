@@ -2297,7 +2297,7 @@ mod tests {
         assert!(client.dispose().is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_subscribe_unsubscribe_instruments_noop() {
         setup_test_env();
 
@@ -2445,7 +2445,7 @@ mod tests {
         assert!(saw_deltas);
     }
 
-    #[test]
+    #[rstest]
     fn test_handle_ws_message_error_does_not_panic() {
         // Ensure malformed/error WebSocket messages are logged and ignored
         // without panicking or affecting client state.
@@ -2926,7 +2926,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_decimal_to_f64_precision_loss_within_tolerance() {
         // Verify converting via Price/Quantity preserves reasonable precision.
         let price_value = 12345.125_f64;
@@ -3030,7 +3030,7 @@ mod tests {
         assert_eq!(best_ask, Price::from("101.00"));
     }
 
-    #[test]
+    #[rstest]
     fn test_resolve_crossed_order_book_bid_larger_than_ask() {
         // Test scenario: bid_size > ask_size
         // Expected: DELETE ask, UPDATE bid (reduce by ask_size)
@@ -3107,7 +3107,7 @@ mod tests {
         assert!(resolved.deltas.len() > 1); // Original delta + synthetic resolution deltas
     }
 
-    #[test]
+    #[rstest]
     fn test_resolve_crossed_order_book_ask_larger_than_bid() {
         // Test scenario: bid_size < ask_size
         // Expected: DELETE bid, UPDATE ask (reduce by bid_size)
@@ -3181,7 +3181,7 @@ mod tests {
         assert!(resolved.deltas.len() > 1);
     }
 
-    #[test]
+    #[rstest]
     fn test_resolve_crossed_order_book_equal_sizes() {
         // Test scenario: bid_size == ask_size
         // Expected: DELETE both bid and ask
@@ -3256,7 +3256,7 @@ mod tests {
         assert!(resolved.deltas.len() > 1);
     }
 
-    #[test]
+    #[rstest]
     fn test_resolve_crossed_order_book_multiple_iterations() {
         // Test scenario: multiple crossed levels requiring multiple iterations
         let instrument = create_test_instrument_any();
@@ -3358,7 +3358,7 @@ mod tests {
         assert!(resolved.deltas.len() > 2); // Original deltas + multiple resolution passes
     }
 
-    #[test]
+    #[rstest]
     fn test_resolve_crossed_order_book_non_crossed_passthrough() {
         // Test scenario: non-crossed orderbook should pass through unchanged
         let instrument = create_test_instrument_any();
@@ -4205,7 +4205,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_request_instrument_symbol_extraction() {
         // Test symbol extraction from InstrumentId
         setup_test_env();
@@ -4795,7 +4795,7 @@ mod tests {
         assert_eq!(last_limit, Some(Some(500)));
     }
 
-    #[test]
+    #[rstest]
     fn test_request_trades_symbol_conversion() {
         // Test symbol conversion (strip -PERP suffix)
         setup_test_env();
@@ -7393,7 +7393,7 @@ mod tests {
         assert_eq!(client.order_books.len(), 0);
     }
 
-    #[test]
+    #[rstest]
     #[ignore]
     fn test_instrument_id_validation_rejects_invalid_formats() {
         let invalid_ids = vec!["", "INVALID", "NO-VENUE", ".DYDX", "SYMBOL."];
@@ -7409,7 +7409,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_instrument_id_validation_accepts_valid_formats() {
         let valid_ids = vec![
             "BTC-USD-PERP.DYDX",

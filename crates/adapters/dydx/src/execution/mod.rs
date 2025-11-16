@@ -1698,6 +1698,8 @@ impl LiveExecutionClientExt for DydxExecutionClient {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use nautilus_model::{
         enums::{OrderSide, OrderType, TimeInForce},
@@ -1708,7 +1710,7 @@ mod tests {
     };
 
     /// Test that client order ID parsing to u32 works for numeric strings
-    #[test]
+    #[rstest]
     fn test_client_order_id_numeric_parsing() {
         let client_id = "12345";
         let result: Result<u32, _> = client_id.parse();
@@ -1717,7 +1719,7 @@ mod tests {
     }
 
     /// Test that client order ID hashing works for non-numeric strings
-    #[test]
+    #[rstest]
     fn test_client_order_id_hash_fallback() {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -1736,7 +1738,7 @@ mod tests {
     }
 
     /// Test that unsupported order types are properly rejected
-    #[test]
+    #[rstest]
     fn test_unsupported_order_type_rejection() {
         // Test that StopMarket is currently rejected
         let order_type = OrderType::StopMarket;
@@ -1750,7 +1752,7 @@ mod tests {
     }
 
     /// Test that supported order types are accepted
-    #[test]
+    #[rstest]
     fn test_supported_order_types() {
         let market = OrderType::Market;
         assert!(matches!(market, OrderType::Market | OrderType::Limit));
@@ -1760,7 +1762,7 @@ mod tests {
     }
 
     /// Test UnixNanos to seconds conversion for expire_time
-    #[test]
+    #[rstest]
     fn test_unix_nanos_to_seconds_conversion() {
         use nautilus_core::UnixNanos;
 
@@ -1781,7 +1783,7 @@ mod tests {
     }
 
     /// Test that OrderAny API methods work correctly
-    #[test]
+    #[rstest]
     fn test_order_any_api_usage() {
         let order = OrderInitializedBuilder::default()
             .trader_id(TraderId::from("TRADER-001"))
@@ -1810,14 +1812,14 @@ mod tests {
     }
 
     /// Test MAX_CLIENT_ID constant is within dYdX limits
-    #[test]
+    #[rstest]
     fn test_max_client_id_limit() {
         // dYdX requires client IDs to be u32
         assert_eq!(MAX_CLIENT_ID, u32::MAX);
     }
 
     /// Test that client order ID conversion is consistent for cancel operations
-    #[test]
+    #[rstest]
     fn test_cancel_order_id_consistency() {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -1838,7 +1840,7 @@ mod tests {
     }
 
     /// Test clob_pair_id extraction from CryptoPerpetual raw_symbol
-    #[test]
+    #[rstest]
     fn test_clob_pair_id_extraction_from_raw_symbol() {
         // Simulate raw_symbol "1" -> clob_pair_id 1
         let raw_symbol = "1";
@@ -1854,7 +1856,7 @@ mod tests {
     }
 
     /// Test clob_pair_id extraction failure for invalid raw_symbol
-    #[test]
+    #[rstest]
     fn test_clob_pair_id_extraction_invalid() {
         // Invalid raw_symbol should fail parsing
         let raw_symbol = "BTC-USD";
@@ -1868,7 +1870,7 @@ mod tests {
     }
 
     /// Test market ticker to instrument mapping logic
-    #[test]
+    #[rstest]
     fn test_market_ticker_parsing() {
         let ticker = "BTC-USD";
         let parts: Vec<&str> = ticker.split('-').collect();
@@ -1884,7 +1886,7 @@ mod tests {
     }
 
     /// Test market ticker with invalid format
-    #[test]
+    #[rstest]
     fn test_market_ticker_invalid_format() {
         let ticker = "BTCUSD";
         let parts: Vec<&str> = ticker.split('-').collect();
