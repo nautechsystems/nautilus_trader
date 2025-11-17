@@ -127,7 +127,8 @@ fn convert_ws_order_to_http(
         .parse()
         .context("Failed to parse total_filled")?;
 
-    let remaining_size = size - total_filled;
+    // Saturate to zero if total_filled exceeds size (edge case: rounding or partial fills)
+    let remaining_size = (size - total_filled).max(Decimal::ZERO);
 
     let price: Decimal = ws_order.price.parse().context("Failed to parse price")?;
 
@@ -163,7 +164,8 @@ fn convert_ws_order_to_http(
         .as_ref()
         .and_then(|s| Decimal::from_str(s).ok());
 
-    // Parse updated_at - use current time if not provided
+    // Parse updated_at - if missing, we must use current time since created_at
+    // is not available in WebSocket messages (only created_at_height exists)
     let updated_at = ws_order
         .updated_at
         .as_ref()
@@ -176,8 +178,8 @@ fn convert_ws_order_to_http(
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(created_at_height);
 
-    // Convert order type to string (EnumString expects PascalCase)
-    let order_type = format!("{:?}", ws_order.order_type); // Debug format gives us "Limit", "Market", etc.
+    // Convert order type to string using Display (gives PascalCase like "Limit", "Market")
+    let order_type = ws_order.order_type.to_string();
 
     Ok(Order {
         id: ws_order.id.clone(),
