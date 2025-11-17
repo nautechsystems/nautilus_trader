@@ -24,9 +24,10 @@ use chrono::Utc;
 use dashmap::DashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
+    enums::{OrderSide, OrderStatus},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
-    reports::{FillReport, OrderStatusReport},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use rust_decimal::Decimal;
 use std::str::FromStr;
@@ -99,7 +100,7 @@ pub fn parse_ws_order_report(
         crate::common::enums::DydxOrderStatus::Untriggered
     ) && ws_order.trigger_price.is_some()
     {
-        report.order_status = nautilus_model::enums::OrderStatus::PendingUpdate;
+        report.order_status = OrderStatus::PendingUpdate;
     }
 
     Ok(report)
@@ -313,7 +314,7 @@ pub fn parse_ws_position_report(
     instruments: &DashMap<InstrumentId, InstrumentAny>,
     account_id: AccountId,
     ts_init: UnixNanos,
-) -> anyhow::Result<nautilus_model::reports::PositionStatusReport> {
+) -> anyhow::Result<PositionStatusReport> {
     // Lookup instrument by market symbol
     let instrument = instruments
         .iter()
@@ -414,9 +415,9 @@ fn convert_ws_position_to_http(
 
     // Determine side from size sign (HTTP format uses OrderSide, not PositionSide)
     let side = if size.is_sign_positive() {
-        nautilus_model::enums::OrderSide::Buy
+        OrderSide::Buy
     } else {
-        nautilus_model::enums::OrderSide::Sell
+        OrderSide::Sell
     };
 
     Ok(PerpetualPosition {
@@ -443,7 +444,7 @@ mod tests {
     use super::*;
     use crate::common::enums::{DydxOrderStatus, DydxOrderType, DydxTimeInForce};
     use nautilus_model::{
-        enums::OrderSide,
+        enums::{LiquiditySide, OrderSide, OrderType, PositionSideSpecified},
         identifiers::{AccountId, InstrumentId, Symbol, Venue},
         instruments::CryptoPerpetual,
         types::{Currency, Price, Quantity},
@@ -826,10 +827,7 @@ mod tests {
 
         let position_report = result.unwrap();
         assert_eq!(position_report.instrument_id, instrument_id);
-        assert_eq!(
-            position_report.position_side,
-            nautilus_model::enums::PositionSideSpecified::Long
-        );
+        assert_eq!(position_report.position_side, PositionSideSpecified::Long);
         assert_eq!(position_report.quantity.as_f64(), 0.5);
         // avg_px_open should be entry_price
         assert!(position_report.avg_px_open.is_some());
@@ -871,10 +869,7 @@ mod tests {
 
         let position_report = result.unwrap();
         assert_eq!(position_report.instrument_id, instrument_id);
-        assert_eq!(
-            position_report.position_side,
-            nautilus_model::enums::PositionSideSpecified::Short
-        );
+        assert_eq!(position_report.position_side, PositionSideSpecified::Short);
         assert_eq!(position_report.quantity.as_f64(), 0.25); // Quantity is always positive
     }
 
@@ -1037,10 +1032,7 @@ mod tests {
 
         assert!(result.is_ok());
         let report = result.unwrap();
-        assert_eq!(
-            report.order_status,
-            nautilus_model::enums::OrderStatus::PendingUpdate
-        );
+        assert_eq!(report.order_status, OrderStatus::PendingUpdate);
         // Trigger price should be parsed and available in the report
         assert!(report.trigger_price.is_some());
     }
@@ -1092,11 +1084,8 @@ mod tests {
 
         assert!(result.is_ok());
         let report = result.unwrap();
-        assert_eq!(report.order_type, nautilus_model::enums::OrderType::Market);
-        assert_eq!(
-            report.order_status,
-            nautilus_model::enums::OrderStatus::Filled
-        );
+        assert_eq!(report.order_type, OrderType::Market);
+        assert_eq!(report.order_status, OrderStatus::Filled);
     }
 
     #[rstest]
@@ -1224,10 +1213,7 @@ mod tests {
         assert!(result.is_ok());
 
         let fill_report = result.unwrap();
-        assert_eq!(
-            fill_report.liquidity_side,
-            nautilus_model::enums::LiquiditySide::Maker
-        );
+        assert_eq!(fill_report.liquidity_side, LiquiditySide::Maker);
         // Commission should be positive (rebate) after negating dYdX's negative fee
         assert!(fill_report.commission.as_f64() > 0.0);
     }
@@ -1269,10 +1255,7 @@ mod tests {
         assert!(result.is_ok());
 
         let fill_report = result.unwrap();
-        assert_eq!(
-            fill_report.liquidity_side,
-            nautilus_model::enums::LiquiditySide::Taker
-        );
+        assert_eq!(fill_report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(fill_report.order_side, OrderSide::Sell);
         // Commission should be negative (cost to trader) after negating positive fee
         assert!(fill_report.commission.as_f64() < 0.0);

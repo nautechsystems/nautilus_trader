@@ -61,9 +61,7 @@ use crate::{
     websocket::client::DydxWebSocketClient,
 };
 
-/// Context struct for WebSocket message handling.
-///
-/// Groups related dependencies to avoid excessive function parameters.
+/// Groups WebSocket message handling dependencies.
 struct WsMessageContext<'a> {
     data_sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: &'a Arc<DashMap<Ustr, InstrumentAny>>,
@@ -99,11 +97,11 @@ pub struct DydxDataClient {
     /// Background task handles.
     tasks: Vec<JoinHandle<()>>,
     /// Channel sender for emitting data events to the DataEngine.
-    _data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     /// Cached instruments by symbol (shared with HTTP client via `Arc<DashMap<Ustr, InstrumentAny>>`).
     instruments: Arc<DashMap<Ustr, InstrumentAny>>,
     /// High-resolution clock for timestamps.
-    _clock: &'static AtomicTime,
+    clock: &'static AtomicTime,
     /// Local order books maintained for generating quotes and resolving crosses.
     #[allow(dead_code)]
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
@@ -179,9 +177,9 @@ impl DydxDataClient {
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
-            _data_sender: data_sender,
+            data_sender,
             instruments: instruments_cache,
-            _clock: clock,
+            clock,
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),
             incomplete_bars: Arc::new(DashMap::new()),
@@ -196,6 +194,19 @@ impl DydxDataClient {
     #[must_use]
     pub fn venue(&self) -> Venue {
         *DYDX_VENUE
+    }
+
+    fn ws_client(&self) -> anyhow::Result<&DydxWebSocketClient> {
+        self.ws_client
+            .as_ref()
+            .context("websocket client not initialized; call connect first")
+    }
+
+    #[allow(dead_code)]
+    fn ws_client_mut(&mut self) -> anyhow::Result<&mut DydxWebSocketClient> {
+        self.ws_client
+            .as_mut()
+            .context("websocket client not initialized; call connect first")
     }
 
     /// Returns `true` when the client is connected.
@@ -324,7 +335,7 @@ impl DataClient for DydxDataClient {
 
             // Start message processing task (handler already converts to NautilusWsMessage)
             if let Some(rx) = ws.take_receiver() {
-                let data_tx = self._data_sender.clone();
+                let data_tx = self.data_sender.clone();
                 let instruments = self.instruments.clone();
                 let order_books = self.order_books.clone();
                 let last_quotes = self.last_quotes.clone();
@@ -425,11 +436,7 @@ impl DataClient for DydxDataClient {
     }
 
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
-        let ws = self
-            .ws_client
-            .as_ref()
-            .context("WebSocket client not initialized")?
-            .clone();
+        let ws = self.ws_client()?.clone();
         let instrument_id = cmd.instrument_id;
 
         // Track active subscription for reconnection recovery
@@ -463,11 +470,7 @@ impl DataClient for DydxDataClient {
         // Track active subscription for periodic refresh
         self.active_orderbook_subs.insert(cmd.instrument_id, ());
 
-        let ws = self
-            .ws_client
-            .as_ref()
-            .context("WebSocket client not initialized")?
-            .clone();
+        let ws = self.ws_client()?.clone();
         let instrument_id = cmd.instrument_id;
 
         self.spawn_ws(
@@ -495,11 +498,7 @@ impl DataClient for DydxDataClient {
         // Track active subscription for periodic refresh
         self.active_orderbook_subs.insert(cmd.instrument_id, ());
 
-        let ws = self
-            .ws_client
-            .as_ref()
-            .context("WebSocket client not initialized")?
-            .clone();
+        let ws = self.ws_client()?.clone();
         let instrument_id = cmd.instrument_id;
 
         tokio::spawn(async move {
@@ -541,11 +540,7 @@ impl DataClient for DydxDataClient {
     }
 
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
-        let ws = self
-            .ws_client
-            .as_ref()
-            .context("WebSocket client not initialized")?
-            .clone();
+        let ws = self.ws_client()?.clone();
         let instrument_id = cmd.bar_type.instrument_id();
         let spec = cmd.bar_type.spec();
 
@@ -613,11 +608,7 @@ impl DataClient for DydxDataClient {
         // Remove from active subscription tracking
         self.active_trade_subs.remove(&cmd.instrument_id);
 
-        let ws = self
-            .ws_client
-            .as_ref()
-            .context("WebSocket client not initialized")?
-            .clone();
+        let ws = self.ws_client()?.clone();
         let instrument_id = cmd.instrument_id;
 
         self.spawn_ws(
@@ -636,11 +627,7 @@ impl DataClient for DydxDataClient {
         // Remove from active subscription tracking
         self.active_orderbook_subs.remove(&cmd.instrument_id);
 
-        let ws = self
-            .ws_client
-            .as_ref()
-            .context("WebSocket client not initialized")?
-            .clone();
+        let ws = self.ws_client()?.clone();
         let instrument_id = cmd.instrument_id;
 
         self.spawn_ws(
@@ -661,11 +648,7 @@ impl DataClient for DydxDataClient {
         // Remove from active subscription tracking
         self.active_orderbook_subs.remove(&cmd.instrument_id);
 
-        let ws = self
-            .ws_client
-            .as_ref()
-            .context("WebSocket client not initialized")?
-            .clone();
+        let ws = self.ws_client()?.clone();
         let instrument_id = cmd.instrument_id;
 
         self.spawn_ws(
@@ -700,11 +683,7 @@ impl DataClient for DydxDataClient {
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let ws = self
-            .ws_client
-            .as_ref()
-            .context("WebSocket client not initialized")?
-            .clone();
+        let ws = self.ws_client()?.clone();
         let instrument_id = cmd.bar_type.instrument_id();
         let spec = cmd.bar_type.spec();
 
@@ -769,7 +748,7 @@ impl DataClient for DydxDataClient {
 
     fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
         let instruments_cache = self.instruments.clone();
-        let sender = self._data_sender.clone();
+        let sender = self.data_sender.clone();
         let http = self.http_client.clone();
         let instrument_id = request.instrument_id;
         let request_id = request.request_id;
@@ -777,7 +756,7 @@ impl DataClient for DydxDataClient {
         let start = request.start;
         let end = request.end;
         let params = request.params.clone();
-        let clock = self._clock;
+        let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
@@ -794,8 +773,7 @@ impl DataClient for DydxDataClient {
                     Ok(instruments) => {
                         // Cache all fetched instruments
                         for inst in &instruments {
-                            let sym = Ustr::from(inst.id().symbol.as_str());
-                            instruments_cache.insert(sym, inst.clone());
+                            upsert_instrument(&instruments_cache, inst.clone());
                         }
                         // Find the requested instrument
                         instruments.into_iter().find(|i| i.id() == instrument_id)
@@ -832,7 +810,7 @@ impl DataClient for DydxDataClient {
 
     fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
         let http = self.http_client.clone();
-        let sender = self._data_sender.clone();
+        let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -840,7 +818,7 @@ impl DataClient for DydxDataClient {
         let start = request.start;
         let end = request.end;
         let params = request.params.clone();
-        let clock = self._clock;
+        let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
@@ -851,8 +829,7 @@ impl DataClient for DydxDataClient {
 
                     // Cache all instruments
                     for instrument in &instruments {
-                        let symbol = Ustr::from(instrument.id().symbol.as_str());
-                        instruments_cache.insert(symbol, instrument.clone());
+                        upsert_instrument(&instruments_cache, instrument.clone());
                     }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -904,7 +881,7 @@ impl DataClient for DydxDataClient {
 
         let http = self.http_client.clone();
         let instruments = self.instruments.clone();
-        let sender = self._data_sender.clone();
+        let sender = self.data_sender.clone();
         let instrument_id = request.instrument_id;
         let start = request.start;
         let end = request.end;
@@ -912,7 +889,7 @@ impl DataClient for DydxDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let params = request.params.clone();
-        let clock = self._clock;
+        let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
@@ -1112,7 +1089,7 @@ impl DataClient for DydxDataClient {
 
         let http = self.http_client.clone();
         let instruments = self.instruments.clone();
-        let sender = self._data_sender.clone();
+        let sender = self.data_sender.clone();
         let instrument_id = bar_type.instrument_id();
         // dYdX ticker does not include the "-PERP" suffix.
         let symbol = instrument_id
@@ -1123,7 +1100,7 @@ impl DataClient for DydxDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let params = request.params.clone();
-        let clock = self._clock;
+        let clock = self.clock;
 
         let start = request.start;
         let end = request.end;
@@ -1380,6 +1357,12 @@ impl DataClient for DydxDataClient {
     }
 }
 
+/// Upserts an instrument into the shared cache.
+fn upsert_instrument(cache: &Arc<DashMap<Ustr, InstrumentAny>>, instrument: InstrumentAny) {
+    let symbol = Ustr::from(instrument.id().symbol.as_str());
+    cache.insert(symbol, instrument);
+}
+
 /// Convert optional DateTime to optional UnixNanos timestamp.
 fn datetime_to_unix_nanos(value: Option<chrono::DateTime<chrono::Utc>>) -> Option<UnixNanos> {
     value
@@ -1435,8 +1418,7 @@ impl DydxDataClient {
 
                                 // Update local cache with refreshed instruments
                                 for instrument in instruments {
-                                    let symbol = instrument.id().symbol.inner();
-                                    instruments_cache.insert(symbol, instrument);
+                                    upsert_instrument(&instruments_cache, instrument);
                                 }
 
                                 // Also update HTTP client cache via cache_instruments method
@@ -1483,7 +1465,7 @@ impl DydxDataClient {
         let order_books = self.order_books.clone();
         let active_subs = self.active_orderbook_subs.clone();
         let cancellation_token = self.cancellation_token.clone();
-        let data_sender = self._data_sender.clone();
+        let data_sender = self.data_sender.clone();
 
         tracing::info!(
             "Starting orderbook snapshot refresh task (interval: {}s)",
