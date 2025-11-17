@@ -15,6 +15,7 @@
 
 import math
 import pickle
+import sys
 from decimal import Decimal
 
 import pytest
@@ -769,6 +770,75 @@ class TestQuantity:
 
         with pytest.raises(ValueError):
             Quantity.from_str("-0.001")
+
+    def test_from_decimal_returns_expected_value(self):
+        # Arrange, Act
+        qty = Quantity.from_decimal(Decimal("0.511"))
+
+        # Assert
+        assert qty == Quantity(0.511, precision=3)
+        assert str(qty) == "0.511"
+        assert qty.precision == 3
+
+    def test_from_decimal_with_integer_value(self):
+        # Arrange, Act
+        qty = Quantity.from_decimal(Decimal("1"))
+
+        # Assert
+        assert qty == Quantity(1, precision=0)
+        assert str(qty) == "1"
+        assert qty.precision == 0
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="High precision not supported on Windows")
+    def test_from_decimal_with_high_precision(self):
+        # Arrange, Act
+        qty = Quantity.from_decimal(Decimal("1.234567890123456"))
+
+        # Assert
+        assert qty.precision == 15
+        assert str(qty) == "1.234567890123456"
+
+    def test_from_decimal_equivalent_to_from_str(self):
+        # Test that from_decimal produces the same result as from_str
+        test_values = [
+            Decimal("1"),
+            Decimal("0.5"),
+            Decimal("100.25"),
+            Decimal("0.001"),
+            Decimal("1234.5678"),
+        ]
+
+        for decimal_val in test_values:
+            qty_from_decimal = Quantity.from_decimal(decimal_val)
+            qty_from_str = Quantity.from_str(str(decimal_val))
+            assert qty_from_decimal == qty_from_str
+            assert qty_from_decimal.precision == qty_from_str.precision
+
+    def test_from_decimal_with_negative_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_decimal(Decimal("-1.0"))
+        with pytest.raises(ValueError, match="invalid negative quantity"):
+            Quantity.from_decimal(Decimal("-0.001"))
+
+    def test_from_decimal_precision_preservation(self):
+        # Whole numbers should have precision 0
+        assert Quantity.from_decimal(Decimal("100")).precision == 0
+        assert Quantity.from_decimal(Decimal("1000000")).precision == 0
+
+        # Decimal places should determine precision
+        assert Quantity.from_decimal(Decimal("100.0")).precision == 1
+        assert Quantity.from_decimal(Decimal("100.00")).precision == 2
+        assert Quantity.from_decimal(Decimal("100.12345")).precision == 5
+
+    def test_from_decimal_with_zero(self):
+        # Arrange, Act
+        qty = Quantity.from_decimal(Decimal("0"))
+
+        # Assert
+        assert qty.as_double() == 0
+        assert str(qty) == "0"
+        assert qty.precision == 0
 
     @pytest.mark.parametrize(
         ("value", "expected"),

@@ -533,6 +533,41 @@ cdef class Quantity:
 
         return Quantity.from_int_c(value)
 
+    @staticmethod
+    def from_decimal(value: decimal.Decimal) -> Quantity:
+        """
+        Return a quantity from the given Decimal value.
+
+        Handles up to 16 decimals of precision (in high-precision mode).
+
+        Parameters
+        ----------
+        value : Decimal
+            The Decimal value for the quantity.
+
+        Returns
+        -------
+        Quantity
+
+        Raises
+        ------
+        ValueError
+            If inferred precision is greater than 16.
+        ValueError
+            If raw value is outside the valid representable range [0, `QUANTITY_RAW_MAX`].
+        OverflowError
+            If inferred precision is negative (< 0).
+
+        Warnings
+        --------
+        The decimal precision will be inferred from the number of digits
+        following the '.' point (if no point then precision zero).
+
+        """
+        Condition.not_none(value, "value")
+
+        return Quantity.from_str_c(str(value))
+
     cpdef str to_formatted_str(self):
         """
         Return the formatted string representation of the quantity.
