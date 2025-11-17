@@ -28,6 +28,7 @@ use crate::defi::{
     pool_analysis::{
         position::PoolPosition,
         quote::SwapQuote,
+        size_estimator,
         snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
         swap_math::compute_swap_step,
     },
@@ -699,6 +700,50 @@ impl PoolProfiler {
         sqrt_price_limit_x96: U160,
     ) -> anyhow::Result<SwapQuote> {
         self.quote_swap(I256::MAX, false, Some(sqrt_price_limit_x96))
+    }
+
+    /// Finds the maximum trade size that produces a target slippage (including fees).
+    ///
+    /// Uses binary search to find the largest trade size that results in slippage
+    /// at or below the target. The method iteratively simulates swaps at different
+    /// sizes until it converges to the optimal size within the specified tolerance.
+    ///
+    /// # Returns
+    /// The maximum trade size (U256) that produces the target slippage
+    ///
+    /// # Errors
+    /// Returns error if:
+    /// - Impact is zero or exceeds 100% (10000 bps)
+    /// - Pool is not initialized
+    /// - Swap simulations fail
+    ///
+    /// # Panics
+    /// Panics if pool is not initialized
+    pub fn size_for_impact_bps(&self, impact_bps: u32, zero_for_one: bool) -> anyhow::Result<U256> {
+        let config = size_estimator::EstimationConfig::default();
+        size_estimator::size_for_impact_bps(self, impact_bps, zero_for_one, &config)
+    }
+
+    /// Finds the maximum trade size with comprehensive search diagnostics.
+    /// This is the detailed version of [`Self::size_for_impact_bps`] that returns
+    /// extensive information about the search process.It is useful for debugging,
+    /// monitoring, and analyzing search behavior in production.
+    ///
+    /// # Returns
+    /// Detailed result with size and comprehensive search diagnostics
+    ///
+    /// # Errors
+    /// Returns error if:
+    /// - Impact is zero or exceeds 100% (10000 bps)
+    /// - Pool is not initialized
+    /// - Swap simulations fail
+    pub fn size_for_impact_bps_detailed(
+        &self,
+        impact_bps: u32,
+        zero_for_one: bool,
+    ) -> anyhow::Result<size_estimator::SizeForImpactResult> {
+        let config = size_estimator::EstimationConfig::default();
+        size_estimator::size_for_impact_bps_detailed(self, impact_bps, zero_for_one, &config)
     }
 
     /// Validates that the price limit is in the correct direction for the swap.
