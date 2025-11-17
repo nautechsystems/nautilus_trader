@@ -56,7 +56,7 @@ cdef class Actor(Component):
     cdef object _executor
     cdef bint _log_events
     cdef bint _log_commands
-    cdef TopicCache _topic_cache
+    cdef readonly TopicCache _topic_cache
     cdef set[type] _warning_events
     cdef dict[UUID4, RequestData] _requests
     cdef dict[UUID4, object] _pending_requests
@@ -370,6 +370,16 @@ cdef class Actor(Component):
     cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick)
     cpdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick)
     cpdef void _handle_indicators_for_bar(self, list indicators, Bar bar)
+    cdef void _subscribe_historical_data(self, DataType data_type, InstrumentId instrument_id=*)
+    cdef void _subscribe_historical_order_book_depth(self, InstrumentId instrument_id)
+    cdef void _subscribe_historical_quote_ticks(self, InstrumentId instrument_id)
+    cdef void _subscribe_historical_trade_ticks(self, InstrumentId instrument_id)
+    cdef void _subscribe_historical_bars(self, BarType bar_type)
+    cdef void _unsubscribe_historical_data(self, DataType data_type, InstrumentId instrument_id=*)
+    cdef void _unsubscribe_historical_order_book_depth(self, InstrumentId instrument_id)
+    cdef void _unsubscribe_historical_quote_ticks(self, InstrumentId instrument_id)
+    cdef void _unsubscribe_historical_trade_ticks(self, InstrumentId instrument_id)
+    cdef void _unsubscribe_historical_bars(self, BarType bar_type)
 
 # -- VALIDATIONS ------------------------------------------------------------------------------
 

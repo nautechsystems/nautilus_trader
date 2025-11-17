@@ -340,14 +340,10 @@ class BacktestNode:
 
         self._download_actor.clock.set_time(pd.Timestamp.utcnow().value)
 
-        kwargs["update_catalog"] = True
-        params = kwargs.get("params", {})
-
         # No need to do catalog queries when we just want to download and store data
+        params = kwargs.get("params", {})
         params["skip_catalog_data"] = True
-
-        # To be able to download future data if necessary
-        params["subscription_name"] = "download"
+        params["update_catalog"] = True
         kwargs["params"] = params
 
         function = getattr(self._download_actor, request_function)

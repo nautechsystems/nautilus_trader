@@ -2723,14 +2723,20 @@ cdef class Actor(Component):
         self._requests[request_id] = request
         self._pending_requests[request_id] = callback
 
+        self._subscribe_historical_data(data_type, instrument_id)
+        self._send_data_req(request)
+
+        return request_id
+
+    cdef void _subscribe_historical_data(
+        self,
+        DataType data_type,
+        InstrumentId instrument_id = None,
+    ):
         self._msgbus.subscribe(
             topic=self._topic_cache.get_custom_data_topic(data_type, instrument_id, historical=True),
             handler=self.handle_historical_data,
         )
-
-        self._send_data_req(request)
-
-        return request_id
 
     cpdef UUID4 request_instrument(
         self,
@@ -3095,14 +3101,19 @@ cdef class Actor(Component):
         self._requests[request_id] = request
         self._pending_requests[request_id] = callback
 
+        self._subscribe_historical_order_book_depth(instrument_id)
+        self._send_data_req(request)
+
+        return request_id
+
+    cdef void _subscribe_historical_order_book_depth(
+        self,
+        InstrumentId instrument_id,
+    ):
         self._msgbus.subscribe(
             topic=self._topic_cache.get_depth_topic(instrument_id, historical=True),
             handler=self.handle_historical_order_book_depth,
         )
-
-        self._send_data_req(request)
-
-        return request_id
 
     cpdef UUID4 request_quote_ticks(
         self,
@@ -3197,14 +3208,19 @@ cdef class Actor(Component):
         self._requests[request_id] = request
         self._pending_requests[request_id] = callback
 
+        self._subscribe_historical_quote_ticks(instrument_id)
+        self._send_data_req(request)
+
+        return request_id
+
+    cdef void _subscribe_historical_quote_ticks(
+        self,
+        InstrumentId instrument_id,
+    ):
         self._msgbus.subscribe(
             topic=self._topic_cache.get_quotes_topic(instrument_id, historical=True),
             handler=self.handle_historical_quote_tick,
         )
-
-        self._send_data_req(request)
-
-        return request_id
 
     cpdef UUID4 request_trade_ticks(
         self,
@@ -3297,14 +3313,19 @@ cdef class Actor(Component):
         self._requests[request_id] = request
         self._pending_requests[request_id] = callback
 
+        self._subscribe_historical_trade_ticks(instrument_id)
+        self._send_data_req(request)
+
+        return request_id
+
+    cdef void _subscribe_historical_trade_ticks(
+        self,
+        InstrumentId instrument_id,
+    ):
         self._msgbus.subscribe(
             topic=self._topic_cache.get_trades_topic(instrument_id, historical=True),
             handler=self.handle_historical_trade_tick,
         )
-
-        self._send_data_req(request)
-
-        return request_id
 
     cpdef UUID4 request_bars(
         self,
@@ -3400,14 +3421,19 @@ cdef class Actor(Component):
         self._requests[request_id] = request
         self._pending_requests[request_id] = callback
 
-        self._msgbus.subscribe(
-            topic=self._topic_cache.get_bars_topic(standard_bar_type, historical=True),
-            handler=self.handle_historical_bar,
-        )
-
+        self._subscribe_historical_bars(standard_bar_type)
         self._send_data_req(request)
 
         return request_id
+
+    cdef void _subscribe_historical_bars(
+        self,
+        BarType bar_type,
+    ):
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_bars_topic(bar_type.standard(), historical=True),
+            handler=self.handle_historical_bar,
+        )
 
     cpdef UUID4 request_aggregated_bars(
         self,
@@ -3520,10 +3546,7 @@ cdef class Actor(Component):
 
         # Subscribe to all requested bar types (historical topics for aggregated bars)
         for bar_type in bar_types:
-            self._msgbus.subscribe(
-                topic=self._topic_cache.get_bars_topic(bar_type.standard(), historical=True),
-                handler=self.handle_historical_bar,
-            )
+            self._subscribe_historical_bars(bar_type.standard())
 
         if first_bar_type.is_composite():
             request = RequestBars(
@@ -3540,10 +3563,7 @@ cdef class Actor(Component):
             )
 
             if include_external_data:
-                self._msgbus.subscribe(
-                    topic=self._topic_cache.get_bars_topic(first_bar_type.composite(), historical=True),
-                    handler=self.handle_historical_bar,
-                )
+                self._subscribe_historical_bars(first_bar_type.composite().standard())
         elif first_bar_type.spec.price_type == PriceType.LAST:
             request = RequestTradeTicks(
                 instrument_id=first_bar_type.instrument_id,
@@ -3559,10 +3579,7 @@ cdef class Actor(Component):
             )
 
             if include_external_data:
-                self._msgbus.subscribe(
-                    topic=self._topic_cache.get_trades_topic(first_bar_type.instrument_id, historical=True),
-                    handler=self.handle_historical_trade_tick,
-                )
+                self._subscribe_historical_trade_ticks(first_bar_type.instrument_id)
         else:
             request = RequestQuoteTicks(
                 instrument_id=first_bar_type.instrument_id,
@@ -3578,10 +3595,7 @@ cdef class Actor(Component):
             )
 
             if include_external_data:
-                self._msgbus.subscribe(
-                    topic=self._topic_cache.get_quotes_topic(first_bar_type.instrument_id, historical=True),
-                    handler=self.handle_historical_quote_tick,
-                )
+                self._subscribe_historical_quote_ticks(first_bar_type.instrument_id)
 
         self._pending_requests[request_id] = callback
         self._send_data_req(request)
@@ -4169,13 +4183,29 @@ cdef class Actor(Component):
 
     cpdef void _handle_data_response(self, DataResponse response):
         cdef RequestData request = self._requests.pop(response.correlation_id, None)
+        if request is not None and not request.params.get("keep_subscriptions", False):
+            self._unsubscribe_historical_data(request.data_type, request.instrument_id)
+
         if request is not None:
-            self._msgbus.unsubscribe(
-                topic=self._topic_cache.get_custom_data_topic(request.data_type, request.instrument_id, historical=True),
-                handler=self.handle_historical_data,
-            )
+            instrument_id = request.instrument_id
+            length = response.params.get("data_count", 0)
+
+            if length > 0:
+                self._log.info(f"Received <{request.data_type.type}[{length}]> data for {instrument_id=}")
+            else:
+                self._log.warning(f"Received <{request.data_type.type}[]> data with no ticks for {instrument_id=}")
 
         self._finish_response(response.correlation_id)
+
+    cdef void _unsubscribe_historical_data(
+        self,
+        DataType data_type,
+        InstrumentId instrument_id = None,
+    ):
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_custom_data_topic(data_type, instrument_id, historical=True),
+            handler=self.handle_historical_data,
+        )
 
     cpdef void _handle_join_response(self, DataResponse response):
         self._finish_response(response.correlation_id)
@@ -4198,75 +4228,103 @@ cdef class Actor(Component):
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response):
         cdef RequestQuoteTicks request = self._requests.pop(response.correlation_id, None)
+        if request is not None and not request.params.get("keep_subscriptions", False):
+            self._unsubscribe_historical_quote_ticks(request.instrument_id)
+
         if request is not None:
-            self._msgbus.unsubscribe(
-                topic=self._topic_cache.get_quotes_topic(request.instrument_id, historical=True),
-                handler=self.handle_historical_quote_tick,
-            )
+            instrument_id = request.instrument_id
+            length = response.params.get("data_count", 0)
 
-        cdef int length = response.params.get("data_count", 0)
-        cdef InstrumentId instrument_id = request.instrument_id
-
-        if length > 0:
-            self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}")
-        else:
-            self._log.warning(f"Received <QuoteTick[]> data with no ticks for {instrument_id}")
+            if length > 0:
+                self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}")
+            else:
+                self._log.warning(f"Received <QuoteTick[]> data with no ticks for {instrument_id}")
 
         self._finish_response(response.correlation_id)
+
+    cdef void _unsubscribe_historical_quote_ticks(
+        self,
+        InstrumentId instrument_id,
+    ):
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_quotes_topic(instrument_id, historical=True),
+            handler=self.handle_historical_quote_tick,
+        )
 
     cpdef void _handle_trade_ticks_response(self, DataResponse response):
         cdef RequestTradeTicks request = self._requests.pop(response.correlation_id, None)
+        if request is not None and not request.params.get("keep_subscriptions", False):
+            self._unsubscribe_historical_trade_ticks(request.instrument_id)
+
         if request is not None:
-            self._msgbus.unsubscribe(
-                topic=self._topic_cache.get_trades_topic(request.instrument_id, historical=True),
-                handler=self.handle_historical_trade_tick,
-            )
+            instrument_id = request.instrument_id
+            length = response.params.get("data_count", 0)
 
-        cdef int length = response.params.get("data_count", 0)
-        cdef InstrumentId instrument_id = request.instrument_id
-
-        if length > 0:
-            self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}")
-        else:
-            self._log.warning(f"Received <TradeTick[]> data with no ticks for {instrument_id}")
+            if length > 0:
+                self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}")
+            else:
+                self._log.warning(f"Received <TradeTick[]> data with no ticks for {instrument_id}")
 
         self._finish_response(response.correlation_id)
+
+    cdef void _unsubscribe_historical_trade_ticks(
+        self,
+        InstrumentId instrument_id,
+    ):
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_trades_topic(instrument_id, historical=True),
+            handler=self.handle_historical_trade_tick,
+        )
 
     cpdef void _handle_order_book_depth_response(self, DataResponse response):
         cdef RequestOrderBookDepth request = self._requests.pop(response.correlation_id, None)
+        if request is not None and not request.params.get("keep_subscriptions", False):
+            self._unsubscribe_historical_order_book_depth(request.instrument_id)
+
         if request is not None:
-            self._msgbus.unsubscribe(
-                topic=self._topic_cache.get_depth_topic(request.instrument_id, historical=True),
-                handler=self.handle_historical_order_book_depth,
-            )
+            instrument_id = request.instrument_id
+            length = response.params.get("data_count", 0)
 
-        cdef int length = response.params.get("data_count", 0)
-        cdef InstrumentId instrument_id = request.instrument_id
-
-        if length > 0:
-            self._log.info(f"Received <OrderBookDepth10[{length}]> data for {instrument_id}")
-        else:
-            self._log.warning(f"Received <OrderBookDepth10[]> data with no ticks for {instrument_id}")
+            if length > 0:
+                self._log.info(f"Received <OrderBookDepth10[{length}]> data for {instrument_id}")
+            else:
+                self._log.warning(f"Received <OrderBookDepth10[]> data with no ticks for {instrument_id}")
 
         self._finish_response(response.correlation_id)
+
+    cdef void _unsubscribe_historical_order_book_depth(
+        self,
+        InstrumentId instrument_id,
+    ):
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_depth_topic(instrument_id, historical=True),
+            handler=self.handle_historical_order_book_depth,
+        )
 
     cpdef void _handle_bars_response(self, DataResponse response):
         cdef RequestBars request = self._requests.pop(response.correlation_id, None)
+        if request is not None and not request.params.get("keep_subscriptions", False):
+            self._unsubscribe_historical_bars(request.bar_type.standard())
+
         if request is not None:
-            self._msgbus.unsubscribe(
-                topic=self._topic_cache.get_bars_topic(request.bar_type.standard(), historical=True),
-                handler=self.handle_historical_bar,
-            )
+            bar_type = request.bar_type
+            length = response.params.get("data_count", 0)
 
-        cdef int length = response.params.get("data_count", 0)
-        cdef BarType bar_type = request.bar_type
-
-        if length > 0:
-            self._log.info(f"Received <Bar[{length}]> data for {bar_type}")
-        else:
-            self._log.warning(f"Received <Bar[]> data with no bar for {bar_type}")
+            if length > 0:
+                self._log.info(f"Received <Bar[{length}]> data for {bar_type}")
+            else:
+                self._log.warning(f"Received <Bar[]> data with no bar for {bar_type}")
 
         self._finish_response(response.correlation_id)
+
+    cdef void _unsubscribe_historical_bars(
+        self,
+        BarType bar_type,
+    ):
+        self._msgbus.unsubscribe(
+            topic=self._topic_cache.get_bars_topic(bar_type.standard(), historical=True),
+            handler=self.handle_historical_bar,
+        )
 
     cpdef void _handle_aggregated_bars_response(self, DataResponse response):
         # Can be useful to keep subscriptions in place for example for later requesting order books that convert to quotes
@@ -4282,32 +4340,17 @@ cdef class Actor(Component):
     cpdef void _unsubscribe_historical_aggregated_bars(self, tuple bar_types, bint include_external_data = False):
         # Unsubscribe from all aggregated bar types (historical topics)
         for bar_type in bar_types:
-            self._msgbus.unsubscribe(
-                topic=self._topic_cache.get_bars_topic(bar_type.standard(), historical=True),
-                handler=self.handle_historical_bar,
-            )
+            self._unsubscribe_historical_bars(bar_type.standard())
 
         # Unsubscribe from underlying data topic based on first bar type (historical topics)
         first_bar_type = bar_types[0] if bar_types else None
         if include_external_data and first_bar_type is not None:
             if first_bar_type.is_composite():
-                # Unsubscribe from composite bar topic
-                self._msgbus.unsubscribe(
-                    topic=self._topic_cache.get_bars_topic(first_bar_type.composite().standard(), historical=True),
-                    handler=self.handle_historical_bar,
-                )
+                self._unsubscribe_historical_bars(first_bar_type.composite().standard())
             elif first_bar_type.spec.price_type == PriceType.LAST:
-                # Unsubscribe from trade ticks topic
-                self._msgbus.unsubscribe(
-                    topic=self._topic_cache.get_trades_topic(first_bar_type.instrument_id, historical=True),
-                    handler=self.handle_historical_trade_tick,
-                )
+                self._unsubscribe_historical_trade_ticks(first_bar_type.instrument_id)
             else:
-                # Unsubscribe from quote ticks topic
-                self._msgbus.unsubscribe(
-                    topic=self._topic_cache.get_quotes_topic(first_bar_type.instrument_id, historical=True),
-                    handler=self.handle_historical_quote_tick,
-                )
+                self._unsubscribe_historical_quote_ticks(first_bar_type.instrument_id)
 
     cpdef void _finish_response(self, UUID4 request_id):
         callback: Callable | None = self._pending_requests.pop(request_id, None)
