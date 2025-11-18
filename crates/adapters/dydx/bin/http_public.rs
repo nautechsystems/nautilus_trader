@@ -54,9 +54,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = DydxHttpClient::new(Some(base_url), Some(30), None, is_testnet, None)?;
 
-    tracing::info!("TEST 1: Request all instruments");
-    tracing::info!("-------------------------------------");
-
     let start = std::time::Instant::now();
     let instruments = client.request_instruments(None, None, None).await?;
     let elapsed = start.elapsed();
@@ -79,10 +76,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     client.cache_instruments(instruments.clone());
     tracing::info!("Cached {} instruments", instruments.len());
-    tracing::info!("");
-
-    tracing::info!("TEST 2: Request single instrument (cache hit)");
-    tracing::info!("-------------------------------------");
 
     let symbol = Ustr::from("BTC-USD");
     let start = std::time::Instant::now();
@@ -104,10 +97,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::warn!("FAILED: Instrument {} not found in cache", symbol);
         }
     }
-    tracing::info!("");
-
-    tracing::info!("TEST 3: Request historical trades");
-    tracing::info!("-------------------------------------");
 
     let symbol = "BTC-USD";
     let limit = Some(100);
@@ -140,10 +129,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         tracing::info!("   Time range: {} to {}", first.created_at, last.created_at);
     }
-    tracing::info!("");
-
-    tracing::info!("TEST 4: Request historical bars (small range)");
-    tracing::info!("-------------------------------------");
 
     let resolution = DydxCandleResolution::OneMinute;
     let end_time = Utc::now();
@@ -184,10 +169,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         tracing::info!("   Time range: {} to {}", first.started_at, last.started_at);
     }
-    tracing::info!("");
-
-    tracing::info!("TEST 5: Request historical bars (large range)");
-    tracing::info!("-------------------------------------");
 
     let end_time = Utc::now();
     let start_time = end_time - Duration::days(7); // 7 days

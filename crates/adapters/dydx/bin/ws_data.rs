@@ -35,9 +35,13 @@ use std::time::Duration;
 use nautilus_dydx::{
     common::consts::{DYDX_TESTNET_HTTP_URL, DYDX_TESTNET_WS_URL},
     http::client::DydxHttpClient,
-    websocket::client::DydxWebSocketClient,
+    websocket::{client::DydxWebSocketClient, handler::HandlerCommand},
 };
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{
+    data::{BarSpecification, BarType},
+    enums::{AggregationSource, BarAggregation, PriceType},
+    identifiers::InstrumentId,
+};
 use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
 
@@ -93,6 +97,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Subscribing to orderbook for {instrument_id}");
     ws_client.subscribe_orderbook(instrument_id).await?;
+
+    // Register bar type before subscribing to candles
+    let bar_spec = BarSpecification {
+        step: std::num::NonZeroUsize::new(1).unwrap(),
+        aggregation: BarAggregation::Minute,
+        price_type: PriceType::Last,
+    };
+    let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
+    let ticker = instrument_id.symbol.as_str().trim_end_matches("-PERP");
+    let topic = format!("{ticker}/1MIN");
+
+    ws_client.send_command(HandlerCommand::RegisterBarType { topic, bar_type })?;
 
     tracing::info!("Subscribing to 1-minute candles for {instrument_id}");
     ws_client.subscribe_candles(instrument_id, "1MIN").await?;

@@ -67,6 +67,10 @@ pub enum HandlerCommand {
     UpdateInstrument(Box<InstrumentAny>),
     /// Initialize instruments in bulk.
     InitializeInstruments(Vec<InstrumentAny>),
+    /// Register a bar type for candle subscriptions.
+    RegisterBarType { topic: String, bar_type: BarType },
+    /// Unregister a bar type for candle subscriptions.
+    UnregisterBarType { topic: String },
     /// Send a text message via WebSocket.
     SendText(String),
 }
@@ -270,6 +274,12 @@ impl FeedHandler {
                     let symbol = instrument.id().symbol.inner();
                     self.instruments.insert(symbol, instrument);
                 }
+            }
+            HandlerCommand::RegisterBarType { topic, bar_type } => {
+                self.bar_types.insert(topic, bar_type);
+            }
+            HandlerCommand::UnregisterBarType { topic } => {
+                self.bar_types.remove(&topic);
             }
             HandlerCommand::SendText(text) => {
                 if let Err(e) = self.client.send_text(text, None).await {

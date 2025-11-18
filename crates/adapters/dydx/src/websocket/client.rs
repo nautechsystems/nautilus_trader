@@ -392,6 +392,18 @@ impl DydxWebSocketClient {
         Ok(())
     }
 
+    /// Sends a command to the handler.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler task has terminated.
+    pub fn send_command(&self, cmd: HandlerCommand) -> DydxWsResult<()> {
+        self.cmd_tx.send(cmd).map_err(|e| {
+            DydxWsError::Transport(format!("Failed to send command to handler: {e}"))
+        })?;
+        Ok(())
+    }
+
     fn ticker_from_instrument_id(instrument_id: &InstrumentId) -> String {
         let mut s = instrument_id.symbol.as_str().to_string();
         if let Some(stripped) = s.strip_suffix("-PERP") {
@@ -487,7 +499,7 @@ impl DydxWebSocketClient {
         resolution: &str,
     ) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
-        let id = format!("{ticker}-{resolution}");
+        let id = format!("{ticker}/{resolution}");
         let sub = super::messages::DydxSubscription {
             op: super::enums::DydxWsOperation::Subscribe,
             channel: super::enums::DydxWsChannel::Candles,
@@ -508,7 +520,7 @@ impl DydxWebSocketClient {
         resolution: &str,
     ) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
-        let id = format!("{ticker}-{resolution}");
+        let id = format!("{ticker}/{resolution}");
         let sub = super::messages::DydxSubscription {
             op: super::enums::DydxWsOperation::Unsubscribe,
             channel: super::enums::DydxWsChannel::Candles,

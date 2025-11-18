@@ -13,23 +13,35 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Live integration tests for the dYdX data client against the public testnet.
+//! Live integration tests for dYdX data client against public testnet.
 //!
-//! These tests are **ignored by default** and are intended to be run manually:
+//! These tests verify end-to-end data flow from dYdX testnet to NautilusTrader's
+//! data engine, including subscription management, orderbook handling, and data
+//! type conversions.
+//!
+//! Usage:
 //! ```bash
-//! DYDX_TESTNET_INTEGRATION=1 cargo test -p nautilus-dydx --tests -- --ignored
+//! # Run all live integration tests against testnet
+//! cargo run --bin dydx-live-integration -p nautilus-dydx
+//!
+//! # Override endpoints
+//! DYDX_HTTP_URL=https://indexer.v4testnet.dydx.exchange \
+//! DYDX_WS_URL=wss://indexer.v4testnet.dydx.exchange/v4/ws \
+//! cargo run --bin dydx-live-integration -p nautilus-dydx
 //! ```
-//! They require outbound network access to the dYdX v4 testnet indexer.
+//!
+//! **Requirements**:
+//! - Outbound network access to dYdX v4 testnet indexer
+//! - No credentials required (public endpoints only)
 
 use std::time::Duration;
 
 use nautilus_common::{
     messages::{
-        DataEvent,
-        data::{DataResponse, RequestBars, SubscribeBars, SubscribeBookDeltas, SubscribeTrades},
+        DataEvent, DataResponse,
+        data::{RequestBars, SubscribeBars, SubscribeBookDeltas, SubscribeTrades},
     },
     runner::set_data_event_sender,
-    testing::init_logger_for_testing,
 };
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_data::client::DataClient;
@@ -41,48 +53,49 @@ use nautilus_dydx::{
     websocket::client::DydxWebSocketClient,
 };
 use nautilus_model::{
-    data::{BarSpecification, BarType},
+    data::{BarSpecification, BarType, Data},
     enums::{BarAggregation, BookType, PriceType},
     identifiers::{ClientId, InstrumentId},
 };
 use tokio::time::timeout;
+use tracing::level_filters::LevelFilter;
 
-fn integration_enabled() -> bool {
-    std::env::var("DYDX_TESTNET_INTEGRATION")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
-}
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::INFO)
+        .init();
 
-/// Connects to dYdX testnet and subscribes to trades, order book deltas, and bars for BTC-USD.
-///
-/// This test verifies that:
-/// - The data client can connect to the testnet.
-/// - Subscriptions for trades, book deltas, and bars succeed.
-/// - At least one `DataEvent` is received on the data channel.
-#[tokio::test]
-#[ignore]
-async fn dydx_testnet_connect_and_subscribe_btc_usd() -> anyhow::Result<()> {
-    if !integration_enabled() {
-        // Allow the test to be skipped without failing when integration is disabled.
-        return Ok(());
-    }
-
-    let _guard = init_logger_for_testing(None)?;
+    tracing::info!("===== dYdX Live Integration Tests =====");
+    tracing::info!("");
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
 
+    test_connect_and_subscribe(&mut rx).await?;
+    test_request_historical_bars(&mut rx).await?;
+    test_orderbook_snapshot_refresh(&mut rx).await?;
+    test_complete_data_flow(&mut rx).await?;
+    test_crossed_orderbook_detection(&mut rx).await?;
+
+    tracing::info!("");
+    tracing::info!("===== All Live Integration Tests Passed =====");
+
+    Ok(())
+}
+
+async fn test_connect_and_subscribe(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> anyhow::Result<()> {
     let client_id = ClientId::from("DYDX-INT-DATA");
 
     let config = DydxDataClientConfig {
         is_testnet: true,
         base_url_http: Some(
-            std::env::var("DYDX_TESTNET_HTTP_URL")
-                .unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
+            std::env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
         ),
         base_url_ws: Some(
-            std::env::var("DYDX_TESTNET_WS_URL")
-                .unwrap_or_else(|_| DYDX_TESTNET_WS_URL.to_string()),
+            std::env::var("DYDX_WS_URL").unwrap_or_else(|_| DYDX_TESTNET_WS_URL.to_string()),
         ),
         ..Default::default()
     };
@@ -104,14 +117,13 @@ async fn dydx_testnet_connect_and_subscribe_btc_usd() -> anyhow::Result<()> {
     let mut data_client = DydxDataClient::new(client_id, config, http_client, Some(ws_client))?;
 
     data_client.connect().await?;
+    tracing::info!("Connected to dYdX testnet");
 
-    // BTC-USD perpetual on dYdX maps to this instrument ID.
     let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
     let venue = *DYDX_VENUE;
     let ts_init: UnixNanos = get_atomic_clock_realtime().get_time_ns();
     let command_id = UUID4::new();
 
-    // Subscribe to trades.
     let subscribe_trades = SubscribeTrades::new(
         instrument_id,
         Some(client_id),
@@ -121,8 +133,8 @@ async fn dydx_testnet_connect_and_subscribe_btc_usd() -> anyhow::Result<()> {
         None,
     );
     data_client.subscribe_trades(&subscribe_trades)?;
+    tracing::info!("Subscribed to trades");
 
-    // Subscribe to order book deltas.
     let subscribe_book = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
@@ -135,8 +147,8 @@ async fn dydx_testnet_connect_and_subscribe_btc_usd() -> anyhow::Result<()> {
         None,
     );
     data_client.subscribe_book_deltas(&subscribe_book)?;
+    tracing::info!("Subscribed to order book deltas");
 
-    // Subscribe to 1-minute bars.
     let bar_spec = BarSpecification {
         step: std::num::NonZeroUsize::new(1).unwrap(),
         aggregation: BarAggregation::Minute,
@@ -156,43 +168,32 @@ async fn dydx_testnet_connect_and_subscribe_btc_usd() -> anyhow::Result<()> {
         None,
     );
     data_client.subscribe_bars(&subscribe_bars)?;
+    tracing::info!("Subscribed to 1-minute bars");
 
-    // Wait for at least one DataEvent to confirm data flow.
     match timeout(Duration::from_secs(30), rx.recv()).await {
         Ok(Some(_)) => {
-            // Any data or response from testnet is sufficient to confirm the path.
+            tracing::info!("Received data event from testnet");
         }
         Ok(None) => anyhow::bail!("data channel closed before receiving DataEvent"),
         Err(_) => anyhow::bail!("timed out waiting for DataEvent"),
     }
 
+    data_client.disconnect().await?;
+    tracing::info!("Disconnected");
+    tracing::info!("");
+
     Ok(())
 }
 
-/// Requests historical bars for BTC-USD on dYdX testnet over small and large date ranges.
-///
-/// This test verifies:
-/// - `request_bars` executes without error for both short and long ranges.
-/// - A `BarsResponse` is emitted on the data channel for each request.
-#[tokio::test]
-#[ignore]
-async fn dydx_testnet_request_historical_bars() -> anyhow::Result<()> {
-    if !integration_enabled() {
-        return Ok(());
-    }
-
-    let _guard = init_logger_for_testing(None)?;
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
-
+async fn test_request_historical_bars(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> anyhow::Result<()> {
     let client_id = ClientId::from("DYDX-INT-BARS");
 
     let config = DydxDataClientConfig {
         is_testnet: true,
         base_url_http: Some(
-            std::env::var("DYDX_TESTNET_HTTP_URL")
-                .unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
+            std::env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
         ),
         ..Default::default()
     };
@@ -205,7 +206,11 @@ async fn dydx_testnet_request_historical_bars() -> anyhow::Result<()> {
         None,
     )?;
 
-    let data_client = DydxDataClient::new(client_id, config, http_client, None)?;
+    let mut data_client = DydxDataClient::new(client_id, config, http_client, None)?;
+
+    // Connect to bootstrap instruments (required for bar conversion)
+    // Note: No WebSocket client provided, so only HTTP initialization occurs
+    data_client.connect().await?;
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
     let bar_spec = BarSpecification {
@@ -227,7 +232,6 @@ async fn dydx_testnet_request_historical_bars() -> anyhow::Result<()> {
 
     let ts_init = get_atomic_clock_realtime().get_time_ns();
 
-    // Small range request.
     let small_request = RequestBars::new(
         bar_type,
         small_start,
@@ -239,8 +243,8 @@ async fn dydx_testnet_request_historical_bars() -> anyhow::Result<()> {
         None,
     );
     data_client.request_bars(&small_request)?;
+    tracing::info!("Requested 1-hour bar range");
 
-    // Large range request (will exercise partitioning logic).
     let large_request = RequestBars::new(
         bar_type,
         large_start,
@@ -252,8 +256,8 @@ async fn dydx_testnet_request_historical_bars() -> anyhow::Result<()> {
         None,
     );
     data_client.request_bars(&large_request)?;
+    tracing::info!("Requested 24-hour bar range (partitioned)");
 
-    // Collect at least one BarsResponse.
     let mut saw_bars_response = false;
     let timeout_at = Duration::from_secs(60);
 
@@ -269,44 +273,30 @@ async fn dydx_testnet_request_historical_bars() -> anyhow::Result<()> {
         }
     }
 
-    assert!(
-        saw_bars_response,
-        "expected at least one BarsResponse from dYdX testnet"
-    );
+    if saw_bars_response {
+        tracing::info!("Received BarsResponse");
+    } else {
+        anyhow::bail!("expected at least one BarsResponse from dYdX testnet");
+    }
+
+    tracing::info!("");
 
     Ok(())
 }
 
-/// Verifies that orderbook snapshot refresh task runs periodically.
-///
-/// This test:
-/// - Subscribes to order book deltas.
-/// - Waits for multiple orderbook updates to verify periodic refresh is active.
-/// - Confirms that snapshots are being fetched on the configured interval.
-#[tokio::test]
-#[ignore]
-async fn dydx_testnet_orderbook_snapshot_refresh() -> anyhow::Result<()> {
-    if !integration_enabled() {
-        return Ok(());
-    }
-
-    let _guard = init_logger_for_testing(None)?;
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
-
+async fn test_orderbook_snapshot_refresh(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> anyhow::Result<()> {
     let client_id = ClientId::from("DYDX-INT-SNAPSHOT");
 
     let config = DydxDataClientConfig {
         is_testnet: true,
-        orderbook_refresh_interval_secs: Some(10), // Refresh every 10 seconds for testing
+        orderbook_refresh_interval_secs: Some(10),
         base_url_http: Some(
-            std::env::var("DYDX_TESTNET_HTTP_URL")
-                .unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
+            std::env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
         ),
         base_url_ws: Some(
-            std::env::var("DYDX_TESTNET_WS_URL")
-                .unwrap_or_else(|_| DYDX_TESTNET_WS_URL.to_string()),
+            std::env::var("DYDX_WS_URL").unwrap_or_else(|_| DYDX_TESTNET_WS_URL.to_string()),
         ),
         ..Default::default()
     };
@@ -334,7 +324,6 @@ async fn dydx_testnet_orderbook_snapshot_refresh() -> anyhow::Result<()> {
     let ts_init: UnixNanos = get_atomic_clock_realtime().get_time_ns();
     let command_id = UUID4::new();
 
-    // Subscribe to order book deltas (triggers snapshot refresh task).
     let subscribe_book = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
@@ -347,8 +336,8 @@ async fn dydx_testnet_orderbook_snapshot_refresh() -> anyhow::Result<()> {
         None,
     );
     data_client.subscribe_book_deltas(&subscribe_book)?;
+    tracing::info!("Subscribed to order book with 10s refresh interval");
 
-    // Collect orderbook deltas for at least 30 seconds to verify periodic refresh.
     let mut orderbook_updates = 0;
     let timeout_at = Duration::from_secs(30);
     let start = tokio::time::Instant::now();
@@ -364,47 +353,34 @@ async fn dydx_testnet_orderbook_snapshot_refresh() -> anyhow::Result<()> {
         }
     }
 
-    assert!(
-        orderbook_updates >= 3,
-        "expected at least 3 orderbook updates within 30 seconds (got {})",
-        orderbook_updates
-    );
-
     data_client.disconnect().await?;
+
+    if orderbook_updates >= 3 {
+        tracing::info!("Received {} orderbook updates", orderbook_updates);
+    } else {
+        anyhow::bail!(
+            "expected at least 3 orderbook updates, got {}",
+            orderbook_updates
+        );
+    }
+
+    tracing::info!("");
 
     Ok(())
 }
 
-/// End-to-end integration test verifying complete data flow from dYdX testnet to DataEngine.
-///
-/// This test:
-/// - Connects to testnet and bootstraps instruments.
-/// - Subscribes to trades, orderbook deltas, quotes, and bars.
-/// - Verifies that each data type flows correctly to the data channel.
-/// - Confirms quote generation from book deltas (dYdX-specific).
-#[tokio::test]
-#[ignore]
-async fn dydx_testnet_complete_data_flow() -> anyhow::Result<()> {
-    if !integration_enabled() {
-        return Ok(());
-    }
-
-    let _guard = init_logger_for_testing(None)?;
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
-
+async fn test_complete_data_flow(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> anyhow::Result<()> {
     let client_id = ClientId::from("DYDX-INT-FLOW");
 
     let config = DydxDataClientConfig {
         is_testnet: true,
         base_url_http: Some(
-            std::env::var("DYDX_TESTNET_HTTP_URL")
-                .unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
+            std::env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
         ),
         base_url_ws: Some(
-            std::env::var("DYDX_TESTNET_WS_URL")
-                .unwrap_or_else(|_| DYDX_TESTNET_WS_URL.to_string()),
+            std::env::var("DYDX_WS_URL").unwrap_or_else(|_| DYDX_TESTNET_WS_URL.to_string()),
         ),
         ..Default::default()
     };
@@ -425,7 +401,6 @@ async fn dydx_testnet_complete_data_flow() -> anyhow::Result<()> {
 
     let mut data_client = DydxDataClient::new(client_id, config, http_client, Some(ws_client))?;
 
-    // Connect and bootstrap instruments.
     data_client.connect().await?;
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
@@ -433,7 +408,6 @@ async fn dydx_testnet_complete_data_flow() -> anyhow::Result<()> {
     let ts_init: UnixNanos = get_atomic_clock_realtime().get_time_ns();
     let command_id = UUID4::new();
 
-    // Subscribe to all major data types.
     let subscribe_trades = SubscribeTrades::new(
         instrument_id,
         Some(client_id),
@@ -477,7 +451,6 @@ async fn dydx_testnet_complete_data_flow() -> anyhow::Result<()> {
     );
     data_client.subscribe_bars(&subscribe_bars)?;
 
-    // Track received data types.
     let mut saw_trade = false;
     let mut saw_orderbook = false;
     let mut saw_bar = false;
@@ -487,15 +460,27 @@ async fn dydx_testnet_complete_data_flow() -> anyhow::Result<()> {
 
     while start.elapsed() < timeout_at && (!saw_trade || !saw_orderbook || !saw_bar) {
         match timeout(Duration::from_secs(10), rx.recv()).await {
-            Ok(Some(DataEvent::Data(data))) => {
-                use nautilus_model::data::Data;
-                match data {
-                    Data::Trade(_) => saw_trade = true,
-                    Data::Delta(_) | Data::Deltas(_) => saw_orderbook = true,
-                    Data::Bar(_) => saw_bar = true,
-                    _ => {}
+            Ok(Some(DataEvent::Data(data))) => match data {
+                Data::Trade(_) => {
+                    if !saw_trade {
+                        tracing::info!("Received trade data");
+                        saw_trade = true;
+                    }
                 }
-            }
+                Data::Delta(_) | Data::Deltas(_) => {
+                    if !saw_orderbook {
+                        tracing::info!("Received orderbook data");
+                        saw_orderbook = true;
+                    }
+                }
+                Data::Bar(_) => {
+                    if !saw_bar {
+                        tracing::info!("Received bar data");
+                        saw_bar = true;
+                    }
+                }
+                _ => {}
+            },
             Ok(Some(_)) => continue,
             Ok(None) => break,
             Err(_) => continue,
@@ -504,47 +489,33 @@ async fn dydx_testnet_complete_data_flow() -> anyhow::Result<()> {
 
     data_client.disconnect().await?;
 
-    assert!(saw_trade, "expected to receive at least one trade tick");
-    assert!(
-        saw_orderbook,
-        "expected to receive at least one orderbook update"
-    );
-    assert!(saw_bar, "expected to receive at least one bar");
+    if !saw_trade {
+        anyhow::bail!("expected to receive at least one trade tick");
+    }
+    if !saw_orderbook {
+        anyhow::bail!("expected to receive at least one orderbook update");
+    }
+    if !saw_bar {
+        anyhow::bail!("expected to receive at least one bar");
+    }
+
+    tracing::info!("");
 
     Ok(())
 }
 
-/// Integration test for crossed orderbook detection with live WebSocket data.
-///
-/// This test subscribes to order book deltas for a volatile instrument and monitors
-/// for crossed orderbook conditions. Due to dYdX's validator consensus delays,
-/// crossed books may occur under high volatility.
-///
-/// **Note**: This test may not always observe a crossed book on testnet if market
-/// conditions are stable. It serves as a regression test for the resolution logic.
-#[tokio::test]
-#[ignore]
-async fn dydx_testnet_crossed_orderbook_live_detection() -> anyhow::Result<()> {
-    if !integration_enabled() {
-        return Ok(());
-    }
-
-    let _guard = init_logger_for_testing(None)?;
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
-
+async fn test_crossed_orderbook_detection(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> anyhow::Result<()> {
     let client_id = ClientId::from("DYDX-INT-CROSSED");
 
     let config = DydxDataClientConfig {
         is_testnet: true,
         base_url_http: Some(
-            std::env::var("DYDX_TESTNET_HTTP_URL")
-                .unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
+            std::env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string()),
         ),
         base_url_ws: Some(
-            std::env::var("DYDX_TESTNET_WS_URL")
-                .unwrap_or_else(|_| DYDX_TESTNET_WS_URL.to_string()),
+            std::env::var("DYDX_WS_URL").unwrap_or_else(|_| DYDX_TESTNET_WS_URL.to_string()),
         ),
         ..Default::default()
     };
@@ -612,20 +583,14 @@ async fn dydx_testnet_crossed_orderbook_live_detection() -> anyhow::Result<()> {
 
     data_client.disconnect().await?;
 
-    assert!(
-        saw_orderbook_delta,
-        "Expected to receive at least one orderbook delta"
-    );
+    if saw_orderbook_delta {
+        tracing::info!("Monitored orderbook for crossed conditions");
+        tracing::info!("  Received {} quotes from deltas", quote_count);
+    } else {
+        anyhow::bail!("Expected to receive at least one orderbook delta");
+    }
 
-    println!(
-        "Integration test completed: saw {} orderbook deltas, {} quotes",
-        if saw_orderbook_delta {
-            "multiple"
-        } else {
-            "no"
-        },
-        quote_count
-    );
+    tracing::info!("");
 
     Ok(())
 }

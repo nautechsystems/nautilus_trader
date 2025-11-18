@@ -261,8 +261,8 @@ impl DydxDataClient {
 
         tracing::info!("Loaded {} dYdX instruments", instruments.len());
 
-        // Instruments are already cached in HTTP client by request_instruments()
-        // No need to cache again - the cache is shared via Arc<DashMap>
+        // Cache instruments in HTTP client (request_instruments does NOT cache automatically)
+        self.http_client.cache_instruments(instruments.clone());
 
         // Cache in WebSocket client if present
         if let Some(ref ws) = self.ws_client {
@@ -594,6 +594,21 @@ impl DataClient for DydxDataClient {
 
         self.spawn_ws(
             async move {
+                // Register bar type BEFORE subscribing to avoid race condition
+                let ticker = instrument_id.symbol.as_str().trim_end_matches(".DYDX");
+                let topic = format!("{ticker}/{resolution}");
+                if let Err(e) =
+                    ws.send_command(crate::websocket::handler::HandlerCommand::RegisterBarType {
+                        topic,
+                        bar_type,
+                    })
+                {
+                    anyhow::bail!("Failed to register bar type: {e}");
+                }
+
+                // Delay to ensure handler processes registration before candle messages arrive
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
                 ws.subscribe_candles(instrument_id, resolution)
                     .await
                     .context("candles subscription")
@@ -733,6 +748,15 @@ impl DataClient for DydxDataClient {
         // Remove from active subscription tracking
         self.active_bar_subs
             .remove(&(instrument_id, resolution.to_string()));
+
+        // Unregister bar type from handler
+        let ticker = instrument_id.symbol.as_str().trim_end_matches(".DYDX");
+        let topic = format!("{ticker}/{resolution}");
+        if let Err(e) =
+            ws.send_command(crate::websocket::handler::HandlerCommand::UnregisterBarType { topic })
+        {
+            tracing::warn!("Failed to unregister bar type: {e}");
+        }
 
         self.spawn_ws(
             async move {
@@ -1511,8 +1535,8 @@ impl DydxDataClient {
                                 }
                             };
 
-                            // Fetch snapshot via HTTP
-                            let symbol = instrument_id.symbol.as_str();
+                            // Fetch snapshot via HTTP (strip -PERP suffix for dYdX API)
+                            let symbol = instrument_id.symbol.as_str().trim_end_matches("-PERP");
                             let snapshot_result = http_client.inner.get_orderbook(symbol).await;
 
                             let snapshot = match snapshot_result {
@@ -1804,7 +1828,23 @@ impl DydxDataClient {
                         let (instrument_id, resolution) = entry.key();
                         let instrument_id = *instrument_id;
                         let resolution = resolution.clone();
+                        let bar_type = *entry.value();
                         let ws_clone = ws.clone();
+
+                        // Re-register bar type with handler
+                        let ticker = instrument_id.symbol.as_str().trim_end_matches(".DYDX");
+                        let topic = format!("{ticker}/{resolution}");
+                        if let Err(e) = ws.send_command(
+                            crate::websocket::handler::HandlerCommand::RegisterBarType {
+                                topic,
+                                bar_type,
+                            },
+                        ) {
+                            tracing::warn!(
+                                "Failed to re-register bar type for {instrument_id} ({resolution}): {e}"
+                            );
+                        }
+
                         tokio::spawn(async move {
                             if let Err(e) =
                                 ws_clone.subscribe_candles(instrument_id, &resolution).await
@@ -2093,7 +2133,7 @@ impl DydxDataClient {
         } else {
             // Edge case: Empty orderbook levels - use last quote as fallback
             if book.best_bid_price().is_none() && book.best_ask_price().is_none() {
-                tracing::warn!(
+                tracing::debug!(
                     "Empty orderbook for {instrument_id} after applying deltas, using last quote"
                 );
                 last_quotes.get(&instrument_id).map(|q| *q)
@@ -2146,7 +2186,7 @@ impl DydxDataClient {
 
             // Get instrument to access instrument_id
             let Some(instrument) = instruments.get(&symbol) else {
-                tracing::warn!(
+                tracing::debug!(
                     symbol = %symbol,
                     "Received oracle price for unknown instrument (not cached yet)"
                 );

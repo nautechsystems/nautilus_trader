@@ -104,3 +104,7 @@ path = "bin/http_public.rs"
 [[bin]]
 name = "dydx-ws-data"
 path = "bin/ws_data.rs"
+
+[[bin]]
+name = "dydx-live-integration"
+path = "bin/live_integration.rs"
