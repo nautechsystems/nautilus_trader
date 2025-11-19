@@ -22,15 +22,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+        uses: astral-sh/setup-uv@v3
       - name: Ruff lint
         run: |
           uv run --active --no-sync ruff check .
-      - name: Mypy type-check (API only)
+      - name: Mypy type-check (API and core subset)
         run: |
-          uv run --active --no-sync mypy services/api
+          uv run --active --no-sync mypy services/api nautilus_trader
       - name: Bandit security scan
         run: |
           uv run --active --no-sync pip install bandit
@@ -44,6 +42,39 @@ jobs:
       - name: Web security audit (non-blocking)
         working-directory: apps/web
         run: npm audit --omit=dev --audit-level=moderate || true
+
+  python-audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v3
+      - name: Export constraints and run pip-audit
+        run: |
+          uv pip compile pyproject.toml -o constraints.txt
+          uv run --active --no-sync pip install pip-audit
+          uv run --active --no-sync pip-audit -r constraints.txt
+
+  rust-unwrap-report:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.91.0
+      - name: Generate unwrap/expect report
+        run: |
+          bash scripts/unwrap_report.sh || true
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unwrap-report
+          path: unwrap_report.txt
 
   security-rust:
     runs-on: ubuntu-latest
