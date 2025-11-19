@@ -129,7 +129,7 @@ impl TradeId {
     pub fn as_cstr(&self) -> &CStr {
         // SAFETY: Unwrap safe as we always store valid C strings
         // We use until nul because the values array may be padded with nul bytes
-        CStr::from_bytes_until_nul(&self.value).unwrap()
+        CStr::from_bytes_until_nul(&self.value).expect("TradeId internal C string must be valid and NUL-terminated")
     }
 }
 
@@ -141,7 +141,7 @@ impl Debug for TradeId {
 
 impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_cstr().to_str().unwrap())
+        write!(f, "{}", self.as_cstr().to_str().expect("TradeId must be valid UTF-8"))
     }
 }
 
