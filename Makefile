@@ -512,6 +512,10 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 
 #== CLI Tools
 
+.PHONY: unwrap-report
+unwrap-report:  #-- Report uses of unwrap/expect in non-test Rust code
+	@bash scripts/unwrap_report.sh
+
 .PHONY: install-cli
 install-cli:  #-- Install Nautilus CLI tool from source
 	cargo install --path crates/cli --bin nautilus --locked --force
