@@ -689,7 +689,9 @@ impl<'de> Deserialize<'de> for BitmexProductType {
             "DERIVATIVES" => Ok(Self::Derivatives),
             "SPOT" => Ok(Self::Spot),
             s if s.starts_with("instrument:") => {
-                let symbol = s.strip_prefix("instrument:").unwrap();
+                let symbol = s
+                    .strip_prefix("instrument:")
+                    .expect("prefix must be present due to starts_with check");
                 Ok(Self::Specific(symbol.to_string()))
             }
             _ => Err(serde::de::Error::custom(format!(
