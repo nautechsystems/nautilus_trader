@@ -194,13 +194,23 @@ impl OrderEmulator {
                 .client_id(&order.client_order_id())
                 .copied();
 
+            // Require client_id and venue_order_id; skip if missing (avoid panic on stale cache)
+            let Some(client_id) = client_id else {
+                log::error!("Cannot reactivate order {}: missing client_id", order.client_order_id());
+                continue;
+            };
+            let Some(venue_order_id) = order.venue_order_id() else {
+                log::error!("Cannot reactivate order {}: missing venue_order_id", order.client_order_id());
+                continue;
+            };
+
             let command = SubmitOrder::new(
                 order.trader_id(),
-                client_id.unwrap(),
+                client_id,
                 order.strategy_id(),
                 order.instrument_id(),
                 order.client_order_id(),
-                order.venue_order_id().unwrap(),
+                venue_order_id,
                 order.clone(),
                 order.exec_algorithm_id(),
                 position_id,
@@ -226,7 +236,13 @@ impl OrderEmulator {
             && order.is_closed()
             && let Some(matching_core) = self.matching_cores.get_mut(&order.instrument_id())
             && let Err(e) = matching_core.delete_order(
-                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+                &match PassiveOrderAny::try_from(order.clone()) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        log::error!("Cannot delete order: passive conversion failed: {err}");
+                        return;
+                    }
+                },
             )
         {
             log::error!("Error deleting order: {e}");
@@ -365,13 +381,21 @@ impl OrderEmulator {
         self.manager.cache_submit_order_command(command);
 
         // Check if immediately marketable
-        matching_core.match_order(
-            &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+        if let Err(e) = matching_core.match_order(
+            &match PassiveOrderAny::try_from(order.clone()) {
+                Ok(p) => p,
+                Err(err) => {
+                    log::error!("Cannot emulate order: passive conversion failed: {err}");
+                    return;
+                }
+            },
             true,
-        );
+        ) {
+            log::error!("Cannot emulate order: matching failed: {e}");
+        }
 
         // Handle data subscriptions
-        match emulation_trigger.unwrap() {
+        match emulation_trigger.unwrap_or(TriggerType::NoTrigger) {
             TriggerType::Default | TriggerType::BidAsk => {
                 if !self.subscribed_quotes.contains(&trigger_instrument_id) {
                     if !trigger_instrument_id.is_synthetic() {
@@ -406,9 +430,13 @@ impl OrderEmulator {
         }
 
         // Hold in matching core
-        if let Err(e) = matching_core
-            .add_order(PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"))
-        {
+        if let Err(e) = matching_core.add_order(match PassiveOrderAny::try_from(order.clone()) {
+            Ok(p) => p,
+            Err(err) => {
+                log::error!("Cannot hold order: passive conversion failed: {err}");
+                return;
+            }
+        }) {
             log::error!("Cannot add order: {e:?}");
             return;
         }
@@ -734,7 +762,13 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id)
             && let Err(e) = matching_core.delete_order(
-                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+                &match PassiveOrderAny::try_from(order.clone()) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        log::error!("Cannot delete order: passive conversion failed: {err}");
+                        return;
+                    }
+                },
             )
         {
             log::error!("Cannot delete order: {e:?}");
@@ -810,7 +844,7 @@ impl OrderEmulator {
             return None;
         }
 
-        Some(released_price.unwrap())
+        released_price
     }
 
     /// # Panics
@@ -867,7 +901,13 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(
-                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+                &match PassiveOrderAny::try_from(order.clone()) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        log::error!("Cannot delete order: passive conversion failed: {err}");
+                        return;
+                    }
+                },
             ) {
                 log::error!("Error deleting order: {e:?}");
             }
@@ -875,6 +915,13 @@ impl OrderEmulator {
             let emulation_trigger = TriggerType::NoTrigger;
 
             // Transform order
+            let price = match order.price() {
+                Some(px) => px,
+                None => {
+                    log::error!("Cannot create limit order: missing price for {}", order.client_order_id());
+                    return;
+                }
+            };
             let mut transformed = if let Ok(transformed) = LimitOrder::new_checked(
                 order.trader_id(),
                 order.strategy_id(),
@@ -882,7 +929,7 @@ impl OrderEmulator {
                 order.client_order_id(),
                 order.order_side(),
                 order.quantity(),
-                order.price().unwrap(),
+                price,
                 order.time_in_force(),
                 order.expire_time(),
                 order.is_post_only(),
@@ -1005,14 +1052,26 @@ impl OrderEmulator {
                 None => return, // Order stays queued for retry
             };
 
-        let mut command = self
+        let mut command = match self
             .manager
             .pop_submit_order_command(order.client_order_id())
-            .expect("invalid operation `fill_market_order` with no command");
+        {
+            Some(cmd) => cmd,
+            None => {
+                log::error!("Cannot fill market order {}: missing submit command", order.client_order_id());
+                return;
+            }
+        };
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(
-                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
+                &match PassiveOrderAny::try_from(order.clone()) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        log::error!("Cannot delete order: passive conversion failed: {err}");
+                        return;
+                    }
+                },
             ) {
                 log::error!("Cannot delete order: {e:?}");
             }
