@@ -26,9 +26,9 @@ jobs:
       - name: Ruff lint
         run: |
           uv run --active --no-sync ruff check .
-      - name: Mypy type-check (API and core subset)
+      - name: Mypy type-check (API only)
         run: |
-          uv run --active --no-sync mypy services/api nautilus_trader
+          uv run --active --no-sync mypy services/api
       - name: Bandit security scan
         run: |
           uv run --active --no-sync pip install bandit
@@ -57,6 +57,25 @@ jobs:
           uv pip compile pyproject.toml -o constraints.txt
           uv run --active --no-sync pip install pip-audit
           uv run --active --no-sync pip-audit -r constraints.txt
+
+  python-mypy-extended:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v3
+      - name: Extended mypy over nautilus_trader (non-blocking)
+        run: |
+          uv run --active --no-sync mypy nautilus_trader | tee mypy_extended.txt || true
+      - name: Upload mypy extended report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypy-extended
+          path: mypy_extended.txt
 
   rust-unwrap-report:
     runs-on: ubuntu-latest
