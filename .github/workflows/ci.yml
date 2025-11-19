@@ -1,0 +1,249 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      with_hypersync:
+        description: "Run Hypersync lint (installs capnp)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  lint-type:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Ruff lint
+        run: |
+          uv run --active --no-sync ruff check .
+      - name: Mypy type-check (API only)
+        run: |
+          uv run --active --no-sync mypy services/api
+      - name: Bandit security scan
+        run: |
+          uv run --active --no-sync pip install bandit
+          uv run --active --no-sync bandit -q -r nautilus_trader
+      - name: Web typecheck
+        working-directory: apps/web
+        run: npm run typecheck
+      - name: Web lint
+        working-directory: apps/web
+        run: npm run lint -- --no-cache
+      - name: Web security audit (non-blocking)
+        working-directory: apps/web
+        run: npm audit --omit=dev --audit-level=moderate || true
+
+  security-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo-audit (with configured ignores)
+        run: cargo audit --color never
+      - name: cargo-deny (advisories/licenses/bans)
+        run: cargo deny --all-features check
+
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install API deps
+        run: |
+          uv pip install -e services/api
+      - name: Run API tests
+        run: |
+          uv run --active --no-sync pytest -q tests/api
+
+  python-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install deps (no build)
+        run: make install-just-deps
+      - name: Run unit + smoke tests with coverage (gated)
+        run: uv run --active --no-sync pytest -q -m "unit or smoke" --cov=nautilus_trader --cov-report=xml:coverage.xml --cov-fail-under=85
+      - name: Upload Python coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: coverage.xml
+
+  python-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: nautilus
+          POSTGRES_USER: nautilus
+          POSTGRES_DB: nautilus
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nautilus" --health-interval 10s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: nautilus
+      POSTGRES_USER: nautilus
+      POSTGRES_PASSWORD: nautilus
+      REDIS_URL: redis://localhost:6379/0
+      OFFLINE_MODE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install deps (no build)
+        run: make install-just-deps
+      - name: Run integration tests
+        run: uv run --active --no-sync pytest -q -m integration
+
+  rust-clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.91.0
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust clippy (default features)
+        run: cargo clippy -- -D warnings
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install nextest
+        run: cargo install cargo-nextest --locked --force
+      - name: Run Rust tests (workspace)
+        run: |
+          cargo nextest run --workspace --features "ffi,python,high-precision,defi" --cargo-profile nextest --status-level fail --final-status-level flaky
+
+  rust-build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (release) without stubs
+        run: |
+          cargo build --release --no-default-features --features "ffi,python,high-precision,defi"
+
+  rust-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked --force
+      - name: Generate Rust coverage (gated)
+        run: |
+cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info --fail-under-lines 77
+      - name: Upload Rust coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage
+          path: lcov.info
+
+  hypersync-lint:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.with_hypersync == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.91.0
+          components: clippy
+      - name: Install capnp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y capnproto
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust clippy (hypersync)
+        run: cargo clippy --features "hypersync" -- -D warnings
+
+  web-e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install web deps
+        run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+      - name: Set up uv (Python)
+        uses: astral-sh/setup-uv@v3
+      - name: Install API runtime deps (FastAPI/Uvicorn)
+        working-directory: .
+        run: |
+          uv run --active --no-sync pip install -U pip
+          uv run --active --no-sync pip install 'fastapi>=0.115,<1.0' 'uvicorn[standard]>=0.30,<1.0' 'msgspec>=0.19,<1.0' 'httpx>=0.27,<1.0' 'pandas>=2.2,<3.0'
+      - name: Start API (background)
+        working-directory: .
+        run: |
+          nohup uv run --active --no-sync python -m uvicorn services.api.main:app --host 0.0.0.0 --port 8000 >/dev/null 2>&1 &
+      - name: Wait for API
+        working-directory: .
+        run: |
+          for i in {1..60}; do curl -fsS http://localhost:8000/health && exit 0 || sleep 2; done; exit 1
+      - name: Run Playwright tests (chromium)
+        env:
+          E2E_PORT: 3102
+          NEXT_PUBLIC_API_BASE: http://localhost:8000
+        run: npm run test:e2e:ci
+      - name: Upload Playwright traces and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report

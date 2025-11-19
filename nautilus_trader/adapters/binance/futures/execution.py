@@ -451,7 +451,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         self._log.info("Account config updated", LogColor.BLUE)  # Implement
 
     def _handle_listen_key_expired(self, raw: bytes) -> None:
-        self._log.warning("Listen key expired")  # Implement
+        # Trigger listen key recovery without blocking the message handler
+        self._log.warning("Listen key expired - scheduling recovery")
+        self.create_task(self._handle_listen_key_failure())
 
     def _handle_trade_lite(self, raw: bytes) -> None:
         trade_lite = self._decoder_futures_trade_lite_wrapper.decode(raw)

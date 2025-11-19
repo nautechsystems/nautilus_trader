@@ -155,11 +155,15 @@ pre-commit:  #-- Run all pre-commit hooks on all files
 	uv run --active --no-sync pre-commit run --all-files
 
 .PHONY: pre-flight
-pre-flight:  #-- Run comprehensive pre-flight checks (format, pre-commit, cargo-test-hypersync, build-debug, pytest)
+pre-flight:  #-- Run comprehensive pre-flight checks (format, pre-commit, cargo tests, build-debug, pytest)
 	$(info $(M) Running pre-flight checks...)
 	@$(MAKE) --no-print-directory format
 	@$(MAKE) --no-print-directory pre-commit
-	@$(MAKE) --no-print-directory cargo-test-hypersync
+	@if [ "$(WITH_HYPERSYNC)" = "true" ]; then \
+		$(MAKE) --no-print-directory cargo-test-hypersync; \
+	else \
+		$(MAKE) --no-print-directory cargo-test; \
+	fi
 	@$(MAKE) --no-print-directory build-debug
 	@$(MAKE) --no-print-directory pytest
 	@printf "$(GREEN)All pre-flight checks passed$(RESET)\n"
@@ -169,23 +173,31 @@ ruff:  #-- Run ruff linter with automatic fixes
 	uv run --active --no-sync ruff check . --fix
 
 .PHONY: clippy
-clippy:  #-- Run clippy linter (check only, workspace lints)
-	cargo clippy --all-targets --all-features -- -D warnings
+clippy:  #-- Run clippy linter (workspace libs/bins; set CLIPPY_FEATURES to enable extras)
+	cargo clippy $(if $(CLIPPY_FEATURES),--features "$(CLIPPY_FEATURES)",) -- -D warnings
 
 .PHONY: clippy-fix
-clippy-fix:  #-- Run clippy linter with automatic fixes (workspace lints)
-	cargo clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings
+clippy-fix:  #-- Run clippy linter with automatic fixes (workspace; default features)
+	cargo clippy --fix --all-targets $(if $(CLIPPY_FEATURES),--features "$(CLIPPY_FEATURES)",) --allow-dirty --allow-staged -- -D warnings
 
 .PHONY: clippy-fix-nightly
-clippy-fix-nightly:  #-- Run clippy linter with nightly toolchain and automatic fixes (workspace lints + additional strictness)
-	cargo +nightly clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings
+clippy-fix-nightly:  #-- Run clippy linter with nightly toolchain and automatic fixes (workspace; default features)
+	cargo +nightly clippy --fix --all-targets $(if $(CLIPPY_FEATURES),--features "$(CLIPPY_FEATURES)",) --allow-dirty --allow-staged -- -D warnings
 
 .PHONY: clippy-pedantic-crate-%
 clippy-pedantic-crate-%:  #-- Run clippy linter for a specific Rust crate (usage: make clippy-crate-<crate_name>)
-	cargo clippy --all-targets --all-features -p $* -- -D warnings \
+	cargo clippy --all-targets $(if $(CLIPPY_FEATURES),--features "$(CLIPPY_FEATURES)",) -p $* -- -D warnings \
 		-W clippy::todo \
 		-W clippy::unwrap_used \
 		-W clippy::expect_used
+
+.PHONY: clippy-all
+clippy-all:  #-- Run clippy on all targets (libs, bins, tests, benches)
+	cargo clippy --all-targets $(if $(CLIPPY_FEATURES),--features "$(CLIPPY_FEATURES)",) -- -D warnings
+
+.PHONY: clippy-all-features
+clippy-all-features:  #-- Run clippy on all targets with all features
+	cargo clippy --all-targets --all-features -- -D warnings
 
 #== Dependencies
 
@@ -215,6 +227,21 @@ security-audit: check-audit-installed  #-- Run security audit for Rust and Pytho
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
 	cargo deny --all-features check
 
+#== Web E2E and API tests
+
+.PHONY: web-e2e
+web-e2e:  #-- Run Playwright end-to-end tests for the web app
+	npm --prefix apps/web run test:e2e
+
+.PHONY: api-tests
+api-tests:  #-- Run API unit/integration tests (tests/api)
+	uv run --active --no-sync pytest -q tests/api
+
+.PHONY: test-all
+test-all:  #-- Run API tests and web E2E tests
+	$(MAKE) --no-print-directory api-tests
+	$(MAKE) --no-print-directory web-e2e
+
 #== Documentation
 
 .PHONY: docs
@@ -234,6 +261,10 @@ docs-rust:  #-- Build Rust documentation with cargo doc
 docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
 	cargo hack --workspace doc --no-deps --all-features
+
+# Env knobs
+CLIPPY_FEATURES ?=
+WITH_HYPERSYNC ?= false
 
 #== Rust Development
 
@@ -297,6 +328,25 @@ check-outdated-installed:  #-- Verify cargo-outdated is installed
 check-features: check-hack-installed
 	cargo hack check --each-feature
 
+#== UI/API Helpers
+
+.PHONY: ui-api
+ui-api:  #-- Run local API and Web (host)
+	@echo "Run API: uvicorn services.api.main:app --host 0.0.0.0 --port 8000"
+	@echo "Then in another shell: NEXT_PUBLIC_API_BASE=http://localhost:8000 npm --prefix apps/web run dev"
+
+.PHONY: ui-typecheck
+ui-typecheck:  #-- Type-check web UI (Next.js/TypeScript)
+	npm --prefix apps/web run typecheck
+
+.PHONY: ui-build
+ui-build:  #-- Build web UI
+	npm --prefix apps/web run build
+
+.PHONY: ui-compose
+ui-compose:  #-- Run API+Web via docker compose
+	docker compose up --build
+
 #== Rust Testing
 
 .PHONY: cargo-test
@@ -316,6 +366,10 @@ endif
 cargo-test-hypersync: export RUST_BACKTRACE=1
 cargo-test-hypersync: check-nextest-installed
 cargo-test-hypersync:  #-- Run all Rust tests with ffi,python,high-precision,defi,hypersync features
+	@if ! command -v capnp >/dev/null 2>&1; then \
+		echo "capnp is required for hypersync builds. Install with 'brew install capnp' (macOS) or 'apt-get install capnproto' (Linux)."; \
+		exit 1; \
+	fi
 	cargo nextest run --workspace --features "ffi,python,high-precision,defi,hypersync" --cargo-profile nextest
 
 .PHONY: cargo-test-lib
