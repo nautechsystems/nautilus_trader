@@ -1226,14 +1226,15 @@ impl BybitWebSocketClient {
         for order in &orders {
             if let Some(order_link_id_str) = &order.order_link_id {
                 let client_order_id = ClientOrderId::from(order_link_id_str.as_str());
+                let cache_key = make_bybit_symbol(order.symbol.as_str(), category);
                 let instrument_id = self
                     .instruments_cache
-                    .get(&order.symbol)
+                    .get(&cache_key)
                     .map(|inst| inst.id())
                     .ok_or_else(|| {
                         BybitWsError::ClientError(format!(
                             "Instrument {} not found in cache",
-                            order.symbol
+                            cache_key
                         ))
                     })?;
                 batch_order_data.push((
