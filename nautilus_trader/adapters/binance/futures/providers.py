@@ -162,10 +162,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 )  
             except Exception as e:  
                 # If API call fails, fall back to hardcoded table  
-                self._log.warning(  
-                    f"Failed to query commission rate for {symbol_info.symbol}: {e}. "  
-                    "Falling back to fee tier table."  
-                )  
+                self._log.warning(f"Failed to query commission rate for {symbol_info.symbol}: {e}.Falling back to fee tier table.")  
                 account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))  
                 fee_rates = self._fee_rates.get(account_info.feeTier, self._fee_rates[0])  
                 fee = BinanceFuturesCommissionRate(  
@@ -173,7 +170,6 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     makerCommissionRate=fee_rates.maker,  
                     takerCommissionRate=fee_rates.taker,  
                 )
-
             self._parse_instrument(
                 symbol_info=symbol_info,
                 fee=fee,
@@ -245,11 +241,18 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))
         fee_rates = self._fee_rates[account_info.feeTier]
-        fee = BinanceFuturesCommissionRate(
-            symbol=symbol,
-            makerCommissionRate=fee_rates.maker,
-            takerCommissionRate=fee_rates.taker,
-        )
+        try:  
+            fee = await self._http_wallet.query_futures_commission_rate(  
+                symbol=symbol,  
+                recv_window=str(5000),  
+            )
+        except Exception as e:  
+            self._log.warning(f"Failed to load commission rate for {symbol}: {e}")  
+            fee = BinanceFuturesCommissionRate(
+                symbol=symbol,
+                makerCommissionRate=fee_rates.maker,
+                takerCommissionRate=fee_rates.taker,
+            )
 
         self._parse_instrument(
             symbol_info=symbol_info_dict[symbol],
