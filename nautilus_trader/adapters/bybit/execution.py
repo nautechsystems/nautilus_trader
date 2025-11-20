@@ -390,6 +390,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     product_type=product_type,
                     instrument_id=pyo3_instrument_id,
                     open_only=command.open_only,
+                    start=ensure_pydatetime_utc(command.start),
+                    end=ensure_pydatetime_utc(command.end),
                 )
                 pyo3_reports.extend(response)
 

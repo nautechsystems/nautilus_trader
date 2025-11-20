@@ -2788,12 +2788,15 @@ impl BybitHttpClient {
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
+    #[allow(clippy::too_many_arguments)]
     pub async fn request_order_status_reports(
         &self,
         account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         // Extract symbol parameter from instrument_id if provided
@@ -2966,6 +2969,12 @@ impl BybitHttpClient {
                     }
                     if let Some(coin) = settle_coin.clone() {
                         history_params.settle_coin(coin);
+                    }
+                    if let Some(start) = start {
+                        history_params.start_time(start.timestamp_millis());
+                    }
+                    if let Some(end) = end {
+                        history_params.end_time(end.timestamp_millis());
                     }
                     history_params.limit(page_limit as u32);
                     if let Some(c) = cursor {

@@ -1235,6 +1235,8 @@ async fn test_request_order_status_reports_calls_both_endpoints() {
             BybitProductType::Linear,
             None,    // No specific instrument - will query both USDT and USDC
             false,   // open_only=false triggers dual endpoint call
+            None,    // start
+            None,    // end
             Some(3), // Limit to 3 to keep test focused on deduplication logic
         )
         .await
@@ -1295,7 +1297,9 @@ async fn test_request_order_status_reports_requires_settle_coin_for_linear() {
             BybitProductType::Linear,
             None, // No symbol - requires settleCoin
             true, // open_only=true
-            None,
+            None, // start
+            None, // end
+            None, // limit
         )
         .await;
 
@@ -1342,7 +1346,9 @@ async fn test_order_deduplication_by_order_id() {
             BybitProductType::Linear,
             Some(instrument_id), // Specify instrument to avoid settle coin iteration
             false,               // This will query both realtime and history endpoints
-            None,
+            None,                // start
+            None,                // end
+            None,                // limit
         )
         .await
         .unwrap();
@@ -1390,7 +1396,15 @@ async fn test_request_order_status_reports_linear_queries_all_settle_coins() {
     let account_id = AccountId::from("BYBIT-UNIFIED");
 
     let _reports = client
-        .request_order_status_reports(account_id, BybitProductType::Linear, None, true, None)
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            None,
+            true,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -1448,7 +1462,15 @@ async fn test_request_order_status_reports_respects_limit_across_settle_coins() 
     // Test data has 2 orders per settle coin
     // With limit=3: expect 2 from USDT, 1 from USDC
     let reports = client
-        .request_order_status_reports(account_id, BybitProductType::Linear, None, true, Some(3))
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            None,
+            true,
+            None,
+            None,
+            Some(3),
+        )
         .await
         .unwrap();
 
@@ -1500,7 +1522,15 @@ async fn test_request_order_status_reports_stops_before_next_coin() {
 
     // Test data has 2 orders, limit=1 should stop after USDT
     let reports = client
-        .request_order_status_reports(account_id, BybitProductType::Linear, None, true, Some(1))
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            None,
+            true,
+            None,
+            None,
+            Some(1),
+        )
         .await
         .unwrap();
 
@@ -1556,7 +1586,15 @@ async fn test_request_order_status_reports_combines_orders_from_each_settle_coin
     let account_id = AccountId::from("BYBIT-UNIFIED");
 
     let reports = client
-        .request_order_status_reports(account_id, BybitProductType::Linear, None, true, None)
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            None,
+            true,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 

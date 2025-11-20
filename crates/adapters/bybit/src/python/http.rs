@@ -574,7 +574,8 @@ impl BybitHttpClient {
     }
 
     #[pyo3(name = "request_order_status_reports")]
-    #[pyo3(signature = (account_id, product_type, instrument_id=None, open_only=false, limit=None))]
+    #[pyo3(signature = (account_id, product_type, instrument_id=None, open_only=false, start=None, end=None, limit=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_request_order_status_reports<'py>(
         &self,
         py: Python<'py>,
@@ -582,6 +583,8 @@ impl BybitHttpClient {
         product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -593,6 +596,8 @@ impl BybitHttpClient {
                     product_type,
                     instrument_id,
                     open_only,
+                    start,
+                    end,
                     limit,
                 )
                 .await

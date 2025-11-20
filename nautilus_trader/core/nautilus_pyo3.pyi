@@ -5885,6 +5885,8 @@ class BybitHttpClient:
         product_type: BybitProductType,
         instrument_id: InstrumentId | None = None,
         open_only: bool = False,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[OrderStatusReport]: ...
     async def request_fill_reports(
