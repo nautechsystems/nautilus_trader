@@ -653,7 +653,8 @@ impl DydxRawHttpClient {
 )]
 pub struct DydxHttpClient {
     /// Raw HTTP client wrapped in Arc for efficient cloning.
-    pub(crate) inner: Arc<DydxRawHttpClient>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub inner: Arc<DydxRawHttpClient>,
     /// Instrument cache shared across the adapter using DashMap for thread-safe access.
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     /// Cached mapping from CLOB pair ID → InstrumentId for efficient lookups.
