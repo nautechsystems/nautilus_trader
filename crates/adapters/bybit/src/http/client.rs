@@ -2374,15 +2374,6 @@ impl BybitHttpClient {
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let ts_init = self.generate_ts_init();
 
-        let params = BybitInstrumentsInfoParams {
-            category: product_type,
-            symbol,
-            status: None,
-            base_coin: None,
-            limit: None,
-            cursor: None,
-        };
-
         let mut instruments = Vec::new();
 
         let default_fee_rate = |symbol: ustr::Ustr| BybitFeeRate {
@@ -2394,9 +2385,6 @@ impl BybitHttpClient {
 
         match product_type {
             BybitProductType::Spot => {
-                let response: BybitInstrumentSpotResponse =
-                    self.inner.get_instruments(&params).await?;
-
                 // Try to get fee rates, use defaults if credentials are missing
                 let fee_map: HashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
@@ -2420,22 +2408,40 @@ impl BybitHttpClient {
                     }
                 };
 
-                for definition in response.result.list {
-                    let fee_rate = fee_map
-                        .get(&definition.symbol)
-                        .cloned()
-                        .unwrap_or_else(|| default_fee_rate(definition.symbol));
-                    if let Ok(instrument) =
-                        parse_spot_instrument(&definition, &fee_rate, ts_init, ts_init)
-                    {
-                        instruments.push(instrument);
+                let mut cursor: Option<String> = None;
+
+                loop {
+                    let params = BybitInstrumentsInfoParams {
+                        category: product_type,
+                        symbol: symbol.clone(),
+                        status: None,
+                        base_coin: None,
+                        limit: Some(1000),
+                        cursor: cursor.clone(),
+                    };
+
+                    let response: BybitInstrumentSpotResponse =
+                        self.inner.get_instruments(&params).await?;
+
+                    for definition in response.result.list {
+                        let fee_rate = fee_map
+                            .get(&definition.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(definition.symbol));
+                        if let Ok(instrument) =
+                            parse_spot_instrument(&definition, &fee_rate, ts_init, ts_init)
+                        {
+                            instruments.push(instrument);
+                        }
+                    }
+
+                    cursor = response.result.next_page_cursor;
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        break;
                     }
                 }
             }
             BybitProductType::Linear => {
-                let response: BybitInstrumentLinearResponse =
-                    self.inner.get_instruments(&params).await?;
-
                 // Try to get fee rates, use defaults if credentials are missing
                 let fee_map: HashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
@@ -2459,22 +2465,40 @@ impl BybitHttpClient {
                     }
                 };
 
-                for definition in response.result.list {
-                    let fee_rate = fee_map
-                        .get(&definition.symbol)
-                        .cloned()
-                        .unwrap_or_else(|| default_fee_rate(definition.symbol));
-                    if let Ok(instrument) =
-                        parse_linear_instrument(&definition, &fee_rate, ts_init, ts_init)
-                    {
-                        instruments.push(instrument);
+                let mut cursor: Option<String> = None;
+
+                loop {
+                    let params = BybitInstrumentsInfoParams {
+                        category: product_type,
+                        symbol: symbol.clone(),
+                        status: None,
+                        base_coin: None,
+                        limit: Some(1000),
+                        cursor: cursor.clone(),
+                    };
+
+                    let response: BybitInstrumentLinearResponse =
+                        self.inner.get_instruments(&params).await?;
+
+                    for definition in response.result.list {
+                        let fee_rate = fee_map
+                            .get(&definition.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(definition.symbol));
+                        if let Ok(instrument) =
+                            parse_linear_instrument(&definition, &fee_rate, ts_init, ts_init)
+                        {
+                            instruments.push(instrument);
+                        }
+                    }
+
+                    cursor = response.result.next_page_cursor;
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        break;
                     }
                 }
             }
             BybitProductType::Inverse => {
-                let response: BybitInstrumentInverseResponse =
-                    self.inner.get_instruments(&params).await?;
-
                 // Try to get fee rates, use defaults if credentials are missing
                 let fee_map: HashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
@@ -2498,25 +2522,66 @@ impl BybitHttpClient {
                     }
                 };
 
-                for definition in response.result.list {
-                    let fee_rate = fee_map
-                        .get(&definition.symbol)
-                        .cloned()
-                        .unwrap_or_else(|| default_fee_rate(definition.symbol));
-                    if let Ok(instrument) =
-                        parse_inverse_instrument(&definition, &fee_rate, ts_init, ts_init)
-                    {
-                        instruments.push(instrument);
+                let mut cursor: Option<String> = None;
+
+                loop {
+                    let params = BybitInstrumentsInfoParams {
+                        category: product_type,
+                        symbol: symbol.clone(),
+                        status: None,
+                        base_coin: None,
+                        limit: Some(1000),
+                        cursor: cursor.clone(),
+                    };
+
+                    let response: BybitInstrumentInverseResponse =
+                        self.inner.get_instruments(&params).await?;
+
+                    for definition in response.result.list {
+                        let fee_rate = fee_map
+                            .get(&definition.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(definition.symbol));
+                        if let Ok(instrument) =
+                            parse_inverse_instrument(&definition, &fee_rate, ts_init, ts_init)
+                        {
+                            instruments.push(instrument);
+                        }
+                    }
+
+                    cursor = response.result.next_page_cursor;
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        break;
                     }
                 }
             }
             BybitProductType::Option => {
-                let response: BybitInstrumentOptionResponse =
-                    self.inner.get_instruments(&params).await?;
+                let mut cursor: Option<String> = None;
 
-                for definition in response.result.list {
-                    if let Ok(instrument) = parse_option_instrument(&definition, ts_init, ts_init) {
-                        instruments.push(instrument);
+                loop {
+                    let params = BybitInstrumentsInfoParams {
+                        category: product_type,
+                        symbol: symbol.clone(),
+                        status: None,
+                        base_coin: None,
+                        limit: Some(1000),
+                        cursor: cursor.clone(),
+                    };
+
+                    let response: BybitInstrumentOptionResponse =
+                        self.inner.get_instruments(&params).await?;
+
+                    for definition in response.result.list {
+                        if let Ok(instrument) =
+                            parse_option_instrument(&definition, ts_init, ts_init)
+                        {
+                            instruments.push(instrument);
+                        }
+                    }
+
+                    cursor = response.result.next_page_cursor;
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        break;
                     }
                 }
             }
@@ -2875,7 +2940,7 @@ impl BybitHttpClient {
                     all_orders.extend(response.result.list);
 
                     cursor = response.result.next_page_cursor;
-                    if cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
                         break;
                     }
                 }
@@ -3244,7 +3309,7 @@ impl BybitHttpClient {
                     }
 
                     cursor = response.result.next_page_cursor;
-                    if cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
                         break;
                     }
                 }
