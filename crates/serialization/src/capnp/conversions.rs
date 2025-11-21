@@ -588,6 +588,7 @@ pub fn account_type_to_capnp(value: AccountType) -> enums_capnp::AccountType {
         AccountType::Cash => enums_capnp::AccountType::Cash,
         AccountType::Margin => enums_capnp::AccountType::Margin,
         AccountType::Betting => enums_capnp::AccountType::Betting,
+        AccountType::Wallet => enums_capnp::AccountType::Wallet,
     }
 }
 
@@ -597,6 +598,7 @@ pub fn account_type_from_capnp(value: enums_capnp::AccountType) -> AccountType {
         enums_capnp::AccountType::Cash => AccountType::Cash,
         enums_capnp::AccountType::Margin => AccountType::Margin,
         enums_capnp::AccountType::Betting => AccountType::Betting,
+        enums_capnp::AccountType::Wallet => AccountType::Wallet,
     }
 }
 

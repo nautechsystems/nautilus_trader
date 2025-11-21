@@ -5,6 +5,7 @@ enum AccountType {
     cash @0;
     margin @1;
     betting @2;
+    wallet @3;
 }
 
 enum AggressorSide {

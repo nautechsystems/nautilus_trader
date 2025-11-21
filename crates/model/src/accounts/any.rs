@@ -170,6 +170,7 @@ impl From<AccountState> for AccountAny {
             AccountType::Margin => Self::Margin(MarginAccount::new(event, false)),
             AccountType::Cash => Self::Cash(CashAccount::new(event, false, false)),
             AccountType::Betting => panic!("Betting account not implemented"),
+            AccountType::Wallet => panic!("Wallet account not implemented"),
         }
     }
 }
