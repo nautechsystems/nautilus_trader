@@ -96,7 +96,7 @@ impl BlockchainHttpRpcClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP RPC request fails or the response cannot be parsed.
-    pub async fn execute_eth_call<T: DeserializeOwned>(
+    pub async fn execute_rpc_call<T: DeserializeOwned>(
         &self,
         rpc_request: serde_json::Value,
     ) -> anyhow::Result<T> {
