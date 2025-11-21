@@ -153,22 +153,22 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))
         fee_rates = self._fee_rates[account_info.feeTier]
 
-        for symbol_info in exchange_info.symbols:  
-            try:  
-                # Priority API query for accurate, symbol-specific fee rates  
-                fee = await self._http_wallet.query_futures_commission_rate(  
-                    symbol=symbol_info.symbol,  
-                    recv_window=str(5000),  
-                )  
-            except Exception as e:  
-                # If API call fails, fall back to hardcoded table  
-                self._log.warning(f"Failed to query commission rate for {symbol_info.symbol}: {e}.Falling back to fee tier table.")  
-                account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))  
-                fee_rates = self._fee_rates.get(account_info.feeTier, self._fee_rates[0])  
-                fee = BinanceFuturesCommissionRate(  
-                    symbol=symbol_info.symbol,  
-                    makerCommissionRate=fee_rates.maker,  
-                    takerCommissionRate=fee_rates.taker,  
+        for symbol_info in exchange_info.symbols:
+            try:
+                # Priority API query for accurate, symbol-specific fee rates
+                fee = await self._http_wallet.query_futures_commission_rate(
+                    symbol=symbol_info.symbol,
+                    recv_window=str(5000),
+                )
+            except Exception as e:
+                # If API call fails, fall back to hardcoded table
+                self._log.warning(f"Failed to query commission rate for {symbol_info.symbol}: {e}.Falling back to fee tier table.")
+                account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))
+                fee_rates = self._fee_rates.get(account_info.feeTier, self._fee_rates[0])
+                fee = BinanceFuturesCommissionRate(
+                    symbol=symbol_info.symbol,
+                    makerCommissionRate=fee_rates.maker,
+                    takerCommissionRate=fee_rates.taker,
                 )
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -205,13 +205,13 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         position_risk_resp = await self._http_account.query_futures_position_risk()
         position_risk = {risk.symbol: risk for risk in position_risk_resp}
         for symbol in symbols:
-            try:  
-                fee = await self._http_wallet.query_futures_commission_rate(  
-                    symbol=symbol,  
-                    recv_window=str(5000),  
+            try:
+                fee = await self._http_wallet.query_futures_commission_rate(
+                    symbol=symbol,
+                    recv_window=str(5000),
                 )
-            except Exception as e:  
-                self._log.warning(f"Failed to load commission rate for {symbol}: {e}")  
+            except Exception as e:
+                self._log.warning(f"Failed to load commission rate for {symbol}: {e}")
                 fee = BinanceFuturesCommissionRate(
                     symbol=symbol,
                     makerCommissionRate=fee_rates.maker,
@@ -241,13 +241,13 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))
         fee_rates = self._fee_rates[account_info.feeTier]
-        try:  
-            fee = await self._http_wallet.query_futures_commission_rate(  
-                symbol=symbol,  
-                recv_window=str(5000),  
+        try:
+            fee = await self._http_wallet.query_futures_commission_rate(
+                symbol=symbol,
+                recv_window=str(5000),
             )
-        except Exception as e:  
-            self._log.warning(f"Failed to load commission rate for {symbol}: {e}")  
+        except Exception as e:
+            self._log.warning(f"Failed to load commission rate for {symbol}: {e}")
             fee = BinanceFuturesCommissionRate(
                 symbol=symbol,
                 makerCommissionRate=fee_rates.maker,
