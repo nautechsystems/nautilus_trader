@@ -90,8 +90,10 @@ use crate::defi::engine as _;
 use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
-        BarAggregator, RenkoBarAggregator, TickBarAggregator, TimeBarAggregator,
-        ValueBarAggregator, VolumeBarAggregator,
+        BarAggregator, RenkoBarAggregator, TickBarAggregator, TickImbalanceBarAggregator,
+        TickRunsBarAggregator, TimeBarAggregator, ValueBarAggregator, ValueImbalanceBarAggregator,
+        ValueRunsBarAggregator, VolumeBarAggregator, VolumeImbalanceBarAggregator,
+        VolumeRunsBarAggregator,
     },
     client::DataClientAdapter,
 };
@@ -1223,13 +1225,49 @@ impl DataEngine {
                     size_precision,
                     handler,
                 )) as Box<dyn BarAggregator>,
+                BarAggregation::TickImbalance => Box::new(TickImbalanceBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::TickRuns => Box::new(TickRunsBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
                 BarAggregation::Volume => Box::new(VolumeBarAggregator::new(
                     bar_type,
                     price_precision,
                     size_precision,
                     handler,
                 )) as Box<dyn BarAggregator>,
+                BarAggregation::VolumeImbalance => Box::new(VolumeImbalanceBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::VolumeRuns => Box::new(VolumeRunsBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
                 BarAggregation::Value => Box::new(ValueBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::ValueImbalance => Box::new(ValueImbalanceBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::ValueRuns => Box::new(ValueRunsBarAggregator::new(
                     bar_type,
                     price_precision,
                     size_precision,
@@ -1243,7 +1281,7 @@ impl DataEngine {
                     handler,
                 )) as Box<dyn BarAggregator>,
                 _ => panic!(
-                    "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, VOLUME, VALUE, RENKO",
+                    "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, TICK_IMBALANCE, TICK_RUNS, VOLUME, VOLUME_IMBALANCE, VOLUME_RUNS, VALUE, VALUE_IMBALANCE, VALUE_RUNS, RENKO",
                     bar_type.spec().aggregation
                 ),
             }

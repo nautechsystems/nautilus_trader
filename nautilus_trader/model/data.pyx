@@ -176,8 +176,14 @@ _SUPPORTED_BAR_AGGREGATIONS = (
     BarAggregation.MONTH,
     BarAggregation.YEAR,
     BarAggregation.TICK,
+    BarAggregation.TICK_IMBALANCE,
+    BarAggregation.TICK_RUNS,
     BarAggregation.VOLUME,
+    BarAggregation.VOLUME_IMBALANCE,
+    BarAggregation.VOLUME_RUNS,
     BarAggregation.VALUE,
+    BarAggregation.VALUE_IMBALANCE,
+    BarAggregation.VALUE_RUNS,
     BarAggregation.RENKO,
 )
 

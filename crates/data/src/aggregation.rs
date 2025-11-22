@@ -41,7 +41,7 @@ use nautilus_model::{
         QuoteTick, TradeTick,
         bar::{Bar, BarType, get_bar_interval_ns, get_time_bar_start},
     },
-    enums::{AggregationSource, BarAggregation, BarIntervalType},
+    enums::{AggregationSource, AggressorSide, BarAggregation, BarIntervalType},
     types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
 };
 
@@ -406,6 +406,186 @@ impl BarAggregator for TickBarAggregator {
     }
 }
 
+/// Aggregates bars based on tick buy/sell imbalance.
+///
+/// Increments imbalance by +1 for buyer-aggressed trades and -1 for seller-aggressed trades.
+/// Emits a bar when the absolute imbalance reaches the step threshold.
+pub struct TickImbalanceBarAggregator {
+    core: BarAggregatorCore,
+    imbalance: isize,
+}
+
+impl Debug for TickImbalanceBarAggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TickImbalanceBarAggregator))
+            .field("core", &self.core)
+            .field("imbalance", &self.imbalance)
+            .finish()
+    }
+}
+
+impl TickImbalanceBarAggregator {
+    /// Creates a new [`TickImbalanceBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    pub fn new<H: FnMut(Bar) + 'static>(
+        bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
+        handler: H,
+    ) -> Self {
+        Self {
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
+            imbalance: 0,
+        }
+    }
+}
+
+impl BarAggregator for TickImbalanceBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.set_is_running(value);
+    }
+
+    /// Apply the given update to the aggregator.
+    ///
+    /// Note: side-aware logic lives in `handle_trade`. This method is used for
+    /// quote/bar updates where no aggressor side is available.
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        self.core.apply_update(price, size, ts_init);
+    }
+
+    fn handle_trade(&mut self, trade: TradeTick) {
+        self.core
+            .apply_update(trade.price, trade.size, trade.ts_init);
+
+        let delta = match trade.aggressor_side {
+            AggressorSide::Buyer => 1,
+            AggressorSide::Seller => -1,
+            AggressorSide::NoAggressor => 0,
+        };
+
+        if delta == 0 {
+            return;
+        }
+
+        self.imbalance += delta;
+        let threshold = self.core.bar_type.spec().step.get();
+        if self.imbalance.unsigned_abs() >= threshold {
+            self.core.build_now_and_send();
+            self.imbalance = 0;
+        }
+    }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        self.core.builder.update_bar(bar, volume, ts_init);
+    }
+}
+
+/// Aggregates bars based on consecutive buy/sell tick runs.
+pub struct TickRunsBarAggregator {
+    core: BarAggregatorCore,
+    current_run_side: Option<AggressorSide>,
+    run_count: usize,
+}
+
+impl Debug for TickRunsBarAggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TickRunsBarAggregator))
+            .field("core", &self.core)
+            .field("current_run_side", &self.current_run_side)
+            .field("run_count", &self.run_count)
+            .finish()
+    }
+}
+
+impl TickRunsBarAggregator {
+    /// Creates a new [`TickRunsBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    pub fn new<H: FnMut(Bar) + 'static>(
+        bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
+        handler: H,
+    ) -> Self {
+        Self {
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
+            current_run_side: None,
+            run_count: 0,
+        }
+    }
+}
+
+impl BarAggregator for TickRunsBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.set_is_running(value);
+    }
+
+    /// Apply the given update to the aggregator.
+    ///
+    /// Note: side-aware logic lives in `handle_trade`. This method is used for
+    /// quote/bar updates where no aggressor side is available.
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        self.core.apply_update(price, size, ts_init);
+    }
+
+    fn handle_trade(&mut self, trade: TradeTick) {
+        self.core
+            .apply_update(trade.price, trade.size, trade.ts_init);
+
+        let side = match trade.aggressor_side {
+            AggressorSide::Buyer => Some(AggressorSide::Buyer),
+            AggressorSide::Seller => Some(AggressorSide::Seller),
+            AggressorSide::NoAggressor => None,
+        };
+
+        if let Some(side) = side {
+            if self.current_run_side == Some(side) {
+                self.run_count += 1;
+            } else {
+                self.current_run_side = Some(side);
+                self.run_count = 1;
+                self.core.builder.reset();
+            }
+
+            let threshold = self.core.bar_type.spec().step.get();
+            if self.run_count >= threshold {
+                self.core.build_now_and_send();
+                self.run_count = 0;
+                self.current_run_side = None;
+            }
+        }
+    }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        self.core.builder.update_bar(bar, volume, ts_init);
+    }
+}
+
 /// Provides a means of building volume bars aggregated from quote and trades.
 pub struct VolumeBarAggregator {
     core: BarAggregatorCore,
@@ -513,6 +693,223 @@ impl BarAggregator for VolumeBarAggregator {
     }
 }
 
+/// Aggregates bars based on buy/sell volume imbalance.
+pub struct VolumeImbalanceBarAggregator {
+    core: BarAggregatorCore,
+    imbalance_raw: i128,
+    raw_step: i128,
+}
+
+impl Debug for VolumeImbalanceBarAggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(VolumeImbalanceBarAggregator))
+            .field("core", &self.core)
+            .field("imbalance_raw", &self.imbalance_raw)
+            .field("raw_step", &self.raw_step)
+            .finish()
+    }
+}
+
+impl VolumeImbalanceBarAggregator {
+    /// Creates a new [`VolumeImbalanceBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    pub fn new<H: FnMut(Bar) + 'static>(
+        bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
+        handler: H,
+    ) -> Self {
+        let raw_step = (bar_type.spec().step.get() as f64 * FIXED_SCALAR) as i128;
+        Self {
+            core: BarAggregatorCore::new(
+                bar_type.standard(),
+                price_precision,
+                size_precision,
+                handler,
+            ),
+            imbalance_raw: 0,
+            raw_step,
+        }
+    }
+}
+
+impl BarAggregator for VolumeImbalanceBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.set_is_running(value);
+    }
+
+    /// Apply the given update to the aggregator.
+    ///
+    /// Note: side-aware logic lives in `handle_trade`. This method is used for
+    /// quote/bar updates where no aggressor side is available.
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        self.core.apply_update(price, size, ts_init);
+    }
+
+    fn handle_trade(&mut self, trade: TradeTick) {
+        let side = match trade.aggressor_side {
+            AggressorSide::Buyer => 1,
+            AggressorSide::Seller => -1,
+            AggressorSide::NoAggressor => {
+                self.core
+                    .apply_update(trade.price, trade.size, trade.ts_init);
+                return;
+            }
+        };
+
+        let mut raw_remaining = trade.size.raw as i128;
+        while raw_remaining > 0 {
+            let imbalance_abs = self.imbalance_raw.abs();
+            let needed = (self.raw_step - imbalance_abs).max(1);
+            let raw_chunk = raw_remaining.min(needed);
+            let qty_chunk = Quantity::from_raw(raw_chunk as QuantityRaw, trade.size.precision);
+
+            self.core
+                .apply_update(trade.price, qty_chunk, trade.ts_init);
+
+            self.imbalance_raw += side * raw_chunk;
+            raw_remaining -= raw_chunk;
+
+            if self.imbalance_raw.abs() >= self.raw_step {
+                self.core.build_now_and_send();
+                self.imbalance_raw = 0;
+            }
+        }
+    }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        self.core.builder.update_bar(bar, volume, ts_init);
+    }
+}
+
+/// Aggregates bars based on consecutive buy/sell volume runs.
+pub struct VolumeRunsBarAggregator {
+    core: BarAggregatorCore,
+    current_run_side: Option<AggressorSide>,
+    run_volume_raw: QuantityRaw,
+    raw_step: QuantityRaw,
+}
+
+impl Debug for VolumeRunsBarAggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(VolumeRunsBarAggregator))
+            .field("core", &self.core)
+            .field("current_run_side", &self.current_run_side)
+            .field("run_volume_raw", &self.run_volume_raw)
+            .field("raw_step", &self.raw_step)
+            .finish()
+    }
+}
+
+impl VolumeRunsBarAggregator {
+    /// Creates a new [`VolumeRunsBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    pub fn new<H: FnMut(Bar) + 'static>(
+        bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
+        handler: H,
+    ) -> Self {
+        let raw_step = (bar_type.spec().step.get() as f64 * FIXED_SCALAR) as QuantityRaw;
+        Self {
+            core: BarAggregatorCore::new(
+                bar_type.standard(),
+                price_precision,
+                size_precision,
+                handler,
+            ),
+            current_run_side: None,
+            run_volume_raw: 0,
+            raw_step,
+        }
+    }
+}
+
+impl BarAggregator for VolumeRunsBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.set_is_running(value);
+    }
+
+    /// Apply the given update to the aggregator.
+    ///
+    /// Note: side-aware logic lives in `handle_trade`. This method is used for
+    /// quote/bar updates where no aggressor side is available.
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        self.core.apply_update(price, size, ts_init);
+    }
+
+    fn handle_trade(&mut self, trade: TradeTick) {
+        let side = match trade.aggressor_side {
+            AggressorSide::Buyer => Some(AggressorSide::Buyer),
+            AggressorSide::Seller => Some(AggressorSide::Seller),
+            AggressorSide::NoAggressor => None,
+        };
+
+        let Some(side) = side else {
+            self.core
+                .apply_update(trade.price, trade.size, trade.ts_init);
+            return;
+        };
+
+        if self.current_run_side != Some(side) {
+            self.current_run_side = Some(side);
+            self.run_volume_raw = 0;
+            self.core.builder.reset();
+        }
+
+        let mut raw_remaining = trade.size.raw;
+        while raw_remaining > 0 {
+            let needed = self.raw_step.saturating_sub(self.run_volume_raw).max(1);
+            let raw_chunk = raw_remaining.min(needed);
+
+            self.core.apply_update(
+                trade.price,
+                Quantity::from_raw(raw_chunk, trade.size.precision),
+                trade.ts_init,
+            );
+
+            self.run_volume_raw += raw_chunk;
+            raw_remaining -= raw_chunk;
+
+            if self.run_volume_raw >= self.raw_step {
+                self.core.build_now_and_send();
+                self.run_volume_raw = 0;
+                self.current_run_side = None;
+            }
+        }
+    }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        self.core.builder.update_bar(bar, volume, ts_init);
+    }
+}
+
 /// Provides a means of building value bars aggregated from quote and trades.
 ///
 /// When received value reaches the step threshold of the bar
@@ -583,6 +980,13 @@ impl BarAggregator for ValueBarAggregator {
 
         while size_update > 0.0 {
             let value_update = price.as_f64() * size_update;
+            if value_update == 0.0 {
+                // Prevent division by zero - apply remaining size without triggering bar
+                self.core
+                    .apply_update(price, Quantity::new(size_update, size.precision), ts_init);
+                break;
+            }
+
             if self.cum_value + value_update < spec.step.get() as f64 {
                 self.cum_value += value_update;
                 self.core
@@ -610,6 +1014,12 @@ impl BarAggregator for ValueBarAggregator {
 
         while volume_update.as_f64() > 0.0 {
             let value_update = average_price.as_f64() * volume_update.as_f64();
+            if value_update == 0.0 {
+                // Prevent division by zero - apply remaining volume without triggering bar
+                self.core.builder.update_bar(bar, volume_update, ts_init);
+                break;
+            }
+
             if self.cum_value + value_update < self.core.bar_type.spec().step.get() as f64 {
                 self.cum_value += value_update;
                 self.core.builder.update_bar(bar, volume_update, ts_init);
@@ -631,6 +1041,267 @@ impl BarAggregator for ValueBarAggregator {
                 volume_update.precision,
             );
         }
+    }
+}
+
+/// Aggregates bars based on buy/sell notional imbalance.
+pub struct ValueImbalanceBarAggregator {
+    core: BarAggregatorCore,
+    imbalance_value: f64,
+    step_value: f64,
+}
+
+impl Debug for ValueImbalanceBarAggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ValueImbalanceBarAggregator))
+            .field("core", &self.core)
+            .field("imbalance_value", &self.imbalance_value)
+            .field("step_value", &self.step_value)
+            .finish()
+    }
+}
+
+impl ValueImbalanceBarAggregator {
+    /// Creates a new [`ValueImbalanceBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    pub fn new<H: FnMut(Bar) + 'static>(
+        bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
+        handler: H,
+    ) -> Self {
+        Self {
+            core: BarAggregatorCore::new(
+                bar_type.standard(),
+                price_precision,
+                size_precision,
+                handler,
+            ),
+            imbalance_value: 0.0,
+            step_value: bar_type.spec().step.get() as f64,
+        }
+    }
+}
+
+impl BarAggregator for ValueImbalanceBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.set_is_running(value);
+    }
+
+    /// Apply the given update to the aggregator.
+    ///
+    /// Note: side-aware logic lives in `handle_trade`. This method is used for
+    /// quote/bar updates where no aggressor side is available.
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        self.core.apply_update(price, size, ts_init);
+    }
+
+    fn handle_trade(&mut self, trade: TradeTick) {
+        let price_f64 = trade.price.as_f64();
+        if price_f64 == 0.0 {
+            self.core
+                .apply_update(trade.price, trade.size, trade.ts_init);
+            return;
+        }
+
+        let side_sign = match trade.aggressor_side {
+            AggressorSide::Buyer => 1.0,
+            AggressorSide::Seller => -1.0,
+            AggressorSide::NoAggressor => {
+                self.core
+                    .apply_update(trade.price, trade.size, trade.ts_init);
+                return;
+            }
+        };
+
+        let mut size_remaining = trade.size.as_f64();
+        while size_remaining > 0.0 {
+            let value_remaining = price_f64 * size_remaining;
+            let current_sign = self.imbalance_value.signum();
+
+            if current_sign == 0.0 || current_sign == side_sign {
+                let needed = self.step_value - self.imbalance_value.abs();
+                if value_remaining <= needed {
+                    self.imbalance_value += side_sign * value_remaining;
+                    self.core.apply_update(
+                        trade.price,
+                        Quantity::new(size_remaining, trade.size.precision),
+                        trade.ts_init,
+                    );
+                    break;
+                }
+
+                let value_chunk = needed;
+                let size_chunk = value_chunk / price_f64;
+                self.core.apply_update(
+                    trade.price,
+                    Quantity::new(size_chunk, trade.size.precision),
+                    trade.ts_init,
+                );
+                self.imbalance_value += side_sign * value_chunk;
+                size_remaining -= size_chunk;
+
+                if self.imbalance_value.abs() >= self.step_value {
+                    self.core.build_now_and_send();
+                    self.imbalance_value = 0.0;
+                }
+            } else {
+                // Opposing side: first neutralize existing imbalance
+                let value_to_flatten = self.imbalance_value.abs().min(value_remaining);
+                let size_chunk = value_to_flatten / price_f64;
+                self.core.apply_update(
+                    trade.price,
+                    Quantity::new(size_chunk, trade.size.precision),
+                    trade.ts_init,
+                );
+                self.imbalance_value += side_sign * value_to_flatten;
+                size_remaining -= size_chunk;
+            }
+        }
+    }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        self.core.builder.update_bar(bar, volume, ts_init);
+    }
+}
+
+/// Aggregates bars based on consecutive buy/sell notional runs.
+pub struct ValueRunsBarAggregator {
+    core: BarAggregatorCore,
+    current_run_side: Option<AggressorSide>,
+    run_value: f64,
+    step_value: f64,
+}
+
+impl Debug for ValueRunsBarAggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ValueRunsBarAggregator))
+            .field("core", &self.core)
+            .field("current_run_side", &self.current_run_side)
+            .field("run_value", &self.run_value)
+            .field("step_value", &self.step_value)
+            .finish()
+    }
+}
+
+impl ValueRunsBarAggregator {
+    /// Creates a new [`ValueRunsBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    pub fn new<H: FnMut(Bar) + 'static>(
+        bar_type: BarType,
+        price_precision: u8,
+        size_precision: u8,
+        handler: H,
+    ) -> Self {
+        Self {
+            core: BarAggregatorCore::new(
+                bar_type.standard(),
+                price_precision,
+                size_precision,
+                handler,
+            ),
+            current_run_side: None,
+            run_value: 0.0,
+            step_value: bar_type.spec().step.get() as f64,
+        }
+    }
+}
+
+impl BarAggregator for ValueRunsBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
+
+    fn is_running(&self) -> bool {
+        self.core.is_running
+    }
+
+    fn set_is_running(&mut self, value: bool) {
+        self.core.set_is_running(value);
+    }
+
+    /// Apply the given update to the aggregator.
+    ///
+    /// Note: side-aware logic lives in `handle_trade`. This method is used for
+    /// quote/bar updates where no aggressor side is available.
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        self.core.apply_update(price, size, ts_init);
+    }
+
+    fn handle_trade(&mut self, trade: TradeTick) {
+        let price_f64 = trade.price.as_f64();
+        if price_f64 == 0.0 {
+            self.core
+                .apply_update(trade.price, trade.size, trade.ts_init);
+            return;
+        }
+
+        let side = match trade.aggressor_side {
+            AggressorSide::Buyer => Some(AggressorSide::Buyer),
+            AggressorSide::Seller => Some(AggressorSide::Seller),
+            AggressorSide::NoAggressor => None,
+        };
+
+        let Some(side) = side else {
+            self.core
+                .apply_update(trade.price, trade.size, trade.ts_init);
+            return;
+        };
+
+        if self.current_run_side != Some(side) {
+            self.current_run_side = Some(side);
+            self.run_value = 0.0;
+            self.core.builder.reset();
+        }
+
+        let mut size_remaining = trade.size.as_f64();
+        while size_remaining > 0.0 {
+            let value_update = price_f64 * size_remaining;
+            if self.run_value + value_update < self.step_value {
+                self.run_value += value_update;
+                self.core.apply_update(
+                    trade.price,
+                    Quantity::new(size_remaining, trade.size.precision),
+                    trade.ts_init,
+                );
+                break;
+            }
+
+            let value_needed = self.step_value - self.run_value;
+            let size_chunk = value_needed / price_f64;
+            self.core.apply_update(
+                trade.price,
+                Quantity::new(size_chunk, trade.size.precision),
+                trade.ts_init,
+            );
+
+            self.core.build_now_and_send();
+            self.run_value = 0.0;
+            self.current_run_side = None;
+            size_remaining -= size_chunk;
+        }
+    }
+
+    fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
+        self.core.builder.update_bar(bar, volume, ts_init);
     }
 }
 
@@ -1219,7 +1890,7 @@ mod tests {
     use nautilus_core::{MUTEX_POISONED, UUID4};
     use nautilus_model::{
         data::{BarSpecification, BarType},
-        enums::{AggregationSource, BarAggregation, PriceType},
+        enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
         instruments::{CurrencyPair, Equity, Instrument, InstrumentAny, stubs::*},
         types::{Price, Quantity},
     };
@@ -1644,6 +2315,96 @@ mod tests {
     }
 
     #[rstest]
+    fn test_tick_imbalance_bar_aggregator_emits_at_threshold(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(2, BarAggregation::TickImbalance, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = TickImbalanceBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let trade = TradeTick::default();
+        aggregator.handle_trade(trade);
+        aggregator.handle_trade(trade);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+        let bar = handler_guard.first().unwrap();
+        assert_eq!(bar.volume, Quantity::from(200000));
+    }
+
+    #[rstest]
+    fn test_tick_imbalance_bar_aggregator_handles_seller_direction(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::TickImbalance, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = TickImbalanceBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let sell = TradeTick {
+            aggressor_side: AggressorSide::Seller,
+            ..TradeTick::default()
+        };
+
+        aggregator.handle_trade(sell);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+    }
+
+    #[rstest]
+    fn test_tick_runs_bar_aggregator_resets_on_side_change(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(2, BarAggregation::TickRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = TickRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let buy = TradeTick::default();
+        let sell = TradeTick {
+            aggressor_side: AggressorSide::Seller,
+            ..buy
+        };
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(sell);
+        aggregator.handle_trade(sell);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 2);
+    }
+
+    #[rstest]
     fn test_volume_bar_aggregator_builds_multiple_bars_from_large_update(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(10, BarAggregation::Volume, PriceType::Last);
@@ -1673,6 +2434,123 @@ mod tests {
         assert_eq!(bar1.volume, Quantity::from(10));
         let bar2 = &handler_guard[1];
         assert_eq!(bar2.volume, Quantity::from(10));
+    }
+
+    #[rstest]
+    fn test_volume_runs_bar_aggregator_side_change_resets(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(2, BarAggregation::VolumeRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = VolumeRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let buy = TradeTick {
+            instrument_id: instrument.id(),
+            price: Price::from("1.0"),
+            size: Quantity::from(1),
+            ..TradeTick::default()
+        };
+        let sell = TradeTick {
+            aggressor_side: AggressorSide::Seller,
+            ..buy
+        };
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(buy); // emit first bar at 2
+        aggregator.handle_trade(sell);
+        aggregator.handle_trade(sell); // emit second bar at 2 sell-side
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert!(handler_guard.len() >= 2);
+        assert!(
+            (handler_guard[0].volume.as_f64() - handler_guard[1].volume.as_f64()).abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[rstest]
+    fn test_volume_runs_bar_aggregator_handles_large_single_trade(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(3, BarAggregation::VolumeRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = VolumeRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let trade = TradeTick {
+            instrument_id: instrument.id(),
+            price: Price::from("1.0"),
+            size: Quantity::from(5),
+            ..TradeTick::default()
+        };
+
+        aggregator.handle_trade(trade);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert!(!handler_guard.is_empty());
+        assert!(handler_guard[0].volume.as_f64() > 0.0);
+        assert!(handler_guard[0].volume.as_f64() < trade.size.as_f64());
+    }
+
+    #[rstest]
+    fn test_volume_imbalance_bar_aggregator_splits_large_trade(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(2, BarAggregation::VolumeImbalance, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = VolumeImbalanceBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let trade_small = TradeTick {
+            instrument_id: instrument.id(),
+            price: Price::from("1.0"),
+            size: Quantity::from(1),
+            ..TradeTick::default()
+        };
+        let trade_large = TradeTick {
+            size: Quantity::from(3),
+            ..trade_small
+        };
+
+        aggregator.handle_trade(trade_small);
+        aggregator.handle_trade(trade_large);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 2);
+        let total_output = handler_guard
+            .iter()
+            .map(|bar| bar.volume.as_f64())
+            .sum::<f64>();
+        let total_input = trade_small.size.as_f64() + trade_large.size.as_f64();
+        assert!((total_output - total_input).abs() < f64::EPSILON);
     }
 
     #[rstest]
@@ -1740,6 +2618,318 @@ mod tests {
         assert_eq!(handler_guard.len(), 2);
         let remaining_value = aggregator.get_cumulative_value();
         assert!(remaining_value < 1000.0); // Should be less than threshold
+    }
+
+    #[rstest]
+    fn test_value_bar_aggregator_handles_zero_price(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1000, BarAggregation::Value, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        // Update with zero price should not cause division by zero
+        aggregator.update(
+            Price::from("0.00"),
+            Quantity::from(100),
+            UnixNanos::default(),
+        );
+
+        // No bars should be emitted since value is zero
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 0);
+
+        // Cumulative value should remain zero
+        assert_eq!(aggregator.get_cumulative_value(), 0.0);
+    }
+
+    #[rstest]
+    fn test_value_bar_aggregator_handles_zero_size(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1000, BarAggregation::Value, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        // Update with zero size should not cause issues
+        aggregator.update(
+            Price::from("100.00"),
+            Quantity::from(0),
+            UnixNanos::default(),
+        );
+
+        // No bars should be emitted
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 0);
+
+        // Cumulative value should remain zero
+        assert_eq!(aggregator.get_cumulative_value(), 0.0);
+    }
+
+    #[rstest]
+    fn test_value_imbalance_bar_aggregator_emits_on_opposing_overflow(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(10, BarAggregation::ValueImbalance, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueImbalanceBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let buy = TradeTick {
+            price: Price::from("5.0"),
+            size: Quantity::from(2), // value 10, should emit one bar
+            instrument_id: instrument.id(),
+            ..TradeTick::default()
+        };
+        let sell = TradeTick {
+            price: Price::from("5.0"),
+            size: Quantity::from(2), // value 10, should emit another bar
+            aggressor_side: AggressorSide::Seller,
+            instrument_id: instrument.id(),
+            ..buy
+        };
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(sell);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert!(handler_guard.is_empty());
+    }
+
+    #[rstest]
+    fn test_value_runs_bar_aggregator_emits_on_consecutive_side(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(100, BarAggregation::ValueRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let trade = TradeTick {
+            price: Price::from("10.0"),
+            size: Quantity::from(5),
+            instrument_id: instrument.id(),
+            ..TradeTick::default()
+        };
+
+        aggregator.handle_trade(trade);
+        aggregator.handle_trade(trade);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+        let bar = handler_guard.first().unwrap();
+        assert_eq!(bar.volume, Quantity::from(10));
+    }
+
+    #[rstest]
+    fn test_value_runs_bar_aggregator_resets_on_side_change(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(100, BarAggregation::ValueRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let buy = TradeTick {
+            price: Price::from("10.0"),
+            size: Quantity::from(5),
+            instrument_id: instrument.id(),
+            ..TradeTick::default()
+        }; // value 50
+        let sell = TradeTick {
+            price: Price::from("10.0"),
+            size: Quantity::from(10),
+            aggressor_side: AggressorSide::Seller,
+            ..buy
+        }; // value 100
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(sell);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+        assert_eq!(handler_guard[0].volume, Quantity::from(10));
+    }
+
+    #[rstest]
+    fn test_tick_runs_bar_aggregator_continues_run_after_bar_emission(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(2, BarAggregation::TickRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = TickRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let buy = TradeTick::default();
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(buy); // Emit bar 1 (run complete)
+        aggregator.handle_trade(buy); // Start new run
+        aggregator.handle_trade(buy); // Emit bar 2 (new run complete)
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 2);
+    }
+
+    #[rstest]
+    fn test_tick_runs_bar_aggregator_handles_no_aggressor_trades(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(2, BarAggregation::TickRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = TickRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let buy = TradeTick::default();
+        let no_aggressor = TradeTick {
+            aggressor_side: AggressorSide::NoAggressor,
+            ..buy
+        };
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(no_aggressor); // Should not affect run count
+        aggregator.handle_trade(no_aggressor); // Should not affect run count
+        aggregator.handle_trade(buy); // Continue run to threshold
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+    }
+
+    #[rstest]
+    fn test_volume_runs_bar_aggregator_continues_run_after_bar_emission(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(2, BarAggregation::VolumeRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = VolumeRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let buy = TradeTick {
+            instrument_id: instrument.id(),
+            price: Price::from("1.0"),
+            size: Quantity::from(1),
+            ..TradeTick::default()
+        };
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(buy); // Emit bar 1 (2.0 volume reached)
+        aggregator.handle_trade(buy); // Start new run
+        aggregator.handle_trade(buy); // Emit bar 2 (new 2.0 volume reached)
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 2);
+        assert_eq!(handler_guard[0].volume, Quantity::from(2));
+        assert_eq!(handler_guard[1].volume, Quantity::from(2));
+    }
+
+    #[rstest]
+    fn test_value_runs_bar_aggregator_continues_run_after_bar_emission(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(100, BarAggregation::ValueRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let buy = TradeTick {
+            instrument_id: instrument.id(),
+            price: Price::from("10.0"),
+            size: Quantity::from(5),
+            ..TradeTick::default()
+        }; // value 50 per trade
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(buy); // Emit bar 1 (100 value reached)
+        aggregator.handle_trade(buy); // Start new run
+        aggregator.handle_trade(buy); // Emit bar 2 (new 100 value reached)
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 2);
+        assert_eq!(handler_guard[0].volume, Quantity::from(10));
+        assert_eq!(handler_guard[1].volume, Quantity::from(10));
     }
 
     #[rstest]
