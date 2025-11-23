@@ -60,6 +60,13 @@ PYTHON_PATH=$(which python)
 echo -e "\n[env]\nPYO3_PYTHON = \"$PYTHON_PATH\"" >> .cargo/config.toml
 ```
 
+4. **Optional**: To avoid errors when running `make cargo-test` with a uv managed Python installation, configure the `PYTHONHOME` variable in `.cargo/config.toml` with the exact path to the Python installation:
+
+```bash
+PYTHON_HOME=$(python -c "import sys; print(sys.base_prefix if hasattr(sys, 'base_prefix') else sys.prefix)")
+echo -e "PYTHONHOME = \"$PYTHON_HOME\"" >> .cargo/config.toml
+```
+
 Since `.cargo/config.toml` is tracked, configure git to skip any local modifications:
 
 ```bash
