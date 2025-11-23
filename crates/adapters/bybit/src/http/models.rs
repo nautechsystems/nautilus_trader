@@ -904,7 +904,7 @@ pub struct BybitAccountDetails {
     pub kyc_level: String,
     pub kyc_region: String,
     #[serde(default)]
-    pub deadline_day: u64,
+    pub deadline_day: i64,
     #[serde(default)]
     pub expired_at: Option<String>,
     pub created_at: String,
@@ -1011,7 +1011,7 @@ impl BybitAccountDetails {
 
     #[getter]
     #[must_use]
-    pub fn deadline_day(&self) -> u64 {
+    pub fn deadline_day(&self) -> i64 {
         self.deadline_day
     }
 
