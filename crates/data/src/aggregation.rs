@@ -554,9 +554,6 @@ impl BarAggregator for TickRunsBarAggregator {
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
-        self.core
-            .apply_update(trade.price, trade.size, trade.ts_init);
-
         let side = match trade.aggressor_side {
             AggressorSide::Buyer => Some(AggressorSide::Buyer),
             AggressorSide::Seller => Some(AggressorSide::Seller),
@@ -564,13 +561,15 @@ impl BarAggregator for TickRunsBarAggregator {
         };
 
         if let Some(side) = side {
-            if self.current_run_side == Some(side) {
-                self.run_count += 1;
-            } else {
+            if self.current_run_side != Some(side) {
                 self.current_run_side = Some(side);
-                self.run_count = 1;
+                self.run_count = 0;
                 self.core.builder.reset();
             }
+
+            self.core
+                .apply_update(trade.price, trade.size, trade.ts_init);
+            self.run_count += 1;
 
             let threshold = self.core.bar_type.spec().step.get();
             if self.run_count >= threshold {
@@ -578,6 +577,9 @@ impl BarAggregator for TickRunsBarAggregator {
                 self.run_count = 0;
                 self.current_run_side = None;
             }
+        } else {
+            self.core
+                .apply_update(trade.price, trade.size, trade.ts_init);
         }
     }
 
@@ -2402,6 +2404,45 @@ mod tests {
 
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
+    }
+
+    #[rstest]
+    fn test_tick_runs_bar_aggregator_volume_conservation(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(2, BarAggregation::TickRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = TickRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let buy = TradeTick {
+            size: Quantity::from(1),
+            ..TradeTick::default()
+        };
+        let sell = TradeTick {
+            aggressor_side: AggressorSide::Seller,
+            size: Quantity::from(1),
+            ..buy
+        };
+
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(buy);
+        aggregator.handle_trade(sell);
+        aggregator.handle_trade(sell);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 2);
+        assert_eq!(handler_guard[0].volume, Quantity::from(2));
+        assert_eq!(handler_guard[1].volume, Quantity::from(2));
     }
 
     #[rstest]
