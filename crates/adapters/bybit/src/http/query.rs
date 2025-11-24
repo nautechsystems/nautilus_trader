@@ -238,9 +238,11 @@ pub struct BybitSetLeverageParams {
 #[serde(rename_all = "camelCase")]
 pub struct BybitSwitchModeParams {
     pub category: BybitProductType,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub symbol: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub coin: Option<String>,
