@@ -536,9 +536,11 @@ impl ExecutionClient for DydxExecutionClient {
 
         let grpc_client = self.grpc_client.clone();
         let wallet = self.wallet.clone();
+        let http_client = self.http_client.clone();
         let wallet_address = self.wallet_address.clone();
         let subaccount_number = self.subaccount_number;
         let client_order_id = order.client_order_id();
+        let instrument_id = order.instrument_id();
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
         #[allow(clippy::redundant_clone)]
         let order_clone = order.clone();
@@ -555,8 +557,12 @@ impl ExecutionClient for DydxExecutionClient {
                     .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?;
 
                 let grpc_guard = grpc_client.read().await;
-                let submitter =
-                    OrderSubmitter::new((*grpc_guard).clone(), wallet_address, subaccount_number);
+                let submitter = OrderSubmitter::new(
+                    (*grpc_guard).clone(),
+                    http_client.clone(),
+                    wallet_address,
+                    subaccount_number,
+                );
 
                 // Generate client_order_id as u32 (dYdX requires u32 client IDs)
                 // TODO: Implement proper client_order_id to u32 mapping
@@ -577,6 +583,7 @@ impl ExecutionClient for DydxExecutionClient {
                         submitter
                             .submit_market_order(
                                 wallet_ref,
+                                instrument_id,
                                 client_id_u32,
                                 order_clone.order_side(),
                                 order_clone.quantity(),
@@ -592,6 +599,7 @@ impl ExecutionClient for DydxExecutionClient {
                         submitter
                             .submit_limit_order(
                                 wallet_ref,
+                                instrument_id,
                                 client_id_u32,
                                 order_clone.order_side(),
                                 order_clone
@@ -695,6 +703,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         let grpc_client = self.grpc_client.clone();
         let wallet = self.wallet.clone();
+        let http_client = self.http_client.clone();
         let wallet_address = self.wallet_address.clone();
         let subaccount_number = self.subaccount_number;
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
@@ -709,8 +718,12 @@ impl ExecutionClient for DydxExecutionClient {
                 .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?;
 
             let grpc_guard = grpc_client.read().await;
-            let submitter =
-                OrderSubmitter::new((*grpc_guard).clone(), wallet_address, subaccount_number);
+            let submitter = OrderSubmitter::new(
+                (*grpc_guard).clone(),
+                http_client.clone(),
+                wallet_address,
+                subaccount_number,
+            );
 
             // Convert client_order_id to u32 (same logic as submit_order)
             let client_id_u32 = client_order_id.as_str().parse::<u32>().unwrap_or_else(|_| {

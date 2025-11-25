@@ -66,11 +66,12 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dydx-proto = { workspace = true }
 hex = { workspace = true }
-prost = { workspace = true }
-prost-types = { workspace = true }
+prost = "0.13.3"
+prost-types = "0.13.3"
 rand = { workspace = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
+rustls = { version = "0.23", features = ["ring"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -79,7 +80,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
-tonic = { workspace = true }
+tonic = { version = "0.13.1", features = ["tls-native-roots"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true } # Needed for bin scripts
 urlencoding = { workspace = true }
@@ -109,3 +110,7 @@ path = "bin/ws_data.rs"
 [[bin]]
 name = "dydx-live-integration"
 path = "bin/live_integration.rs"
+
+[[bin]]
+name = "dydx-grpc-exec"
+path = "bin/grpc_exec.rs"

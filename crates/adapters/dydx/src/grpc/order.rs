@@ -93,11 +93,18 @@ impl OrderMarketParams {
     /// Returns an error if conversion fails.
     pub fn quantize_price(&self, price: Decimal) -> Result<u64, anyhow::Error> {
         const QUOTE_QUANTUMS_ATOMIC_RESOLUTION: i32 = -6;
-        let scale = -(self.atomic_resolution
+        let exponent = -(self.atomic_resolution
             - self.quantum_conversion_exponent
             - QUOTE_QUANTUMS_ATOMIC_RESOLUTION);
 
-        let factor = Decimal::new(1, scale.unsigned_abs());
+        // When exponent is negative, we multiply by 10^|exponent|
+        // When exponent is positive, we divide by 10^exponent (multiply by 10^-exponent)
+        let factor = if exponent < 0 {
+            Decimal::from(10_i64.pow(exponent.unsigned_abs()))
+        } else {
+            Decimal::new(1, exponent.unsigned_abs())
+        };
+
         let raw_subticks = price * factor;
         let subticks_per_tick = Decimal::from(self.subticks_per_tick);
         let quantums = Self::quantize(&raw_subticks, &subticks_per_tick);
@@ -114,7 +121,14 @@ impl OrderMarketParams {
     ///
     /// Returns an error if conversion fails.
     pub fn quantize_quantity(&self, quantity: Decimal) -> Result<u64, anyhow::Error> {
-        let factor = Decimal::new(1, self.atomic_resolution.unsigned_abs());
+        // When atomic_resolution is negative, we multiply by 10^|atomic_resolution|
+        // When atomic_resolution is positive, we divide by 10^atomic_resolution
+        let factor = if self.atomic_resolution < 0 {
+            Decimal::from(10_i64.pow(self.atomic_resolution.unsigned_abs()))
+        } else {
+            Decimal::new(1, self.atomic_resolution.unsigned_abs())
+        };
+
         let raw_quantums = quantity * factor;
         let step_base_quantums = Decimal::from(self.step_base_quantums);
         let quantums = Self::quantize(&raw_quantums, &step_base_quantums);
@@ -356,16 +370,16 @@ impl OrderBuilder {
             clob_pair_id: self.market_params.clob_pair_id,
         });
 
-        // Set good til oneof
-        let good_til_oneof = if let Some(until) = self.until {
-            match until {
-                OrderGoodUntil::Block(height) => Some(GoodTilOneof::GoodTilBlock(height)),
-                OrderGoodUntil::Time(time) => {
-                    Some(GoodTilOneof::GoodTilBlockTime(time.timestamp().try_into()?))
-                }
+        // Set good til oneof - required for all orders
+        let until = self
+            .until
+            .ok_or_else(|| anyhow::anyhow!("Order expiration (until) not set"))?;
+
+        let good_til_oneof = match until {
+            OrderGoodUntil::Block(height) => Some(GoodTilOneof::GoodTilBlock(height)),
+            OrderGoodUntil::Time(time) => {
+                Some(GoodTilOneof::GoodTilBlockTime(time.timestamp().try_into()?))
             }
-        } else {
-            None
         };
 
         // Quantize price if provided
@@ -427,9 +441,10 @@ impl Default for OrderBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::rstest;
     use rust_decimal_macros::dec;
+
+    use super::*;
 
     fn sample_market_params() -> OrderMarketParams {
         OrderMarketParams {
@@ -483,19 +498,19 @@ mod tests {
     #[rstest]
     fn test_quantize_quantity_rounding_up() {
         let market = sample_market_params();
-        // Quantity slightly above 0.01 should round to next quantum
-        let quantity = dec!(0.0100001);
+        // Quantity with 0.5 or more above quantum should round up
+        let quantity = dec!(0.0105); // 105 quantums, rounds to 105
         let quantums = market.quantize_quantity(quantity).unwrap();
-        assert_eq!(quantums, 101_000_000);
+        assert_eq!(quantums, 105_000_000);
     }
 
     #[rstest]
     fn test_quantize_quantity_rounding_down() {
         let market = sample_market_params();
-        // Quantity slightly below 0.01 should round down
-        let quantity = dec!(0.0099999);
+        // Quantity with less than 0.5 above quantum should round down
+        let quantity = dec!(0.0104); // 104 quantums, rounds to 104
         let quantums = market.quantize_quantity(quantity).unwrap();
-        assert_eq!(quantums, 100_000_000);
+        assert_eq!(quantums, 104_000_000);
     }
 
     #[rstest]

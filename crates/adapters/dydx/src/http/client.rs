@@ -661,6 +661,12 @@ pub struct DydxHttpClient {
     /// This is populated from HTTP PerpetualMarket metadata (`clob_pair_id`) alongside
     /// instrument creation to avoid re-deriving IDs from symbols or other heuristics.
     pub(crate) clob_pair_id_to_instrument: Arc<DashMap<u32, InstrumentId>>,
+    /// Cached mapping from InstrumentId → PerpetualMarket for market params extraction.
+    ///
+    /// This stores the raw market data from the HTTP API for later extraction of
+    /// quantization parameters (atomic_resolution, subticks_per_tick, etc.) needed
+    /// for order submission.
+    pub(crate) market_params_cache: Arc<DashMap<InstrumentId, super::models::PerpetualMarket>>,
     /// Tracks whether the instrument cache has been initialized.
     cache_initialized: AtomicBool,
 }
@@ -677,6 +683,7 @@ impl Clone for DydxHttpClient {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
             clob_pair_id_to_instrument: self.clob_pair_id_to_instrument.clone(),
+            market_params_cache: self.market_params_cache.clone(),
             cache_initialized,
         }
     }
@@ -716,6 +723,7 @@ impl DydxHttpClient {
             )?),
             instruments_cache: Arc::new(DashMap::new()),
             clob_pair_id_to_instrument: Arc::new(DashMap::new()),
+            market_params_cache: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
         })
     }
@@ -789,6 +797,7 @@ impl DydxHttpClient {
 
         self.instruments_cache.clear();
         self.clob_pair_id_to_instrument.clear();
+        self.market_params_cache.clear();
 
         let markets_response = self.inner.get_markets().await?;
         let ts_init = get_atomic_clock_realtime().get_time_ns();
@@ -807,6 +816,9 @@ impl DydxHttpClient {
                     // Also cache by clob_pair_id for efficient WebSocket lookups
                     self.clob_pair_id_to_instrument
                         .insert(market.clob_pair_id, instrument_id);
+
+                    // Cache raw market data for market params extraction
+                    self.market_params_cache.insert(instrument_id, market);
 
                     instruments.push(instrument);
                 }
@@ -875,6 +887,24 @@ impl DydxHttpClient {
 
         // Then look up the full instrument by symbol
         self.get_instrument(&instrument_id.symbol.inner())
+    }
+
+    /// Gets market parameters for order submission from the cached market data.
+    ///
+    /// Returns the quantization parameters needed by OrderBuilder to construct
+    /// properly formatted orders for the dYdX v4 protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns None if the instrument is not found in the market params cache.
+    #[must_use]
+    pub fn get_market_params(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<super::models::PerpetualMarket> {
+        self.market_params_cache
+            .get(instrument_id)
+            .map(|entry| entry.clone())
     }
 
     /// Requests historical trades for a symbol.
