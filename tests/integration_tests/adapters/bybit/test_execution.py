@@ -1293,6 +1293,239 @@ async def test_repay_spot_borrow_repays_partial_when_bought_less_than_borrowed(
         await client._disconnect()
 
 
+@pytest.mark.asyncio
+async def test_repay_spot_borrow_repays_partial_single(
+    monkeypatch,
+    exec_client_builder,
+    cache,
+):
+    # Arrange
+    # Use TestClock with time outside blackout window (04:00-05:30 UTC) so repayment logic runs
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"auto_repay_spot_borrows": True},
+        clock=test_clock,
+    )
+
+    # Create a SPOT instrument
+    spot_instrument = CurrencyPair(
+        instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        ts_event=0,
+        ts_init=0,
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+    )
+    cache.add_instrument(spot_instrument)
+
+    # Create a BUY order for SPOT - buying 0.5 BTC
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=spot_instrument.id,
+        client_order_id=ClientOrderId("O-PARTIAL-REPAY"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.500000"),  # Buying 0.5 BTC
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    # Mock HTTP client to simulate:
+    # - Borrowed amount: 2.0 BTC (more than what we're buying)
+    # - We're only buying: 0.5 BTC
+    # - Expected repayment: 0.5 BTC (not the full 2.0 BTC)
+    http_client.get_spot_borrow_amount = AsyncMock(return_value=Decimal("2.000000"))
+    http_client.repay_spot_borrow = AsyncMock()
+
+    # Start the repayment queue processor
+    await client._connect()
+    
+    try:
+        # Create a fill report for the full order (0.5 BTC)
+        fill_report = nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId("BYBIT-UNIFIED"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(spot_instrument.id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId("BYBIT-PARTIAL-123"),
+            trade_id=nautilus_pyo3.TradeId("T-PARTIAL-001"),
+            order_side=nautilus_pyo3.OrderSide.BUY,
+            last_qty=nautilus_pyo3.Quantity.from_str("0.500000"),
+            last_px=nautilus_pyo3.Price.from_str("50000.00"),
+            commission=nautilus_pyo3.Money.from_str("0.025 USDT"),
+            liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+            ts_event=0,
+            client_order_id=nautilus_pyo3.ClientOrderId("O-PARTIAL-REPAY"),
+            report_id=nautilus_pyo3.UUID4(),
+            ts_init=0,
+        )
+
+        # Act - Process the fill report
+        client._handle_fill_report_pyo3(fill_report)
+
+        # Give the repayment queue processor time to process the queue
+        await asyncio.sleep(0.2)
+
+        # Assert - Verify the complete flow executed correctly
+        # 1. Borrow amount was checked
+        http_client.get_spot_borrow_amount.assert_called_once_with("BTC")
+
+        # 2. Repayment was called with the partial amount (0.5 BTC, not full 2.0 BTC)
+        assert http_client.repay_spot_borrow.call_count == 1
+        call_args = http_client.repay_spot_borrow.call_args
+        assert call_args[0][0] == "BTC"  # Currency
+        # Should repay min(borrowed=2.0, bought=0.5) = 0.5
+        assert float(call_args[0][1]) == 0.5
+
+        # 3. Order tracking should be cleaned up after full fill
+        assert order.client_order_id not in client._order_filled_qty
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_repay_spot_borrow_repays_partial_multiple(
+    monkeypatch,
+    exec_client_builder,
+    cache,
+):
+    # Arrange
+    # Use TestClock with time outside blackout window (04:00-05:30 UTC) so repayment logic runs
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"auto_repay_spot_borrows": True},
+        clock=test_clock,
+    )
+
+    # Create a SPOT instrument
+    spot_instrument = CurrencyPair(
+        instrument_id=InstrumentId.from_str("ETHUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("ETHUSDT"),
+        base_currency=ETH,
+        quote_currency=USDT,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        ts_event=0,
+        ts_init=0,
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+    )
+    cache.add_instrument(spot_instrument)
+
+    # Create multiple BUY orders for SPOT
+    # Initial borrowed amount: 1.0 ETH
+    # We'll buy in fractions: +15% (+0.15), +30% (+0.30), +40% (+0.40), +5% (+0.05) = 0.9 ETH total
+    # This ensures we never repay the full borrowed amount (1.0 ETH)
+    
+    orders = []
+    order_ids = [
+        ("O-PARTIAL-1", "0.150000"),  # 15% of 1.0 = 0.15 ETH
+        ("O-PARTIAL-2", "0.300000"),  # 30% of 1.0 = 0.30 ETH
+        ("O-PARTIAL-3", "0.400000"),  # 40% of 1.0 = 0.40 ETH
+        ("O-PARTIAL-4", "0.050000"),  # 5% of 1.0 = 0.05 ETH
+    ]
+    
+    for order_id, qty in order_ids:
+        order = LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=spot_instrument.id,
+            client_order_id=ClientOrderId(order_id),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(qty),
+            price=Price.from_str("3000.00"),
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+        cache.add_order(order, None)
+        orders.append((order, qty))
+
+    # Mock HTTP client to simulate borrowed amount that decreases after each repayment
+    # Initial: 1.0 ETH
+    # After 1st repay (0.15): 0.85 ETH
+    # After 2nd repay (0.30): 0.55 ETH
+    # After 3rd repay (0.40): 0.15 ETH
+    # After 4th repay (0.05): 0.10 ETH (never reaches 0, so we never repay full amount)
+    borrow_amounts = [
+        Decimal("1.000000"),  # Initial
+        Decimal("0.850000"),  # After 1st repayment
+        Decimal("0.550000"),  # After 2nd repayment
+        Decimal("0.150000"),  # After 3rd repayment
+        Decimal("0.100000"),  # After 4th repayment
+    ]
+    http_client.get_spot_borrow_amount = AsyncMock(side_effect=borrow_amounts)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    # Start the repayment queue processor
+    await client._connect()
+    
+    try:
+        expected_repayments = []
+        
+        # Process each order as a separate fill
+        for i, (order, qty) in enumerate(orders):
+            fill_report = nautilus_pyo3.FillReport(
+                account_id=nautilus_pyo3.AccountId("BYBIT-UNIFIED"),
+                instrument_id=nautilus_pyo3.InstrumentId.from_str(spot_instrument.id.value),
+                venue_order_id=nautilus_pyo3.VenueOrderId(f"BYBIT-MULTI-{i}"),
+                trade_id=nautilus_pyo3.TradeId(f"T-MULTI-{i:03d}"),
+                order_side=nautilus_pyo3.OrderSide.BUY,
+                last_qty=nautilus_pyo3.Quantity.from_str(qty),
+                last_px=nautilus_pyo3.Price.from_str("3000.00"),
+                commission=nautilus_pyo3.Money.from_str("0.025 USDT"),
+                liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+                ts_event=0,
+                client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
+                report_id=nautilus_pyo3.UUID4(),
+                ts_init=0,
+            )
+            
+            # Act - Process the fill report
+            client._handle_fill_report_pyo3(fill_report)
+            
+            # Give the repayment queue processor time to process
+            await asyncio.sleep(0.2)
+            
+            # Track expected repayment for this iteration
+            expected_repayments.append(float(qty))
+
+        # 1. Borrow amount should be checked 4 times (once for each order)
+        assert http_client.get_spot_borrow_amount.call_count == 4
+        
+        # 2. Repayment should be called 4 times with partial amounts
+        assert http_client.repay_spot_borrow.call_count == 4
+        
+        # 3. Verify each repayment amount
+        for i, expected_amt in enumerate(expected_repayments):
+            call_args = http_client.repay_spot_borrow.call_args_list[i]
+            assert call_args[0][0] == "ETH"  # Currency
+            # Each repayment should be min(borrowed_amount, bought_qty)
+            # Since we always have sufficient borrow, repayment = bought_qty
+            assert float(call_args[0][1]) == expected_amt
+        
+        # 4. Total repaid should be 0.9 ETH (less than 1.0 ETH borrowed)
+        total_repaid = sum(expected_repayments)
+        assert total_repaid == 0.9  # 0.15 + 0.30 + 0.40 + 0.05 = 0.90
+        
+        # 5. All orders should be cleaned up from tracking
+        for order, _ in orders:
+            assert order.client_order_id not in client._order_filled_qty
+    finally:
+        await client._disconnect()
+
+
 def test_is_repay_blackout_window_during_hour_4(monkeypatch, exec_client_builder):
     # Arrange
     test_clock = TestClock()
