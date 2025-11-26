@@ -38,6 +38,9 @@ pub mod token;
 pub mod types;
 pub mod validation;
 
+#[cfg(test)]
+pub mod stubs;
+
 // Re-exports
 pub use amm::{Pool, SharedPool};
 pub use chain::{Blockchain, Chain, SharedChain};

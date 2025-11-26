@@ -330,7 +330,7 @@ mod tests {
             sma.update_raw(price);
             assert!(
                 (sma.value() - exp_mean).abs() < 1e-12,
-                "input={price}, expected={exp_mean}, got={}",
+                "input={price}, expected={exp_mean}, was={}",
                 sma.value()
             );
         }

@@ -23,7 +23,7 @@ from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccoun
 from nautilus_trader.common.component import LiveClock
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_binance_spot_account_http_client():
     clock = LiveClock()
 

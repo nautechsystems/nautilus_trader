@@ -1,0 +1,38 @@
+{
+    "result": "success",
+    "instruments": [
+        {
+            "symbol": "PI_XBTUSD",
+            "type": "futures_inverse",
+            "underlying": "rr_xbtusd",
+            "tickSize": 0.5,
+            "contractSize": 1,
+            "tradeable": true,
+            "impactMidSize": 1000.0,
+            "maxPositionSize": 75000000.0,
+            "openingDate": "2018-08-31T00:00:00Z",
+            "marginLevels": [
+                {
+                    "contracts": 0,
+                    "initialMargin": 0.02,
+                    "maintenanceMargin": 0.01
+                },
+                {
+                    "contracts": 500000,
+                    "initialMargin": 0.04,
+                    "maintenanceMargin": 0.02
+                }
+            ],
+            "fundingRateCoefficient": 24,
+            "maxRelativeFundingRate": 0.0025,
+            "isin": "GB00J62YGL67",
+            "contractValueTradePrecision": 0,
+            "postOnly": false,
+            "feeScheduleUid": "a6cbc326-9477-4a6c-911a-d4cb3ed7481e",
+            "mtf": true,
+            "base": "BTC",
+            "quote": "USD",
+            "pair": "BTC:USD"
+        }
+    ]
+}

@@ -22,7 +22,7 @@ from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window
+from nautilus_trader.live.reconciliation import adjust_fills_for_partial_window_single
 from nautilus_trader.live.reconciliation import calculate_reconciliation_price
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
@@ -77,73 +77,73 @@ def eurusd_instrument():
 
 
 @pytest.mark.parametrize(
-    "current_qty,current_avg_px,target_qty,target_avg_px,expected_price,description",
+    ("current_qty", "current_avg_px", "target_qty", "target_avg_px", "expected_price", "description"),
     [
         # Flat position scenarios
         (
-            Decimal("0"),
+            Decimal(0),
             None,
-            Decimal("100"),
+            Decimal(100),
             Decimal("1.25000"),
             Price(1.25000, precision=5),
             "Flat to long position",
         ),
         (
-            Decimal("0"),
+            Decimal(0),
             None,
-            Decimal("-100"),
+            Decimal(-100),
             Decimal("1.25000"),
             Price(1.25000, precision=5),
             "Flat to short position",
         ),
         # Position increases
         (
-            Decimal("100"),
+            Decimal(100),
             Decimal("1.20000"),
-            Decimal("200"),
+            Decimal(200),
             Decimal("1.22000"),
             Price(1.24000, precision=5),
             "Long position increase",
         ),
         (
-            Decimal("-100"),
+            Decimal(-100),
             Decimal("1.30000"),
-            Decimal("-200"),
+            Decimal(-200),
             Decimal("1.28000"),
             Price(1.26000, precision=5),
             "Short position increase",
         ),
         # Position decreases
         (
-            Decimal("200"),
+            Decimal(200),
             Decimal("1.20000"),
-            Decimal("100"),
+            Decimal(100),
             Decimal("1.20000"),
             Price(1.20000, precision=5),
             "Long position decrease",
         ),
         # Position flips
         (
-            Decimal("100"),
+            Decimal(100),
             Decimal("1.20000"),
-            Decimal("-100"),
+            Decimal(-100),
             Decimal("1.25000"),
             Price(1.25000, precision=5),
             "Long to short flip",
         ),
         (
-            Decimal("-100"),
+            Decimal(-100),
             Decimal("1.30000"),
-            Decimal("100"),
+            Decimal(100),
             Decimal("1.25000"),
             Price(1.25000, precision=5),
             "Short to long flip",
         ),
         # Complex scenario
         (
-            Decimal("150"),
+            Decimal(150),
             Decimal("1.23456"),
-            Decimal("250"),
+            Decimal(250),
             Decimal("1.24567"),
             Price(1.26233, precision=5),
             "Complex partial fill scenario",
@@ -175,37 +175,37 @@ def test_reconciliation_price_calculations(
 
 
 @pytest.mark.parametrize(
-    "current_qty,current_avg_px,target_qty,target_avg_px,description",
+    ("current_qty", "current_avg_px", "target_qty", "target_avg_px", "description"),
     [
         # No target average price
         (
-            Decimal("100"),
+            Decimal(100),
             Decimal("1.20000"),
-            Decimal("200"),
+            Decimal(200),
             None,
             "No target avg price",
         ),
         # Zero target average price
         (
-            Decimal("100"),
+            Decimal(100),
             Decimal("1.20000"),
-            Decimal("200"),
-            Decimal("0"),
+            Decimal(200),
+            Decimal(0),
             "Zero target avg price",
         ),
         # No quantity change
         (
-            Decimal("100"),
+            Decimal(100),
             Decimal("1.20000"),
-            Decimal("100"),
+            Decimal(100),
             Decimal("1.20000"),
             "No quantity change",
         ),
         # Negative price scenario
         (
-            Decimal("100"),
+            Decimal(100),
             Decimal("2.00000"),
-            Decimal("200"),
+            Decimal(200),
             Decimal("1.00000"),
             "Negative price calculation",
         ),
@@ -239,9 +239,9 @@ def test_reconciliation_price_flat_position_logic(eurusd_instrument):
     """
     # When current position is flat, reconciliation price should equal target avg price
     result = calculate_reconciliation_price(
-        current_position_qty=Decimal("0"),
+        current_position_qty=Decimal(0),
         current_position_avg_px=None,
-        target_position_qty=Decimal("100"),
+        target_position_qty=Decimal(100),
         target_position_avg_px=Decimal("1.25000"),
         instrument=eurusd_instrument,
     )
@@ -255,9 +255,9 @@ def test_reconciliation_price_precision_handling(eurusd_instrument):
     """
     # Test with high precision input that should be rounded
     result = calculate_reconciliation_price(
-        current_position_qty=Decimal("100"),
+        current_position_qty=Decimal(100),
         current_position_avg_px=Decimal("1.123456789"),
-        target_position_qty=Decimal("200"),
+        target_position_qty=Decimal(200),
         target_position_avg_px=Decimal("1.234567890"),
         instrument=eurusd_instrument,
     )
@@ -379,7 +379,7 @@ def test_adjust_fills_no_position_report(ethusdt_instrument):
     )
     mass_status._fill_reports[venue_order_id] = [fill]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -455,7 +455,7 @@ def test_adjust_fills_complete_lifecycle_no_adjustment(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -529,7 +529,7 @@ def test_adjust_fills_incomplete_lifecycle_adds_synthetic_fill(ethusdt_instrumen
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -539,7 +539,7 @@ def test_adjust_fills_incomplete_lifecycle_adds_synthetic_fill(ethusdt_instrumen
     assert venue_order_id in result  # Original order still present
 
     # Find the synthetic venue_order_id
-    synthetic_venue_order_ids = [vid for vid in result.keys() if str(vid).startswith("S-")]
+    synthetic_venue_order_ids = [vid for vid in result if str(vid).startswith("S-")]
     assert len(synthetic_venue_order_ids) == 1
     synthetic_venue_order_id = synthetic_venue_order_ids[0]
 
@@ -630,7 +630,7 @@ def test_adjust_fills_with_zero_crossings(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -726,7 +726,7 @@ def test_adjust_fills_current_lifecycle_mismatch_creates_synthetic(ethusdt_instr
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -829,7 +829,7 @@ def test_adjust_fills_oldest_lifecycle_incomplete_adds_synthetic(ethusdt_instrum
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -839,7 +839,7 @@ def test_adjust_fills_oldest_lifecycle_incomplete_adds_synthetic(ethusdt_instrum
     assert VenueOrderId("ORDER-002") in result  # Original order still present
 
     # Find the synthetic venue_order_id
-    synthetic_venue_order_ids = [vid for vid in result.keys() if str(vid).startswith("S-")]
+    synthetic_venue_order_ids = [vid for vid in result if str(vid).startswith("S-")]
     assert len(synthetic_venue_order_ids) == 1
     synthetic_venue_order_id = synthetic_venue_order_ids[0]
 
@@ -924,7 +924,7 @@ def test_adjust_fills_short_position(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -934,7 +934,7 @@ def test_adjust_fills_short_position(ethusdt_instrument):
     assert venue_order_id in result  # Original order still present
 
     # Find the synthetic venue_order_id
-    synthetic_venue_order_ids = [vid for vid in result.keys() if str(vid).startswith("S-")]
+    synthetic_venue_order_ids = [vid for vid in result if str(vid).startswith("S-")]
     assert len(synthetic_venue_order_ids) == 1
     synthetic_venue_order_id = synthetic_venue_order_ids[0]
 
@@ -1024,7 +1024,7 @@ def test_adjust_fills_flat_position_after_zero_crossings(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -1108,7 +1108,7 @@ def test_adjust_fills_position_flip_in_current_lifecycle(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -1316,12 +1316,12 @@ def test_adjust_fills_multi_instrument_preserves_all_fills(eurusd_instrument, et
     # Simulate the execution engine loop that processes multiple instruments
     final_fills = dict(mass_status._fill_reports)
 
-    for instrument_id in mass_status.position_reports.keys():
+    for instrument_id in mass_status.position_reports:
         instrument = (
             eurusd_instrument if instrument_id == eurusd_instrument.id else ethusdt_instrument
         )
         adjusted_orders_for_instrument, adjusted_fills_for_instrument = (
-            adjust_fills_for_partial_window(mass_status, instrument)
+            adjust_fills_for_partial_window_single(mass_status, instrument)
         )
 
         # Remove old fills for this instrument
@@ -1440,7 +1440,7 @@ def test_adjust_fills_missing_order_reports_uses_fill_side(ethusdt_instrument):
     )
     mass_status._position_reports[ethusdt_instrument.id] = [position_report]
 
-    adjusted_orders, result = adjust_fills_for_partial_window(
+    adjusted_orders, result = adjust_fills_for_partial_window_single(
         mass_status,
         ethusdt_instrument,
     )
@@ -1618,7 +1618,7 @@ def test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders(eurus
     mass_status._position_reports[eurusd_instrument.id] = [position_report]
 
     # Act - Adjust fills (should trigger FilterToCurrentLifecycle)
-    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window(
+    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window_single(
         mass_status,
         eurusd_instrument,
     )
@@ -1783,7 +1783,7 @@ def test_adjust_fills_replace_current_lifecycle_reuses_venue_order_id(eurusd_ins
     mass_status._position_reports = {eurusd_instrument.id: [position_report]}
 
     # Act - Run reconciliation
-    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window(
+    adjusted_orders, adjusted_fills = adjust_fills_for_partial_window_single(
         mass_status,
         eurusd_instrument,
     )

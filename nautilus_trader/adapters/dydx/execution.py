@@ -93,6 +93,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -520,9 +521,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        """
-        Create an order status report for a specific order.
-        """
         self._log.debug("Requesting OrderStatusReport...")
 
         client_order_id = command.client_order_id
@@ -609,9 +607,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
-        """
-        Create an order status report.
-        """
         self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
@@ -676,14 +671,11 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate OrderStatusReports")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-        if command.log_receipt_level == LogLevel.INFO:
-            self._log.info(receipt_log)
-        else:
-            self._log.debug(receipt_log)
+        self._log_report_receipt(
+            len(reports),
+            "OrderStatusReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -691,9 +683,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        """
-        Create an order fill report.
-        """
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
@@ -751,18 +740,13 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate FillReports")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} FillReport{plural}")
+        self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
         return reports
 
     async def generate_position_status_reports(
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        """
-        Generate position status reports.
-        """
         self._log.debug("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
 
@@ -830,9 +814,12 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate PositionStatusReports")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+        self._log_report_receipt(
+            len(reports),
+            "PositionStatusReport",
+            command.log_receipt_level,
+        )
+
         return reports
 
     def _handle_ws_message(self, raw: bytes) -> None:  # noqa: C901
@@ -1464,6 +1451,12 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"dYdX does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         open_orders_strategy: list[Order] = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,

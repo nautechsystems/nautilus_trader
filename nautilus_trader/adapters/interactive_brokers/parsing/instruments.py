@@ -17,6 +17,9 @@ import datetime
 import re
 import time
 from decimal import Decimal
+from enum import Enum
+from typing import Any
+from typing import cast
 
 import pandas as pd
 from ibapi.contract import ContractDetails
@@ -762,7 +765,33 @@ def contract_details_to_dict(details: IBContractDetails) -> dict:
             tag_value.tag: tag_value.value for tag_value in dict_details["secIdList"]
         }
 
-    return dict_details
+    # Serialize Decimal and Enum objects for JSON compatibility
+    result = _serialize_for_json(dict_details)
+
+    # Type cast: we know this is a dict because we passed a dict
+    return cast(dict[str, Any], result)
+
+
+def _serialize_for_json(obj: object) -> object:
+    """
+    Recursively convert Decimal objects and Enum objects to JSON-serializable types.
+    """
+    if obj is None:
+        return None
+
+    if isinstance(obj, Decimal):
+        return str(obj)
+
+    if isinstance(obj, Enum):
+        return obj.value if hasattr(obj, "value") else str(obj)
+
+    if isinstance(obj, dict):
+        return {k: _serialize_for_json(v) for k, v in obj.items()}
+
+    if isinstance(obj, (list, tuple)):
+        return [_serialize_for_json(item) for item in obj]
+
+    return obj
 
 
 def _tick_size_to_precision(tick_size: float | Decimal) -> int:
@@ -774,10 +803,10 @@ def _tick_size_to_precision(tick_size: float | Decimal) -> int:
 def decade_digit(last_digit: str, contract: IBContract) -> int:
     if year := contract.lastTradeDateOrContractMonth[:4]:
         return int(year[2:3])
-    elif int(last_digit) > int(repr(datetime.datetime.now().year)[-1]):
-        return int(repr(datetime.datetime.now().year)[-2]) - 1
+    elif int(last_digit) > int(repr(datetime.datetime.now(tz=datetime.UTC).year)[-1]):
+        return int(repr(datetime.datetime.now(tz=datetime.UTC).year)[-2]) - 1
     else:
-        return int(repr(datetime.datetime.now().year)[-2])
+        return int(repr(datetime.datetime.now(tz=datetime.UTC).year)[-2])
 
 
 def ib_contract_to_instrument_id(
@@ -819,9 +848,7 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         symbol = contract.symbol
     elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']}"
-    elif security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol)):
-        symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year'][-1]}"
-    elif security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol)):
+    elif (security_type == "FUT" and (m := RE_FUT2_ORIGINAL.match(contract.localSymbol))) or (security_type == "FUT" and (m := RE_FUT3_ORIGINAL.match(contract.localSymbol))):
         symbol = f"{m['symbol']}{FUTURES_MONTH_TO_CODE[m['month']]}{m['year'][-1]}"
     elif security_type == "FOP" and (m := RE_FOP_ORIGINAL.match(contract.localSymbol)):
         symbol = f"{m['symbol']}{m['month']}{m['year']} {m['right']}{m['strike']}"
@@ -914,9 +941,7 @@ def ib_contract_to_instrument_id_raw_symbology(
     contract: IBContract,
     venue: str,
 ) -> InstrumentId:
-    if contract.secType == "CFD":
-        symbol = f"{contract.localSymbol}={contract.secType}"
-    elif contract.secType == "CMDTY":
+    if contract.secType == "CFD" or contract.secType == "CMDTY":
         symbol = f"{contract.localSymbol}={contract.secType}"
     else:
         symbol = f"{contract.localSymbol}={contract.secType}"

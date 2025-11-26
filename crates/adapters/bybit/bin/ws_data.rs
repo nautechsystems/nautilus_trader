@@ -140,6 +140,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     NautilusWsMessage::Reconnected => {
                         tracing::warn!("WebSocket reconnected");
                     }
+                    NautilusWsMessage::Authenticated => {
+                        tracing::info!("Authenticated successfully");
+                    }
                 }
             }
             _ = &mut shutdown => {

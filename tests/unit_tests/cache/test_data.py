@@ -559,18 +559,20 @@ class TestCache:
         # Assert
         assert result == [tick]
 
-    def test_add_quote_ticks_when_identical_ticks_does_not_add(self):
+    def test_add_quote_ticks_when_older_quote_does_not_add(self):
         # Arrange
-        tick = TestDataStubs.quote_tick()
+        tick1 = TestDataStubs.quote_tick(ts_event=1000, ts_init=1000)
+        self.cache.add_quote_tick(tick1)
 
-        self.cache.add_quote_tick(tick)
+        # Try to add older tick
+        tick2 = TestDataStubs.quote_tick(ts_event=500, ts_init=500)
 
         # Act
-        self.cache.add_quote_ticks([tick])
-        result = self.cache.quote_ticks(tick.instrument_id)
+        self.cache.add_quote_ticks([tick2])
+        result = self.cache.quote_ticks(tick1.instrument_id)
 
-        # Assert
-        assert result == [tick]
+        # Assert - older tick should not be added
+        assert result == [tick1]
 
     def test_add_quote_ticks_when_older_quotes(self):
         # Arrange
@@ -586,6 +588,22 @@ class TestCache:
         # Assert
         assert result == [tick2, tick1]
 
+    def test_add_quote_ticks_same_timestamp_adds_all(self):
+        # Arrange - multiple quotes at same timestamp
+        tick1 = TestDataStubs.quote_tick(bid_price=1.00001, ts_event=1000, ts_init=1000)
+        self.cache.add_quote_tick(tick1)
+
+        # Add two more ticks with same timestamp but different prices
+        tick2 = TestDataStubs.quote_tick(bid_price=1.00002, ts_event=1000, ts_init=1000)
+        tick3 = TestDataStubs.quote_tick(bid_price=1.00003, ts_event=1000, ts_init=1000)
+
+        # Act
+        self.cache.add_quote_ticks([tick2, tick3])
+        result = self.cache.quote_ticks(tick1.instrument_id)
+
+        # Assert - all three ticks should be in cache
+        assert len(result) == 3
+
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
         tick = TestDataStubs.trade_tick()
@@ -598,18 +616,20 @@ class TestCache:
         # Assert
         assert result == [tick]
 
-    def test_add_trade_ticks_when_identical_ticks_does_not_add(self):
+    def test_add_trade_ticks_when_older_trade_does_not_add(self):
         # Arrange
-        tick = TestDataStubs.trade_tick()
+        tick1 = TestDataStubs.trade_tick(trade_id="1", ts_event=1000, ts_init=1000)
+        self.cache.add_trade_tick(tick1)
 
-        self.cache.add_trade_tick(tick)
+        # Try to add older tick
+        tick2 = TestDataStubs.trade_tick(trade_id="2", ts_event=500, ts_init=500)
 
         # Act
-        self.cache.add_trade_ticks([tick])
-        result = self.cache.trade_ticks(tick.instrument_id)
+        self.cache.add_trade_ticks([tick2])
+        result = self.cache.trade_ticks(tick1.instrument_id)
 
-        # Assert
-        assert result == [tick]
+        # Assert - older tick should not be added
+        assert result == [tick1]
 
     def test_add_trade_ticks_when_older_trades(self):
         # Arrange
@@ -626,6 +646,25 @@ class TestCache:
         # Assert
         assert result == [tick2, tick1]
 
+    def test_add_trade_ticks_same_timestamp_adds_all(self):
+        # Arrange - multiple trades at same timestamp (e.g., large order sweeping levels)
+        tick1 = TestDataStubs.trade_tick(trade_id="1", ts_event=1000, ts_init=1000)
+        self.cache.add_trade_tick(tick1)
+
+        # Add two more ticks with same timestamp but different trade_ids
+        tick2 = TestDataStubs.trade_tick(trade_id="2", ts_event=1000, ts_init=1000)
+        tick3 = TestDataStubs.trade_tick(trade_id="3", ts_event=1000, ts_init=1000)
+
+        # Act
+        self.cache.add_trade_ticks([tick2, tick3])
+        result = self.cache.trade_ticks(tick1.instrument_id)
+
+        # Assert - all three ticks should be in cache
+        assert len(result) == 3
+        assert tick1 in result
+        assert tick2 in result
+        assert tick3 in result
+
     def test_bars_when_one_bar_returns_expected_list(self):
         # Arrange
         bar = TestDataStubs.bar_5decimal()
@@ -638,33 +677,51 @@ class TestCache:
         # Assert
         assert result == [bar]
 
-    def test_add_bars_when_already_identical_bar_does_not_add(self):
+    def test_add_bars_when_older_bar_does_not_add(self):
         # Arrange
-        bar = TestDataStubs.bar_5decimal()
-
-        self.cache.add_bar(bar)
-
-        # Act
-        self.cache.add_bars([bar])
-        result = self.cache.bars(bar.bar_type)
-
-        # Assert
-        assert result == [bar]
-
-    def test_add_bars_when_older_cached_bars(self):
-        # Arrange
-        bar1 = TestDataStubs.bar_5decimal()
+        bar1 = TestDataStubs.bar_5decimal(ts_event=1000)
         self.cache.add_bar(bar1)
 
-        bar2 = TestDataStubs.bar_5decimal(ts_event=1)
-        self.cache.add_bar(bar2)
+        # Try to add older bar
+        bar2 = TestDataStubs.bar_5decimal(ts_event=500)
 
         # Act
         self.cache.add_bars([bar2])
         result = self.cache.bars(bar1.bar_type)
 
-        # Assert
-        assert result == [bar2, bar1]
+        # Assert - older bar should not be added
+        assert result == [bar1]
+
+    def test_add_bars_when_newer_bar_adds(self):
+        # Arrange
+        bar1 = TestDataStubs.bar_5decimal(ts_event=0)
+        self.cache.add_bar(bar1)
+
+        bar2 = TestDataStubs.bar_5decimal(ts_event=1)
+
+        # Act
+        self.cache.add_bars([bar2])
+        result = self.cache.bars(bar1.bar_type)
+
+        # Assert - newer bar is added
+        assert len(result) == 2
+        assert result[0] == bar2  # newest first
+
+    def test_add_bars_same_timestamp_adds_all(self):
+        # Arrange - multiple bars at same timestamp
+        bar1 = TestDataStubs.bar_5decimal(ts_event=1000)
+        self.cache.add_bar(bar1)
+
+        # Add two more bars with same timestamp
+        bar2 = TestDataStubs.bar_5decimal(ts_event=1000)
+        bar3 = TestDataStubs.bar_5decimal(ts_event=1000)
+
+        # Act
+        self.cache.add_bars([bar2, bar3])
+        result = self.cache.bars(bar1.bar_type)
+
+        # Assert - all three bars should be in cache
+        assert len(result) == 3
 
     def test_instrument_when_no_instrument_returns_none(self):
         # Arrange, Act
@@ -1028,7 +1085,7 @@ class TestCache:
         result = self.cache.get_xrate(SIM, AUD, AUD)
 
         # Assert
-        assert result == Decimal("1")
+        assert result == Decimal(1)
 
     def test_get_xrate_with_conversion(self):
         # Arrange

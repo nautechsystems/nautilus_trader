@@ -191,14 +191,10 @@ impl SyntheticInstrument {
 
     /// Calculates the price of the synthetic instrument based on component input prices provided as a map.
     ///
-    /// # Panics
-    ///
-    /// Panics if a required component price is missing from the input map,
-    /// or if setting the value in the evaluation context fails.
-    ///
     /// # Errors
     ///
-    /// Returns an error if formula evaluation fails.
+    /// Returns an error if formula evaluation fails, a required component price is missing
+    /// from the input map, or if setting the value in the evaluation context fails.
     pub fn calculate_from_map(&mut self, inputs: &HashMap<String, f64>) -> anyhow::Result<Price> {
         let mut input_values = Vec::new();
 
@@ -207,11 +203,11 @@ impl SyntheticInstrument {
                 input_values.push(value);
                 self.context
                     .set_value(variable.clone(), Value::Float(value))
-                    .unwrap_or_else(|e| {
-                        panic!("Failed to set value for variable {variable}: {e}");
-                    });
+                    .map_err(|e| {
+                        anyhow::anyhow!("Failed to set value for variable {variable}: {e}")
+                    })?;
             } else {
-                panic!("Missing price for component: {variable}");
+                anyhow::bail!("Missing price for component: {variable}");
             }
         }
 

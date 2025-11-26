@@ -101,6 +101,8 @@ cdef class Order:
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity leaves_qty
     """The order total leaves quantity.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity overfill_qty
+    """The order total overfill quantity (filled beyond original quantity).\n\n:returns: `Quantity`"""
     cdef readonly double avg_px
     """The order average fill price.\n\n:returns: `double`"""
     cdef readonly double slippage
@@ -193,6 +195,7 @@ cdef class Order:
 
     cpdef void apply(self, OrderEvent event)
 
+    cdef Quantity calculate_overfill_c(self, Quantity fill_qty)
     cdef void _denied(self, OrderDenied event)
     cdef void _submitted(self, OrderSubmitted event)
     cdef void _rejected(self, OrderRejected event)

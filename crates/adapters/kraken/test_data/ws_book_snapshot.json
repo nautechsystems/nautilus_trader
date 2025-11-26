@@ -1,0 +1,20 @@
+{
+  "channel": "book",
+  "type": "snapshot",
+  "data": [
+    {
+      "symbol": "BTC/USD",
+      "bids": [
+        {"price": 105944.20, "qty": 0.136},
+        {"price": 105935.40, "qty": 0.024},
+        {"price": 105920.10, "qty": 0.052}
+      ],
+      "asks": [
+        {"price": 105944.30, "qty": 0.136},
+        {"price": 105946.90, "qty": 0.095},
+        {"price": 105955.80, "qty": 0.003}
+      ],
+      "checksum": 2439117997
+    }
+  ]
+}

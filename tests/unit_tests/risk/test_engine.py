@@ -166,7 +166,7 @@ class TestRiskEngineWithCashAccount:
         assert risk_engine.is_bypassed
         assert risk_engine.max_order_submit_rate() == (5, timedelta(seconds=1))
         assert risk_engine.max_order_modify_rate() == (5, timedelta(seconds=1))
-        assert risk_engine.max_notionals_per_order() == {_GBPUSD_SIM.id: Decimal("2000000")}
+        assert risk_engine.max_notionals_per_order() == {_GBPUSD_SIM.id: Decimal(2000000)}
         assert risk_engine.max_notional_per_order(_GBPUSD_SIM.id) == 2_000_000
 
     def test_risk_engine_on_stop(self):
@@ -249,7 +249,7 @@ class TestRiskEngineWithCashAccount:
         max_notional = self.risk_engine.max_notional_per_order(_AUDUSD_SIM.id)
 
         # Assert
-        assert max_notionals == {_AUDUSD_SIM.id: Decimal("1000000")}
+        assert max_notionals == {_AUDUSD_SIM.id: Decimal(1000000)}
         assert max_notional == Decimal(1_000_000)
 
     def test_given_random_command_then_logs_and_continues(self):
@@ -972,6 +972,92 @@ class TestRiskEngineWithCashAccount:
         # Assert
         assert order.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
+
+    def test_submit_order_when_negative_price_for_futures_spread_then_allows(self):
+        # Arrange
+        self.exec_engine.start()
+
+        futures_spread = TestInstrumentProvider.futures_spread()
+        self.cache.add_instrument(futures_spread)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=futures_spread)
+        self.cache.add_quote_tick(quote)
+
+        order = strategy.order_factory.limit(
+            futures_spread.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+            Price.from_str("-17.0"),  # Negative price is valid for spreads
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1  # Command reaches engine
+
+    def test_submit_order_when_negative_price_for_option_spread_then_allows(self):
+        # Arrange
+        self.exec_engine.start()
+
+        option_spread = TestInstrumentProvider.option_spread()
+        self.cache.add_instrument(option_spread)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=option_spread)
+        self.cache.add_quote_tick(quote)
+
+        order = strategy.order_factory.limit(
+            option_spread.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+            Price.from_str("-2.50"),  # Negative price is valid for spreads
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1  # Command reaches engine
 
     def test_submit_order_when_invalid_trigger_price_then_denies(self):
         # Arrange
@@ -2947,7 +3033,7 @@ class TestRiskEngineWithBettingAccount:
         self.exec_engine.start()
 
     @pytest.mark.parametrize(
-        "side,quantity,price,expected_status",
+        ("side", "quantity", "price", "expected_status"),
         [
             (OrderSide.SELL, 500, 2.0, OrderStatus.INITIALIZED),
             (OrderSide.SELL, 999, 2.0, OrderStatus.INITIALIZED),
@@ -3127,82 +3213,3 @@ class TestRiskEngineWithCryptoCashAccount:
         # Assert
         assert order.status == OrderStatus.INITIALIZED
         assert self.exec_engine.command_count == 1
-
-    @pytest.mark.skip(reason="WIP")
-    def test_partial_fill_and_full_fill_account_balance_correct(self):
-        # Arrange
-        self.cache.add_instrument(_ETHUSDT_BINANCE)
-        quote = TestDataStubs.quote_tick(
-            instrument=_ETHUSDT_BINANCE,
-            bid_price=10_000.00,
-            ask_price=10_000.10,
-        )
-        self.cache.add_quote_tick(quote)
-
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-        )
-
-        order1 = strategy.order_factory.market(
-            _ETHUSDT_BINANCE.id,
-            OrderSide.BUY,
-            _ETHUSDT_BINANCE.make_qty(0.02),
-        )
-
-        order2 = strategy.order_factory.market(
-            _ETHUSDT_BINANCE.id,
-            OrderSide.BUY,
-            _ETHUSDT_BINANCE.make_qty(0.02),
-        )
-
-        submit_order1 = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=strategy.id,
-            position_id=None,
-            order=order1,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        self.risk_engine.execute(submit_order1)
-        self.exec_engine.process(TestEventStubs.order_submitted(order1, account_id=self.account_id))
-        self.exec_engine.process(TestEventStubs.order_accepted(order1))
-        self.exec_engine.process(
-            TestEventStubs.order_filled(
-                order1,
-                _ETHUSDT_BINANCE,
-                account_id=self.account_id,
-                last_qty=_ETHUSDT_BINANCE.make_qty(0.0005),
-            ),
-        )
-
-        submit_order2 = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000000-000-None-1"),
-            order=order2,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.risk_engine.execute(submit_order2)
-        self.exec_engine.process(TestEventStubs.order_submitted(order2, account_id=self.account_id))
-        self.exec_engine.process(TestEventStubs.order_accepted(order2))
-        self.exec_engine.process(
-            TestEventStubs.order_filled(
-                order2,
-                _ETHUSDT_BINANCE,
-                account_id=self.account_id,
-            ),
-        )
-
-        # Assert
-        account = self.cache.account(self.account_id)
-        assert account.balance(_ETHUSDT_BINANCE.base_currency).total == Money(0.00000000, ETH)
-        assert self.portfolio.net_position(_ETHUSDT_BINANCE.id) == Decimal("0.02050")

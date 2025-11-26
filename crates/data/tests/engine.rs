@@ -15,8 +15,11 @@
 
 mod common;
 
-use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, str::FromStr, sync::Arc};
+use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc};
+#[cfg(feature = "defi")]
+use std::{str::FromStr, sync::Arc};
 
+#[cfg(feature = "defi")]
 use alloy_primitives::{Address, I256, U160, U256};
 use common::mocks::MockDataClient;
 #[cfg(feature = "defi")]
@@ -51,26 +54,25 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{AmmType, Dex, DexType, chain::chains};
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{
+    Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolProfiler,
+    PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
+};
+#[cfg(feature = "defi")]
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
         OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
-    defi::{AmmType, Dex, DexType, chain::chains},
     enums::{BookType, PriceType},
-    identifiers::{ClientId, InstrumentId, TraderId, Venue},
+    identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     types::Price,
-};
-#[cfg(feature = "defi")]
-use nautilus_model::{
-    defi::{
-        Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType,
-        PoolProfiler, PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
-    },
-    enums::OrderSide,
-    types::Quantity,
 };
 use rstest::*;
 
@@ -433,7 +435,6 @@ fn test_execute_subscribe_book_deltas(
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
-#[ignore = "Attempt to subtract with overflow"]
 #[rstest]
 fn test_execute_subscribe_book_snapshots(
     audusd_sim: CurrencyPair,
@@ -1832,7 +1833,7 @@ fn test_execute_subscribe_pool_swaps(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -1971,9 +1972,6 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         U160::from(59000000000000u128),
         1000000,
         100,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
 
     let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
@@ -2059,7 +2057,7 @@ fn test_execute_subscribe_pool_liquidity_updates(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -2146,7 +2144,7 @@ fn test_execute_subscribe_pool_fee_collects(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -2229,7 +2227,7 @@ fn test_execute_subscribe_pool_flash_events(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -2654,7 +2652,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         .liquidity;
     assert!(
         active_liquidity > 0,
-        "Active liquidity should be > 0 after mint, got: {}",
+        "Active liquidity should be > 0 after mint, was: {}",
         active_liquidity
     );
 
@@ -2703,9 +2701,6 @@ fn test_pool_updater_processes_swap_updates_profiler(
         new_price,
         1000u128,
         0i32,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -3317,7 +3312,7 @@ fn test_setup_pool_updater_requests_snapshot(
             assert_eq!(request.client_id, Some(client_id));
         }
         _ => panic!(
-            "Expected second command to be RequestPoolSnapshot, got: {:?}",
+            "Expected second command to be RequestPoolSnapshot, was: {:?}",
             recorded[1]
         ),
     }

@@ -38,6 +38,7 @@ python = [
   "pyo3-async-runtimes",
 ]
 defi = ["nautilus-model/defi", "alloy-primitives"]
+capnp = ["nautilus-serialization/capnp"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -47,6 +48,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true }
 nautilus-indicators = { workspace = true, optional = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-serialization = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -77,6 +79,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 rstest = { workspace = true, optional = true }
 
 [dev-dependencies]
+capnp = { workspace = true }
 criterion = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }

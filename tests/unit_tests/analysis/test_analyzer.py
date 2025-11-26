@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import UTC
 from datetime import datetime
 
 from nautilus_trader.analysis import SharpeRatio
@@ -96,16 +97,16 @@ class TestPortfolioAnalyzer:
 
     def test_analyzer_tracks_returns(self):
         # Arrange
-        t1 = datetime(year=2010, month=1, day=1)
-        t2 = datetime(year=2010, month=1, day=2)
-        t3 = datetime(year=2010, month=1, day=3)
-        t4 = datetime(year=2010, month=1, day=4)
-        t5 = datetime(year=2010, month=1, day=5)
-        t6 = datetime(year=2010, month=1, day=6)
-        t7 = datetime(year=2010, month=1, day=7)
-        t8 = datetime(year=2010, month=1, day=8)
-        t9 = datetime(year=2010, month=1, day=9)
-        t10 = datetime(year=2010, month=1, day=10)
+        t1 = datetime(year=2010, month=1, day=1, tzinfo=UTC)
+        t2 = datetime(year=2010, month=1, day=2, tzinfo=UTC)
+        t3 = datetime(year=2010, month=1, day=3, tzinfo=UTC)
+        t4 = datetime(year=2010, month=1, day=4, tzinfo=UTC)
+        t5 = datetime(year=2010, month=1, day=5, tzinfo=UTC)
+        t6 = datetime(year=2010, month=1, day=6, tzinfo=UTC)
+        t7 = datetime(year=2010, month=1, day=7, tzinfo=UTC)
+        t8 = datetime(year=2010, month=1, day=8, tzinfo=UTC)
+        t9 = datetime(year=2010, month=1, day=9, tzinfo=UTC)
+        t10 = datetime(year=2010, month=1, day=10, tzinfo=UTC)
 
         # Act
         self.analyzer.add_return(t1, 0.05)

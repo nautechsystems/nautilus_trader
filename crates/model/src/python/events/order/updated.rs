@@ -29,7 +29,7 @@ use crate::{
 impl OrderUpdated {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, quantity, event_id, ts_event, ts_init, reconciliation, venue_order_id=None, account_id=None, price=None, trigger_price=None))]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, quantity, event_id, ts_event, ts_init, reconciliation, venue_order_id=None, account_id=None, price=None, trigger_price=None, protection_price=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -44,6 +44,7 @@ impl OrderUpdated {
         account_id: Option<AccountId>,
         price: Option<Price>,
         trigger_price: Option<Price>,
+        protection_price: Option<Price>,
     ) -> Self {
         Self::new(
             trader_id,
@@ -59,6 +60,7 @@ impl OrderUpdated {
             account_id,
             price,
             trigger_price,
+            protection_price,
         )
     }
 

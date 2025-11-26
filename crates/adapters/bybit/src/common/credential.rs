@@ -17,7 +17,7 @@
 
 #![allow(unused_assignments)] // Fields are used in methods, false positive from nightly
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 use aws_lc_rs::hmac;
 use hex;
@@ -33,7 +33,7 @@ pub struct Credential {
 }
 
 impl Debug for Credential {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Credential")
             .field("api_key", &self.api_key)
             .field("api_secret", &"<redacted>")
@@ -48,7 +48,7 @@ impl Credential {
         let api_key = api_key.into();
         let api_secret_bytes = api_secret.into().into_bytes();
 
-        let api_key = Ustr::from(api_key.as_str());
+        let api_key = Ustr::from(&api_key);
 
         Self {
             api_key,
@@ -67,15 +67,8 @@ impl Credential {
     /// Shows first 4 and last 4 characters with ellipsis in between.
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
-    pub fn masked_api_key(&self) -> String {
-        let key = self.api_key.as_str();
-        let len = key.len();
-
-        if len <= 8 {
-            "*".repeat(len)
-        } else {
-            format!("{}...{}", &key[..4], &key[len - 4..])
-        }
+    pub fn api_key_masked(&self) -> String {
+        nautilus_core::string::mask_api_key(self.api_key.as_str())
     }
 
     /// Produces the Bybit WebSocket authentication signature for the provided expiry timestamp.

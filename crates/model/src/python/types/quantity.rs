@@ -342,6 +342,18 @@ impl Quantity {
         Self::from(value)
     }
 
+    #[staticmethod]
+    #[pyo3(name = "from_decimal")]
+    fn py_from_decimal(decimal: Decimal) -> PyResult<Self> {
+        Self::from_decimal(decimal).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_decimal_dp")]
+    fn py_from_decimal_dp(decimal: Decimal, precision: u8) -> PyResult<Self> {
+        Self::from_decimal_dp(decimal, precision).map_err(to_pyvalue_err)
+    }
+
     #[pyo3(name = "is_zero")]
     fn py_is_zero(&self) -> bool {
         self.is_zero()

@@ -115,6 +115,6 @@ class TestVenue:
         # Act, Assert
         assert InstrumentClose.from_dict(InstrumentClose.to_dict(update)) == update
         assert (
-            "InstrumentClose(instrument_id=BTCUSDT.BINANCE, close_price=100, close_type=CONTRACT_EXPIRED)"
-            == repr(update)
+            repr(update)
+            == "InstrumentClose(instrument_id=BTCUSDT.BINANCE, close_price=100, close_type=CONTRACT_EXPIRED)"
         )

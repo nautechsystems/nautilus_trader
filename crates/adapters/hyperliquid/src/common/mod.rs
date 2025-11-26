@@ -26,7 +26,9 @@ pub use converters::{
     hyperliquid_time_in_force_to_nautilus, nautilus_order_type_to_hyperliquid,
     nautilus_time_in_force_to_hyperliquid, nautilus_to_hyperliquid_conditional,
 };
-pub use enums::{HyperliquidOrderStatus, hyperliquid_status_to_order_status};
+pub use enums::{
+    HyperliquidOrderStatus, HyperliquidProductType, hyperliquid_status_to_order_status,
+};
 pub use models::{
     ConversionError, HyperliquidAccountEvent, HyperliquidAccountState, HyperliquidBalance,
     HyperliquidDataConverter, HyperliquidInstrumentCache, HyperliquidInstrumentInfo,

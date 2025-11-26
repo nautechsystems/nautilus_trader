@@ -26,14 +26,11 @@
 //! The WebSocket client maintains internal caches for order book reconstruction
 //! and provides efficient parsing of BitMEX's table-based update format.
 
-pub mod cache;
 pub mod client;
 pub mod enums;
 pub mod error;
+pub mod handler;
 pub mod messages;
 pub mod parse;
-
-mod auth;
-mod subscription;
 
 pub use crate::websocket::client::BitmexWebSocketClient;

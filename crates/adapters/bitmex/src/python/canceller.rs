@@ -91,6 +91,13 @@ impl CancelBroadcaster {
         Self::new(config).map_err(to_pyvalue_err)
     }
 
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+        let inst_any = pyobject_to_instrument_any(py, instrument)?;
+        self.cache_instrument(inst_any);
+        Ok(())
+    }
+
     #[pyo3(name = "start")]
     fn py_start<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let broadcaster = self.clone_for_async();
@@ -214,12 +221,5 @@ impl CancelBroadcaster {
             list.append(dict)?;
         }
         Ok(list.into())
-    }
-
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
-        let inst_any = pyobject_to_instrument_any(py, instrument)?;
-        self.add_instrument(inst_any);
-        Ok(())
     }
 }

@@ -36,6 +36,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
 
 
 class DataTesterConfig(ActorConfig, frozen=True):
@@ -342,6 +343,22 @@ class DataTester(Actor):
         """
         if self.config.log_data:
             self.log.info("Historical " + repr(data), LogColor.CYAN)
+
+    def on_instrument(self, instrument: Instrument) -> None:
+        """
+        Actions to be performed when the actor receives an instrument.
+        """
+        if self.config.log_data:
+            self.log.info(repr(instrument), LogColor.CYAN)
+
+    def on_instruments(self, instruments: list[Instrument]) -> None:
+        """
+        Actions to be performed when the actor receives multiple instruments.
+        """
+        if self.config.log_data:
+            self.log.info(f"Received <Instrument[{len(instruments)}]> data", LogColor.CYAN)
+            for instrument in instruments:
+                self.log.info(repr(instrument), LogColor.CYAN)
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """

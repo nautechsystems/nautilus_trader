@@ -1625,8 +1625,8 @@ class TestBacktestEngineDataSorting:
         self.engine.reset()
 
         # Assert - should raise because data is still unsorted after reset
+        self.engine.add_strategy(Strategy())
         with pytest.raises(RuntimeError, match="Data has been added but not sorted"):
-            self.engine.add_strategy(Strategy())
             self.engine.run()
 
     def test_clear_data_resets_sorted_flag(self):

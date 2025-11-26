@@ -221,8 +221,8 @@ def test_closed_perpetual_positions_into_margin_balance(
     """
     perpetual_positions_response.positions[0].status = DYDXPerpetualPositionStatus.CLOSED
     expected_result = MarginBalance(
-        initial=Money(Decimal("0"), Currency.from_str("USDC")),
-        maintenance=Money(Decimal("0"), Currency.from_str("USDC")),
+        initial=Money(Decimal(0), Currency.from_str("USDC")),
+        maintenance=Money(Decimal(0), Currency.from_str("USDC")),
     )
 
     # Act
@@ -650,7 +650,7 @@ def test_parse_to_instrument(
         is_inverse=False,
         price_precision=0,
         size_precision=4,
-        price_increment=Price(Decimal("1"), 0),
+        price_increment=Price(Decimal(1), 0),
         size_increment=Quantity(Decimal("0.0001"), 4),
         max_quantity=None,
         min_quantity=None,

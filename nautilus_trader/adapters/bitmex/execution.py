@@ -19,6 +19,8 @@ from typing import Any
 from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
 from nautilus_trader.adapters.bitmex.constants import BITMEX_VENUE
 from nautilus_trader.adapters.bitmex.providers import BitmexInstrumentProvider
+from nautilus_trader.adapters.bitmex.types import BITMEX_INSTRUMENT_TYPES
+from nautilus_trader.adapters.bitmex.types import BitmexInstrument
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -149,7 +151,8 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        masked_key = self._http_client.api_key_masked
+        self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # Determine HTTP base URL for broadcasters
         http_url = config.base_url_http or nautilus_pyo3.get_bitmex_http_base_url(config.testnet)
@@ -212,14 +215,15 @@ class BitmexExecutionClient(LiveExecutionClient):
         instruments_pyo3 = self._instrument_provider.instruments_pyo3()  # type: ignore
 
         for inst in instruments_pyo3:
-            self._add_instrument(inst)
+            self._cache_instrument(inst)
 
         self._log.debug(f"Cached {len(instruments_pyo3)} instruments", LogColor.MAGENTA)
 
-    def _add_instrument(self, instrument: Any) -> None:
-        self._http_client.add_instrument(instrument)
-        self._submitter.add_instrument(instrument)
-        self._canceller.add_instrument(instrument)
+    def _cache_instrument(self, instrument: Any) -> None:
+        self._http_client.cache_instrument(instrument)
+        self._submitter.cache_instrument(instrument)
+        self._canceller.cache_instrument(instrument)
+        self._ws_client.cache_instrument(instrument)
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
@@ -349,14 +353,11 @@ class BitmexExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 reports.append(OrderStatusReport.from_pyo3(pyo3_report))
 
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-            if command.log_receipt_level == LogLevel.INFO:
-                self._log.info(receipt_log)
-            else:
-                self._log.debug(receipt_log)
+            self._log_report_receipt(
+                len(reports),
+                "OrderStatusReport",
+                command.log_receipt_level,
+            )
 
             return reports
         except Exception as e:
@@ -386,9 +387,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 reports.append(FillReport.from_pyo3(pyo3_report))
 
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            self._log.info(f"Received {len(reports)} FillReport{plural}")
+            self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
             return reports
         except Exception as e:
@@ -407,9 +406,11 @@ class BitmexExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 reports.append(PositionStatusReport.from_pyo3(pyo3_report))
 
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+            self._log_report_receipt(
+                len(reports),
+                "PositionStatusReport",
+                command.log_receipt_level,
+            )
 
             return reports
         except Exception as e:
@@ -769,7 +770,9 @@ class BitmexExecutionClient(LiveExecutionClient):
     def _handle_msg(self, msg: Any) -> None:
         try:
             if nautilus_pyo3.is_pycapsule(msg):
-                pass  # PyCapsules are market data we ignore for the execution client
+                pass  # PyCapsules are handled by data clients
+            elif isinstance(msg, BITMEX_INSTRUMENT_TYPES):
+                self._handle_instrument_update(msg)
             elif isinstance(msg, nautilus_pyo3.AccountState):
                 self._handle_account_state(msg)
             elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
@@ -784,6 +787,12 @@ class BitmexExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Received unhandled message type: {type(msg)}")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
+
+    def _handle_instrument_update(self, pyo3_instrument: BitmexInstrument) -> None:
+        self._http_client.cache_instrument(pyo3_instrument)
+
+        if self._ws_client is not None:
+            self._ws_client.cache_instrument(pyo3_instrument)
 
     def _handle_fill_reports_list(self, reports: list) -> None:
         for fill_report in reports:

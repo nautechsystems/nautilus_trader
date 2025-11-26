@@ -17,9 +17,7 @@ use alloy::primitives::{Address, I256, U160};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{PoolSwap, SharedChain, SharedDex},
-    enums::OrderSide,
     identifiers::InstrumentId,
-    types::{Price, Quantity},
 };
 
 /// Represents a token swap event from liquidity pools emitted from smart contract.
@@ -103,9 +101,6 @@ impl SwapEvent {
         chain: SharedChain,
         instrument_id: InstrumentId,
         pool_address: Address,
-        normalized_side: Option<OrderSide>,
-        normalized_quantity: Option<Quantity>,
-        normalized_price: Option<Price>,
         timestamp: Option<UnixNanos>,
     ) -> PoolSwap {
         PoolSwap::new(
@@ -125,9 +120,6 @@ impl SwapEvent {
             self.sqrt_price_x96,
             self.liquidity,
             self.tick,
-            normalized_side,
-            normalized_quantity,
-            normalized_price,
         )
     }
 }

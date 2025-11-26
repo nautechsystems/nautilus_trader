@@ -57,17 +57,17 @@ def _create_currency(
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue():
     return OKX_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_id(venue) -> AccountId:
     return AccountId(f"{venue.value}-123")
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument() -> CurrencyPair:
     btc = _create_currency(
         "BTC",
@@ -94,7 +94,7 @@ def instrument() -> CurrencyPair:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def eth_usdt_instrument() -> CurrencyPair:
     eth = _create_currency(
         "ETH",
@@ -127,7 +127,7 @@ def eth_usdt_instrument() -> CurrencyPair:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state(account_id) -> AccountState:
     usd_currency = USD
 
@@ -151,7 +151,7 @@ def account_state(account_id) -> AccountState:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_http_client():
     mock = MagicMock(spec=nautilus_pyo3.OKXHttpClient)
     mock.api_key = "test_api_key"
@@ -159,7 +159,7 @@ def mock_http_client():
     mock.api_passphrase = "test_passphrase"
 
     mock.request_instruments = AsyncMock(return_value=[])
-    mock.add_instrument = MagicMock()
+    mock.cache_instrument = MagicMock()
     mock.cancel_all_requests = MagicMock()
     mock.is_initialized = MagicMock(return_value=True)
     mock.get_server_time = AsyncMock(return_value=1234567890000)
@@ -205,6 +205,8 @@ def _create_ws_mock() -> MagicMock:
     mock.wait_until_active = AsyncMock()
     mock.close = AsyncMock()
     mock.subscribe_instruments = AsyncMock()
+    mock.subscribe_instrument = AsyncMock()
+    mock.cache_instruments = MagicMock()
     mock.subscribe_book = AsyncMock()
     mock.subscribe_book50_l2_tbt = AsyncMock()
     mock.subscribe_book_l2_tbt = AsyncMock()
@@ -236,12 +238,12 @@ def _create_ws_mock() -> MagicMock:
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_ws_clients():
     return _create_ws_mock(), _create_ws_mock()
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_instrument_provider(instrument):
     provider = MagicMock(spec=OKXInstrumentProvider)
     provider.initialize = AsyncMock()
@@ -254,7 +256,7 @@ def mock_instrument_provider(instrument):
     return provider
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client(
     event_loop,
     mock_http_client,
@@ -300,6 +302,6 @@ def exec_client(
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     return None

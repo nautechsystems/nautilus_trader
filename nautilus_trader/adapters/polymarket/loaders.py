@@ -16,12 +16,14 @@
 Provides data loaders for historical Polymarket data from various APIs.
 """
 
-from urllib.parse import urlencode
+from __future__ import annotations
+
+from typing import Any
 
 import msgspec
 import pandas as pd
 
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import BookOrder
@@ -71,7 +73,7 @@ class PolymarketDataLoader:
         slug: str,
         token_index: int = 0,
         http_client: nautilus_pyo3.HttpClient | None = None,
-    ) -> "PolymarketDataLoader":
+    ) -> PolymarketDataLoader:
         """
         Create a loader by fetching market data from Polymarket APIs.
 
@@ -121,7 +123,7 @@ class PolymarketDataLoader:
         outcome = token["outcome"]
 
         # Create instrument
-        instrument = parse_instrument(
+        instrument = parse_polymarket_instrument(
             market_info=market_details,
             token_id=token_id,
             outcome=outcome,
@@ -284,12 +286,9 @@ class PolymarketDataLoader:
             "archived": str(archived).lower(),
             "limit": str(limit),
         }
-        query_string = urlencode(params)
-        url = f"https://gamma-api.polymarket.com/markets?{query_string}"
-
-        response = await client.request(
-            method=nautilus_pyo3.HttpMethod.GET,
-            url=url,
+        response = await client.get(
+            url="https://gamma-api.polymarket.com/markets",
+            params=params,
         )
 
         if response.status != 200:
@@ -303,7 +302,7 @@ class PolymarketDataLoader:
     async def find_market_by_slug(
         slug: str,
         http_client: nautilus_pyo3.HttpClient | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Find a specific market by slug.
 
@@ -316,7 +315,7 @@ class PolymarketDataLoader:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Market data dictionary.
 
         Raises
@@ -339,7 +338,7 @@ class PolymarketDataLoader:
     async def fetch_market_details(
         condition_id: str,
         http_client: nautilus_pyo3.HttpClient | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Fetch detailed market information from Polymarket CLOB API.
 
@@ -352,17 +351,14 @@ class PolymarketDataLoader:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Detailed market information.
 
         """
         client = http_client or nautilus_pyo3.HttpClient()
         url = f"https://clob.polymarket.com/markets/{condition_id}"
 
-        response = await client.request(
-            method=nautilus_pyo3.HttpMethod.GET,
-            url=url,
-        )
+        response = await client.get(url=url)
 
         if response.status != 200:
             raise RuntimeError(
@@ -377,7 +373,7 @@ class PolymarketDataLoader:
         start_time_ms: int,
         end_time_ms: int,
         limit: int = 500,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Fetch orderbook history from DomeAPI.
 
@@ -394,7 +390,7 @@ class PolymarketDataLoader:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             List of orderbook snapshot dictionaries.
 
         Notes
@@ -417,12 +413,9 @@ class PolymarketDataLoader:
             if pagination_key:
                 params["pagination_key"] = pagination_key
 
-            query_string = urlencode(params)
-            url = f"https://api.domeapi.io/v1/polymarket/orderbooks?{query_string}"
-
-            response = await self._http_client.request(
-                method=nautilus_pyo3.HttpMethod.GET,
-                url=url,
+            response = await self._http_client.get(
+                url="https://api.domeapi.io/v1/polymarket/orderbooks",
+                params=params,
             )
 
             if response.status != 200:
@@ -451,7 +444,7 @@ class PolymarketDataLoader:
         start_time_ms: int,
         end_time_ms: int,
         fidelity: int = 1,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Fetch price history from Polymarket CLOB API.
 
@@ -468,7 +461,7 @@ class PolymarketDataLoader:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             List of price history points with 't' (timestamp) and 'p' (price).
 
         """
@@ -482,12 +475,9 @@ class PolymarketDataLoader:
             "endTs": str(end_time_s),
             "fidelity": str(fidelity),
         }
-        query_string = urlencode(params)
-        url = f"https://clob.polymarket.com/prices-history?{query_string}"
-
-        response = await self._http_client.request(
-            method=nautilus_pyo3.HttpMethod.GET,
-            url=url,
+        response = await self._http_client.get(
+            url="https://clob.polymarket.com/prices-history",
+            params=params,
         )
 
         if response.status != 200:

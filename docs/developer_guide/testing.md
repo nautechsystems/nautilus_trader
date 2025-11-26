@@ -47,6 +47,24 @@ make cargo-test
 cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
 ```
 
+#### Testing with optional features
+
+Use `EXTRA_FEATURES` to include optional features like `capnp` or `hypersync`:
+
+```bash
+# Test with capnp feature
+make cargo-test EXTRA_FEATURES="capnp"
+
+# Test with multiple features
+make cargo-test EXTRA_FEATURES="capnp hypersync"
+
+# Legacy shorthand for hypersync
+make cargo-test HYPERSYNC=true
+
+# Test specific crate with features
+make cargo-test-crate-nautilus-serialization FEATURES="capnp"
+```
+
 ### IDE integration
 
 - **PyCharm**: Right-click the tests folder or file → "Run pytest".

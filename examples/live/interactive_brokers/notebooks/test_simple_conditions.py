@@ -359,7 +359,7 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         log_level_file="INFO",
         log_file_name=datetime.datetime.strftime(
-            datetime.datetime.now(datetime.UTC),
+            datetime.datetime.now(tz=datetime.UTC),
             "%Y-%m-%d_%H-%M",
         )
         + "_simple_conditions_test.log",

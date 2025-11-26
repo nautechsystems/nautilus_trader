@@ -86,7 +86,7 @@ def mock_betfair_request(obj, response):
         mock_resp.body = encode(response)
         return mock_resp
 
-    setattr(obj, "_request", MagicMock(side_effect=mock_request))
+    obj._request = MagicMock(side_effect=mock_request)
 
 
 class BetfairTestStubs:

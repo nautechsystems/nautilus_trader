@@ -16,10 +16,10 @@
 
 | Platform           | Rust   | Python    |
 | :----------------- | :----- | :-------- |
-| `Linux (x86_64)`   | 1.91.0 | 3.12-3.14 |
-| `Linux (ARM64)`    | 1.91.0 | 3.12-3.14 |
-| `macOS (ARM64)`    | 1.91.0 | 3.12-3.14 |
-| `Windows (x86_64)` | 1.91.0 | 3.12-3.13 |
+| `Linux (x86_64)`   | 1.91.1 | 3.12-3.14 |
+| `Linux (ARM64)`    | 1.91.1 | 3.12-3.14 |
+| `macOS (ARM64)`    | 1.91.1 | 3.12-3.14 |
+| `Windows (x86_64)` | 1.91.1 | 3.12-3.14 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -129,6 +129,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 | [dYdX](https://dydx.exchange/)                                               | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/dydx.md)          |
 | [Hyperliquid](https://hyperliquid.xyz)                                       | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/hyperliquid.md)   |
 | [Interactive Brokers](https://www.interactivebrokers.com)                    | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/ib.md)            |
+| [Kraken](https://kraken.com)                                                 | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/kraken.md)        |
 | [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/okx.md)           |
 | [Polymarket](https://polymarket.com)                                         | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/polymarket.md)    |
 | [Tardis](https://tardis.dev)                                                 | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/tardis.md)        |
@@ -213,6 +214,14 @@ To install the latest binary wheel (or sdist package) from PyPI using Python's p
 ```bash
 pip install -U nautilus_trader
 ```
+
+Install optional dependencies as 'extras' for specific integrations (e.g., `betfair`, `docker`, `dydx`, `ib`, `polymarket`, `visualization`):
+
+```bash
+pip install -U "nautilus_trader[docker,ib]"
+```
+
+See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#extras) for the full list of available extras.
 
 ### From the Nautech Systems package index
 
@@ -402,12 +411,18 @@ It's possible to install from source using pip if you first install the build de
 
     # Set the Python executable path for PyO3
     export PYO3_PYTHON=$(pwd)/.venv/bin/python
+
+    # Required for Rust tests when using uv-installed Python
+    export PYTHONHOME=$(python -c "import sys; print(sys.base_prefix)")
     ```
 
 > [!NOTE]
 >
 > Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match your system.
 > Use `uv python list` to find the exact path for your Python installation.
+>
+> The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`-installed Python.
+> Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 

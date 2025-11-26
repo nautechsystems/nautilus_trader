@@ -26,7 +26,10 @@ use crate::{
     RECONNECTED,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
-    websocket::{MessageHandler, PingHandler, WebSocketClient, WebSocketConfig, WriterCommand},
+    websocket::{
+        WebSocketClient, WebSocketConfig,
+        types::{MessageHandler, PingHandler, WriterCommand},
+    },
 };
 
 // Python exception class for websocket errors
@@ -40,7 +43,20 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 impl WebSocketConfig {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100))]
+    #[pyo3(signature = (
+        url,
+        handler,
+        headers,
+        heartbeat=None,
+        heartbeat_msg=None,
+        ping_handler=None,
+        reconnect_timeout_ms=10_000,
+        reconnect_delay_initial_ms=2_000,
+        reconnect_delay_max_ms=30_000,
+        reconnect_backoff_factor=1.5,
+        reconnect_jitter_ms=100,
+        reconnect_max_attempts=None,
+    ))]
     fn py_new(
         url: String,
         handler: Py<PyAny>,
@@ -53,6 +69,7 @@ impl WebSocketConfig {
         reconnect_delay_max_ms: Option<u64>,
         reconnect_backoff_factor: Option<f64>,
         reconnect_jitter_ms: Option<u64>,
+        reconnect_max_attempts: Option<u32>,
     ) -> Self {
         // Create function pointer that calls Python handler
         let handler_clone = clone_py_object(&handler);
@@ -61,13 +78,12 @@ impl WebSocketConfig {
                 let data = match msg {
                     Message::Binary(data) => data.to_vec(),
                     Message::Text(text) => {
-                        // Disregard the RECONNECTED sentinel message used for Rust flows
                         if text == RECONNECTED {
                             return;
                         }
                         text.as_bytes().to_vec()
                     }
-                    _ => return, // Skip other message types
+                    _ => return,
                 };
                 if let Err(e) = handler_clone.call1(py, (PyBytes::new(py, &data),)) {
                     tracing::error!("Error calling Python message handler: {e}");
@@ -100,6 +116,7 @@ impl WebSocketConfig {
             reconnect_delay_max_ms,
             reconnect_backoff_factor,
             reconnect_jitter_ms,
+            reconnect_max_attempts,
         }
     }
 }
@@ -120,7 +137,6 @@ impl WebSocketClient {
         default_quota: Option<Quota>,
         py: Python<'_>,
     ) -> PyResult<Bound<'_, PyAny>> {
-        // Convert Python callback to function pointer
         let post_reconnection_fn = post_reconnection.map(|callback| {
             let callback_clone = clone_py_object(&callback);
             Arc::new(move || {
@@ -295,9 +311,9 @@ impl WebSocketClient {
         data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
         let writer_tx = slf.writer_tx.clone();
         let mode = slf.connection_mode.clone();
+        let data_len = data.len();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
@@ -307,7 +323,7 @@ impl WebSocketClient {
                 );
                 return Err(to_pyruntime_err(e));
             }
-            tracing::trace!("Sending pong: {data_str}");
+            tracing::trace!("Sending pong frame ({data_len} bytes)");
 
             let msg = Message::Pong(data.into());
             writer_tx
@@ -356,6 +372,7 @@ mod tests {
     }
 
     impl Callback for TestCallback {
+        #[allow(clippy::panic_in_result_fn)]
         fn on_request(
             self,
             request: &server::Request,
@@ -499,6 +516,7 @@ counter = Counter()
             None,
             None,
             None,
+            None,
         );
         let client = WebSocketClient::connect(config, None, Vec::new(), None)
             .await
@@ -570,6 +588,7 @@ counter = Counter()
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
+            None,
             None,
             None,
             None,

@@ -45,7 +45,7 @@ class TestRateOfChange:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange, Act
-        for _i in range(3):
+        for _ in range(3):
             self.roc.update_raw(1.00000)
 
         # Assert
@@ -76,7 +76,7 @@ class TestRateOfChange:
         price = 1.00000
 
         # Act
-        for _i in range(10):
+        for _ in range(10):
             price += 0.10000
             self.roc.update_raw(price)
 
@@ -135,7 +135,7 @@ class TestRateOfChange:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(10):
+        for _ in range(10):
             self.roc.update_raw(1.00000)
 
         # Act

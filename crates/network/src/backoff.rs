@@ -105,6 +105,9 @@ impl ExponentialBackoff {
         let jitter = rand::rng().random_range(0..=self.jitter_ms);
         let delay_with_jitter = self.delay_current + Duration::from_millis(jitter);
 
+        // Clamp the returned delay to never exceed delay_max
+        let clamped_delay = std::cmp::min(delay_with_jitter, self.delay_max);
+
         // Prepare the next delay with overflow protection
         // Keep all math in u128 to avoid silent truncation
         let current_nanos = self.delay_current.as_nanos();
@@ -135,7 +138,7 @@ impl ExponentialBackoff {
 
         self.delay_current = Duration::from_nanos(final_nanos);
 
-        delay_with_jitter
+        clamped_delay
     }
 
     /// Reset the backoff to its initial state.
@@ -435,5 +438,29 @@ mod tests {
             Duration::ZERO,
             "Reset should restore immediate_first behavior"
         );
+    }
+
+    #[rstest]
+    fn test_jitter_never_exceeds_max_delay() {
+        let initial = Duration::from_millis(100);
+        let max = Duration::from_millis(1000);
+        let factor = 2.0;
+        let jitter = 500;
+
+        let mut backoff = ExponentialBackoff::new(initial, max, factor, jitter, false).unwrap();
+
+        // Run backoff until it reaches the cap
+        while backoff.current_delay() < max {
+            backoff.next_duration();
+        }
+
+        // Now that we're at the cap, verify jitter doesn't push us over delay_max
+        for _ in 0..100 {
+            let delay = backoff.next_duration();
+            assert!(
+                delay <= max,
+                "Delay with jitter {delay:?} exceeded max {max:?}"
+            );
+        }
     }
 }

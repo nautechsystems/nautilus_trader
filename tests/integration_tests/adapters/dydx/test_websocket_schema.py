@@ -284,7 +284,7 @@ def test_account_parse_to_account_balances() -> None:
     expected_result = [
         AccountBalance(
             total=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
-            locked=Money(Decimal("0"), Currency.from_str("USDC")),
+            locked=Money(Decimal(0), Currency.from_str("USDC")),
             free=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
         ),
     ]
@@ -307,7 +307,7 @@ def test_account_parse_to_account_balances_order_best_effort_canceled() -> None:
     expected_result = [
         AccountBalance(
             total=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
-            locked=Money(Decimal("0"), Currency.from_str("USDC")),
+            locked=Money(Decimal(0), Currency.from_str("USDC")),
             free=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
         ),
     ]
@@ -1020,8 +1020,8 @@ def test_orderbook(instrument_id: InstrumentId) -> None:
         action=BookAction.DELETE,
         order=BookOrder(
             side=OrderSide.BUY,
-            price=Price(Decimal("65920"), 0),
-            size=Quantity(Decimal("0"), 4),
+            price=Price(Decimal(65920), 0),
+            size=Quantity(Decimal(0), 4),
             order_id=0,
         ),
         flags=RecordFlag.F_LAST,

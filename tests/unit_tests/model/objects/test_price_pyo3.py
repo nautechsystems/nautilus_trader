@@ -91,7 +91,7 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value", "precision", "expected"),
         [
-            [Price(2.15, precision=2), 0, Decimal("2")],
+            [Price(2.15, precision=2), 0, Decimal(2)],
             [Price(2.15, precision=2), 1, Decimal("2.2")],
             [Price(2.255, precision=3), 2, Decimal("2.26")],
         ],
@@ -106,10 +106,10 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Price(-0, precision=0), Decimal("0")],
-            [Price(0, precision=0), Decimal("0")],
-            [Price(1, precision=0), Decimal("1")],
-            [Price(-1, precision=0), Decimal("1")],
+            [Price(-0, precision=0), Decimal(0)],
+            [Price(0, precision=0), Decimal(0)],
+            [Price(1, precision=0), Decimal(1)],
+            [Price(-1, precision=0), Decimal(1)],
             [Price(-1.1, precision=1), Decimal("1.1")],
         ],
     )
@@ -125,11 +125,11 @@ class TestPrice:
         [
             [
                 Price(-1.0, precision=0),
-                Decimal("1"),
+                Decimal(1),
             ],  # Matches built-in decimal.Decimal behavior
             [
                 Price(0, 0),
-                Decimal("0"),
+                Decimal(0),
             ],
         ],
     )
@@ -143,8 +143,8 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Price(1, precision=0), Decimal("-1")],
-            [Price(0, precision=0), Decimal("0")],
+            [Price(1, precision=0), Decimal(-1)],
+            [Price(0, precision=0), Decimal(0)],
         ],
     )
     def test_neg_with_various_values_returns_expected_decimal(self, value, expected):
@@ -677,3 +677,72 @@ class TestPrice:
 
         # Assert
         assert pickle.loads(pickled) == price  # noqa: S301 (testing pickle)
+
+    def test_from_decimal_infers_precision(self):
+        # Arrange, Act
+        price = Price.from_decimal(Decimal("123.456"))
+
+        # Assert
+        assert price.precision == 3
+        assert str(price) == "123.456"
+        assert price == Price(123.456, 3)
+
+    def test_from_decimal_with_integer_decimal(self):
+        # Arrange, Act
+        price = Price.from_decimal(Decimal(100))
+
+        # Assert
+        assert price.precision == 0
+        assert str(price) == "100"
+        assert price == Price(100, 0)
+
+    def test_from_decimal_with_high_precision(self):
+        # Arrange, Act
+        price = Price.from_decimal(Decimal("1.23456789"))
+
+        # Assert
+        assert price.precision == 8
+        assert str(price) == "1.23456789"
+
+    def test_from_decimal_with_negative_value(self):
+        # Arrange, Act
+        price = Price.from_decimal(Decimal("-99.95"))
+
+        # Assert
+        assert price.precision == 2
+        assert str(price) == "-99.95"
+        assert price == Price(-99.95, 2)
+
+    def test_from_decimal_trailing_zeros(self):
+        # Arrange, Act
+        price = Price.from_decimal(Decimal("1.230"))
+
+        # Assert - Decimal preserves trailing zeros in scale
+        assert price.precision == 3
+        assert str(price) == "1.230"
+
+    def test_from_decimal_dp_with_explicit_precision(self):
+        # Arrange, Act
+        price = Price.from_decimal_dp(Decimal("123.456789"), 2)
+
+        # Assert
+        assert price.precision == 2
+        assert str(price) == "123.46"
+
+    def test_from_decimal_dp_rounds_correctly(self):
+        # Arrange, Act - Banker's rounding (round half to even)
+        price1 = Price.from_decimal_dp(Decimal("1.005"), 2)
+        price2 = Price.from_decimal_dp(Decimal("1.015"), 2)
+
+        # Assert
+        assert str(price1) == "1.00"
+        assert str(price2) == "1.02"
+
+    def test_from_decimal_dp_precision_limits(self):
+        # Arrange, Act, Assert - At FIXED_PRECISION should succeed
+        price = Price.from_decimal_dp(Decimal("1.0"), FIXED_PRECISION)
+        assert price.precision == FIXED_PRECISION
+
+        # Exceeding FIXED_PRECISION should error
+        with pytest.raises(ValueError):
+            Price.from_decimal_dp(Decimal("1.0"), FIXED_PRECISION + 1)

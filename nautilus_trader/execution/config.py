@@ -61,6 +61,10 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         Client IDs representing external execution streams.
         Commands with these client IDs will be published on the message bus only;
         the execution engine will not attempt to forward them to a local `ExecutionClient`.
+    allow_overfills : bool, default False
+        If True, allows order fills that exceed the original order quantity.
+        When an overfill is detected, the order's ``overfill_qty`` is set and a warning is logged.
+        When False (default), a ValueError is raised for backward compatibility.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -73,6 +77,7 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
     snapshot_positions: bool = False
     snapshot_positions_interval_secs: PositiveFloat | None = None
     external_clients: list[ClientId] | None = None
+    allow_overfills: bool = False
     debug: bool = False
 
 

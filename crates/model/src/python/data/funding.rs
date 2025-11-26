@@ -24,7 +24,10 @@ use std::{
 use nautilus_core::{
     UnixNanos,
     python::{IntoPyObjectNautilusExt, to_pyvalue_err},
-    serialization::Serializable,
+    serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    },
 };
 use pyo3::{
     exceptions::PyKeyError,

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
@@ -344,7 +345,7 @@ def save_databento_data(data, file):
 
 def next_day(date_str):
     date_format = "%Y-%m-%d"
-    date = datetime.strptime(date_str, date_format)
+    date = datetime.strptime(date_str, date_format).replace(tzinfo=UTC)
     result = date + timedelta(days=1)
 
     return result.strftime(date_format)

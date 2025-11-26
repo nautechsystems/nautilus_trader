@@ -22,7 +22,7 @@ from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_data import DataTester
@@ -35,40 +35,61 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
+instrument_ids = [
+    InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID"),
+    InstrumentId.from_str("ETH-USD-PERP.HYPERLIQUID"),
+    InstrumentId.from_str("HYPE-USDC-SPOT.HYPERLIQUID"),
+]
+
+bar_types = [
+    BarType.from_str("BTC-USD-PERP.HYPERLIQUID-1-MINUTE-LAST-EXTERNAL"),
+    BarType.from_str("HYPE-USDC-SPOT.HYPERLIQUID-1-MINUTE-LAST-EXTERNAL"),
+]
+
 if __name__ == "__main__":
     # Configure the trading node
     config_node = TradingNodeConfig(
         trader_id=TraderId("TESTER-001"),
-        logging=LoggingConfig(log_level="INFO"),
+        logging=LoggingConfig(
+            log_level="INFO",
+            # log_level_file="DEBUG",
+            use_pyo3=True,
+        ),
         exec_engine=LiveExecEngineConfig(
-            reconciliation=True,
-            reconciliation_lookback_mins=1440,
+            reconciliation=False,  # Not required for data testing
         ),
         data_clients={
             HYPERLIQUID: HyperliquidDataClientConfig(
                 instrument_provider=InstrumentProviderConfig(load_all=True),
-                testnet=True,  # If client uses the testnet
+                testnet=False,  # If client uses the testnet
             ),
         },
         timeout_connection=20.0,
         timeout_reconciliation=10.0,
         timeout_portfolio=10.0,
         timeout_disconnection=10.0,
-        timeout_post_stop=5.0,
+        timeout_post_stop=2.0,
     )
 
     # Instantiate the node with a configuration
     node = TradingNode(config=config_node)
 
     # Configure your strategy
-    strat_config = DataTesterConfig(
-        instrument_ids=[InstrumentId.from_str("ETH-USD.HYPERLIQUID")],
+    config_strat = DataTesterConfig(
+        instrument_ids=instrument_ids,
+        bar_types=bar_types,
+        # subscribe_book_at_interval=True,
+        # book_interval_ms=10,
+        # subscribe_quotes=True,
         subscribe_trades=True,
-        subscribe_bars=True,
-        book_type=BookType.L2_MBP,
+        subscribe_mark_prices=True,
+        subscribe_index_prices=True,
+        subscribe_funding_rates=True,
+        # subscribe_bars=True,
+        # request_bars=True,
     )
     # Instantiate your strategy
-    strategy = DataTester(config=strat_config)
+    strategy = DataTester(config=config_strat)
 
     # Add your actors and modules
     node.trader.add_actor(strategy)

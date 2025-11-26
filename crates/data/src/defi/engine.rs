@@ -587,9 +587,6 @@ mod tests {
             U160::ZERO,
             0,
             0,
-            None,
-            None,
-            None,
         )
     }
 

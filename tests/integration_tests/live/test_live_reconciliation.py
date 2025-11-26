@@ -39,6 +39,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
@@ -219,7 +220,7 @@ def fixture_order_factory(trader_id, strategy, clock):
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_missed_fill_reconciliation_scenario(
     exec_engine,
     exec_client,
@@ -317,7 +318,7 @@ async def test_missed_fill_reconciliation_scenario(
     assert order.avg_px == Decimal("1.00000")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_order_state_discrepancy_reconciliation(
     exec_engine,
     exec_client,
@@ -386,7 +387,7 @@ async def test_order_state_discrepancy_reconciliation(
     assert order.status == OrderStatus.REJECTED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_external_order_reconciliation(
     exec_engine,
     exec_client,
@@ -437,7 +438,7 @@ async def test_external_order_reconciliation(
     assert external_order.venue_order_id == VenueOrderId("V-EXT-001")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_inflight_order_timeout_reconciliation(
     exec_engine,
     exec_client,
@@ -494,7 +495,7 @@ async def test_inflight_order_timeout_reconciliation(
     assert order.status == OrderStatus.REJECTED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_multiple_fills_reconciliation(
     exec_engine,
     exec_client,
@@ -638,7 +639,7 @@ async def test_multiple_fills_reconciliation(
     assert order.filled_qty == Quantity.from_int(100_000)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_concurrent_order_reconciliation(
     exec_engine,
     exec_client,
@@ -739,7 +740,7 @@ async def test_concurrent_order_reconciliation(
     assert orders[4].status == OrderStatus.CANCELED  # Venue reported CANCELED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_targeted_query_limiting(
     msgbus,
     cache,
@@ -792,7 +793,7 @@ async def test_targeted_query_limiting(
 
     # Create 10 orders and add them to cache as ACCEPTED
     orders = []
-    for i in range(10):
+    for _ in range(10):
         order = order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
@@ -832,7 +833,7 @@ async def test_targeted_query_limiting(
     await eventually(lambda: exec_engine.is_stopped)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_targeted_query_limiting_with_retry_accumulation(
     msgbus,
     cache,
@@ -886,7 +887,7 @@ async def test_targeted_query_limiting_with_retry_accumulation(
 
     # Create 10 orders, all ACCEPTED (missing at venue)
     orders = []
-    for i in range(10):
+    for _ in range(10):
         order = order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
@@ -942,7 +943,7 @@ async def test_targeted_query_limiting_with_retry_accumulation(
     await eventually(lambda: exec_engine.is_stopped)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_cross_zero_reconciliation_with_missing_avg_px_uses_close_price_fallback(
     msgbus,
     cache,
@@ -1028,7 +1029,7 @@ async def test_cross_zero_reconciliation_with_missing_avg_px_uses_close_price_fa
     await eventually(lambda: exec_engine.is_stopped)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_position_discrepancy_queries_missing_fills(
     msgbus,
     cache,
@@ -1202,7 +1203,7 @@ async def test_position_discrepancy_queries_missing_fills(
     await eventually(lambda: exec_engine.is_stopped)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_position_reconciliation_venue_has_position_we_think_flat(
     msgbus,
     cache,
@@ -1368,7 +1369,7 @@ async def test_position_reconciliation_venue_has_position_we_think_flat(
     await eventually(lambda: exec_engine.is_stopped)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_position_reconciliation_respects_threshold(
     msgbus,
     cache,
@@ -1550,7 +1551,7 @@ async def test_position_reconciliation_respects_threshold(
     await eventually(lambda: exec_engine.is_stopped)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_position_reconciliation_respects_instrument_filter(
     msgbus,
     cache,
@@ -1674,7 +1675,7 @@ async def test_position_reconciliation_respects_instrument_filter(
     await eventually(lambda: exec_engine.is_stopped)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_recent_fills_cache_prevents_duplicate_reconciliation(
     msgbus,
     cache,
@@ -1682,6 +1683,7 @@ async def test_recent_fills_cache_prevents_duplicate_reconciliation(
     trader_id,
     account_id,
     order_factory,
+    portfolio,
 ):
     """
     Test that recent fills cache prevents duplicate reconciliation of fills.
@@ -1753,7 +1755,7 @@ async def test_recent_fills_cache_prevents_duplicate_reconciliation(
         last_qty=Quantity.from_int(100_000),
         last_px=Price.from_str("1.00000"),
     )
-    order.apply(fill_event)
+    # Don't apply manually - let exec_engine.process handle it
     exec_engine.process(fill_event)
 
     # Allow async processing to complete
@@ -1818,7 +1820,7 @@ async def test_recent_fills_cache_prevents_duplicate_reconciliation(
     await eventually(lambda: exec_engine.is_stopped)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_position_reconciliation_fill_without_cached_order(
     msgbus,
     cache,
@@ -1932,7 +1934,7 @@ async def test_position_reconciliation_fill_without_cached_order(
     await eventually(lambda: exec_engine.is_stopped)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_position_reconciliation_handles_generate_fill_reports_exception(
     msgbus,
     cache,
@@ -1940,6 +1942,7 @@ async def test_position_reconciliation_handles_generate_fill_reports_exception(
     trader_id,
     account_id,
     order_factory,
+    portfolio,
 ):
     """
     Test position reconciliation handles exceptions from generate_fill_reports
@@ -2059,3 +2062,184 @@ async def test_position_reconciliation_handles_generate_fill_reports_exception(
     # Cleanup
     exec_engine.stop()
     await eventually(lambda: exec_engine.is_stopped)
+
+
+@pytest.mark.asyncio
+async def test_position_flip_netting_mode(
+    event_loop,
+    msgbus,
+    cache,
+    clock,
+    order_factory,
+    exec_client,
+    account_id,
+):
+    """
+    Test that position flip in NETTING mode properly handles the position state.
+
+    Verifies that NETTING position flips correctly update position side and quantity.
+
+    """
+    exec_engine = LiveExecutionEngine(
+        loop=event_loop,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        config=LiveExecEngineConfig(
+            reconciliation=True,
+            inflight_check_interval_ms=100,
+            inflight_check_threshold_ms=200,
+            inflight_check_retries=2,
+            open_check_interval_secs=0.5,
+            reconciliation_startup_delay_secs=0,
+            snapshot_positions=True,
+        ),
+    )
+
+    # Override exec_client with NETTING mode
+    exec_client_netting = MockLiveExecutionClient(
+        loop=event_loop,
+        client_id=ClientId(SIM.value),
+        venue=SIM,
+        account_type=AccountType.CASH,
+        base_currency=USD,
+        instrument_provider=InstrumentProvider(),
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+        oms_type=OmsType.NETTING,
+    )
+
+    exec_engine.register_client(exec_client_netting)
+    exec_engine.start()
+    exec_engine._startup_reconciliation_event.set()
+    await eventually(lambda: exec_engine.is_running)
+
+    try:
+        # ENTER - open LONG position
+        order_entry = order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+        cache.add_order(order_entry)
+        exec_engine.process(
+            TestEventStubs.order_submitted(order_entry, ts_event=clock.timestamp_ns()),
+        )
+        exec_engine.process(
+            TestEventStubs.order_accepted(order_entry, ts_event=clock.timestamp_ns()),
+        )
+        exec_engine.process(
+            TestEventStubs.order_filled(
+                order_entry,
+                instrument=AUDUSD_SIM,
+                account_id=account_id,
+                last_px=Price.from_str("1.00000"),
+                trade_id=TradeId("1"),
+                ts_event=clock.timestamp_ns(),
+            ),
+        )
+
+        # Wait for position to be opened
+        await eventually(lambda: len(cache.positions()) == 1)
+        await eventually(lambda: cache.positions()[0].is_open)
+
+        original_pos = cache.positions()[0]
+        assert original_pos.side == PositionSide.LONG
+        assert original_pos.quantity == Quantity.from_int(100_000)
+
+        # FLIP - close LONG and open SHORT position
+        order_flip = order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(150_000),
+        )
+        cache.add_order(order_flip)
+        exec_engine.process(
+            TestEventStubs.order_submitted(order_flip, ts_event=clock.timestamp_ns()),
+        )
+        exec_engine.process(
+            TestEventStubs.order_accepted(order_flip, ts_event=clock.timestamp_ns()),
+        )
+        exec_engine.process(
+            TestEventStubs.order_filled(
+                order_flip,
+                instrument=AUDUSD_SIM,
+                account_id=account_id,
+                last_qty=Quantity.from_int(150_000),
+                last_px=Price.from_str("1.00010"),
+                trade_id=TradeId("2"),
+            ),
+        )
+
+        # Wait for position to be flipped to SHORT
+        await eventually(lambda: len(cache.positions()) > 0 and cache.positions()[0].side == PositionSide.SHORT)
+
+        # Assert - verify position flip
+        flipped_pos = cache.positions()[0]
+        assert flipped_pos.side == PositionSide.SHORT
+        assert flipped_pos.quantity == Quantity.from_int(50_000)
+
+        # Close and reopen to verify position lifecycle
+        order_close = order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(50_000),
+        )
+        cache.add_order(order_close)
+        exec_engine.process(
+            TestEventStubs.order_submitted(order_close, ts_event=clock.timestamp_ns()),
+        )
+        exec_engine.process(
+            TestEventStubs.order_accepted(order_close, ts_event=clock.timestamp_ns()),
+        )
+        exec_engine.process(
+            TestEventStubs.order_filled(
+                order_close,
+                instrument=AUDUSD_SIM,
+                account_id=account_id,
+                last_qty=Quantity.from_int(50_000),
+                last_px=Price.from_str("1.00000"),
+                trade_id=TradeId("3"),
+            ),
+        )
+
+        # Wait for close
+        await eventually(lambda: cache.positions()[0].is_closed)
+
+        # Reopen Long
+        order_reopen = order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(10_000),
+        )
+        cache.add_order(order_reopen)
+        exec_engine.process(
+            TestEventStubs.order_submitted(order_reopen, ts_event=clock.timestamp_ns()),
+        )
+        exec_engine.process(
+            TestEventStubs.order_accepted(order_reopen, ts_event=clock.timestamp_ns()),
+        )
+        exec_engine.process(
+            TestEventStubs.order_filled(
+                order_reopen,
+                instrument=AUDUSD_SIM,
+                account_id=account_id,
+                last_qty=Quantity.from_int(10_000),
+                last_px=Price.from_str("1.00020"),
+                trade_id=TradeId("4"),
+            ),
+        )
+
+        # Wait for reopen
+        await eventually(lambda: cache.positions()[0].is_open)
+
+        final_pos = cache.positions()[0]
+        assert final_pos.is_open
+        assert final_pos.side == PositionSide.LONG
+        assert final_pos.quantity == Quantity.from_int(10_000)
+
+    finally:
+        # Cleanup
+        exec_engine.stop()
+        await eventually(lambda: exec_engine.is_stopped)

@@ -60,6 +60,7 @@ nautilus-serialization = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
@@ -102,7 +103,9 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+axum = { workspace = true }
 criterion = { workspace = true }
+futures-util = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 
@@ -123,17 +126,9 @@ name = "hyperliquid-ws-exec"
 path = "bin/ws_exec.rs"
 
 [[bin]]
-name = "hyperliquid-ws-post"
-path = "bin/ws_post.rs"
-
-[[bin]]
 name = "hyperliquid-http-exec"
 path = "bin/http_exec.rs"
 
 [[bin]]
 name = "hyperliquid-capture-test-data"
 path = "bin/capture_test_data.rs"
-
-[[bin]]
-name = "hyperliquid-capture-ws-test-data"
-path = "bin/capture_ws_test_data.rs"

@@ -143,6 +143,7 @@ mod tests {
     use nautilus_core::UnixNanos;
     use rstest::*;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -200,7 +201,7 @@ mod tests {
         assert_eq!(report.instrument_id, InstrumentId::from("AUDUSD.SIM"));
         assert_eq!(report.position_side, PositionSideSpecified::Long);
         assert_eq!(report.quantity, Quantity::from("100"));
-        assert_eq!(report.signed_decimal_qty, Decimal::from(100));
+        assert_eq!(report.signed_decimal_qty, dec!(100));
         assert_eq!(report.venue_position_id, Some(PositionId::from("P-001")));
         assert_eq!(report.ts_last, UnixNanos::from(1_000_000_000));
         assert_eq!(report.ts_init, UnixNanos::from(2_000_000_000));
@@ -212,7 +213,7 @@ mod tests {
 
         assert_eq!(report.position_side, PositionSideSpecified::Short);
         assert_eq!(report.quantity, Quantity::from("50"));
-        assert_eq!(report.signed_decimal_qty, Decimal::from(-50));
+        assert_eq!(report.signed_decimal_qty, dec!(-50));
         assert_eq!(report.venue_position_id, None);
     }
 

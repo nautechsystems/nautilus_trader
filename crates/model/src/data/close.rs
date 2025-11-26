@@ -114,6 +114,7 @@ impl HasTsInit for InstrumentClose {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::serialization::msgpack::{FromMsgPack, ToMsgPack};
     use rstest::rstest;
 
     use super::*;

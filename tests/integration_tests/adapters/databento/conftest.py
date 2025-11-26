@@ -16,26 +16,26 @@
 import pytest
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument_provider():
     pass  # Not applicable
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     pass  # Not applicable
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client():
     pass  # Not applicable
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     pass  # Not applicable
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state():
     pass  # Not applicable

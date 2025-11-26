@@ -146,10 +146,10 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         self.strategy.start()
 
     @pytest.mark.parametrize(
-        ("emulation_trigger",),
+        "emulation_trigger",
         [
-            [TriggerType.NO_TRIGGER],
-            [TriggerType.BID_ASK],
+            TriggerType.NO_TRIGGER,
+            TriggerType.BID_ASK,
         ],
     )
     def test_bracket_accepts_trailing_stop_market_order_tp(
@@ -236,10 +236,10 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         assert tp_order.status == OrderStatus.FILLED
 
     @pytest.mark.parametrize(
-        ("emulation_trigger",),
+        "emulation_trigger",
         [
-            [TriggerType.NO_TRIGGER],
-            [TriggerType.BID_ASK],
+            TriggerType.NO_TRIGGER,
+            TriggerType.BID_ASK,
         ],
     )
     def test_bracket_accepts_trailing_stop_market_order_sl(

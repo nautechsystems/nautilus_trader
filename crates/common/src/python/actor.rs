@@ -1741,7 +1741,15 @@ mod tests {
         );
     }
 
-    #[ignore = "TODO: Under development"]
+    // Test that Rust actor wrapper correctly calls through to Python actor lifecycle methods.
+    //
+    // This test should verify that when lifecycle methods (on_start, on_stop, on_dispose)
+    // are called on the Rust actor wrapper, they correctly invoke the corresponding methods
+    // on the underlying Python actor object via PyO3.
+    //
+    // TODO: Complete implementation and test all lifecycle method call-throughs.
+    // Related: Python-Rust actor bridging layer
+    #[ignore = "Under development - Python actor lifecycle integration"]
     #[rstest]
     fn test_lifecycle_methods_pass_through(
         clock: Rc<RefCell<TestClock>>,
@@ -2336,9 +2344,6 @@ mod tests {
             U160::from(59000000000000u128),
             1000000,
             100,
-            Some(nautilus_model::enums::OrderSide::Buy),
-            Some(Quantity::from("1000")),
-            Some(Price::from("1.0")),
         );
 
         assert!(rust_actor.on_pool_swap(&swap).is_ok());

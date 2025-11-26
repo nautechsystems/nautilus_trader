@@ -1,0 +1,35 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "algoId": "123456789",
+      "algoClOrdId": "client_algo_1",
+      "clOrdId": "",
+      "ordId": "",
+      "instId": "BTC-USDT-SWAP",
+      "instType": "SWAP",
+      "ordType": "trigger",
+      "state": "live",
+      "side": "buy",
+      "posSide": "long",
+      "sz": "1",
+      "triggerPx": "40000",
+      "triggerPxType": "last",
+      "ordPx": "40000",
+      "actualSz": "0",
+      "actualPx": "",
+      "actualSide": "",
+      "triggerTime": "",
+      "tdMode": "isolated",
+      "cTime": "1622559930237",
+      "uTime": "1622559930237",
+      "pxVar": "",
+      "pxSpread": "",
+      "pxLimit": "",
+      "szLimit": "",
+      "amendPxOnTriggerType": "",
+      "tag": ""
+    }
+  ]
+}

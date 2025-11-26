@@ -17,7 +17,7 @@
 
 #![allow(unused_assignments)] // Fields are accessed externally, false positive from nightly
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter};
 
 use aws_lc_rs::hmac;
 use base64::prelude::*;
@@ -37,7 +37,7 @@ pub struct Credential {
 }
 
 impl Debug for Credential {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
             .field("api_key", &self.api_key)
             .field("api_passphrase", &self.api_passphrase)
@@ -88,6 +88,15 @@ impl Credential {
         let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
         let tag = hmac::sign(&key, &message);
         BASE64_STANDARD.encode(tag.as_ref())
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    ///
+    /// Shows first 4 and last 4 characters with ellipsis in between.
+    /// For keys shorter than 8 characters, shows asterisks only.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        nautilus_core::string::mask_api_key(self.api_key.as_str())
     }
 }
 
@@ -220,5 +229,25 @@ mod tests {
             !dbg_out.contains(&secret_bytes_dbg),
             "Debug output must not contain raw secret bytes"
         );
+    }
+
+    #[rstest]
+    fn test_api_key_masked_short() {
+        let credential = Credential::new(
+            "short".to_string(),
+            "secret".to_string(),
+            "pass".to_string(),
+        );
+        assert_eq!(credential.api_key_masked(), "*****");
+    }
+
+    #[rstest]
+    fn test_api_key_masked_long() {
+        let credential = Credential::new(
+            API_KEY.to_string(),
+            API_SECRET.to_string(),
+            API_PASSPHRASE.to_string(),
+        );
+        assert_eq!(credential.api_key_masked(), "985d...7083");
     }
 }

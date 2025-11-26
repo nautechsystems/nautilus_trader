@@ -208,11 +208,6 @@ impl Secrets {
 
     /// Create secrets from explicit private key and vault address.
     ///
-    /// # Arguments
-    ///
-    /// * `private_key_str` - The private key hex string (with or without 0x prefix)
-    /// * `vault_address_str` - Optional vault address for vault trading
-    ///
     /// # Errors
     ///
     /// Returns an error if the private key or vault address is invalid.
@@ -434,28 +429,6 @@ mod tests {
 
         for (input, expected) in test_cases {
             assert_eq!(normalize_address(input).unwrap(), expected);
-        }
-    }
-
-    #[rstest]
-    #[ignore = "This test modifies environment variables - run manually if needed"]
-    fn test_secrets_from_env() {
-        // Note: This test requires setting environment variables manually
-        // HYPERLIQUID_PK=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
-        // HYPERLIQUID_VAULT=0x1234567890abcdef1234567890abcdef12345678
-        // HYPERLIQUID_NETWORK=testnet
-
-        // For now, just test the error case when variables are not set
-        match Secrets::from_env() {
-            Err(e) => {
-                assert!(
-                    e.to_string().contains("HYPERLIQUID_PK")
-                        || e.to_string().contains("environment variable not set")
-                );
-            }
-            Ok(_) => {
-                // If environment variables are actually set, that's fine too
-            }
         }
     }
 }

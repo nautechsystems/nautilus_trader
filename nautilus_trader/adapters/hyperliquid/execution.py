@@ -25,6 +25,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -43,6 +44,8 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 
@@ -124,7 +127,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # price and size precisions when parsing responses
         instruments_pyo3 = self._instrument_provider.instruments_pyo3()
         for inst in instruments_pyo3:
-            self._client.add_instrument(inst)
+            self._client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -294,6 +297,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._log.warning(f"Order cancellation not yet implemented for {command.client_order_id}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"Hyperliquid does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         instrument_str = (
             f" for {command.instrument_id}" if command.instrument_id is not None else ""
         )
@@ -323,7 +332,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_order_status_reports(instrument_id=instrument_id)
 
-            self._log.info(f"Generated {len(reports)} order status report(s)", LogColor.GREEN)
+            self._log_report_receipt(
+                len(reports),
+                "OrderStatusReport",
+                command.log_receipt_level,
+                "Generated",
+            )
             return reports
         except Exception as e:
             self._log.error(f"Failed to generate order status reports: {e}")
@@ -337,7 +351,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_fill_reports(instrument_id=instrument_id)
 
-            self._log.info(f"Generated {len(reports)} fill report(s)", LogColor.GREEN)
+            self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO, "Generated")
             return reports
         except Exception as e:
             self._log.error(f"Failed to generate fill reports: {e}")
@@ -353,7 +367,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 instrument_id=instrument_id,
             )
 
-            self._log.info(f"Generated {len(reports)} position status report(s)", LogColor.GREEN)
+            self._log_report_receipt(
+                len(reports),
+                "PositionStatusReport",
+                command.log_receipt_level,
+            )
+
             return reports
         except Exception as e:
             self._log.error(f"Failed to generate position status reports: {e}")

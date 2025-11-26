@@ -98,9 +98,7 @@ def test_exchange_to_venue_mapping():
                     f"but expected '{expected_venue}'"
                 )
         except ValueError:
-            assert (
-                False
-            ), f"Tardis exchange '{exchange_str}' maps to invalid Nautilus venue '{venue_str}'"
+            raise AssertionError(f"Tardis exchange '{exchange_str}' maps to invalid Nautilus venue '{venue_str}'")
 
 
 def test_venue_to_exchange_mapping_bidirectional():

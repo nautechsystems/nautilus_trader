@@ -203,12 +203,7 @@ impl BlockchainDataClient {
                                 BlockchainMessage::SwapEvent(swap_event) => {
                                     match core_client.get_pool(&swap_event.pool_address) {
                                         Ok(pool) => {
-                                            let dex_extended = get_dex_extended(core_client.chain.name, &pool.dex.name).expect("Failed to get dex extended");
-                                            match core_client.process_pool_swap_event(
-                                                &swap_event,
-                                                pool,
-                                                dex_extended,
-                                            ){
+                                            match core_client.process_pool_swap_event(&swap_event, pool){
                                                 Ok(swap) => Some(DataEvent::DeFi(DefiData::PoolSwap(swap))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool swap event: {e}");

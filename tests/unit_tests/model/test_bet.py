@@ -79,7 +79,7 @@ def test_betposition_methods():
     bet2 = Bet(Decimal("2.0"), Decimal("150.0"), BetSide.LAY)
     pos.add_bet(bet2)
     # Depending on the internal logic, the overall exposure may flip negative
-    assert pos.exposure < Decimal("0")
+    assert pos.exposure < Decimal(0)
 
     # If the net exposure is non-zero, as_bet() should return a Bet
     assert pos.as_bet() is not None
@@ -372,10 +372,10 @@ def test_probability_to_bet_back_low_prob():
 
 def test_probability_to_bet_sell():
     bet = probability_to_bet(probability=dec(0.80), volume=dec(50.0), side=OrderSide.SELL)
-    expected = Bet(Decimal("1.25"), Decimal("40"), BetSide.LAY)
+    expected = Bet(Decimal("1.25"), Decimal(40), BetSide.LAY)
     assert bet == expected
-    assert bet.outcome_win_payoff() == Decimal("-10")
-    assert bet.outcome_lose_payoff() == Decimal("40")
+    assert bet.outcome_win_payoff() == Decimal(-10)
+    assert bet.outcome_lose_payoff() == Decimal(40)
 
 
 def test_inverse_probability_to_bet():
@@ -411,16 +411,16 @@ def test_inverse_probability_to_bet_example2():
 
 def test_bet_position_back_and_lay():
     bet_position = BetPosition()
-    back_bet = Bet(Decimal("2.00"), Decimal("100000"), BetSide.BACK)
-    lay_bet = Bet(Decimal("3.00"), Decimal("10000"), BetSide.LAY)
+    back_bet = Bet(Decimal("2.00"), Decimal(100000), BetSide.BACK)
+    lay_bet = Bet(Decimal("3.00"), Decimal(10000), BetSide.LAY)
     bet_position.add_bet(back_bet)
     bet_position.add_bet(lay_bet)
 
     # Assuming exposure is stake * odds for back and -stake * odds for lay
     # 200,000 - 30,000 = 170,000
-    expected_exposure = Decimal("100000") * Decimal("2.00") - Decimal("10000") * Decimal("3.00")
+    expected_exposure = Decimal(100000) * Decimal("2.00") - Decimal(10000) * Decimal("3.00")
     # Note: Portfolio test expects -170,000, suggesting a sign convention
-    assert expected_exposure == Decimal("170000")
+    assert expected_exposure == Decimal(170000)
     assert bet_position.exposure == expected_exposure  # Adjust based on actual implementation
 
     # Check unrealized PnL at mark price 3.00

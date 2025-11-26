@@ -39,6 +39,8 @@ pub struct BybitWsPlaceOrderParams {
     #[pyo3(get, set)]
     pub qty: String,
     #[pyo3(get, set)]
+    pub is_leverage: Option<i32>,
+    #[pyo3(get, set)]
     pub market_unit: Option<String>,
     #[pyo3(get, set)]
     pub price: Option<String>,
@@ -90,6 +92,7 @@ impl BybitWsPlaceOrderParams {
         side: String,
         order_type: String,
         qty: String,
+        is_leverage: Option<i32>,
         market_unit: Option<String>,
         price: Option<String>,
         time_in_force: Option<String>,
@@ -117,6 +120,7 @@ impl BybitWsPlaceOrderParams {
             side,
             order_type,
             qty,
+            is_leverage,
             market_unit,
             price,
             time_in_force,
@@ -217,6 +221,7 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
             side,
             order_type,
             qty: params.qty,
+            is_leverage: params.is_leverage,
             market_unit: params.market_unit,
             price: params.price,
             time_in_force,
@@ -294,6 +299,7 @@ impl From<messages::BybitWsPlaceOrderParams> for BybitWsPlaceOrderParams {
             side,
             order_type,
             qty: params.qty,
+            is_leverage: params.is_leverage,
             market_unit: params.market_unit,
             price: params.price,
             time_in_force,

@@ -160,6 +160,13 @@ impl OKXWebSocketClient {
         self.api_key()
     }
 
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    #[must_use]
+    pub fn py_api_key_masked(&self) -> Option<String> {
+        self.api_key_masked()
+    }
+
     #[pyo3(name = "is_active")]
     fn py_is_active(&mut self) -> bool {
         self.is_active()
@@ -219,7 +226,7 @@ impl OKXWebSocketClient {
             instruments_any.push(inst_any);
         }
 
-        self.initialize_instruments_cache(instruments_any);
+        self.cache_instruments(instruments_any);
 
         let mut client = self.clone();
 
@@ -228,7 +235,9 @@ impl OKXWebSocketClient {
 
             let stream = client.stream();
 
+            // Keep client alive in the spawned task to prevent handler from dropping
             tokio::spawn(async move {
+                let _client = client;
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {
@@ -282,7 +291,11 @@ impl OKXWebSocketClient {
                         NautilusWsMessage::AccountUpdate(msg) => {
                             call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
+                        NautilusWsMessage::PositionUpdate(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
                         NautilusWsMessage::Reconnected => {} // Nothing to handle
+                        NautilusWsMessage::Authenticated => {} // Nothing to handle
                         NautilusWsMessage::Error(msg) => {
                             call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
@@ -1144,6 +1157,22 @@ impl OKXWebSocketClient {
                 .await
                 .map_err(to_pyvalue_err)
         })
+    }
+
+    #[pyo3(name = "cache_instruments")]
+    fn py_cache_instruments(&self, py: Python<'_>, instruments: Vec<Py<PyAny>>) -> PyResult<()> {
+        let instruments: Result<Vec<_>, _> = instruments
+            .into_iter()
+            .map(|inst| pyobject_to_instrument_any(py, inst))
+            .collect();
+        self.cache_instruments(instruments?);
+        Ok(())
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
+        self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
+        Ok(())
     }
 }
 

@@ -284,6 +284,8 @@ class OrderStatusReport(ExecutionReport):
         )
 
     def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
         if not isinstance(other, OrderStatusReport):
             return False
         return (
@@ -668,6 +670,8 @@ class FillReport(ExecutionReport):
         self.ts_event = ts_event
 
     def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
         if not isinstance(other, FillReport):
             return False
         return (

@@ -32,6 +32,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.core.nautilus_pyo3 import ed25519_signature
 from nautilus_trader.core.nautilus_pyo3 import hmac_signature
+from nautilus_trader.core.nautilus_pyo3 import mask_api_key
 from nautilus_trader.core.nautilus_pyo3 import rsa_signature
 
 
@@ -126,6 +127,21 @@ class BinanceHttpClient:
 
         """
         return self._key
+
+    @property
+    def api_key_masked(self) -> str:
+        """
+        Return the masked Binance API key being used by the client.
+
+        Shows first 4 and last 4 characters with ellipsis in between.
+        For keys shorter than 8 characters, shows asterisks only.
+
+        Returns
+        -------
+        str
+
+        """
+        return mask_api_key(self._key)
 
     @property
     def headers(self):

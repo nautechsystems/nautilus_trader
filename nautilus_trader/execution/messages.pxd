@@ -83,6 +83,9 @@ cdef class GenerateFillReports(ExecutionReportCommand):
 
 
 cdef class GeneratePositionStatusReports(ExecutionReportCommand):
+    cdef readonly LogLevel log_receipt_level
+    """The log level for logging received reports.\n\n:returns: `LogLevel`"""
+
     @staticmethod
     cdef GeneratePositionStatusReports from_dict_c(dict values)
 

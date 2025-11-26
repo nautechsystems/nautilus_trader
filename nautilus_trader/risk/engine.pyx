@@ -43,6 +43,7 @@ from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TradingState
+from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -51,6 +52,7 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -58,8 +60,10 @@ from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.functions cimport trading_state_to_str
+from nautilus_trader.model.functions cimport trailing_offset_type_to_str
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.base cimport NEGATIVE_PRICE_INSTRUMENT_CLASSES
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Currency
@@ -699,11 +703,63 @@ cdef class RiskEngine(Component):
                 last_px = order.trigger_price
             elif order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 if order.trigger_price is None:
-                    self._log.warning(
-                        f"Cannot check {order_type_to_str(order.order_type)} order risk: "
-                        f"no trigger price was set",  # TODO: Use last_trade += offset
-                    )
-                    continue  # Cannot assess risk
+                    # Validate trailing offset type is supported
+                    if order.trailing_offset_type not in (TrailingOffsetType.PRICE, TrailingOffsetType.BASIS_POINTS, TrailingOffsetType.TICKS):
+                        self._deny_order(
+                            order=order,
+                            reason=f"UNSUPPORTED_TRAILING_OFFSET_TYPE: {trailing_offset_type_to_str(order.trailing_offset_type)}",
+                        )
+                        return False
+
+                    last_trade = None
+                    last_quote = None
+
+                    if order.trigger_type == TriggerType.BID_ASK:
+                        last_quote = self._cache.quote_tick(instrument.id)
+                        if last_quote is None:
+                            self._log.warning(
+                                f"Cannot check {order_type_to_str(order.order_type)} order risk: no trigger price set and no bid/ask quotes available for {instrument.id}",
+                            )
+                            continue
+                        last_px = TrailingStopCalculator.calculate_with_bid_ask(
+                            price_increment=instrument.price_increment,
+                            trailing_offset_type=order.trailing_offset_type,
+                            side=order.side,
+                            offset=float(order.trailing_offset),
+                            bid=last_quote.bid_price,
+                            ask=last_quote.ask_price,
+                        )
+                    else:
+                        last_trade = self._cache.trade_tick(instrument.id)
+                        if last_trade is not None:
+                            last_px = TrailingStopCalculator.calculate_with_last(
+                                price_increment=instrument.price_increment,
+                                trailing_offset_type=order.trailing_offset_type,
+                                side=order.side,
+                                offset=float(order.trailing_offset),
+                                last=last_trade.price,
+                            )
+                        elif order.trigger_type == TriggerType.LAST_OR_BID_ASK:
+                            # Fallback to bid/ask when no trade data available
+                            last_quote = self._cache.quote_tick(instrument.id)
+                            if last_quote is None:
+                                self._log.warning(
+                                    f"Cannot check {order_type_to_str(order.order_type)} order risk: no trigger price set and no market data available for {instrument.id}",
+                                )
+                                continue
+                            last_px = TrailingStopCalculator.calculate_with_bid_ask(
+                                price_increment=instrument.price_increment,
+                                trailing_offset_type=order.trailing_offset_type,
+                                side=order.side,
+                                offset=float(order.trailing_offset),
+                                bid=last_quote.bid_price,
+                                ask=last_quote.ask_price,
+                            )
+                        else:
+                            self._log.warning(
+                                f"Cannot check {order_type_to_str(order.order_type)} order risk: no trigger price set and no market data available for {instrument.id}",
+                            )
+                            continue
                 else:
                     last_px = order.trigger_price
             else:
@@ -888,7 +944,7 @@ cdef class RiskEngine(Component):
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
 
-        if instrument.instrument_class != InstrumentClass.OPTION:
+        if instrument.instrument_class not in NEGATIVE_PRICE_INSTRUMENT_CLASSES:
             if price.raw_int_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"

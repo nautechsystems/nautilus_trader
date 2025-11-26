@@ -38,6 +38,7 @@ impl<T> EagerStream<T> {
     {
         let _guard = runtime.enter();
         let (tx, rx) = mpsc::channel(1);
+
         let task = tokio::spawn(async move {
             stream
                 .for_each(|item| async {

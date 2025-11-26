@@ -31,7 +31,11 @@ use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::InstrumentAny,
 };
-use tokio::{sync::mpsc::error::TryRecvError, time::Duration};
+use nautilus_network::backoff::ExponentialBackoff;
+use tokio::{
+    sync::mpsc::error::TryRecvError,
+    time::{Duration, Instant},
+};
 
 use super::{
     decode::{decode_imbalance_msg, decode_statistics_msg, decode_status_msg},
@@ -88,13 +92,21 @@ pub struct DatabentoFeedHandler {
     replay: bool,
     use_exchange_as_venue: bool,
     bars_timestamp_on_close: bool,
+    reconnect_timeout_mins: Option<u64>,
+    backoff: ExponentialBackoff,
+    subscriptions: Vec<Subscription>,
+    buffered_commands: Vec<LiveCommand>,
 }
 
 impl DatabentoFeedHandler {
     /// Creates a new [`DatabentoFeedHandler`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if exponential backoff creation fails (should never happen with valid hardcoded parameters).
     #[must_use]
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         key: String,
         dataset: String,
         rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,
@@ -103,7 +115,21 @@ impl DatabentoFeedHandler {
         symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
+        reconnect_timeout_mins: Option<u64>,
     ) -> Self {
+        // Choose max delay based on timeout configuration:
+        // - With timeout: 60s max (quick recovery to reconnect within window)
+        // - Without timeout (None): 600s max (patient recovery, respectful of infrastructure)
+        let delay_max = if reconnect_timeout_mins.is_some() {
+            Duration::from_secs(60)
+        } else {
+            Duration::from_secs(600)
+        };
+
+        // SAFETY: Hardcoded parameters are all valid
+        let backoff =
+            ExponentialBackoff::new(Duration::from_secs(1), delay_max, 2.0, 1000, false).unwrap();
+
         Self {
             key,
             dataset,
@@ -114,6 +140,10 @@ impl DatabentoFeedHandler {
             replay: false,
             use_exchange_as_venue,
             bars_timestamp_on_close,
+            reconnect_timeout_mins,
+            backoff,
+            subscriptions: Vec::new(),
+            buffered_commands: Vec::new(),
         }
     }
 
@@ -122,12 +152,105 @@ impl DatabentoFeedHandler {
     /// Establishes a connection to the Databento LSG, subscribes to requested data feeds,
     /// and continuously processes incoming market data messages until shutdown.
     ///
+    /// Implements automatic reconnection with exponential backoff (1s to 60s with jitter).
+    /// Each successful session resets the reconnection cycle, giving the next disconnect
+    /// a fresh timeout window. Gives up after `reconnect_timeout_mins` if configured.
+    ///
     /// # Errors
     ///
     /// Returns an error if any client operation or message handling fails.
     #[allow(clippy::blocks_in_conditions)]
     pub async fn run(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Running feed handler");
+
+        let mut reconnect_start: Option<Instant> = None;
+        let mut attempt = 0;
+
+        loop {
+            attempt += 1;
+
+            match self.run_session(attempt).await {
+                Ok(ran_successfully) => {
+                    if ran_successfully {
+                        tracing::info!("Resetting reconnection cycle after successful session");
+                        reconnect_start = None;
+                        attempt = 0;
+                        self.backoff.reset();
+                        continue;
+                    } else {
+                        tracing::info!("Session ended normally");
+                        break Ok(());
+                    }
+                }
+                Err(e) => {
+                    let cycle_start = reconnect_start.get_or_insert_with(Instant::now);
+
+                    if let Some(timeout_mins) = self.reconnect_timeout_mins {
+                        let elapsed = cycle_start.elapsed();
+                        let timeout = Duration::from_secs(timeout_mins * 60);
+
+                        if elapsed >= timeout {
+                            tracing::error!(
+                                "Giving up reconnection after {} minutes",
+                                timeout_mins
+                            );
+                            self.send_msg(LiveMessage::Error(anyhow::anyhow!(
+                                "Reconnection timeout after {} minutes: {}",
+                                timeout_mins,
+                                e
+                            )))
+                            .await;
+                            break Err(e);
+                        }
+                    }
+
+                    let delay = self.backoff.next_duration();
+
+                    tracing::warn!(
+                        "Connection lost (attempt {}): {}. Reconnecting in {}s...",
+                        attempt,
+                        e,
+                        delay.as_secs()
+                    );
+
+                    tokio::select! {
+                        _ = tokio::time::sleep(delay) => {}
+                        cmd = self.cmd_rx.recv() => {
+                            match cmd {
+                                Some(LiveCommand::Close) => {
+                                    tracing::info!("Close received during backoff");
+                                    return Ok(());
+                                }
+                                None => {
+                                    tracing::debug!("Command channel closed during backoff");
+                                    return Ok(());
+                                }
+                                Some(cmd) => {
+                                    tracing::debug!("Buffering command received during backoff: {:?}", cmd);
+                                    self.buffered_commands.push(cmd);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Runs a single session, handling connection, subscriptions, and data streaming.
+    ///
+    /// Returns `Ok(bool)` where the bool indicates if the session ran successfully
+    /// for a meaningful duration (true) or was intentionally closed (false).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if connection fails, subscription fails, or data streaming encounters an error.
+    async fn run_session(&mut self, attempt: usize) -> anyhow::Result<bool> {
+        if attempt > 1 {
+            tracing::info!("Reconnecting (attempt {})...", attempt);
+        }
+
+        let session_start = Instant::now();
         let clock = get_atomic_clock_realtime();
         let mut symbol_map = PitSymbolMap::new();
         let mut instrument_id_map: AHashMap<u32, InstrumentId> = AHashMap::new();
@@ -147,27 +270,79 @@ impl DatabentoFeedHandler {
         )
         .await?;
 
-        tracing::info!("Connected");
-
         let mut client = match result {
-            Ok(client) => client,
+            Ok(client) => {
+                if attempt > 1 {
+                    tracing::info!("Reconnected successfully");
+                } else {
+                    tracing::info!("Connected");
+                }
+                client
+            }
             Err(e) => {
-                self.msg_tx.send(LiveMessage::Close).await?;
-                self.cmd_rx.close();
                 anyhow::bail!("Failed to connect to Databento LSG: {e}");
             }
         };
 
-        // Timeout awaiting the next record before checking for a command
-        let timeout = Duration::from_millis(10);
+        // Process any commands buffered during reconnection backoff
+        let mut start_buffered = false;
+        if !self.buffered_commands.is_empty() {
+            tracing::info!(
+                "Processing {} buffered commands",
+                self.buffered_commands.len()
+            );
+            for cmd in self.buffered_commands.drain(..) {
+                match cmd {
+                    LiveCommand::Subscribe(sub) => {
+                        if !self.replay && sub.start.is_some() {
+                            self.replay = true;
+                        }
+                        self.subscriptions.push(sub);
+                    }
+                    LiveCommand::Start => {
+                        start_buffered = true;
+                    }
+                    LiveCommand::Close => {
+                        tracing::warn!("Close command was buffered, shutting down");
+                        return Ok(false);
+                    }
+                }
+            }
+        }
 
-        // Flag to control whether to continue to await next record
+        let timeout = Duration::from_millis(10);
         let mut running = false;
+
+        if !self.subscriptions.is_empty() {
+            tracing::info!(
+                "Resubscribing to {} subscriptions",
+                self.subscriptions.len()
+            );
+            for sub in self.subscriptions.clone() {
+                client.subscribe(sub).await?;
+            }
+            // Strip start timestamps after successful subscription to avoid replaying history on future reconnects
+            for sub in &mut self.subscriptions {
+                sub.start = None;
+            }
+            client.start().await?;
+            running = true;
+            tracing::info!("Resubscription complete");
+        } else if start_buffered {
+            tracing::info!("Starting session from buffered Start command");
+            buffering_start = if self.replay {
+                Some(clock.get_time_ns())
+            } else {
+                None
+            };
+            client.start().await?;
+            running = true;
+        }
 
         loop {
             if self.msg_tx.is_closed() {
                 tracing::debug!("Message channel was closed: stopping");
-                break;
+                return Ok(false);
             }
 
             match self.cmd_rx.try_recv() {
@@ -178,7 +353,11 @@ impl DatabentoFeedHandler {
                             if !self.replay && sub.start.is_some() {
                                 self.replay = true;
                             }
-                            client.subscribe(sub).await?;
+                            client.subscribe(sub.clone()).await?;
+                            // Store without start to avoid replaying history on reconnect
+                            let mut sub_for_reconnect = sub;
+                            sub_for_reconnect.start = None;
+                            self.subscriptions.push(sub_for_reconnect);
                         }
                         LiveCommand::Start => {
                             buffering_start = if self.replay {
@@ -196,14 +375,14 @@ impl DatabentoFeedHandler {
                                 client.close().await?;
                                 tracing::debug!("Closed inner client");
                             }
-                            break;
+                            return Ok(false);
                         }
                     }
                 }
-                Err(TryRecvError::Empty) => {} // No command yet
+                Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {
-                    tracing::debug!("Disconnected");
-                    break;
+                    tracing::debug!("Command channel disconnected");
+                    return Ok(false);
                 }
             }
 
@@ -211,21 +390,29 @@ impl DatabentoFeedHandler {
                 continue;
             }
 
-            // Await the next record with a timeout
             let result = tokio::time::timeout(timeout, client.next_record()).await;
             let record_opt = match result {
                 Ok(record_opt) => record_opt,
-                Err(_) => continue, // Timeout
+                Err(_) => continue,
             };
 
             let record = match record_opt {
                 Ok(Some(record)) => record,
-                Ok(None) => break, // Session ended normally
+                Ok(None) => {
+                    const SUCCESS_THRESHOLD: Duration = Duration::from_secs(60);
+                    if session_start.elapsed() >= SUCCESS_THRESHOLD {
+                        tracing::info!("Session ended after successful run");
+                        return Ok(true);
+                    }
+                    anyhow::bail!("Session ended by gateway");
+                }
                 Err(e) => {
-                    // Fail the session entirely for now. Consider refining
-                    // this strategy to handle specific errors more gracefully.
-                    self.send_msg(LiveMessage::Error(anyhow::anyhow!(e))).await;
-                    break;
+                    const SUCCESS_THRESHOLD: Duration = Duration::from_secs(60);
+                    if session_start.elapsed() >= SUCCESS_THRESHOLD {
+                        tracing::info!("Connection error after successful run: {e}");
+                        return Ok(true);
+                    }
+                    anyhow::bail!("Connection error: {e}");
                 }
             };
 
@@ -310,7 +497,7 @@ impl DatabentoFeedHandler {
                 self.send_msg(LiveMessage::Statistics(data)).await;
             } else {
                 // Decode a generic record with possible errors
-                let (mut data1, data2) = match {
+                let res = {
                     let sym_map = self.read_symbol_venue_map()?;
                     handle_record(
                         record,
@@ -322,7 +509,8 @@ impl DatabentoFeedHandler {
                         &initialized_books,
                         self.bars_timestamp_on_close,
                     )
-                } {
+                };
+                let (mut data1, data2) = match res {
                     Ok(decoded) => decoded,
                     Err(e) => {
                         tracing::error!("Error decoding record: {e}");
@@ -391,11 +579,6 @@ impl DatabentoFeedHandler {
                 }
             }
         }
-
-        self.cmd_rx.close();
-        tracing::debug!("Closed command receiver");
-
-        Ok(())
     }
 
     /// Sends a message to the message processing task.
@@ -672,4 +855,91 @@ fn handle_record(
         include_trades,
         bars_timestamp_on_close,
     )
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use databento::live::Subscription;
+    use indexmap::IndexMap;
+    use rstest::*;
+    use time::macros::datetime;
+
+    use super::*;
+
+    fn create_test_handler(reconnect_timeout_mins: Option<u64>) -> DatabentoFeedHandler {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (msg_tx, _msg_rx) = tokio::sync::mpsc::channel(100);
+
+        DatabentoFeedHandler::new(
+            "test_key".to_string(),
+            "GLBX.MDP3".to_string(),
+            cmd_rx,
+            msg_tx,
+            IndexMap::new(),
+            Arc::new(RwLock::new(AHashMap::new())),
+            false,
+            false,
+            reconnect_timeout_mins,
+        )
+    }
+
+    #[rstest]
+    #[case(Some(10))]
+    #[case(None)]
+    fn test_backoff_initialization(#[case] reconnect_timeout_mins: Option<u64>) {
+        let handler = create_test_handler(reconnect_timeout_mins);
+
+        assert_eq!(handler.reconnect_timeout_mins, reconnect_timeout_mins);
+        assert!(handler.subscriptions.is_empty());
+        assert!(handler.buffered_commands.is_empty());
+    }
+
+    #[rstest]
+    fn test_subscription_with_and_without_start() {
+        let start_time = datetime!(2024-01-01 00:00:00 UTC);
+        let sub_with_start = Subscription::builder()
+            .symbols("ES.FUT")
+            .schema(databento::dbn::Schema::Mbp1)
+            .start(start_time)
+            .build();
+
+        let mut sub_without_start = sub_with_start.clone();
+        sub_without_start.start = None;
+
+        assert!(sub_with_start.start.is_some());
+        assert!(sub_without_start.start.is_none());
+        assert_eq!(sub_with_start.schema, sub_without_start.schema);
+        assert_eq!(sub_with_start.symbols, sub_without_start.symbols);
+    }
+
+    #[rstest]
+    fn test_handler_initialization_state() {
+        let handler = create_test_handler(Some(10));
+
+        assert!(!handler.replay);
+        assert_eq!(handler.dataset, "GLBX.MDP3");
+        assert_eq!(handler.key, "test_key");
+        assert!(handler.subscriptions.is_empty());
+        assert!(handler.buffered_commands.is_empty());
+    }
+
+    #[rstest]
+    fn test_handler_with_no_timeout() {
+        let handler = create_test_handler(None);
+
+        assert_eq!(handler.reconnect_timeout_mins, None);
+        assert!(!handler.replay);
+    }
+
+    #[rstest]
+    fn test_handler_with_zero_timeout() {
+        let handler = create_test_handler(Some(0));
+
+        assert_eq!(handler.reconnect_timeout_mins, Some(0));
+        assert!(!handler.replay);
+    }
 }

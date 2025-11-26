@@ -60,7 +60,7 @@ impl DataBackendSession {
     /// to work correctly.
     #[pyo3(name = "add_file")]
     #[pyo3(signature = (data_type, table_name, file_path, sql_query=None))]
-    fn add_file_py(
+    fn py_add_file(
         mut slf: PyRefMut<'_, Self>,
         data_type: NautilusDataType,
         table_name: &str,
@@ -99,7 +99,7 @@ impl DataBackendSession {
     /// Register an object store with the session context from a URI with optional storage options
     #[pyo3(name = "register_object_store_from_uri")]
     #[pyo3(signature = (uri, storage_options=None))]
-    fn register_object_store_from_uri_py(
+    fn py_register_object_store_from_uri(
         mut slf: PyRefMut<'_, Self>,
         uri: &str,
         storage_options: Option<std::collections::HashMap<String, String>>,

@@ -15,11 +15,10 @@
 
 //! Live execution client implementation for the Hyperliquid adapter.
 
-use std::{cell::Ref, str::FromStr, sync::Mutex};
+use std::{str::FromStr, sync::Mutex};
 
 use anyhow::Context;
 use nautilus_common::{
-    clock::Clock,
     messages::{
         ExecutionEvent, ExecutionReport as NautilusExecutionReport,
         execution::{
@@ -32,7 +31,6 @@ use nautilus_common::{
 };
 use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
-use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderType},
@@ -45,6 +43,7 @@ use tokio::task::JoinHandle;
 
 use crate::{
     common::{
+        HyperliquidProductType,
         consts::HYPERLIQUID_VENUE,
         credential::Secrets,
         parse::{
@@ -53,13 +52,8 @@ use crate::{
         },
     },
     config::HyperliquidExecClientConfig,
-    http::{client::HyperliquidHttpClient, query::ExchangeAction},
-    websocket::{
-        ExecutionReport,
-        client::HyperliquidWebSocketClient,
-        messages::HyperliquidWsMessage as HyperliquidWsMsg,
-        parse::{parse_ws_fill_report, parse_ws_order_status_report},
-    },
+    http::{client::HyperliquidHttpClient, models::ClearinghouseState, query::ExchangeAction},
+    websocket::{ExecutionReport, NautilusWsMessage, client::HyperliquidWebSocketClient},
 };
 
 #[derive(Debug)]
@@ -173,10 +167,17 @@ impl HyperliquidExecutionClient {
             Some(config.http_timeout_secs),
             config.http_proxy_url.clone(),
         )
-        .context("Failed to create Hyperliquid HTTP client")?;
+        .context("failed to create Hyperliquid HTTP client")?;
 
         // Create WebSocket client (will connect when needed)
-        let ws_client = HyperliquidWebSocketClient::new(None, config.is_testnet);
+        // Note: For execution WebSocket (private account messages), product type is less critical
+        // since messages are account-scoped. Defaulting to Perp.
+        let ws_client = HyperliquidWebSocketClient::new(
+            None,
+            config.is_testnet,
+            HyperliquidProductType::Perp,
+            Some(core.account_id),
+        );
 
         Ok(Self {
             core,
@@ -210,7 +211,7 @@ impl HyperliquidExecutionClient {
             tracing::info!("Initialized {} instruments", instruments.len());
 
             for instrument in &instruments {
-                self.http_client.add_instrument(instrument.clone());
+                self.http_client.cache_instrument(instrument.clone());
             }
         }
 
@@ -240,12 +241,11 @@ impl HyperliquidExecutionClient {
             .http_client
             .info_clearinghouse_state(account_address)
             .await
-            .context("Failed to fetch clearinghouse state")?;
+            .context("failed to fetch clearinghouse state")?;
 
         // Deserialize the response
-        let state: crate::http::models::ClearinghouseState =
-            serde_json::from_value(clearinghouse_state)
-                .context("Failed to deserialize clearinghouse state")?;
+        let state: ClearinghouseState = serde_json::from_value(clearinghouse_state)
+            .context("failed to deserialize clearinghouse state")?;
 
         tracing::debug!(
             "Received clearinghouse state: cross_margin_summary={:?}, asset_positions={}",
@@ -257,7 +257,7 @@ impl HyperliquidExecutionClient {
         if let Some(ref cross_margin_summary) = state.cross_margin_summary {
             let (balances, margins) =
                 crate::common::parse::parse_account_balances_and_margins(cross_margin_summary)
-                    .context("Failed to parse account balances and margins")?;
+                    .context("failed to parse account balances and margins")?;
 
             let ts_event = if let Some(time_ms) = state.time {
                 nautilus_core::UnixNanos::from(time_ms * 1_000_000)
@@ -283,7 +283,7 @@ impl HyperliquidExecutionClient {
         let address = self
             .http_client
             .get_user_address()
-            .context("Failed to get user address from HTTP client")?;
+            .context("failed to get user address from HTTP client")?;
 
         Ok(address)
     }
@@ -380,7 +380,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.started = true;
 
         // Start WebSocket stream for execution updates
-        if let Err(e) = self.start_ws_stream() {
+        if let Err(e) = get_runtime().block_on(self.start_ws_stream()) {
             tracing::warn!("Failed to start WebSocket stream: {e}");
         }
 
@@ -427,7 +427,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
             return Ok(());
         }
 
-        // Validate order before submission
         if let Err(e) = self.validate_order_submission(order) {
             self.core.generate_order_rejected(
                 order.strategy_id(),
@@ -841,13 +840,23 @@ use async_trait::async_trait;
 use nautilus_common::messages::execution::{
     GenerateFillReports, GenerateOrderStatusReport, GeneratePositionReports,
 };
-use nautilus_execution::client::LiveExecutionClient;
+use nautilus_live::execution::client::LiveExecutionClient;
 use nautilus_model::reports::{
     ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport,
 };
 
 #[async_trait(?Send)]
 impl LiveExecutionClient for HyperliquidExecutionClient {
+    fn get_message_channel(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedSender<nautilus_common::messages::ExecutionEvent> {
+        get_exec_event_sender()
+    }
+
+    fn get_clock(&self) -> std::cell::Ref<'_, dyn nautilus_common::clock::Clock> {
+        self.core.clock().borrow()
+    }
+
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             return Ok(());
@@ -859,8 +868,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         self.ensure_instruments_initialized_async().await?;
 
         // Connect WebSocket client
-        let url = crate::common::consts::ws_url(self.config.is_testnet);
-        self.ws_client = HyperliquidWebSocketClient::connect(url).await?;
+        self.ws_client.connect().await?;
 
         // Subscribe to user-specific order updates and fills
         let user_address = self.get_user_address()?;
@@ -877,10 +885,12 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         self.connected = true;
         self.core.set_connected(true);
 
-        tracing::info!(
-            "Hyperliquid execution client {} connected",
-            self.core.client_id
-        );
+        // Start WebSocket stream for execution updates
+        if let Err(e) = self.start_ws_stream().await {
+            tracing::warn!("Failed to start WebSocket stream: {e}");
+        }
+
+        tracing::info!(client_id = %self.core.client_id, "Connected");
         Ok(())
     }
 
@@ -900,10 +910,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         self.connected = false;
         self.core.set_connected(false);
 
-        tracing::info!(
-            "Hyperliquid execution client {} disconnected",
-            self.core.client_id
-        );
+        tracing::info!(client_id = %self.core.client_id, "Disconnected");
         Ok(())
     }
 
@@ -928,7 +935,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
             .http_client
             .request_order_status_reports(&user_address, cmd.instrument_id)
             .await
-            .context("Failed to generate order status reports")?;
+            .context("failed to generate order status reports")?;
 
         // Filter by client_order_id if specified
         let reports = if let Some(client_order_id) = cmd.client_order_id {
@@ -957,7 +964,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
             .http_client
             .request_fill_reports(&user_address, cmd.instrument_id)
             .await
-            .context("Failed to generate fill reports")?;
+            .context("failed to generate fill reports")?;
 
         // Filter by time range if specified
         let reports = if let (Some(start), Some(end)) = (cmd.start, cmd.end) {
@@ -990,7 +997,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
             .http_client
             .request_position_status_reports(&user_address, cmd.instrument_id)
             .await
-            .context("Failed to generate position status reports")?;
+            .context("failed to generate position status reports")?;
 
         tracing::info!("Generated {} position status reports", reports.len());
         Ok(reports)
@@ -1012,46 +1019,32 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
     }
 }
 
-impl LiveExecutionClientExt for HyperliquidExecutionClient {
-    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
-        get_exec_event_sender()
-    }
-
-    fn get_clock(&self) -> Ref<'_, dyn Clock> {
-        self.core.clock().borrow()
-    }
-}
-
 impl HyperliquidExecutionClient {
-    fn start_ws_stream(&mut self) -> anyhow::Result<()> {
-        let mut handle_guard = self.ws_stream_handle.lock().expect(MUTEX_POISONED);
-        if handle_guard.is_some() {
-            return Ok(());
+    async fn start_ws_stream(&mut self) -> anyhow::Result<()> {
+        {
+            let handle_guard = self.ws_stream_handle.lock().expect(MUTEX_POISONED);
+            if handle_guard.is_some() {
+                return Ok(());
+            }
         }
 
-        // Get user address for subscriptions
         let user_address = self.get_user_address()?;
-        let account_id = self.core.account_id;
-        let ws_client = self.ws_client.clone();
+        let _account_id = self.core.account_id;
+        let mut ws_client = self.ws_client.clone();
 
-        // Add instruments to WebSocket client cache
-        // This ensures instruments are available for parsing
-        let runtime = get_runtime();
-        let instruments = runtime.block_on(async {
-            self.http_client
-                .request_instruments()
-                .await
-                .unwrap_or_default()
-        });
+        let instruments = self
+            .http_client
+            .request_instruments()
+            .await
+            .unwrap_or_default();
 
         for instrument in instruments {
-            ws_client.add_instrument(instrument);
+            ws_client.cache_instrument(instrument);
         }
 
-        // Spawn background task to process WebSocket messages
+        let runtime = get_runtime();
         let handle = runtime.spawn(async move {
-            // Ensure connection and subscribe
-            if let Err(e) = ws_client.ensure_connected().await {
+            if let Err(e) = ws_client.connect().await {
                 tracing::warn!("Failed to connect WebSocket: {e}");
                 return;
             }
@@ -1068,116 +1061,46 @@ impl HyperliquidExecutionClient {
 
             tracing::info!("Subscribed to Hyperliquid execution updates");
 
-            let clock = get_atomic_clock_realtime();
+            let _clock = get_atomic_clock_realtime();
 
-            // Process messages
             loop {
                 let event = ws_client.next_event().await;
 
                 match event {
                     Some(msg) => {
-                        match &msg {
-                            HyperliquidWsMsg::OrderUpdates { data } => {
-                                let mut exec_reports = Vec::new();
-
-                                // Process each order update in the array
-                                for order_update in data {
-                                    if let Some(instrument) =
-                                        ws_client.get_instrument_by_symbol(&order_update.order.coin)
-                                    {
-                                        let ts_init = clock.get_time_ns();
-
-                                        match parse_ws_order_status_report(
-                                            order_update,
-                                            &instrument,
-                                            account_id,
-                                            ts_init,
-                                        ) {
-                                            Ok(report) => {
-                                                exec_reports.push(ExecutionReport::Order(report));
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!("Error parsing order update: {e}");
-                                            }
-                                        }
-                                    } else {
-                                        tracing::warn!(
-                                            "No instrument found for symbol: {}",
-                                            order_update.order.coin
-                                        );
-                                    }
-                                }
-
-                                // Dispatch reports if any
-                                if !exec_reports.is_empty() {
-                                    for report in exec_reports {
-                                        dispatch_execution_report(report);
-                                    }
+                        match msg {
+                            NautilusWsMessage::ExecutionReports(reports) => {
+                                // Handler already parsed the messages, just dispatch them
+                                for report in reports {
+                                    dispatch_execution_report(report);
                                 }
                             }
-                            HyperliquidWsMsg::UserEvents { data } => {
-                                use crate::websocket::messages::WsUserEventData;
-
-                                let ts_init = clock.get_time_ns();
-
-                                match data {
-                                    WsUserEventData::Fills { fills } => {
-                                        let mut exec_reports = Vec::new();
-
-                                        // Process each fill
-                                        for fill in fills {
-                                            if let Some(instrument) =
-                                                ws_client.get_instrument_by_symbol(&fill.coin)
-                                            {
-                                                match parse_ws_fill_report(
-                                                    fill,
-                                                    &instrument,
-                                                    account_id,
-                                                    ts_init,
-                                                ) {
-                                                    Ok(report) => {
-                                                        exec_reports
-                                                            .push(ExecutionReport::Fill(report));
-                                                    }
-                                                    Err(e) => {
-                                                        tracing::warn!("Error parsing fill: {e}");
-                                                    }
-                                                }
-                                            } else {
-                                                tracing::warn!(
-                                                    "No instrument found for symbol: {}",
-                                                    fill.coin
-                                                );
-                                            }
-                                        }
-
-                                        // Dispatch reports if any
-                                        if !exec_reports.is_empty() {
-                                            for report in exec_reports {
-                                                dispatch_execution_report(report);
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        // Other user events (funding, liquidation, etc.) not handled yet
-                                    }
-                                }
+                            NautilusWsMessage::Reconnected => {
+                                tracing::info!("WebSocket reconnected");
+                                // TODO: Resubscribe to user channels if needed
                             }
-                            _ => {
-                                // Ignore other message types in execution stream
+                            NautilusWsMessage::Error(e) => {
+                                tracing::error!("WebSocket error: {e}");
                             }
+                            // Handled by data client
+                            NautilusWsMessage::Trades(_)
+                            | NautilusWsMessage::Quote(_)
+                            | NautilusWsMessage::Deltas(_)
+                            | NautilusWsMessage::Candle(_)
+                            | NautilusWsMessage::MarkPrice(_)
+                            | NautilusWsMessage::IndexPrice(_)
+                            | NautilusWsMessage::FundingRate(_) => {}
                         }
                     }
                     None => {
-                        // Connection closed
-                        tracing::warn!("Hyperliquid WebSocket connection closed");
+                        tracing::warn!("WebSocket next_event returned None");
                         break;
                     }
                 }
             }
         });
 
-        *handle_guard = Some(handle);
+        *self.ws_stream_handle.lock().expect(MUTEX_POISONED) = Some(handle);
         tracing::info!("Hyperliquid WebSocket execution stream started");
         Ok(())
     }

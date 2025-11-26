@@ -44,7 +44,7 @@ class InstrumentProvider:
         if config is None:
             config = InstrumentProviderConfig()
         self._log = Logger(name=type(self).__name__)
-
+        self._config = config
         self._instruments: dict[InstrumentId, Instrument] = {}
         self._currencies: dict[str, Currency] = {}
 
@@ -55,7 +55,7 @@ class InstrumentProvider:
 
         # Async loading flags
         self._loaded = False
-        self._loading = False
+        self._init_lock = asyncio.Lock()
 
         self._tasks: set[asyncio.Task] = set()
 
@@ -148,28 +148,18 @@ class InstrumentProvider:
             If False, then will immediately return if already loaded.
 
         """
-        if not reload and self._loaded:
-            return  # Already loaded
+        async with self._init_lock:
+            if not reload and self._loaded:
+                return  # Already loaded
 
-        if not self._load_all_on_start and not self._load_ids_on_start:
-            self._log.warning(
-                "No loading configured: ensure either `load_all=True` or there are `load_ids`",
-            )
-            return
+            if not self._load_all_on_start and not self._load_ids_on_start:
+                self._log.warning(
+                    "No loading configured: ensure either `load_all=True` or there are `load_ids`",
+                )
+                return
 
-        if self._loading:
-            self._log.debug("Awaiting loading...")
-            while self._loading:
-                await asyncio.sleep(0.1)
+            self._log.info("Initializing instruments...")
 
-        if not reload and self._loaded:
-            return  # Already loaded
-
-        # Set state flag
-        self._loading = True
-        self._log.info("Initializing instruments...")
-
-        try:
             if self._load_all_on_start:
                 await self.load_all_async(self._filters)
             elif self._load_ids_on_start:
@@ -183,18 +173,15 @@ class InstrumentProvider:
                 self._log.info(f"Loading instruments: {instruments_str}{filters_str}")
 
                 await self.load_ids_async(instrument_ids, self._filters)
-        finally:
-            # Always reset loading flag
-            self._loading = False
 
-        if self._instruments:
-            self._log.info(f"Loaded {self.count} instruments")
-        else:
-            self._log.warning("No instruments were loaded, verify config if this is unexpected")
+            if self._instruments:
+                self._log.info(f"Loaded {self.count} instruments")
+            else:
+                self._log.warning("No instruments were loaded, verify config if this is unexpected")
 
-        self._loaded = True
+            self._loaded = True
 
-        self._log.info("Initialized instruments")
+            self._log.info("Initialized instruments")
 
     def load_all(self, filters: dict | None = None) -> None:
         """

@@ -24,7 +24,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoPerpetual, CurrencyPair, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -202,7 +202,7 @@ pub fn parse_account_state(
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
     for b in coinbase_balances {
-        let currency = Currency::from(b.asset_name);
+        let currency = get_currency(&b.asset_name);
         let total = Money::new(b.quantity.parse::<f64>()?, currency);
         let locked = Money::new(b.hold.parse::<f64>()?, currency);
         let free = total - locked;

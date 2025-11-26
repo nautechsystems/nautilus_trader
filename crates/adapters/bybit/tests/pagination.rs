@@ -173,7 +173,7 @@ async fn init_instrument_cache(client: &BybitHttpClient) {
                     if let Ok(instrument) =
                         parse_linear_instrument(&definition, &fee_rate, ts_init, ts_init)
                     {
-                        client.add_instrument(instrument);
+                        client.cache_instrument(instrument);
                     }
                 }
             }

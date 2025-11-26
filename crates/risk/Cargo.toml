@@ -51,6 +51,7 @@ nautilus-portfolio = { workspace = true }
 
 log = { workspace = true }
 rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
 

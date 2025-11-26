@@ -494,7 +494,7 @@ impl StopLimitOrder {
     }
 
     #[pyo3(name = "to_dict")]
-    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;

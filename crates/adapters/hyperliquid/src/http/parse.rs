@@ -14,10 +14,33 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
-use rust_decimal::Decimal;
+use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_model::{
+    enums::{
+        CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
+        TimeInForce, TriggerType,
+    },
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, VenueOrderId,
+    },
+    instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Currency, Price, Quantity},
+};
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
-use super::models::{PerpMeta, SpotMeta};
+use super::models::{HyperliquidFill, PerpMeta, SpotMeta};
+use crate::{
+    common::{
+        consts::HYPERLIQUID_VENUE,
+        enums::{
+            HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide, HyperliquidTpSl,
+        },
+    },
+    websocket::messages::{WsBasicOrderData, WsOrderData},
+};
 
 /// Market type enumeration for normalized instrument definitions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,11 +58,11 @@ pub enum HyperliquidMarketType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidInstrumentDef {
     /// Human-readable symbol (e.g., "BTC-USD-PERP", "PURR-USDC-SPOT").
-    pub symbol: String,
+    pub symbol: Ustr,
     /// Base currency/asset (e.g., "BTC", "PURR").
-    pub base: String,
+    pub base: Ustr,
     /// Quote currency (e.g., "USD" for perps, "USDC" for spot).
-    pub quote: String,
+    pub quote: Ustr,
     /// Market type (perpetual or spot).
     pub market_type: HyperliquidMarketType,
     /// Number of decimal places for price precision.
@@ -87,9 +110,9 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
         let symbol = format!("{}-USD-PERP", asset.name);
 
         let def = HyperliquidInstrumentDef {
-            symbol,
-            base: asset.name.clone(),
-            quote: "USD".to_string(), // Hyperliquid perps are USD-quoted (USDC settled)
+            symbol: symbol.into(),
+            base: asset.name.clone().into(),
+            quote: "USD".into(), // Hyperliquid perps are USD-quoted (USDC settled)
             market_type: HyperliquidMarketType::Perp,
             price_decimals,
             size_decimals: asset.sz_decimals,
@@ -144,9 +167,9 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
         let symbol = format!("{}-{}-SPOT", base_token.name, quote_token.name);
 
         let def = HyperliquidInstrumentDef {
-            symbol,
-            base: base_token.name.clone(),
-            quote: quote_token.name.clone(),
+            symbol: symbol.into(),
+            base: base_token.name.clone().into(),
+            quote: quote_token.name.clone().into(),
             market_type: HyperliquidMarketType::Spot,
             price_decimals,
             size_decimals: base_token.sz_decimals,
@@ -176,21 +199,7 @@ fn pow10_neg(decimals: u32) -> Result<Decimal, String> {
     Ok(Decimal::from_i128_with_scale(1, decimals))
 }
 
-// ================================================================================================
-// Instrument Conversion Functions
-// ================================================================================================
-
-use nautilus_core::time::get_atomic_clock_realtime;
-use nautilus_model::{
-    enums::CurrencyType,
-    identifiers::{InstrumentId, Symbol},
-    instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
-    types::{Currency, Price, Quantity},
-};
-
-use crate::common::consts::HYPERLIQUID_VENUE;
-
-fn get_currency(code: &str) -> Currency {
+pub fn get_currency(code: &str) -> Currency {
     Currency::try_from_str(code).unwrap_or_else(|| {
         let currency = Currency::new(code, 8, 0, code, CurrencyType::Crypto);
         if let Err(e) = Currency::register(currency, false) {
@@ -204,16 +213,17 @@ fn get_currency(code: &str) -> Currency {
 ///
 /// Returns `None` if the conversion fails (e.g., unsupported market type).
 #[must_use]
-pub fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<InstrumentAny> {
-    let clock = get_atomic_clock_realtime();
-    let ts_event = clock.get_time_ns();
-    let ts_init = ts_event;
-
-    let symbol = Symbol::new(&def.symbol);
+pub fn create_instrument_from_def(
+    def: &HyperliquidInstrumentDef,
+    ts_init: UnixNanos,
+) -> Option<InstrumentAny> {
+    let symbol = Symbol::new(def.symbol);
     let venue = *HYPERLIQUID_VENUE;
     let instrument_id = InstrumentId::new(symbol, venue);
 
-    let raw_symbol = Symbol::new(&def.symbol);
+    // Use base currency as raw_symbol (e.g., "BTC" not "BTC-USD-PERP")
+    // This is what Hyperliquid expects in WebSocket subscriptions
+    let raw_symbol = Symbol::new(def.base);
     let base_currency = get_currency(&def.base);
     let quote_currency = get_currency(&def.quote);
     let price_increment = Price::from(&def.tick_size.to_string());
@@ -241,7 +251,7 @@ pub fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<Inst
             None,
             None,
             None,
-            ts_event,
+            ts_init, // Identical to ts_init for now
             ts_init,
         ))),
         HyperliquidMarketType::Perp => {
@@ -270,7 +280,7 @@ pub fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<Inst
                 None,
                 None,
                 None,
-                ts_event,
+                ts_init, // Identical to ts_init for now
                 ts_init,
             )))
         }
@@ -280,281 +290,24 @@ pub fn create_instrument_from_def(def: &HyperliquidInstrumentDef) -> Option<Inst
 /// Convert a collection of Hyperliquid instrument definitions into Nautilus instruments,
 /// discarding any definitions that fail to convert.
 #[must_use]
-pub fn instruments_from_defs(defs: &[HyperliquidInstrumentDef]) -> Vec<InstrumentAny> {
-    defs.iter().filter_map(create_instrument_from_def).collect()
+pub fn instruments_from_defs(
+    defs: &[HyperliquidInstrumentDef],
+    ts_init: UnixNanos,
+) -> Vec<InstrumentAny> {
+    defs.iter()
+        .filter_map(|def| create_instrument_from_def(def, ts_init))
+        .collect()
 }
 
 /// Convert owned definitions into Nautilus instruments, consuming the input vector.
 #[must_use]
 pub fn instruments_from_defs_owned(defs: Vec<HyperliquidInstrumentDef>) -> Vec<InstrumentAny> {
+    let clock = get_atomic_clock_realtime();
+    let ts_init = clock.get_time_ns();
+
     defs.into_iter()
-        .filter_map(|def| create_instrument_from_def(&def))
+        .filter_map(|def| create_instrument_from_def(&def, ts_init))
         .collect()
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use rstest::rstest;
-
-    use super::{
-        super::models::{HyperliquidL2Book, PerpAsset, SpotPair, SpotToken},
-        *,
-    };
-
-    #[rstest]
-    fn test_pow10_neg() {
-        assert_eq!(pow10_neg(0).unwrap(), Decimal::from(1));
-        assert_eq!(pow10_neg(1).unwrap(), Decimal::from_str("0.1").unwrap());
-        assert_eq!(pow10_neg(5).unwrap(), Decimal::from_str("0.00001").unwrap());
-    }
-
-    #[test]
-    fn test_parse_perp_instruments() {
-        let meta = PerpMeta {
-            universe: vec![
-                PerpAsset {
-                    name: "BTC".to_string(),
-                    sz_decimals: 5,
-                    max_leverage: Some(50),
-                    only_isolated: None,
-                    is_delisted: None,
-                },
-                PerpAsset {
-                    name: "DELIST".to_string(),
-                    sz_decimals: 3,
-                    max_leverage: Some(10),
-                    only_isolated: Some(true),
-                    is_delisted: Some(true), // Should be included but marked as inactive
-                },
-            ],
-            margin_tables: vec![],
-        };
-
-        let defs = parse_perp_instruments(&meta).unwrap();
-
-        // Should have both BTC and DELIST (delisted instruments are included for historical data)
-        assert_eq!(defs.len(), 2);
-
-        let btc = &defs[0];
-        assert_eq!(btc.symbol, "BTC-USD-PERP");
-        assert_eq!(btc.base, "BTC");
-        assert_eq!(btc.quote, "USD");
-        assert_eq!(btc.market_type, HyperliquidMarketType::Perp);
-        assert_eq!(btc.price_decimals, 1); // 6 - 5 = 1
-        assert_eq!(btc.size_decimals, 5);
-        assert_eq!(btc.tick_size, Decimal::from_str("0.1").unwrap());
-        assert_eq!(btc.lot_size, Decimal::from_str("0.00001").unwrap());
-        assert_eq!(btc.max_leverage, Some(50));
-        assert!(!btc.only_isolated);
-        assert!(btc.active);
-
-        let delist = &defs[1];
-        assert_eq!(delist.symbol, "DELIST-USD-PERP");
-        assert_eq!(delist.base, "DELIST");
-        assert!(!delist.active); // Delisted instruments are marked as inactive
-    }
-
-    fn load_test_data<T>(filename: &str) -> T
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let path = format!("test_data/{}", filename);
-        let content = std::fs::read_to_string(path).expect("Failed to read test data");
-        serde_json::from_str(&content).expect("Failed to parse test data")
-    }
-
-    #[test]
-    fn test_parse_perp_instruments_from_real_data() {
-        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
-
-        let defs = parse_perp_instruments(&meta).unwrap();
-
-        // Should have 3 instruments (BTC, ETH, ATOM)
-        assert_eq!(defs.len(), 3);
-
-        // Validate BTC
-        let btc = &defs[0];
-        assert_eq!(btc.symbol, "BTC-USD-PERP");
-        assert_eq!(btc.base, "BTC");
-        assert_eq!(btc.quote, "USD");
-        assert_eq!(btc.market_type, HyperliquidMarketType::Perp);
-        assert_eq!(btc.size_decimals, 5);
-        assert_eq!(btc.max_leverage, Some(40));
-        assert!(btc.active);
-
-        // Validate ETH
-        let eth = &defs[1];
-        assert_eq!(eth.symbol, "ETH-USD-PERP");
-        assert_eq!(eth.base, "ETH");
-        assert_eq!(eth.size_decimals, 4);
-        assert_eq!(eth.max_leverage, Some(25));
-
-        // Validate ATOM
-        let atom = &defs[2];
-        assert_eq!(atom.symbol, "ATOM-USD-PERP");
-        assert_eq!(atom.base, "ATOM");
-        assert_eq!(atom.size_decimals, 2);
-        assert_eq!(atom.max_leverage, Some(5));
-    }
-
-    #[test]
-    fn test_deserialize_l2_book_from_real_data() {
-        let book: HyperliquidL2Book = load_test_data("http_l2_book_btc.json");
-
-        // Validate basic structure
-        assert_eq!(book.coin, "BTC");
-        assert_eq!(book.levels.len(), 2); // [bids, asks]
-        assert_eq!(book.levels[0].len(), 5); // 5 bid levels
-        assert_eq!(book.levels[1].len(), 5); // 5 ask levels
-
-        // Verify bids and asks are properly ordered
-        let bids = &book.levels[0];
-        let asks = &book.levels[1];
-
-        // Bids should be descending (highest first)
-        for i in 1..bids.len() {
-            let prev_price = bids[i - 1].px.parse::<f64>().unwrap();
-            let curr_price = bids[i].px.parse::<f64>().unwrap();
-            assert!(prev_price >= curr_price, "Bids should be descending");
-        }
-
-        // Asks should be ascending (lowest first)
-        for i in 1..asks.len() {
-            let prev_price = asks[i - 1].px.parse::<f64>().unwrap();
-            let curr_price = asks[i].px.parse::<f64>().unwrap();
-            assert!(prev_price <= curr_price, "Asks should be ascending");
-        }
-    }
-
-    #[rstest]
-    fn test_parse_spot_instruments() {
-        let tokens = vec![
-            SpotToken {
-                name: "USDC".to_string(),
-                sz_decimals: 6,
-                wei_decimals: 6,
-                index: 0,
-                token_id: "0x1".to_string(),
-                is_canonical: true,
-                evm_contract: None,
-                full_name: None,
-                deployer_trading_fee_share: None,
-            },
-            SpotToken {
-                name: "PURR".to_string(),
-                sz_decimals: 0,
-                wei_decimals: 5,
-                index: 1,
-                token_id: "0x2".to_string(),
-                is_canonical: true,
-                evm_contract: None,
-                full_name: None,
-                deployer_trading_fee_share: None,
-            },
-        ];
-
-        let pairs = vec![
-            SpotPair {
-                name: "PURR/USDC".to_string(),
-                tokens: [1, 0], // PURR base, USDC quote
-                index: 0,
-                is_canonical: true,
-            },
-            SpotPair {
-                name: "ALIAS".to_string(),
-                tokens: [1, 0],
-                index: 1,
-                is_canonical: false, // Should be included but marked as inactive
-            },
-        ];
-
-        let meta = SpotMeta {
-            tokens,
-            universe: pairs,
-        };
-
-        let defs = parse_spot_instruments(&meta).unwrap();
-
-        // Should have both PURR/USDC and ALIAS (non-canonical pairs are included for historical data)
-        assert_eq!(defs.len(), 2);
-
-        let purr_usdc = &defs[0];
-        assert_eq!(purr_usdc.symbol, "PURR-USDC-SPOT");
-        assert_eq!(purr_usdc.base, "PURR");
-        assert_eq!(purr_usdc.quote, "USDC");
-        assert_eq!(purr_usdc.market_type, HyperliquidMarketType::Spot);
-        assert_eq!(purr_usdc.price_decimals, 8); // 8 - 0 = 8 (PURR sz_decimals = 0)
-        assert_eq!(purr_usdc.size_decimals, 0);
-        assert_eq!(
-            purr_usdc.tick_size,
-            Decimal::from_str("0.00000001").unwrap()
-        );
-        assert_eq!(purr_usdc.lot_size, Decimal::from(1));
-        assert_eq!(purr_usdc.max_leverage, None);
-        assert!(!purr_usdc.only_isolated);
-        assert!(purr_usdc.active);
-
-        let alias = &defs[1];
-        assert_eq!(alias.symbol, "PURR-USDC-SPOT");
-        assert_eq!(alias.base, "PURR");
-        assert!(!alias.active); // Non-canonical pairs are marked as inactive
-    }
-
-    #[rstest]
-    fn test_price_decimals_clamping() {
-        // Test that price decimals are clamped to >= 0
-        let meta = PerpMeta {
-            universe: vec![PerpAsset {
-                name: "HIGHPREC".to_string(),
-                sz_decimals: 10, // 6 - 10 = -4, should clamp to 0
-                max_leverage: Some(1),
-                only_isolated: None,
-                is_delisted: None,
-            }],
-            margin_tables: vec![],
-        };
-
-        let defs = parse_perp_instruments(&meta).unwrap();
-        assert_eq!(defs[0].price_decimals, 0);
-        assert_eq!(defs[0].tick_size, Decimal::from(1));
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Order, Fill, and Position Report Parsing
-////////////////////////////////////////////////////////////////////////////////
-
-use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{
-    enums::{
-        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
-        TriggerType,
-    },
-    identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
-    instruments::Instrument,
-    reports::{FillReport, OrderStatusReport, PositionStatusReport},
-};
-use rust_decimal::prelude::ToPrimitive;
-
-use super::models::HyperliquidFill;
-use crate::{
-    common::enums::HyperliquidSide,
-    websocket::messages::{WsBasicOrderData, WsOrderData},
-};
-
-/// Map Hyperliquid order side to Nautilus OrderSide.
-fn parse_order_side(side: &str) -> OrderSide {
-    match side.to_lowercase().as_str() {
-        "a" | "buy" => OrderSide::Buy,
-        "b" | "sell" => OrderSide::Sell,
-        _ => OrderSide::NoOrderSide,
-    }
 }
 
 /// Map Hyperliquid fill side to Nautilus OrderSide.
@@ -562,19 +315,6 @@ fn parse_fill_side(side: &HyperliquidSide) -> OrderSide {
     match side {
         HyperliquidSide::Buy => OrderSide::Buy,
         HyperliquidSide::Sell => OrderSide::Sell,
-    }
-}
-
-/// Map Hyperliquid order status string to Nautilus OrderStatus.
-pub fn parse_order_status(status: &str) -> OrderStatus {
-    match status.to_lowercase().as_str() {
-        "open" => OrderStatus::Accepted,
-        "filled" => OrderStatus::Filled,
-        "canceled" | "cancelled" => OrderStatus::Canceled,
-        "rejected" => OrderStatus::Rejected,
-        "triggered" => OrderStatus::Triggered,
-        "partial_fill" | "partially_filled" => OrderStatus::PartiallyFilled,
-        _ => OrderStatus::Accepted, // Default to accepted for unknown statuses
     }
 }
 
@@ -605,7 +345,7 @@ pub fn parse_order_status_report_from_ws(
 /// Returns an error if required fields are missing or invalid.
 pub fn parse_order_status_report_from_basic(
     order: &WsBasicOrderData,
-    status_str: &str,
+    status: &HyperliquidOrderStatusEnum,
     instrument: &dyn Instrument,
     account_id: AccountId,
     ts_init: UnixNanos,
@@ -615,21 +355,21 @@ pub fn parse_order_status_report_from_basic(
 
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order.oid.to_string());
-    let order_side = parse_order_side(&order.side);
+    let order_side = OrderSide::from(order.side);
 
     // Determine order type based on trigger parameters
     let order_type = if order.trigger_px.is_some() {
         if order.is_market == Some(true) {
             // Check if it's stop-loss or take-profit based on tpsl field
-            match order.tpsl.as_deref() {
-                Some("tp") => OrderType::MarketIfTouched,
-                Some("sl") => OrderType::StopMarket,
+            match order.tpsl.as_ref() {
+                Some(HyperliquidTpSl::Tp) => OrderType::MarketIfTouched,
+                Some(HyperliquidTpSl::Sl) => OrderType::StopMarket,
                 _ => OrderType::StopMarket,
             }
         } else {
-            match order.tpsl.as_deref() {
-                Some("tp") => OrderType::LimitIfTouched,
-                Some("sl") => OrderType::StopLimit,
+            match order.tpsl.as_ref() {
+                Some(HyperliquidTpSl::Tp) => OrderType::LimitIfTouched,
+                Some(HyperliquidTpSl::Sl) => OrderType::StopLimit,
                 _ => OrderType::StopLimit,
             }
         }
@@ -638,7 +378,7 @@ pub fn parse_order_status_report_from_basic(
     };
 
     let time_in_force = TimeInForce::Gtc; // Hyperliquid uses GTC by default
-    let order_status = parse_order_status(status_str);
+    let order_status = OrderStatus::from(*status);
 
     // Parse quantities
     let price_precision = instrument.price_precision();
@@ -813,7 +553,7 @@ pub fn parse_position_status_report(
 
     // Deserialize the position data
     let asset_position: AssetPosition = serde_json::from_value(position_data.clone())
-        .context("Failed to deserialize AssetPosition")?;
+        .context("failed to deserialize AssetPosition")?;
 
     let position = &asset_position.position;
     let instrument_id = instrument.id();
@@ -831,7 +571,7 @@ pub fn parse_position_status_report(
     let quantity = Quantity::new(
         quantity_value
             .to_f64()
-            .context("Failed to convert quantity to f64")?,
+            .context("failed to convert quantity to f64")?,
         instrument.size_precision(),
     );
 
@@ -860,52 +600,238 @@ pub fn parse_position_status_report(
     ))
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
-mod reconciliation_tests {
-    use super::*;
+mod tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
 
-    #[test]
-    fn test_parse_order_side() {
-        assert_eq!(parse_order_side("A"), OrderSide::Buy);
-        assert_eq!(parse_order_side("buy"), OrderSide::Buy);
-        assert_eq!(parse_order_side("B"), OrderSide::Sell);
-        assert_eq!(parse_order_side("sell"), OrderSide::Sell);
-        assert_eq!(parse_order_side("unknown"), OrderSide::NoOrderSide);
-    }
+    use super::{
+        super::models::{HyperliquidL2Book, PerpAsset, SpotPair, SpotToken},
+        *,
+    };
 
-    #[test]
-    fn test_parse_order_status() {
-        assert_eq!(parse_order_status("open"), OrderStatus::Accepted);
-        assert_eq!(parse_order_status("filled"), OrderStatus::Filled);
-        assert_eq!(parse_order_status("canceled"), OrderStatus::Canceled);
-        assert_eq!(parse_order_status("cancelled"), OrderStatus::Canceled);
-        assert_eq!(parse_order_status("rejected"), OrderStatus::Rejected);
-        assert_eq!(parse_order_status("triggered"), OrderStatus::Triggered);
-    }
-
-    #[test]
+    #[rstest]
     fn test_parse_fill_side() {
         assert_eq!(parse_fill_side(&HyperliquidSide::Buy), OrderSide::Buy);
         assert_eq!(parse_fill_side(&HyperliquidSide::Sell), OrderSide::Sell);
     }
 
-    #[test]
-    fn test_parse_order_side_case_insensitive() {
-        assert_eq!(parse_order_side("A"), OrderSide::Buy);
-        assert_eq!(parse_order_side("a"), OrderSide::Buy);
-        assert_eq!(parse_order_side("BUY"), OrderSide::Buy);
-        assert_eq!(parse_order_side("Buy"), OrderSide::Buy);
-        assert_eq!(parse_order_side("B"), OrderSide::Sell);
-        assert_eq!(parse_order_side("b"), OrderSide::Sell);
-        assert_eq!(parse_order_side("SELL"), OrderSide::Sell);
-        assert_eq!(parse_order_side("Sell"), OrderSide::Sell);
+    #[rstest]
+    fn test_pow10_neg() {
+        assert_eq!(pow10_neg(0).unwrap(), dec!(1));
+        assert_eq!(pow10_neg(1).unwrap(), dec!(0.1));
+        assert_eq!(pow10_neg(5).unwrap(), dec!(0.00001));
     }
 
-    #[test]
-    fn test_parse_order_status_edge_cases() {
-        assert_eq!(parse_order_status("OPEN"), OrderStatus::Accepted);
-        assert_eq!(parse_order_status("FILLED"), OrderStatus::Filled);
-        assert_eq!(parse_order_status(""), OrderStatus::Accepted);
-        assert_eq!(parse_order_status("unknown_status"), OrderStatus::Accepted);
+    #[rstest]
+    fn test_parse_perp_instruments() {
+        let meta = PerpMeta {
+            universe: vec![
+                PerpAsset {
+                    name: "BTC".to_string(),
+                    sz_decimals: 5,
+                    max_leverage: Some(50),
+                    only_isolated: None,
+                    is_delisted: None,
+                },
+                PerpAsset {
+                    name: "DELIST".to_string(),
+                    sz_decimals: 3,
+                    max_leverage: Some(10),
+                    only_isolated: Some(true),
+                    is_delisted: Some(true), // Should be included but marked as inactive
+                },
+            ],
+            margin_tables: vec![],
+        };
+
+        let defs = parse_perp_instruments(&meta).unwrap();
+
+        // Should have both BTC and DELIST (delisted instruments are included for historical data)
+        assert_eq!(defs.len(), 2);
+
+        let btc = &defs[0];
+        assert_eq!(btc.symbol, "BTC-USD-PERP");
+        assert_eq!(btc.base, "BTC");
+        assert_eq!(btc.quote, "USD");
+        assert_eq!(btc.market_type, HyperliquidMarketType::Perp);
+        assert_eq!(btc.price_decimals, 1); // 6 - 5 = 1
+        assert_eq!(btc.size_decimals, 5);
+        assert_eq!(btc.tick_size, dec!(0.1));
+        assert_eq!(btc.lot_size, dec!(0.00001));
+        assert_eq!(btc.max_leverage, Some(50));
+        assert!(!btc.only_isolated);
+        assert!(btc.active);
+
+        let delist = &defs[1];
+        assert_eq!(delist.symbol, "DELIST-USD-PERP");
+        assert_eq!(delist.base, "DELIST");
+        assert!(!delist.active); // Delisted instruments are marked as inactive
+    }
+
+    fn load_test_data<T>(filename: &str) -> T
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let path = format!("test_data/{filename}");
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    #[rstest]
+    fn test_parse_perp_instruments_from_real_data() {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+
+        let defs = parse_perp_instruments(&meta).unwrap();
+
+        // Should have 3 instruments (BTC, ETH, ATOM)
+        assert_eq!(defs.len(), 3);
+
+        // Validate BTC
+        let btc = &defs[0];
+        assert_eq!(btc.symbol, "BTC-USD-PERP");
+        assert_eq!(btc.base, "BTC");
+        assert_eq!(btc.quote, "USD");
+        assert_eq!(btc.market_type, HyperliquidMarketType::Perp);
+        assert_eq!(btc.size_decimals, 5);
+        assert_eq!(btc.max_leverage, Some(40));
+        assert!(btc.active);
+
+        // Validate ETH
+        let eth = &defs[1];
+        assert_eq!(eth.symbol, "ETH-USD-PERP");
+        assert_eq!(eth.base, "ETH");
+        assert_eq!(eth.size_decimals, 4);
+        assert_eq!(eth.max_leverage, Some(25));
+
+        // Validate ATOM
+        let atom = &defs[2];
+        assert_eq!(atom.symbol, "ATOM-USD-PERP");
+        assert_eq!(atom.base, "ATOM");
+        assert_eq!(atom.size_decimals, 2);
+        assert_eq!(atom.max_leverage, Some(5));
+    }
+
+    #[rstest]
+    fn test_deserialize_l2_book_from_real_data() {
+        let book: HyperliquidL2Book = load_test_data("http_l2_book_btc.json");
+
+        // Validate basic structure
+        assert_eq!(book.coin, "BTC");
+        assert_eq!(book.levels.len(), 2); // [bids, asks]
+        assert_eq!(book.levels[0].len(), 5); // 5 bid levels
+        assert_eq!(book.levels[1].len(), 5); // 5 ask levels
+
+        // Verify bids and asks are properly ordered
+        let bids = &book.levels[0];
+        let asks = &book.levels[1];
+
+        // Bids should be descending (highest first)
+        for i in 1..bids.len() {
+            let prev_price = bids[i - 1].px.parse::<f64>().unwrap();
+            let curr_price = bids[i].px.parse::<f64>().unwrap();
+            assert!(prev_price >= curr_price, "Bids should be descending");
+        }
+
+        // Asks should be ascending (lowest first)
+        for i in 1..asks.len() {
+            let prev_price = asks[i - 1].px.parse::<f64>().unwrap();
+            let curr_price = asks[i].px.parse::<f64>().unwrap();
+            assert!(prev_price <= curr_price, "Asks should be ascending");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot_instruments() {
+        let tokens = vec![
+            SpotToken {
+                name: "USDC".to_string(),
+                sz_decimals: 6,
+                wei_decimals: 6,
+                index: 0,
+                token_id: "0x1".to_string(),
+                is_canonical: true,
+                evm_contract: None,
+                full_name: None,
+                deployer_trading_fee_share: None,
+            },
+            SpotToken {
+                name: "PURR".to_string(),
+                sz_decimals: 0,
+                wei_decimals: 5,
+                index: 1,
+                token_id: "0x2".to_string(),
+                is_canonical: true,
+                evm_contract: None,
+                full_name: None,
+                deployer_trading_fee_share: None,
+            },
+        ];
+
+        let pairs = vec![
+            SpotPair {
+                name: "PURR/USDC".to_string(),
+                tokens: [1, 0], // PURR base, USDC quote
+                index: 0,
+                is_canonical: true,
+            },
+            SpotPair {
+                name: "ALIAS".to_string(),
+                tokens: [1, 0],
+                index: 1,
+                is_canonical: false, // Should be included but marked as inactive
+            },
+        ];
+
+        let meta = SpotMeta {
+            tokens,
+            universe: pairs,
+        };
+
+        let defs = parse_spot_instruments(&meta).unwrap();
+
+        // Should have both PURR/USDC and ALIAS (non-canonical pairs are included for historical data)
+        assert_eq!(defs.len(), 2);
+
+        let purr_usdc = &defs[0];
+        assert_eq!(purr_usdc.symbol, "PURR-USDC-SPOT");
+        assert_eq!(purr_usdc.base, "PURR");
+        assert_eq!(purr_usdc.quote, "USDC");
+        assert_eq!(purr_usdc.market_type, HyperliquidMarketType::Spot);
+        assert_eq!(purr_usdc.price_decimals, 8); // 8 - 0 = 8 (PURR sz_decimals = 0)
+        assert_eq!(purr_usdc.size_decimals, 0);
+        assert_eq!(purr_usdc.tick_size, dec!(0.00000001));
+        assert_eq!(purr_usdc.lot_size, dec!(1));
+        assert_eq!(purr_usdc.max_leverage, None);
+        assert!(!purr_usdc.only_isolated);
+        assert!(purr_usdc.active);
+
+        let alias = &defs[1];
+        assert_eq!(alias.symbol, "PURR-USDC-SPOT");
+        assert_eq!(alias.base, "PURR");
+        assert!(!alias.active); // Non-canonical pairs are marked as inactive
+    }
+
+    #[rstest]
+    fn test_price_decimals_clamping() {
+        // Test that price decimals are clamped to >= 0
+        let meta = PerpMeta {
+            universe: vec![PerpAsset {
+                name: "HIGHPREC".to_string(),
+                sz_decimals: 10, // 6 - 10 = -4, should clamp to 0
+                max_leverage: Some(1),
+                only_isolated: None,
+                is_delisted: None,
+            }],
+            margin_tables: vec![],
+        };
+
+        let defs = parse_perp_instruments(&meta).unwrap();
+        assert_eq!(defs[0].price_decimals, 0);
+        assert_eq!(defs[0].tick_size, dec!(1));
     }
 }

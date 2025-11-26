@@ -37,7 +37,7 @@ _EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("IDEALPRO"))
 
 
 @pytest.mark.parametrize(
-    "expected_order_type, expected_tif, nautilus_order",
+    ("expected_order_type", "expected_tif", "nautilus_order"),
     [
         ("MKT", "GTC", TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.GTC)),
         ("MKT", "DAY", TestExecStubs.market_order(instrument=_EURUSD, time_in_force=TimeInForce.DAY)),
@@ -70,7 +70,7 @@ async def test_transform_order_to_ib_order_market(
 
 
 @pytest.mark.parametrize(
-    "expected_order_type, expected_tif, nautilus_order",
+    ("expected_order_type", "expected_tif", "nautilus_order"),
     [
         ("LMT", "GTC", TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.GTC)),
         ("LMT", "DAY", TestExecStubs.limit_order(instrument=_EURUSD, time_in_force=TimeInForce.DAY)),

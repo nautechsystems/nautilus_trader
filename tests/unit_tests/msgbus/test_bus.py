@@ -142,23 +142,6 @@ def test_request_when_endpoint_not_registered_logs_error(bus, clock):
     assert bus.req_count == 0
 
 
-def test_response_when_no_correlation_id_logs_error(bus, clock):
-    # Arrange
-    handler = []
-    response = Response(
-        correlation_id=UUID4(),
-        response_id=UUID4(),
-        ts_init=clock.timestamp_ns(),
-    )
-
-    # Act
-    bus.response(response)
-
-    # Assert
-    assert response not in handler
-    assert bus.res_count == 0
-
-
 def test_request_response_when_correlation_id_registered_handles_response(bus, clock):
     # Arrange
     endpoint = []

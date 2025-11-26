@@ -127,6 +127,7 @@ impl CoreBlockchainRpcClient {
             reconnect_delay_max_ms: Some(30_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(1_000),
+            reconnect_max_attempts: None,
         };
 
         let client = WebSocketClient::connect(config, None, vec![], None).await?;

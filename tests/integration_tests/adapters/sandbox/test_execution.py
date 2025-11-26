@@ -79,7 +79,7 @@ def _make_equity_with_increment(instrument: Equity, price_increment: str) -> Equ
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_connect(exec_client):
     exec_client.connect()
     await asyncio.sleep(0)
@@ -87,7 +87,7 @@ async def test_connect(exec_client):
     assert exec_client.is_connected
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_submit_order_success(exec_client, instrument, strategy, events):
     # Arrange
     exec_client.connect()
@@ -106,7 +106,7 @@ async def test_submit_order_success(exec_client, instrument, strategy, events):
     assert accepted.venue_order_id.value.startswith("SANDBOX-")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_submit_orders_list_success(
     exec_client,
     instrument,
@@ -161,7 +161,7 @@ async def test_submit_orders_list_success(
     assert second_accepted.venue_order_id.value.startswith("SANDBOX-")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_modify_order_success(exec_client, strategy, instrument, events):
     # Arrange
     exec_client.connect()
@@ -187,7 +187,7 @@ async def test_modify_order_success(exec_client, strategy, instrument, events):
     assert updated.price == Price.from_str("0.01")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument):
     # Arrange
     exec_client.connect()
@@ -214,7 +214,7 @@ async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument)
     assert client_order_id not in order_client_ids
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_cancel_order_success(exec_client, cache, strategy, instrument, events):
     # Arrange
     exec_client.connect()
@@ -235,7 +235,7 @@ async def test_cancel_order_success(exec_client, cache, strategy, instrument, ev
     assert isinstance(cancelled, OrderCanceled)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_cancel_order_fail(exec_client, cache, strategy, instrument, events):
     # Arrange
     exec_client.connect()
@@ -262,7 +262,7 @@ async def test_cancel_order_fail(exec_client, cache, strategy, instrument, event
     assert venue_order_id not in venue_order_ids
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_data_updates_exchange_instrument(exec_client, instrument):
     # Arrange
     exec_client.connect()
@@ -278,7 +278,7 @@ async def test_on_data_updates_exchange_instrument(exec_client, instrument):
     assert matching_engine.instrument.ts_init == updated_instrument.ts_init
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_data_forwards_instrument_status(exec_client, instrument):
     # Arrange
     exec_client.connect()
@@ -301,7 +301,7 @@ async def test_on_data_forwards_instrument_status(exec_client, instrument):
     mock_exchange.process.assert_called_once_with(status.ts_init)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_data_forwards_instrument_close(exec_client, instrument):
     # Arrange
     exec_client.connect()

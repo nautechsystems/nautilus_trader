@@ -25,7 +25,7 @@ from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketCl
 from nautilus_trader.common.component import LiveClock
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_binance_websocket_client():
     clock = LiveClock()
 

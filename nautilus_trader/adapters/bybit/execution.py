@@ -55,7 +55,10 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderModifyRejected
@@ -66,6 +69,7 @@ from nautilus_trader.model.functions import time_in_force_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
@@ -169,7 +173,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         # HTTP API
         self._http_client = client
-        masked_key = self._http_client.masked_api_key()
+        masked_key = self._http_client.api_key_masked
         self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # Configure HTTP client settings
@@ -202,8 +206,10 @@ class BybitExecutionClient(LiveExecutionClient):
                 heartbeat=20,
             )
         )
-
         self._ws_client_futures: set[asyncio.Future] = set()
+
+        # Hot cache for accumulating spot borrow fills (only)
+        self._order_filled_qty: dict[ClientOrderId, Quantity] = {}
 
     @property
     def bybit_instrument_provider(self) -> BybitInstrumentProvider:
@@ -214,6 +220,12 @@ class BybitExecutionClient(LiveExecutionClient):
         await self._cache_instruments()
         await self._update_account_state()
         await self._await_account_registered()
+
+        try:
+            details = await self._http_client.get_account_details()
+            self._ws_trade_client.set_mm_level(details.mkt_maker_level)
+        except Exception as e:
+            self._log.warning(f"Error requesting account details for MM level: {e}")
 
         # Set account_id on WebSocket clients so they can parse account messages
         self._ws_private_client.set_account_id(self.pyo3_account_id)
@@ -240,12 +252,12 @@ class BybitExecutionClient(LiveExecutionClient):
         self._http_client.cancel_all_requests()
 
         # Close private WebSocket
-        if await self._ws_private_client.is_active():
+        if not self._ws_private_client.is_closed():
             self._log.info("Disconnecting private websocket")
             await self._ws_private_client.close()
 
         # Close trade WebSocket
-        if await self._ws_trade_client.is_active():
+        if not self._ws_trade_client.is_closed():
             self._log.info("Disconnecting trade websocket")
             await self._ws_trade_client.close()
 
@@ -271,9 +283,9 @@ class BybitExecutionClient(LiveExecutionClient):
         instruments_pyo3 = self.bybit_instrument_provider.instruments_pyo3()
 
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
-            self._ws_private_client.add_instrument(inst)
-            self._ws_trade_client.add_instrument(inst)
+            self._http_client.cache_instrument(inst)
+            self._ws_private_client.cache_instrument(inst)
+            self._ws_trade_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -342,7 +354,8 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _apply_margin_mode_setting(self) -> None:
         try:
-            await self._http_client.set_margin_mode(self._margin_mode)  # type: ignore[attr-defined]
+            assert self._margin_mode is not None  # type checking
+            await self._http_client.set_margin_mode(self._margin_mode)
             self._log.info(f"Set account margin mode to {self._margin_mode}")
         except Exception as e:
             error_msg = str(e).lower()
@@ -383,6 +396,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     product_type=product_type,
                     instrument_id=pyo3_instrument_id,
                     open_only=command.open_only,
+                    start=ensure_pydatetime_utc(command.start),
+                    end=ensure_pydatetime_utc(command.end),
                 )
                 pyo3_reports.extend(response)
 
@@ -405,14 +420,11 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception("Failed to generate OrderStatusReports", e)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-        if command.log_receipt_level == LogLevel.INFO:
-            self._log.info(receipt_log)
-        else:
-            self._log.debug(receipt_log)
+        self._log_report_receipt(
+            len(reports),
+            "OrderStatusReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -444,7 +456,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 f"About to call query_order: product_type={product_type}, "
                 f"instrument_id={pyo3_instrument_id}, "
                 f"client_order_id={pyo3_client_order_id}",
-                LogColor.CYAN,
+                LogColor.MAGENTA,
             )
 
             pyo3_report = await self._http_client.query_order(
@@ -455,7 +467,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 venue_order_id=pyo3_venue_order_id,
             )
 
-            self._log.debug(f"query_order returned: {pyo3_report}", LogColor.CYAN)
+            self._log.debug(f"query_order returned: {pyo3_report}", LogColor.MAGENTA)
 
             if pyo3_report is None:
                 self._log.warning(f"No order status report found for {command.client_order_id!r}")
@@ -539,9 +551,7 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception("Failed to generate FillReports", e)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} FillReport{plural}")
+        self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
         return reports
 
@@ -556,12 +566,23 @@ class BybitExecutionClient(LiveExecutionClient):
 
         try:
             pyo3_instrument_id = None
+            product_types_to_query = self._product_types
+
             if command.instrument_id:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                     command.instrument_id.value,
                 )
 
-            for product_type in self._product_types:
+                try:
+                    product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+                        command.instrument_id.symbol.value,
+                    )
+                    product_types_to_query = [product_type]
+                except ValueError:
+                    # Symbol lacks suffix, fall back to querying all configured types
+                    pass
+
+            for product_type in product_types_to_query:
                 response = await self._http_client.request_position_status_reports(
                     account_id=self.pyo3_account_id,
                     product_type=product_type,
@@ -581,9 +602,11 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception("Failed to generate PositionStatusReports", e)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+        self._log_report_receipt(
+            len(reports),
+            "PositionStatusReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -607,7 +630,7 @@ class BybitExecutionClient(LiveExecutionClient):
             raw_symbol = nautilus_pyo3.bybit_extract_raw_symbol(symbol)
             product_type = nautilus_pyo3.bybit_product_type_from_symbol(symbol)
 
-            await self._http_client.set_leverage(  # type: ignore[attr-defined]
+            await self._http_client.set_leverage(
                 product_type=product_type,
                 symbol=raw_symbol,
                 buy_leverage=str(leverage),
@@ -643,7 +666,7 @@ class BybitExecutionClient(LiveExecutionClient):
             raw_symbol = nautilus_pyo3.bybit_extract_raw_symbol(symbol)
             product_type = nautilus_pyo3.bybit_product_type_from_symbol(symbol)
 
-            await self._http_client.switch_mode(  # type: ignore[attr-defined]
+            await self._http_client.switch_mode(
                 product_type=product_type,
                 mode=mode,
                 symbol=raw_symbol,
@@ -660,6 +683,19 @@ class BybitExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
+    def _check_order_validity(
+        self,
+        order: Order,
+        product_type: BybitProductType,
+    ) -> str | None:
+        if order.is_post_only and order.order_type != OrderType.LIMIT:
+            return "UNSUPPORTED_POST_ONLY"
+
+        if order.is_reduce_only and product_type == BybitProductType.SPOT:
+            return "UNSUPPORTED_REDUCE_ONLY_SPOT"
+
+        return None
+
     async def _query_account(self, _command: QueryAccount) -> None:
         await self._update_account_state()
 
@@ -670,6 +706,20 @@ class BybitExecutionClient(LiveExecutionClient):
             self._log.warning(f"Cannot submit already closed order: {order}")
             return
 
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            order.instrument_id.symbol.value,
+        )
+
+        if reason := self._check_order_validity(order, product_type):
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         # Generate OrderSubmitted event
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -678,6 +728,8 @@ class BybitExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
+        pyo3_trader_id = nautilus_pyo3.TraderId(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
         pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
         pyo3_order_side = order_side_to_pyo3(order.side)
@@ -692,24 +744,29 @@ class BybitExecutionClient(LiveExecutionClient):
         if order.has_trigger_price:
             pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 
-        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
-            order.instrument_id.symbol.value,
+        is_leverage = command.params.get("is_leverage", False) if command.params else False
+        is_quote_quantity = (
+            order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
         )
 
         try:
             # Submit via WebSocket
             await self._ws_trade_client.submit_order(
                 product_type=product_type,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
                 order_side=pyo3_order_side,
                 order_type=pyo3_order_type,
                 quantity=pyo3_quantity,
+                is_quote_quantity=is_quote_quantity,
                 time_in_force=pyo3_time_in_force,
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
+                is_leverage=is_leverage,
             )
         except Exception as e:
             self._log.error(f"Failed to submit order {order.client_order_id}: {e}")
@@ -727,12 +784,28 @@ class BybitExecutionClient(LiveExecutionClient):
         if not command.order_list.orders:
             return
 
+        is_leverage = command.params.get("is_leverage", False) if command.params else False
+
         now_ns = self._clock.timestamp_ns()
         order_params = []
 
         for order in command.order_list.orders:
             if order.is_closed:
                 self._log.warning(f"Cannot submit already closed order: {order}")
+                continue
+
+            product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+                order.instrument_id.symbol.value,
+            )
+
+            if reason := self._check_order_validity(order, product_type):
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=reason,
+                    ts_event=now_ns,
+                )
                 continue
 
             self.generate_order_submitted(
@@ -758,9 +831,8 @@ class BybitExecutionClient(LiveExecutionClient):
 
             post_only = order.is_post_only
             reduce_only = order.is_reduce_only
-
-            product_type = nautilus_pyo3.bybit_product_type_from_symbol(
-                order.instrument_id.symbol.value,
+            is_quote_quantity = (
+                order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
             )
 
             params = self._ws_trade_client.build_place_order_params(
@@ -770,16 +842,37 @@ class BybitExecutionClient(LiveExecutionClient):
                 order_side=pyo3_order_side,
                 order_type=pyo3_order_type,
                 quantity=pyo3_quantity,
+                is_quote_quantity=is_quote_quantity,
                 time_in_force=pyo3_time_in_force,
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
                 post_only=post_only,
                 reduce_only=reduce_only,
+                is_leverage=is_leverage,
             )
             order_params.append(params)
 
         if order_params:
-            await self._ws_trade_client.batch_place_orders(order_params)
+            pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)
+            pyo3_strategy_id = nautilus_pyo3.StrategyId(command.strategy_id.value)
+
+            try:
+                await self._ws_trade_client.batch_place_orders(
+                    pyo3_trader_id,
+                    pyo3_strategy_id,
+                    order_params,
+                )
+            except Exception as e:
+                self._log.error(f"Failed to batch place orders: {e}")
+                for order in command.order_list.orders:
+                    if not order.is_closed:
+                        self.generate_order_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            reason=str(e),
+                            ts_event=self._clock.timestamp_ns(),
+                        )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -794,6 +887,8 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
+        pyo3_trader_id = nautilus_pyo3.TraderId(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         pyo3_client_order_id = (
             nautilus_pyo3.ClientOrderId(command.client_order_id.value)
@@ -818,9 +913,11 @@ class BybitExecutionClient(LiveExecutionClient):
             # Modify via WebSocket
             await self._ws_trade_client.modify_order(
                 product_type=product_type,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
                 instrument_id=pyo3_instrument_id,
-                venue_order_id=pyo3_venue_order_id,
                 client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
                 quantity=pyo3_quantity,
                 price=pyo3_price,
             )
@@ -848,6 +945,8 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
+        pyo3_trader_id = nautilus_pyo3.TraderId(order.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         pyo3_client_order_id = (
             nautilus_pyo3.ClientOrderId(command.client_order_id.value)
@@ -868,9 +967,11 @@ class BybitExecutionClient(LiveExecutionClient):
             # Cancel via WebSocket
             await self._ws_trade_client.cancel_order(
                 product_type=product_type,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
                 instrument_id=pyo3_instrument_id,
-                venue_order_id=pyo3_venue_order_id,
                 client_order_id=pyo3_client_order_id,
+                venue_order_id=pyo3_venue_order_id,
             )
         except Exception as e:
             self._log.error(f"Failed to cancel order {command.client_order_id}: {e}")
@@ -884,6 +985,12 @@ class BybitExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        if command.order_side != OrderSide.NO_ORDER_SIDE:
+            self._log.warning(
+                f"Bybit does not support order_side filtering for cancel all orders; "
+                f"ignoring order_side={order_side_to_str(command.order_side)} and canceling all orders",
+            )
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
 
         product_type = nautilus_pyo3.bybit_product_type_from_symbol(
@@ -935,16 +1042,32 @@ class BybitExecutionClient(LiveExecutionClient):
             command.cancels[0].instrument_id.symbol.value,
         )
 
+        pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)
+        pyo3_strategy_id = nautilus_pyo3.StrategyId(command.strategy_id.value)
+
         try:
             # Batch cancel via WebSocket
             await self._ws_trade_client.batch_cancel_orders(
                 product_type=product_type,
+                trader_id=pyo3_trader_id,
+                strategy_id=pyo3_strategy_id,
                 instrument_ids=instrument_ids,
                 venue_order_ids=venue_order_ids,
                 client_order_ids=client_order_ids,
             )
         except Exception as e:
             self._log.error(f"Failed to batch cancel orders: {e}")
+            for cancel in command.cancels:
+                order = self._cache.order(cancel.client_order_id)
+                if order and not order.is_closed:
+                    self.generate_order_cancel_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                        reason=str(e),
+                        ts_event=self._clock.timestamp_ns(),
+                    )
 
     # -- MESSAGE HANDLERS -------------------------------------------------------------------------
 
@@ -980,15 +1103,15 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     def _handle_order_rejected_pyo3(self, msg: nautilus_pyo3.OrderRejected) -> None:
-        event = OrderRejected.from_pyo3(msg)
+        event = OrderRejected.from_dict(msg.to_dict())
         self._send_order_event(event)
 
     def _handle_order_cancel_rejected_pyo3(self, msg: nautilus_pyo3.OrderCancelRejected) -> None:
-        event = OrderCancelRejected.from_pyo3(msg)
+        event = OrderCancelRejected.from_dict(msg.to_dict())
         self._send_order_event(event)
 
     def _handle_order_modify_rejected_pyo3(self, msg: nautilus_pyo3.OrderModifyRejected) -> None:
-        event = OrderModifyRejected.from_pyo3(msg)
+        event = OrderModifyRejected.from_dict(msg.to_dict())
         self._send_order_event(event)
 
     def _handle_order_status_report_pyo3(  # noqa: C901 (too complex)
@@ -1019,6 +1142,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 reason=report.cancel_reason or "Order rejected by exchange",
                 ts_event=report.ts_last,
             )
+            self._order_filled_qty.pop(report.client_order_id, None)
         elif report.order_status == OrderStatus.ACCEPTED:
             if is_order_updated(order, report):
                 self.generate_order_updated(
@@ -1075,6 +1199,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     venue_order_id=report.venue_order_id,
                     ts_event=report.ts_last,
                 )
+            self._order_filled_qty.pop(report.client_order_id, None)
         elif report.order_status == OrderStatus.EXPIRED:
             self.generate_order_expired(
                 strategy_id=order.strategy_id,
@@ -1083,6 +1208,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
+            self._order_filled_qty.pop(report.client_order_id, None)
         elif report.order_status == OrderStatus.TRIGGERED:
             self.generate_order_triggered(
                 strategy_id=order.strategy_id,
@@ -1139,11 +1265,90 @@ class BybitExecutionClient(LiveExecutionClient):
             ts_event=report.ts_event,
         )
 
+        if self._config.auto_repay_spot_borrows and order.side == OrderSide.BUY:
+            try:
+                product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+                    order.instrument_id.symbol.value,
+                )
+                if product_type != BybitProductType.SPOT:
+                    return
+
+                filled_current = self._order_filled_qty.get(order.client_order_id, order.filled_qty)
+                if filled_current >= order.quantity:
+                    return  # Already triggered repayment
+
+                filled_new = filled_current + report.last_qty
+
+                if filled_new >= order.quantity:
+                    # Order is now fully filled: clean up and trigger repayment
+                    self._order_filled_qty.pop(order.client_order_id, None)
+                    base_currency = instrument.base_currency.code
+                    self.create_task(
+                        self._repay_spot_borrow_if_needed(base_currency, order.quantity),
+                    )
+                else:
+                    # Partial fill: update tracking
+                    self._order_filled_qty[order.client_order_id] = filled_new
+            except Exception as e:
+                self._log.warning(f"Failed to check for spot borrow repayment: {e}")
+
     def _handle_position_status_report_pyo3(self, msg: nautilus_pyo3.PositionStatusReport) -> None:
         report = PositionStatusReport.from_pyo3(msg)
         self._log.debug(f"Received {report}", LogColor.MAGENTA)
         # Do not send position reports from WebSocket stream - we use HTTP endpoint for reconciliation
         # to avoid noise from position updates every time a fill occurs
+
+    async def _repay_spot_borrow_if_needed(self, coin: str, bought_qty: Quantity) -> None:
+        # Repay outstanding spot borrows for a specific coin, this method is called when
+        # BUY orders are fully filled on SPOT instruments to automatically repay any outstanding
+        # borrows, preventing interest accrual.
+        try:
+            if self._is_repay_blackout_window():
+                self._log.warning(
+                    f"Skipping borrow repayment for {coin} due to Bybit blackout window "
+                    f"(04:00-05:30 UTC daily), will need manual repayment",
+                    LogColor.YELLOW,
+                )
+                return
+
+            # Check if there's an outstanding borrow first
+            borrow_amount = await self._http_client.get_spot_borrow_amount(coin)
+
+            if borrow_amount == 0:
+                self._log.info(f"No outstanding borrow for {coin}", LogColor.BLUE)
+                return
+
+            # Only repay up to the amount we just bought
+            bought_amount = bought_qty.as_decimal()
+            repay_amount = min(borrow_amount, bought_amount)
+
+            self._log.info(
+                f"Attempting to repay spot borrow for {coin} "
+                f"(outstanding: {borrow_amount}, bought: {bought_amount}, repaying: {repay_amount})",
+                LogColor.BLUE,
+            )
+
+            repay_qty = nautilus_pyo3.Quantity.from_decimal_dp(repay_amount, bought_qty.precision)
+            await self._http_client.repay_spot_borrow(coin, repay_qty)
+
+            self._log.info(
+                f"Successfully repaid {repay_amount} {coin} spot borrow",
+                LogColor.GREEN,
+            )
+        except Exception as e:
+            self._log.error(
+                f"Failed to repay spot borrow for {coin}: {e}",
+                LogColor.RED,
+            )
+
+    def _is_repay_blackout_window(self) -> bool:
+        # Check if current UTC time is within Bybit's repayment blackout window (04:00-05:30 UTC daily).
+        # During this window, Bybit blocks no-convert repayment operations for interest calculation.
+        now_utc = self._clock.utc_now()
+        hour = now_utc.hour
+        minute = now_utc.minute
+
+        return hour == 4 or (hour == 5 and minute < 30)
 
     def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
         return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)

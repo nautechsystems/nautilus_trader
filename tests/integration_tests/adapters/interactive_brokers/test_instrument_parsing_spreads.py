@@ -123,7 +123,7 @@ class TestSpreadInstrumentParsing:
 
         # Create mock contract details for legs
         leg_contract_details = []
-        for leg_id, ratio in [(leg1_id, 1), (leg2_id, -2), (leg3_id, 1)]:
+        for _leg_id, ratio in [(leg1_id, 1), (leg2_id, -2), (leg3_id, 1)]:
             contract = IBContract(secType="OPT", symbol="SPY", currency="USD", multiplier="100")
             details = IBContractDetails(contract=contract, minTick=0.01, underSymbol="SPY")
             leg_contract_details.append((details, ratio))
@@ -152,7 +152,7 @@ class TestSpreadInstrumentParsing:
 
         # Create mock contract details for legs
         leg_contract_details = []
-        for leg_id, ratio in [(leg1_id, 1), (leg2_id, -1), (leg3_id, 1), (leg4_id, -1)]:
+        for _leg_id, ratio in [(leg1_id, 1), (leg2_id, -1), (leg3_id, 1), (leg4_id, -1)]:
             contract = IBContract(secType="OPT", symbol="SPY", currency="USD", multiplier="100")
             details = IBContractDetails(contract=contract, minTick=0.01, underSymbol="SPY")
             leg_contract_details.append((details, ratio))

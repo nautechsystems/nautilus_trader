@@ -24,7 +24,7 @@ from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesW
 from nautilus_trader.common.component import LiveClock
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_binance_futures_testnet_wallet_http_client():
     clock = LiveClock()
 

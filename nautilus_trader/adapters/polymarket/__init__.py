@@ -31,6 +31,7 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
@@ -59,4 +60,5 @@ __all__ = [
     "get_polymarket_http_client",
     "get_polymarket_instrument_id",
     "get_polymarket_instrument_provider",
+    "parse_polymarket_instrument",
 ]

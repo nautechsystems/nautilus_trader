@@ -73,8 +73,8 @@ _ETHUSD_FUTURE_QUANTO = nautilus_pyo3.CryptoFuture(
     size_precision=0,
     price_increment=Pyo3Price.from_str("0.5"),
     size_increment=Pyo3Quantity.from_int(1),
-    maker_fee=Decimal("0"),
-    taker_fee=Decimal("0"),
+    maker_fee=Decimal(0),
+    taker_fee=Decimal(0),
     margin_init=Decimal("0.01"),
     margin_maint=Decimal("0.005"),
     multiplier=None,
@@ -200,7 +200,7 @@ def test_notional_value_inverse_with_quote_override():
     notional = inverse.notional_value(quantity, price, use_quote_for_inverse=True)
 
     assert notional.currency == Currency.from_str("USD")
-    assert notional.as_decimal() == Decimal("10000")
+    assert notional.as_decimal() == Decimal(10000)
 
 
 def test_notional_value_quanto():

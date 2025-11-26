@@ -93,17 +93,17 @@ def mocked_ib_client(
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue():
     return IB_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     return IBTestContractStubs.aapl_instrument()
 
 
-@pytest.fixture()
+@pytest.fixture
 def gateway_config():
     return DockerizedIBGatewayConfig(
         username="test",
@@ -111,7 +111,7 @@ def gateway_config():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client_config():
     return InteractiveBrokersDataClientConfig(
         ibg_host="127.0.0.1",
@@ -120,7 +120,7 @@ def data_client_config():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client_config():
     return InteractiveBrokersExecClientConfig(
         ibg_host="127.0.0.1",
@@ -130,7 +130,7 @@ def exec_client_config():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def ib_client(data_client_config, event_loop, msgbus, cache, clock):
     client = InteractiveBrokersClient(
         loop=event_loop,
@@ -146,7 +146,7 @@ def ib_client(data_client_config, event_loop, msgbus, cache, clock):
         client._stop()
 
 
-@pytest.fixture()
+@pytest.fixture
 def ib_client_running(ib_client):
     ib_client._connect = AsyncMock()
     ib_client._eclient = MagicMock()
@@ -160,7 +160,7 @@ def ib_client_running(ib_client):
         ib_client.stop()
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument_provider(ib_client):
     from nautilus_trader.common.component import LiveClock
 
@@ -171,7 +171,7 @@ def instrument_provider(ib_client):
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 @patch(
     "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
     new=mocked_ib_client,
@@ -195,7 +195,7 @@ def data_client(data_client_config, venue, event_loop, msgbus, cache, clock):
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 @patch(
     "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
     new=mocked_ib_client,
@@ -219,6 +219,6 @@ def exec_client(exec_client_config, venue, event_loop, msgbus, cache, clock):
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state(venue: Venue) -> AccountState:
     return TestEventStubs.cash_account_state(account_id=AccountId(f"{venue.value}-001"))

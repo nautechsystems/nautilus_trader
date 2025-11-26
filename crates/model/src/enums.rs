@@ -79,6 +79,8 @@ pub enum AccountType {
     Margin = 2,
     /// An account specific to betting markets.
     Betting = 3,
+    /// An account which represents a blockchain wallet,
+    Wallet = 4,
 }
 
 /// An aggregation source for derived data.

@@ -256,3 +256,17 @@ class TestCurrency:
 
         # Assert
         assert result == expected
+
+    def test_currency_equality_with_none_returns_false(self):
+        # Arrange
+        currency = Currency(
+            code="AUD",
+            precision=2,
+            iso4217=36,
+            name="Australian dollar",
+            currency_type=CurrencyType.FIAT,
+        )
+
+        # Act, Assert
+        assert (currency == None) is False  # noqa: E711
+        assert (currency != None) is True  # noqa: E711

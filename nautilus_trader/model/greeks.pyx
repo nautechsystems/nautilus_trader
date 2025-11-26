@@ -157,7 +157,13 @@ cdef class GreeksCalculator:
         if instrument.instrument_class is not InstrumentClass.OPTION:
             multiplier = float(instrument.multiplier)
             underlying_instrument_id = instrument.id
-            underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
+            underlying_price_obj = self._cache.price(underlying_instrument_id, PriceType.LAST)
+
+            if underlying_price_obj is None:
+                self._log.warning(f"No last price available for {underlying_instrument_id}")
+                return None
+
+            underlying_price = float(underlying_price_obj)
 
             delta, _, _ = self.modify_greeks(multiplier, 0., underlying_instrument_id, underlying_price + spot_shock, underlying_price,
                                              percent_greeks, index_instrument_id, beta_weights, 0.0, 0.0, 0, None)

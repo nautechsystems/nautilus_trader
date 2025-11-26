@@ -14,11 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.common.component import LiveClock
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -310,3 +312,106 @@ async def test_load_markets_seq_without_filter_includes_closed_markets(
 
     condition_ids = {instr.info["condition_id"] for instr in instruments}
     assert ACTIVE_CLOSED_MARKET["condition_id"] in condition_ids
+
+
+@pytest.mark.asyncio
+async def test_gamma_markets_filters_specific_token_ids(mock_clob_client, live_clock):
+    """
+    Test that Gamma API loader only loads explicitly requested token_ids.
+
+    When requesting specific instruments like POLYMARKET-123.YES, it should only load
+    that specific token, not both YES and NO tokens from the market.
+
+    """
+    # Arrange
+    config = InstrumentProviderConfig(use_gamma_markets=True)
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    yes_instrument_id = InstrumentId.from_str(
+        f"{ACTIVE_OPEN_MARKET['condition_id']}-"
+        f"{ACTIVE_OPEN_MARKET['tokens'][0]['token_id']}.POLYMARKET",
+    )
+
+    gamma_market = {
+        "conditionId": ACTIVE_OPEN_MARKET["condition_id"],
+        "clobTokenIds": f'["{ACTIVE_OPEN_MARKET["tokens"][0]["token_id"]}", "{ACTIVE_OPEN_MARKET["tokens"][1]["token_id"]}"]',
+        "outcomes": '["Yes", "No"]',
+        "outcomePrices": '["0.5", "0.5"]',
+        "question": ACTIVE_OPEN_MARKET["question"],
+        "endDateIso": "2025-12-31",
+        "orderPriceMinTickSize": 0.001,
+        "orderMinSize": 5,
+        "active": True,
+        "closed": False,
+        "enableOrderBook": True,
+    }
+
+    with patch("nautilus_trader.adapters.polymarket.providers.list_markets") as mock_list_markets:
+        async def mock_async_list_markets(*args, **kwargs):
+            return [gamma_market]
+        mock_list_markets.side_effect = mock_async_list_markets
+
+        # Act
+        await provider.load_ids_async([yes_instrument_id])
+
+        # Assert: Only YES token should be loaded, not NO
+        instruments = provider.list_all()
+        assert len(instruments) == 1
+
+        instrument = instruments[0]
+        assert instrument.id == yes_instrument_id
+        assert instrument.outcome == "Yes"
+
+
+@pytest.mark.asyncio
+async def test_gamma_markets_deduplicates_condition_ids(mock_clob_client, live_clock):
+    """
+    Test that Gamma API loader deduplicates condition IDs before limit check.
+
+    When loading both YES and NO tokens from the same markets (common case), condition
+    IDs should be deduplicated so that 60 markets with 2 tokens each (120 instruments)
+    uses the filtered query instead of bulk load.
+
+    """
+    # Arrange
+    config = InstrumentProviderConfig(use_gamma_markets=True)
+    provider = PolymarketInstrumentProvider(
+        client=mock_clob_client,
+        clock=live_clock,
+        config=config,
+    )
+
+    # Create 60 instrument pairs (both YES and NO tokens from same market)
+    instrument_ids = []
+    for i in range(60):
+        condition_id = f"0x{'1' * 63}{i:x}"
+        yes_token_id = f"1{i:063d}"
+        no_token_id = f"2{i:063d}"
+
+        instrument_ids.append(
+            InstrumentId.from_str(f"{condition_id}-{yes_token_id}.POLYMARKET"),
+        )
+        instrument_ids.append(
+            InstrumentId.from_str(f"{condition_id}-{no_token_id}.POLYMARKET"),
+        )
+
+    with patch("nautilus_trader.adapters.polymarket.providers.list_markets") as mock_list_markets:
+        async def mock_async_list_markets(*args, **kwargs):
+            return []
+        mock_list_markets.side_effect = mock_async_list_markets
+
+        # Act
+        await provider.load_ids_async(instrument_ids)
+
+        # Assert: Should use filtered query, not bulk load
+        call_args = mock_list_markets.call_args
+        filters = call_args[1]["filters"]
+
+        # Verify condition_ids filter was applied (means we used targeted query)
+        assert "condition_ids" in filters
+        # Verify we deduplicated: 120 instruments -> 60 unique condition_ids
+        assert len(filters["condition_ids"]) == 60

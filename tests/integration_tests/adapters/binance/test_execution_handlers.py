@@ -521,6 +521,50 @@ class TestBinanceFuturesExecutionHandlers:
         fill_idx = exec_client.mock_calls.index(fill_call)
         assert status_idx < fill_idx, "OrderStatusReport must be sent before FillReport"
 
+    def test_adl_order_with_trade_execution_type_sends_order_status_then_fill_report(self, mocker):
+        # Arrange: ADL order with x=TRADE and X=FILLED (instead of x=NEW and X=FILLED)
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_order_update_adl_filled.json",
+        )
+        decoder = msgspec.json.Decoder(BinanceFuturesOrderUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        exec_client = mocker.MagicMock()
+        exec_client.account_id = mocker.MagicMock()
+        exec_client._cache.strategy_id_for_order.return_value = None
+        exec_client._get_cached_instrument_id.return_value = ETHUSDT_BINANCE.id
+        exec_client._instrument_provider.find.return_value = ETHUSDT_BINANCE
+        exec_client._enum_parser.parse_binance_order_side.return_value = OrderSide.BUY
+        exec_client._clock.timestamp_ns.return_value = 1759347763200000000
+        exec_client.use_position_ids = False
+
+        # Act
+        wrapper.data.o.handle_order_trade_update(exec_client)
+
+        # Assert
+        exec_client._log.warning.assert_called_once()
+        assert "Received ADL order" in exec_client._log.warning.call_args[0][0]
+        assert "adl_autoclose-123" in exec_client._log.warning.call_args[0][0]
+
+        exec_client._send_order_status_report.assert_called_once()
+        order_report = exec_client._send_order_status_report.call_args[0][0]
+        assert order_report.client_order_id == ClientOrderId("adl_autoclose-123")
+
+        exec_client._send_fill_report.assert_called_once()
+        fill_report = exec_client._send_fill_report.call_args[0][0]
+        assert fill_report.last_qty == Quantity.from_str("1.000")
+        assert fill_report.last_px == Price.from_str("2500.00")
+        assert fill_report.liquidity_side == LiquiditySide.TAKER
+        assert fill_report.client_order_id == ClientOrderId("adl_autoclose-123")
+
+        # Verify OrderStatusReport sent before FillReport
+        status_call = call._send_order_status_report(order_report)
+        fill_call = call._send_fill_report(fill_report)
+        status_idx = exec_client.mock_calls.index(status_call)
+        fill_idx = exec_client.mock_calls.index(fill_call)
+        assert status_idx < fill_idx, "OrderStatusReport must be sent before FillReport"
+
     def test_settlement_order_sends_order_status_then_fill_report(self, mocker):
         # Arrange
         raw = pkgutil.get_data(
