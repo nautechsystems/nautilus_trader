@@ -1349,7 +1349,7 @@ async def test_repay_spot_borrow_repays_partial_single(
 
     # Start the repayment queue processor
     await client._connect()
-    
+
     try:
         # Create a fill report for the full order (0.5 BTC)
         fill_report = nautilus_pyo3.FillReport(
@@ -1428,7 +1428,7 @@ async def test_repay_spot_borrow_repays_partial_multiple(
     # Initial borrowed amount: 1.0 ETH
     # We'll buy in fractions: +15% (+0.15), +30% (+0.30), +40% (+0.40), +5% (+0.05) = 0.9 ETH total
     # This ensures we never repay the full borrowed amount (1.0 ETH)
-    
+
     orders = []
     order_ids = [
         ("O-PARTIAL-1", "0.150000"),  # 15% of 1.0 = 0.15 ETH
@@ -1436,7 +1436,7 @@ async def test_repay_spot_borrow_repays_partial_multiple(
         ("O-PARTIAL-3", "0.400000"),  # 40% of 1.0 = 0.40 ETH
         ("O-PARTIAL-4", "0.050000"),  # 5% of 1.0 = 0.05 ETH
     ]
-    
+
     for order_id, qty in order_ids:
         order = LimitOrder(
             trader_id=TestIdStubs.trader_id(),
@@ -1470,10 +1470,10 @@ async def test_repay_spot_borrow_repays_partial_multiple(
 
     # Start the repayment queue processor
     await client._connect()
-    
+
     try:
         expected_repayments = []
-        
+
         # Process each order as a separate fill
         for i, (order, qty) in enumerate(orders):
             fill_report = nautilus_pyo3.FillReport(
@@ -1491,22 +1491,22 @@ async def test_repay_spot_borrow_repays_partial_multiple(
                 report_id=nautilus_pyo3.UUID4(),
                 ts_init=0,
             )
-            
+
             # Act - Process the fill report
             client._handle_fill_report_pyo3(fill_report)
-            
+
             # Give the repayment queue processor time to process
             await asyncio.sleep(0.2)
-            
+
             # Track expected repayment for this iteration
             expected_repayments.append(float(qty))
 
         # 1. Borrow amount should be checked 4 times (once for each order)
         assert http_client.get_spot_borrow_amount.call_count == 4
-        
+
         # 2. Repayment should be called 4 times with partial amounts
         assert http_client.repay_spot_borrow.call_count == 4
-        
+
         # 3. Verify each repayment amount
         for i, expected_amt in enumerate(expected_repayments):
             call_args = http_client.repay_spot_borrow.call_args_list[i]
@@ -1514,11 +1514,11 @@ async def test_repay_spot_borrow_repays_partial_multiple(
             # Each repayment should be min(borrowed_amount, bought_qty)
             # Since we always have sufficient borrow, repayment = bought_qty
             assert float(call_args[0][1]) == expected_amt
-        
+
         # 4. Total repaid should be 0.9 ETH (less than 1.0 ETH borrowed)
         total_repaid = sum(expected_repayments)
         assert total_repaid == 0.9  # 0.15 + 0.30 + 0.40 + 0.05 = 0.90
-        
+
         # 5. All orders should be cleaned up from tracking
         for order, _ in orders:
             assert order.client_order_id not in client._order_filled_qty

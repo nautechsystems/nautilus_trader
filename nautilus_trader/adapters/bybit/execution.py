@@ -20,9 +20,8 @@ WebSocket APIs for order management and execution. The client uses Rust-based HT
 WebSocket clients exposed via PyO3 for performance.
 
 """
-
 import asyncio
-import time
+import contextlib
 from asyncio import Queue
 from decimal import Decimal
 from typing import Any
@@ -55,6 +54,7 @@ from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -74,7 +74,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
-from nautilus_trader.live.enqueue import ThrottledEnqueuer
 
 
 class BybitExecutionClient(LiveExecutionClient):
@@ -221,7 +220,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         # Start repayment processor coroutine
         self._repay_task = loop.create_task(
-            self._process_repayment_queues(), name="repay_processor"
+            self._process_repayment_queues(), name="repay_processor",
         )
 
     @property
@@ -293,10 +292,8 @@ class BybitExecutionClient(LiveExecutionClient):
         # Cancel repayment processor task
         if self._repay_task and not self._repay_task.done():
             self._repay_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._repay_task
-            except asyncio.CancelledError:
-                pass
 
         # Cancel pending enqueuer tasks
         for enqueuer in self._repay_enqueuers.values():
@@ -1344,7 +1341,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 for base_currency, queue in list(self._repay_queues.items()):
                     try:
                         # Accumulate all pending quantities for this currency
-                        total_qty = Decimal("0")
+                        total_qty = Decimal(0)
                         while not queue.empty():
                             try:
                                 qty = queue.get_nowait()
