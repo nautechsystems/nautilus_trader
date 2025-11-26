@@ -22,7 +22,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     error::DydxError,
-    grpc::{Account, DydxGrpcClient, OrderBuilder, OrderGoodUntil, OrderMarketParams, TxBuilder},
+    grpc::{Account, DydxGrpcClient, OrderBuilder, OrderGoodUntil, OrderMarketParams, TxBuilder, Wallet},
     proto::dydxprotocol::clob::order::{
         Side as ProtoOrderSide, TimeInForce as ProtoTimeInForce,
     },
@@ -620,5 +620,53 @@ impl OrderSubmitter {
         // TODO: Generate and send OrderRejected event
         tracing::debug!("[STUB] Would generate OrderRejected event");
         Ok(())
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+//  Tests
+// ------------------------------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use nautilus_model::enums::{OrderSide, TimeInForce};
+
+    use crate::proto::dydxprotocol::clob::order::{
+        Side as ProtoOrderSide, TimeInForce as ProtoTimeInForce,
+    };
+
+    use super::OrderSubmitter;
+
+    // ------------------------------------------------------------------------
+    // convert_side tests
+    // ------------------------------------------------------------------------
+
+    #[rstest]
+    #[case::buy(OrderSide::Buy, ProtoOrderSide::Buy)]
+    #[case::sell(OrderSide::Sell, ProtoOrderSide::Sell)]
+    #[case::no_side(OrderSide::NoOrderSide, ProtoOrderSide::Unspecified)]
+    fn test_convert_side(#[case] input: OrderSide, #[case] expected: ProtoOrderSide) {
+        let result = OrderSubmitter::convert_side(input);
+        assert_eq!(result, expected);
+    }
+
+    // ------------------------------------------------------------------------
+    // convert_time_in_force tests
+    // ------------------------------------------------------------------------
+
+    #[rstest]
+    #[case::ioc(TimeInForce::Ioc, ProtoTimeInForce::Ioc)]
+    #[case::fok(TimeInForce::Fok, ProtoTimeInForce::FillOrKill)]
+    #[case::gtc(TimeInForce::Gtc, ProtoTimeInForce::Unspecified)]
+    #[case::gtd(TimeInForce::Gtd, ProtoTimeInForce::Unspecified)]
+    #[case::day(TimeInForce::Day, ProtoTimeInForce::Unspecified)]
+    #[case::at_the_open(TimeInForce::AtTheOpen, ProtoTimeInForce::Unspecified)]
+    #[case::at_the_close(TimeInForce::AtTheClose, ProtoTimeInForce::Unspecified)]
+    #[case::good_til_canceled(TimeInForce::GoodTilCanceled, ProtoTimeInForce::Unspecified)]
+    #[case::good_til_date(TimeInForce::GoodTilDate, ProtoTimeInForce::Unspecified)]
+    fn test_convert_time_in_force(#[case] input: TimeInForce, #[case] expected: ProtoTimeInForce) {
+        let result = OrderSubmitter::convert_time_in_force(input);
+        assert_eq!(result, expected);
     }
 }
