@@ -15,5 +15,13 @@
 
 //! Protocol Buffer definitions for dYdX v4.
 //!
-//! This module will contain generated protobuf code for the dYdX protocol.
-//! Generated files will be included here once proto compilation is set up.
+//! This module re-exports the `dydx-proto` crate which contains pre-compiled
+//! Protocol Buffer definitions from the official dYdX v4 chain repository.
+//!
+//! The proto definitions include:
+//! - Cosmos SDK base types and gRPC services
+//! - dYdX protocol-specific messages (orders, subaccounts, markets, etc.)
+//! - gRPC service clients for querying and broadcasting transactions
+
+// Re-export the entire dydx-proto crate for full access
+pub use dydx_proto::*;
