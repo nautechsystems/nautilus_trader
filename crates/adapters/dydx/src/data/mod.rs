@@ -35,6 +35,7 @@ use nautilus_common::{
         },
     },
     runner::get_data_event_sender,
+    symbols::extract_raw_symbol,
 };
 use nautilus_core::{
     UnixNanos,
@@ -125,18 +126,6 @@ pub struct DydxDataClient {
 }
 
 impl DydxDataClient {
-    /// Derives the dYdX candle topic ticker from a Nautilus InstrumentId.
-    ///
-    /// dYdX candle topics use the exchange symbol without the `-PERP` suffix.
-    /// For example, `BTC-USD-PERP.DYDX` → `BTC-USD`.
-    ///
-    /// This must match the topic format used in WebSocket candle subscription
-    /// and incoming candle messages.
-    fn dydx_candle_ticker_from_instrument(instrument_id: &InstrumentId) -> String {
-        let symbol = instrument_id.symbol.as_str();
-        symbol.strip_suffix("-PERP").unwrap_or(symbol).to_string()
-    }
-
     /// Maps Nautilus BarType spec to dYdX candle resolution string.
     ///
     /// # Errors
