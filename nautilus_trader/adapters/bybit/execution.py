@@ -1334,15 +1334,11 @@ class BybitExecutionClient(LiveExecutionClient):
         # to avoid noise from position updates every time a fill occurs
 
     async def _process_repayment_queues(self) -> None:
-        """
-        Process repayment queues for all currencies.
-
-        This coroutine runs continuously, checking frequently if there are any
-        accumulated quantities to repay for each base currency.
-        """
         self._log.debug("Repayment queue processor starting")
         try:
             while True:
+                # This delay must be increased maybe to 1s in real world, in tests, large delays fail
+                # A way to solve this would be to use different delays depending on scenarios (tests/production)
                 await asyncio.sleep(0.05)
 
                 for base_currency, queue in list(self._repay_queues.items()):
