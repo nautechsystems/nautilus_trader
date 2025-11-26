@@ -242,7 +242,7 @@ impl BaseAccount {
                 .calculate_notional_value(quantity, price, use_quote_for_inverse)
                 .as_f64(),
             OrderSide::Sell => quantity.as_f64(),
-            _ => panic!("Invalid `OrderSide` in `base_calculate_balance_locked`"),
+            _ => anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}"),
         };
 
         // Handle inverse
@@ -253,7 +253,7 @@ impl BaseAccount {
         } else if side == OrderSide::Sell {
             Ok(Money::new(notional, base_currency))
         } else {
-            panic!("Invalid `OrderSide` in `base_calculate_balance_locked`")
+            anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}")
         }
     }
 
@@ -305,20 +305,23 @@ impl BaseAccount {
                 Money::new(notional.as_f64(), notional.currency),
             );
         } else {
-            panic!("Invalid `OrderSide` in base_calculate_pnls")
+            anyhow::bail!(
+                "Invalid `OrderSide` in base_calculate_pnls: {}",
+                fill.order_side
+            );
         }
         Ok(pnls.into_values().collect())
     }
 
     /// Calculates commission fees for a filled order.
     ///
-    /// # Errors
-    ///
-    /// This function never returns an error (TBD).
-    ///
     /// # Panics
     ///
-    /// Panics if `liquidity_side` is `LiquiditySide::NoLiquiditySide` or otherwise invalid.
+    /// Panics if instrument fees cannot be converted to f64, or if base currency is unavailable for inverse instruments.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "Error conditions documented inline"
+    )]
     pub fn base_calculate_commission(
         &self,
         instrument: InstrumentAny,
@@ -327,9 +330,9 @@ impl BaseAccount {
         liquidity_side: LiquiditySide,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        assert!(
+        anyhow::ensure!(
             liquidity_side != LiquiditySide::NoLiquiditySide,
-            "Invalid `LiquiditySide`"
+            "Invalid `LiquiditySide`: {liquidity_side}"
         );
         let notional = instrument
             .calculate_notional_value(last_qty, last_px, use_quote_for_inverse)
@@ -339,7 +342,7 @@ impl BaseAccount {
         } else if liquidity_side == LiquiditySide::Taker {
             notional * instrument.taker_fee().to_f64().unwrap()
         } else {
-            panic!("Invalid `LiquiditySide` {liquidity_side}")
+            anyhow::bail!("Invalid `LiquiditySide`: {liquidity_side}");
         };
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
             Ok(Money::new(commission, instrument.base_currency().unwrap()))

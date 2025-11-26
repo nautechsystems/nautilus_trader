@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 2Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,9 +15,8 @@
 
 use bytes::Bytes;
 use futures::stream::Stream;
-use ustr::Ustr;
 
-use super::BusMessage;
+use super::{BusMessage, MStr, Topic};
 
 #[cfg_attr(
     feature = "python",
@@ -64,8 +63,9 @@ impl MessageBusListener {
     }
 
     /// Publishes a message with the given `topic` and `payload`.
-    pub fn publish(&self, topic: Ustr, payload: Bytes) {
-        let msg = BusMessage::new(topic, payload);
+    pub fn publish<T: Into<MStr<Topic>>>(&self, topic: T, payload: Bytes) {
+        let topic = topic.into();
+        let msg = BusMessage::new(*topic, payload);
         if let Err(e) = self.tx.send(msg) {
             log::error!("Failed to send message: {e}");
         }
@@ -101,6 +101,7 @@ mod tests {
     use bytes::Bytes;
     use futures::StreamExt;
     use tokio::sync::mpsc;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -235,5 +236,77 @@ mod tests {
 
         // Publishing should log an error but not panic
         listener.publish(Ustr::from("test-topic"), Bytes::from("test-payload"));
+    }
+
+    #[tokio::test]
+    async fn test_publish_with_mstr_topic() {
+        // This test specifically verifies that publish() correctly handles
+        // MStr<Topic> -> *topic (Ustr deref) -> BusMessage::new(Ustr, ...)
+        let mut listener = MessageBusListener::new();
+
+        let rx = listener
+            .get_stream_receiver()
+            .expect("Failed to get stream receiver");
+
+        let (notify_tx, mut notify_rx) = mpsc::channel::<()>(1);
+
+        // Spawn a task to process the message
+        let handle = tokio::spawn(async move {
+            let stream = MessageBusListener::stream(rx);
+            futures::pin_mut!(stream);
+            let msg = stream.next().await.expect("No message received");
+
+            assert_eq!(msg.topic, "mstr-topic");
+            assert_eq!(msg.payload.as_ref(), b"mstr-payload");
+            notify_tx.send(()).await.unwrap();
+        });
+
+        // Publish using MStr<Topic> (not Ustr directly)
+        let topic = MStr::<Topic>::from("mstr-topic");
+        listener.publish(topic, Bytes::from("mstr-payload"));
+
+        // Wait for the message to be processed
+        tokio::select! {
+            _ = notify_rx.recv() => {},
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
+                panic!("Timeout waiting for message");
+            }
+        }
+
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_publish_with_string_topic() {
+        // Test that &str -> Into<MStr<Topic>> -> *topic -> Ustr works
+        let mut listener = MessageBusListener::new();
+
+        let rx = listener
+            .get_stream_receiver()
+            .expect("Failed to get stream receiver");
+
+        let (notify_tx, mut notify_rx) = mpsc::channel::<()>(1);
+
+        let handle = tokio::spawn(async move {
+            let stream = MessageBusListener::stream(rx);
+            futures::pin_mut!(stream);
+            let msg = stream.next().await.expect("No message received");
+
+            assert_eq!(msg.topic, "string-topic");
+            assert_eq!(msg.payload.as_ref(), b"string-payload");
+            notify_tx.send(()).await.unwrap();
+        });
+
+        // Publish using &str (tests Into<MStr<Topic>> conversion)
+        listener.publish("string-topic", Bytes::from("string-payload"));
+
+        tokio::select! {
+            _ = notify_rx.recv() => {},
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
+                panic!("Timeout waiting for message");
+            }
+        }
+
+        handle.await.unwrap();
     }
 }

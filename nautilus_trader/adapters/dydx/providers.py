@@ -128,8 +128,8 @@ class DYDXInstrumentProvider(InstrumentProvider):
             self._log.error("Failed to fetch the instruments")
             return
 
-        maker_fee = Decimal("0")
-        taker_fee = Decimal("0")
+        maker_fee = Decimal(0)
+        taker_fee = Decimal(0)
 
         if fee_tier is None:
             try:

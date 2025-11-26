@@ -27,7 +27,7 @@ from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument() -> Instrument:
     return TestInstrumentProvider.default_fx_ccy("EUR/USD")
 
@@ -55,7 +55,7 @@ def test_fixed_commission_single_fill(instrument, order_side):
 
 
 @pytest.mark.parametrize(
-    "order_side, charge_commission_once, expected_first_fill, expected_next_fill",
+    ("order_side", "charge_commission_once", "expected_first_fill", "expected_next_fill"),
     [
         [OrderSide.BUY, True, Money(1, USD), Money(0, USD)],
         [OrderSide.SELL, True, Money(1, USD), Money(0, USD)],

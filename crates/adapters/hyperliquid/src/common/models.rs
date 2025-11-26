@@ -863,6 +863,7 @@ pub fn parse_position_status_report(
 #[allow(dead_code)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -1162,8 +1163,8 @@ mod tests {
         assert_eq!(info.instrument_id, instrument_id);
         assert_eq!(info.price_decimals, 3);
         assert_eq!(info.size_decimals, 4);
-        assert_eq!(info.tick_size, Some(Decimal::new(1, 3))); // 0.001
-        assert_eq!(info.step_size, Some(Decimal::new(1, 4))); // 0.0001
+        assert_eq!(info.tick_size, Some(dec!(0.001))); // 0.001
+        assert_eq!(info.step_size, Some(dec!(0.0001))); // 0.0001
     }
 
     #[tokio::test]

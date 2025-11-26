@@ -69,6 +69,8 @@ cdef class ShutdownSystem(Command):
         self._ts_init = ts_init
 
     def __eq__(self, Command other) -> bool:
+        if other is None:
+            return False
         return self._command_id == other.id
 
     def __hash__(self) -> int:
@@ -193,6 +195,8 @@ cdef class ComponentStateChanged(Event):
         self._ts_init = ts_init
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self._event_id == other.id
 
     def __hash__(self) -> int:
@@ -345,6 +349,8 @@ cdef class RiskEvent(Event):
         self._ts_init = ts_init
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self._event_id == other.id
 
     def __hash__(self) -> int:

@@ -50,6 +50,13 @@ impl CoinbaseIntxFixClient {
     }
 
     #[getter]
+    #[pyo3(name = "api_key_masked")]
+    #[must_use]
+    pub fn py_api_key_masked(&self) -> String {
+        self.api_key_masked()
+    }
+
+    #[getter]
     #[pyo3(name = "portfolio_id")]
     #[must_use]
     pub const fn py_portfolio_id(&self) -> &str {

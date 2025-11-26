@@ -68,7 +68,7 @@ class TestEventStubs:
             component_id=ComponentId("MyActor-001"),
             component_type="MyActor",
             state=ComponentState.RUNNING,
-            config={"do_something": True, "trade_size": Decimal("10")},
+            config={"do_something": True, "trade_size": Decimal(10)},
             event_id=UUID4(),
             ts_event=0,
             ts_init=0,

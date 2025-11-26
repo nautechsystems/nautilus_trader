@@ -606,9 +606,8 @@ pub fn parse_position_status_report(
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::{
         super::models::{HyperliquidL2Book, PerpAsset, SpotPair, SpotToken},
@@ -623,9 +622,9 @@ mod tests {
 
     #[rstest]
     fn test_pow10_neg() {
-        assert_eq!(pow10_neg(0).unwrap(), Decimal::from(1));
-        assert_eq!(pow10_neg(1).unwrap(), Decimal::from_str("0.1").unwrap());
-        assert_eq!(pow10_neg(5).unwrap(), Decimal::from_str("0.00001").unwrap());
+        assert_eq!(pow10_neg(0).unwrap(), dec!(1));
+        assert_eq!(pow10_neg(1).unwrap(), dec!(0.1));
+        assert_eq!(pow10_neg(5).unwrap(), dec!(0.00001));
     }
 
     #[rstest]
@@ -662,8 +661,8 @@ mod tests {
         assert_eq!(btc.market_type, HyperliquidMarketType::Perp);
         assert_eq!(btc.price_decimals, 1); // 6 - 5 = 1
         assert_eq!(btc.size_decimals, 5);
-        assert_eq!(btc.tick_size, Decimal::from_str("0.1").unwrap());
-        assert_eq!(btc.lot_size, Decimal::from_str("0.00001").unwrap());
+        assert_eq!(btc.tick_size, dec!(0.1));
+        assert_eq!(btc.lot_size, dec!(0.00001));
         assert_eq!(btc.max_leverage, Some(50));
         assert!(!btc.only_isolated);
         assert!(btc.active);
@@ -805,11 +804,8 @@ mod tests {
         assert_eq!(purr_usdc.market_type, HyperliquidMarketType::Spot);
         assert_eq!(purr_usdc.price_decimals, 8); // 8 - 0 = 8 (PURR sz_decimals = 0)
         assert_eq!(purr_usdc.size_decimals, 0);
-        assert_eq!(
-            purr_usdc.tick_size,
-            Decimal::from_str("0.00000001").unwrap()
-        );
-        assert_eq!(purr_usdc.lot_size, Decimal::from(1));
+        assert_eq!(purr_usdc.tick_size, dec!(0.00000001));
+        assert_eq!(purr_usdc.lot_size, dec!(1));
         assert_eq!(purr_usdc.max_leverage, None);
         assert!(!purr_usdc.only_isolated);
         assert!(purr_usdc.active);
@@ -836,6 +832,6 @@ mod tests {
 
         let defs = parse_perp_instruments(&meta).unwrap();
         assert_eq!(defs[0].price_decimals, 0);
-        assert_eq!(defs[0].tick_size, Decimal::from(1));
+        assert_eq!(defs[0].tick_size, dec!(1));
     }
 }

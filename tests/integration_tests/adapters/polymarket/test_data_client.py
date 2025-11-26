@@ -153,7 +153,8 @@ def test_tick_size_change_rebuilds_local_book_precision(event_loop) -> None:
     rebuilt_book = client._local_books[instrument_id]
     bid_price = rebuilt_book.best_bid_price()
     ask_price = rebuilt_book.best_ask_price()
-    assert bid_price is not None and ask_price is not None
+    assert bid_price is not None
+    assert ask_price is not None
     assert bid_price.precision == ask_price.precision == 3
 
     assert any(

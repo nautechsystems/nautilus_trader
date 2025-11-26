@@ -77,6 +77,7 @@ tracing-subscriber = { workspace = true }
 urlencoding = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }

@@ -110,7 +110,7 @@ impl BaseContract {
 
         let encoded_response = self
             .client
-            .execute_eth_call::<String>(rpc_request)
+            .execute_rpc_call::<String>(rpc_request)
             .await
             .map_err(|e| BlockchainRpcClientError::ClientError(format!("RPC call failed: {e}")))?;
 
@@ -149,7 +149,7 @@ impl BaseContract {
 
         let encoded_response = self
             .client
-            .execute_eth_call::<String>(rpc_request)
+            .execute_rpc_call::<String>(rpc_request)
             .await
             .map_err(|e| BlockchainRpcClientError::ClientError(format!("Multicall failed: {e}")))?;
 

@@ -1519,26 +1519,27 @@ cdef class ExecutionEngine(Component):
         cdef Position position = self._cache.position(fill.position_id)
 
         if position is None or position.is_closed_c():
-            position = self._open_position(instrument, position, fill, oms_type)
+            self._open_position(instrument, position, fill, oms_type)
         elif self._will_flip_position(position, fill):
             self._flip_position(instrument, position, fill, oms_type)
         else:
             self._update_position(instrument, position, fill, oms_type)
 
-    cpdef Position _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
-        if position is None:
-            position = Position(instrument, fill)
-            self._cache.add_position(position, oms_type)
-        else:
+    cpdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
+        if position is not None:
             try:
-                # Always snapshot opening positions to handle NETTING OMS
-                self._cache.snapshot_position(position)
-                position.apply(fill)
-                self._cache.update_position(position)
-            except KeyError as e:
-                # Protected against duplicate OrderFilled
-                self._log.exception(f"Error on applying {fill!r} to {position!r}", e)
-                return  # Not re-raising to avoid crashing engine
+                position._check_duplicate_trade_id(fill)
+            except KeyError:
+                self._log.warning(
+                    f"Ignoring duplicate fill {fill.trade_id} for closed position {position.id}; "
+                    "no position reopened",
+                )
+                return
+
+            self._reopen_position(position, oms_type)
+
+        position = Position(instrument, fill)
+        self._cache.add_position(position, oms_type)
 
         cdef PositionOpened event = PositionOpened.create_c(
             position=position,
@@ -1557,7 +1558,20 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-        return position
+    cpdef void _reopen_position(self, Position position, OmsType oms_type):
+        if oms_type == OmsType.NETTING:
+            if position.is_open_c():
+                raise RuntimeError(
+                    f"Cannot reopen position {position.info()} (oms_type={oms_type_to_str(oms_type)}: "
+                    "reopening is only valid for closed positions in NETTING mode"
+                )
+            # Snapshot closed position if reopening (NETTING mode)
+            self._cache.snapshot_position(position)
+        else:  # HEDGING
+            self._log.warning(
+                f"Received fill for closed position {position.id} in HEDGING mode; "
+                "creating new position and ignoring previous state"
+            )
 
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         try:
@@ -1642,6 +1656,10 @@ cdef class ExecutionEngine(Component):
 
             # Close original position
             self._update_position(instrument, position, fill_split1, oms_type)
+
+            # Snapshot closed position before reusing ID (NETTING mode)
+            if oms_type == OmsType.NETTING:
+                self._cache.snapshot_position(position)
 
         # Guard against flipping a position with a zero fill size
         if difference._mem.raw == 0:

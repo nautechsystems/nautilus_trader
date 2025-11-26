@@ -55,7 +55,7 @@ class TestBacktestLongRequest:
         bar_messages = [msg for msg in messages_received if msg.startswith("bar_received:")]
         assert (
             len(bar_messages) > 0
-        ), f"Expected to receive historical bars, got messages: {messages_received}"
+        ), f"Expected to receive historical bars, received messages: {messages_received}"
         assert len(bar_messages) == 10
 
         # Verify all bars are for the correct instrument
@@ -246,7 +246,7 @@ class TestBacktestRequestJoin:
         bar_messages = [msg for msg in messages_received if msg.startswith("bar_received:")]
         assert (
             len(bar_messages) > 0
-        ), f"Expected to receive historical bars, got messages: {messages_received}"
+        ), f"Expected to receive historical bars, received messages: {messages_received}"
 
         # Verify bars are from both instruments
         es_bar_type = f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL"
@@ -255,8 +255,8 @@ class TestBacktestRequestJoin:
         es_bars = [msg for msg in bar_messages if es_bar_type in msg]
         nq_bars = [msg for msg in bar_messages if nq_bar_type in msg]
 
-        assert len(es_bars) > 0, f"Expected to receive ES bars, got messages: {bar_messages}"
-        assert len(nq_bars) > 0, f"Expected to receive NQ bars, got messages: {bar_messages}"
+        assert len(es_bars) > 0, f"Expected to receive ES bars, received messages: {bar_messages}"
+        assert len(nq_bars) > 0, f"Expected to receive NQ bars, received messages: {bar_messages}"
         assert len(es_bars) == 10
         assert len(nq_bars) == 10
 

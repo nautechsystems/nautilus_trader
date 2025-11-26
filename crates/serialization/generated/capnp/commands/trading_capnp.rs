@@ -291,13 +291,14 @@ pub mod trading_command_header {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 115] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 116] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(202, 99, 120, 210, 213, 238, 239, 210),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(6, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(101, 1, 0, 0, 105, 2, 0, 0),
       ::capnp::word(21, 0, 0, 0, 98, 1, 0, 0),
       ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1548,13 +1549,14 @@ pub mod order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 726] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 727] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(227, 82, 120, 115, 226, 23, 220, 199),
       ::capnp::word(23, 0, 0, 0, 1, 0, 5, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(31, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(224, 2, 0, 0, 185, 12, 0, 0),
       ::capnp::word(21, 0, 0, 0, 234, 0, 0, 0),
       ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -3223,13 +3225,14 @@ pub mod position {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 585] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 586] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(121, 206, 212, 181, 123, 73, 44, 167),
       ::capnp::word(23, 0, 0, 0, 1, 0, 7, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(23, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(3, 13, 0, 0, 78, 19, 0, 0),
       ::capnp::word(21, 0, 0, 0, 2, 1, 0, 0),
       ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4070,13 +4073,14 @@ pub mod order_list {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 70] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 71] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(106, 50, 214, 69, 0, 8, 129, 165),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(120, 19, 0, 0, 4, 20, 0, 0),
       ::capnp::word(21, 0, 0, 0, 10, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4546,13 +4550,14 @@ pub mod trading_command {
   impl Pipeline  {
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 148] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 149] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(237, 63, 84, 179, 43, 0, 213, 237),
       ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(1, 0, 7, 0, 0, 0, 8, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(33, 20, 0, 0, 144, 21, 0, 0),
       ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4807,11 +4812,11 @@ pub mod submit_order {
       !self.reader.get_pointer_field(0).is_null()
     }
     #[inline]
-    pub fn get_order(self) -> ::capnp::Result<crate::trading_capnp::order::Reader<'a>> {
+    pub fn get_order_init(self) -> ::capnp::Result<crate::order_capnp::order_initialized::Reader<'a>> {
       ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(1), ::core::option::Option::None)
     }
     #[inline]
-    pub fn has_order(&self) -> bool {
+    pub fn has_order_init(&self) -> bool {
       !self.reader.get_pointer_field(1).is_null()
     }
     #[inline]
@@ -4893,19 +4898,19 @@ pub mod submit_order {
       !self.builder.is_pointer_field_null(0)
     }
     #[inline]
-    pub fn get_order(self) -> ::capnp::Result<crate::trading_capnp::order::Builder<'a>> {
+    pub fn get_order_init(self) -> ::capnp::Result<crate::order_capnp::order_initialized::Builder<'a>> {
       ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(1), ::core::option::Option::None)
     }
     #[inline]
-    pub fn set_order(&mut self, value: crate::trading_capnp::order::Reader<'_>) -> ::capnp::Result<()> {
+    pub fn set_order_init(&mut self, value: crate::order_capnp::order_initialized::Reader<'_>) -> ::capnp::Result<()> {
       ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(1), value, false)
     }
     #[inline]
-    pub fn init_order(self, ) -> crate::trading_capnp::order::Builder<'a> {
+    pub fn init_order_init(self, ) -> crate::order_capnp::order_initialized::Builder<'a> {
       ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(1), 0)
     }
     #[inline]
-    pub fn has_order(&self) -> bool {
+    pub fn has_order_init(&self) -> bool {
       !self.builder.is_pointer_field_null(1)
     }
     #[inline]
@@ -4936,7 +4941,7 @@ pub mod submit_order {
     pub fn get_header(&self) -> crate::trading_capnp::trading_command_header::Pipeline {
       ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(0))
     }
-    pub fn get_order(&self) -> crate::trading_capnp::order::Pipeline {
+    pub fn get_order_init(&self) -> crate::order_capnp::order_initialized::Pipeline {
       ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(1))
     }
     pub fn get_position_id(&self) -> crate::identifiers_capnp::position_id::Pipeline {
@@ -4944,13 +4949,14 @@ pub mod submit_order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 65] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 67] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(88, 251, 76, 212, 89, 5, 63, 205),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(146, 21, 0, 0, 40, 22, 0, 0),
       ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4974,17 +4980,17 @@ pub mod submit_order {
       ::capnp::word(1, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(0, 0, 1, 0, 1, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(73, 0, 0, 0, 50, 0, 0, 0),
+      ::capnp::word(73, 0, 0, 0, 82, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(68, 0, 0, 0, 3, 0, 1, 0),
-      ::capnp::word(80, 0, 0, 0, 2, 0, 1, 0),
+      ::capnp::word(72, 0, 0, 0, 3, 0, 1, 0),
+      ::capnp::word(84, 0, 0, 0, 2, 0, 1, 0),
       ::capnp::word(2, 0, 0, 0, 2, 0, 0, 0),
       ::capnp::word(0, 0, 1, 0, 2, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(77, 0, 0, 0, 90, 0, 0, 0),
+      ::capnp::word(81, 0, 0, 0, 90, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(76, 0, 0, 0, 3, 0, 1, 0),
-      ::capnp::word(88, 0, 0, 0, 2, 0, 1, 0),
+      ::capnp::word(80, 0, 0, 0, 3, 0, 1, 0),
+      ::capnp::word(92, 0, 0, 0, 2, 0, 1, 0),
       ::capnp::word(104, 101, 97, 100, 101, 114, 0, 0),
       ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(202, 99, 120, 210, 213, 238, 239, 210),
@@ -4993,9 +4999,10 @@ pub mod submit_order {
       ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(111, 114, 100, 101, 114, 0, 0, 0),
+      ::capnp::word(111, 114, 100, 101, 114, 73, 110, 105),
+      ::capnp::word(116, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(227, 82, 120, 115, 226, 23, 220, 199),
+      ::capnp::word(52, 251, 107, 68, 25, 165, 101, 240),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
@@ -5014,7 +5021,7 @@ pub mod submit_order {
     pub fn get_field_types(index: u16) -> ::capnp::introspect::Type {
       match index {
         0 => <crate::trading_capnp::trading_command_header::Owned as ::capnp::introspect::Introspect>::introspect(),
-        1 => <crate::trading_capnp::order::Owned as ::capnp::introspect::Introspect>::introspect(),
+        1 => <crate::order_capnp::order_initialized::Owned as ::capnp::introspect::Introspect>::introspect(),
         2 => <crate::identifiers_capnp::position_id::Owned as ::capnp::introspect::Introspect>::introspect(),
         _ => ::capnp::introspect::panic_invalid_field_index(index),
       }
@@ -5105,11 +5112,11 @@ pub mod submit_order_list {
       !self.reader.get_pointer_field(0).is_null()
     }
     #[inline]
-    pub fn get_order_list(self) -> ::capnp::Result<crate::trading_capnp::order_list::Reader<'a>> {
+    pub fn get_order_inits(self) -> ::capnp::Result<::capnp::struct_list::Reader<'a,crate::order_capnp::order_initialized::Owned>> {
       ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(1), ::core::option::Option::None)
     }
     #[inline]
-    pub fn has_order_list(&self) -> bool {
+    pub fn has_order_inits(&self) -> bool {
       !self.reader.get_pointer_field(1).is_null()
     }
     #[inline]
@@ -5191,19 +5198,19 @@ pub mod submit_order_list {
       !self.builder.is_pointer_field_null(0)
     }
     #[inline]
-    pub fn get_order_list(self) -> ::capnp::Result<crate::trading_capnp::order_list::Builder<'a>> {
+    pub fn get_order_inits(self) -> ::capnp::Result<::capnp::struct_list::Builder<'a,crate::order_capnp::order_initialized::Owned>> {
       ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(1), ::core::option::Option::None)
     }
     #[inline]
-    pub fn set_order_list(&mut self, value: crate::trading_capnp::order_list::Reader<'_>) -> ::capnp::Result<()> {
+    pub fn set_order_inits(&mut self, value: ::capnp::struct_list::Reader<'_,crate::order_capnp::order_initialized::Owned>) -> ::capnp::Result<()> {
       ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(1), value, false)
     }
     #[inline]
-    pub fn init_order_list(self, ) -> crate::trading_capnp::order_list::Builder<'a> {
-      ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(1), 0)
+    pub fn init_order_inits(self, size: u32) -> ::capnp::struct_list::Builder<'a,crate::order_capnp::order_initialized::Owned> {
+      ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(1), size)
     }
     #[inline]
-    pub fn has_order_list(&self) -> bool {
+    pub fn has_order_inits(&self) -> bool {
       !self.builder.is_pointer_field_null(1)
     }
     #[inline]
@@ -5234,21 +5241,19 @@ pub mod submit_order_list {
     pub fn get_header(&self) -> crate::trading_capnp::trading_command_header::Pipeline {
       ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(0))
     }
-    pub fn get_order_list(&self) -> crate::trading_capnp::order_list::Pipeline {
-      ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(1))
-    }
     pub fn get_position_id(&self) -> crate::identifiers_capnp::position_id::Pipeline {
       ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(2))
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 66] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 71] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(126, 172, 30, 125, 130, 27, 69, 196),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(42, 22, 0, 0, 203, 22, 0, 0),
       ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5272,17 +5277,17 @@ pub mod submit_order_list {
       ::capnp::word(1, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(0, 0, 1, 0, 1, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(73, 0, 0, 0, 82, 0, 0, 0),
+      ::capnp::word(73, 0, 0, 0, 90, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(72, 0, 0, 0, 3, 0, 1, 0),
-      ::capnp::word(84, 0, 0, 0, 2, 0, 1, 0),
+      ::capnp::word(100, 0, 0, 0, 2, 0, 1, 0),
       ::capnp::word(2, 0, 0, 0, 2, 0, 0, 0),
       ::capnp::word(0, 0, 1, 0, 2, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(81, 0, 0, 0, 90, 0, 0, 0),
+      ::capnp::word(97, 0, 0, 0, 90, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(80, 0, 0, 0, 3, 0, 1, 0),
-      ::capnp::word(92, 0, 0, 0, 2, 0, 1, 0),
+      ::capnp::word(96, 0, 0, 0, 3, 0, 1, 0),
+      ::capnp::word(108, 0, 0, 0, 2, 0, 1, 0),
       ::capnp::word(104, 101, 97, 100, 101, 114, 0, 0),
       ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(202, 99, 120, 210, 213, 238, 239, 210),
@@ -5291,13 +5296,17 @@ pub mod submit_order_list {
       ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(111, 114, 100, 101, 114, 76, 105, 115),
-      ::capnp::word(116, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
-      ::capnp::word(106, 50, 214, 69, 0, 8, 129, 165),
+      ::capnp::word(111, 114, 100, 101, 114, 73, 110, 105),
+      ::capnp::word(116, 115, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(14, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(0, 0, 0, 0, 3, 0, 1, 0),
       ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(52, 251, 107, 68, 25, 165, 101, 240),
+      ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(14, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
       ::capnp::word(112, 111, 115, 105, 116, 105, 111, 110),
@@ -5313,7 +5322,7 @@ pub mod submit_order_list {
     pub fn get_field_types(index: u16) -> ::capnp::introspect::Type {
       match index {
         0 => <crate::trading_capnp::trading_command_header::Owned as ::capnp::introspect::Introspect>::introspect(),
-        1 => <crate::trading_capnp::order_list::Owned as ::capnp::introspect::Introspect>::introspect(),
+        1 => <::capnp::struct_list::Owned<crate::order_capnp::order_initialized::Owned> as ::capnp::introspect::Introspect>::introspect(),
         2 => <crate::identifiers_capnp::position_id::Owned as ::capnp::introspect::Introspect>::introspect(),
         _ => ::capnp::introspect::panic_invalid_field_index(index),
       }
@@ -5622,13 +5631,14 @@ pub mod modify_order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 113] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 114] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(130, 152, 94, 47, 7, 143, 225, 216),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(6, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(205, 22, 0, 0, 198, 23, 0, 0),
       ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5971,13 +5981,14 @@ pub mod cancel_order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 66] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 67] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(176, 142, 211, 36, 212, 96, 52, 132),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(200, 23, 0, 0, 99, 24, 0, 0),
       ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6228,13 +6239,14 @@ pub mod cancel_all_orders {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 50] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 51] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(243, 7, 26, 231, 73, 7, 196, 246),
       ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(1, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(101, 24, 0, 0, 199, 24, 0, 0),
       ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6480,13 +6492,14 @@ pub mod batch_cancel_orders {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 55] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 56] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(223, 141, 216, 17, 7, 160, 29, 196),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(201, 24, 0, 0, 51, 25, 0, 0),
       ::capnp::word(21, 0, 0, 0, 74, 1, 0, 0),
       ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6767,13 +6780,14 @@ pub mod query_order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 66] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 67] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(220, 9, 75, 94, 17, 9, 171, 143),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(53, 25, 0, 0, 207, 25, 0, 0),
       ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -7093,13 +7107,14 @@ pub mod query_account {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 82] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 83] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(225, 57, 71, 190, 93, 235, 24, 233),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(4, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(209, 25, 0, 0, 117, 26, 0, 0),
       ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),

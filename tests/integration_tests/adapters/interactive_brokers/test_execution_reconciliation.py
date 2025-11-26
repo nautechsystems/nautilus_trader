@@ -28,7 +28,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 def instrument_setup(exec_client, cache, instrument=None, contract_details=None):
     instrument = instrument or IBTestContractStubs.aapl_instrument()
     contract_details = contract_details or IBTestContractStubs.aapl_equity_contract_details()
-    exec_client._instrument_provider.contract_details[instrument.id.value] = contract_details
+    exec_client._instrument_provider.contract_details[instrument.id] = contract_details
     exec_client._instrument_provider.contract_id_to_instrument_id[
         contract_details.contract.conId
     ] = instrument.id
@@ -36,7 +36,7 @@ def instrument_setup(exec_client, cache, instrument=None, contract_details=None)
     cache.add_instrument(instrument)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_generate_position_status_reports_with_zero_quantity(exec_client, cache):
     """
     Test that zero-quantity positions generate FLAT PositionStatusReport.
@@ -52,7 +52,7 @@ async def test_generate_position_status_reports_with_zero_quantity(exec_client, 
     zero_position = IBPosition(
         account_id="DU123456",
         contract=IBTestContractStubs.aapl_equity_ib_contract(),
-        quantity=Decimal("0"),
+        quantity=Decimal(0),
         avg_cost=100.0,
     )
 
@@ -72,11 +72,11 @@ async def test_generate_position_status_reports_with_zero_quantity(exec_client, 
     # Assert
     assert len(reports) == 1
     assert reports[0].position_side == PositionSide.FLAT
-    assert reports[0].quantity.as_decimal() == Decimal("0")
+    assert reports[0].quantity.as_decimal() == Decimal(0)
     assert reports[0].instrument_id == instrument.id
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_generate_position_status_reports_flat_when_no_positions(exec_client, cache):
     """
     Test that FLAT report is generated when specific instrument has no positions.
@@ -105,5 +105,5 @@ async def test_generate_position_status_reports_flat_when_no_positions(exec_clie
     # Assert
     assert len(reports) == 1
     assert reports[0].position_side == PositionSide.FLAT
-    assert reports[0].quantity.as_decimal() == Decimal("0")
+    assert reports[0].quantity.as_decimal() == Decimal(0)
     assert reports[0].instrument_id == instrument.id

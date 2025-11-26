@@ -50,11 +50,10 @@ runs:
         sudo apt-get update -o Acquire::Retries=5
         sudo apt-get install -y curl clang git make pkg-config ripgrep -o Acquire::Retries=5
         sudo apt-get install -y python3-dev libpython3-dev -o Acquire::Retries=5
-        sudo apt-get install -y capnproto libcapnp-dev -o Acquire::Retries=5
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
 
-    - name: Install capnproto (macOS)
+    - name: Install capnp and ripgrep (macOS)
       if: runner.os == 'macOS'
       shell: bash
       run: |
@@ -62,7 +61,27 @@ runs:
         brew install capnp ripgrep || { sleep 5; brew install capnp ripgrep; }
         brew cleanup
 
-    - name: Install capnproto (Windows)
+    - name: Set Cap'n Proto install prefix (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        echo "CAPNP_PREFIX=$GITHUB_WORKSPACE/.cache/capnp" >> $GITHUB_ENV
+        echo "$GITHUB_WORKSPACE/.cache/capnp/bin" >> $GITHUB_PATH
+
+    - name: Cache Cap'n Proto (Linux)
+      if: runner.os == 'Linux'
+      id: cache-capnp
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ${{ github.workspace }}/.cache/capnp
+        key: capnp-linux-1.2.0-${{ runner.arch }}
+
+    - name: Install capnp
+      if: runner.os == 'Linux'
+      shell: bash
+      run: bash scripts/install-capnp.sh
+
+    - name: Install capnp (Windows)
       if: runner.os == 'Windows'
       shell: bash
       run: |
@@ -122,7 +141,7 @@ runs:
       if: runner.os != 'Windows' && inputs.build-type != 'pre-commit'
       shell: bash
       run: |
-        echo "SCCACHE_DIR=${{ github.workspace }}/.cache/sccache" >> $GITHUB_ENV
+        echo "SCCACHE_DIR=$GITHUB_WORKSPACE/.cache/sccache" >> $GITHUB_ENV
         echo "CC=sccache clang" >> $GITHUB_ENV
         echo "CXX=sccache clang++" >> $GITHUB_ENV
 
@@ -133,21 +152,6 @@ runs:
         echo SCCACHE_DIR="C:\.cache\sccache" >> $GITHUB_ENV
         echo CMAKE_C_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
         echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
-
-    - name: Cached sccache
-      if: inputs.build-type != 'pre-commit'
-      id: cached-sccache
-      # https://github.com/actions/cache
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: ${{ env.SCCACHE_DIR }}
-        key:
-          sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{
-          hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/uv.lock') }}
-        restore-keys: |
-          sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
-          sccache-${{ runner.os }}-${{ github.workflow }}-
-          sccache-${{ runner.os }}-
 
     - name: Run sccache
       if: inputs.build-type != 'pre-commit'
@@ -210,6 +214,9 @@ runs:
         echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
 
     - name: Cached uv
+      # Skip on macOS: hashFiles() broken in composite actions after Nov 20 runner update
+      # See: https://github.com/actions/runner/issues/3765
+      if: runner.os != 'macOS'
       id: cached-uv
       # https://github.com/actions/cache
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -220,6 +227,9 @@ runs:
     # > --------------------------------------------------
     # > pre-commit
     - name: Cached pre-commit
+      # Skip on macOS: hashFiles() broken in composite actions after Nov 20 runner update
+      # See: https://github.com/actions/runner/issues/3765
+      if: runner.os != 'macOS'
       id: cached-pre-commit
       # https://github.com/actions/cache
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0

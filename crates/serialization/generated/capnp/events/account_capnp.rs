@@ -336,13 +336,14 @@ pub mod account_state {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 167] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 168] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(65, 232, 106, 12, 88, 255, 19, 203),
       ::capnp::word(21, 0, 0, 0, 1, 0, 1, 0),
       ::capnp::word(63, 123, 96, 21, 211, 85, 196, 254),
       ::capnp::word(7, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(93, 1, 0, 0, 229, 2, 0, 0),
       ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),

@@ -15,6 +15,7 @@
 
 from typing import Final
 
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
@@ -37,3 +38,8 @@ VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
 }
 
 POLYMARKET_INVALID_API_KEY: Final[str] = "Unauthorized/Invalid api key"
+
+POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = (
+    PolymarketTradeStatus.MINED,
+    PolymarketTradeStatus.CONFIRMED,
+)

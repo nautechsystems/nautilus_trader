@@ -80,10 +80,12 @@ async def main(
         # ),
         exec_engine=LiveExecEngineConfig(
             reconciliation=True,
-            # snapshot_orders=True,
-            # snapshot_positions=True,
-            # snapshot_positions_interval_secs=5.0,
-            # open_check_interval_secs=5.0,
+            open_check_interval_secs=5.0,
+            open_check_open_only=False,
+            position_check_interval_secs=5.0,
+            snapshot_orders=True,
+            snapshot_positions=True,
+            snapshot_positions_interval_secs=5.0,
         ),
         data_clients={
             BETFAIR: BetfairDataClientConfig(
@@ -147,7 +149,7 @@ if __name__ == "__main__":
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
         account_currency="AUD",
-        market_ids=["1.250468530"],
+        market_ids=["1.250955700"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()

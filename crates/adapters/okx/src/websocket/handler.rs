@@ -53,7 +53,6 @@ use nautilus_network::{
     websocket::{AuthTracker, SubscriptionState, TEXT_PING, TEXT_PONG, WebSocketClient},
 };
 use serde_json::Value;
-use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -61,10 +60,10 @@ use super::{
     enums::{OKXSubscriptionEvent, OKXWsChannel, OKXWsOperation},
     error::OKXWsError,
     messages::{
-        ExecutionReport, NautilusWsMessage, OKXAlgoOrderMsg, OKXOrderMsg, OKXSubscription,
-        OKXSubscriptionArg, OKXWebSocketArg, OKXWebSocketError, OKXWsMessage, OKXWsRequest,
-        WsAmendOrderParams, WsCancelAlgoOrderParamsBuilder, WsCancelOrderParamsBuilder,
-        WsMassCancelParams, WsPostAlgoOrderParams, WsPostOrderParams,
+        ExecutionReport, NautilusWsMessage, OKXAlgoOrderMsg, OKXBookMsg, OKXOrderMsg,
+        OKXSubscription, OKXSubscriptionArg, OKXWebSocketArg, OKXWebSocketError, OKXWsMessage,
+        OKXWsRequest, WsAmendOrderParams, WsCancelAlgoOrderParamsBuilder,
+        WsCancelOrderParamsBuilder, WsMassCancelParams, WsPostAlgoOrderParams, WsPostOrderParams,
     },
     parse::{parse_algo_order_msg, parse_book_msg_vec, parse_order_msg, parse_ws_message_data},
     subscription::topic_from_websocket_arg,
@@ -76,11 +75,11 @@ use crate::{
             should_retry_error_code,
         },
         enums::{
-            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide, OKXTargetCurrency,
-            OKXTradeMode,
+            OKXBookAction, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide,
+            OKXTargetCurrency, OKXTradeMode,
         },
         parse::{
-            okx_instrument_type, parse_account_state, parse_client_order_id,
+            determine_order_type, okx_instrument_type, parse_account_state, parse_client_order_id,
             parse_millisecond_timestamp, parse_position_status_report, parse_price, parse_quantity,
         },
     },
@@ -231,7 +230,7 @@ impl OKXWsFeedHandler {
         account_id: AccountId,
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-        raw_rx: UnboundedReceiver<Message>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
         client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
@@ -542,33 +541,10 @@ impl OKXWsFeedHandler {
                     continue;
                 }
                 OKXWsMessage::BookData { arg, action, data } => {
-                    let Some(inst_id) = arg.inst_id else {
-                        tracing::error!("Instrument ID missing for book data event");
-                        continue;
-                    };
-
-                    let Some(inst) = self.instruments_cache.get(&inst_id) else {
-                        continue;
-                    };
-
-                    let instrument_id = inst.id();
-                    let price_precision = inst.price_precision();
-                    let size_precision = inst.size_precision();
-
-                    match parse_book_msg_vec(
-                        data,
-                        &instrument_id,
-                        price_precision,
-                        size_precision,
-                        action,
-                        ts_init,
-                    ) {
-                        Ok(payloads) => return Some(NautilusWsMessage::Data(payloads)),
-                        Err(e) => {
-                            tracing::error!("Failed to parse book message: {e}");
-                            continue;
-                        }
+                    if let Some(msg) = self.handle_book_data(arg, action, data, ts_init) {
+                        return Some(msg);
                     }
+                    continue;
                 }
                 OKXWsMessage::OrderResponse {
                     id,
@@ -577,453 +553,10 @@ impl OKXWsFeedHandler {
                     msg,
                     data,
                 } => {
-                    if code == "0" {
-                        tracing::debug!(
-                            "Order operation successful: id={id:?} op={op} code={code}"
-                        );
-
-                        if op == OKXWsOperation::BatchCancelOrders {
-                            tracing::debug!(
-                                "Batch cancel operation successful: id={id:?} cancelled_count={}",
-                                data.len()
-                            );
-
-                            // Check for per-order errors even when top-level code is "0"
-                            for (idx, entry) in data.iter().enumerate() {
-                                if let Some(entry_code) = entry.get("sCode").and_then(|v| v.as_str())
-                                    && entry_code != "0"
-                                {
-                                    let entry_msg = entry.get("sMsg")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("Unknown error");
-
-                                    if let Some(cl_ord_id_str) = entry.get("clOrdId")
-                                        .and_then(|v| v.as_str())
-                                        .filter(|s| !s.is_empty())
-                                    {
-                                        tracing::error!(
-                                            "Batch cancel partial failure for order {}: sCode={} sMsg={}",
-                                            cl_ord_id_str, entry_code, entry_msg
-                                        );
-                                        // TODO: Emit OrderCancelRejected for this specific order
-                                    } else {
-                                        tracing::error!(
-                                            "Batch cancel entry[{}] failed: sCode={} sMsg={} data={:?}",
-                                            idx, entry_code, entry_msg, entry
-                                        );
-                                    }
-                                }
-                            }
-
-                            continue;
-                        } else if op == OKXWsOperation::MassCancel
-                            && let Some(request_id) = &id
-                            && let Some(instrument_id) =
-                                self.pending_mass_cancel_requests.remove(request_id)
-                        {
-                            tracing::info!(
-                                "Mass cancel operation successful for instrument: {}",
-                                instrument_id
-                            );
-                        } else if op == OKXWsOperation::Order
-                            && let Some(request_id) = &id
-                            && let Some((params, client_order_id, _trader_id, _strategy_id, instrument_id))
-                                = self.pending_place_requests.remove(request_id)
-                        {
-                            let (venue_order_id, ts_accepted) = if let Some(first) = data.first() {
-                                let ord_id = first
-                                    .get("ordId")
-                                    .and_then(|v| v.as_str())
-                                    .filter(|s| !s.is_empty())
-                                    .map(VenueOrderId::new);
-
-                                let ts = first
-                                    .get("ts")
-                                    .and_then(|v| v.as_str())
-                                    .and_then(|s| s.parse::<u64>().ok())
-                                    .map_or_else(
-                                        || self.clock.get_time_ns(),
-                                        |ms| UnixNanos::from(ms * 1_000_000),
-                                    );
-
-                                (ord_id, ts)
-                            } else {
-                                (None, self.clock.get_time_ns())
-                            };
-
-                            if let Some(instrument) = self
-                                .instruments_cache
-                                .get(&instrument_id.symbol.inner())
-                            {
-                                match params {
-                                    PendingOrderParams::Regular(order_params) => {
-                                        let is_explicit_quote_sized = order_params
-                                            .tgt_ccy
-                                            .is_some_and(|tgt| tgt == OKXTargetCurrency::QuoteCcy);
-
-                                        // SPOT market BUY in cash mode with no tgt_ccy defaults to quote-sizing
-                                        let is_implicit_quote_sized =
-                                            order_params.tgt_ccy.is_none()
-                                                && order_params.side == OKXSide::Buy
-                                                && matches!(
-                                                    order_params.ord_type,
-                                                    OKXOrderType::Market
-                                                )
-                                                && order_params.td_mode == OKXTradeMode::Cash
-                                                && instrument.instrument_class().as_ref() == "SPOT";
-
-                                        if is_explicit_quote_sized || is_implicit_quote_sized {
-                                            // For quote-sized orders, sz is in quote currency (USDT),
-                                            // not base currency (ETH). We can't accurately parse the
-                                            // base quantity without the fill price, so we skip the
-                                            // synthetic OrderAccepted and rely on the orders channel
-                                            tracing::info!(
-                                                "Skipping synthetic OrderAccepted for {} quote-sized order: client_order_id={client_order_id}, venue_order_id={venue_order_id:?}",
-                                                if is_explicit_quote_sized {
-                                                    "explicit"
-                                                } else {
-                                                    "implicit"
-                                                },
-                                            );
-                                            continue;
-                                        }
-
-                                        let order_side = order_params.side.into();
-                                        let order_type = order_params.ord_type.into();
-                                        let time_in_force = match order_params.ord_type {
-                                            OKXOrderType::Fok => TimeInForce::Fok,
-                                            OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
-                                                TimeInForce::Ioc
-                                            }
-                                            _ => TimeInForce::Gtc,
-                                        };
-
-                                        let size_precision = instrument.size_precision();
-                                        let quantity = match parse_quantity(
-                                            &order_params.sz,
-                                            size_precision,
-                                        ) {
-                                            Ok(q) => q,
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Failed to parse quantity for accepted order: {e}"
-                                                );
-                                                continue;
-                                            }
-                                        };
-
-                                        let filled_qty = Quantity::zero(size_precision);
-
-                                        let mut report = OrderStatusReport::new(
-                                            self.account_id,
-                                            instrument_id,
-                                            Some(client_order_id),
-                                            venue_order_id
-                                                .unwrap_or_else(|| VenueOrderId::new("PENDING")),
-                                            order_side,
-                                            order_type,
-                                            time_in_force,
-                                            OrderStatus::Accepted,
-                                            quantity,
-                                            filled_qty,
-                                            ts_accepted,
-                                            ts_accepted, // ts_last same as ts_accepted for new orders
-                                            ts_init,
-                                            None, // Generate UUID4 automatically
-                                        );
-
-                                        if let Some(px) = &order_params.px
-                                            && !px.is_empty()
-                                            && let Ok(price) =
-                                                parse_price(px, instrument.price_precision())
-                                        {
-                                            report = report.with_price(price);
-                                        }
-
-                                        if let Some(true) = order_params.reduce_only {
-                                            report = report.with_reduce_only(true);
-                                        }
-
-                                        if order_type == OrderType::Limit
-                                            && order_params.ord_type == OKXOrderType::PostOnly
-                                        {
-                                            report = report.with_post_only(true);
-                                        }
-
-                                        if let Some(ref v_order_id) = venue_order_id {
-                                            self.emitted_order_accepted.insert(*v_order_id, ());
-                                        }
-
-                                        tracing::debug!(
-                                            "Order accepted: client_order_id={client_order_id}, venue_order_id={:?}",
-                                            venue_order_id
-                                        );
-
-                                        return Some(NautilusWsMessage::ExecutionReports(vec![
-                                            ExecutionReport::Order(report),
-                                        ]));
-                                    }
-                                    PendingOrderParams::Algo(_) => {
-                                        tracing::info!(
-                                            "Algo order placement confirmed: client_order_id={client_order_id}, venue_order_id={:?}",
-                                            venue_order_id
-                                        );
-                                    }
-                                }
-                            } else {
-                                tracing::error!(
-                                    "Instrument not found for accepted order: {instrument_id}"
-                                );
-                            }
-                        }
-
-                        if let Some(first) = data.first()
-                            && let Some(success_msg) =
-                                first.get("sMsg").and_then(|value| value.as_str())
-                        {
-                            tracing::debug!("Order details: {success_msg}");
-                        }
-
-                        continue;
+                    if let Some(msg) = self.handle_order_response(id, op, code, msg, data, ts_init) {
+                        return Some(msg);
                     }
-
-                    let error_msg = data
-                        .first()
-                        .and_then(|d| d.get("sMsg"))
-                        .and_then(|s| s.as_str())
-                        .unwrap_or(&msg)
-                        .to_string();
-
-                    if let Some(first) = data.first() {
-                        tracing::debug!(
-                            "Error data fields: {}",
-                            serde_json::to_string_pretty(first)
-                                .unwrap_or_else(|_| "unable to serialize".to_string())
-                        );
-                    }
-
-                    tracing::warn!(
-                        "Order operation failed: id={id:?} op={op} code={code} msg={error_msg}"
-                    );
-
-                    let ts_event = self.clock.get_time_ns();
-
-                    if let Some(request_id) = &id {
-                        match op {
-                            OKXWsOperation::Order => {
-                                if let Some((
-                                    _params,
-                                    client_order_id,
-                                    trader_id,
-                                    strategy_id,
-                                    instrument_id,
-                                )) = self.pending_place_requests.remove(request_id)
-                                {
-                                    let due_post_only =
-                                        is_post_only_rejection(code.as_str(), &data);
-                                    let rejected = OrderRejected::new(
-                                        trader_id,
-                                        strategy_id,
-                                        instrument_id,
-                                        client_order_id,
-                                        self.account_id,
-                                        Ustr::from(error_msg.as_str()),
-                                        UUID4::new(),
-                                        ts_event,
-                                        ts_init,
-                                        false, // Not from reconciliation
-                                        due_post_only,
-                                    );
-
-                                    return Some(NautilusWsMessage::OrderRejected(rejected));
-                                }
-                            }
-                            OKXWsOperation::CancelOrder => {
-                                if let Some((
-                                    client_order_id,
-                                    trader_id,
-                                    strategy_id,
-                                    instrument_id,
-                                    venue_order_id,
-                                )) = self.pending_cancel_requests.remove(request_id)
-                                {
-                                    let rejected = OrderCancelRejected::new(
-                                        trader_id,
-                                        strategy_id,
-                                        instrument_id,
-                                        client_order_id,
-                                        Ustr::from(error_msg.as_str()),
-                                        UUID4::new(),
-                                        ts_event,
-                                        ts_init,
-                                        false, // Not from reconciliation
-                                        venue_order_id,
-                                        Some(self.account_id),
-                                    );
-
-                                    return Some(NautilusWsMessage::OrderCancelRejected(rejected));
-                                }
-                            }
-                            OKXWsOperation::AmendOrder => {
-                                if let Some((
-                                    client_order_id,
-                                    trader_id,
-                                    strategy_id,
-                                    instrument_id,
-                                    venue_order_id,
-                                )) = self.pending_amend_requests.remove(request_id)
-                                {
-                                    let rejected = OrderModifyRejected::new(
-                                        trader_id,
-                                        strategy_id,
-                                        instrument_id,
-                                        client_order_id,
-                                        Ustr::from(error_msg.as_str()),
-                                        UUID4::new(),
-                                        ts_event,
-                                        ts_init,
-                                        false, // Not from reconciliation
-                                        venue_order_id,
-                                        Some(self.account_id),
-                                    );
-
-                                    return Some(NautilusWsMessage::OrderModifyRejected(rejected));
-                                }
-                            }
-                            OKXWsOperation::OrderAlgo => {
-                                if let Some((
-                                    _params,
-                                    client_order_id,
-                                    trader_id,
-                                    strategy_id,
-                                    instrument_id,
-                                )) = self.pending_place_requests.remove(request_id)
-                                {
-                                    let due_post_only =
-                                        is_post_only_rejection(code.as_str(), &data);
-                                    let rejected = OrderRejected::new(
-                                        trader_id,
-                                        strategy_id,
-                                        instrument_id,
-                                        client_order_id,
-                                        self.account_id,
-                                        Ustr::from(error_msg.as_str()),
-                                        UUID4::new(),
-                                        ts_event,
-                                        ts_init,
-                                        false, // Not from reconciliation
-                                        due_post_only,
-                                    );
-
-                                    return Some(NautilusWsMessage::OrderRejected(rejected));
-                                }
-                            }
-                            OKXWsOperation::CancelAlgos => {
-                                if let Some((
-                                    client_order_id,
-                                    trader_id,
-                                    strategy_id,
-                                    instrument_id,
-                                    venue_order_id,
-                                )) = self.pending_cancel_requests.remove(request_id)
-                                {
-                                    let rejected = OrderCancelRejected::new(
-                                        trader_id,
-                                        strategy_id,
-                                        instrument_id,
-                                        client_order_id,
-                                        Ustr::from(error_msg.as_str()),
-                                        UUID4::new(),
-                                        ts_event,
-                                        ts_init,
-                                        false, // Not from reconciliation
-                                        venue_order_id,
-                                        Some(self.account_id),
-                                    );
-
-                                    return Some(NautilusWsMessage::OrderCancelRejected(rejected));
-                                }
-                            }
-                            OKXWsOperation::MassCancel => {
-                                if let Some(instrument_id) =
-                                    self.pending_mass_cancel_requests.remove(request_id)
-                                {
-                                    tracing::error!(
-                                        "Mass cancel operation failed for {}: code={code} msg={error_msg}",
-                                        instrument_id
-                                    );
-                                    let error = OKXWebSocketError {
-                                        code,
-                                        message: format!(
-                                            "Mass cancel failed for {}: {}",
-                                            instrument_id, error_msg
-                                        ),
-                                        conn_id: None,
-                                        timestamp: ts_event.as_u64(),
-                                    };
-                                    return Some(NautilusWsMessage::Error(error));
-                                } else {
-                                    tracing::error!(
-                                        "Mass cancel operation failed: code={code} msg={error_msg}"
-                                    );
-                                }
-                            }
-                            OKXWsOperation::BatchCancelOrders => {
-                                tracing::warn!(
-                                    "Batch cancel operation failed: id={id:?} code={code} msg={error_msg} data_count={}",
-                                    data.len()
-                                );
-
-                                // Iterate through data array to check per-order errors
-                                for (idx, entry) in data.iter().enumerate() {
-                                    let entry_code = entry.get("sCode")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or(&code);
-                                    let entry_msg = entry.get("sMsg")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or(&error_msg);
-
-                                    if entry_code != "0" {
-                                        // Try to extract client order ID for targeted error events
-                                        if let Some(cl_ord_id_str) = entry.get("clOrdId")
-                                            .and_then(|v| v.as_str())
-                                            .filter(|s| !s.is_empty())
-                                        {
-                                            tracing::error!(
-                                                "Batch cancel failed for order {}: sCode={} sMsg={}",
-                                                cl_ord_id_str, entry_code, entry_msg
-                                            );
-                                            // TODO: Emit OrderCancelRejected event once we track
-                                            // batch cancel metadata (client_order_id, trader_id, etc.)
-                                        } else {
-                                            tracing::error!(
-                                                "Batch cancel entry[{}] failed: sCode={} sMsg={} data={:?}",
-                                                idx, entry_code, entry_msg, entry
-                                            );
-                                        }
-                                    }
-                                }
-
-                                // Emit generic error for the batch operation
-                                let error = OKXWebSocketError {
-                                    code,
-                                    message: format!("Batch cancel failed: {}", error_msg),
-                                    conn_id: None,
-                                    timestamp: ts_event.as_u64(),
-                                };
-                                return Some(NautilusWsMessage::Error(error));
-                            }
-                            _ => tracing::warn!("Unhandled operation type for rejection: {op}"),
-                        }
-                    }
-
-                    let error = OKXWebSocketError {
-                        code,
-                        message: error_msg,
-                        conn_id: None,
-                        timestamp: ts_event.as_u64(),
-                    };
-                    return Some(NautilusWsMessage::Error(error));
+                    continue;
                 }
                 OKXWsMessage::Data { arg, data } => {
                     let OKXWebSocketArg {
@@ -1032,327 +565,34 @@ impl OKXWsFeedHandler {
 
                     match channel {
                         OKXWsChannel::Account => {
-                            match serde_json::from_value::<Vec<OKXAccount>>(data) {
-                                Ok(accounts) => {
-                                    if let Some(account) = accounts.first() {
-                                        match parse_account_state(account, self.account_id, ts_init)
-                                        {
-                                            Ok(account_state) => {
-                                                if let Some(last_account_state) =
-                                                    &self.last_account_state
-                                                    && account_state.has_same_balances_and_margins(
-                                                        last_account_state,
-                                                    )
-                                                {
-                                                    continue;
-                                                }
-                                                self.last_account_state =
-                                                    Some(account_state.clone());
-                                                return Some(NautilusWsMessage::AccountUpdate(
-                                                    account_state,
-                                                ));
-                                            }
-                                            Err(e) => tracing::error!(
-                                                "Failed to parse account state: {e}"
-                                            ),
-                                        }
-                                    }
-                                }
-                                Err(e) => tracing::error!("Failed to parse account data: {e}"),
+                            if let Some(msg) = self.handle_account_data(data, ts_init) {
+                                return Some(msg);
                             }
                             continue;
                         }
                         OKXWsChannel::Positions => {
-                            match serde_json::from_value::<Vec<OKXPosition>>(data) {
-                                Ok(positions) => {
-                                    tracing::debug!("Received {} position update(s)", positions.len());
-
-                                    for position in positions {
-                                        let instrument_id = match InstrumentId::from_as_ref(format!(
-                                            "{}.OKX",
-                                            position.inst_id
-                                        )) {
-                                            Ok(id) => id,
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Failed to parse instrument ID from {}: {e}",
-                                                    position.inst_id
-                                                );
-                                                continue;
-                                            }
-                                        };
-
-                                        let instrument = match self.instruments_cache.get(&position.inst_id) {
-                                            Some(inst) => inst,
-                                            None => {
-                                                tracing::warn!(
-                                                    "Received position update for unknown instrument {}, skipping",
-                                                    instrument_id
-                                                );
-                                                continue;
-                                            }
-                                        };
-
-                                        let size_precision = instrument.size_precision();
-
-                                        match parse_position_status_report(
-                                            position,
-                                            self.account_id,
-                                            instrument_id,
-                                            size_precision,
-                                            ts_init,
-                                        ) {
-                                            Ok(position_report) => {
-                                                self.pending_messages.push_back(
-                                                    NautilusWsMessage::PositionUpdate(position_report),
-                                                );
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    "Failed to parse position status report for {}: {e}",
-                                                    instrument_id
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::error!("Failed to parse positions data: {e}");
-                                }
-                            }
+                            self.handle_positions_data(data, ts_init);
                             continue;
                         }
                         OKXWsChannel::Orders => {
-                            let orders: Vec<OKXOrderMsg> = match serde_json::from_value(data) {
-                                Ok(orders) => orders,
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Failed to deserialize orders channel payload: {e}"
-                                    );
-                                    continue;
-                                }
-                            };
-
-                            tracing::debug!(
-                                "Received {} order message(s) from orders channel",
-                                orders.len()
-                            );
-
-                            let mut exec_reports: Vec<ExecutionReport> =
-                                Vec::with_capacity(orders.len());
-
-                            for msg in orders {
-                                tracing::debug!(
-                                    "Processing order message: inst_id={}, cl_ord_id={}, state={:?}, exec_type={:?}",
-                                    msg.inst_id,
-                                    msg.cl_ord_id,
-                                    msg.state,
-                                    msg.exec_type
-                                );
-
-                                if self.try_handle_post_only_auto_cancel(
-                                    &msg,
-                                    ts_init,
-                                    &mut exec_reports,
-                                ) {
-                                    continue;
-                                }
-
-                                let raw_child = parse_client_order_id(&msg.cl_ord_id);
-                                let parent_from_msg = msg
-                                    .algo_cl_ord_id
-                                    .as_ref()
-                                    .filter(|value| !value.is_empty())
-                                    .map(ClientOrderId::new);
-                                let effective_client_id = self
-                                    .register_client_order_aliases(&raw_child, &parent_from_msg);
-
-                                match parse_order_msg(
-                                    &msg,
-                                    self.account_id,
-                                    &self.instruments_cache,
-                                    &self.fee_cache,
-                                    &self.filled_qty_cache,
-                                    ts_init,
-                                ) {
-                                    Ok(report) => {
-                                        tracing::debug!(
-                                            "Successfully parsed execution report: {:?}",
-                                            report
-                                        );
-
-                                        let is_duplicate_accepted =
-                                            if let ExecutionReport::Order(ref status_report) =
-                                                report
-                                            {
-                                                if status_report.order_status
-                                                    == OrderStatus::Accepted
-                                                {
-                                                    self.emitted_order_accepted
-                                                        .contains_key(&status_report.venue_order_id)
-                                                } else {
-                                                    false
-                                                }
-                                            } else {
-                                                false
-                                            };
-
-                                        if is_duplicate_accepted {
-                                            tracing::debug!(
-                                                "Skipping duplicate OrderAccepted for venue_order_id={}",
-                                                if let ExecutionReport::Order(ref r) = report {
-                                                    r.venue_order_id.to_string()
-                                                } else {
-                                                    "unknown".to_string()
-                                                }
-                                            );
-                                            continue;
-                                        }
-
-                                        if let ExecutionReport::Order(ref status_report) = report
-                                            && status_report.order_status == OrderStatus::Accepted
-                                        {
-                                            self.emitted_order_accepted
-                                                .insert(status_report.venue_order_id, ());
-                                        }
-
-                                        let adjusted = self.adjust_execution_report(
-                                            report,
-                                            &effective_client_id,
-                                            &raw_child,
-                                        );
-
-                                        // Clean up tracking for terminal states
-                                        if let ExecutionReport::Order(ref status_report) = adjusted
-                                            && matches!(
-                                                status_report.order_status,
-                                                OrderStatus::Filled
-                                                    | OrderStatus::Canceled
-                                                    | OrderStatus::Expired
-                                                    | OrderStatus::Rejected
-                                            )
-                                        {
-                                            self.emitted_order_accepted
-                                                .remove(&status_report.venue_order_id);
-                                        }
-
-                                        self.update_caches_with_report(&adjusted);
-                                        exec_reports.push(adjusted);
-                                    }
-                                    Err(e) => tracing::error!("Failed to parse order message: {e}"),
-                                }
+                            if let Some(msg) = self.handle_orders_data(data, ts_init) {
+                                return Some(msg);
                             }
-
-                            if !exec_reports.is_empty() {
-                                tracing::debug!(
-                                    "Pushing {} execution report(s) to message queue",
-                                    exec_reports.len()
-                                );
-                                self.pending_messages
-                                    .push_back(NautilusWsMessage::ExecutionReports(exec_reports));
-                            } else {
-                                tracing::debug!(
-                                    "No execution reports generated from order messages"
-                                );
-                            }
-
-                            if let Some(message) = self.pending_messages.pop_front() {
-                                return Some(message);
-                            }
-
                             continue;
                         }
                         OKXWsChannel::OrdersAlgo => {
-                            let orders: Vec<OKXAlgoOrderMsg> = match serde_json::from_value(data) {
-                                Ok(orders) => orders,
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Failed to deserialize algo orders payload: {e}"
-                                    );
-                                    continue;
-                                }
-                            };
-
-                            let mut exec_reports: Vec<ExecutionReport> =
-                                Vec::with_capacity(orders.len());
-
-                            for msg in orders {
-                                let raw_child = parse_client_order_id(&msg.cl_ord_id);
-                                let parent_from_msg = parse_client_order_id(&msg.algo_cl_ord_id);
-                                let effective_client_id = self
-                                    .register_client_order_aliases(&raw_child, &parent_from_msg);
-
-                                match parse_algo_order_msg(
-                                    msg,
-                                    self.account_id,
-                                    &self.instruments_cache,
-                                    ts_init,
-                                ) {
-                                    Ok(report) => {
-                                        let adjusted = self.adjust_execution_report(
-                                            report,
-                                            &effective_client_id,
-                                            &raw_child,
-                                        );
-                                        self.update_caches_with_report(&adjusted);
-                                        exec_reports.push(adjusted);
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Failed to parse algo order message: {e}");
-                                    }
-                                }
+                            if let Some(msg) = self.handle_algo_orders_data(data, ts_init) {
+                                return Some(msg);
                             }
-
-                            if !exec_reports.is_empty() {
-                                return Some(NautilusWsMessage::ExecutionReports(exec_reports));
-                            }
-
                             continue;
                         }
                         _ => {
-                            let Some(inst_id) = inst_id else {
-                                tracing::error!("No instrument for channel {:?}", channel);
-                                continue;
-                            };
-
-                            let Some(instrument) = self.instruments_cache.get(&inst_id) else {
-                                tracing::error!(
-                                    "No instrument for channel {:?}, inst_id {:?}",
-                                    channel,
-                                    inst_id
-                                );
-                                continue;
-                            };
-
-                            let instrument_id = instrument.id();
-                            let price_precision = instrument.price_precision();
-                            let size_precision = instrument.size_precision();
-
-                            match parse_ws_message_data(
-                                &channel,
-                                data,
-                                &instrument_id,
-                                price_precision,
-                                size_precision,
-                                ts_init,
-                                &mut self.funding_rate_cache,
-                                &self.instruments_cache,
-                            ) {
-                                Ok(Some(msg)) => {
-                                    if let NautilusWsMessage::Instrument(ref inst) = msg {
-                                        self.instruments_cache.insert(inst.symbol().inner(), inst.as_ref().clone());
-                                    }
-                                    return Some(msg);
-                                }
-                                Ok(None) => continue,
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Error parsing message for channel {:?}: {e}",
-                                        channel
-                                    );
-                                    continue;
-                                }
+                            if let Some(msg) =
+                                self.handle_other_channel_data(channel, inst_id, data, ts_init)
+                            {
+                                return Some(msg);
                             }
+                            continue;
                         }
                     }
                 }
@@ -1629,9 +869,790 @@ impl OKXWsFeedHandler {
         }
     }
 
-    pub(crate) fn parse_raw_message(msg: Message) -> Option<OKXWsMessage> {
+    #[allow(clippy::too_many_lines)]
+    fn handle_order_response(
+        &mut self,
+        id: Option<String>,
+        op: OKXWsOperation,
+        code: String,
+        msg: String,
+        data: Vec<Value>,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        if code == "0" {
+            tracing::debug!("Order operation successful: id={id:?} op={op} code={code}");
+
+            if op == OKXWsOperation::BatchCancelOrders {
+                tracing::debug!(
+                    "Batch cancel operation successful: id={id:?} cancelled_count={}",
+                    data.len()
+                );
+
+                // Check for per-order errors even when top-level code is "0"
+                for (idx, entry) in data.iter().enumerate() {
+                    if let Some(entry_code) = entry.get("sCode").and_then(|v| v.as_str())
+                        && entry_code != "0"
+                    {
+                        let entry_msg = entry
+                            .get("sMsg")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown error");
+
+                        if let Some(cl_ord_id_str) = entry
+                            .get("clOrdId")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                        {
+                            tracing::error!(
+                                "Batch cancel partial failure for order {}: sCode={} sMsg={}",
+                                cl_ord_id_str,
+                                entry_code,
+                                entry_msg
+                            );
+                            // TODO: Emit OrderCancelRejected for this specific order
+                        } else {
+                            tracing::error!(
+                                "Batch cancel entry[{}] failed: sCode={} sMsg={} data={:?}",
+                                idx,
+                                entry_code,
+                                entry_msg,
+                                entry
+                            );
+                        }
+                    }
+                }
+
+                return None;
+            } else if op == OKXWsOperation::MassCancel
+                && let Some(request_id) = &id
+                && let Some(instrument_id) = self.pending_mass_cancel_requests.remove(request_id)
+            {
+                tracing::info!(
+                    "Mass cancel operation successful for instrument: {}",
+                    instrument_id
+                );
+            } else if op == OKXWsOperation::Order
+                && let Some(request_id) = &id
+                && let Some((params, client_order_id, _trader_id, _strategy_id, instrument_id)) =
+                    self.pending_place_requests.remove(request_id)
+            {
+                let (venue_order_id, ts_accepted) = if let Some(first) = data.first() {
+                    let ord_id = first
+                        .get("ordId")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(VenueOrderId::new);
+
+                    let ts = first
+                        .get("ts")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map_or_else(
+                            || self.clock.get_time_ns(),
+                            |ms| UnixNanos::from(ms * 1_000_000),
+                        );
+
+                    (ord_id, ts)
+                } else {
+                    (None, self.clock.get_time_ns())
+                };
+
+                if let Some(instrument) = self.instruments_cache.get(&instrument_id.symbol.inner())
+                {
+                    match params {
+                        PendingOrderParams::Regular(order_params) => {
+                            let order_type = determine_order_type(
+                                order_params.ord_type,
+                                order_params.px.as_deref().unwrap_or(""),
+                            );
+
+                            let is_explicit_quote_sized = order_params
+                                .tgt_ccy
+                                .is_some_and(|tgt| tgt == OKXTargetCurrency::QuoteCcy);
+
+                            // SPOT market BUY in cash mode with no tgt_ccy defaults to quote-sizing
+                            let is_implicit_quote_sized = order_params.tgt_ccy.is_none()
+                                && order_params.side == OKXSide::Buy
+                                && order_type == OrderType::Market
+                                && order_params.td_mode == OKXTradeMode::Cash
+                                && instrument.instrument_class().as_ref() == "SPOT";
+
+                            if is_explicit_quote_sized || is_implicit_quote_sized {
+                                // For quote-sized orders, sz is in quote currency (USDT),
+                                // not base currency (ETH). We can't accurately parse the
+                                // base quantity without the fill price, so we skip the
+                                // synthetic OrderAccepted and rely on the orders channel
+                                tracing::info!(
+                                    "Skipping synthetic OrderAccepted for {} quote-sized order: client_order_id={client_order_id}, venue_order_id={venue_order_id:?}",
+                                    if is_explicit_quote_sized {
+                                        "explicit"
+                                    } else {
+                                        "implicit"
+                                    },
+                                );
+                                return None;
+                            }
+
+                            let order_side = order_params.side.into();
+                            let time_in_force = match order_params.ord_type {
+                                OKXOrderType::Fok => TimeInForce::Fok,
+                                OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
+                                    TimeInForce::Ioc
+                                }
+                                _ => TimeInForce::Gtc,
+                            };
+
+                            let size_precision = instrument.size_precision();
+                            let quantity = match parse_quantity(&order_params.sz, size_precision) {
+                                Ok(q) => q,
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to parse quantity for accepted order: {e}"
+                                    );
+                                    return None;
+                                }
+                            };
+
+                            let filled_qty = Quantity::zero(size_precision);
+
+                            let mut report = OrderStatusReport::new(
+                                self.account_id,
+                                instrument_id,
+                                Some(client_order_id),
+                                venue_order_id.unwrap_or_else(|| VenueOrderId::new("PENDING")),
+                                order_side,
+                                order_type,
+                                time_in_force,
+                                OrderStatus::Accepted,
+                                quantity,
+                                filled_qty,
+                                ts_accepted,
+                                ts_accepted, // ts_last same as ts_accepted for new orders
+                                ts_init,
+                                None, // Generate UUID4 automatically
+                            );
+
+                            if let Some(px) = &order_params.px
+                                && !px.is_empty()
+                                && let Ok(price) = parse_price(px, instrument.price_precision())
+                            {
+                                report = report.with_price(price);
+                            }
+
+                            if let Some(true) = order_params.reduce_only {
+                                report = report.with_reduce_only(true);
+                            }
+
+                            if order_type == OrderType::Limit
+                                && order_params.ord_type == OKXOrderType::PostOnly
+                            {
+                                report = report.with_post_only(true);
+                            }
+
+                            if let Some(ref v_order_id) = venue_order_id {
+                                self.emitted_order_accepted.insert(*v_order_id, ());
+                            }
+
+                            tracing::debug!(
+                                "Order accepted: client_order_id={client_order_id}, venue_order_id={:?}",
+                                venue_order_id
+                            );
+
+                            return Some(NautilusWsMessage::ExecutionReports(vec![
+                                ExecutionReport::Order(report),
+                            ]));
+                        }
+                        PendingOrderParams::Algo(_) => {
+                            tracing::info!(
+                                "Algo order placement confirmed: client_order_id={client_order_id}, venue_order_id={:?}",
+                                venue_order_id
+                            );
+                        }
+                    }
+                } else {
+                    tracing::error!("Instrument not found for accepted order: {instrument_id}");
+                }
+            }
+
+            if let Some(first) = data.first()
+                && let Some(success_msg) = first.get("sMsg").and_then(|value| value.as_str())
+            {
+                tracing::debug!("Order details: {success_msg}");
+            }
+
+            return None;
+        }
+
+        let error_msg = data
+            .first()
+            .and_then(|d| d.get("sMsg"))
+            .and_then(|s| s.as_str())
+            .unwrap_or(&msg)
+            .to_string();
+
+        if let Some(first) = data.first() {
+            tracing::debug!(
+                "Error data fields: {}",
+                serde_json::to_string_pretty(first)
+                    .unwrap_or_else(|_| "unable to serialize".to_string())
+            );
+        }
+
+        tracing::warn!("Order operation failed: id={id:?} op={op} code={code} msg={error_msg}");
+
+        let ts_event = self.clock.get_time_ns();
+
+        if let Some(request_id) = &id {
+            match op {
+                OKXWsOperation::Order => {
+                    if let Some((_params, client_order_id, trader_id, strategy_id, instrument_id)) =
+                        self.pending_place_requests.remove(request_id)
+                    {
+                        let due_post_only = is_post_only_rejection(code.as_str(), &data);
+                        let rejected = OrderRejected::new(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            self.account_id,
+                            Ustr::from(error_msg.as_str()),
+                            UUID4::new(),
+                            ts_event,
+                            ts_init,
+                            false, // Not from reconciliation
+                            due_post_only,
+                        );
+
+                        return Some(NautilusWsMessage::OrderRejected(rejected));
+                    }
+                }
+                OKXWsOperation::CancelOrder => {
+                    if let Some((
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                        venue_order_id,
+                    )) = self.pending_cancel_requests.remove(request_id)
+                    {
+                        let rejected = OrderCancelRejected::new(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Ustr::from(error_msg.as_str()),
+                            UUID4::new(),
+                            ts_event,
+                            ts_init,
+                            false, // Not from reconciliation
+                            venue_order_id,
+                            Some(self.account_id),
+                        );
+
+                        return Some(NautilusWsMessage::OrderCancelRejected(rejected));
+                    }
+                }
+                OKXWsOperation::AmendOrder => {
+                    if let Some((
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                        venue_order_id,
+                    )) = self.pending_amend_requests.remove(request_id)
+                    {
+                        let rejected = OrderModifyRejected::new(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Ustr::from(error_msg.as_str()),
+                            UUID4::new(),
+                            ts_event,
+                            ts_init,
+                            false, // Not from reconciliation
+                            venue_order_id,
+                            Some(self.account_id),
+                        );
+
+                        return Some(NautilusWsMessage::OrderModifyRejected(rejected));
+                    }
+                }
+                OKXWsOperation::OrderAlgo => {
+                    if let Some((_params, client_order_id, trader_id, strategy_id, instrument_id)) =
+                        self.pending_place_requests.remove(request_id)
+                    {
+                        let due_post_only = is_post_only_rejection(code.as_str(), &data);
+                        let rejected = OrderRejected::new(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            self.account_id,
+                            Ustr::from(error_msg.as_str()),
+                            UUID4::new(),
+                            ts_event,
+                            ts_init,
+                            false, // Not from reconciliation
+                            due_post_only,
+                        );
+
+                        return Some(NautilusWsMessage::OrderRejected(rejected));
+                    }
+                }
+                OKXWsOperation::CancelAlgos => {
+                    if let Some((
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        instrument_id,
+                        venue_order_id,
+                    )) = self.pending_cancel_requests.remove(request_id)
+                    {
+                        let rejected = OrderCancelRejected::new(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Ustr::from(error_msg.as_str()),
+                            UUID4::new(),
+                            ts_event,
+                            ts_init,
+                            false, // Not from reconciliation
+                            venue_order_id,
+                            Some(self.account_id),
+                        );
+
+                        return Some(NautilusWsMessage::OrderCancelRejected(rejected));
+                    }
+                }
+                OKXWsOperation::MassCancel => {
+                    if let Some(instrument_id) =
+                        self.pending_mass_cancel_requests.remove(request_id)
+                    {
+                        tracing::error!(
+                            "Mass cancel operation failed for {}: code={code} msg={error_msg}",
+                            instrument_id
+                        );
+                        let error = OKXWebSocketError {
+                            code,
+                            message: format!(
+                                "Mass cancel failed for {}: {}",
+                                instrument_id, error_msg
+                            ),
+                            conn_id: None,
+                            timestamp: ts_event.as_u64(),
+                        };
+                        return Some(NautilusWsMessage::Error(error));
+                    } else {
+                        tracing::error!(
+                            "Mass cancel operation failed: code={code} msg={error_msg}"
+                        );
+                    }
+                }
+                OKXWsOperation::BatchCancelOrders => {
+                    tracing::warn!(
+                        "Batch cancel operation failed: id={id:?} code={code} msg={error_msg} data_count={}",
+                        data.len()
+                    );
+
+                    // Iterate through data array to check per-order errors
+                    for (idx, entry) in data.iter().enumerate() {
+                        let entry_code =
+                            entry.get("sCode").and_then(|v| v.as_str()).unwrap_or(&code);
+                        let entry_msg = entry
+                            .get("sMsg")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&error_msg);
+
+                        if entry_code != "0" {
+                            // Try to extract client order ID for targeted error events
+                            if let Some(cl_ord_id_str) = entry
+                                .get("clOrdId")
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                            {
+                                tracing::error!(
+                                    "Batch cancel failed for order {}: sCode={} sMsg={}",
+                                    cl_ord_id_str,
+                                    entry_code,
+                                    entry_msg
+                                );
+                                // TODO: Emit OrderCancelRejected event once we track
+                                // batch cancel metadata (client_order_id, trader_id, etc.)
+                            } else {
+                                tracing::error!(
+                                    "Batch cancel entry[{}] failed: sCode={} sMsg={} data={:?}",
+                                    idx,
+                                    entry_code,
+                                    entry_msg,
+                                    entry
+                                );
+                            }
+                        }
+                    }
+
+                    // Emit generic error for the batch operation
+                    let error = OKXWebSocketError {
+                        code,
+                        message: format!("Batch cancel failed: {}", error_msg),
+                        conn_id: None,
+                        timestamp: ts_event.as_u64(),
+                    };
+                    return Some(NautilusWsMessage::Error(error));
+                }
+                _ => tracing::warn!("Unhandled operation type for rejection: {op}"),
+            }
+        }
+
+        let error = OKXWebSocketError {
+            code,
+            message: error_msg,
+            conn_id: None,
+            timestamp: ts_event.as_u64(),
+        };
+        Some(NautilusWsMessage::Error(error))
+    }
+
+    fn handle_book_data(
+        &self,
+        arg: OKXWebSocketArg,
+        action: OKXBookAction,
+        data: Vec<OKXBookMsg>,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let Some(inst_id) = arg.inst_id else {
+            tracing::error!("Instrument ID missing for book data event");
+            return None;
+        };
+
+        let inst = self.instruments_cache.get(&inst_id)?;
+
+        let instrument_id = inst.id();
+        let price_precision = inst.price_precision();
+        let size_precision = inst.size_precision();
+
+        match parse_book_msg_vec(
+            data,
+            &instrument_id,
+            price_precision,
+            size_precision,
+            action,
+            ts_init,
+        ) {
+            Ok(payloads) => Some(NautilusWsMessage::Data(payloads)),
+            Err(e) => {
+                tracing::error!("Failed to parse book message: {e}");
+                None
+            }
+        }
+    }
+
+    fn handle_account_data(
+        &mut self,
+        data: Value,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        match serde_json::from_value::<Vec<OKXAccount>>(data) {
+            Ok(accounts) => {
+                if let Some(account) = accounts.first() {
+                    match parse_account_state(account, self.account_id, ts_init) {
+                        Ok(account_state) => {
+                            if let Some(last_account_state) = &self.last_account_state
+                                && account_state.has_same_balances_and_margins(last_account_state)
+                            {
+                                return None;
+                            }
+                            self.last_account_state = Some(account_state.clone());
+                            Some(NautilusWsMessage::AccountUpdate(account_state))
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to parse account state: {e}");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to parse account data: {e}");
+                None
+            }
+        }
+    }
+
+    fn handle_positions_data(&mut self, data: Value, ts_init: UnixNanos) {
+        match serde_json::from_value::<Vec<OKXPosition>>(data) {
+            Ok(positions) => {
+                tracing::debug!("Received {} position update(s)", positions.len());
+
+                for position in positions {
+                    let instrument_id =
+                        match InstrumentId::from_as_ref(format!("{}.OKX", position.inst_id)) {
+                            Ok(id) => id,
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed to parse instrument ID from {}: {e}",
+                                    position.inst_id
+                                );
+                                continue;
+                            }
+                        };
+
+                    let instrument = match self.instruments_cache.get(&position.inst_id) {
+                        Some(inst) => inst,
+                        None => {
+                            tracing::warn!(
+                                "Received position update for unknown instrument {}, skipping",
+                                instrument_id
+                            );
+                            continue;
+                        }
+                    };
+
+                    let size_precision = instrument.size_precision();
+
+                    match parse_position_status_report(
+                        position,
+                        self.account_id,
+                        instrument_id,
+                        size_precision,
+                        ts_init,
+                    ) {
+                        Ok(position_report) => {
+                            self.pending_messages
+                                .push_back(NautilusWsMessage::PositionUpdate(position_report));
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to parse position status report for {}: {e}",
+                                instrument_id
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to parse positions data: {e}");
+            }
+        }
+    }
+
+    fn handle_orders_data(&mut self, data: Value, ts_init: UnixNanos) -> Option<NautilusWsMessage> {
+        let orders: Vec<OKXOrderMsg> = match serde_json::from_value(data) {
+            Ok(orders) => orders,
+            Err(e) => {
+                tracing::error!("Failed to deserialize orders channel payload: {e}");
+                return None;
+            }
+        };
+
+        tracing::debug!(
+            "Received {} order message(s) from orders channel",
+            orders.len()
+        );
+
+        let mut exec_reports: Vec<ExecutionReport> = Vec::with_capacity(orders.len());
+
+        for msg in orders {
+            tracing::debug!(
+                "Processing order message: inst_id={}, cl_ord_id={}, state={:?}, exec_type={:?}",
+                msg.inst_id,
+                msg.cl_ord_id,
+                msg.state,
+                msg.exec_type
+            );
+
+            if self.try_handle_post_only_auto_cancel(&msg, ts_init, &mut exec_reports) {
+                continue;
+            }
+
+            let raw_child = parse_client_order_id(&msg.cl_ord_id);
+            let parent_from_msg = msg
+                .algo_cl_ord_id
+                .as_ref()
+                .filter(|value| !value.is_empty())
+                .map(ClientOrderId::new);
+            let effective_client_id =
+                self.register_client_order_aliases(&raw_child, &parent_from_msg);
+
+            match parse_order_msg(
+                &msg,
+                self.account_id,
+                &self.instruments_cache,
+                &self.fee_cache,
+                &self.filled_qty_cache,
+                ts_init,
+            ) {
+                Ok(report) => {
+                    tracing::debug!("Successfully parsed execution report: {:?}", report);
+
+                    let is_duplicate_accepted =
+                        if let ExecutionReport::Order(ref status_report) = report {
+                            if status_report.order_status == OrderStatus::Accepted {
+                                self.emitted_order_accepted
+                                    .contains_key(&status_report.venue_order_id)
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                    if is_duplicate_accepted {
+                        tracing::debug!(
+                            "Skipping duplicate OrderAccepted for venue_order_id={}",
+                            if let ExecutionReport::Order(ref r) = report {
+                                r.venue_order_id.to_string()
+                            } else {
+                                "unknown".to_string()
+                            }
+                        );
+                        continue;
+                    }
+
+                    if let ExecutionReport::Order(ref status_report) = report
+                        && status_report.order_status == OrderStatus::Accepted
+                    {
+                        self.emitted_order_accepted
+                            .insert(status_report.venue_order_id, ());
+                    }
+
+                    let adjusted =
+                        self.adjust_execution_report(report, &effective_client_id, &raw_child);
+
+                    // Clean up tracking for terminal states
+                    if let ExecutionReport::Order(ref status_report) = adjusted
+                        && matches!(
+                            status_report.order_status,
+                            OrderStatus::Filled
+                                | OrderStatus::Canceled
+                                | OrderStatus::Expired
+                                | OrderStatus::Rejected
+                        )
+                    {
+                        self.emitted_order_accepted
+                            .remove(&status_report.venue_order_id);
+                    }
+
+                    self.update_caches_with_report(&adjusted);
+                    exec_reports.push(adjusted);
+                }
+                Err(e) => tracing::error!("Failed to parse order message: {e}"),
+            }
+        }
+
+        if !exec_reports.is_empty() {
+            tracing::debug!(
+                "Pushing {} execution report(s) to message queue",
+                exec_reports.len()
+            );
+            self.pending_messages
+                .push_back(NautilusWsMessage::ExecutionReports(exec_reports));
+        } else {
+            tracing::debug!("No execution reports generated from order messages");
+        }
+
+        self.pending_messages.pop_front()
+    }
+
+    fn handle_algo_orders_data(
+        &mut self,
+        data: Value,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let orders: Vec<OKXAlgoOrderMsg> = match serde_json::from_value(data) {
+            Ok(orders) => orders,
+            Err(e) => {
+                tracing::error!("Failed to deserialize algo orders payload: {e}");
+                return None;
+            }
+        };
+
+        let mut exec_reports: Vec<ExecutionReport> = Vec::with_capacity(orders.len());
+
+        for msg in orders {
+            let raw_child = parse_client_order_id(&msg.cl_ord_id);
+            let parent_from_msg = parse_client_order_id(&msg.algo_cl_ord_id);
+            let effective_client_id =
+                self.register_client_order_aliases(&raw_child, &parent_from_msg);
+
+            match parse_algo_order_msg(msg, self.account_id, &self.instruments_cache, ts_init) {
+                Ok(report) => {
+                    let adjusted =
+                        self.adjust_execution_report(report, &effective_client_id, &raw_child);
+                    self.update_caches_with_report(&adjusted);
+                    exec_reports.push(adjusted);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to parse algo order message: {e}");
+                }
+            }
+        }
+
+        if !exec_reports.is_empty() {
+            Some(NautilusWsMessage::ExecutionReports(exec_reports))
+        } else {
+            None
+        }
+    }
+
+    fn handle_other_channel_data(
+        &mut self,
+        channel: OKXWsChannel,
+        inst_id: Option<Ustr>,
+        data: Value,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let Some(inst_id) = inst_id else {
+            tracing::error!("No instrument for channel {:?}", channel);
+            return None;
+        };
+
+        let Some(instrument) = self.instruments_cache.get(&inst_id) else {
+            tracing::error!(
+                "No instrument for channel {:?}, inst_id {:?}",
+                channel,
+                inst_id
+            );
+            return None;
+        };
+
+        let instrument_id = instrument.id();
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+
+        match parse_ws_message_data(
+            &channel,
+            data,
+            &instrument_id,
+            price_precision,
+            size_precision,
+            ts_init,
+            &mut self.funding_rate_cache,
+            &self.instruments_cache,
+        ) {
+            Ok(Some(msg)) => {
+                if let NautilusWsMessage::Instrument(ref inst) = msg {
+                    self.instruments_cache
+                        .insert(inst.symbol().inner(), inst.as_ref().clone());
+                }
+                Some(msg)
+            }
+            Ok(None) => None,
+            Err(e) => {
+                tracing::error!("Error parsing message for channel {:?}: {e}", channel);
+                None
+            }
+        }
+    }
+
+    pub(crate) fn parse_raw_message(
+        msg: tokio_tungstenite::tungstenite::Message,
+    ) -> Option<OKXWsMessage> {
         match msg {
-            Message::Text(text) => {
+            tokio_tungstenite::tungstenite::Message::Text(text) => {
                 if text == TEXT_PONG {
                     tracing::trace!("Received pong from OKX");
                     return None;

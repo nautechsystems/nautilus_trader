@@ -17,6 +17,9 @@ import datetime
 import re
 import time
 from decimal import Decimal
+from enum import Enum
+from typing import Any
+from typing import cast
 
 import pandas as pd
 from ibapi.contract import ContractDetails
@@ -762,7 +765,33 @@ def contract_details_to_dict(details: IBContractDetails) -> dict:
             tag_value.tag: tag_value.value for tag_value in dict_details["secIdList"]
         }
 
-    return dict_details
+    # Serialize Decimal and Enum objects for JSON compatibility
+    result = _serialize_for_json(dict_details)
+
+    # Type cast: we know this is a dict because we passed a dict
+    return cast(dict[str, Any], result)
+
+
+def _serialize_for_json(obj: object) -> object:
+    """
+    Recursively convert Decimal objects and Enum objects to JSON-serializable types.
+    """
+    if obj is None:
+        return None
+
+    if isinstance(obj, Decimal):
+        return str(obj)
+
+    if isinstance(obj, Enum):
+        return obj.value if hasattr(obj, "value") else str(obj)
+
+    if isinstance(obj, dict):
+        return {k: _serialize_for_json(v) for k, v in obj.items()}
+
+    if isinstance(obj, (list, tuple)):
+        return [_serialize_for_json(item) for item in obj]
+
+    return obj
 
 
 def _tick_size_to_precision(tick_size: float | Decimal) -> int:

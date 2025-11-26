@@ -26,7 +26,7 @@ def get_polymarket_condition_id(instrument_id: InstrumentId) -> str:
     if len(parts) != 2 or not parts[0]:
         raise ValueError(
             f"Invalid Polymarket instrument ID format: expected "
-            f"'{{condition_id}}-{{token_id}}', got '{instrument_id.symbol.value}'",
+            f"'{{condition_id}}-{{token_id}}', was '{instrument_id.symbol.value}'",
         )
     return parts[0]
 
@@ -36,6 +36,6 @@ def get_polymarket_token_id(instrument_id: InstrumentId) -> str:
     if len(parts) != 2 or not parts[1]:
         raise ValueError(
             f"Invalid Polymarket instrument ID format: expected "
-            f"'{{condition_id}}-{{token_id}}', got '{instrument_id.symbol.value}'",
+            f"'{{condition_id}}-{{token_id}}', was '{instrument_id.symbol.value}'",
         )
     return parts[1]

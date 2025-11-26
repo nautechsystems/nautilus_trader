@@ -170,7 +170,7 @@ class TestDYDXDataClientBarPartitioning:
     # =====================================================================================
 
     @pytest.mark.parametrize(
-        "bars_count,max_bars,expected",
+        ("bars_count", "max_bars", "expected"),
         [
             (999, 1000, False),  # Just below threshold
             (1000, 1000, False),  # Exactly at threshold
@@ -248,7 +248,7 @@ class TestDYDXDataClientBarPartitioning:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "total_bars,expected_chunks",
+        ("total_bars", "expected_chunks"),
         [
             (1000, 1),  # Single chunk
             (1500, 2),  # Two chunks: 1000 + 500
@@ -458,7 +458,7 @@ class TestDYDXDataClientBarPartitioning:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "total_bars,limit,expected_result_bars",
+        ("total_bars", "limit", "expected_result_bars"),
         [
             (2000, 1500, 1499),  # 1500 limit applied, minus 1 for partial
             (3000, 2500, 2499),  # 2500 limit applied, minus 1 for partial

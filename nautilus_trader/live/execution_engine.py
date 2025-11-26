@@ -16,9 +16,9 @@
 import asyncio
 import math
 import os
-import uuid
 from asyncio import Queue
 from collections import Counter
+from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
 from typing import Final
@@ -39,6 +39,7 @@ from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.core.message import Command
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import GenerateExecutionMassStatus
 from nautilus_trader.execution.messages import GenerateFillReports
@@ -62,6 +63,8 @@ from nautilus_trader.live.reconciliation import create_order_filled_event
 from nautilus_trader.live.reconciliation import create_order_rejected_event
 from nautilus_trader.live.reconciliation import create_order_triggered_event
 from nautilus_trader.live.reconciliation import create_order_updated_event
+from nautilus_trader.live.reconciliation import get_existing_fill_for_trade_id
+from nautilus_trader.live.reconciliation import is_within_single_unit_tolerance
 from nautilus_trader.model.book import py_should_handle_own_book_order
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -73,6 +76,7 @@ from nautilus_trader.model.enums import trigger_type_to_str
 from nautilus_trader.model.events import OrderEvent
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -81,6 +85,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders import OrderUnpacker
@@ -262,6 +267,8 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         return self._reconciliation
 
+    # -- LIFECYCLE ---------------------------------------------------------------------------------
+
     def connect(self) -> None:
         """
         Connect the engine by calling connect on all registered clients.
@@ -359,7 +366,157 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         return self._evt_queue.qsize()
 
-    # -- COMMANDS -------------------------------------------------------------------------------------
+    def _on_start(self) -> None:
+        """
+        Initialize engine on start, creating queue processing tasks and starting
+        reconciliation, audit, and purge loops if configured.
+        """
+        if not self._loop.is_running():
+            self._log.warning("Started when loop is not running")
+
+        # Clear reconciliation event for fresh start cycle
+        self._startup_reconciliation_event.clear()
+        self._is_shutting_down = False
+
+        self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
+        self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
+        self._log.debug(f"Scheduled task '{self._cmd_queue_task.get_name()}'")
+        self._log.debug(f"Scheduled task '{self._evt_queue_task.get_name()}'")
+
+        # Start reconciliation task if any check is configured
+        if (
+            self.inflight_check_interval_ms
+            or self.open_check_interval_secs
+            or self.position_check_interval_secs
+        ) and not self._reconciliation_task:
+            self._reconciliation_task = self._loop.create_task(
+                self._continuous_reconciliation_loop(),
+                name="continuous_reconciliation",
+            )
+            self._log.debug(f"Scheduled task '{self._reconciliation_task.get_name()}'")
+            self._log.info("Started reconciliation task", LogColor.BLUE)
+
+        if self.own_books_audit_interval_secs and not self._own_books_audit_task:
+            self._own_books_audit_task = self._loop.create_task(
+                self._own_books_audit_loop(self.own_books_audit_interval_secs),
+                name="own_books_audit",
+            )
+
+        if self.purge_closed_orders_interval_mins and not self._purge_closed_orders_task:
+            self._purge_closed_orders_task = self._loop.create_task(
+                self._purge_closed_orders_loop(self.purge_closed_orders_interval_mins),
+                name="purge_closed_orders",
+            )
+
+        if self.purge_closed_positions_interval_mins and not self._purge_closed_positions_task:
+            self._purge_closed_positions_task = self._loop.create_task(
+                self._purge_closed_positions_loop(self.purge_closed_positions_interval_mins),
+                name="purge_closed_positions",
+            )
+
+        if self.purge_account_events_interval_mins and not self._purge_account_events_task:
+            self._purge_account_events_task = self._loop.create_task(
+                self._purge_account_events_loop(self.purge_account_events_interval_mins),
+                name="purge_account_events",
+            )
+
+    async def _purge_closed_positions_loop(self, interval_mins: int) -> None:
+        """
+        Periodic loop to purge closed positions from cache based on configured interval
+        and buffer time.
+        """
+        interval_secs = interval_mins * 60
+        buffer_mins = self.purge_closed_positions_buffer_mins or 0
+        buffer_secs = buffer_mins * 60
+
+        try:
+            while True:
+                await asyncio.sleep(interval_secs)
+                ts_now = self._clock.timestamp_ns()
+                self._cache.purge_closed_positions(
+                    ts_now=ts_now,
+                    buffer_secs=buffer_secs,
+                    purge_from_database=self.purge_from_database,
+                )
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'purge_closed_positions'")
+        except Exception as e:
+            self._log.exception("Error purging closed positions", e)
+
+    async def _purge_closed_orders_loop(self, interval_mins: int) -> None:
+        """
+        Periodic loop to purge closed orders from cache based on configured interval and
+        buffer time.
+        """
+        interval_secs = interval_mins * 60
+        buffer_mins = self.purge_closed_orders_buffer_mins or 0
+        buffer_secs = buffer_mins * 60
+
+        try:
+            while True:
+                await asyncio.sleep(interval_secs)
+                ts_now = self._clock.timestamp_ns()
+                self._cache.purge_closed_orders(
+                    ts_now=ts_now,
+                    buffer_secs=buffer_secs,
+                    purge_from_database=self.purge_from_database,
+                )
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'purge_closed_orders'")
+        except Exception as e:
+            self._log.exception("Error purging closed orders", e)
+
+    def _on_stop(self) -> None:
+        """
+        Clean up engine on stop, canceling all background tasks and enqueuing sentinel
+        messages to stop queue processing.
+        """
+        self._is_shutting_down = True
+
+        if self._reconciliation_task:
+            self._log.debug(f"Canceling task '{self._reconciliation_task.get_name()}'")
+            self._reconciliation_task.cancel()
+            self._reconciliation_task = None
+
+        if self._own_books_audit_task:
+            self._log.debug(f"Canceling task '{self._own_books_audit_task.get_name()}'")
+            self._own_books_audit_task.cancel()
+            self._own_books_audit_task = None
+
+        if self._purge_closed_orders_task:
+            self._log.debug(f"Canceling task '{self._purge_closed_orders_task.get_name()}'")
+            self._purge_closed_orders_task.cancel()
+            self._purge_closed_orders_task = None
+
+        if self._filtered_external_orders_count > 0:
+            self._log.info(
+                f"Filtered {self._filtered_external_orders_count:,} unclaimed EXTERNAL orders during run",
+                LogColor.BLUE,
+            )
+
+        if self._purge_closed_positions_task:
+            self._log.debug(f"Canceling task '{self._purge_closed_positions_task.get_name()}'")
+            self._purge_closed_positions_task.cancel()
+            self._purge_closed_positions_task = None
+
+        if self._purge_account_events_task:
+            self._log.debug(f"Canceling task '{self._purge_account_events_task.get_name()}'")
+            self._purge_account_events_task.cancel()
+            self._purge_account_events_task = None
+
+        if self._kill:
+            return  # Avoids enqueuing unnecessary sentinel messages when termination already signaled
+
+        # This will stop queue processing as soon as they 'see' the sentinel message
+        self._enqueue_sentinel()
+
+    def _enqueue_sentinel(self) -> None:
+        # Signal queue processing to stop
+        self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, self._sentinel)
+        self._log.debug("Sentinel messages placed on queues")
+
+    # -- COMMANDS ----------------------------------------------------------------------------------
 
     def kill(self) -> None:
         """
@@ -411,180 +568,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._record_local_activity(event)
         self._evt_enqueuer.enqueue(event)
 
-    # -- INTERNAL -------------------------------------------------------------------------------------
-
-    def _handle_queue_exception(self, e: Exception, queue_name: str) -> None:
-        self._log.exception(
-            f"Unexpected exception in {queue_name} queue processing: {e!r}",
-            e,
-        )
-        if self.graceful_shutdown_on_exception:
-            if not self._is_shutting_down:
-                self._log.warning(
-                    "Initiating graceful shutdown due to unexpected exception",
-                )
-                self.shutdown_system(
-                    f"Unexpected exception in {queue_name} queue processing: {e!r}",
-                )
-                self._is_shutting_down = True
-        else:
-            self._log.error(
-                "System will terminate immediately to prevent operation in degraded state",
-            )
-            os._exit(1)  # Immediate crash
-
-    def _enqueue_sentinel(self) -> None:
-        self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
-        self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, self._sentinel)
-        self._log.debug("Sentinel messages placed on queues")
-
-    def _record_local_activity(self, event: OrderEvent | None) -> None:
-        if event is None:
-            return
-        client_order_id = event.client_order_id
-        if client_order_id is None:
-            return
-        ts_event = event.ts_event
-        if ts_event == 0:
-            ts_event = self._clock.timestamp_ns()
-        self._order_local_activity_ns[client_order_id] = ts_event
-
-    def _clear_recon_tracking(
-        self,
-        client_order_id: ClientOrderId,
-        *,
-        drop_last_query: bool = True,
-    ) -> None:
-        self._recon_check_retries.pop(client_order_id, None)
-        if drop_last_query:
-            self._ts_last_query.pop(client_order_id, None)
-
-    def _prune_recent_fills_cache(self, ttl_secs: float = 60.0) -> None:
-        # Remove expired fills from cache (default TTL: 60 seconds)
-        ts_now = self._clock.timestamp_ns()
-        ttl_ns = secs_to_nanos(ttl_secs)
-        expired_trade_ids = [
-            trade_id
-            for trade_id, ts_cached in self._recent_fills_cache.items()
-            if ts_now - ts_cached > ttl_ns
-        ]
-        for trade_id in expired_trade_ids:
-            self._recent_fills_cache.pop(trade_id, None)
-
-    def _handle_event_with_tracking(self, event: OrderEvent) -> None:
-        self._record_local_activity(event)
-
-        if isinstance(event, OrderFilled):
-            self._recent_fills_cache[event.trade_id] = self._clock.timestamp_ns()
-            self._position_local_activity_ns[event.instrument_id] = event.ts_event
-
-            # Track inferred fill timestamps to prevent duplicate historical fills
-            if event.reconciliation:
-                client_order_id = event.client_order_id
-                if client_order_id not in self._inferred_fill_ts:
-                    self._inferred_fill_ts[client_order_id] = event.ts_event
-
-        self._handle_event(event)
-
-        if event.client_order_id is None:
-            return
-
-        order = self._cache.order(event.client_order_id)
-        if order and order.is_closed:
-            self._clear_recon_tracking(order.client_order_id)
-            self._order_local_activity_ns.pop(order.client_order_id, None)
-            self._inferred_fill_ts.pop(order.client_order_id, None)
-            self._fill_application_audit.pop(order.client_order_id, None)
-
-    def _on_start(self) -> None:
-        if not self._loop.is_running():
-            self._log.warning("Started when loop is not running")
-
-        # Clear reconciliation event for fresh start cycle
-        self._startup_reconciliation_event.clear()
-        self._is_shutting_down = False
-
-        self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
-        self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
-        self._log.debug(f"Scheduled task '{self._cmd_queue_task.get_name()}'")
-        self._log.debug(f"Scheduled task '{self._evt_queue_task.get_name()}'")
-
-        # Start reconciliation task if any check is configured
-        if (
-            self.inflight_check_interval_ms
-            or self.open_check_interval_secs
-            or self.position_check_interval_secs
-        ) and not self._reconciliation_task:
-            self._reconciliation_task = self._loop.create_task(
-                self._continuous_reconciliation_loop(),
-                name="continuous_reconciliation",
-            )
-            self._log.debug(f"Scheduled task '{self._reconciliation_task.get_name()}'")
-            self._log.info("Started reconciliation task", LogColor.BLUE)
-
-        if self.own_books_audit_interval_secs and not self._own_books_audit_task:
-            self._own_books_audit_task = self._loop.create_task(
-                self._own_books_audit_loop(self.own_books_audit_interval_secs),
-                name="own_books_audit",
-            )
-
-        if self.purge_closed_orders_interval_mins and not self._purge_closed_orders_task:
-            self._purge_closed_orders_task = self._loop.create_task(
-                self._purge_closed_orders_loop(self.purge_closed_orders_interval_mins),
-                name="purge_closed_orders",
-            )
-
-        if self.purge_closed_positions_interval_mins and not self._purge_closed_positions_task:
-            self._purge_closed_positions_task = self._loop.create_task(
-                self._purge_closed_positions_loop(self.purge_closed_positions_interval_mins),
-                name="purge_closed_positions",
-            )
-
-        if self.purge_account_events_interval_mins and not self._purge_account_events_task:
-            self._purge_account_events_task = self._loop.create_task(
-                self._purge_account_events_loop(self.purge_account_events_interval_mins),
-                name="purge_account_events",
-            )
-
-    def _on_stop(self) -> None:
-        self._is_shutting_down = True
-
-        if self._reconciliation_task:
-            self._log.debug(f"Canceling task '{self._reconciliation_task.get_name()}'")
-            self._reconciliation_task.cancel()
-            self._reconciliation_task = None
-
-        if self._own_books_audit_task:
-            self._log.debug(f"Canceling task '{self._own_books_audit_task.get_name()}'")
-            self._own_books_audit_task.cancel()
-            self._own_books_audit_task = None
-
-        if self._purge_closed_orders_task:
-            self._log.debug(f"Canceling task '{self._purge_closed_orders_task.get_name()}'")
-            self._purge_closed_orders_task.cancel()
-            self._purge_closed_orders_task = None
-
-        if self._filtered_external_orders_count > 0:
-            self._log.info(
-                f"Filtered {self._filtered_external_orders_count:,} unclaimed EXTERNAL orders during run",
-                LogColor.BLUE,
-            )
-
-        if self._purge_closed_positions_task:
-            self._log.debug(f"Canceling task '{self._purge_closed_positions_task.get_name()}'")
-            self._purge_closed_positions_task.cancel()
-            self._purge_closed_positions_task = None
-
-        if self._purge_account_events_task:
-            self._log.debug(f"Canceling task '{self._purge_account_events_task.get_name()}'")
-            self._purge_account_events_task.cancel()
-            self._purge_account_events_task = None
-
-        if self._kill:
-            return  # Avoids enqueuing unnecessary sentinel messages when termination already signaled
-
-        # This will stop queue processing as soon as they 'see' the sentinel message
-        self._enqueue_sentinel()
+    # -- QUEUE PROCESSING --------------------------------------------------------------------------
 
     async def _run_cmd_queue(self) -> None:
         self._log.debug(
@@ -636,7 +620,251 @@ class LiveExecutionEngine(ExecutionEngine):
             else:
                 self._log.debug(stopped_msg)
 
+    def _handle_queue_exception(self, e: Exception, queue_name: str) -> None:
+        self._log.exception(
+            f"Unexpected exception in {queue_name} queue processing: {e!r}",
+            e,
+        )
+
+        if self.graceful_shutdown_on_exception:
+            if not self._is_shutting_down:
+                self._log.warning(
+                    "Initiating graceful shutdown due to unexpected exception",
+                )
+                self.shutdown_system(
+                    f"Unexpected exception in {queue_name} queue processing: {e!r}",
+                )
+                self._is_shutting_down = True
+        else:
+            self._log.error(
+                "System will terminate immediately to prevent operation in degraded state",
+            )
+            os._exit(1)  # Immediate crash
+
+    # -- CONTINUOUS MONITORING ---------------------------------------------------------------------
+
+    async def _own_books_audit_loop(self, interval_secs: float) -> None:
+        """
+        Periodic loop to audit own order books based on configured interval.
+        """
+        try:
+            while True:
+                await asyncio.sleep(interval_secs)
+                self._cache.audit_own_order_books()
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'own_books_audit'")
+        except Exception as e:
+            self._log.exception("Error auditing own books", e)
+
+    # ruff: noqa: C901
+    async def _continuous_reconciliation_loop(self) -> None:
+        """
+        Run main loop for continuous reconciliation checks, running periodic in-flight
+        order, order consistency, and position consistency checks.
+        """
+        try:
+            # Track last execution times (in nanoseconds)
+            ts_last_inflight_check = 0
+            ts_last_consistency_check = 0
+            ts_last_position_check = 0
+            ts_last_cache_prune = 0
+
+            # Convert intervals to nanoseconds (handle None values)
+            inflight_check_interval_ns = (
+                millis_to_nanos(self.inflight_check_interval_ms)
+                if self.inflight_check_interval_ms > 0
+                else 0
+            )
+            consistency_check_interval_ns = (
+                secs_to_nanos(self.open_check_interval_secs) if self.open_check_interval_secs else 0
+            )
+            position_check_interval_ns = (
+                secs_to_nanos(self.position_check_interval_secs)
+                if self.position_check_interval_secs
+                else 0
+            )
+            cache_prune_interval_ns = secs_to_nanos(60.0)
+
+            # Determine minimum sleep interval (in seconds)
+            intervals_secs: list[float] = []
+
+            if self.inflight_check_interval_ms > 0:
+                intervals_secs.append(self.inflight_check_interval_ms / 1000)
+
+            if self.open_check_interval_secs:
+                intervals_secs.append(self.open_check_interval_secs)
+
+            if self.position_check_interval_secs:
+                intervals_secs.append(self.position_check_interval_secs)
+
+            min_interval_secs = min(intervals_secs) if intervals_secs else 1.0
+
+            self._log.info(
+                f"Starting continuous reconciliation with intervals: "
+                f"inflight={self.inflight_check_interval_ms}ms, "
+                f"consistency={self.open_check_interval_secs}s, "
+                f"position={self.position_check_interval_secs}s",
+                LogColor.BLUE,
+            )
+
+            # Only wait if reconciliation is enabled (otherwise event never set)
+            if self.reconciliation:
+                self._log.info(
+                    "Awaiting startup reconciliation completion before starting continuous checks",
+                    LogColor.BLUE,
+                )
+                await self._startup_reconciliation_event.wait()
+                self._log.info("Startup reconciliation completed", LogColor.GREEN)
+
+                # Apply additional startup delay AFTER reconciliation completes
+                if self.reconciliation_startup_delay_secs > 0:
+                    self._log.info(
+                        f"Applying post-reconciliation startup delay "
+                        f"({self.reconciliation_startup_delay_secs}s)",
+                        LogColor.BLUE,
+                    )
+                    await asyncio.sleep(self.reconciliation_startup_delay_secs)
+            else:
+                self._log.info(
+                    "Startup reconciliation disabled, proceeding with continuous checks",
+                    LogColor.BLUE,
+                )
+
+            while True:
+                if self._is_shutting_down:
+                    self._log.debug("Reconciliation loop exiting due to stop signal")
+                    break
+
+                ts_now = self._clock.timestamp_ns()
+
+                # Check in-flight orders
+                if (
+                    inflight_check_interval_ns > 0
+                    and ts_now - ts_last_inflight_check >= inflight_check_interval_ns
+                ):
+                    # Check stop signal before starting check
+                    if self._is_shutting_down:
+                        break
+                    try:
+                        await self._check_inflight_orders()
+                        ts_last_inflight_check = ts_now
+                    except Exception as e:
+                        self._log.exception("Failed in check_inflight_orders", e)
+
+                # Check open orders consistency
+                if (
+                    consistency_check_interval_ns > 0
+                    and ts_now - ts_last_consistency_check >= consistency_check_interval_ns
+                ):
+                    # Check stop signal before starting check
+                    if self._is_shutting_down:
+                        break
+                    try:
+                        await self._check_orders_consistency()
+                        ts_last_consistency_check = ts_now
+                    except Exception as e:
+                        self._log.exception("Failed in check_orders_consistency", e)
+
+                # Check positions consistency
+                if (
+                    position_check_interval_ns > 0
+                    and ts_now - ts_last_position_check >= position_check_interval_ns
+                ):
+                    # Check stop signal before starting check
+                    if self._is_shutting_down:
+                        break
+                    try:
+                        await self._check_positions_consistency()
+                        ts_last_position_check = ts_now
+                    except Exception as e:
+                        self._log.exception("Failed in check_positions_consistency", e)
+
+                if ts_now - ts_last_cache_prune >= cache_prune_interval_ns:
+                    try:
+                        self._prune_recent_fills_cache()
+                        ts_last_cache_prune = ts_now
+                    except Exception as e:
+                        self._log.exception("Failed in prune_recent_fills_cache", e)
+
+                await asyncio.sleep(min_interval_secs)
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'continuous_reconciliation'")
+
+    async def _check_inflight_orders(self) -> None:
+        """
+        Monitor in-flight orders for delays exceeding threshold, querying venue for
+        status and resolving as failed after max retries.
+        """
+        if self._is_shutting_down:
+            self._log.debug("Skipping in-flight orders check due to stop signal")
+            return
+
+        self._log.debug("Checking in-flight orders status")
+
+        delayed_orders: list[Order] = []
+        inflight_orders: list[Order] = self._cache.orders_inflight()
+
+        ts_now = self._clock.timestamp_ns()
+
+        for order in inflight_orders:
+            if ts_now > order.last_event.ts_event + self._inflight_check_threshold_ns:
+                delayed_orders.append(order)
+
+        if delayed_orders:
+            self._log.debug(
+                f"Detected {len(delayed_orders)} delayed in-flight "
+                f"order{'' if len(delayed_orders) == 1 else 's'}",
+            )
+
+        # Query and potentially resolve each inconsistent order
+        for order in delayed_orders:
+            if not order.is_inflight:
+                self._clear_recon_tracking(order.client_order_id, drop_last_query=False)
+                continue
+
+            last_query_ts = self._ts_last_query.get(order.client_order_id)
+            if last_query_ts and ts_now - last_query_ts < self._inflight_check_threshold_ns:
+                self._log.debug(
+                    f"Skipping re-query for {order.client_order_id!r} - awaiting prior response",
+                )
+                continue
+
+            retries = self._recon_check_retries[order.client_order_id]
+            if retries >= self.inflight_check_max_retries:
+                backlog = self.evt_qsize()
+                if backlog > 0:
+                    self._log.debug(
+                        f"Deferring inflight resolution for {order.client_order_id!r} - event queue backlog {backlog}",
+                    )
+                    continue
+
+                self._log.warning(
+                    f"Order {order.client_order_id!r} exceeded max inflight retries ({retries}), "
+                    f"resolving as failed",
+                    LogColor.YELLOW,
+                )
+                self._resolve_inflight_order(order)
+            else:
+                self._log.debug(f"Querying {order} with venue...")
+                query_ts = self._clock.timestamp_ns()
+                query = QueryOrder(
+                    trader_id=order.trader_id,
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    command_id=UUID4(),
+                    ts_init=query_ts,
+                )
+                self._execute_command(query)
+                self._ts_last_query[order.client_order_id] = query_ts
+                self._recon_check_retries[order.client_order_id] = retries + 1
+
     def _resolve_inflight_order(self, order: Order) -> None:
+        """
+        Resolve an in-flight order that exceeded retry threshold, generating rejection
+        or cancellation events based on order status.
+        """
         if not order.is_inflight:
             self._log.debug(
                 f"Skipping inflight resolution for {order.client_order_id!r} - current status {order.status_string()}",
@@ -668,17 +896,504 @@ class LiveExecutionEngine(ExecutionEngine):
         self._clear_recon_tracking(order.client_order_id)
         self._order_local_activity_ns.pop(order.client_order_id, None)
 
+    async def _check_positions_consistency(self) -> None:
+        """
+        Validate positions match venue state, comparing cached positions with venue
+        reports and reconciling discrepancies.
+        """
+        if self._is_shutting_down:
+            self._log.debug("Skipping position consistency check due to stop signal")
+            return
+
+        self._log.debug("Checking position consistency between cached-state and venues")
+
+        open_positions = self._cache.positions_open()
+
+        if self.reconciliation_instrument_ids:
+            open_positions = [
+                p for p in open_positions if p.instrument_id in self.reconciliation_instrument_ids
+            ]
+
+        # Group positions by instrument_id (for netting)
+        positions_by_instrument: dict[InstrumentId, list[Position]] = {}
+
+        for position in open_positions:
+            if position.instrument_id not in positions_by_instrument:
+                positions_by_instrument[position.instrument_id] = []
+
+            positions_by_instrument[position.instrument_id].append(position)
+
+        self._log.debug(
+            f"Found {len(positions_by_instrument)} unique instrument(s) with open positions",
+        )
+
+        if not self._clients:
+            self._log.debug("No execution clients to check position consistency, early return")
+            return
+
+        venue_positions = await self._query_position_status_reports()
+
+        await self._process_cached_position_discrepancies(
+            positions_by_instrument,
+            venue_positions,
+        )
+
+        await self._process_venue_reported_positions(
+            positions_by_instrument,
+            venue_positions,
+        )
+
+    async def _query_position_status_reports(self) -> dict[InstrumentId, PositionStatusReport]:
+        clients = self._clients.values()
+
+        tasks = [
+            c.generate_position_status_reports(
+                GeneratePositionStatusReports(
+                    instrument_id=None,  # Get all positions
+                    start=None,  # No time filter - we want all open and closed positions
+                    end=None,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                    log_receipt_level=LogLevel.DEBUG,
+                ),
+            )
+            for c in clients
+        ]
+
+        try:
+            position_reports_all = await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            self._log.error(f"Failed to gather position status reports: {e}")
+            return {}
+
+        # Build mapping: instrument_id -> venue report
+        venue_positions: dict[InstrumentId, PositionStatusReport] = {}
+        for reports_or_exception in position_reports_all:
+            if isinstance(reports_or_exception, Exception):
+                self._log.error(
+                    f"Failed to generate position status reports: {reports_or_exception}",
+                )
+                continue
+
+            reports = cast("list[PositionStatusReport]", reports_or_exception)
+            for report in reports:
+                venue_positions[report.instrument_id] = report
+
+        return venue_positions
+
+    async def _process_cached_position_discrepancies(
+        self,
+        positions_by_instrument: dict[InstrumentId, list[Position]],
+        venue_positions: dict[InstrumentId, PositionStatusReport],
+    ) -> None:
+        """
+        Process discrepancies for cached positions, querying and reconciling missing
+        fills.
+        """
+        clients = self._clients.values()
+
+        for instrument_id, cached_positions in positions_by_instrument.items():
+            venue_report = venue_positions.get(instrument_id)
+
+            has_discrepancy = self._check_position_discrepancy(
+                cached_positions,
+                venue_report,
+                instrument_id,
+            )
+
+            if not has_discrepancy:
+                continue
+
+            last_activity_ts = self._position_local_activity_ns.get(instrument_id)
+            if last_activity_ts:
+                ts_now = self._clock.timestamp_ns()
+                if ts_now - last_activity_ts < self._position_check_threshold_ns:
+                    self._log.debug(
+                        f"Skipping position reconciliation for {instrument_id}: "
+                        f"recent activity within threshold ({self.position_check_threshold_ms}ms)",
+                    )
+                    continue
+
+            cached_qty = sum(p.signed_decimal_qty() for p in cached_positions)
+            venue_qty = venue_report.signed_decimal_qty if venue_report else Decimal(0)
+
+            self._log.warning(
+                f"Position discrepancy detected for {instrument_id}: "
+                f"cached_qty={cached_qty}, venue_qty={venue_qty}; querying for missing fills...",
+                LogColor.YELLOW,
+            )
+
+            missing_fills = await self._query_and_find_missing_fills(instrument_id, clients)
+            await self._reconcile_missing_fills(missing_fills, instrument_id)
+
+            if not missing_fills and has_discrepancy:
+                self._log.warning(
+                    f"Position discrepancy for {instrument_id} persists but no missing fills found. "
+                    f"Possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
+                    f"venue position error, or internal calculation error.",
+                    LogColor.YELLOW,
+                )
+
+    def _check_position_discrepancy(
+        self,
+        cached_positions: list[Position],
+        venue_report: PositionStatusReport | None,
+        instrument_id: InstrumentId,
+    ) -> bool:
+        """
+        Check if there is a position discrepancy between cached positions and venue
+        report, using tolerance for precision differences.
+        """
+        # Calculate cached position quantity
+        cached_qty = Decimal(0)
+        for position in cached_positions:
+            cached_qty += position.signed_decimal_qty()
+
+        # Handle case where venue has no position report
+        if venue_report is None:
+            # We think we have a position, but venue says flat (or no report)
+            if cached_qty != 0:
+                instrument = self._cache.instrument(instrument_id)
+                if instrument is not None:
+                    if is_within_single_unit_tolerance(
+                        cached_qty,
+                        Decimal(0),
+                        instrument.size_precision,
+                    ):
+                        return False
+                else:
+                    self._log.debug(
+                        f"Cannot apply tolerance check for {instrument_id}: instrument not in cache",
+                    )
+
+                self._log.warning(
+                    f"Position discrepancy for {instrument_id}: "
+                    f"cached_qty={cached_qty}, venue has no position report",
+                    LogColor.YELLOW,
+                )
+                return True
+            # Both flat - no discrepancy
+            return False
+
+        venue_qty = venue_report.signed_decimal_qty
+
+        # Check if quantities match (both could be zero)
+        if cached_qty == venue_qty:
+            return False
+
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is not None:
+            if is_within_single_unit_tolerance(
+                cached_qty,
+                venue_qty,
+                instrument.size_precision,
+            ):
+                return False
+        else:
+            self._log.debug(
+                f"Cannot apply tolerance check for {instrument_id}: instrument not in cache",
+            )
+
+        return True
+
+    async def _process_venue_reported_positions(
+        self,
+        positions_by_instrument: dict[InstrumentId, list[Position]],
+        venue_positions: dict[InstrumentId, PositionStatusReport],
+    ) -> None:
+        """
+        Process venue-reported positions that we don't have cached, querying and
+        reconciling missing fills.
+        """
+        clients = self._clients.values()
+
+        for instrument_id, venue_report in venue_positions.items():
+            if instrument_id in positions_by_instrument:
+                continue  # Already checked above
+
+            # Apply instrument filter
+            if (
+                self.reconciliation_instrument_ids
+                and instrument_id not in self.reconciliation_instrument_ids
+            ):
+                continue
+
+            # Venue has a position but we don't - this is a discrepancy
+            if venue_report.signed_decimal_qty == 0:
+                continue  # Both flat, no discrepancy
+
+            # THRESHOLD CHECK
+            last_activity_ts = self._position_local_activity_ns.get(instrument_id)
+            if last_activity_ts:
+                ts_now = self._clock.timestamp_ns()
+                if ts_now - last_activity_ts < self._position_check_threshold_ns:
+                    self._log.debug(
+                        f"Skipping position reconciliation for {instrument_id}: "
+                        f"recent activity within threshold ({self.position_check_threshold_ms}ms)",
+                    )
+                    continue
+
+            self._log.warning(
+                f"Position discrepancy detected for {instrument_id}: "
+                f"cached_qty=0 (flat), venue_qty={venue_report.signed_decimal_qty}. Querying for missing fills...",
+                LogColor.YELLOW,
+            )
+
+            missing_fills = await self._query_and_find_missing_fills(instrument_id, clients)
+            await self._reconcile_missing_fills(missing_fills, instrument_id)
+
+            if not missing_fills:
+                self._log.warning(
+                    f"Position discrepancy for {instrument_id} persists but no missing fills found. "
+                    f"Possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
+                    f"venue position error, or internal calculation error.",
+                    LogColor.YELLOW,
+                )
+
+    async def _query_and_find_missing_fills(
+        self,
+        instrument_id: InstrumentId,
+        clients: Iterable[ExecutionClient],
+    ) -> list[FillReport]:
+        fill_lookback_start = self._clock.utc_now() - pd.Timedelta(
+            minutes=self.position_check_lookback_mins,
+        )
+
+        fill_tasks = [
+            c.generate_fill_reports(
+                GenerateFillReports(
+                    instrument_id=instrument_id,
+                    venue_order_id=None,
+                    start=fill_lookback_start,
+                    end=None,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                ),
+            )
+            for c in clients
+        ]
+
+        fill_reports_all = await asyncio.gather(*fill_tasks, return_exceptions=True)
+
+        venue_fills: list[FillReport] = []
+        for fills_or_exception in fill_reports_all:
+            if isinstance(fills_or_exception, Exception):
+                self._log.error(
+                    f"Failed to generate fill reports for {instrument_id}: {fills_or_exception}",
+                )
+                continue
+
+            fills = cast("list[FillReport]", fills_or_exception)
+            venue_fills.extend(fills)
+
+        cached_fill_trade_ids: set[TradeId] = set()
+        for order in self._cache.orders(instrument_id=instrument_id):
+            for event in order.events:
+                if isinstance(event, OrderFilled):
+                    cached_fill_trade_ids.add(event.trade_id)
+
+        # Find missing fills (not in cache and not in recent fills cache)
+        missing_fills = [
+            fill
+            for fill in venue_fills
+            if fill.trade_id not in cached_fill_trade_ids
+            and fill.trade_id not in self._recent_fills_cache
+        ]
+
+        return missing_fills
+
+    async def _reconcile_missing_fills(
+        self,
+        missing_fills: list[FillReport],
+        instrument_id: InstrumentId,
+    ) -> None:
+        """
+        Reconcile a list of missing fill reports for an instrument.
+        """
+        if not missing_fills:
+            return
+
+        self._log.warning(
+            f"Found {len(missing_fills)} missing fill(s) for {instrument_id}",
+            LogColor.YELLOW,
+        )
+
+        for fill_report in missing_fills:
+            try:
+                result = self._reconcile_fill_report_single(fill_report)
+                if result:
+                    self._position_local_activity_ns[instrument_id] = self._clock.timestamp_ns()
+                else:
+                    self._log.warning(
+                        f"Failed to reconcile fill {fill_report.trade_id} for {instrument_id}: "
+                        f"order not yet cached or other prerequisite missing. "
+                        f"Fill will be retried in next position check cycle.",
+                        LogColor.YELLOW,
+                    )
+            except Exception as e:
+                self._log.error(
+                    f"Exception reconciling missing fill {fill_report.trade_id} for {instrument_id}: {e}",
+                )
+
+    def _prune_recent_fills_cache(self, ttl_secs: float = 60.0) -> None:
+        # Remove expired fills from cache (default TTL: 60 seconds)
+        ts_now = self._clock.timestamp_ns()
+        ttl_ns = secs_to_nanos(ttl_secs)
+        expired_trade_ids = [
+            trade_id
+            for trade_id, ts_cached in self._recent_fills_cache.items()
+            if ts_now - ts_cached > ttl_ns
+        ]
+        for trade_id in expired_trade_ids:
+            self._recent_fills_cache.pop(trade_id, None)
+
+    async def _check_orders_consistency(self) -> None:
+        """
+        Validate open orders match venue state, comparing cache state with venue reports
+        and reconciling discrepancies.
+        """
+        try:
+            if self._is_shutting_down:
+                self._log.debug("Skipping order consistency check due to stop signal")
+                return
+
+            self._log.debug("Checking order consistency between cached-state and venues")
+
+            open_order_ids: set[ClientOrderId] = self._cache.client_order_ids_open()
+            open_orders: list[Order] = self._cache.orders_open()
+
+            if self.reconciliation_instrument_ids:
+                open_orders = [
+                    o for o in open_orders if o.instrument_id in self.reconciliation_instrument_ids
+                ]
+                open_order_ids = {o.client_order_id for o in open_orders}
+
+            open_len = len(open_orders)
+            self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open in cache")
+
+            if not self._clients:
+                self._log.debug("No execution clients to check orders consistency, early return")
+                return
+
+            all_order_reports, venue_reported_ids = await self._query_order_status_reports()
+
+            self._reconcile_order_reports(all_order_reports, open_order_ids)
+
+            if self.open_check_open_only:
+                missing_orders = open_order_ids - venue_reported_ids
+                if missing_orders:
+                    self._log.debug(
+                        f"{len(missing_orders)} cached open order(s) not in venue's current response - "
+                        f"likely recently filled/canceled (venue may include recent closed orders with open query):",
+                    )
+
+                    for order_id in missing_orders:
+                        self._log.debug(f"- {order_id}")
+
+                return  # Can't reliably resolve missing orders in open_only mode
+
+            await self._handle_missing_orders_at_venue(open_order_ids, venue_reported_ids)
+
+            self._validate_open_orders_consistency()
+        except Exception as e:
+            self._log.exception("Error in check_order_consistency", e)
+
+    def _validate_open_orders_consistency(self) -> None:
+        for order in self._cache.orders_open():
+            computed_filled = sum(e.last_qty for e in order.events if isinstance(e, OrderFilled))
+            if computed_filled != order.filled_qty:
+                self._log.error(
+                    f"INCONSISTENCY: {order.client_order_id} "
+                    f"computed={computed_filled} vs cached={order.filled_qty}",
+                )
+
+    async def _handle_missing_orders_at_venue(
+        self,
+        open_order_ids: set[ClientOrderId],
+        venue_reported_ids: set[ClientOrderId],
+    ) -> None:
+        """
+        Handle orders that are open in cache but not reported by venue, performing
+        targeted queries.
+        """
+        missing_at_venue: set[ClientOrderId] = open_order_ids - venue_reported_ids
+        ts_now = self._clock.timestamp_ns()
+
+        targeted_queries_count = 0
+        logged_limit_warning = False
+
+        for client_order_id in missing_at_venue:
+            order = self._cache.order(client_order_id)
+            if order is None:
+                self._log.error(f"{client_order_id!r} missing at venue and not found in cache")
+                continue
+
+            # Check if order is too recent to reconcile (avoid race conditions)
+            ts_last = order.ts_last
+            if (ts_now - ts_last) < self._open_check_threshold_ns:
+                self._log.debug(
+                    f"Skipping reconciliation for {client_order_id!r} - order too recent "
+                    f"(age={(ts_now - ts_last) / 1_000_000}ms < threshold={self.open_check_threshold_ms}ms)",
+                )
+                continue
+
+            local_activity = self._order_local_activity_ns.get(client_order_id)
+            if local_activity and (ts_now - local_activity) < self._open_check_threshold_ns:
+                self._log.debug(
+                    f"Skipping reconciliation for {client_order_id!r}; "
+                    f"pending local activity ({(ts_now - local_activity) / 1_000_000}ms < threshold={self.open_check_threshold_ms}ms)",
+                )
+                continue
+
+            retries = self._recon_check_retries.get(client_order_id, 0)
+            if retries >= self.open_check_missing_retries:
+                if targeted_queries_count >= self.max_single_order_queries_per_cycle:
+                    self._recon_check_retries[client_order_id] = retries + 1
+
+                    if not logged_limit_warning:
+                        # Count how many orders at threshold are being deferred
+                        orders_at_threshold_remaining = (
+                            sum(
+                                1
+                                for cid in missing_at_venue
+                                if self._recon_check_retries.get(cid, 0)
+                                >= self.open_check_missing_retries
+                            )
+                            - targeted_queries_count
+                        )
+                        self._log.warning(
+                            f"Reached max single-order queries ({self.max_single_order_queries_per_cycle}) "
+                            f"this cycle, deferring {orders_at_threshold_remaining} order(s) at threshold to next cycle",
+                            LogColor.YELLOW,
+                        )
+                        logged_limit_warning = True
+
+                    continue  # Skip query but continue processing other orders
+
+                self._log.warning(
+                    f"Order {client_order_id!r} not found at venue after {retries} retries, performing single-order query",
+                    LogColor.YELLOW,
+                )
+                self._clear_recon_tracking(client_order_id, drop_last_query=False)
+                await self._resolve_order_not_found_at_venue(order)
+                targeted_queries_count += 1
+
+                # Add delay between single-order queries (skip after final query)
+                if (
+                    targeted_queries_count < self.max_single_order_queries_per_cycle
+                    and self.single_order_query_delay_ms > 0
+                ):
+                    await asyncio.sleep(self.single_order_query_delay_ms / 1000.0)
+            else:
+                self._recon_check_retries[client_order_id] = retries + 1
+                self._log.debug(
+                    f"Order {client_order_id!r} not found at venue, retry {retries + 1}/{self.open_check_missing_retries}",
+                )
+
     async def _resolve_order_not_found_at_venue(self, order: Order) -> None:
         """
-        Resolve an order that exists in cache but is not found at the venue.
-
-        This handles the case where our cache shows an order as open but the venue has
-        no record of it, which typically means the order was never successfully placed
-        or was rejected.
-
-        Before marking as rejected, performs a single-order query to check if the order
-        exists but was missed due to API timing/processing delays.
-
+        Resolve an order that exists in cache but is not found at venue, performing a
+        single-order query before marking as rejected.
         """
         ts_now = self._clock.timestamp_ns()
 
@@ -785,783 +1500,113 @@ class LiveExecutionEngine(ExecutionEngine):
         self._clear_recon_tracking(order.client_order_id)
         self._order_local_activity_ns.pop(order.client_order_id, None)
 
-    async def _own_books_audit_loop(self, interval_secs: float) -> None:
-        try:
-            while True:
-                await asyncio.sleep(interval_secs)
-                self._cache.audit_own_order_books()
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'own_books_audit'")
-        except Exception as e:
-            self._log.exception("Error auditing own books", e)
-
-    # ruff: noqa: C901
-    async def _continuous_reconciliation_loop(
+    async def _query_order_status_reports(
         self,
-    ) -> None:
-        try:
-            # Track last execution times (in nanoseconds)
-            ts_last_inflight_check = 0
-            ts_last_consistency_check = 0
-            ts_last_position_check = 0
-            ts_last_cache_prune = 0
-
-            # Convert intervals to nanoseconds (handle None values)
-            inflight_check_interval_ns = (
-                millis_to_nanos(self.inflight_check_interval_ms)
-                if self.inflight_check_interval_ms > 0
-                else 0
-            )
-            consistency_check_interval_ns = (
-                secs_to_nanos(self.open_check_interval_secs) if self.open_check_interval_secs else 0
-            )
-            position_check_interval_ns = (
-                secs_to_nanos(self.position_check_interval_secs)
-                if self.position_check_interval_secs
-                else 0
-            )
-            cache_prune_interval_ns = secs_to_nanos(60.0)
-
-            # Determine minimum sleep interval (in seconds)
-            intervals_secs: list[float] = []
-
-            if self.inflight_check_interval_ms > 0:
-                intervals_secs.append(self.inflight_check_interval_ms / 1000)
-            if self.open_check_interval_secs:
-                intervals_secs.append(self.open_check_interval_secs)
-            if self.position_check_interval_secs:
-                intervals_secs.append(self.position_check_interval_secs)
-
-            min_interval_secs = min(intervals_secs) if intervals_secs else 1.0
-
-            self._log.info(
-                f"Starting continuous reconciliation with intervals: "
-                f"inflight={self.inflight_check_interval_ms}ms, "
-                f"consistency={self.open_check_interval_secs}s, "
-                f"position={self.position_check_interval_secs}s",
-                LogColor.BLUE,
-            )
-
-            # Only wait if reconciliation is enabled (otherwise event never set)
-            if self.reconciliation:
-                self._log.info(
-                    "Awaiting startup reconciliation completion before starting continuous checks",
-                    LogColor.BLUE,
-                )
-                await self._startup_reconciliation_event.wait()
-                self._log.info("Startup reconciliation completed", LogColor.GREEN)
-
-                # Apply additional startup delay AFTER reconciliation completes
-                if self.reconciliation_startup_delay_secs > 0:
-                    self._log.info(
-                        f"Applying post-reconciliation startup delay "
-                        f"({self.reconciliation_startup_delay_secs}s)",
-                        LogColor.BLUE,
-                    )
-                    await asyncio.sleep(self.reconciliation_startup_delay_secs)
-            else:
-                self._log.info(
-                    "Startup reconciliation disabled, proceeding with continuous checks",
-                    LogColor.BLUE,
-                )
-
-            while True:
-                if self._is_shutting_down:
-                    self._log.debug("Reconciliation loop exiting due to stop signal")
-                    break
-
-                ts_now = self._clock.timestamp_ns()
-
-                # Check in-flight orders
-                if (
-                    inflight_check_interval_ns > 0
-                    and ts_now - ts_last_inflight_check >= inflight_check_interval_ns
-                ):
-                    # Check stop signal before starting check
-                    if self._is_shutting_down:
-                        break
-                    try:
-                        await self._check_inflight_orders()
-                        ts_last_inflight_check = ts_now
-                    except Exception as e:
-                        self._log.exception("Failed in check_inflight_orders", e)
-
-                # Check open orders consistency
-                if (
-                    consistency_check_interval_ns > 0
-                    and ts_now - ts_last_consistency_check >= consistency_check_interval_ns
-                ):
-                    # Check stop signal before starting check
-                    if self._is_shutting_down:
-                        break
-                    try:
-                        await self._check_orders_consistency()
-                        ts_last_consistency_check = ts_now
-                    except Exception as e:
-                        self._log.exception("Failed in check_orders_consistency", e)
-
-                # Check positions consistency
-                if (
-                    position_check_interval_ns > 0
-                    and ts_now - ts_last_position_check >= position_check_interval_ns
-                ):
-                    # Check stop signal before starting check
-                    if self._is_shutting_down:
-                        break
-                    try:
-                        await self._check_positions_consistency()
-                        ts_last_position_check = ts_now
-                    except Exception as e:
-                        self._log.exception("Failed in check_positions_consistency", e)
-
-                if ts_now - ts_last_cache_prune >= cache_prune_interval_ns:
-                    try:
-                        self._prune_recent_fills_cache()
-                        ts_last_cache_prune = ts_now
-                    except Exception as e:
-                        self._log.exception("Failed in prune_recent_fills_cache", e)
-
-                await asyncio.sleep(min_interval_secs)
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'continuous_reconciliation'")
-
-    async def _check_inflight_orders(self) -> None:
-        if self._is_shutting_down:
-            self._log.debug("Skipping in-flight orders check due to stop signal")
-            return
-
-        self._log.debug("Checking in-flight orders status")
-
-        delayed_orders: list[Order] = []
-        inflight_orders: list[Order] = self._cache.orders_inflight()
-
-        ts_now = self._clock.timestamp_ns()
-
-        for order in inflight_orders:
-            if ts_now > order.last_event.ts_event + self._inflight_check_threshold_ns:
-                delayed_orders.append(order)
-
-        if delayed_orders:
-            self._log.debug(
-                f"Detected {len(delayed_orders)} delayed in-flight "
-                f"order{'' if len(delayed_orders) == 1 else 's'}",
-            )
-
-        # Query and potentially resolve each inconsistent order
-        for order in delayed_orders:
-            if not order.is_inflight:
-                self._clear_recon_tracking(order.client_order_id, drop_last_query=False)
-                continue
-
-            last_query_ts = self._ts_last_query.get(order.client_order_id)
-            if last_query_ts and ts_now - last_query_ts < self._inflight_check_threshold_ns:
-                self._log.debug(
-                    f"Skipping re-query for {order.client_order_id!r} - awaiting prior response",
-                )
-                continue
-
-            retries = self._recon_check_retries[order.client_order_id]
-            if retries >= self.inflight_check_max_retries:
-                backlog = self.evt_qsize()
-                if backlog > 0:
-                    self._log.debug(
-                        f"Deferring inflight resolution for {order.client_order_id!r} - event queue backlog {backlog}",
-                    )
-                    continue
-
-                self._log.warning(
-                    f"Order {order.client_order_id!r} exceeded max inflight retries ({retries}), "
-                    f"resolving as failed",
-                    LogColor.YELLOW,
-                )
-                self._resolve_inflight_order(order)
-            else:
-                self._log.debug(f"Querying {order} with venue...")
-                query_ts = self._clock.timestamp_ns()
-                query = QueryOrder(
-                    trader_id=order.trader_id,
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    venue_order_id=order.venue_order_id,
-                    command_id=UUID4(),
-                    ts_init=query_ts,
-                )
-                self._execute_command(query)
-                self._ts_last_query[order.client_order_id] = query_ts
-                self._recon_check_retries[order.client_order_id] = retries + 1
-
-    async def _check_orders_consistency(self) -> None:
-        try:
-            if self._is_shutting_down:
-                self._log.debug("Skipping order consistency check due to stop signal")
-                return
-
-            self._log.debug("Checking order consistency between cached-state and venues")
-
-            open_order_ids: set[ClientOrderId] = self._cache.client_order_ids_open()
-            open_orders: list[Order] = self._cache.orders_open()
-
-            if self.reconciliation_instrument_ids:
-                open_orders = [
-                    o for o in open_orders if o.instrument_id in self.reconciliation_instrument_ids
-                ]
-                open_order_ids = {o.client_order_id for o in open_orders}
-
-            open_len = len(open_orders)
-            self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open in cache")
-
-            if not self._clients:
-                self._log.debug("No execution clients to check orders consistency, early return")
-                return
-
-            # For continuous reconciliation limit lookback to configured window
-            order_status_start = self._clock.utc_now() - pd.Timedelta(
-                minutes=self.open_check_lookback_mins,
-            )
-
-            # Always use all registered clients for consistency checks
-            clients = self._clients.values()
-
-            tasks = [
-                c.generate_order_status_reports(
-                    GenerateOrderStatusReports(
-                        instrument_id=None,
-                        start=order_status_start,
-                        end=None,
-                        open_only=self.open_check_open_only,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                        log_receipt_level=LogLevel.DEBUG,
-                    ),
-                )
-                for c in clients
-            ]
-
-            order_reports_all = await asyncio.gather(*tasks, return_exceptions=True)
-            all_order_reports: list[OrderStatusReport] = []
-
-            for reports_or_exception in order_reports_all:
-                if isinstance(reports_or_exception, Exception):
-                    self._log.error(
-                        f"Failed to generate order status reports: {reports_or_exception}",
-                    )
-                    continue
-
-                reports = cast(list[OrderStatusReport], reports_or_exception)
-                all_order_reports.extend(reports)
-
-            # Build set of client order IDs reported by venue
-            venue_reported_ids: set[ClientOrderId] = {
-                report.client_order_id
-                for report in all_order_reports
-                if report.client_order_id is not None
-            }
-
-            # Reconcile each report against cache state
-            for report in all_order_reports:
-                is_in_open_ids = report.client_order_id in open_order_ids
-
-                # Clear any retry counts for successfully queried orders
-                if report.client_order_id:
-                    self._clear_recon_tracking(report.client_order_id)
-                elif report.venue_order_id:
-                    # Try to map venue-only ID to client order ID and clear that retry counter
-                    mapped_client_id = self._cache.client_order_id(report.venue_order_id)
-                    if mapped_client_id:
-                        self._clear_recon_tracking(mapped_client_id)
-
-                # Check if we should reconcile this order
-                should_reconcile = False
-                reconcile_reason = ""
-
-                if report.is_open != is_in_open_ids:
-                    should_reconcile = True
-                    reconcile_reason = f"venue_open={report.is_open}, cache_open={is_in_open_ids}"
-                elif report.client_order_id:
-                    order = self._cache.order(report.client_order_id)
-                    if order:
-                        # Check filled_qty mismatch, treating None as zero
-                        report_filled = (
-                            report.filled_qty
-                            if report.filled_qty is not None
-                            else Quantity.zero(order.quantity.precision)
-                        )
-                        if order.filled_qty != report_filled:
-                            should_reconcile = True
-                            reconcile_reason = f"filled_qty mismatch: venue={report_filled}, cache={order.filled_qty}"
-
-                if should_reconcile:
-                    # Apply include filter before reconciling
-                    if not self._consider_for_reconciliation(report.instrument_id):
-                        self._log.debug(
-                            f"Skipping reconciliation for {report.client_order_id!r}: "
-                            f"instrument {report.instrument_id} not in include list",
-                        )
-                        continue
-
-                    self._log.debug(
-                        f"Reconciling {report.client_order_id!r}: {reconcile_reason}",
-                        LogColor.BLUE,
-                    )
-                    self._reconcile_order_report(report, trades=[])
-
-            # When open_check_open_only=True, we can't determine if orders are truly missing
-            # or just filled/canceled (since venue only returns open orders)
-            # Skip the missing order resolution to avoid false positives
-            if self.open_check_open_only:
-                missing_orders = open_order_ids - venue_reported_ids
-                if missing_orders:
-                    self._log.debug(
-                        f"{len(missing_orders)} cached open order(s) not in venue's current response - "
-                        f"likely recently filled/canceled (venue may include recent closed orders with open query):",
-                    )
-                    for order_id in missing_orders:
-                        self._log.debug(f"- {order_id}")
-
-                return  # Can't reliably resolve missing orders in open_only mode
-
-            # Check for orders that are open in cache but not reported by venue
-            # In full history mode, these are genuinely missing orders
-            missing_at_venue: set[ClientOrderId] = open_order_ids - venue_reported_ids
-            ts_now = self._clock.timestamp_ns()
-
-            # Track targeted queries to prevent rate limit exhaustion
-            targeted_queries_count = 0
-            logged_limit_warning = False
-
-            for client_order_id in missing_at_venue:
-                order = self._cache.order(client_order_id)
-                if order is None:
-                    self._log.error(f"{client_order_id!r} missing at venue and not found in cache")
-                    continue
-
-                # Check if order is too recent to reconcile (avoid race conditions)
-                ts_last = order.ts_last
-                if (ts_now - ts_last) < self._open_check_threshold_ns:
-                    # TODO: Debug log for initial development only
-                    self._log.debug(
-                        f"Skipping reconciliation for {client_order_id!r} - order too recent "
-                        f"(age={(ts_now - ts_last) / 1_000_000}ms < threshold={self.open_check_threshold_ms}ms)",
-                    )
-                    continue
-
-                local_activity = self._order_local_activity_ns.get(client_order_id)
-                if local_activity and (ts_now - local_activity) < self._open_check_threshold_ns:
-                    self._log.debug(
-                        f"Skipping reconciliation for {client_order_id!r}; "
-                        f"pending local activity ({(ts_now - local_activity) / 1_000_000}ms < threshold={self.open_check_threshold_ms}ms)",
-                    )
-                    continue
-
-                retries = self._recon_check_retries.get(client_order_id, 0)
-                if retries >= self.open_check_missing_retries:
-                    if targeted_queries_count >= self.max_single_order_queries_per_cycle:
-                        self._recon_check_retries[client_order_id] = retries + 1
-
-                        if not logged_limit_warning:
-                            # Count how many orders at threshold are being deferred
-                            orders_at_threshold_remaining = (
-                                sum(
-                                    1
-                                    for cid in missing_at_venue
-                                    if self._recon_check_retries.get(cid, 0)
-                                    >= self.open_check_missing_retries
-                                )
-                                - targeted_queries_count
-                            )
-                            self._log.warning(
-                                f"Reached max single-order queries ({self.max_single_order_queries_per_cycle}) "
-                                f"this cycle, deferring {orders_at_threshold_remaining} order(s) at threshold to next cycle",
-                                LogColor.YELLOW,
-                            )
-                            logged_limit_warning = True
-
-                        continue  # Skip query but continue processing other orders
-
-                    self._log.warning(
-                        f"Order {client_order_id!r} not found at venue after {retries} retries, performing single-order query",
-                        LogColor.YELLOW,
-                    )
-                    self._clear_recon_tracking(client_order_id, drop_last_query=False)
-                    await self._resolve_order_not_found_at_venue(order)
-                    targeted_queries_count += 1
-
-                    # Add delay between single-order queries (skip after final query)
-                    if (
-                        targeted_queries_count < self.max_single_order_queries_per_cycle
-                        and self.single_order_query_delay_ms > 0
-                    ):
-                        await asyncio.sleep(self.single_order_query_delay_ms / 1000.0)
-                else:
-                    self._recon_check_retries[client_order_id] = retries + 1
-                    self._log.debug(
-                        f"Order {client_order_id!r} not found at venue, retry {retries + 1}/{self.open_check_missing_retries}",
-                    )
-
-            # Perform sanity check on all open orders to detect internal inconsistencies
-            for order in self._cache.orders_open():
-                computed_filled = sum(
-                    e.last_qty for e in order.events if isinstance(e, OrderFilled)
-                )
-                if computed_filled != order.filled_qty:
-                    self._log.error(
-                        f"INCONSISTENCY: {order.client_order_id} "
-                        f"computed={computed_filled} vs cached={order.filled_qty}",
-                    )
-        except Exception as e:
-            self._log.exception("Error in check_order_consistency", e)
-
-    async def _check_open_orders(self) -> None:
-        # Legacy method maintained for compatibility
-        await self._check_orders_consistency()
-
-    async def _check_positions_consistency(self) -> None:
-        if self._is_shutting_down:
-            self._log.debug("Skipping position consistency check due to stop signal")
-            return
-
-        self._log.debug("Checking position consistency between cached-state and venues")
-
-        open_positions = self._cache.positions_open()
-
-        if self.reconciliation_instrument_ids:
-            open_positions = [
-                p for p in open_positions if p.instrument_id in self.reconciliation_instrument_ids
-            ]
-
-        # Group positions by instrument_id (for netting)
-        positions_by_instrument: dict[InstrumentId, list[Position]] = {}
-
-        for position in open_positions:
-            if position.instrument_id not in positions_by_instrument:
-                positions_by_instrument[position.instrument_id] = []
-            positions_by_instrument[position.instrument_id].append(position)
-
-        self._log.debug(
-            f"Found {len(positions_by_instrument)} unique instrument(s) with open positions",
+    ) -> tuple[list[OrderStatusReport], set[ClientOrderId]]:
+        order_status_start = self._clock.utc_now() - pd.Timedelta(
+            minutes=self.open_check_lookback_mins,
         )
 
-        if not self._clients:
-            self._log.debug("No execution clients to check position consistency, early return")
-            return
-
-        # Request position status reports from venues (all open positions, no time filter)
         clients = self._clients.values()
 
         tasks = [
-            c.generate_position_status_reports(
-                GeneratePositionStatusReports(
-                    instrument_id=None,  # Get all positions
-                    start=None,  # No time filter - we want all open and closed positions
+            c.generate_order_status_reports(
+                GenerateOrderStatusReports(
+                    instrument_id=None,
+                    start=order_status_start,
                     end=None,
+                    open_only=self.open_check_open_only,
                     command_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
+                    log_receipt_level=LogLevel.DEBUG,
                 ),
             )
             for c in clients
         ]
 
-        try:
-            position_reports_all = await asyncio.gather(*tasks, return_exceptions=True)
-        except Exception as e:
-            self._log.error(f"Failed to gather position status reports: {e}")
-            return
+        order_reports_all = await asyncio.gather(*tasks, return_exceptions=True)
+        all_order_reports: list[OrderStatusReport] = []
 
-        # Build mapping: instrument_id -> venue report
-        venue_positions: dict[InstrumentId, PositionStatusReport] = {}
-        for reports_or_exception in position_reports_all:
+        for reports_or_exception in order_reports_all:
             if isinstance(reports_or_exception, Exception):
                 self._log.error(
-                    f"Failed to generate position status reports: {reports_or_exception}",
+                    f"Failed to generate order status reports: {reports_or_exception}",
                 )
                 continue
 
-            reports = cast("list[PositionStatusReport]", reports_or_exception)
-            for report in reports:
-                venue_positions[report.instrument_id] = report
+            reports = cast(list[OrderStatusReport], reports_or_exception)
+            all_order_reports.extend(reports)
 
-        # Check each cached position for discrepancies
-        for instrument_id, cached_positions in positions_by_instrument.items():
-            venue_report = venue_positions.get(instrument_id)
+        venue_reported_ids: set[ClientOrderId] = {
+            report.client_order_id
+            for report in all_order_reports
+            if report.client_order_id is not None
+        }
 
-            has_discrepancy = self._check_position_discrepancy(
-                cached_positions,
-                venue_report,
-                instrument_id,
-            )
+        return all_order_reports, venue_reported_ids
 
-            if not has_discrepancy:
-                continue
+    def _reconcile_order_reports(
+        self,
+        all_order_reports: list[OrderStatusReport],
+        open_order_ids: set[ClientOrderId],
+    ) -> None:
+        """
+        Reconcile each order report against cache state, checking for discrepancies.
+        """
+        for report in all_order_reports:
+            is_in_open_ids = report.client_order_id in open_order_ids
 
-            last_activity_ts = self._position_local_activity_ns.get(instrument_id)
-            if last_activity_ts:
-                ts_now = self._clock.timestamp_ns()
-                if ts_now - last_activity_ts < self._position_check_threshold_ns:
-                    self._log.debug(
-                        f"Skipping position reconciliation for {instrument_id}: "
-                        f"recent activity within threshold ({self.position_check_threshold_ms}ms)",
+            # Clear any retry counts for successfully queried orders
+            if report.client_order_id:
+                self._clear_recon_tracking(report.client_order_id)
+            elif report.venue_order_id:
+                # Try to map venue-only ID to client order ID and clear that retry counter
+                mapped_client_id = self._cache.client_order_id(report.venue_order_id)
+                if mapped_client_id:
+                    self._clear_recon_tracking(mapped_client_id)
+
+            # Check if we should reconcile this order
+            should_reconcile = False
+            reconcile_reason = ""
+
+            if report.is_open != is_in_open_ids:
+                should_reconcile = True
+                reconcile_reason = f"venue_open={report.is_open}, cache_open={is_in_open_ids}"
+            elif report.client_order_id:
+                order = self._cache.order(report.client_order_id)
+                if order:
+                    # Check filled_qty mismatch, treating None as zero
+                    report_filled = (
+                        report.filled_qty
+                        if report.filled_qty is not None
+                        else Quantity.zero(order.quantity.precision)
                     )
-                    continue
-
-            cached_qty = sum(p.signed_decimal_qty() for p in cached_positions)
-            venue_qty = venue_report.signed_decimal_qty if venue_report else Decimal(0)
-
-            self._log.warning(
-                f"Position discrepancy detected for {instrument_id}: "
-                f"cached_qty={cached_qty}, venue_qty={venue_qty}; querying for missing fills...",
-                LogColor.YELLOW,
-            )
-
-            # Query fills for this instrument
-            fill_lookback_start = self._clock.utc_now() - pd.Timedelta(
-                minutes=self.position_check_lookback_mins,
-            )
-
-            # Get fills from all clients for this instrument
-            fill_tasks = [
-                c.generate_fill_reports(
-                    GenerateFillReports(
-                        instrument_id=instrument_id,
-                        venue_order_id=None,  # Query all fills for the instrument
-                        start=fill_lookback_start,
-                        end=None,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    ),
-                )
-                for c in clients
-            ]
-
-            try:
-                fill_reports_all = await asyncio.gather(*fill_tasks, return_exceptions=True)
-            except Exception as e:
-                self._log.error(
-                    f"Failed to gather fill reports for {instrument_id}: {e}",
-                )
-                continue
-
-            venue_fills: list[FillReport] = []
-
-            for fills_or_exception in fill_reports_all:
-                if isinstance(fills_or_exception, Exception):
-                    self._log.error(
-                        f"Failed to generate fill reports for {instrument_id}: {fills_or_exception}",
-                    )
-                    continue
-
-                fills = cast("list[FillReport]", fills_or_exception)  # Type checking
-                venue_fills.extend(fills)
-
-            cached_fill_trade_ids: set[TradeId] = set()
-
-            for order in self._cache.orders(instrument_id=instrument_id):
-                for event in order.events:
-                    if isinstance(event, OrderFilled):
-                        cached_fill_trade_ids.add(event.trade_id)
-
-            # Find missing fills (not in cache and not in recent fills cache)
-            missing_fills = [
-                fill
-                for fill in venue_fills
-                if fill.trade_id not in cached_fill_trade_ids
-                and fill.trade_id not in self._recent_fills_cache
-            ]
-
-            if missing_fills:
-                self._log.warning(
-                    f"Found {len(missing_fills)} missing fill(s) for {instrument_id}",
-                    LogColor.YELLOW,
-                )
-
-                # Process each missing fill
-                for fill_report in missing_fills:
-                    try:
-                        result = self._reconcile_fill_report_single(fill_report)
-                        if result:
-                            # Update position activity timestamp after successful processing
-                            self._position_local_activity_ns[instrument_id] = (
-                                self._clock.timestamp_ns()
-                            )
-                        else:
-                            # Fill reconciliation failed (e.g., order not cached yet)
-                            self._log.warning(
-                                f"Failed to reconcile fill {fill_report.trade_id} for {instrument_id}: "
-                                f"order not yet cached or other prerequisite missing. "
-                                f"Fill will be retried in next position check cycle",
-                                LogColor.YELLOW,
-                            )
-                    except Exception as e:
-                        self._log.error(
-                            f"Exception reconciling missing fill {fill_report.trade_id} for {instrument_id}: {e}",
+                    if order.filled_qty != report_filled:
+                        should_reconcile = True
+                        reconcile_reason = (
+                            f"filled_qty mismatch: venue={report_filled}, cache={order.filled_qty}"
                         )
-            elif has_discrepancy:
-                # Discrepancy persists but no missing fills found
-                self._log.warning(
-                    f"Position discrepancy for {instrument_id} persists but no missing fills found. "
-                    f"Possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
-                    f"venue position error, or internal calculation error",
-                    LogColor.YELLOW,
-                )
-                # TODO: Consider fallback to synthetic position adjustment if discrepancy persists
 
-        # Check venue-reported positions that we don't have cached (venue says open, we think flat)
-        for instrument_id, venue_report in venue_positions.items():
-            if instrument_id in positions_by_instrument:
-                continue  # Already checked above
-
-            # Apply instrument filter
-            if (
-                self.reconciliation_instrument_ids
-                and instrument_id not in self.reconciliation_instrument_ids
-            ):
-                continue
-
-            # Venue has a position but we don't - this is a discrepancy
-            if venue_report.signed_decimal_qty == 0:
-                continue  # Both flat, no discrepancy
-
-            # THRESHOLD CHECK
-            last_activity_ts = self._position_local_activity_ns.get(instrument_id)
-            if last_activity_ts:
-                ts_now = self._clock.timestamp_ns()
-                if ts_now - last_activity_ts < self._position_check_threshold_ns:
+            if should_reconcile:
+                # Apply include filter before reconciling
+                if not self._consider_for_reconciliation(report.instrument_id):
                     self._log.debug(
-                        f"Skipping position reconciliation for {instrument_id}: "
-                        f"recent activity within threshold ({self.position_check_threshold_ms}ms)",
+                        f"Skipping reconciliation for {report.client_order_id!r}: "
+                        f"instrument {report.instrument_id} not in include list",
                     )
                     continue
 
-            self._log.warning(
-                f"Position discrepancy detected for {instrument_id}: "
-                f"cached_qty=0 (flat), venue_qty={venue_report.signed_decimal_qty}. Querying for missing fills...",
-                LogColor.YELLOW,
-            )
-
-            # Query fills for this instrument
-            fill_lookback_start = self._clock.utc_now() - pd.Timedelta(
-                minutes=self.position_check_lookback_mins,
-            )
-
-            fill_tasks = [
-                c.generate_fill_reports(
-                    GenerateFillReports(
-                        instrument_id=instrument_id,
-                        venue_order_id=None,
-                        start=fill_lookback_start,
-                        end=None,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    ),
+                self._log.debug(
+                    f"Reconciling {report.client_order_id!r}: {reconcile_reason}",
+                    LogColor.BLUE,
                 )
-                for c in clients
-            ]
-
-            try:
-                fill_reports_all = await asyncio.gather(*fill_tasks, return_exceptions=True)
-            except Exception as e:
-                self._log.error(
-                    f"Failed to gather fill reports for {instrument_id}: {e}",
-                )
-                continue
-
-            venue_fills_2 = []
-            for fills_or_exception in fill_reports_all:
-                if isinstance(fills_or_exception, Exception):
-                    self._log.error(
-                        f"Failed to generate fill reports for {instrument_id}: {fills_or_exception}",
-                    )
-                    continue
-
-                fills = cast("list[FillReport]", fills_or_exception)
-                venue_fills_2.extend(fills)
-
-            # Get cached fills for comparison
-            cached_fill_trade_ids_2 = set()
-            for order in self._cache.orders(instrument_id=instrument_id):
-                for event in order.events:
-                    if isinstance(event, OrderFilled):
-                        cached_fill_trade_ids_2.add(event.trade_id)
-
-            # Find missing fills
-            missing_fills = [
-                fill
-                for fill in venue_fills_2
-                if fill.trade_id not in cached_fill_trade_ids_2
-                and fill.trade_id not in self._recent_fills_cache
-            ]
-
-            if missing_fills:
-                self._log.warning(
-                    f"Found {len(missing_fills)} missing fill(s) for {instrument_id}",
-                    LogColor.YELLOW,
-                )
-
-                for fill_report in missing_fills:
-                    try:
-                        result = self._reconcile_fill_report_single(fill_report)
-                        if result:
-                            self._position_local_activity_ns[instrument_id] = (
-                                self._clock.timestamp_ns()
-                            )
-                        else:
-                            self._log.warning(
-                                f"Failed to reconcile fill {fill_report.trade_id} for {instrument_id}: "
-                                f"order not yet cached or other prerequisite missing; "
-                                f"fill will be retried in next position check cycle",
-                                LogColor.YELLOW,
-                            )
-                    except Exception as e:
-                        self._log.error(
-                            f"Exception reconciling missing fill {fill_report.trade_id} for {instrument_id}: {e}",
-                        )
-            else:
-                self._log.warning(
-                    f"Position discrepancy for {instrument_id} persists but no missing fills found; "
-                    f"possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
-                    f"venue position error, or internal calculation error",
-                    LogColor.YELLOW,
-                )
-
-    async def _purge_closed_orders_loop(self, interval_mins: int) -> None:
-        interval_secs = interval_mins * 60
-        buffer_mins = self.purge_closed_orders_buffer_mins or 0
-        buffer_secs = buffer_mins * 60
-
-        try:
-            while True:
-                await asyncio.sleep(interval_secs)
-                ts_now = self._clock.timestamp_ns()
-                self._cache.purge_closed_orders(
-                    ts_now=ts_now,
-                    buffer_secs=buffer_secs,
-                    purge_from_database=self.purge_from_database,
-                )
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'purge_closed_orders'")
-        except Exception as e:
-            self._log.exception("Error purging closed orders", e)
-
-    async def _purge_closed_positions_loop(self, interval_mins: int) -> None:
-        interval_secs = interval_mins * 60
-        buffer_mins = self.purge_closed_positions_buffer_mins or 0
-        buffer_secs = buffer_mins * 60
-
-        try:
-            while True:
-                await asyncio.sleep(interval_secs)
-                ts_now = self._clock.timestamp_ns()
-                self._cache.purge_closed_positions(
-                    ts_now=ts_now,
-                    buffer_secs=buffer_secs,
-                    purge_from_database=self.purge_from_database,
-                )
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'purge_closed_positions'")
-        except Exception as e:
-            self._log.exception("Error purging closed positions", e)
+                self._reconcile_order_report(report, trades=[])
 
     async def _purge_account_events_loop(self, interval_mins: int) -> None:
+        """
+        Periodic loop to purge account events from cache based on configured interval
+        and lookback time.
+        """
         interval_secs = interval_mins * 60
         lookback_mins = self.purge_account_events_lookback_mins or 0
         lookback_secs = lookback_mins * 60
@@ -1580,35 +1625,13 @@ class LiveExecutionEngine(ExecutionEngine):
         except Exception as e:
             self._log.exception("Error purging account events", e)
 
-    # -- RECONCILIATION -------------------------------------------------------------------------------
-
-    def _consider_for_reconciliation(self, instrument_id: InstrumentId) -> bool:
-        if self.reconciliation_instrument_ids:
-            return instrument_id in self.reconciliation_instrument_ids
-
-        return True
-
-    def _log_reconciliation_result(self, value: ClientId | InstrumentId, result: bool) -> None:
-        if result:
-            self._log.info(f"Reconciliation for {value} succeeded", LogColor.GREEN)
-        else:
-            self._log.warning(f"Reconciliation for {value} failed")
-
-    def _log_skipping_reconciliation_on_instrument_id(self, report: ExecutionReport) -> None:
-        self._log.debug(
-            f"Skipping {type(report).__name__} reconciliation for {report.instrument_id}: "
-            f"not in `reconciliation_instrument_ids` include list",
-            LogColor.MAGENTA,
-        )
-
-    def _log_skipping_reconciliation_on_client_order_id(self, report: ExecutionReport) -> None:
-        self._log.debug(
-            f"Skipping {type(report).__name__} reconciliation for {report.client_order_id!r}: "
-            f"in `filtered_client_order_ids` list",
-            LogColor.MAGENTA,
-        )
+    # -- REQUEST HANDLERS --------------------------------------------------------------------------
 
     def generate_execution_mass_status(self, command: GenerateExecutionMassStatus) -> None:
+        """
+        Handle request to generate execution mass status, triggering startup
+        reconciliation.
+        """
         self._log.info(f"Received {command!r}", LogColor.BLUE)
         self._loop.create_task(self.reconcile_execution_state())
 
@@ -1617,24 +1640,8 @@ class LiveExecutionEngine(ExecutionEngine):
         timeout_secs: float = 10.0,
     ) -> bool:
         """
-        Reconcile the systems internal execution state with all execution clients
-        (external state).
-
-        Parameters
-        ----------
-        timeout_secs : double, default 10.0
-            The timeout (seconds) for reconciliation to complete.
-
-        Returns
-        -------
-        bool
-            True if states reconcile within timeout, else False.
-
-        Raises
-        ------
-        ValueError
-            If `timeout_secs` is not positive (> 0).
-
+        Reconcile execution state as main entry point for startup reconciliation,
+        coordinating reconciliation across all execution clients.
         """
         PyCondition.positive(timeout_secs, "timeout_secs")
 
@@ -1707,7 +1714,6 @@ class LiveExecutionEngine(ExecutionEngine):
 
                 for position in self._cache.positions_open(venue):
                     instrument_id = position.instrument_id
-
                     if instrument_id in mass_status.position_reports:
                         self._log.debug(
                             f"Position {instrument_id} for {client_id} already reconciled",
@@ -1729,8 +1735,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 if report_tasks:
                     # Reconcile specific internal open positions
                     self._log.info(f"Awaiting {len(report_tasks)} position reports for {client_id}")
-                    position_results: list[bool] = []
 
+                    position_results: list[bool] = []
                     for task_result_or_exception in await asyncio.gather(
                         *report_tasks,
                         return_exceptions=True,
@@ -1743,7 +1749,6 @@ class LiveExecutionEngine(ExecutionEngine):
                             continue
 
                         task_result = cast("list[PositionStatusReport]", task_result_or_exception)
-
                         for report in task_result:
                             position_result = self._reconcile_position_report(report)
                             self._log_reconciliation_result(report.instrument_id, position_result)
@@ -1764,20 +1769,16 @@ class LiveExecutionEngine(ExecutionEngine):
             # Always signal completion to prevent continuous loop signal await hang
             self._startup_reconciliation_event.set()
 
+    def _log_reconciliation_result(self, value: ClientId | InstrumentId, result: bool) -> None:
+        if result:
+            self._log.info(f"Reconciliation for {value} succeeded", LogColor.GREEN)
+        else:
+            self._log.warning(f"Reconciliation for {value} failed")
+
     def reconcile_execution_report(self, report: ExecutionReport) -> bool:
         """
-        Reconcile the given execution report.
-
-        Parameters
-        ----------
-        report : ExecutionReport
-            The execution report to check.
-
-        Returns
-        -------
-        bool
-            True if reconciliation successful, else False.
-
+        Reconcile a single execution report received at runtime, routing to appropriate
+        reconciliation method based on report type.
         """
         self._log.debug(f"<--[RPT] {report}")
         self.report_count += 1
@@ -1807,15 +1808,11 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return result
 
+    # -- RECONCILIATION ----------------------------------------------------------------------------
+
     def reconcile_execution_mass_status(self, report: ExecutionMassStatus) -> None:
         """
-        Reconcile the given execution mass status report.
-
-        Parameters
-        ----------
-        report : ExecutionMassStatus
-            The execution mass status report to reconcile.
-
+        Public entry point for mass status reconciliation.
         """
         self._reconcile_execution_mass_status(report)
 
@@ -1823,6 +1820,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self,
         mass_status: ExecutionMassStatus,
     ) -> bool:
+        """
+        Core method for reconciling a complete mass status report from a venue,
+        adjusting fills, deduplicating orders, and reconciling positions.
+        """
         self._log.debug(f"<--[RPT] {mass_status}")
         self.report_count += 1
 
@@ -1831,6 +1832,99 @@ class LiveExecutionEngine(ExecutionEngine):
             color=LogColor.BLUE,
         )
 
+        # Adjust fills for instruments with incomplete first lifecycles
+        self._adjust_mass_status_fills(mass_status)
+
+        # Deduplicate orders in mass status
+        self._deduplicate_mass_status_orders(mass_status)
+
+        results: list[bool] = []
+        reconciled_orders: set[ClientOrderId] = set()
+        reconciled_trades: set[TradeId] = set()
+
+        # Reconcile all reported orders
+        total_ethusdt_fills = 0
+        for venue_order_id, order_report in mass_status.order_reports.items():
+            trades = mass_status.fill_reports.get(venue_order_id, [])
+            if (
+                order_report.instrument_id == InstrumentId.from_str("ETHUSDT-LINEAR.BYBIT")
+                and trades
+            ):
+                total_ethusdt_fills += len(trades)
+                for trade in trades:
+                    self._log.debug(
+                        f"Reconciling order {venue_order_id}: trade_id={trade.trade_id}, last_px={trade.last_px}",
+                    )
+
+        if total_ethusdt_fills > 0:
+            self._log.info(
+                f"Total ETHUSDT fills being reconciled: {total_ethusdt_fills}",
+                LogColor.BLUE,
+            )
+
+        for venue_order_id, order_report in mass_status.order_reports.items():
+            trades = mass_status.fill_reports.get(venue_order_id, [])
+
+            if not self._consider_for_reconciliation(order_report.instrument_id):
+                self._log_skipping_reconciliation_on_instrument_id(order_report)
+                continue
+
+            client_order_id = order_report.client_order_id
+
+            if client_order_id is not None and client_order_id in self.filtered_client_order_ids:
+                self._log.debug(
+                    f"Skipping {type(order_report).__name__} reconciliation for {order_report.client_order_id!r}: "
+                    f"in `filtered_client_order_ids` list",
+                    LogColor.MAGENTA,
+                )
+                continue
+
+            # Check for duplicate trade IDs
+            for fill_report in trades:
+                if fill_report.trade_id in reconciled_trades:
+                    self._log.warning(
+                        f"Duplicate {fill_report.trade_id!r} detected: {fill_report}",
+                    )
+
+                reconciled_trades.add(fill_report.trade_id)
+
+            try:
+                # Apply all fills - let position cycle naturally through all lifecycles
+                result = self._reconcile_order_report(order_report, trades)
+            except InvalidStateTrigger as e:
+                self._log.error(str(e))
+                result = False
+
+            results.append(result)
+
+            if order_report.client_order_id is not None:
+                reconciled_orders.add(order_report.client_order_id)
+
+        if not self.filter_position_reports:
+            position_reports: list[PositionStatusReport]
+
+            # Reconcile all reported positions
+            for position_reports in mass_status.position_reports.values():
+                for report in position_reports:
+                    if not self._consider_for_reconciliation(report.instrument_id):
+                        self._log_skipping_reconciliation_on_instrument_id(report)
+                        continue
+
+                    result = self._reconcile_position_report(report)
+                    results.append(result)
+
+        # Publish mass status
+        self._msgbus.publish(
+            topic=f"reports.execution.{mass_status.venue}",
+            msg=mass_status,
+        )
+
+        # Validate reconciliation state for consistency
+        self._validate_reconciliation_state(mass_status)
+
+        return all(results)
+
+    def _adjust_mass_status_fills(self, mass_status: ExecutionMassStatus) -> None:
         # Adjust fills for instruments with incomplete first lifecycles
         # Start with original orders and fills
         final_orders = dict(mass_status._order_reports)
@@ -1849,8 +1943,7 @@ class LiveExecutionEngine(ExecutionEngine):
             instrument = self._cache.instrument(instrument_id)
             if not instrument:
                 self._log.debug(
-                    f"Skipping fill adjustment for {instrument_id}: "
-                    f"instrument not found in cache",
+                    f"Skipping fill adjustment for {instrument_id}: instrument not found in cache",
                 )
                 continue
 
@@ -1897,15 +1990,17 @@ class LiveExecutionEngine(ExecutionEngine):
             LogColor.BLUE,
         )
 
-        # TODO: Extract logic to dedicated function
-        # Deduplicate orders by client_order_id before reconciliation
+    def _deduplicate_mass_status_orders(self, mass_status: ExecutionMassStatus) -> None:
+        # Remove duplicate orders within mass status report
         seen_client_order_ids: dict[ClientOrderId, VenueOrderId] = {}
         duplicate_venue_order_ids: list[VenueOrderId] = []
+        orders_to_skip: list[VenueOrderId] = []
 
+        # First pass: deduplicate within the current report
         for venue_order_id, order_report in mass_status._order_reports.items():
             if order_report.client_order_id is not None:
                 if order_report.client_order_id in seen_client_order_ids:
-                    # Duplicate found - mark for removal
+                    # Duplicate found in current report - mark for removal
                     duplicate_venue_order_ids.append(venue_order_id)
                     self._log.warning(
                         f"Deduplicating order: {order_report.client_order_id} "
@@ -1916,287 +2011,138 @@ class LiveExecutionEngine(ExecutionEngine):
                     # First occurrence - track it
                     seen_client_order_ids[order_report.client_order_id] = venue_order_id
 
-        # Remove duplicates
-        for venue_order_id in duplicate_venue_order_ids:
+        # Second pass: check against cached orders to prevent duplicates
+        # Only skip if order is an exact match (same status, filled_qty, etc.)
+        # This prevents duplicate creation while still allowing reconciliation of mismatches
+        for venue_order_id, order_report in mass_status._order_reports.items():
+            if venue_order_id in duplicate_venue_order_ids:
+                continue  # Already marked as duplicate
+
+            # Check if this order already exists in cache by client_order_id
+            if order_report.client_order_id is not None:
+                cached_order = self._cache.order(order_report.client_order_id)
+                if cached_order is not None:
+                    # Skip closed reconciliation orders to prevent duplicate inferred fills on restart
+                    if (
+                        cached_order.is_closed
+                        and cached_order.tags is not None
+                        and "RECONCILIATION" in cached_order.tags
+                    ):
+                        orders_to_skip.append(venue_order_id)
+                        self._log.debug(
+                            f"Skipping closed reconciliation order {order_report.client_order_id}: "
+                            f"synthetic position adjustment from previous session",
+                        )
+                        continue
+
+                    # Order exists in cache - check if it's an exact duplicate
+                    # Only skip if it's an exact match (prevents duplicate creation)
+                    # But still reconcile if there are any discrepancies
+                    report_filled = (
+                        order_report.filled_qty
+                        if order_report.filled_qty is not None
+                        else Quantity.zero(cached_order.quantity.precision)
+                    )
+
+                    # Check for exact match - same status, filled_qty, and instrument
+                    is_exact_match = (
+                        cached_order.status == order_report.order_status
+                        and cached_order.filled_qty == report_filled
+                        and cached_order.instrument_id == order_report.instrument_id
+                        and cached_order.side == order_report.order_side
+                    )
+
+                    if is_exact_match:
+                        # Exact duplicate - skip to prevent duplicate creation
+                        orders_to_skip.append(venue_order_id)
+                        self._log.debug(
+                            f"Skipping exact duplicate order {order_report.client_order_id}: "
+                            f"order already exists in cache with identical state",
+                        )
+                        continue
+                    # If not exact match, continue with reconciliation to fix discrepancies
+
+            # Also check by venue_order_id if client_order_id lookup failed or wasn't provided
+            if order_report.venue_order_id is not None and order_report.client_order_id is None:
+                cached_client_id = self._cache.client_order_id(order_report.venue_order_id)
+                if cached_client_id is not None:
+                    cached_order = self._cache.order(cached_client_id)
+                    if cached_order is not None:
+                        # Update the report to use the cached client_order_id for consistency
+                        order_report.client_order_id = cached_client_id
+                        self._log.debug(
+                            f"Found cached order {cached_client_id} by venue_order_id {order_report.venue_order_id}, "
+                            f"updating report to use cached client_order_id",
+                        )
+                        # Don't skip - still need to reconcile in case there are discrepancies
+
+        # Remove duplicates and orders to skip
+        orders_to_remove = set(duplicate_venue_order_ids) | set(orders_to_skip)
+        for venue_order_id in orders_to_remove:
             del mass_status._order_reports[venue_order_id]
+
             # Also remove associated fills
             if venue_order_id in mass_status._fill_reports:
                 del mass_status._fill_reports[venue_order_id]
 
-        if duplicate_venue_order_ids:
+        if orders_to_remove:
             self._log.info(
-                f"Removed {len(duplicate_venue_order_ids)} duplicate order(s) from reconciliation",
+                f"Removed {len(orders_to_remove)} duplicate/skipped order(s) from reconciliation "
+                f"({len(duplicate_venue_order_ids)} duplicates, {len(orders_to_skip)} already in cache)",
                 LogColor.YELLOW,
             )
 
-        results: list[bool] = []
-        reconciled_orders: set[ClientOrderId] = set()
-        reconciled_trades: set[TradeId] = set()
-
-        # Reconcile all reported orders
-        total_ethusdt_fills = 0
-        for venue_order_id, order_report in mass_status.order_reports.items():
-            trades = mass_status.fill_reports.get(venue_order_id, [])
-            if (
-                order_report.instrument_id == InstrumentId.from_str("ETHUSDT-LINEAR.BYBIT")
-                and trades
-            ):
-                total_ethusdt_fills += len(trades)
-                for trade in trades:
-                    self._log.debug(
-                        f"Reconciling order {venue_order_id}: trade_id={trade.trade_id}, last_px={trade.last_px}",
-                    )
-
-        if total_ethusdt_fills > 0:
-            self._log.info(
-                f"Total ETHUSDT fills being reconciled: {total_ethusdt_fills}",
-                LogColor.BLUE,
-            )
-
-        for venue_order_id, order_report in mass_status.order_reports.items():
-            trades = mass_status.fill_reports.get(venue_order_id, [])
-
-            if not self._consider_for_reconciliation(order_report.instrument_id):
-                self._log_skipping_reconciliation_on_instrument_id(order_report)
-                continue
-
-            client_order_id = order_report.client_order_id
-
-            if (
-                client_order_id is not None
-                and client_order_id in self.filtered_client_order_ids
-            ):
-                self._log_skipping_reconciliation_on_client_order_id(order_report)
-                continue
-
-            # Check for duplicate trade IDs
-            for fill_report in trades:
-                if fill_report.trade_id in reconciled_trades:
-                    self._log.warning(
-                        f"Duplicate {fill_report.trade_id!r} detected: {fill_report}",
-                    )
-
-                reconciled_trades.add(fill_report.trade_id)
-
-            try:
-                # Apply all fills - let position cycle naturally through all lifecycles
-                result = self._reconcile_order_report(order_report, trades)
-            except InvalidStateTrigger as e:
-                self._log.error(str(e))
-                result = False
-
-            results.append(result)
-            if order_report.client_order_id is not None:
-                reconciled_orders.add(order_report.client_order_id)
-
-        if not self.filter_position_reports:
-            position_reports: list[PositionStatusReport]
-
-            # Reconcile all reported positions
-            for position_reports in mass_status.position_reports.values():
-                for report in position_reports:
-                    if not self._consider_for_reconciliation(report.instrument_id):
-                        self._log_skipping_reconciliation_on_instrument_id(report)
-                        continue
-
-                    result = self._reconcile_position_report(report)
-                    results.append(result)
-
-        # Publish mass status
-        self._msgbus.publish(
-            topic=f"reports.execution.{mass_status.venue}",
-            msg=mass_status,
-        )
-
-        return all(results)
-
-    def _reconcile_order_report(
+    def _validate_reconciliation_state(
         self,
-        report: OrderStatusReport,
-        trades: list[FillReport],
-        is_external: bool = True,
-    ) -> bool:
-        if self._is_shutting_down:
-            return True  # Skip reconciliation during shutdown
+        mass_status: ExecutionMassStatus,
+    ) -> None:
+        # Check for duplicate venue_order_ids and indexing consistency in mass status
+        venue_order_ids_seen: set[VenueOrderId] = set()
+        issues: list[str] = []
 
-        client_order_id: ClientOrderId = report.client_order_id
+        # Check all orders in mass status
+        for order_report in mass_status._order_reports.values():
+            if order_report.venue_order_id is None:
+                continue
 
-        if client_order_id is None:
-            client_order_id = self._cache.client_order_id(report.venue_order_id)
-
-            if client_order_id is None:
-                # Generate external client order ID
-                client_order_id = self._generate_client_order_id()
-
-            # Assign to report
-            report.client_order_id = client_order_id
-
-        # Reset retry count
-        self._clear_recon_tracking(client_order_id)
-
-        self._log.debug(f"Reconciling order for {client_order_id!r}", LogColor.MAGENTA)
-        order: Order = self._cache.order(client_order_id)
-
-        if order is None:
-            instrument = self._cache.instrument(report.instrument_id)
-            if instrument is None:
-                self._log.debug(
-                    f"Cannot reconcile order for {client_order_id!r}: "
-                    f"instrument {report.instrument_id} not found",
+            if order_report.venue_order_id in venue_order_ids_seen:
+                issues.append(
+                    f"Duplicate venue_order_id {order_report.venue_order_id} in mass status",
                 )
-                return True  # Filtered instrument not loaded
 
-            order = self._generate_order(report, is_external)
+            venue_order_ids_seen.add(order_report.venue_order_id)
 
-            if order is None:
-                # External order dropped
-                return True  # No further reconciliation
+            # Check if venue_order_id is properly indexed
+            if order_report.client_order_id:
+                cached_client_id = self._cache.client_order_id(order_report.venue_order_id)
+                if cached_client_id is None:
+                    issues.append(
+                        f"Venue order ID {order_report.venue_order_id} not indexed in cache "
+                        f"for client_order_id {order_report.client_order_id}",
+                    )
+                elif cached_client_id != order_report.client_order_id:
+                    issues.append(
+                        f"Venue order ID {order_report.venue_order_id} indexing mismatch: "
+                        f"expected {order_report.client_order_id}, found {cached_client_id}",
+                    )
 
-            # Add to cache without determining any position ID initially
-            self._cache.add_order(order)
-
-            if self.manage_own_order_books and py_should_handle_own_book_order(order):
-                self._add_own_book_order(order)
-
+        if issues:
+            self._log.warning(
+                f"Reconciliation state validation found {len(issues)} issue(s):\n"
+                + "\n".join(f"  - {issue}" for issue in issues),
+            )
         else:
-            # Order already exists, check instrument
-            instrument = self._cache.instrument(order.instrument_id)
-            if instrument is None:
-                self._log.debug(
-                    f"Cannot reconcile order for {order.client_order_id!r}: "
-                    f"instrument {order.instrument_id} not found",
-                )
-                return True  # Filtered instrument not loaded
-
-        if report.order_status == OrderStatus.REJECTED:
-            if order.status != OrderStatus.REJECTED:
-                self._generate_order_rejected(order, report)
-
-            return True  # Reconciled
-
-        if report.order_status == OrderStatus.ACCEPTED:
-            if order.status != OrderStatus.ACCEPTED:
-                self._generate_order_accepted(order, report)
-
-            return True  # Reconciled
-
-        # Order must have been accepted from this point
-        if order.status in (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED):
-            self._generate_order_accepted(order, report)
-
-        # Update order quantity and price differences
-        if self._should_update(order, report):
-            self._generate_order_updated(order, report)
-
-        if report.order_status == OrderStatus.TRIGGERED:
-            if order.status != OrderStatus.TRIGGERED:
-                self._generate_order_triggered(order, report)
-
-            return True  # Reconciled
-
-        if report.order_status == OrderStatus.CANCELED:
-            if order.status != OrderStatus.CANCELED and order.is_open:
-                if report.ts_triggered > 0:
-                    self._generate_order_triggered(order, report)
-
-                # Reconcile all trades
-                for trade in trades:
-                    self._reconcile_fill_report(order, trade, instrument)
-
-                self._generate_order_canceled(order, report)
-
-            return True  # Reconciled
-
-        if report.order_status == OrderStatus.EXPIRED:
-            if order.status != OrderStatus.EXPIRED and order.is_open:
-                if report.ts_triggered > 0:
-                    self._generate_order_triggered(order, report)
-
-                self._generate_order_expired(order, report)
-
-            return True  # Reconciled
-
-        #######################################################################
-        # Order has fills from this point
-        #######################################################################
-
-        # Reconcile all trades
-        for trade in trades:
-            self._reconcile_fill_report(order, trade, instrument)
-
-        if report.avg_px is None:
-            self._log.warning("report.avg_px was `None` when a value was expected")
-
-        if report.filled_qty < order.filled_qty:
-            # Gather diagnostic information
-            fill_history = [
-                (event.trade_id, event.last_qty, event.ts_event)
-                for event in order.events
-                if isinstance(event, OrderFilled)
-            ]
-
-            self._log.error(
-                f"report.filled_qty {report.filled_qty} < order.filled_qty {order.filled_qty}, "
-                f"this could potentially be caused by duplicate fills or corrupted cached state; "
-                f"order_id={order.client_order_id}, venue_order_id={order.venue_order_id}, "
-                f"total_fills_applied={len(fill_history)}, "
-                f"fill_trade_ids={order.trade_ids}, "
-                f"inferred_fill={'yes' if client_order_id in self._inferred_fill_ts else 'no'}, "
-                f"order_status={order.status}, report_status={report.order_status}",
+            self._log.debug(
+                f"Reconciliation state validation passed for {len(mass_status._order_reports)} order(s)",
             )
 
-            # Log each fill for forensics
-            for trade_id, qty, ts in fill_history:
-                self._log.error(f"  Fill: {trade_id}, qty={qty}, ts={ts}")
-
-            return False  # Failed
-
-        if report.filled_qty > order.filled_qty:
-            # Check if order is already closed to avoid duplicate inferred fills
-            if order.is_closed:
-                # Use the higher precision for tolerance check
-                precision = max(report.filled_qty.precision, order.filled_qty.precision)
-                if self._is_within_single_unit_tolerance(
-                    report.filled_qty.as_decimal(),
-                    order.filled_qty.as_decimal(),
-                    precision,
-                ):
-                    return True
-
-                self._log.warning(  # TODO: Reduce level to debug after initial development phase
-                    f"{order.instrument_id} {order.client_order_id!r} already {order.status_string()} but "
-                    f"reported difference in filled_qty: "
-                    f"report={report.filled_qty}, cached={order.filled_qty}, "
-                    f"skipping inferred fill generation for closed order",
-                )
-                return True  # Consider it reconciled to avoid infinite loops
-
-            # This is due to missing fill report(s), there may now be some
-            # information loss if multiple fills occurred to reach the reported
-            # state, or if commissions differed from the default.
-            try:
-                fill: OrderFilled = self._generate_inferred_fill(order, report, instrument)
-                self._handle_event_with_tracking(fill)
-            except ValueError as e:
-                self._log.error(
-                    f"Cannot generate inferred fill for {order.client_order_id}: {e}. "
-                    f"Reconciliation for this order failed.",
-                )
-                return False  # Failed
-
-            if (
-                report.avg_px is not None
-                and order.avg_px is not None
-                and not math.isclose(float(report.avg_px), float(order.avg_px))
-            ):
-                self._log.warning(
-                    f"report.avg_px {report.avg_px} != order.avg_px {order.avg_px}, "
-                    "this could potentially be caused by information loss due to inferred fills",
-                )
-
-        return True  # Reconciled
+    # -- FILL RECONCILIATION -----------------------------------------------------------------------
 
     def _reconcile_fill_report_single(self, report: FillReport) -> bool:
+        """
+        Reconcile a single fill report received at runtime, resolving the order and
+        applying the fill.
+        """
         if self._is_shutting_down:
             return True  # Skip reconciliation during shutdown
 
@@ -2217,11 +2163,39 @@ class LiveExecutionEngine(ExecutionEngine):
         order: Order | None = self._cache.order(client_order_id)
 
         if order is None:
-            self._log.warning(
-                f"FillReport received before order cached for {client_order_id!r}, "
-                "deferring reconciliation",
+            # Try to find order by venue_order_id if client_order_id lookup failed
+            # This handles cases where external orders might not be fully indexed yet
+            if report.venue_order_id is not None:
+                order = self._find_order_by_venue_order_id(
+                    venue_order_id=report.venue_order_id,
+                    instrument_id=report.instrument_id,
+                    order_side=None,  # Don't filter by side to find any matching order
+                )
+                if order is not None:
+                    self._log.debug(
+                        f"Found order {order.client_order_id} by venue_order_id "
+                        f"{report.venue_order_id} for fill report",
+                    )
+                    # Ensure mapping is indexed
+                    self._ensure_venue_order_id_indexed(
+                        client_order_id=order.client_order_id,
+                        venue_order_id=report.venue_order_id,
+                        log_context="for fill report",
+                    )
+
+            if order is None:
+                self._log.warning(
+                    f"FillReport received before order cached for {client_order_id!r} "
+                    f"(venue_order_id={report.venue_order_id!r}), deferring reconciliation",
+                )
+                return False  # Failed
+
+        # Log external order processing for better visibility
+        if order.strategy_id.value == "EXTERNAL":
+            self._log.debug(
+                f"Processing fill for external order {order.client_order_id} "
+                f"(venue_order_id={order.venue_order_id})",
             )
-            return False  # Failed
 
         instrument: Instrument | None = self._cache.instrument(order.instrument_id)
         if instrument is None:
@@ -2233,153 +2207,11 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return self._reconcile_fill_report(order, report, instrument)
 
-    def _reconcile_fill_report(
-        self,
-        order: Order,
-        report: FillReport,
-        instrument: Instrument,
-    ) -> bool:
-        # Check if this fill predates an inferred reconciliation fill
-        # This prevents historical fills from being applied on top of inferred fills
-        client_order_id = order.client_order_id
-        if client_order_id in self._inferred_fill_ts:
-            earliest_inferred_ts = self._inferred_fill_ts[client_order_id]
-            if report.ts_event < earliest_inferred_ts:
-                self._log.debug(
-                    f"Skipping historical fill {report.trade_id} (ts_event={report.ts_event}) "
-                    f"for {client_order_id!r} as it predates inferred reconciliation fill "
-                    f"(ts={earliest_inferred_ts}); this fill is already accounted for in the inferred fill",
-                )
-                return True  # Skip this fill, it's already covered by inferred fill
-
-        if report.trade_id in order.trade_ids:
-            # Fill already applied; check if data is consistent.
-            # An existing fill may be sourced from the cache on start,
-            # or may exist in-memory when a reconciliation is triggered.
-
-            # Log detailed info about when it was first applied
-            if order.client_order_id in self._fill_application_audit:
-                audit = self._fill_application_audit[order.client_order_id]
-                previous = [a for a in audit if a[0] == report.trade_id]
-                if previous:
-                    self._log.warning(
-                        f"Duplicate fill detected; {report.trade_id} was already applied "
-                        f"at ts={previous[0][2]}, source={previous[0][1]}",
-                    )
-
-            existing_fill = self._get_existing_fill_for_trade_id(order, report.trade_id)
-
-            if existing_fill and not self._fill_reports_equal(existing_fill, report):
-                differences: list[str] = []
-
-                # Last quantity
-                if existing_fill.last_qty != report.last_qty:
-                    differences.append(f"qty: {existing_fill.last_qty} vs {report.last_qty}")
-
-                # Last price
-                if existing_fill.last_px != report.last_px:
-                    differences.append(f"px: {existing_fill.last_px} vs {report.last_px}")
-
-                # Commission
-                if existing_fill.commission is None and report.commission is not None:
-                    differences.append(f"commission: None vs {report.commission}")
-                elif existing_fill.commission is not None and report.commission is None:
-                    differences.append(f"commission: {existing_fill.commission} vs None")
-                elif existing_fill.commission is not None and report.commission is not None:
-                    if existing_fill.commission.currency != report.commission.currency:
-                        differences.append(
-                            f"commission currency: {existing_fill.commission.currency} vs {report.commission.currency}",
-                        )
-                    elif existing_fill.commission != report.commission:
-                        differences.append(
-                            f"commission: {existing_fill.commission} vs {report.commission}",
-                        )
-
-                # Liquidity side
-                if existing_fill.liquidity_side != report.liquidity_side:
-                    differences.append(
-                        f"liquidity: {existing_fill.liquidity_side} vs {report.liquidity_side}",
-                    )
-
-                # Timestamp
-                if existing_fill.ts_event != report.ts_event:
-                    differences.append(
-                        f"ts_event: {existing_fill.ts_event} vs {report.ts_event}",
-                    )
-
-                self._log.warning(
-                    f"Fill report data differs from existing data for trade_id {report.trade_id}, "
-                    f"differences: {', '.join(differences)}; retaining cached data for consistency",
-                )
-
-            if existing_fill:
-                return True  # Fill already applied, continue with existing data
-
-        # Check if fill would cause overfill
-        potential_filled_qty = order.filled_qty + report.last_qty
-        if potential_filled_qty > order.quantity:
-            self._log.warning(
-                f"Rejecting fill that would cause overfill for {order.client_order_id!r}: "
-                f"order.quantity={order.quantity}, order.filled_qty={order.filled_qty}, "
-                f"fill.last_qty={report.last_qty}, would result in filled_qty={potential_filled_qty}",
-            )
-            return False  # Reject fill to prevent overfill
-
-        # Verify total fills consistency BEFORE applying
-        current_total = sum(
-            event.last_qty for event in order.events if isinstance(event, OrderFilled)
-        )
-        if current_total != order.filled_qty:
-            self._log.error(
-                f"INCONSISTENCY DETECTED before applying fill: "
-                f"sum(fills)={current_total} != order.filled_qty={order.filled_qty} "
-                f"for {order.client_order_id}",
-            )
-
-        # Track fill application in audit trail BEFORE generating the fill
-        # This ensures cleanup on close remains effective if this fill closes the order
-        if order.client_order_id not in self._fill_application_audit:
-            self._fill_application_audit[order.client_order_id] = []
-
-        audit_entry = (report.trade_id, "reconciliation", self._clock.timestamp_ns())
-        self._fill_application_audit[order.client_order_id].append(audit_entry)
-
-        try:
-            self._generate_order_filled(order, report, instrument)
-        except InvalidStateTrigger as e:
-            # Roll back audit entry since fill was not applied
-            self._fill_application_audit[order.client_order_id].remove(audit_entry)
-            self._log.error(str(e))
-            return False
-        except ValueError as e:
-            # Roll back audit entry since fill was not applied
-            self._fill_application_audit[order.client_order_id].remove(audit_entry)
-            # Handle the negative leaves_qty error
-            self._log.exception(
-                f"ValueError when applying fill to {order.client_order_id!r}: {e}",
-                e,
-            )
-            return False
-
-        # Check correct ordering of fills
-        if report.ts_event < order.ts_last:
-            self._log.warning(
-                f"OrderFilled applied out of chronological order from {report}",
-            )
-        return True
-
-    def _get_existing_fill_for_trade_id(
-        self,
-        order: Order,
-        trade_id: TradeId,
-    ) -> OrderFilled | None:
-        for event in order.events:
-            if isinstance(event, OrderFilled) and event.trade_id == trade_id:
-                return event
-
-        return None
-
     def _fill_reports_equal(self, cached_fill: OrderFilled, report: FillReport) -> bool:
+        """
+        Check if a cached fill event matches a fill report, comparing quantity, price,
+        commission, liquidity side, and timestamp.
+        """
         # Commission can be missing on reports from some venues/paths; compare safely
         if cached_fill.commission is None and report.commission is None:
             commissions_equal = True
@@ -2399,79 +2231,54 @@ class LiveExecutionEngine(ExecutionEngine):
             and cached_fill.ts_event == report.ts_event
         )
 
-    def _is_within_single_unit_tolerance(
+    def _rollback_fill_audit_entry(
         self,
-        value1: Decimal,
-        value2: Decimal,
-        precision: int,
-    ) -> bool:
-        # Handles rounding discrepancies from venues (e.g., OKX fillSz vs accFillSz)
-        # Only apply tolerance for fractional quantities (precision > 0)
-        if precision == 0:
-            return value1 == value2  # Integer quantities require exact match
+        client_order_id: ClientOrderId,
+        audit_entry: tuple[TradeId, str, int],
+    ) -> None:
+        # Remove audit entry when fill application fails
+        if audit_entry in self._fill_application_audit.get(client_order_id, []):
+            self._fill_application_audit[client_order_id].remove(audit_entry)
 
-        tolerance = Decimal(10) ** -precision
-        return abs(value1 - value2) <= tolerance
-
-    def _check_position_discrepancy(
+    def _create_order_status_report_from_cached_order(
         self,
-        cached_positions: list[Position],
-        venue_report: PositionStatusReport | None,
+        cached_order: Order,
         instrument_id: InstrumentId,
-    ) -> bool:
-        # Calculate cached position quantity
-        cached_qty = Decimal(0)
-        for position in cached_positions:
-            cached_qty += position.signed_decimal_qty()
+        account_id: AccountId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        filled_qty: Quantity,
+        price: Price | None,
+        avg_px: Decimal | None,
+        ts_now: int,
+    ) -> OrderStatusReport:
+        # Reuse cached order IDs to prevent duplicate synthetic orders
+        return OrderStatusReport(
+            instrument_id=instrument_id,
+            account_id=account_id,
+            venue_order_id=cached_order.venue_order_id or VenueOrderId(str(UUID4())),
+            order_side=order_side,
+            order_type=cached_order.order_type,
+            time_in_force=cached_order.time_in_force,
+            order_status=OrderStatus.FILLED,
+            price=price,
+            quantity=quantity,
+            filled_qty=filled_qty,
+            avg_px=avg_px,
+            report_id=UUID4(),
+            ts_accepted=ts_now,
+            ts_last=ts_now,
+            ts_init=ts_now,
+            client_order_id=cached_order.client_order_id,
+        )
 
-        # Handle case where venue has no position report
-        if venue_report is None:
-            # We think we have a position, but venue says flat (or no report)
-            if cached_qty != 0:
-                instrument = self._cache.instrument(instrument_id)
-                if instrument is not None:
-                    if self._is_within_single_unit_tolerance(
-                        cached_qty,
-                        Decimal(0),
-                        instrument.size_precision,
-                    ):
-                        return False
-                else:
-                    self._log.debug(
-                        f"Cannot apply tolerance check for {instrument_id}: instrument not in cache",
-                    )
-
-                self._log.warning(
-                    f"Position discrepancy for {instrument_id}: "
-                    f"cached_qty={cached_qty}, venue has no position report",
-                    LogColor.YELLOW,
-                )
-                return True
-            # Both flat - no discrepancy
-            return False
-
-        venue_qty = venue_report.signed_decimal_qty
-
-        # Check if quantities match (both could be zero)
-        if cached_qty == venue_qty:
-            return False
-
-        instrument = self._cache.instrument(instrument_id)
-        if instrument is not None:
-            if self._is_within_single_unit_tolerance(
-                cached_qty,
-                venue_qty,
-                instrument.size_precision,
-            ):
-                return False
-        else:
-            self._log.debug(
-                f"Cannot apply tolerance check for {instrument_id}: instrument not in cache",
-            )
-
-        return True
+    # -- POSITION RECONCILIATION -------------------------------------------------------------------
 
     def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
+        """
+        Reconcile a position status report from venue, routing to hedging or netting
+        reconciliation based on venue_position_id.
+        """
         if self._is_shutting_down:
             return True  # Skip reconciliation during shutdown
 
@@ -2484,7 +2291,32 @@ class LiveExecutionEngine(ExecutionEngine):
         else:
             return self._reconcile_position_report_netting(report)
 
+    def _consider_for_reconciliation(self, instrument_id: InstrumentId) -> bool:
+        """
+        Check if an instrument should be considered for reconciliation based on
+        configured instrument filter.
+        """
+        if self.reconciliation_instrument_ids:
+            return instrument_id in self.reconciliation_instrument_ids
+
+        return True
+
+    def _log_skipping_reconciliation_on_instrument_id(self, report: ExecutionReport) -> None:
+        """
+        Log that reconciliation is being skipped for an instrument not in the include
+        list.
+        """
+        self._log.debug(
+            f"Skipping {type(report).__name__} reconciliation for {report.instrument_id}: "
+            f"not in `reconciliation_instrument_ids` include list",
+            LogColor.MAGENTA,
+        )
+
     def _reconcile_position_report_hedging(self, report: PositionStatusReport) -> bool:
+        """
+        Reconcile hedging-style positions with venue_position_id, validating position
+        exists and quantity matches.
+        """
         self._log.info(
             f"Reconciling HEDGE position for {report.instrument_id}, venue_position_id={report.venue_position_id}",
             LogColor.BLUE,
@@ -2514,6 +2346,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self,
         report: PositionStatusReport,
     ) -> bool:
+        """
+        Reconcile netting-style positions without venue_position_id, comparing cached
+        positions with venue reports and generating reconciliation orders if needed.
+        """
         self._log.info(f"Reconciling NET position for {report.instrument_id}", LogColor.BLUE)
 
         instrument = self._cache.instrument(report.instrument_id)
@@ -2574,8 +2410,6 @@ class LiveExecutionEngine(ExecutionEngine):
                 if total_qty > 0:
                     current_avg_px = total_value / total_qty
 
-            now = self._clock.timestamp_ns()
-
             # Check if position crosses through zero (flips from long to short or vice versa)
             crosses_zero = (
                 position_signed_decimal_qty != 0
@@ -2587,212 +2421,22 @@ class LiveExecutionEngine(ExecutionEngine):
             )
 
             if crosses_zero:
-                self._log.info(
-                    f"Position crosses through zero for {report.instrument_id}: "
-                    f"current={position_signed_decimal_qty}, target={report.signed_decimal_qty}. "
-                    f"Splitting reconciliation into two fills: close existing position, then open new position",
-                    LogColor.BLUE,
+                return self._reconcile_cross_zero_position(
+                    report=report,
+                    instrument=instrument,
+                    position_signed_decimal_qty=position_signed_decimal_qty,
+                    current_avg_px=current_avg_px,
                 )
 
-                # First fill: Close the existing position (bring to zero)
-                close_qty_decimal = abs(position_signed_decimal_qty)
-                close_quantity = Quantity(close_qty_decimal, instrument.size_precision)
-                close_side = OrderSide.BUY if position_signed_decimal_qty < 0 else OrderSide.SELL
-
-                # Use current position average price for closing
-                close_price = None
-                if current_avg_px is not None:
-                    close_price = instrument.make_price(current_avg_px)
-                else:
-                    quote = self._cache.quote_tick(report.instrument_id)
-                    if quote:
-                        close_price = (
-                            quote.ask_price if close_side == OrderSide.BUY else quote.bid_price
-                        )
-
-                close_result = False
-                if close_price:
-                    close_report = OrderStatusReport(
-                        instrument_id=report.instrument_id,
-                        account_id=report.account_id,
-                        venue_order_id=VenueOrderId(str(uuid.uuid4())),
-                        order_side=close_side,
-                        order_type=OrderType.LIMIT,
-                        time_in_force=TimeInForce.GTC,
-                        order_status=OrderStatus.FILLED,
-                        price=close_price,
-                        quantity=close_quantity,
-                        filled_qty=close_quantity,
-                        avg_px=close_price.as_decimal(),
-                        report_id=UUID4(),
-                        ts_accepted=now,
-                        ts_last=now,
-                        ts_init=now,
-                    )
-                    close_result = self._reconcile_order_report(
-                        close_report,
-                        trades=[],
-                        is_external=False,
-                    )
-
-                # Second fill: Open new position in opposite direction
-                open_qty_decimal = abs(report.signed_decimal_qty)
-                open_quantity = Quantity(open_qty_decimal, instrument.size_precision)
-                open_side = OrderSide.BUY if report.signed_decimal_qty > 0 else OrderSide.SELL
-
-                # Use venue's reported average price for the new position
-                open_price = None
-                if report.avg_px_open is not None:
-                    open_price = instrument.make_price(report.avg_px_open)
-                else:
-                    quote = self._cache.quote_tick(report.instrument_id)
-                    if quote:
-                        open_price = (
-                            quote.ask_price if open_side == OrderSide.BUY else quote.bid_price
-                        )
-                    elif close_price:
-                        # Only allow fallback for CurrencyPair since spot asset positions may lack cost basis
-                        is_currency_pair = isinstance(instrument, CurrencyPair)
-
-                        if is_currency_pair:
-                            open_price = close_price
-                            self._log.warning(
-                                f"Using close price {close_price} as fallback for opening position "
-                                f"in cross-zero reconciliation for {report.instrument_id}; "
-                                f"venue position report lacks avg_px_open (spot asset position without cost basis)",
-                            )
-                        else:
-                            self._log.error(
-                                f"Cannot determine open price for {report.instrument_id}: "
-                                f"venue position report lacks avg_px_open and no quote tick available; "
-                                f"this fallback is only allowed for CurrencyPair (spot asset) positions",
-                            )
-                    else:
-                        self._log.error(
-                            f"Cannot determine open price for {report.instrument_id}: "
-                            f"no close price available (existing position lacks avg_px), "
-                            f"venue position report lacks avg_px_open, and no quote tick available",
-                        )
-
-                open_result = False
-                if open_price:
-                    open_report = OrderStatusReport(
-                        instrument_id=report.instrument_id,
-                        account_id=report.account_id,
-                        venue_order_id=VenueOrderId(str(uuid.uuid4())),
-                        order_side=open_side,
-                        order_type=OrderType.LIMIT,
-                        time_in_force=TimeInForce.GTC,
-                        order_status=OrderStatus.FILLED,
-                        price=open_price,
-                        quantity=open_quantity,
-                        filled_qty=open_quantity,
-                        avg_px=open_price.as_decimal(),
-                        report_id=UUID4(),
-                        ts_accepted=now,
-                        ts_last=now,
-                        ts_init=now,
-                    )
-                    open_result = self._reconcile_order_report(
-                        open_report,
-                        trades=[],
-                        is_external=False,
-                    )
-
-                # Check both fills succeeded
-                if not (close_result and open_result):
-                    self._log.error(
-                        f"Failed to reconcile cross-zero position for {report.instrument_id}: "
-                        f"close={close_result}, open={open_result}",
-                    )
-                    return False
-
-                return True  # Reconciliation complete via split fills
-
-            order_side = (
-                OrderSide.BUY
-                if report.signed_decimal_qty > position_signed_decimal_qty
-                else OrderSide.SELL
-            )
-
-            # Calculate reconciliation price
-            reconciliation_price = calculate_reconciliation_price(
-                current_position_qty=position_signed_decimal_qty,
-                current_position_avg_px=current_avg_px,
-                target_position_qty=report.signed_decimal_qty,
-                target_position_avg_px=report.avg_px_open,
+            diff_report = self._create_position_reconciliation_report(
+                report=report,
                 instrument=instrument,
+                position_signed_decimal_qty=position_signed_decimal_qty,
+                diff_quantity=diff_quantity,
+                current_avg_px=current_avg_px,
             )
-
-            # If we couldn't calculate a price, use a reasonable fallback
-            if reconciliation_price is None:
-                # If avg_px_open is None, we cannot compute an exact reconciliation price
-                # and will fall back to a market price.
-                self._log.warning(
-                    f"Cannot calculate exact reconciliation price for {report.instrument_id}: "
-                    f"position report lacks average price information, using last quote fallback",
-                )
-
-                quote = self._cache.quote_tick(report.instrument_id)
-
-                if quote:
-                    if order_side == OrderSide.BUY:
-                        reconciliation_price = quote.ask_price
-                    else:  # OrderSide.SELL
-                        reconciliation_price = quote.bid_price
-                else:
-                    # If no market data, use current average price of positions as fallback
-                    if current_avg_px is not None:
-                        reconciliation_price = instrument.make_price(current_avg_px)
-
-            if reconciliation_price:
-                # Generate a LIMIT order with the calculated reconciliation price
-                avg_px = reconciliation_price.as_decimal()
-
-                diff_report = OrderStatusReport(
-                    instrument_id=report.instrument_id,
-                    account_id=report.account_id,
-                    venue_order_id=VenueOrderId(str(uuid.uuid4())),
-                    order_side=order_side,
-                    order_type=OrderType.LIMIT,
-                    time_in_force=TimeInForce.GTC,
-                    order_status=OrderStatus.FILLED,
-                    price=reconciliation_price,
-                    quantity=diff_quantity,
-                    filled_qty=diff_quantity,
-                    avg_px=avg_px,
-                    report_id=UUID4(),
-                    ts_accepted=now,
-                    ts_last=now,
-                    ts_init=now,
-                )
-            else:
-                # No price information, fall back to generated MARKET order
-                avg_px = None
-                self._log.warning(
-                    f"Could not determine reconciliation price for {report.instrument_id}, "
-                    f"generating MARKET order for position reconciliation "
-                    f"(current: {position_signed_decimal_qty}, target: {report.signed_decimal_qty})",
-                )
-
-                diff_report = OrderStatusReport(
-                    instrument_id=report.instrument_id,
-                    account_id=report.account_id,
-                    venue_order_id=VenueOrderId(str(uuid.uuid4())),
-                    order_side=order_side,
-                    order_type=OrderType.MARKET,
-                    time_in_force=TimeInForce.IOC,
-                    order_status=OrderStatus.FILLED,
-                    quantity=diff_quantity,
-                    filled_qty=diff_quantity,
-                    avg_px=avg_px,
-                    report_id=UUID4(),
-                    ts_accepted=now,
-                    ts_last=now,
-                    ts_init=now,
-                )
-
-            self._reconcile_order_report(diff_report, trades=[], is_external=False)
+            if diff_report:
+                self._reconcile_order_report(diff_report, trades=[], is_external=False)
         elif quantities_match and report.avg_px_open is not None:
             # Quantities match, but verify avg_px_open also matches
             current_avg_px = None
@@ -2828,13 +2472,804 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._log.info(
                         f"Position avg_px verified for {report.instrument_id}: "
                         f"internal={current_avg_px}, venue={report.avg_px_open}",
-                        LogColor.GREEN,
+                        LogColor.BLUE,
                     )
 
         return True  # Reconciled
 
-    def _generate_client_order_id(self) -> ClientOrderId:
-        return ClientOrderId(f"O-{UUID4().value}")
+    def _reconcile_cross_zero_position(
+        self,
+        report: PositionStatusReport,
+        instrument: Instrument,
+        position_signed_decimal_qty: Decimal,
+        current_avg_px: Decimal | None,
+    ) -> bool:
+        """
+        Handle position reconciliation when position flips sign, splitting into two
+        fills: close existing position then open new position in opposite direction.
+        """
+        self._log.info(
+            f"Position crosses through zero for {report.instrument_id}: "
+            f"current={position_signed_decimal_qty}, target={report.signed_decimal_qty}. "
+            f"Splitting reconciliation into two fills: close existing position, then open new position",
+            LogColor.BLUE,
+        )
+
+        now = self._clock.timestamp_ns()
+
+        # First fill: Close the existing position (bring to zero)
+        close_qty_decimal = abs(position_signed_decimal_qty)
+        close_quantity = Quantity(close_qty_decimal, instrument.size_precision)
+        close_side = OrderSide.BUY if position_signed_decimal_qty < 0 else OrderSide.SELL
+
+        # Use current position average price for closing
+        close_price = None
+        if current_avg_px is not None:
+            close_price = instrument.make_price(current_avg_px)
+        else:
+            quote = self._cache.quote_tick(report.instrument_id)
+            if quote:
+                close_price = quote.ask_price if close_side == OrderSide.BUY else quote.bid_price
+
+        close_result = False
+        if close_price:
+            # Fix 2: Check for matching cached order before creating synthetic order
+            close_avg_px = close_price.as_decimal()
+            matching_close_order = self._find_matching_cached_order(
+                instrument_id=report.instrument_id,
+                order_side=close_side,
+                quantity=close_quantity,
+                price=close_price,
+                avg_px=close_avg_px,
+            )
+
+            if matching_close_order:
+                self._log.debug(
+                    f"Found matching cached order {matching_close_order.client_order_id} "
+                    f"for closing position {report.instrument_id}, reusing instead of creating synthetic order",
+                )
+                close_report = self._create_order_status_report_from_cached_order(
+                    cached_order=matching_close_order,
+                    instrument_id=report.instrument_id,
+                    account_id=report.account_id,
+                    order_side=close_side,
+                    quantity=close_quantity,
+                    filled_qty=close_quantity,
+                    price=close_price,
+                    avg_px=close_avg_px,
+                    ts_now=now,
+                )
+            else:
+                close_report = OrderStatusReport(
+                    instrument_id=report.instrument_id,
+                    account_id=report.account_id,
+                    venue_order_id=VenueOrderId(str(UUID4())),
+                    order_side=close_side,
+                    order_type=OrderType.LIMIT,
+                    time_in_force=TimeInForce.GTC,
+                    order_status=OrderStatus.FILLED,
+                    price=close_price,
+                    quantity=close_quantity,
+                    filled_qty=close_quantity,
+                    avg_px=close_avg_px,
+                    report_id=UUID4(),
+                    ts_accepted=now,
+                    ts_last=now,
+                    ts_init=now,
+                )
+            close_result = self._reconcile_order_report(
+                close_report,
+                trades=[],
+                is_external=False,
+            )
+
+        # Second fill: Open new position in opposite direction
+        open_qty_decimal = abs(report.signed_decimal_qty)
+        open_quantity = Quantity(open_qty_decimal, instrument.size_precision)
+        open_side = OrderSide.BUY if report.signed_decimal_qty > 0 else OrderSide.SELL
+
+        # Use venue's reported average price for the new position
+        open_price = None
+        if report.avg_px_open is not None:
+            open_price = instrument.make_price(report.avg_px_open)
+        else:
+            quote = self._cache.quote_tick(report.instrument_id)
+            if quote:
+                open_price = quote.ask_price if open_side == OrderSide.BUY else quote.bid_price
+            elif close_price:
+                # Only allow fallback for CurrencyPair since spot asset positions may lack cost basis
+                is_currency_pair = isinstance(instrument, CurrencyPair)
+
+                if is_currency_pair:
+                    open_price = close_price
+                    self._log.warning(
+                        f"Using close price {close_price} as fallback for opening position "
+                        f"in cross-zero reconciliation for {report.instrument_id}; "
+                        f"venue position report lacks avg_px_open (spot asset position without cost basis)",
+                    )
+                else:
+                    self._log.error(
+                        f"Cannot determine open price for {report.instrument_id}: "
+                        f"venue position report lacks avg_px_open and no quote tick available; "
+                        f"this fallback is only allowed for CurrencyPair (spot asset) positions",
+                    )
+            else:
+                self._log.error(
+                    f"Cannot determine open price for {report.instrument_id}: "
+                    f"no close price available (existing position lacks avg_px), "
+                    f"venue position report lacks avg_px_open, and no quote tick available",
+                )
+
+        open_result = False
+        if open_price:
+            # Fix 2: Check for matching cached order before creating synthetic order
+            open_avg_px = open_price.as_decimal()
+            matching_open_order = self._find_matching_cached_order(
+                instrument_id=report.instrument_id,
+                order_side=open_side,
+                quantity=open_quantity,
+                price=open_price,
+                avg_px=open_avg_px,
+            )
+
+            if matching_open_order:
+                self._log.debug(
+                    f"Found matching cached order {matching_open_order.client_order_id} "
+                    f"for opening position {report.instrument_id}, reusing instead of creating synthetic order",
+                )
+                open_report = self._create_order_status_report_from_cached_order(
+                    cached_order=matching_open_order,
+                    instrument_id=report.instrument_id,
+                    account_id=report.account_id,
+                    order_side=open_side,
+                    quantity=open_quantity,
+                    filled_qty=open_quantity,
+                    price=open_price,
+                    avg_px=open_avg_px,
+                    ts_now=now,
+                )
+            else:
+                open_report = OrderStatusReport(
+                    instrument_id=report.instrument_id,
+                    account_id=report.account_id,
+                    venue_order_id=VenueOrderId(str(UUID4())),
+                    order_side=open_side,
+                    order_type=OrderType.LIMIT,
+                    time_in_force=TimeInForce.GTC,
+                    order_status=OrderStatus.FILLED,
+                    price=open_price,
+                    quantity=open_quantity,
+                    filled_qty=open_quantity,
+                    avg_px=open_avg_px,
+                    report_id=UUID4(),
+                    ts_accepted=now,
+                    ts_last=now,
+                    ts_init=now,
+                )
+            open_result = self._reconcile_order_report(
+                open_report,
+                trades=[],
+                is_external=False,
+            )
+
+        # Check both fills succeeded
+        if not (close_result and open_result):
+            self._log.error(
+                f"Failed to reconcile cross-zero position for {report.instrument_id}: "
+                f"close={close_result}, open={open_result}",
+            )
+            return False
+
+        return True  # Reconciliation complete via split fills
+
+    def _create_position_reconciliation_report(
+        self,
+        report: PositionStatusReport,
+        instrument: Instrument,
+        position_signed_decimal_qty: Decimal,
+        diff_quantity: Quantity,
+        current_avg_px: Decimal | None,
+    ) -> OrderStatusReport | None:
+        """
+        Create a synthetic order status report for position reconciliation, calculating
+        reconciliation price and checking for matching cached orders.
+        """
+        order_side = (
+            OrderSide.BUY
+            if report.signed_decimal_qty > position_signed_decimal_qty
+            else OrderSide.SELL
+        )
+
+        # Calculate reconciliation price
+        reconciliation_price = calculate_reconciliation_price(
+            current_position_qty=position_signed_decimal_qty,
+            current_position_avg_px=current_avg_px,
+            target_position_qty=report.signed_decimal_qty,
+            target_position_avg_px=report.avg_px_open,
+            instrument=instrument,
+        )
+
+        # If we couldn't calculate a price, use a reasonable fallback
+        if reconciliation_price is None:
+            # If avg_px_open is None, we cannot compute an exact reconciliation price
+            # and will fall back to a market price.
+            self._log.warning(
+                f"Cannot calculate exact reconciliation price for {report.instrument_id}: "
+                f"position report lacks average price information, using last quote fallback",
+            )
+
+            quote = self._cache.quote_tick(report.instrument_id)
+
+            if quote:
+                if order_side == OrderSide.BUY:
+                    reconciliation_price = quote.ask_price
+                else:  # OrderSide.SELL
+                    reconciliation_price = quote.bid_price
+            else:
+                # If no market data, use current average price of positions as fallback
+                if current_avg_px is not None:
+                    reconciliation_price = instrument.make_price(current_avg_px)
+
+        now = self._clock.timestamp_ns()
+
+        if reconciliation_price:
+            # Generate a LIMIT order with the calculated reconciliation price
+            avg_px = reconciliation_price.as_decimal()
+
+            # Fix 2: Check for matching cached order before creating synthetic order
+            matching_diff_order = self._find_matching_cached_order(
+                instrument_id=report.instrument_id,
+                order_side=order_side,
+                quantity=diff_quantity,
+                price=reconciliation_price,
+                avg_px=avg_px,
+            )
+
+            if matching_diff_order:
+                self._log.debug(
+                    f"Found matching cached order {matching_diff_order.client_order_id} "
+                    f"for position reconciliation {report.instrument_id}, reusing instead of creating synthetic order",
+                )
+                return self._create_order_status_report_from_cached_order(
+                    cached_order=matching_diff_order,
+                    instrument_id=report.instrument_id,
+                    account_id=report.account_id,
+                    order_side=order_side,
+                    quantity=diff_quantity,
+                    filled_qty=diff_quantity,
+                    price=reconciliation_price,
+                    avg_px=avg_px,
+                    ts_now=now,
+                )
+            else:
+                return OrderStatusReport(
+                    instrument_id=report.instrument_id,
+                    account_id=report.account_id,
+                    venue_order_id=VenueOrderId(str(UUID4())),
+                    order_side=order_side,
+                    order_type=OrderType.LIMIT,
+                    time_in_force=TimeInForce.GTC,
+                    order_status=OrderStatus.FILLED,
+                    price=reconciliation_price,
+                    quantity=diff_quantity,
+                    filled_qty=diff_quantity,
+                    avg_px=avg_px,
+                    report_id=UUID4(),
+                    ts_accepted=now,
+                    ts_last=now,
+                    ts_init=now,
+                )
+        else:
+            # No price information, fall back to generated MARKET order
+            avg_px = None
+            self._log.warning(
+                f"Could not determine reconciliation price for {report.instrument_id}, "
+                f"generating MARKET order for position reconciliation "
+                f"(current: {position_signed_decimal_qty}, target: {report.signed_decimal_qty})",
+            )
+
+            # Fix 2: Check for matching cached order before creating synthetic order
+            matching_diff_order = self._find_matching_cached_order(
+                instrument_id=report.instrument_id,
+                order_side=order_side,
+                quantity=diff_quantity,
+                price=None,
+                avg_px=None,
+            )
+
+            if matching_diff_order:
+                self._log.debug(
+                    f"Found matching cached order {matching_diff_order.client_order_id} "
+                    f"for position reconciliation {report.instrument_id}, reusing instead of creating synthetic order",
+                )
+                return self._create_order_status_report_from_cached_order(
+                    cached_order=matching_diff_order,
+                    instrument_id=report.instrument_id,
+                    account_id=report.account_id,
+                    order_side=order_side,
+                    quantity=diff_quantity,
+                    filled_qty=diff_quantity,
+                    price=None,
+                    avg_px=avg_px,
+                    ts_now=now,
+                )
+            else:
+                return OrderStatusReport(
+                    instrument_id=report.instrument_id,
+                    account_id=report.account_id,
+                    venue_order_id=VenueOrderId(str(UUID4())),
+                    order_side=order_side,
+                    order_type=OrderType.MARKET,
+                    time_in_force=TimeInForce.IOC,
+                    order_status=OrderStatus.FILLED,
+                    quantity=diff_quantity,
+                    filled_qty=diff_quantity,
+                    avg_px=avg_px,
+                    report_id=UUID4(),
+                    ts_accepted=now,
+                    ts_last=now,
+                    ts_init=now,
+                )
+
+    def _reconcile_order_report(
+        self,
+        report: OrderStatusReport,
+        trades: list[FillReport],
+        is_external: bool = True,
+    ) -> bool:
+        """
+        Reconcile a single order status report with associated fill reports, generating
+        missing events and inferring fills when needed.
+        """
+        if self._is_shutting_down:
+            return True  # Skip reconciliation during shutdown
+
+        client_order_id = self._resolve_client_order_id(report)
+
+        # Reset retry count
+        self._clear_recon_tracking(client_order_id)
+
+        self._log.debug(f"Reconciling order for {client_order_id!r}", LogColor.MAGENTA)
+        order: Order = self._cache.order(client_order_id)
+
+        if order is None:
+            instrument = self._cache.instrument(report.instrument_id)
+            if instrument is None:
+                self._log.debug(
+                    f"Cannot reconcile order for {client_order_id!r}: "
+                    f"instrument {report.instrument_id} not found",
+                )
+                return True  # Filtered instrument not loaded
+
+            order = self._generate_order(report, is_external)
+
+            if order is None:
+                # External order dropped
+                return True  # No further reconciliation
+
+            # Add to cache without determining any position ID initially
+            self._cache.add_order(order)
+
+            # Explicitly index venue_order_id for external orders to ensure they can be found
+            # by venue_order_id in subsequent reconciliation passes
+            if order.venue_order_id is not None:
+                self._ensure_venue_order_id_indexed(
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                )
+
+            if self.manage_own_order_books and py_should_handle_own_book_order(order):
+                self._add_own_book_order(order)
+
+        else:
+            # Order already exists, check instrument
+            instrument = self._cache.instrument(order.instrument_id)
+            if instrument is None:
+                self._log.debug(
+                    f"Cannot reconcile order for {order.client_order_id!r}: "
+                    f"instrument {order.instrument_id} not found",
+                )
+                return True  # Filtered instrument not loaded
+
+        # Handle order status transitions
+        status_result = self._handle_order_status_transitions(order, report, trades, instrument)
+        if status_result is not None:
+            return status_result
+
+        # Reconcile all trades
+        for trade in trades:
+            self._reconcile_fill_report(order, trade, instrument)
+
+        if report.avg_px is None:
+            self._log.warning("report.avg_px was `None` when a value was expected")
+
+        # Handle fill quantity mismatches
+        return self._handle_fill_quantity_mismatch(order, report, instrument, client_order_id)
+
+    def _resolve_client_order_id(self, report: OrderStatusReport) -> ClientOrderId:
+        """
+        Resolve the client_order_id for an order status report.
+        """
+        client_order_id: ClientOrderId | None = report.client_order_id
+        if client_order_id is None:
+            client_order_id = self._cache.client_order_id(report.venue_order_id)
+            if client_order_id is None and report.venue_order_id is not None:
+                # Check if an external order with this venue_order_id already exists
+                # by searching cached orders (handles cases where index might not be built yet)
+                cached_order = self._find_order_by_venue_order_id(
+                    venue_order_id=report.venue_order_id,
+                    instrument_id=report.instrument_id,
+                    order_side=report.order_side,
+                )
+                if cached_order is not None:
+                    client_order_id = cached_order.client_order_id
+                    self._log.debug(
+                        f"Found existing external order {client_order_id} by venue_order_id "
+                        f"{report.venue_order_id}, reusing",
+                    )
+                    # Ensure mapping is indexed
+                    self._ensure_venue_order_id_indexed(
+                        client_order_id=client_order_id,
+                        venue_order_id=report.venue_order_id,
+                    )
+
+            if client_order_id is None:
+                # Generate external client order ID
+                client_order_id = ClientOrderId(f"O-{UUID4().value}")
+
+            # Assign to report
+            report.client_order_id = client_order_id
+
+        return client_order_id
+
+    def _ensure_venue_order_id_indexed(
+        self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        log_context: str = "",
+    ) -> None:
+        # Index venue_order_id in cache for lookups
+        try:
+            self._cache.add_venue_order_id(
+                client_order_id,
+                venue_order_id,
+                overwrite=False,
+            )
+        except ValueError:
+            # Mapping already exists or conflicts - this is expected if order was
+            # previously indexed or if there's a conflict (which should be rare)
+            self._log.debug(
+                f"Venue order ID {venue_order_id} already indexed for "
+                f"{client_order_id}{' ' + log_context if log_context else ''}, skipping",
+            )
+
+    def _handle_fill_quantity_mismatch(
+        self,
+        order: Order,
+        report: OrderStatusReport,
+        instrument: Instrument,
+        client_order_id: ClientOrderId,
+    ) -> bool:
+        """
+        Handle fill quantity mismatches between report and cached order, generating
+        inferred fills when needed.
+        """
+        if report.filled_qty < order.filled_qty:
+            # Gather diagnostic information
+            fill_history = [
+                (event.trade_id, event.last_qty, event.ts_event)
+                for event in order.events
+                if isinstance(event, OrderFilled)
+            ]
+
+            self._log.error(
+                f"report.filled_qty {report.filled_qty} < order.filled_qty {order.filled_qty}, "
+                f"this could potentially be caused by duplicate fills or corrupted cached state; "
+                f"order_id={order.client_order_id}, venue_order_id={order.venue_order_id}, "
+                f"total_fills_applied={len(fill_history)}, "
+                f"fill_trade_ids={order.trade_ids}, "
+                f"inferred_fill={'yes' if client_order_id in self._inferred_fill_ts else 'no'}, "
+                f"order_status={order.status}, report_status={report.order_status}",
+            )
+
+            # Log each fill for forensics
+            for trade_id, qty, ts in fill_history:
+                self._log.error(f"  Fill: {trade_id}, qty={qty}, ts={ts}")
+
+            return False  # Failed
+
+        if report.filled_qty > order.filled_qty:
+            # Check if order is already closed to avoid duplicate inferred fills
+            if order.is_closed:
+                # Use the higher precision for tolerance check
+                precision = max(report.filled_qty.precision, order.filled_qty.precision)
+                if is_within_single_unit_tolerance(
+                    report.filled_qty.as_decimal(),
+                    order.filled_qty.as_decimal(),
+                    precision,
+                ):
+                    return True
+
+                self._log.warning(  # TODO: Reduce level to debug after initial development phase
+                    f"{order.instrument_id} {order.client_order_id!r} already {order.status_string()} but "
+                    f"reported difference in filled_qty: "
+                    f"report={report.filled_qty}, cached={order.filled_qty}, "
+                    f"skipping inferred fill generation for closed order",
+                )
+                return True  # Consider it reconciled to avoid infinite loops
+
+            # This is due to missing fill report(s), there may now be some
+            # information loss if multiple fills occurred to reach the reported
+            # state, or if commissions differed from the default.
+            try:
+                fill: OrderFilled = self._generate_inferred_fill(order, report, instrument)
+                self._handle_event_with_tracking(fill)
+            except ValueError as e:
+                self._log.error(
+                    f"Cannot generate inferred fill for {order.client_order_id}: {e}. "
+                    f"Reconciliation for this order failed.",
+                )
+                return False  # Failed
+
+            if (
+                report.avg_px is not None
+                and order.avg_px is not None
+                and not math.isclose(float(report.avg_px), float(order.avg_px))
+            ):
+                self._log.warning(
+                    f"report.avg_px {report.avg_px} != order.avg_px {order.avg_px}, "
+                    "this could potentially be caused by information loss due to inferred fills",
+                )
+
+        return True  # Reconciled
+
+    def _handle_order_status_transitions(
+        self,
+        order: Order,
+        report: OrderStatusReport,
+        trades: list[FillReport],
+        instrument: Instrument,
+    ) -> bool | None:
+        """
+        Handle order status transitions for reconciliation, returning True if reconciled
+        or None to continue.
+        """
+        if report.order_status == OrderStatus.REJECTED:
+            if order.status != OrderStatus.REJECTED:
+                self._generate_order_rejected(order, report)
+
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.ACCEPTED:
+            if order.status != OrderStatus.ACCEPTED:
+                self._generate_order_accepted(order, report)
+
+            return True  # Reconciled
+
+        # Order must have been accepted from this point
+        if order.status in (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED):
+            self._generate_order_accepted(order, report)
+
+        # Update order quantity and price differences
+        if self._should_update(order, report):
+            self._generate_order_updated(order, report)
+
+        if report.order_status == OrderStatus.TRIGGERED:
+            if order.status != OrderStatus.TRIGGERED:
+                self._generate_order_triggered(order, report)
+
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.CANCELED:
+            if order.status != OrderStatus.CANCELED and order.is_open:
+                if report.ts_triggered > 0:
+                    self._generate_order_triggered(order, report)
+
+                # Reconcile all trades
+                for trade in trades:
+                    self._reconcile_fill_report(order, trade, instrument)
+
+                self._generate_order_canceled(order, report)
+
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.EXPIRED:
+            if order.status != OrderStatus.EXPIRED and order.is_open:
+                if report.ts_triggered > 0:
+                    self._generate_order_triggered(order, report)
+
+                self._generate_order_expired(order, report)
+
+            return True  # Reconciled
+
+        return None  # Continue with fill reconciliation
+
+    def _should_update(self, order: Order, report: OrderStatusReport) -> bool:
+        """
+        Check if order should be updated based on quantity, price, or trigger price
+        differences from the report.
+        """
+        if report.quantity != order.quantity:
+            return True
+
+        if order.order_type == OrderType.LIMIT and report.price != order.price:
+            return True
+
+        if (
+            order.order_type in [OrderType.STOP_MARKET, OrderType.TRAILING_STOP_MARKET]
+            and report.trigger_price != order.trigger_price
+        ):
+            return True
+
+        return bool(
+            order.order_type in [OrderType.STOP_LIMIT, OrderType.TRAILING_STOP_LIMIT]
+            and (report.trigger_price != order.trigger_price or report.price != order.price),
+        )
+
+    def _reconcile_fill_report(
+        self,
+        order: Order,
+        report: FillReport,
+        instrument: Instrument,
+    ) -> bool:
+        """
+        Apply a fill report to an order, creating OrderFilled event and checking for
+        duplicates or overfills.
+        """
+        # Check if this fill should be skipped (predates inferred fill or is duplicate)
+        skip_result = self._check_and_skip_duplicate_fill(order, report)
+        if skip_result is not None:
+            return skip_result
+
+        # Check if fill would cause overfill
+        potential_filled_qty = order.filled_qty + report.last_qty
+        if potential_filled_qty > order.quantity:
+            self._log.warning(
+                f"Rejecting fill that would cause overfill for {order.client_order_id!r}: "
+                f"order.quantity={order.quantity}, order.filled_qty={order.filled_qty}, "
+                f"fill.last_qty={report.last_qty}, would result in filled_qty={potential_filled_qty}",
+            )
+            return False  # Reject fill to prevent overfill
+
+        # Verify total fills consistency BEFORE applying
+        current_total = sum(
+            event.last_qty for event in order.events if isinstance(event, OrderFilled)
+        )
+        if current_total != order.filled_qty:
+            self._log.error(
+                f"INCONSISTENCY DETECTED before applying fill: "
+                f"sum(fills)={current_total} != order.filled_qty={order.filled_qty} "
+                f"for {order.client_order_id}",
+            )
+
+        # Final check: ensure trade_id doesn't already exist before generating fill
+        # This prevents KeyError from being raised in _apply_event_to_order
+        if report.trade_id in order.trade_ids:
+            self._log.debug(
+                f"Fill with trade_id {report.trade_id} already exists for order {order.client_order_id}, "
+                f"skipping duplicate fill application",
+            )
+            return True  # Fill already exists, treat as successful
+
+        # Track fill application in audit trail BEFORE generating the fill
+        # This ensures cleanup on close remains effective if this fill closes the order
+        if order.client_order_id not in self._fill_application_audit:
+            self._fill_application_audit[order.client_order_id] = []
+
+        audit_entry = (report.trade_id, "reconciliation", self._clock.timestamp_ns())
+        self._fill_application_audit[order.client_order_id].append(audit_entry)
+
+        try:
+            self._generate_order_filled(order, report, instrument)
+        except InvalidStateTrigger as e:
+            self._rollback_fill_audit_entry(order.client_order_id, audit_entry)
+            self._log.error(str(e))
+            return False
+        except ValueError as e:
+            self._rollback_fill_audit_entry(order.client_order_id, audit_entry)
+            # Handle the negative leaves_qty error
+            self._log.exception(
+                f"ValueError when applying fill to {order.client_order_id!r}: {e}",
+                e,
+            )
+            return False
+
+        # Check correct ordering of fills
+        if report.ts_event < order.ts_last:
+            self._log.warning(
+                f"OrderFilled applied out of chronological order from {report}",
+            )
+        return True
+
+    def _check_and_skip_duplicate_fill(
+        self,
+        order: Order,
+        report: FillReport,
+    ) -> bool | None:
+        """
+        Check if a fill should be skipped due to being a duplicate or predating an
+        inferred fill.
+        """
+        # Check if this fill predates an inferred reconciliation fill
+        # This prevents historical fills from being applied on top of inferred fills
+        client_order_id = order.client_order_id
+        if client_order_id in self._inferred_fill_ts:
+            earliest_inferred_ts = self._inferred_fill_ts[client_order_id]
+            if report.ts_event < earliest_inferred_ts:
+                self._log.debug(
+                    f"Skipping historical fill {report.trade_id} (ts_event={report.ts_event}) "
+                    f"for {client_order_id!r} as it predates inferred reconciliation fill "
+                    f"(ts={earliest_inferred_ts}); this fill is already accounted for in the inferred fill",
+                )
+                return True  # Skip this fill, it's already covered by inferred fill
+
+        # Check for duplicate fill by trade_id - check both trade_ids collection and events
+        # This handles cases where order is loaded from cache and trade_ids might not be fully populated
+        existing_fill = get_existing_fill_for_trade_id(order, report.trade_id)
+        is_duplicate = report.trade_id in order.trade_ids or existing_fill is not None
+        if is_duplicate:
+            # Fill already applied; check if data is consistent.
+            # An existing fill may be sourced from the cache on start,
+            # or may exist in-memory when a reconciliation is triggered.
+
+            # Log detailed info about when it was first applied
+            if order.client_order_id in self._fill_application_audit:
+                audit = self._fill_application_audit[order.client_order_id]
+                previous = [a for a in audit if a[0] == report.trade_id]
+                if previous:
+                    self._log.debug(
+                        f"Duplicate fill detected; {report.trade_id} was already applied "
+                        f"at ts={previous[0][2]}, source={previous[0][1]}",
+                    )
+
+            if existing_fill and not self._fill_reports_equal(existing_fill, report):
+                differences: list[str] = []
+
+                # Last quantity
+                if existing_fill.last_qty != report.last_qty:
+                    differences.append(f"qty: {existing_fill.last_qty} vs {report.last_qty}")
+
+                # Last price
+                if existing_fill.last_px != report.last_px:
+                    differences.append(f"px: {existing_fill.last_px} vs {report.last_px}")
+
+                # Commission
+                if existing_fill.commission is None and report.commission is not None:
+                    differences.append(f"commission: None vs {report.commission}")
+                elif existing_fill.commission is not None and report.commission is None:
+                    differences.append(f"commission: {existing_fill.commission} vs None")
+                elif existing_fill.commission is not None and report.commission is not None:
+                    if existing_fill.commission.currency != report.commission.currency:
+                        differences.append(
+                            f"commission currency: {existing_fill.commission.currency} vs {report.commission.currency}",
+                        )
+                    elif existing_fill.commission != report.commission:
+                        differences.append(
+                            f"commission: {existing_fill.commission} vs {report.commission}",
+                        )
+
+                # Liquidity side
+                if existing_fill.liquidity_side != report.liquidity_side:
+                    differences.append(
+                        f"liquidity: {existing_fill.liquidity_side} vs {report.liquidity_side}",
+                    )
+
+                # Timestamp
+                if existing_fill.ts_event != report.ts_event:
+                    differences.append(
+                        f"ts_event: {existing_fill.ts_event} vs {report.ts_event}",
+                    )
+
+                self._log.warning(
+                    f"Fill report data differs from existing data for trade_id {report.trade_id}, "
+                    f"differences: {', '.join(differences)}; retaining cached data for consistency",
+                )
+
+            # If trade_id is in order.trade_ids or we found an existing fill, skip this fill
+            # This prevents duplicate fills from being applied
+            return True  # Fill already applied, continue with existing data
+
+        return None  # Not a duplicate, proceed with fill
 
     def _generate_inferred_fill(
         self,
@@ -2842,6 +3277,10 @@ class LiveExecutionEngine(ExecutionEngine):
         report: OrderStatusReport,
         instrument: Instrument,
     ) -> OrderFilled:
+        """
+        Create an inferred fill event when fill reports are missing but order shows
+        filled quantity.
+        """
         filled = create_inferred_order_filled_event(
             order=order,
             ts_now=self._clock.timestamp_ns(),
@@ -2849,13 +3288,20 @@ class LiveExecutionEngine(ExecutionEngine):
             instrument=instrument,
         )
         self._log.info(f"Generated inferred {filled}", LogColor.BLUE)
+
         return filled
+
+    # -- ORDER AND EVENTS GENERATION ---------------------------------------------------------------
 
     def _generate_order(
         self,
         report: OrderStatusReport,
         is_external: bool = True,
     ) -> Order | None:
+        """
+        Create an external order from an order status report, applying filtering if
+        configured.
+        """
         self._log.debug(f"Generating order {report.client_order_id!r}", color=LogColor.MAGENTA)
 
         options: dict[str, Any] = {}
@@ -2887,6 +3333,9 @@ class LiveExecutionEngine(ExecutionEngine):
         options["expire_time_ns"] = (
             0 if report.expire_time is None else dt_to_unix_nanos(report.expire_time)
         )
+
+        # Check if any strategy has claimed external orders for this instrument
+        # This allows strategies to resume managing existing orders on restart
         strategy_id = self.get_external_order_claim(report.instrument_id)
 
         if strategy_id is None:
@@ -2900,7 +3349,14 @@ class LiveExecutionEngine(ExecutionEngine):
                 # Internal position diff alignment (synthetic fill)
                 tags = ["RECONCILIATION"]
         else:
+            # External order claimed by a strategy via external_order_claims config
+            # This order will be managed by the claiming strategy
             tags = None
+            self._log.info(
+                f"External order {report.client_order_id} for {report.instrument_id} "
+                f"claimed by strategy {strategy_id}",
+                LogColor.BLUE,
+            )
 
         # Filter unclaimed external orders (but not reconciliation fills)
         if self.filter_unclaimed_external_orders and tags and "VENUE" in tags:
@@ -3025,17 +3481,114 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Generated {filled}")
         self._handle_event_with_tracking(filled)
 
-    def _should_update(self, order: Order, report: OrderStatusReport) -> bool:
-        if report.quantity != order.quantity:
-            return True
+    # -- INTERNAL ----------------------------------------------------------------------------------
 
-        if order.order_type == OrderType.LIMIT and report.price != order.price:
-            return True
+    def _clear_recon_tracking(
+        self,
+        client_order_id: ClientOrderId,
+        *,
+        drop_last_query: bool = True,
+    ) -> None:
+        self._recon_check_retries.pop(client_order_id, None)
 
-        if (
-            order.order_type in [OrderType.STOP_MARKET, OrderType.TRAILING_STOP_MARKET]
-            and report.trigger_price != order.trigger_price
-        ):
-            return True
+        if drop_last_query:
+            self._ts_last_query.pop(client_order_id, None)
 
-        return bool(order.order_type in [OrderType.STOP_LIMIT, OrderType.TRAILING_STOP_LIMIT] and (report.trigger_price != order.trigger_price or report.price != order.price))
+    def _handle_event_with_tracking(self, event: OrderEvent) -> None:
+        # Handle an order event with activity tracking, recording fills in cache and
+        # cleaning up tracking data for closed orders.
+        self._record_local_activity(event)
+
+        if isinstance(event, OrderFilled):
+            self._recent_fills_cache[event.trade_id] = self._clock.timestamp_ns()
+            self._position_local_activity_ns[event.instrument_id] = event.ts_event
+
+            # Track inferred fill timestamps to prevent duplicate historical fills
+            if event.reconciliation:
+                client_order_id = event.client_order_id
+                if client_order_id not in self._inferred_fill_ts:
+                    self._inferred_fill_ts[client_order_id] = event.ts_event
+
+        self._handle_event(event)
+
+        if event.client_order_id is None:
+            return
+
+        order = self._cache.order(event.client_order_id)
+        if order and order.is_closed:
+            self._clear_recon_tracking(order.client_order_id)
+            self._order_local_activity_ns.pop(order.client_order_id, None)
+            self._inferred_fill_ts.pop(order.client_order_id, None)
+            self._fill_application_audit.pop(order.client_order_id, None)
+
+    def _record_local_activity(self, event: OrderEvent | None) -> None:
+        if event is None:
+            return
+
+        client_order_id = event.client_order_id
+        if client_order_id is None:
+            return
+
+        ts_event = event.ts_event
+        if ts_event == 0:
+            ts_event = self._clock.timestamp_ns()
+
+        self._order_local_activity_ns[client_order_id] = ts_event
+
+    def _find_matching_cached_order(
+        self,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price | None,
+        avg_px: Decimal | None,
+    ) -> Order | None:
+        # Search cache for existing order matching reconciliation parameters
+        cached_orders = self._cache.orders(
+            instrument_id=instrument_id,
+            venue=None,
+            side=order_side,
+        )
+
+        for cached_order in cached_orders:
+            # Check if order is filled and matches the parameters
+            if cached_order.status != OrderStatus.FILLED:
+                continue
+
+            # Match quantity
+            if cached_order.filled_qty != quantity:
+                continue
+
+            # Match price if provided
+            if price is not None and cached_order.price is not None and cached_order.price != price:
+                continue
+
+            # Match avg_px if provided
+            if avg_px is not None and cached_order.avg_px is not None:
+                cached_avg_px = Decimal(str(cached_order.avg_px))
+                if cached_avg_px != avg_px:
+                    continue
+
+            # Found a match
+            return cached_order
+
+        return None
+
+    def _find_order_by_venue_order_id(
+        self,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+        order_side: OrderSide | None = None,
+    ) -> Order | None:
+        # Fallback search when venue_order_id index not built
+        cached_orders = self._cache.orders(
+            venue=instrument_id.venue,
+            instrument_id=instrument_id,
+            side=order_side,
+        )
+
+        for cached_order in cached_orders:
+            if cached_order.venue_order_id == venue_order_id:
+                return cached_order
+
+        return None

@@ -25,12 +25,12 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     return Venue("SANDBOX")
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client(
     instrument,
     event_loop,
@@ -58,16 +58,16 @@ def exec_client(
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     return TestInstrumentProvider.equity("AAPL", "SANDBOX")
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state() -> AccountState:
     return TestEventStubs.cash_account_state(account_id=AccountId("SANDBOX-001"))
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     pass

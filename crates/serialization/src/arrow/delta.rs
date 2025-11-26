@@ -25,7 +25,9 @@ use nautilus_model::{
     data::{BookOrder, OrderBookDelta},
     enums::{BookAction, FromU8, OrderSide},
     identifiers::InstrumentId,
-    types::{Price, Quantity, fixed::PRECISION_BYTES},
+    types::{
+        Price, Quantity, fixed::PRECISION_BYTES, price::PRICE_UNDEF, quantity::QUANTITY_UNDEF,
+    },
 };
 
 use super::{
@@ -220,9 +222,21 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                         format!("Invalid enum value, was {side_value}"),
                     )
                 })?;
-                let price = Price::from_raw(get_raw_price(price_values.value(i)), price_precision);
-                let size =
-                    Quantity::from_raw(get_raw_quantity(size_values.value(i)), size_precision);
+                let raw_price = get_raw_price(price_values.value(i));
+                let price_prec = if raw_price == PRICE_UNDEF {
+                    0
+                } else {
+                    price_precision
+                };
+                let price = Price::from_raw(raw_price, price_prec);
+
+                let raw_size = get_raw_quantity(size_values.value(i));
+                let size_prec = if raw_size == QUANTITY_UNDEF {
+                    0
+                } else {
+                    size_precision
+                };
+                let size = Quantity::from_raw(raw_size, size_prec);
                 let order_id = order_id_values.value(i);
                 let flags = flags_values.value(i);
                 let sequence = sequence_values.value(i);
@@ -268,7 +282,11 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::types::{fixed::FIXED_SCALAR, price::PriceRaw};
+    use nautilus_model::types::{
+        fixed::FIXED_SCALAR,
+        price::{PRICE_UNDEF, PriceRaw},
+        quantity::QUANTITY_UNDEF,
+    };
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
@@ -451,5 +469,53 @@ mod tests {
 
         let decoded_data = OrderBookDelta::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
+    }
+
+    #[rstest]
+    fn test_decode_batch_with_undef_values() {
+        let instrument_id = InstrumentId::from("PLTR.XNAS");
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+
+        // Create test data with 'R' (clear) action which has PRICE_UNDEF and QUANTITY_UNDEF
+        let action = UInt8Array::from(vec![4, 1]); // 4 = Clear, 1 = Add
+        let side = UInt8Array::from(vec![0, 1]); // NoOrderSide for Clear, Buy for Add
+        let price = FixedSizeBinaryArray::from(vec![
+            &PRICE_UNDEF.to_le_bytes(),
+            &((100.50 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+        ]);
+        let size = FixedSizeBinaryArray::from(vec![
+            &QUANTITY_UNDEF.to_le_bytes(),
+            &((1000.0 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
+        ]);
+        let order_id = UInt64Array::from(vec![0, 1]);
+        let flags = UInt8Array::from(vec![0, 0]);
+        let sequence = UInt64Array::from(vec![1, 2]);
+        let ts_event = UInt64Array::from(vec![1, 2]);
+        let ts_init = UInt64Array::from(vec![3, 4]);
+
+        let record_batch = RecordBatch::try_new(
+            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
+            vec![
+                Arc::new(action),
+                Arc::new(side),
+                Arc::new(price),
+                Arc::new(size),
+                Arc::new(order_id),
+                Arc::new(flags),
+                Arc::new(sequence),
+                Arc::new(ts_event),
+                Arc::new(ts_init),
+            ],
+        )
+        .unwrap();
+
+        let decoded_data = OrderBookDelta::decode_batch(&metadata, record_batch).unwrap();
+        assert_eq!(decoded_data.len(), 2);
+        assert_eq!(decoded_data[0].order.price.raw, PRICE_UNDEF);
+        assert_eq!(decoded_data[0].order.price.precision, 0);
+        assert_eq!(decoded_data[0].order.size.raw, QUANTITY_UNDEF);
+        assert_eq!(decoded_data[0].order.size.precision, 0);
+        assert_eq!(decoded_data[1].order.price.precision, 2);
+        assert_eq!(decoded_data[1].order.size.precision, 0);
     }
 }

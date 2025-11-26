@@ -582,14 +582,11 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate OrderStatusReports")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-        if command.log_receipt_level == LogLevel.INFO:
-            self._log.info(receipt_log)
-        else:
-            self._log.debug(receipt_log)
+        self._log_report_receipt(
+            len(reports),
+            "OrderStatusReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -654,9 +651,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate FillReports")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} FillReport{plural}")
+        self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
         return reports
 
     async def generate_position_status_reports(
@@ -730,9 +725,12 @@ class DYDXExecutionClient(LiveExecutionClient):
         else:
             self._log.error("Failed to generate PositionStatusReports")
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+        self._log_report_receipt(
+            len(reports),
+            "PositionStatusReport",
+            command.log_receipt_level,
+        )
+
         return reports
 
     def _handle_ws_message(self, raw: bytes) -> None:  # noqa: C901

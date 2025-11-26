@@ -15,8 +15,8 @@
 
 import asyncio
 import json
+from collections import OrderedDict
 from collections import defaultdict
-from collections import deque
 from collections.abc import Coroutine
 from typing import Any
 
@@ -32,6 +32,7 @@ from py_clob_client.clob_types import AssetType
 from py_clob_client.exceptions import PolyApiException
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_FINALIZED_TRADE_STATUSES
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.constants import VALID_POLYMARKET_TIME_IN_FORCE
@@ -128,6 +129,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     """
 
+    PROCESSED_TRADES_LIMIT = 10_000
+
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -177,7 +180,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Get the user address (funder) - this is the address that holds positions
         # For proxy wallets, this differs from the signer address
-        user_address = http_client.builder.funder if hasattr(http_client, "builder") else config.funder or wallet_address
+        user_address = (
+            http_client.builder.funder
+            if hasattr(http_client, "builder")
+            else config.funder or wallet_address
+        )
         validate_ethereum_address(user_address)
         self._user_address = user_address
 
@@ -209,7 +216,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Hot caches
         self._active_markets: set[str] = set()
-        self._processed_trades: deque[TradeId] = deque(maxlen=10_000)
+        self._processed_trades: OrderedDict[TradeId, PolymarketTradeStatus] = OrderedDict()
+        self._finalized_trades: OrderedDict[TradeId, None] = OrderedDict()
         self._ack_events_order: dict[VenueOrderId, asyncio.Event] = {}
         self._ack_events_trade: dict[VenueOrderId, asyncio.Event] = {}
 
@@ -307,7 +315,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-    async def _fetch_user_positions(self, *, limit: int = 100, size_threshold: int = 0) -> list[dict[str, Any]]:
+    async def _fetch_user_positions(
+        self, *, limit: int = 100, size_threshold: int = 0,
+    ) -> list[dict[str, Any]]:
         """
         Fetch all current positions for the configured user using the Polymarket Data
         API.
@@ -525,14 +535,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Generated from fill report: {report}")
                 reports.append(report)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-        if command.log_receipt_level == LogLevel.INFO:
-            self._log.info(receipt_log)
-        else:
-            self._log.debug(receipt_log)
+        self._log_report_receipt(
+            len(reports),
+            "OrderStatusReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -640,9 +647,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} FillReport{plural}")
+        self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
         return reports
 
@@ -682,9 +687,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
             reports.append(report)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} PositionReport{plural}")
+        self._log_report_receipt(
+            len(reports),
+            "PositionReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -711,15 +718,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         filled_user_order_ids = polymarket_trade.get_filled_user_order_ids(
-            self._wallet_address, self._api_key,
+            self._wallet_address,
+            self._api_key,
         )
         for order_id in filled_user_order_ids:
             venue_order_id = polymarket_trade.venue_order_id(order_id)
 
-            if (
-                command.venue_order_id is not None
-                and venue_order_id != command.venue_order_id
-            ):
+            if command.venue_order_id is not None and venue_order_id != command.venue_order_id:
                 continue
 
             client_order_id = self._cache.client_order_id(venue_order_id)
@@ -756,12 +761,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # Map asset (token id) -> size (shares)
         size_by_asset: dict[str, float] = {}
         for p in positions:
-            instrument_id = InstrumentId.from_str(p.get("conditionId", "") + "-" + str(p.get("asset", "") + ".POLYMARKET"))
+            instrument_id = InstrumentId.from_str(
+                p.get("conditionId", "") + "-" + str(p.get("asset", "") + ".POLYMARKET"),
+            )
             size_val = p.get("size", 0) or 0
             try:
                 size_by_asset[instrument_id] = float(size_val)
             except Exception as e:
-                self._log.warning(f"Failed to parse position size for instrument {instrument_id}: {e}")
+                self._log.warning(
+                    f"Failed to parse position size for instrument {instrument_id}: {e}",
+                )
                 continue
 
         # Convert to quantities by instrument ID
@@ -796,10 +805,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.get_balance_allowance,
                 params,
             )
-            quantities[instrument_id] = Quantity.from_raw(usdce_from_units(int(response["balance"])).raw, precision=USDC_POS.precision)
+            quantities[instrument_id] = Quantity.from_raw(
+                usdce_from_units(int(response["balance"])).raw, precision=USDC_POS.precision,
+            )
 
         return quantities
-
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
@@ -1321,6 +1331,28 @@ class PolymarketExecutionClient(LiveExecutionClient):
             case _:  # Branch never hit unless code changes (leave in place)
                 raise RuntimeError(f"Unknown `PolymarketEventType`, was '{msg.type.value}'")
 
+    def _truncate_ordered_dict(self, store: OrderedDict[Any, Any]) -> None:
+        while len(store) > self.PROCESSED_TRADES_LIMIT:
+            store.popitem(last=False)
+
+    def _record_processed_trade(
+        self,
+        trade_id: TradeId,
+        status: PolymarketTradeStatus,
+    ) -> None:
+        if status in POLYMARKET_FINALIZED_TRADE_STATUSES:
+            # Keep final trades in their own cache so duplicates are still suppressed
+            # after we stop tracking intermediate status transitions.
+            self._finalized_trades[trade_id] = None
+            self._finalized_trades.move_to_end(trade_id)
+            self._processed_trades.pop(trade_id, None)
+            self._truncate_ordered_dict(self._finalized_trades)
+            return
+
+        self._processed_trades[trade_id] = status
+        self._processed_trades.move_to_end(trade_id)
+        self._truncate_ordered_dict(self._processed_trades)
+
     def _handle_ws_trade_msg(self, msg: PolymarketUserTrade, wait_for_ack: bool):
         self._log.debug(f"Handling trade message, {wait_for_ack=}")
 
@@ -1338,8 +1370,27 @@ class PolymarketExecutionClient(LiveExecutionClient):
             case _:
                 self._log.info(log_msg, LogColor.BLUE)
 
-        if trade_id in self._processed_trades:
-            self._log.debug(f"Trade {trade_id} already processed - skipping")
+        if trade_id in self._finalized_trades:
+            self._log.debug(f"Trade {trade_id} already finalized - skipping duplicate")
+            return
+
+        previous_status = self._processed_trades.get(trade_id)
+
+        if previous_status is not None:
+            if (
+                msg.status in POLYMARKET_FINALIZED_TRADE_STATUSES
+                and previous_status not in POLYMARKET_FINALIZED_TRADE_STATUSES
+            ):
+                self._record_processed_trade(trade_id, msg.status)
+                self._log.debug(
+                    f"Trade {trade_id} transitioned from {previous_status.value} "
+                    f"to {msg.status.value} - refreshing account state",
+                )
+                self.create_task(self._update_account_state())
+            else:
+                self._log.debug(
+                    f"Trade {trade_id} already processed with status {previous_status.value} - skipping",
+                )
             return
 
         filled_user_order_ids = msg.get_filled_user_order_ids(self._wallet_address, self._api_key)
@@ -1347,7 +1398,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._handle_user_trade_in_ws_trade_msg(msg, trade_id, wait_for_ack, order_id)
 
     def _handle_user_trade_in_ws_trade_msg(
-        self, msg: PolymarketUserTrade, trade_id: TradeId, wait_for_ack: bool, order_id: str,
+        self,
+        msg: PolymarketUserTrade,
+        trade_id: TradeId,
+        wait_for_ack: bool,
+        order_id: str,
     ):
         venue_order_id = msg.venue_order_id(order_id)
         asset_id = msg.get_asset_id(order_id)
@@ -1382,7 +1437,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 filled_user_order_id=order_id,
             )
             self._send_fill_report(report)
-            self._processed_trades.append(trade_id)
+            self._record_processed_trade(trade_id, msg.status)
             return
 
         order = self._cache.order(client_order_id)
@@ -1392,7 +1447,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         if trade_id in order.trade_ids:
-            self._log.debug(f"Trade {trade_id} already processed for {order.client_order_id} - skipping")
+            self._log.debug(
+                f"Trade {trade_id} already processed for {order.client_order_id} - skipping",
+            )
             return
 
         if order.is_closed:
@@ -1401,7 +1458,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         last_qty = instrument.make_qty(msg.last_qty(order_id))
         last_px = instrument.make_price(msg.last_px(order_id))
-        commission = float(last_qty * last_px) * basis_points_as_percentage(float(msg.get_fee_rate_bps(order_id)))
+        commission = float(last_qty * last_px) * basis_points_as_percentage(
+            float(msg.get_fee_rate_bps(order_id)),
+        )
         ts_event = millis_to_nanos(int(msg.match_time))
 
         self.generate_order_filled(
@@ -1422,6 +1481,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             info=msg.to_dict(),
         )
 
-        self._processed_trades.append(trade_id)
+        self._record_processed_trade(trade_id, msg.status)
 
-        self.create_task(self._update_account_state())
+        # Only update account balance after trade is mined on-chain
+        if msg.status in POLYMARKET_FINALIZED_TRADE_STATUSES:
+            self.create_task(self._update_account_state())

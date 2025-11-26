@@ -302,7 +302,7 @@ impl Quantity {
         // SAFETY: The raw value is guaranteed to be within i128 range after scaling
         // because our quantity constraints ensure the maximum raw value times the scaling
         // factor cannot exceed i128::MAX (high-precision) or i64::MAX (standard-precision).
-        #[allow(clippy::useless_conversion, reason = "Required for precision modes")]
+        #[allow(clippy::useless_conversion)]
         Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
     }
 
@@ -316,6 +316,7 @@ impl Quantity {
     ///
     /// This method provides more reliable parsing by using Decimal arithmetic
     /// to avoid floating-point precision issues during conversion.
+    /// The value is rounded to the specified precision using banker's rounding (round half to even).
     ///
     /// # Errors
     ///
@@ -323,7 +324,7 @@ impl Quantity {
     /// - `precision` exceeds [`FIXED_PRECISION`].
     /// - The decimal value cannot be converted to the raw representation.
     /// - Overflow occurs during scaling.
-    pub fn from_decimal(decimal: Decimal, precision: u8) -> anyhow::Result<Self> {
+    pub fn from_decimal_dp(decimal: Decimal, precision: u8) -> anyhow::Result<Self> {
         check_fixed_precision(precision)?;
 
         // Scale the decimal to the target precision
@@ -351,6 +352,22 @@ impl Quantity {
         )?;
 
         Ok(Self { raw, precision })
+    }
+
+    /// Creates a new [`Quantity`] from a [`Decimal`] value with precision inferred from the decimal's scale.
+    ///
+    /// The precision is determined by the scale of the decimal (number of decimal places).
+    /// The value is rounded to the inferred precision using banker's rounding (round half to even).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The inferred precision exceeds [`FIXED_PRECISION`].
+    /// - The decimal value cannot be converted to the raw representation.
+    /// - Overflow occurs during scaling.
+    pub fn from_decimal(decimal: Decimal) -> anyhow::Result<Self> {
+        let precision = decimal.scale() as u8;
+        Self::from_decimal_dp(decimal, precision)
     }
 }
 
@@ -588,7 +605,7 @@ impl FromStr for Quantity {
             0
         };
 
-        Self::from_decimal(decimal, precision).map_err(|e| e.to_string())
+        Self::from_decimal_dp(decimal, precision).map_err(|e| e.to_string())
     }
 }
 
@@ -1000,12 +1017,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_decimal_precision_preservation() {
-        use rust_decimal::Decimal;
-
+    fn test_from_decimal_dp_preservation() {
         // Test that decimal conversion preserves exact values
-        let decimal = Decimal::from_str("123.456789").unwrap();
-        let qty = Quantity::from_decimal(decimal, 6).unwrap();
+        let decimal = dec!(123.456789);
+        let qty = Quantity::from_decimal_dp(decimal, 6).unwrap();
         assert_eq!(qty.precision, 6);
         assert!(approx_eq!(f64, qty.as_f64(), 123.456789, epsilon = 1e-10));
 
@@ -1015,17 +1030,78 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_decimal_rounding() {
-        use rust_decimal::Decimal;
-
+    fn test_from_decimal_dp_rounding() {
         // Test banker's rounding (round half to even)
-        let decimal = Decimal::from_str("1.005").unwrap();
-        let qty = Quantity::from_decimal(decimal, 2).unwrap();
+        let decimal = dec!(1.005);
+        let qty = Quantity::from_decimal_dp(decimal, 2).unwrap();
         assert_eq!(qty.as_f64(), 1.0); // 1.005 rounds to 1.00 (even)
 
-        let decimal = Decimal::from_str("1.015").unwrap();
-        let qty = Quantity::from_decimal(decimal, 2).unwrap();
+        let decimal = dec!(1.015);
+        let qty = Quantity::from_decimal_dp(decimal, 2).unwrap();
         assert_eq!(qty.as_f64(), 1.02); // 1.015 rounds to 1.02 (even)
+    }
+
+    #[rstest]
+    fn test_from_decimal_infers_precision() {
+        // Test that precision is inferred from decimal's scale
+        let decimal = dec!(123.456);
+        let qty = Quantity::from_decimal(decimal).unwrap();
+        assert_eq!(qty.precision, 3);
+        assert!(approx_eq!(f64, qty.as_f64(), 123.456, epsilon = 1e-10));
+
+        // Test with integer (precision 0)
+        let decimal = dec!(100);
+        let qty = Quantity::from_decimal(decimal).unwrap();
+        assert_eq!(qty.precision, 0);
+        assert_eq!(qty.as_f64(), 100.0);
+
+        // Test with high precision
+        let decimal = dec!(1.23456789);
+        let qty = Quantity::from_decimal(decimal).unwrap();
+        assert_eq!(qty.precision, 8);
+        assert!(approx_eq!(f64, qty.as_f64(), 1.23456789, epsilon = 1e-10));
+    }
+
+    #[rstest]
+    fn test_from_decimal_trailing_zeros() {
+        // Decimal preserves trailing zeros in scale
+        let decimal = dec!(5.670);
+        assert_eq!(decimal.scale(), 3); // Has 3 decimal places
+
+        // from_decimal infers precision from scale (includes trailing zeros)
+        let qty = Quantity::from_decimal(decimal).unwrap();
+        assert_eq!(qty.precision, 3);
+        assert!(approx_eq!(f64, qty.as_f64(), 5.67, epsilon = 1e-10));
+
+        // Normalized removes trailing zeros
+        let normalized = decimal.normalize();
+        assert_eq!(normalized.scale(), 2);
+        let qty_normalized = Quantity::from_decimal(normalized).unwrap();
+        assert_eq!(qty_normalized.precision, 2);
+    }
+
+    #[rstest]
+    fn test_from_decimal_excessive_precision_inference() {
+        // Create a decimal with more precision than FIXED_PRECISION
+        // Decimal supports up to 28 decimal places
+        let decimal = dec!(1.1234567890123456789012345678);
+
+        // If scale exceeds FIXED_PRECISION, from_decimal should error
+        if decimal.scale() > FIXED_PRECISION as u32 {
+            assert!(Quantity::from_decimal(decimal).is_err());
+        }
+    }
+
+    #[rstest]
+    fn test_from_decimal_negative_quantity_errors() {
+        // Negative quantities should error (Quantity must be non-negative)
+        let decimal = dec!(-123.45);
+        let result = Quantity::from_decimal(decimal);
+        assert!(result.is_err());
+
+        // Also test with explicit precision
+        let result = Quantity::from_decimal_dp(decimal, 2);
+        assert!(result.is_err());
     }
 
     #[rstest]

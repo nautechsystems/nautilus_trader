@@ -107,6 +107,13 @@ impl BitmexWebSocketClient {
         self.api_key()
     }
 
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    #[must_use]
+    pub fn py_api_key_masked(&self) -> Option<String> {
+        self.api_key_masked()
+    }
+
     #[pyo3(name = "is_active")]
     fn py_is_active(&mut self) -> bool {
         self.is_active()

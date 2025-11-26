@@ -62,6 +62,7 @@ use nautilus_model::{
 use nautilus_portfolio::Portfolio;
 use rstest::{fixture, rstest};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 // Helper that registers message collectors for ExecEngine.process events and
@@ -389,10 +390,10 @@ pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
         Some(Money::from("1 USD")),
         Some(Price::from("10000000")),
         Some(Price::from("0.01")),
-        Some(Decimal::from_str("0.01").unwrap()),
-        Some(Decimal::from_str("0.0035").unwrap()),
-        Some(Decimal::from_str("-0.00025").unwrap()),
-        Some(Decimal::from_str("0.00075").unwrap()),
+        Some(dec!(0.01)),
+        Some(dec!(0.0035)),
+        Some(dec!(-0.00025)),
+        Some(dec!(0.00075)),
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -2757,10 +2758,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
-    risk_engine.set_max_notional_per_order(
-        instrument_xbtusd_bitmex.id(),
-        Decimal::from_str("10000").unwrap(),
-    );
+    risk_engine.set_max_notional_per_order(instrument_xbtusd_bitmex.id(), dec!(10000));
 
     let long = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_xbtusd_bitmex.id())
@@ -2893,10 +2891,7 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
-    risk_engine.set_max_notional_per_order(
-        instrument_xbtusd_bitmex.id(),
-        Decimal::from_str("10000").unwrap(),
-    );
+    risk_engine.set_max_notional_per_order(instrument_xbtusd_bitmex.id(), dec!(10000));
 
     let short = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_xbtusd_bitmex.id())
@@ -3578,10 +3573,10 @@ fn test_submit_order_with_quote_quantity_validates_correctly(
         Some(Money::from("5 USDT")),       // min_notional
         None,
         None,
-        Some(Decimal::from_str("0.1").unwrap()), // margin_init
-        Some(Decimal::from_str("0.1").unwrap()), // margin_maint
-        Some(Decimal::from_str("-0.00005").unwrap()), // maker_fee
-        Some(Decimal::from_str("0.00015").unwrap()), // taker_fee
+        Some(dec!(0.1)),      // margin_init
+        Some(dec!(0.1)),      // margin_maint
+        Some(dec!(-0.00005)), // maker_fee
+        Some(dec!(0.00015)),  // taker_fee
         UnixNanos::default(),
         UnixNanos::default(),
     ));
@@ -3700,10 +3695,10 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
         Some(Money::from("5 USDT")),
         None,
         None,
-        Some(Decimal::from_str("0.1").unwrap()),
-        Some(Decimal::from_str("0.1").unwrap()),
-        Some(Decimal::from_str("-0.00005").unwrap()),
-        Some(Decimal::from_str("0.00015").unwrap()),
+        Some(dec!(0.1)),
+        Some(dec!(0.1)),
+        Some(dec!(-0.00005)),
+        Some(dec!(0.00015)),
         UnixNanos::default(),
         UnixNanos::default(),
     ));

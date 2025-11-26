@@ -26,6 +26,7 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import FIXED_PRECISION
 from nautilus_trader.model.objects import MONEY_MAX
 from nautilus_trader.model.objects import MONEY_MIN
 from nautilus_trader.model.objects import AccountBalance
@@ -352,6 +353,149 @@ class TestMoney:
         money_zero = Money.from_str("0 USD")
         assert money_zero.as_double() == 0
         assert str(money_zero) == "0.00 USD"
+
+    def test_from_decimal_returns_expected_value(self):
+        # Arrange, Act
+        money = Money.from_decimal(Decimal("100.50"), USD)
+
+        # Assert
+        assert money == Money(100.50, USD)
+        assert str(money) == "100.50 USD"
+        assert money.currency == USD
+
+    def test_from_decimal_with_integer_value(self):
+        # Arrange, Act
+        money = Money.from_decimal(Decimal(1000), USD)
+
+        # Assert
+        assert money == Money(1000, USD)
+        assert str(money) == "1000.00 USD"
+        assert money.currency == USD
+
+    def test_from_decimal_with_high_precision_currency(self):
+        # USDT has 8 decimal places
+        # Arrange, Act
+        money = Money.from_decimal(Decimal("100.12345678"), USDT)
+
+        # Assert
+        assert str(money) == "100.12345678 USDT"
+        assert money.currency == USDT
+
+    def test_from_decimal_equivalent_to_from_str(self):
+        test_values = [
+            (Decimal(1), USD),
+            (Decimal("0.5"), USD),
+            (Decimal("100.25"), USD),
+            (Decimal("0.01"), USD),
+            (Decimal("1234.56"), USD),
+            (Decimal("-99.99"), USD),
+            (Decimal("100.12345678"), USDT),
+        ]
+
+        for decimal_val, currency in test_values:
+            money_from_decimal = Money.from_decimal(decimal_val, currency)
+            money_from_str = Money.from_str(f"{decimal_val} {currency.code}")
+            assert money_from_decimal == money_from_str
+            assert money_from_decimal.currency == money_from_str.currency
+
+    def test_from_decimal_with_zero(self):
+        # Arrange, Act
+        money = Money.from_decimal(Decimal(0), USD)
+
+        # Assert
+        assert money.as_double() == 0
+        assert str(money) == "0.00 USD"
+
+    def test_from_decimal_with_negative_value(self):
+        # Arrange, Act
+        money = Money.from_decimal(Decimal("-50.25"), USD)
+
+        # Assert
+        assert money.as_double() == -50.25
+        assert str(money) == "-50.25 USD"
+
+    def test_from_decimal_respects_currency_precision(self):
+        # USD has 2 decimal places
+        money_usd = Money.from_decimal(Decimal("100.123"), USD)
+        assert str(money_usd) == "100.12 USD"  # Rounded to 2 decimal places
+
+        # USDT has 8 decimal places
+        money_usdt = Money.from_decimal(Decimal("100.1234567"), USDT)
+        assert str(money_usdt) == "100.12345670 USDT"  # USDT has 8 decimal places
+
+    @pytest.mark.parametrize(
+        ("decimal_val", "currency", "expected_str"),
+        [
+            (Decimal("1e-2"), USD, "0.01 USD"),
+            (Decimal("1.23e1"), USD, "12.30 USD"),
+            (Decimal("5e-5"), USDT, "0.00005000 USDT"),
+        ],
+    )
+    def test_from_decimal_with_scientific_notation(
+        self,
+        decimal_val,
+        currency,
+        expected_str,
+    ):
+        # Arrange, Act
+        money = Money.from_decimal(decimal_val, currency)
+
+        # Assert
+        assert str(money) == expected_str
+
+    def test_from_decimal_with_very_small_values(self):
+        if FIXED_PRECISION <= 9:
+            # Windows with 9 decimal max
+            money = Money.from_decimal(Decimal("0.000000001"), USDT)
+            assert str(money) == "0.00000000 USDT"  # Rounded to 8 decimal places (USDT precision)
+        else:
+            # Linux/Mac with 16 decimal max
+            money = Money.from_decimal(Decimal("0.0000000000000001"), USDT)
+            assert str(money) == "0.00000000 USDT"  # Rounded to 8 decimal places (USDT precision)
+
+    def test_from_decimal_with_high_precision_rounds_to_currency(self):
+        # High precision decimals are rounded to the currency's precision
+        # USD has 2 decimal places
+        money = Money.from_decimal(Decimal("1.01234567890123456"), USD)
+        assert str(money) == "1.01 USD"
+
+        # USDT has 8 decimal places
+        money_usdt = Money.from_decimal(Decimal("100.123456789012345"), USDT)
+        assert str(money_usdt) == "100.12345679 USDT"  # Rounded to 8 decimals
+
+    def test_from_decimal_with_different_currencies(self):
+        # Test that the currency parameter is correctly used
+        money_usd = Money.from_decimal(Decimal("100.50"), USD)
+        money_aud = Money.from_decimal(Decimal("100.50"), AUD)
+
+        assert money_usd.currency == USD
+        assert money_aud.currency == AUD
+
+        # Comparing Money with different currencies raises ValueError
+        with pytest.raises(ValueError, match=r"currency USD != other\.currency AUD"):
+            _ = money_usd == money_aud
+
+    def test_money_equality_with_none_returns_false(self):
+        # Arrange
+        money = Money(100.0, USD)
+
+        # Act, Assert
+        assert (money == None) is False  # noqa: E711
+        assert (money != None) is True  # noqa: E711
+
+    def test_money_ordering_comparison_with_none_raises_type_error(self):
+        # Arrange
+        money = Money(100.0, USD)
+
+        # Act, Assert
+        with pytest.raises(TypeError):
+            _ = money < None
+        with pytest.raises(TypeError):
+            _ = money <= None
+        with pytest.raises(TypeError):
+            _ = money > None
+        with pytest.raises(TypeError):
+            _ = money >= None
 
 
 class TestAccountBalance:

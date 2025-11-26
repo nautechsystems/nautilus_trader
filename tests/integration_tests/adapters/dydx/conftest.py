@@ -89,7 +89,7 @@ def http_client(live_clock: LiveClock) -> DYDXHttpClient:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     """
     Create a stub dYdX venue.
@@ -97,21 +97,21 @@ def venue() -> Venue:
     return DYDX_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state():
     pass

@@ -189,7 +189,10 @@ impl AtomicTime {
 
     /// Returns the current time as seconds.
     #[must_use]
-    #[allow(clippy::cast_precision_loss)]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Precision loss acceptable for time conversion"
+    )]
     pub fn get_time(&self) -> f64 {
         self.get_time_ns().as_f64() / (NANOSECONDS_IN_SECOND as f64)
     }
@@ -223,13 +226,10 @@ impl AtomicTime {
     ///
     /// # Errors
     ///
-    /// Returns an error if the increment would overflow `u64::MAX`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if called while the clock is in real-time mode.
+    /// Returns an error if the increment would overflow `u64::MAX` or if called
+    /// while the clock is in real-time mode.
     pub fn increment_time(&self, delta: u64) -> anyhow::Result<UnixNanos> {
-        assert!(
+        anyhow::ensure!(
             !self.realtime.load(Ordering::Acquire),
             "Cannot increment time while clock is in realtime mode"
         );
@@ -369,10 +369,16 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Cannot increment time while clock is in realtime mode")]
-    fn test_increment_time_panics_in_realtime_mode() {
+    fn test_increment_time_returns_error_in_realtime_mode() {
         let clock = AtomicTime::new(true, UnixNanos::default());
-        let _ = clock.increment_time(1);
+        let result = clock.increment_time(1);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Cannot increment time while clock is in realtime mode")
+        );
     }
 
     #[rstest]
@@ -454,7 +460,11 @@ mod tests {
     }
 
     #[rstest]
-    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Intentional cast for Python interop"
+    )]
     fn test_nanos_since_unix_epoch_vs_system_time() {
         let unix_nanos = nanos_since_unix_epoch();
         let system_ns = duration_since_unix_epoch().as_nanos() as u64;

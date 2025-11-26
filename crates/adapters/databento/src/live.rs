@@ -898,7 +898,7 @@ mod tests {
         assert!(handler.buffered_commands.is_empty());
     }
 
-    #[test]
+    #[rstest]
     fn test_subscription_with_and_without_start() {
         let start_time = datetime!(2024-01-01 00:00:00 UTC);
         let sub_with_start = Subscription::builder()
@@ -916,7 +916,7 @@ mod tests {
         assert_eq!(sub_with_start.symbols, sub_without_start.symbols);
     }
 
-    #[test]
+    #[rstest]
     fn test_handler_initialization_state() {
         let handler = create_test_handler(Some(10));
 
@@ -927,7 +927,7 @@ mod tests {
         assert!(handler.buffered_commands.is_empty());
     }
 
-    #[test]
+    #[rstest]
     fn test_handler_with_no_timeout() {
         let handler = create_test_handler(None);
 
@@ -935,7 +935,7 @@ mod tests {
         assert!(!handler.replay);
     }
 
-    #[test]
+    #[rstest]
     fn test_handler_with_zero_timeout() {
         let handler = create_test_handler(Some(0));
 

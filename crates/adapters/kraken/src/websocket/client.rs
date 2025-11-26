@@ -124,6 +124,7 @@ impl KrakenWebSocketClient {
             reconnect_delay_max_ms: None,
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
+            reconnect_max_attempts: None,
         };
 
         let ws_client = WebSocketClient::connect(

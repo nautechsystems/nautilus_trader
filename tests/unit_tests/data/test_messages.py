@@ -72,8 +72,8 @@ class TestDataMessage:
         assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
 
+        handler = []
         with pytest.raises(ValueError) as e:
-            handler = []
             RequestData(
                 data_type=DataType(QuoteTick),
                 instrument_id=None,
@@ -87,6 +87,7 @@ class TestDataMessage:
                 ts_init=self.clock.timestamp_ns(),
                 params=None,
             )
+
         assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
 

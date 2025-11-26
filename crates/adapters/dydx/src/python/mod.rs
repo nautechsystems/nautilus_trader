@@ -17,6 +17,7 @@
 
 pub mod enums;
 pub mod http;
+pub mod types;
 pub mod websocket;
 
 use pyo3::prelude::*;
@@ -31,5 +32,8 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__package__", "nautilus_trader.core.nautilus_pyo3.dydx")?;
     m.add_class::<crate::http::client::DydxHttpClient>()?;
     m.add_class::<crate::websocket::client::DydxWebSocketClient>()?;
+    m.add_class::<crate::common::enums::DydxOrderSide>()?;
+    m.add_class::<crate::common::enums::DydxOrderType>()?;
+    m.add_class::<crate::types::DydxOraclePrice>()?;
     Ok(())
 }

@@ -33,7 +33,7 @@ use nautilus_model::{
 use nautilus_network::{
     RECONNECTED,
     retry::{RetryManager, create_websocket_retry_manager},
-    websocket::{AuthTracker, SubscriptionState, WebSocketClient},
+    websocket::{SubscriptionState, WebSocketClient},
 };
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
@@ -42,7 +42,7 @@ use super::{
     client::AssetContextDataType,
     error::HyperliquidWsError,
     messages::{
-        ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
+        CandleData, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
         SubscriptionRequest, WsActiveAssetCtxData, WsUserEventData,
     },
     parse::{
@@ -93,13 +93,13 @@ pub(super) struct FeedHandler {
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
-    _auth_tracker: AuthTracker,
+    account_id: Option<AccountId>,
     subscriptions: SubscriptionState,
     retry_manager: RetryManager<HyperliquidWsError>,
+    message_buffer: Vec<NautilusWsMessage>,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
     bar_types_cache: AHashMap<String, BarType>,
-    account_id: Option<AccountId>,
-    message_buffer: Vec<NautilusWsMessage>,
+    bar_cache: AHashMap<String, CandleData>,
     asset_context_subs: AHashMap<Ustr, HashSet<AssetContextDataType>>,
     mark_price_cache: AHashMap<Ustr, String>,
     index_price_cache: AHashMap<Ustr, String>,
@@ -114,7 +114,6 @@ impl FeedHandler {
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: Option<AccountId>,
-        _auth_tracker: AuthTracker,
         subscriptions: SubscriptionState,
     ) -> Self {
         Self {
@@ -124,13 +123,13 @@ impl FeedHandler {
             cmd_rx,
             raw_rx,
             out_tx,
-            _auth_tracker,
+            account_id,
             subscriptions,
             retry_manager: create_websocket_retry_manager(),
+            message_buffer: Vec::new(),
             instruments_cache: AHashMap::new(),
             bar_types_cache: AHashMap::new(),
-            account_id,
-            message_buffer: Vec::new(),
+            bar_cache: AHashMap::new(),
             asset_context_subs: AHashMap::new(),
             mark_price_cache: AHashMap::new(),
             index_price_cache: AHashMap::new(),
@@ -256,6 +255,7 @@ impl FeedHandler {
                         }
                         HandlerCommand::RemoveBarType { key } => {
                             self.bar_types_cache.remove(&key);
+                            self.bar_cache.remove(&key);
                         }
                         HandlerCommand::UpdateAssetContextSubs { coin, data_types } => {
                             if data_types.is_empty() {
@@ -290,6 +290,7 @@ impl FeedHandler {
                                         &mut self.mark_price_cache,
                                         &mut self.index_price_cache,
                                         &mut self.funding_rate_cache,
+                                        &mut self.bar_cache,
                                     );
 
                                     if !nautilus_msgs.is_empty() {
@@ -337,6 +338,7 @@ impl FeedHandler {
         mark_price_cache: &mut AHashMap<Ustr, String>,
         index_price_cache: &mut AHashMap<Ustr, String>,
         funding_rate_cache: &mut AHashMap<Ustr, String>,
+        bar_cache: &mut AHashMap<String, CandleData>,
     ) -> Vec<NautilusWsMessage> {
         let mut result = Vec::new();
 
@@ -374,7 +376,9 @@ impl FeedHandler {
                 }
             }
             HyperliquidWsMessage::Candle { data } => {
-                if let Some(msg) = Self::handle_candle(&data, instruments, bar_types, ts_init) {
+                if let Some(msg) =
+                    Self::handle_candle(&data, instruments, bar_types, bar_cache, ts_init)
+                {
                     result.push(msg);
                 }
             }
@@ -419,7 +423,7 @@ impl FeedHandler {
                     }
                 }
             } else {
-                tracing::warn!("No instrument found for coin: {}", order_update.order.coin);
+                tracing::debug!("No instrument found for coin: {}", order_update.order.coin);
             }
         }
 
@@ -449,7 +453,7 @@ impl FeedHandler {
                     }
                 }
             } else {
-                tracing::warn!("No instrument found for coin: {}", fill.coin);
+                tracing::debug!("No instrument found for coin: {}", fill.coin);
             }
         }
 
@@ -476,7 +480,7 @@ impl FeedHandler {
                     }
                 }
             } else {
-                tracing::warn!("No instrument found for coin: {}", trade.coin);
+                tracing::debug!("No instrument found for coin: {}", trade.coin);
             }
         }
 
@@ -501,7 +505,7 @@ impl FeedHandler {
                 }
             }
         } else {
-            tracing::warn!("No instrument found for coin: {}", data.coin);
+            tracing::debug!("No instrument found for coin: {}", data.coin);
             None
         }
     }
@@ -520,36 +524,54 @@ impl FeedHandler {
                 }
             }
         } else {
-            tracing::warn!("No instrument found for coin: {}", data.coin);
+            tracing::debug!("No instrument found for coin: {}", data.coin);
             None
         }
     }
 
     fn handle_candle(
-        data: &super::messages::CandleData,
+        data: &CandleData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         bar_types: &AHashMap<String, BarType>,
+        bar_cache: &mut AHashMap<String, CandleData>,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
         let key = format!("candle:{}:{}", data.s, data.i);
 
-        if let Some(bar_type) = bar_types.get(&key) {
-            if let Some(instrument) = instruments.get(&data.s) {
-                match parse_ws_candle(data, instrument, bar_type, ts_init) {
-                    Ok(bar) => Some(NautilusWsMessage::Candle(bar)),
-                    Err(e) => {
-                        tracing::error!("Error parsing candle: {e}");
-                        None
+        let mut closed_bar = None;
+        if let Some(cached) = bar_cache.get(&key) {
+            // Emit cached bar when close_time changes, indicating the previous period closed
+            if cached.close_time != data.close_time {
+                tracing::debug!(
+                    "Bar period changed for {}: prev_close_time={}, new_close_time={}",
+                    data.s,
+                    cached.close_time,
+                    data.close_time
+                );
+                closed_bar = Some(cached.clone());
+            }
+        }
+
+        bar_cache.insert(key.clone(), data.clone());
+
+        if let Some(closed_data) = closed_bar {
+            if let Some(bar_type) = bar_types.get(&key) {
+                if let Some(instrument) = instruments.get(&data.s) {
+                    match parse_ws_candle(&closed_data, instrument, bar_type, ts_init) {
+                        Ok(bar) => return Some(NautilusWsMessage::Candle(bar)),
+                        Err(e) => {
+                            tracing::error!("Error parsing closed candle: {e}");
+                        }
                     }
+                } else {
+                    tracing::debug!("No instrument found for coin: {}", data.s);
                 }
             } else {
-                tracing::warn!("No instrument found for coin: {}", data.s);
-                None
+                tracing::debug!("No bar type found for key: {key}");
             }
-        } else {
-            tracing::warn!("No bar type found for key: {key}");
-            None
         }
+
+        None
     }
 
     fn handle_asset_context(
@@ -624,7 +646,7 @@ impl FeedHandler {
                 }
             }
         } else {
-            tracing::warn!("No instrument found for coin: {coin}");
+            tracing::debug!("No instrument found for coin: {coin}");
         }
 
         result
@@ -643,7 +665,9 @@ fn subscription_to_key(sub: &SubscriptionRequest) -> String {
         }
         SubscriptionRequest::Notification { user } => format!("notification:{user}"),
         SubscriptionRequest::WebData2 { user } => format!("webData2:{user}"),
-        SubscriptionRequest::Candle { coin, interval } => format!("candle:{coin}:{interval:?}"),
+        SubscriptionRequest::Candle { coin, interval } => {
+            format!("candle:{coin}:{}", interval.as_str())
+        }
         SubscriptionRequest::L2Book { coin, .. } => format!("l2Book:{coin}"),
         SubscriptionRequest::Trades { coin } => format!("trades:{coin}"),
         SubscriptionRequest::OrderUpdates { user } => format!("orderUpdates:{user}"),

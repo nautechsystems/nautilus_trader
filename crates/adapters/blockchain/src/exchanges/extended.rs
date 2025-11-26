@@ -16,22 +16,12 @@
 use std::{ops::Deref, sync::Arc};
 
 use hypersync_client::simple_types::Log;
-use nautilus_model::{
-    defi::{
-        dex::{Dex, SharedDex},
-        token::Token,
-    },
-    enums::OrderSide,
-    types::{Price, Quantity},
-};
+use nautilus_model::defi::dex::{Dex, SharedDex};
 
 use crate::events::{
     burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, initialize::InitializeEvent,
     mint::MintEvent, pool_created::PoolCreatedEvent, swap::SwapEvent,
 };
-
-type ConvertTradeDataFn =
-    fn(&Token, &Token, &SwapEvent) -> anyhow::Result<(OrderSide, Quantity, Price)>;
 
 /// Extended DEX wrapper that adds provider-specific event parsing capabilities to the domain `Dex` model.
 #[derive(Debug, Clone)]
@@ -52,8 +42,6 @@ pub struct DexExtended {
     pub parse_collect_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<CollectEvent>>,
     /// Function to parse flash events.
     pub parse_flash_event_fn: Option<fn(SharedDex, Log) -> anyhow::Result<FlashEvent>>,
-    /// Function to convert to trade data.
-    pub convert_to_trade_data_fn: Option<ConvertTradeDataFn>,
 }
 
 impl DexExtended {
@@ -68,7 +56,6 @@ impl DexExtended {
             parse_mint_event_fn: None,
             parse_burn_event_fn: None,
             parse_collect_event_fn: None,
-            convert_to_trade_data_fn: None,
             parse_flash_event_fn: None,
         }
     }
@@ -129,11 +116,6 @@ impl DexExtended {
         self.parse_flash_event_fn = Some(parse_flash_event);
     }
 
-    /// Sets the function used to convert trade data for this Dex.
-    pub fn set_convert_trade_data(&mut self, convert_trade_data: ConvertTradeDataFn) {
-        self.convert_to_trade_data_fn = Some(convert_trade_data);
-    }
-
     /// Parses a pool creation event log using this DEX's specific parsing function.
     ///
     /// # Errors
@@ -162,28 +144,6 @@ impl DexExtended {
         } else {
             anyhow::bail!(
                 "Parsing of swap event in not defined in this dex: {}:{}",
-                self.dex.chain,
-                self.dex.name
-            )
-        }
-    }
-
-    /// Convert to trade data from a log using this DEX's specific parsing function.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the DEX does not have a trade data converter defined or if conversion fails.
-    pub fn convert_to_trade_data(
-        &self,
-        token0: &Token,
-        token1: &Token,
-        swap_event: &SwapEvent,
-    ) -> anyhow::Result<(OrderSide, Quantity, Price)> {
-        if let Some(convert_to_trade_data_fn) = &self.convert_to_trade_data_fn {
-            convert_to_trade_data_fn(token0, token1, swap_event)
-        } else {
-            anyhow::bail!(
-                "Converting to trade data is not defined in this dex: {}:{}",
                 self.dex.chain,
                 self.dex.name
             )

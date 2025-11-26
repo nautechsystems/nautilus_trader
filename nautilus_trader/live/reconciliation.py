@@ -48,6 +48,65 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
+def is_within_single_unit_tolerance(
+    value1: Decimal,
+    value2: Decimal,
+    precision: int,
+) -> bool:
+    """
+    Check if two decimal values are within single unit tolerance based on precision.
+
+    Handles rounding discrepancies from venues (e.g., OKX fillSz vs accFillSz).
+
+    Parameters
+    ----------
+    value1 : Decimal
+        The first value to compare.
+    value2 : Decimal
+        The second value to compare.
+    precision : int
+        The decimal precision for tolerance calculation.
+
+    Returns
+    -------
+    bool
+
+    """
+    # Only apply tolerance for fractional quantities (precision > 0)
+    if precision == 0:
+        return value1 == value2  # Integer quantities require exact match
+
+    tolerance = Decimal(10) ** -precision
+
+    return abs(value1 - value2) <= tolerance
+
+
+def get_existing_fill_for_trade_id(
+    order: Order,
+    trade_id: TradeId,
+) -> OrderFilled | None:
+    """
+    Find an existing fill event for a trade ID in the order's event history.
+
+    Parameters
+    ----------
+    order : Order
+        The order to search.
+    trade_id : TradeId
+        The trade ID to find.
+
+    Returns
+    -------
+    OrderFilled or ``None``
+
+    """
+    for event in order.events:
+        if isinstance(event, OrderFilled) and event.trade_id == trade_id:
+            return event
+
+    return None
+
+
 def create_order_rejected_event(
     order: Order,
     ts_now: int,

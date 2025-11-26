@@ -102,6 +102,13 @@ impl BitmexHttpClient {
         self.api_key()
     }
 
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    #[must_use]
+    pub fn py_api_key_masked(&self) -> Option<String> {
+        self.api_key_masked()
+    }
+
     #[pyo3(name = "update_position_leverage")]
     fn py_update_position_leverage<'py>(
         &self,

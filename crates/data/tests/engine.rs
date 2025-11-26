@@ -57,6 +57,11 @@ use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{AmmType, Dex, DexType, chain::chains};
 #[cfg(feature = "defi")]
+use nautilus_model::defi::{
+    Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolProfiler,
+    PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
+};
+#[cfg(feature = "defi")]
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
     data::{
@@ -68,15 +73,6 @@ use nautilus_model::{
     identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     types::Price,
-};
-#[cfg(feature = "defi")]
-use nautilus_model::{
-    defi::{
-        Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType,
-        PoolProfiler, PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
-    },
-    enums::OrderSide,
-    types::Quantity,
 };
 use rstest::*;
 
@@ -1837,7 +1833,7 @@ fn test_execute_subscribe_pool_swaps(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -1976,9 +1972,6 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         U160::from(59000000000000u128),
         1000000,
         100,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
 
     let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
@@ -2064,7 +2057,7 @@ fn test_execute_subscribe_pool_liquidity_updates(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -2151,7 +2144,7 @@ fn test_execute_subscribe_pool_fee_collects(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -2234,7 +2227,7 @@ fn test_execute_subscribe_pool_flash_events(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -2659,7 +2652,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         .liquidity;
     assert!(
         active_liquidity > 0,
-        "Active liquidity should be > 0 after mint, got: {}",
+        "Active liquidity should be > 0 after mint, was: {}",
         active_liquidity
     );
 
@@ -2708,9 +2701,6 @@ fn test_pool_updater_processes_swap_updates_profiler(
         new_price,
         1000u128,
         0i32,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -3322,7 +3312,7 @@ fn test_setup_pool_updater_requests_snapshot(
             assert_eq!(request.client_id, Some(client_id));
         }
         _ => panic!(
-            "Expected second command to be RequestPoolSnapshot, got: {:?}",
+            "Expected second command to be RequestPoolSnapshot, was: {:?}",
             recorded[1]
         ),
     }

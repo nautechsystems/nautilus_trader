@@ -623,14 +623,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             self._log.debug(f"Received {report}")
             reports.append(report)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-        if command.log_receipt_level == LogLevel.INFO:
-            self._log.info(receipt_log)
-        else:
-            self._log.debug(receipt_log)
+        self._log_report_receipt(
+            len(reports),
+            "OrderStatusReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -685,9 +682,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Confirm sorting in ascending order
         reports = sorted(reports, key=lambda x: x.trade_id)
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} FillReport{plural}")
+        self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
         return reports
 
@@ -719,9 +714,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             self._log.exception(f"Cannot generate PositionStatusReport: {e.message}", e)
             return []
 
-        len_reports = len(reports)
-        plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+        self._log_report_receipt(
+            len(reports),
+            "PositionStatusReport",
+            command.log_receipt_level,
+        )
 
         return reports
 
@@ -968,7 +965,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if order.trailing_offset_type != TrailingOffsetType.BASIS_POINTS:
                 return f"INVALID_TRAILING_OFFSET_TYPE: {trailing_offset_type_to_str(order.trailing_offset_type)}"
 
-            callback_rate = Decimal(order.trailing_offset) / Decimal("100")
+            callback_rate = Decimal(order.trailing_offset) / Decimal(100)
             callback_rate = callback_rate.quantize(Decimal("0.1"))
 
             if (
@@ -1152,7 +1149,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Convert basis points to percentage, preserving precision
         # Binance supports up to 1 decimal place precision for callback rates
-        callback_rate = Decimal(order.trailing_offset) / Decimal("100")
+        callback_rate = Decimal(order.trailing_offset) / Decimal(100)
         # Round to 1 decimal place only if necessary to meet Binance requirements
         callback_rate = callback_rate.quantize(Decimal("0.1"))
 

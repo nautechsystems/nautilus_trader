@@ -184,7 +184,8 @@ async def test_cancel_with_exception_in_task():
     await cancel_tasks_with_timeout(tasks, logger, timeout_secs=1.0)
 
     # Assert
-    assert task1.done() and not task1.cancelled()
+    assert task1.done()
+    assert not task1.cancelled()
     assert task2.cancelled()
 
 

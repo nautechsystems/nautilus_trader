@@ -15,12 +15,14 @@
 
 use std::{
     collections::HashSet,
+    str::FromStr,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 
+use anyhow::Context;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_model::{
@@ -37,7 +39,7 @@ use nautilus_network::{
 use ustr::Ustr;
 
 use crate::{
-    common::{HyperliquidProductType, parse::bar_type_to_interval},
+    common::{HyperliquidProductType, enums::HyperliquidBarInterval, parse::bar_type_to_interval},
     websocket::{
         handler::{FeedHandler, HandlerCommand},
         messages::{NautilusWsMessage, SubscriptionRequest},
@@ -68,13 +70,13 @@ pub struct HyperliquidWebSocketClient {
     product_type: HyperliquidProductType,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     signal: Arc<AtomicBool>,
+    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
+    out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     auth_tracker: AuthTracker,
     subscriptions: SubscriptionState,
     instruments: Arc<DashMap<Ustr, InstrumentAny>>,
     bar_types: Arc<DashMap<String, BarType>>,
     asset_context_subs: Arc<DashMap<Ustr, HashSet<AssetContextDataType>>>,
-    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
-    out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     account_id: Option<AccountId>,
 }
@@ -86,13 +88,13 @@ impl Clone for HyperliquidWebSocketClient {
             product_type: self.product_type,
             connection_mode: Arc::clone(&self.connection_mode),
             signal: Arc::clone(&self.signal),
+            cmd_tx: Arc::clone(&self.cmd_tx),
+            out_rx: None,
             auth_tracker: self.auth_tracker.clone(),
             subscriptions: self.subscriptions.clone(),
             instruments: Arc::clone(&self.instruments),
             bar_types: Arc::clone(&self.bar_types),
             asset_context_subs: Arc::clone(&self.asset_context_subs),
-            cmd_tx: Arc::clone(&self.cmd_tx),
-            out_rx: None,
             task_handle: None,
             account_id: self.account_id,
         }
@@ -163,6 +165,7 @@ impl HyperliquidWebSocketClient {
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(200),
+            reconnect_max_attempts: None,
         };
         let client = WebSocketClient::connect(cfg, None, vec![], None).await?;
 
@@ -194,9 +197,9 @@ impl HyperliquidWebSocketClient {
         // Spawn handler task
         let signal = Arc::clone(&self.signal);
         let account_id = self.account_id;
-        let auth_tracker = self.auth_tracker.clone();
         let subscriptions = self.subscriptions.clone();
-        let _cmd_tx_for_reconnect = cmd_tx.clone();
+        let cmd_tx_for_reconnect = cmd_tx.clone();
+
         let stream_handle = tokio::spawn(async move {
             let mut handler = FeedHandler::new(
                 signal,
@@ -204,16 +207,38 @@ impl HyperliquidWebSocketClient {
                 raw_rx,
                 out_tx,
                 account_id,
-                auth_tracker,
                 subscriptions.clone(),
             );
-            // TODO: Implement proper resubscription logic
-            // Need to store actual SubscriptionRequest objects (not just keys) in a DashMap
-            // similar to OKX adapter, so we can reconstruct and resend on reconnection.
+
             let resubscribe_all = || {
-                tracing::warn!(
-                    "Resubscription after reconnect not yet implemented - subscriptions will be lost"
+                let topics = subscriptions.all_topics();
+                if topics.is_empty() {
+                    tracing::debug!("No active subscriptions to restore after reconnection");
+                    return;
+                }
+
+                tracing::info!(
+                    "Resubscribing to {} active subscriptions after reconnection",
+                    topics.len()
                 );
+                for topic in topics {
+                    match subscription_from_topic(&topic) {
+                        Ok(subscription) => {
+                            if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
+                                subscriptions: vec![subscription],
+                            }) {
+                                tracing::error!(error = %e, "Failed to send resubscribe command");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                topic = %topic,
+                                "Failed to reconstruct subscription from topic"
+                            );
+                        }
+                    }
+                }
             };
             loop {
                 match handler.next().await {
@@ -346,6 +371,7 @@ impl HyperliquidWebSocketClient {
             .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
 
         let subscription = SubscriptionRequest::Trades { coin };
+
         cmd_tx
             .send(HandlerCommand::Subscribe {
                 subscriptions: vec![subscription],
@@ -361,14 +387,8 @@ impl HyperliquidWebSocketClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
         let coin = instrument.raw_symbol().inner();
 
-        // Remove the mapping when unsubscribing
-        tracing::debug!(
-            "Removed coin '{}' mapping for instrument {}",
-            coin,
-            instrument_id
-        );
-
         let subscription = SubscriptionRequest::Trades { coin };
+
         self.cmd_tx
             .read()
             .await
@@ -394,6 +414,7 @@ impl HyperliquidWebSocketClient {
             .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
 
         let subscription = SubscriptionRequest::Bbo { coin };
+
         cmd_tx
             .send(HandlerCommand::Subscribe {
                 subscriptions: vec![subscription],
@@ -409,9 +430,8 @@ impl HyperliquidWebSocketClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
         let coin = instrument.raw_symbol().inner();
 
-        // Remove the mapping from coin to instrument
-
         let subscription = SubscriptionRequest::Bbo { coin };
+
         self.cmd_tx
             .read()
             .await
@@ -441,6 +461,7 @@ impl HyperliquidWebSocketClient {
             mantissa: None,
             n_sig_figs: None,
         };
+
         cmd_tx
             .send(HandlerCommand::Subscribe {
                 subscriptions: vec![subscription],
@@ -456,13 +477,12 @@ impl HyperliquidWebSocketClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
         let coin = instrument.raw_symbol().inner();
 
-        // Remove the mapping from coin to instrument
-
         let subscription = SubscriptionRequest::L2Book {
             coin,
             mantissa: None,
             n_sig_figs: None,
         };
+
         self.cmd_tx
             .read()
             .await
@@ -489,17 +509,14 @@ impl HyperliquidWebSocketClient {
 
         let cmd_tx = self.cmd_tx.read().await;
 
-        // Update the handler's coin→instrument mapping for this subscription
         cmd_tx
             .send(HandlerCommand::UpdateInstrument(instrument.clone()))
             .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
 
-        // Send bar type to handler
         cmd_tx
             .send(HandlerCommand::AddBarType { key, bar_type })
             .map_err(|e| anyhow::anyhow!("Failed to send AddBarType command: {e}"))?;
 
-        // Send subscription
         cmd_tx
             .send(HandlerCommand::Subscribe {
                 subscriptions: vec![subscription],
@@ -518,18 +535,15 @@ impl HyperliquidWebSocketClient {
         let interval = bar_type_to_interval(&bar_type)?;
         let subscription = SubscriptionRequest::Candle { coin, interval };
 
-        // Remove from cache using canonical key
         let key = format!("candle:{coin}:{interval}");
         self.bar_types.remove(&key);
 
         let cmd_tx = self.cmd_tx.read().await;
 
-        // Remove bar type from handler
         cmd_tx
             .send(HandlerCommand::RemoveBarType { key })
             .map_err(|e| anyhow::anyhow!("Failed to send RemoveBarType command: {e}"))?;
 
-        // Send unsubscription
         cmd_tx
             .send(HandlerCommand::Unsubscribe {
                 subscriptions: vec![subscription],
@@ -749,5 +763,172 @@ impl HyperliquidWebSocketClient {
         } else {
             None
         }
+    }
+}
+
+/// Reconstructs a subscription request from a topic string.
+fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
+    let parts: Vec<&str> = topic.split(':').collect();
+
+    match parts.first() {
+        Some(&"allMids") => {
+            let dex = parts.get(1).map(|s| (*s).to_string());
+            Ok(SubscriptionRequest::AllMids { dex })
+        }
+        Some(&"notification") => Ok(SubscriptionRequest::Notification {
+            user: (*parts.get(1).context("Missing user")?).to_string(),
+        }),
+        Some(&"webData2") => Ok(SubscriptionRequest::WebData2 {
+            user: (*parts.get(1).context("Missing user")?).to_string(),
+        }),
+        Some(&"candle") => {
+            let coin = Ustr::from(parts.get(1).context("Missing coin")?);
+            let interval_str = parts.get(2).context("Missing interval")?;
+            let interval = HyperliquidBarInterval::from_str(interval_str)?;
+            Ok(SubscriptionRequest::Candle { coin, interval })
+        }
+        Some(&"l2Book") => Ok(SubscriptionRequest::L2Book {
+            coin: Ustr::from(parts.get(1).context("Missing coin")?),
+            mantissa: None,
+            n_sig_figs: None,
+        }),
+        Some(&"trades") => Ok(SubscriptionRequest::Trades {
+            coin: Ustr::from(parts.get(1).context("Missing coin")?),
+        }),
+        Some(&"orderUpdates") => Ok(SubscriptionRequest::OrderUpdates {
+            user: (*parts.get(1).context("Missing user")?).to_string(),
+        }),
+        Some(&"userEvents") => Ok(SubscriptionRequest::UserEvents {
+            user: (*parts.get(1).context("Missing user")?).to_string(),
+        }),
+        Some(&"userFills") => Ok(SubscriptionRequest::UserFills {
+            user: (*parts.get(1).context("Missing user")?).to_string(),
+            aggregate_by_time: None,
+        }),
+        Some(&"userFundings") => Ok(SubscriptionRequest::UserFundings {
+            user: (*parts.get(1).context("Missing user")?).to_string(),
+        }),
+        Some(&"userNonFundingLedgerUpdates") => {
+            Ok(SubscriptionRequest::UserNonFundingLedgerUpdates {
+                user: (*parts.get(1).context("Missing user")?).to_string(),
+            })
+        }
+        Some(&"activeAssetCtx") => Ok(SubscriptionRequest::ActiveAssetCtx {
+            coin: Ustr::from(parts.get(1).context("Missing coin")?),
+        }),
+        Some(&"activeSpotAssetCtx") => Ok(SubscriptionRequest::ActiveSpotAssetCtx {
+            coin: Ustr::from(parts.get(1).context("Missing coin")?),
+        }),
+        Some(&"activeAssetData") => Ok(SubscriptionRequest::ActiveAssetData {
+            user: (*parts.get(1).context("Missing user")?).to_string(),
+            coin: (*parts.get(2).context("Missing coin")?).to_string(),
+        }),
+        Some(&"userTwapSliceFills") => Ok(SubscriptionRequest::UserTwapSliceFills {
+            user: (*parts.get(1).context("Missing user")?).to_string(),
+        }),
+        Some(&"userTwapHistory") => Ok(SubscriptionRequest::UserTwapHistory {
+            user: (*parts.get(1).context("Missing user")?).to_string(),
+        }),
+        Some(&"bbo") => Ok(SubscriptionRequest::Bbo {
+            coin: Ustr::from(parts.get(1).context("Missing coin")?),
+        }),
+        Some(channel) => anyhow::bail!("Unknown subscription channel: {channel}"),
+        None => anyhow::bail!("Empty topic string"),
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::common::enums::HyperliquidBarInterval;
+
+    /// Generates a unique topic key for a subscription request.
+    fn subscription_topic(sub: &SubscriptionRequest) -> String {
+        match sub {
+            SubscriptionRequest::AllMids { dex } => {
+                if let Some(dex) = dex {
+                    format!("allMids:{dex}")
+                } else {
+                    "allMids".to_string()
+                }
+            }
+            SubscriptionRequest::Notification { user } => format!("notification:{user}"),
+            SubscriptionRequest::WebData2 { user } => format!("webData2:{user}"),
+            SubscriptionRequest::Candle { coin, interval } => {
+                format!("candle:{coin}:{}", interval.as_str())
+            }
+            SubscriptionRequest::L2Book { coin, .. } => format!("l2Book:{coin}"),
+            SubscriptionRequest::Trades { coin } => format!("trades:{coin}"),
+            SubscriptionRequest::OrderUpdates { user } => format!("orderUpdates:{user}"),
+            SubscriptionRequest::UserEvents { user } => format!("userEvents:{user}"),
+            SubscriptionRequest::UserFills { user, .. } => format!("userFills:{user}"),
+            SubscriptionRequest::UserFundings { user } => format!("userFundings:{user}"),
+            SubscriptionRequest::UserNonFundingLedgerUpdates { user } => {
+                format!("userNonFundingLedgerUpdates:{user}")
+            }
+            SubscriptionRequest::ActiveAssetCtx { coin } => format!("activeAssetCtx:{coin}"),
+            SubscriptionRequest::ActiveSpotAssetCtx { coin } => {
+                format!("activeSpotAssetCtx:{coin}")
+            }
+            SubscriptionRequest::ActiveAssetData { user, coin } => {
+                format!("activeAssetData:{user}:{coin}")
+            }
+            SubscriptionRequest::UserTwapSliceFills { user } => {
+                format!("userTwapSliceFills:{user}")
+            }
+            SubscriptionRequest::UserTwapHistory { user } => format!("userTwapHistory:{user}"),
+            SubscriptionRequest::Bbo { coin } => format!("bbo:{coin}"),
+        }
+    }
+
+    #[rstest]
+    #[case(SubscriptionRequest::Trades { coin: "BTC".into() }, "trades:BTC")]
+    #[case(SubscriptionRequest::Bbo { coin: "BTC".into() }, "bbo:BTC")]
+    #[case(SubscriptionRequest::OrderUpdates { user: "0x123".to_string() }, "orderUpdates:0x123")]
+    #[case(SubscriptionRequest::UserEvents { user: "0xabc".to_string() }, "userEvents:0xabc")]
+    fn test_subscription_topic_generation(
+        #[case] subscription: SubscriptionRequest,
+        #[case] expected_topic: &str,
+    ) {
+        assert_eq!(subscription_topic(&subscription), expected_topic);
+    }
+
+    #[rstest]
+    fn test_subscription_topics_unique() {
+        let sub1 = SubscriptionRequest::Trades { coin: "BTC".into() };
+        let sub2 = SubscriptionRequest::Bbo { coin: "BTC".into() };
+
+        let topic1 = subscription_topic(&sub1);
+        let topic2 = subscription_topic(&sub2);
+
+        assert_ne!(topic1, topic2);
+    }
+
+    #[rstest]
+    #[case(SubscriptionRequest::Trades { coin: "BTC".into() })]
+    #[case(SubscriptionRequest::Bbo { coin: "ETH".into() })]
+    #[case(SubscriptionRequest::Candle { coin: "SOL".into(), interval: HyperliquidBarInterval::OneHour })]
+    #[case(SubscriptionRequest::OrderUpdates { user: "0x123".to_string() })]
+    fn test_subscription_reconstruction(#[case] subscription: SubscriptionRequest) {
+        let topic = subscription_topic(&subscription);
+        let reconstructed = subscription_from_topic(&topic).expect("Failed to reconstruct");
+        assert_eq!(subscription_topic(&reconstructed), topic);
+    }
+
+    #[rstest]
+    fn test_subscription_topic_candle() {
+        let sub = SubscriptionRequest::Candle {
+            coin: "BTC".into(),
+            interval: HyperliquidBarInterval::OneHour,
+        };
+
+        let topic = subscription_topic(&sub);
+        assert_eq!(topic, "candle:BTC:1h");
     }
 }

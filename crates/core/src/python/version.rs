@@ -15,7 +15,10 @@
 
 //! Functions for introspecting the running Python interpreter & installed packages.
 
-#![allow(clippy::manual_let_else)]
+#![allow(
+    clippy::manual_let_else,
+    reason = "Prefer explicit control flow for error handling"
+)]
 use pyo3::{prelude::*, types::PyTuple};
 
 /// Retrieves the Python interpreter version as a string.

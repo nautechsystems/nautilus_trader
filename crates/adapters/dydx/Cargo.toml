@@ -64,6 +64,7 @@ chrono = { workspace = true }
 cosmrs = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
+dydx-proto = { workspace = true }
 hex = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
@@ -80,6 +81,8 @@ tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true } # Needed for bin scripts
+urlencoding = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
@@ -93,3 +96,16 @@ rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tracing-test = { workspace = true }
 url = { workspace = true }
+indexmap = { workspace = true }
+
+[[bin]]
+name = "dydx-http-public"
+path = "bin/http_public.rs"
+
+[[bin]]
+name = "dydx-ws-data"
+path = "bin/ws_data.rs"
+
+[[bin]]
+name = "dydx-live-integration"
+path = "bin/live_integration.rs"

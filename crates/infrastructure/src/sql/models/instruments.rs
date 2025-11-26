@@ -119,7 +119,9 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
                 OptionSpreadModel::from_row(row).unwrap().0,
             )))
         } else {
-            panic!("Unknown instrument type")
+            Err(sqlx::Error::Decode(
+                format!("Unknown instrument type: {kind}").into(),
+            ))
         }
     }
 }

@@ -655,7 +655,7 @@ class TestSimulatedExchange:
             [
                 OrderSide.BUY,
                 TrailingOffsetType.BASIS_POINTS,
-                Decimal("100"),
+                Decimal(100),
                 TriggerType.BID_ASK,
                 Price.from_str("14.000"),
                 Price.from_str("14.140"),
@@ -664,7 +664,7 @@ class TestSimulatedExchange:
             [
                 OrderSide.SELL,
                 TrailingOffsetType.BASIS_POINTS,
-                Decimal("100"),
+                Decimal(100),
                 TriggerType.BID_ASK,
                 Price.from_str("13.000"),
                 Price.from_str("12.870"),
@@ -755,7 +755,7 @@ class TestSimulatedExchange:
             [
                 OrderSide.BUY,
                 TrailingOffsetType.BASIS_POINTS,
-                Decimal("100"),
+                Decimal(100),
                 TriggerType.LAST_PRICE,
                 Price.from_str("14.140"),
                 Price.from_str("14.140"),
@@ -763,7 +763,7 @@ class TestSimulatedExchange:
             [
                 OrderSide.SELL,
                 TrailingOffsetType.BASIS_POINTS,
-                Decimal("100"),
+                Decimal(100),
                 TriggerType.LAST_PRICE,
                 Price.from_str("13.860"),
                 Price.from_str("13.860"),
@@ -771,7 +771,7 @@ class TestSimulatedExchange:
             [
                 OrderSide.BUY,
                 TrailingOffsetType.BASIS_POINTS,
-                Decimal("100"),
+                Decimal(100),
                 TriggerType.LAST_OR_BID_ASK,
                 Price.from_str("14.140"),
                 Price.from_str("14.140"),
@@ -779,7 +779,7 @@ class TestSimulatedExchange:
             [
                 OrderSide.SELL,
                 TrailingOffsetType.BASIS_POINTS,
-                Decimal("100"),
+                Decimal(100),
                 TriggerType.LAST_OR_BID_ASK,
                 Price.from_str("13.860"),
                 Price.from_str("13.860"),
@@ -971,7 +971,7 @@ class TestSimulatedExchange:
         self.portfolio.update_quote_tick(quote1)
 
         # Prepare fixed offset for basis-points
-        offset = Decimal("200")
+        offset = Decimal(200)
         # Submit trailing stop limit order
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
@@ -1074,7 +1074,7 @@ class TestSimulatedExchange:
         self.data_engine.process(trade)
 
         # Prepare fixed offset for ticks
-        offset = Decimal("20")
+        offset = Decimal(20)
         # Submit trailing stop limit order
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=USDJPY_SIM.id,
@@ -1158,7 +1158,7 @@ class TestSimulatedExchange:
         self.portfolio.update_quote_tick(quote1)
 
         # Prepare fixed offset for bid/ask ticks
-        offset = Decimal("20")
+        offset = Decimal(20)
 
         # Submit trailing stop limit order
         trailing_stop = self.strategy.order_factory.trailing_stop_limit(
@@ -1207,7 +1207,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(100_000),
             trigger_price=Price.from_str("15.000"),
             trailing_offset_type=TrailingOffsetType.TICKS,
-            trailing_offset=Decimal("10"),
+            trailing_offset=Decimal(10),
             trigger_type=TriggerType.BID_ASK,
         )
         self.strategy.submit_order(trailing_stop)
@@ -1228,7 +1228,7 @@ class TestSimulatedExchange:
         assert trailing_stop.event_count == 4
         assert trailing_stop.events[-1].last_px == Price.from_str("15.000")
         assert trailing_stop.events[-1].last_qty == Quantity.from_int(100_000)
-        assert trailing_stop.avg_px == Decimal("15")
+        assert trailing_stop.avg_px == Decimal(15)
 
     def test_trailing_stop_market_order_sell_fill(
         self,
@@ -1249,7 +1249,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(100_000),
             trigger_price=Price.from_str("12.000"),
             trailing_offset_type=TrailingOffsetType.TICKS,
-            trailing_offset=Decimal("10"),
+            trailing_offset=Decimal(10),
             trigger_type=TriggerType.BID_ASK,
         )
         self.strategy.submit_order(trailing_stop)
@@ -1270,7 +1270,7 @@ class TestSimulatedExchange:
         assert trailing_stop.event_count == 4
         assert trailing_stop.events[-1].last_px == Price.from_str("12.000")
         assert trailing_stop.events[-1].last_qty == Quantity.from_int(100_000)
-        assert trailing_stop.avg_px == Decimal("12")
+        assert trailing_stop.avg_px == Decimal(12)
 
     def test_trailing_stop_market_order_buy_fill_when_quantity_exceeds_top_level(
         self,
@@ -1293,7 +1293,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(200_000),  # <-- Exceeds top-level size
             trigger_price=Price.from_str("15.000"),
             trailing_offset_type=TrailingOffsetType.TICKS,
-            trailing_offset=Decimal("10"),
+            trailing_offset=Decimal(10),
             trigger_type=TriggerType.BID_ASK,
         )
         self.strategy.submit_order(trailing_stop)
@@ -1334,7 +1334,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(200_000),  # <-- Exceeds top-level size
             trigger_price=Price.from_str("12.000"),
             trailing_offset_type=TrailingOffsetType.TICKS,
-            trailing_offset=Decimal("10"),
+            trailing_offset=Decimal(10),
             trigger_type=TriggerType.BID_ASK,
         )
         self.strategy.submit_order(trailing_stop)

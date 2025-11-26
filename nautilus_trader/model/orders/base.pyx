@@ -231,6 +231,8 @@ cdef class Order:
         self.ts_last = init.ts_init
 
     def __eq__(self, Order other) -> bool:
+        if other is None:
+            return False
         return self.client_order_id == other.client_order_id
 
     def __hash__(self) -> int:

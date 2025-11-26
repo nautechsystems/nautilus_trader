@@ -951,6 +951,12 @@ impl BitmexHttpClient {
         self.inner.credential.as_ref().map(|c| c.api_key.as_str())
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> Option<String> {
+        self.inner.credential.as_ref().map(|c| c.api_key_masked())
+    }
+
     /// Requests the current server time from BitMEX.
     ///
     /// Returns the BitMEX system time as a Unix timestamp in milliseconds.

@@ -269,7 +269,7 @@ class TestBettingAccount:
             )
 
     @pytest.mark.parametrize(
-        "side, price, quantity, expected",
+        ("side", "price", "quantity", "expected"),
         [
             (BetSide.BACK, 5.0, 100.0, -100),
             (BetSide.BACK, 1.50, 100.0, -100),

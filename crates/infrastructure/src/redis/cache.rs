@@ -176,6 +176,7 @@ impl RedisCacheDatabase {
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
         let encoding = config.encoding;
+
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
                 log::error!("Error in task '{CACHE_PROCESS}': {e}");
@@ -800,15 +801,15 @@ fn get_index_key(key: &str) -> anyhow::Result<&str> {
         })
 }
 
-#[allow(dead_code, reason = "Under development")]
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct RedisCacheDatabaseAdapter {
     pub encoding: SerializationEncoding,
     pub database: RedisCacheDatabase,
 }
 
-#[allow(dead_code, reason = "Under development")]
-#[allow(unused, reason = "Under development")]
+#[allow(dead_code)]
+#[allow(unused)]
 #[async_trait::async_trait]
 impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()> {

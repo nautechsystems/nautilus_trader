@@ -163,6 +163,12 @@ impl BitmexWebSocketClient {
         self.credential.as_ref().map(|c| c.api_key.as_str())
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> Option<String> {
+        self.credential.as_ref().map(|c| c.api_key_masked())
+    }
+
     /// Returns a value indicating whether the client is active.
     #[must_use]
     pub fn is_active(&self) -> bool {
@@ -484,6 +490,7 @@ impl BitmexWebSocketClient {
             reconnect_delay_max_ms: None,     // Use default
             reconnect_backoff_factor: None,   // Use default
             reconnect_jitter_ms: None,        // Use default
+            reconnect_max_attempts: None,
         };
 
         let keyed_quotas = vec![];

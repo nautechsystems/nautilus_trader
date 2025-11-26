@@ -19,9 +19,22 @@ use std::{any::Any, cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_data::client::DataClient;
-use nautilus_system::factories::{ClientConfig, DataClientFactory};
+use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_model::{
+    enums::{AccountType, OmsType},
+    identifiers::ClientId,
+};
+use nautilus_system::{
+    ExecutionClientFactory,
+    factories::{ClientConfig, DataClientFactory},
+};
 
-use crate::{config::BlockchainDataClientConfig, data::client::BlockchainDataClient};
+use crate::{
+    config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig},
+    constants::BLOCKCHAIN_VENUE,
+    data::client::BlockchainDataClient,
+    execution::client::BlockchainExecutionClient,
+};
 
 impl ClientConfig for BlockchainDataClientConfig {
     fn as_any(&self) -> &dyn Any {
@@ -86,6 +99,78 @@ impl DataClientFactory for BlockchainDataClientFactory {
 
     fn config_type(&self) -> &'static str {
         "BlockchainDataClientConfig"
+    }
+}
+
+/// Factory for creating blockchain execution clients.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.blockchain")
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
+pub struct BlockchainExecutionClientFactory;
+
+impl BlockchainExecutionClientFactory {
+    /// Creates a new [`BlockchainExecutionClientFactory`] instance.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for BlockchainExecutionClientFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExecutionClientFactory for BlockchainExecutionClientFactory {
+    fn create(
+        &self,
+        name: &str,
+        config: &dyn ClientConfig,
+        cache: Rc<RefCell<Cache>>,
+        clock: Rc<RefCell<dyn Clock>>,
+    ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+        let blockchain_execution_config = config
+            .as_any()
+            .downcast_ref::<BlockchainExecutionClientConfig>()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid config type for BlockchainDataClientFactory. Expected `BlockchainDataClientConfig`, was {config:?}"
+                )
+            })?;
+
+        let core_execution_client = ExecutionClientCore::new(
+            blockchain_execution_config.trader_id,
+            ClientId::from(name),
+            *BLOCKCHAIN_VENUE,
+            OmsType::Netting,
+            blockchain_execution_config.client_id,
+            AccountType::Wallet,
+            None,
+            clock,
+            cache,
+        );
+
+        let client = BlockchainExecutionClient::new(
+            core_execution_client,
+            blockchain_execution_config.clone(),
+        );
+
+        Ok(Box::new(client))
+    }
+
+    fn name(&self) -> &'static str {
+        "BLOCKCHAIN"
+    }
+
+    fn config_type(&self) -> &'static str {
+        "BlockchainExecutionClientConfig"
     }
 }
 

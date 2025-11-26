@@ -305,6 +305,10 @@ typedef enum AccountType {
      * An account specific to betting markets.
      */
     BETTING = 3,
+    /**
+     * An account which represents a blockchain wallet,
+     */
+    WALLET = 4,
 } AccountType;
 
 /**

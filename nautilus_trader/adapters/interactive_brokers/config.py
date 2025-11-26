@@ -144,6 +144,8 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
     """
 
     def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
         if not isinstance(other, InteractiveBrokersInstrumentProviderConfig):
             return False
 

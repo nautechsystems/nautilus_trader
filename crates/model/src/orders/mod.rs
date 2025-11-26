@@ -629,14 +629,23 @@ impl OrderCore {
     ///
     /// # Errors
     ///
-    /// Returns an error if the event is invalid for the current order status.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `event.client_order_id()` or `event.strategy_id()` does not match the order.
+    /// Returns an error if the event is invalid for the current order status, or if
+    /// `event.client_order_id()` or `event.strategy_id()` does not match the order.
     pub fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        assert_eq!(self.client_order_id, event.client_order_id());
-        assert_eq!(self.strategy_id, event.strategy_id());
+        if self.client_order_id != event.client_order_id() {
+            return Err(OrderError::Invariant(anyhow::anyhow!(
+                "Event client_order_id {} does not match order client_order_id {}",
+                event.client_order_id(),
+                self.client_order_id
+            )));
+        }
+        if self.strategy_id != event.strategy_id() {
+            return Err(OrderError::Invariant(anyhow::anyhow!(
+                "Event strategy_id {} does not match order strategy_id {}",
+                event.strategy_id(),
+                self.strategy_id
+            )));
+        }
 
         // Save current status as previous_status for ALL transitions except:
         // - Initialized (no prior state exists)

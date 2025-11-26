@@ -317,6 +317,12 @@ impl OKXWebSocketClient {
         self.credential.clone().map(|c| c.api_key.as_str())
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> Option<String> {
+        self.credential.clone().map(|c| c.api_key_masked())
+    }
+
     /// Returns a value indicating whether the client is active.
     pub fn is_active(&self) -> bool {
         let connection_mode_arc = self.connection_mode.load();
@@ -409,6 +415,7 @@ impl OKXWebSocketClient {
             reconnect_delay_max_ms: None,     // Use default
             reconnect_backoff_factor: None,   // Use default
             reconnect_jitter_ms: None,        // Use default
+            reconnect_max_attempts: None,
         };
 
         // Configure rate limits for different operation types
@@ -904,7 +911,7 @@ impl OKXWebSocketClient {
             .map_err(|e| OKXWsError::ClientError(format!("Failed to send subscribe command: {e}")))
     }
 
-    #[allow(clippy::collapsible_if, reason = "Clearer uncollapsed")]
+    #[allow(clippy::collapsible_if)]
     async fn unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
             let topic = topic_from_subscription_arg(arg);
@@ -1989,8 +1996,22 @@ impl OKXWebSocketClient {
             builder.pos_side(pos_side);
         };
 
+        // OKX implements FOK/IOC as order types rather than separate time-in-force
+        // Market + FOK is unsupported (FOK requires a limit price)
         let (okx_ord_type, price) = if post_only.unwrap_or(false) {
             (OKXOrderType::PostOnly, price)
+        } else if let Some(tif) = time_in_force {
+            match (order_type, tif) {
+                (OrderType::Market, TimeInForce::Fok) => {
+                    return Err(OKXWsError::ClientError(
+                        "Market orders with FOK time-in-force are not supported by OKX. Use Limit order with FOK instead.".to_string()
+                    ));
+                }
+                (OrderType::Market, TimeInForce::Ioc) => (OKXOrderType::OptimalLimitIoc, price),
+                (OrderType::Limit, TimeInForce::Fok) => (OKXOrderType::Fok, price),
+                (OrderType::Limit, TimeInForce::Ioc) => (OKXOrderType::Ioc, price),
+                _ => (OKXOrderType::from(order_type), price),
+            }
         } else {
             (OKXOrderType::from(order_type), price)
         };
@@ -2667,14 +2688,14 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_feed_handler_reconnection_detection() {
         let msg = Message::Text(RECONNECTED.to_string().into());
         let result = OKXWsFeedHandler::parse_raw_message(msg);
         assert!(matches!(result, Some(OKXWsMessage::Reconnected)));
     }
 
-    #[test]
+    #[rstest]
     fn test_feed_handler_normal_message_processing() {
         // Test ping message
         let ping_msg = Message::Text(TEXT_PING.to_string().into());
@@ -2699,19 +2720,19 @@ mod tests {
         ));
     }
 
-    #[test]
+    #[rstest]
     fn test_feed_handler_close_message() {
         // Close messages return None (filtered out)
         let result = OKXWsFeedHandler::parse_raw_message(Message::Close(None));
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_reconnection_message_constant() {
         assert_eq!(RECONNECTED, "__RECONNECTED__");
     }
 
-    #[test]
+    #[rstest]
     fn test_multiple_reconnection_signals() {
         // Test that multiple reconnection messages are properly parsed
         for _ in 0..3 {

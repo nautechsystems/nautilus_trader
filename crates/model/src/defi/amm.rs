@@ -141,6 +141,56 @@ impl Pool {
         let venue = Venue::new(format!("{}:{}", chain, dex.name));
         InstrumentId::new(symbol, venue)
     }
+
+    /// Returns the base token based on token priority.
+    ///
+    /// The base token is the asset being traded/priced. Token priority determines
+    /// which token becomes base vs quote:
+    /// - Lower priority number (1=stablecoin, 2=native, 3=other) = quote token
+    /// - Higher priority number = base token
+    pub fn get_base_token(&self) -> &Token {
+        let priority0 = self.token0.get_token_priority();
+        let priority1 = self.token1.get_token_priority();
+
+        if priority0 < priority1 {
+            &self.token1
+        } else {
+            &self.token0
+        }
+    }
+
+    /// Returns the quote token based on token priority.
+    ///
+    /// The quote token is the pricing currency. Token priority determines
+    /// which token becomes quote:
+    /// - Lower priority number (1=stablecoin, 2=native, 3=other) = quote token
+    pub fn get_quote_token(&self) -> &Token {
+        let priority0 = self.token0.get_token_priority();
+        let priority1 = self.token1.get_token_priority();
+
+        if priority0 < priority1 {
+            &self.token0
+        } else {
+            &self.token1
+        }
+    }
+
+    /// Returns whether the base/quote order is inverted from token0/token1 order.
+    ///
+    /// # Returns
+    /// - `true` if base=token1, quote=token0 (inverted from pool order)
+    /// - `false` if base=token0, quote=token1 (matches pool order)
+    ///
+    /// # Use Case
+    /// This is useful for knowing whether prices need to be inverted when
+    /// converting from pool convention (token1/token0) to market convention (base/quote).
+    pub fn is_base_quote_inverted(&self) -> bool {
+        let priority0 = self.token0.get_token_priority();
+        let priority1 = self.token1.get_token_priority();
+
+        // Inverted when token0 has higher priority (becomes quote instead of base)
+        priority0 < priority1
+    }
 }
 
 impl Display for Pool {
@@ -247,6 +297,14 @@ mod tests {
             "0x11b815efB8f581194ae79006d24E0d814B7697F6"
         );
         assert_eq!(pool.instrument_id.venue.as_str(), "Ethereum:UniswapV3");
+        // We expect WETH to be a base and USDT a quote token
+        assert_eq!(pool.get_base_token().symbol, "WETH");
+        assert_eq!(pool.get_quote_token().symbol, "USDT");
+        assert!(!pool.is_base_quote_inverted());
+        assert_eq!(
+            pool.to_full_spec_string(),
+            "WETH/USDT-3000.Ethereum:UniswapV3"
+        );
     }
 
     #[rstest]

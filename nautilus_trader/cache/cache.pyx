@@ -1710,14 +1710,17 @@ cdef class Cache(CacheFacade):
             cached_ticks = deque(maxlen=self.tick_capacity)
             self._quote_ticks[instrument_id] = cached_ticks
 
-        cdef QuoteTick tick
+        cdef uint64_t ts_latest = cached_ticks[0].ts_event if cached_ticks else 0
 
+        cdef:
+            QuoteTick tick
         for tick in ticks:
-            if cached_ticks and tick.ts_event <= cached_ticks[0].ts_event:
+            if tick.ts_event < ts_latest:
                 # Only add more recent data to cache
                 continue
 
             cached_ticks.appendleft(tick)
+            ts_latest = tick.ts_event
 
     cpdef void add_trade_ticks(self, list ticks):
         """
@@ -1747,14 +1750,17 @@ cdef class Cache(CacheFacade):
             cached_ticks = deque(maxlen=self.tick_capacity)
             self._trade_ticks[instrument_id] = cached_ticks
 
-        cdef TradeTick tick
+        cdef uint64_t ts_latest = cached_ticks[0].ts_event if cached_ticks else 0
 
+        cdef:
+            TradeTick tick
         for tick in ticks:
-            if cached_ticks and tick.ts_event <= cached_ticks[0].ts_event:
+            if tick.ts_event < ts_latest:
                 # Only add more recent data to cache
                 continue
 
             cached_ticks.appendleft(tick)
+            ts_latest = tick.ts_event
 
     cpdef void add_bars(self, list bars):
         """
@@ -1784,14 +1790,17 @@ cdef class Cache(CacheFacade):
             cached_bars = deque(maxlen=self.bar_capacity)
             self._bars[bar_type] = cached_bars
 
-        cdef Bar bar
+        cdef uint64_t ts_latest = cached_bars[0].ts_event if cached_bars else 0
 
+        cdef:
+            Bar bar
         for bar in bars:
-            if cached_bars and bar.ts_event <= cached_bars[0].ts_event:
+            if bar.ts_event < ts_latest:
                 # Only add more recent data to cache
                 continue
 
             cached_bars.appendleft(bar)
+            ts_latest = bar.ts_event
 
         bar = bars[-1]
         cdef PriceType price_type = bar.bar_type.spec.price_type
@@ -2050,11 +2059,9 @@ cdef class Cache(CacheFacade):
             self._index_order_client[order.client_order_id] = client_id
             self._log.debug(f"Indexed {client_id!r}")
 
-        if self._database is None:
-            return
-
         # Update database
-        self._database.add_order(order, position_id, client_id)
+        if self._database is not None:
+            self._database.add_order(order, position_id, client_id)
 
     cpdef void add_order_list(self, OrderList order_list):
         """
@@ -2162,6 +2169,7 @@ cdef class Cache(CacheFacade):
         self._positions[position.id] = position
         self._index_positions.add(position.id)
         self._index_positions_open.add(position.id)
+        self._index_positions_closed.discard(position.id)  # Cleanup for NETTING reopen
 
         self.add_position_id(
             position.id,
@@ -2190,11 +2198,9 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Added Position(id={position.id.to_str()}, strategy_id={position.strategy_id.to_str()})")
 
-        if self._database is None:
-            return
-
         # Update database
-        self._database.add_position(position)
+        if self._database is not None:
+            self._database.add_position(position)
 
     cpdef void add_greeks(self, object greeks):
         """
@@ -2424,11 +2430,9 @@ cdef class Cache(CacheFacade):
             if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
                 self.update_own_order_book(order)
 
-        if self._database is None:
-            return
-
         # Update database
-        self._database.update_order(order)
+        if self._database is not None:
+            self._database.update_order(order)
 
     cpdef void update_order_pending_cancel_local(self, Order order):
         """
@@ -2508,11 +2512,9 @@ cdef class Cache(CacheFacade):
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
-        if self._database is None:
-            return
-
         # Update database
-        self._database.update_position(position)
+        if self._database is not None:
+            self._database.update_position(position)
 
     cpdef void update_actor(self, Actor actor):
         """

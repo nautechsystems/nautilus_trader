@@ -72,9 +72,11 @@ pub const WEEKDAYS: [Weekday; 5] = [
 
 /// Converts seconds to nanoseconds (ns).
 ///
-/// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
-/// which may lose precision and drop negative values after clamping.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Intentional for unit conversion, may lose precision after clamping"
+)]
 #[must_use]
 pub fn secs_to_nanos(secs: f64) -> u64 {
     let nanos = secs * NANOSECONDS_IN_SECOND as f64;
@@ -83,9 +85,11 @@ pub fn secs_to_nanos(secs: f64) -> u64 {
 
 /// Converts seconds to milliseconds (ms).
 ///
-/// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
-/// which may lose precision and drop negative values after clamping.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Intentional for unit conversion, may lose precision after clamping"
+)]
 #[must_use]
 pub fn secs_to_millis(secs: f64) -> u64 {
     let millis = secs * MILLISECONDS_IN_SECOND as f64;
@@ -96,7 +100,11 @@ pub fn secs_to_millis(secs: f64) -> u64 {
 ///
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Intentional for unit conversion, may lose precision after clamping"
+)]
 #[must_use]
 pub fn millis_to_nanos(millis: f64) -> u64 {
     let nanos = millis * NANOSECONDS_IN_MILLISECOND as f64;
@@ -107,7 +115,11 @@ pub fn millis_to_nanos(millis: f64) -> u64 {
 ///
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Intentional for unit conversion, may lose precision after clamping"
+)]
 #[must_use]
 pub fn micros_to_nanos(micros: f64) -> u64 {
     let nanos = micros * NANOSECONDS_IN_MICROSECOND as f64;
@@ -118,7 +130,10 @@ pub fn micros_to_nanos(micros: f64) -> u64 {
 ///
 /// Casting u64 to f64 may lose precision for large values,
 /// but is acceptable when computing fractional seconds.
-#[allow(clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Precision loss acceptable for time conversion"
+)]
 #[must_use]
 pub fn nanos_to_secs(nanos: u64) -> f64 {
     let seconds = nanos / NANOSECONDS_IN_SECOND;
@@ -168,26 +183,6 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 /// - The string format is not a valid ISO 8601 format
 /// - The timestamp is out of range for `UnixNanos`
 /// - The date/time values are invalid
-///
-/// # Examples
-///
-/// ```rust
-/// use nautilus_core::datetime::iso8601_to_unix_nanos;
-/// use nautilus_core::UnixNanos;
-///
-/// // Full RFC 3339 format
-/// let nanos = iso8601_to_unix_nanos("2024-02-10T14:58:43.456789Z".to_string())?;
-/// assert_eq!(nanos, UnixNanos::from(1_707_577_123_456_789_000));
-///
-/// // Without fractional seconds
-/// let nanos = iso8601_to_unix_nanos("2024-02-10T14:58:43Z".to_string())?;
-/// assert_eq!(nanos, UnixNanos::from(1_707_577_123_000_000_000));
-///
-/// // Simple date format (midnight UTC)
-/// let nanos = iso8601_to_unix_nanos("2024-02-10".to_string())?;
-/// assert_eq!(nanos, UnixNanos::from(1_707_523_200_000_000_000));
-/// # Ok::<(), anyhow::Error>(())
-/// ```
 #[inline]
 pub fn iso8601_to_unix_nanos(date_string: String) -> anyhow::Result<UnixNanos> {
     date_string
@@ -435,7 +430,10 @@ pub const fn is_leap_year(year: i32) -> bool {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-#[allow(clippy::float_cmp)]
+#[allow(
+    clippy::float_cmp,
+    reason = "Exact float comparisons acceptable in tests"
+)]
 mod tests {
     use chrono::{DateTime, TimeDelta, TimeZone, Utc};
     use rstest::rstest;

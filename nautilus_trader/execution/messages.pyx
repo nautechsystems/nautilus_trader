@@ -465,6 +465,8 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
         Additional parameters for the command.
+    log_receipt_level : LogLevel, default 'INFO'
+        The log level for logging received reports. Must be either `LogLevel.DEBUG` or `LogLevel.INFO`.
     """
 
     def __init__(
@@ -475,6 +477,7 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
+        LogLevel log_receipt_level = LogLevel.INFO,
         UUID4 correlation_id = None,
     ) -> None:
         super().__init__(
@@ -486,6 +489,8 @@ cdef class GeneratePositionStatusReports(ExecutionReportCommand):
             params,
             correlation_id,
         )
+
+        self.log_receipt_level = log_receipt_level
 
     def __repr__(self) -> str:
         return (

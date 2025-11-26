@@ -341,6 +341,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             self.x == BinanceExecutionType.CALCULATED
             or self.X == BinanceOrderStatus.NEW_ADL
             or self.X == BinanceOrderStatus.NEW_INSURANCE
+            or self.X == BinanceOrderStatus.FILLED
         ):
             # These are special exchange-generated fills without a pre-existing order
             if Decimal(self.l) == 0:

@@ -1139,6 +1139,12 @@ impl OKXHttpClient {
         self.inner.credential.as_ref().map(|c| c.api_key.as_str())
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> Option<String> {
+        self.inner.credential.as_ref().map(|c| c.api_key_masked())
+    }
+
     /// Returns whether the client is configured for demo trading.
     #[must_use]
     pub fn is_demo(&self) -> bool {

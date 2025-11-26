@@ -66,9 +66,15 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport RenkoBarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
+from nautilus_trader.data.aggregation cimport TickImbalanceBarAggregator
+from nautilus_trader.data.aggregation cimport TickRunsBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
+from nautilus_trader.data.aggregation cimport ValueImbalanceBarAggregator
+from nautilus_trader.data.aggregation cimport ValueRunsBarAggregator
 from nautilus_trader.data.aggregation cimport VolumeBarAggregator
+from nautilus_trader.data.aggregation cimport VolumeImbalanceBarAggregator
+from nautilus_trader.data.aggregation cimport VolumeRunsBarAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.engine cimport SnapshotInfo
@@ -2565,14 +2571,50 @@ cdef class DataEngine(Component):
                 bar_type=aggregated_bar_type,
                 handler=self.process,
             )
+        elif bar_type.spec.aggregation == BarAggregation.TICK_IMBALANCE:
+            aggregator = TickImbalanceBarAggregator(
+                instrument=instrument,
+                bar_type=aggregated_bar_type,
+                handler=self.process,
+            )
+        elif bar_type.spec.aggregation == BarAggregation.TICK_RUNS:
+            aggregator = TickRunsBarAggregator(
+                instrument=instrument,
+                bar_type=aggregated_bar_type,
+                handler=self.process,
+            )
         elif bar_type.spec.aggregation == BarAggregation.VOLUME:
             aggregator = VolumeBarAggregator(
                 instrument=instrument,
                 bar_type=aggregated_bar_type,
                 handler=self.process,
             )
+        elif bar_type.spec.aggregation == BarAggregation.VOLUME_IMBALANCE:
+            aggregator = VolumeImbalanceBarAggregator(
+                instrument=instrument,
+                bar_type=aggregated_bar_type,
+                handler=self.process,
+            )
+        elif bar_type.spec.aggregation == BarAggregation.VOLUME_RUNS:
+            aggregator = VolumeRunsBarAggregator(
+                instrument=instrument,
+                bar_type=aggregated_bar_type,
+                handler=self.process,
+            )
         elif bar_type.spec.aggregation == BarAggregation.VALUE:
             aggregator = ValueBarAggregator(
+                instrument=instrument,
+                bar_type=aggregated_bar_type,
+                handler=self.process,
+            )
+        elif bar_type.spec.aggregation == BarAggregation.VALUE_IMBALANCE:
+            aggregator = ValueImbalanceBarAggregator(
+                instrument=instrument,
+                bar_type=aggregated_bar_type,
+                handler=self.process,
+            )
+        elif bar_type.spec.aggregation == BarAggregation.VALUE_RUNS:
+            aggregator = ValueRunsBarAggregator(
                 instrument=instrument,
                 bar_type=aggregated_bar_type,
                 handler=self.process,

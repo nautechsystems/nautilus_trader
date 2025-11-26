@@ -476,6 +476,7 @@ mod tests {
         serve,
     };
     use http::status::StatusCode;
+    use rstest::rstest;
 
     use super::*;
 
@@ -676,7 +677,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_http_client_without_proxy() {
         // Create client with no proxy
         let result = HttpClient::new(
@@ -691,7 +692,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_http_client_with_valid_proxy() {
         // Create client with a valid proxy URL
         let result = HttpClient::new(
@@ -706,7 +707,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_http_client_with_socks5_proxy() {
         // Create client with a SOCKS5 proxy URL
         let result = HttpClient::new(
@@ -721,7 +722,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_http_client_with_malformed_proxy() {
         // Note: reqwest::Proxy::all() is lenient and accepts most strings.
         // It only fails on obviously malformed URLs like "://invalid" or "http://".
@@ -739,7 +740,7 @@ mod tests {
         assert!(matches!(result, Err(HttpClientError::InvalidProxy(_))));
     }
 
-    #[test]
+    #[rstest]
     fn test_http_client_with_empty_proxy_string() {
         // Create client with an empty proxy URL string
         let result = HttpClient::new(

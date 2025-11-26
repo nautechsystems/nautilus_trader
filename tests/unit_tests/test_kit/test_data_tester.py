@@ -107,7 +107,7 @@ def create_tester_factory(trader_id, msgbus, cache, clock, portfolio):
         testers.append(tester)
         return tester
 
-    yield _create_tester
+    return _create_tester
 
 
 # ================================================================================================

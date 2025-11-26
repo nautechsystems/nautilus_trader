@@ -238,9 +238,11 @@ pub struct BybitSetLeverageParams {
 #[serde(rename_all = "camelCase")]
 pub struct BybitSwitchModeParams {
     pub category: BybitProductType,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub symbol: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub coin: Option<String>,
@@ -283,6 +285,32 @@ pub struct BybitSetTradingStopParams {
     pub tp_order_type: Option<BybitOrderType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sl_order_type: Option<BybitOrderType>,
+}
+
+/// Body parameters for `POST /v5/account/borrow`.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/account/borrow>
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitBorrowParams {
+    pub coin: String,
+    pub amount: String,
+}
+
+/// Body parameters for `POST /v5/account/no-convert-repay`.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/account/no-convert-repay>
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitNoConvertRepayParams {
+    pub coin: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub amount: Option<String>,
 }
 
 /// Order entry payload for `POST /v5/order/create-batch`.

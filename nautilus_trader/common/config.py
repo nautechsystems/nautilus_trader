@@ -437,6 +437,8 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
     """
 
     def __eq__(self, other):
+        if other is None:
+            return False
         return (
             self.load_all == other.load_all
             and self.load_ids == other.load_ids

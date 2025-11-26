@@ -26,9 +26,7 @@ requires-python = ">=3.12,<3.15"
 dependencies = [
   "click>=8.0.0,<9.0.0",
   "fsspec>=2025.2.0,<2026.0.0",
-  "msgspec>=0.19.0,<1.0.0; python_version < '3.14'",
-  "msgspec @ git+https://github.com/jcrist/msgspec.git@0c764a6ed7c641918e66963b9a41367d288a8abe ; python_version >= '3.14' and sys_platform != 'win32'", # Temporary: waiting for 0.19.1+ release with Python 3.14 support
-  "msgspec>=0.19.0,<1.0.0; python_version >= '3.14' and sys_platform == 'win32'", # Fallback for Windows 3.14 (untested, may not work - see README)
+  "msgspec>=0.20.0,<1.0.0",
   "numpy>=1.26.4",
   "pandas>=2.2.3,<3.0.0",
   "portion>=2.6.1",
@@ -49,7 +47,7 @@ requires = [
   "setuptools>=80",
   "poetry-core==2.2.1", # Pinned to 2.2.1 for stability
   "numpy>=1.26.4",
-  "cython==3.2.0", # Pinned to 3.2.0 for stability
+  "cython==3.2.1", # Pinned to 3.2.1 for stability
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -75,7 +73,7 @@ script = "build.py"
 generate-setup-file = false
 
 [project.optional-dependencies]
-betfair = ["betfair-parser==0.17.2"] # Pinned to 0.17.2 for stability
+betfair = ["betfair-parser==0.18.0"] # Pinned to 0.18.0 for stability
 ib = [
   "defusedxml>=0.7.1,<1.0.0; python_version < '3.14'",
   "nautilus-ibapi==10.30.1; python_version < '3.14'",
@@ -97,18 +95,18 @@ visualization = ["plotly>=6.3.1,<7.0.0"]
 
 [dependency-groups]
 dev = [
-  "cython==3.2.0", # Pinned to 3.2.0 for stability
+  "cython==3.2.1", # Pinned to 3.2.1 for stability
   "setuptools>=75",
   "mypy==1.18.2,<2.0.0", # Pinned to 1.18.2 (keep in line with pre-commit)
   "pandas-stubs>=2.3.2,<3.0.0",
-  "pre-commit>=4.4.0,<5.0.0",
-  "ruff==0.14.5", # Pinned to 0.14.5 (keep in line with pre-commit)
+  "pre-commit>=4.5.0,<5.0.0",
+  "ruff==0.14.6", # Pinned to 0.14.6 (keep in line with pre-commit)
   "types-pytz>=2025.2,<2026.0",
   "types-toml>=0.10.2,<1.0.0",
 ]
 test = [
   "aiohttp==3.12.14,<4.0.0", # Pinned to 3.12.14 (fixes GHSA-9548-qrrj-x5pj)
-  "coverage>=7.11.3,<8.0.0",
+  "coverage>=7.12.0,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.0,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability
@@ -178,7 +176,7 @@ select = [
   "T10",
   "ICN",
   "PIE",
-  # "PT",
+  "PT",
   "PYI",
   "Q",
   # "I",  # Disabled - using isort instead
@@ -186,12 +184,14 @@ select = [
   "TID",
   "SIM", # flake8-simplify
   "B", # flake8-bugbear
-  "PERF102", # - When using only dict values use the values() method
-  "FURB122", # - Use writelines instead of write in a loop
-  "FURB166", # - int() on sliced str
-  "FURB188", # - Use removeprefix/removesuffix instead of slicing
-  # "ARG",
-  # "ERA",
+  "PERF", # Perflint
+  "FURB", # refurb
+  "ISC", # flake8-implicit-str-concat
+  "FLY", # flynt
+  "LOG", # flake8-logging
+  # "ARG",  # unused-arguments - 301 violations
+  # "ERA",  # eradicate - 165 violations
+  # "ASYNC",  # flake8-async - 15 violations (5 ASYNC110 busy-wait, 10 ASYNC109 timeout params)
   "PD",
   "PGH",
   # "PLW",
@@ -218,13 +218,18 @@ ignore = [
   "E501", # Line too long (will lint separately)
   "E741", # Ambiguous variable name (single char)
   "FURB166", # int() on sliced str (explicit base is clearer than auto-detection)
+  "PERF401", # manual-list-comprehension (16 violations - fix incrementally)
+  "PERF402", # manual-list-copy (3 violations - fix incrementally)
+  "PT007", # pytest-parametrize-values-wrong-type (1621 violations - deferred)
+  "PT011", # Exception type too broad (needs to be fixed case-by-case)
+  "PT014", # Use list comprehensions (not always readable or appropriate)
+  "PT017", # pytest-assert-in-except (1 violation - fix later)
+  "PT028", # pytest-parameter-with-default-argument (4 violations - fix later)
   "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
   "PGH003", # Blanket type-ignore (TODO: make these specific incrementally)
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "RUF059", # Unpacked variable is never used (can still be clearer than a discard in some cases)
-  "S101", # Use of assert detected (OK in test suite)
-  "S105", # Use of hardcoded password (spurious)
-  "S106", # Use of hardcoded password (spurious)
+  "S101", # Use of assert detected (OK in test suite, production violations to fix incrementally)
   "SIM108", # Use ternary operator instead of if-else-block (opinionated style)
   "B017", # pytest.raises(Exception) is too broad (we need broad catches for now)
   "B018", # Useless expression (OK in notebooks for displaying figures)
@@ -256,9 +261,26 @@ known-first-party = ["nautilus_trader"]
 max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
-"test_perf_logger.py" = ["S311"]
-"examples/**/*.py" = ["DTZ"] # Examples can use naive datetimes for simplicity
+"**/*.ipynb" = ["S101"] # Notebooks can use asserts for demonstrations
 "build.py" = ["S603", "S607"] # Build script needs subprocess calls
+"examples/**/*.py" = [
+  "DTZ",
+  "S101",
+  "S105",
+  "S106",
+] # Examples can use naive datetimes, asserts, and mock credentials
+"nautilus_trader/common/config.py" = [
+  "S105",
+] # redacted_password variable is intentional
+"nautilus_trader/adapters/betfair/**/*.py" = [
+  "S101",
+] # Betfair adapter uses asserts for validation (for now)
+"test_perf_logger.py" = ["S311"]
+"tests/**/*.py" = [
+  "S101",
+  "S105",
+  "S106",
+] # Tests can use asserts, mock credentials, and pickle
 
 [tool.mypy]
 python_version = "3.12"

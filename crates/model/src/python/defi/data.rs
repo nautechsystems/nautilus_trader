@@ -35,9 +35,7 @@ use crate::{
             PoolSwap, Transaction,
         },
     },
-    enums::OrderSide,
     identifiers::InstrumentId,
-    types::{Price, Quantity},
 };
 
 #[pymethods]
@@ -162,9 +160,6 @@ impl PoolSwap {
         sqrt_price_x96: String,
         liquidity: u128,
         tick: i32,
-        side: Option<OrderSide>,
-        size: Option<Quantity>,
-        price: Option<Price>,
     ) -> PyResult<Self> {
         let sender = sender.parse().map_err(to_pyvalue_err)?;
         let receiver = receiver.parse().map_err(to_pyvalue_err)?;
@@ -188,9 +183,6 @@ impl PoolSwap {
             sqrt_price_x96,
             liquidity,
             tick,
-            side,
-            size,
-            price,
         ))
     }
 
@@ -270,24 +262,6 @@ impl PoolSwap {
     #[pyo3(name = "sender")]
     fn py_sender(&self) -> String {
         self.sender.to_string()
-    }
-
-    #[getter]
-    #[pyo3(name = "side")]
-    fn py_side(&self) -> Option<OrderSide> {
-        self.side
-    }
-
-    #[getter]
-    #[pyo3(name = "size")]
-    fn py_size(&self) -> Option<Quantity> {
-        self.size
-    }
-
-    #[getter]
-    #[pyo3(name = "price")]
-    fn py_price(&self) -> Option<Price> {
-        self.price
     }
 
     #[getter]

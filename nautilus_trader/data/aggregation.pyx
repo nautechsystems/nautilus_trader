@@ -36,6 +36,7 @@ from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
+from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
@@ -426,6 +427,136 @@ cdef class TickBarAggregator(BarAggregator):
             self._build_now_and_send()
 
 
+cdef class TickImbalanceBarAggregator(BarAggregator):
+    """
+    Provides a means of building tick imbalance bars from ticks.
+
+    When the absolute difference between buy and sell ticks reaches the step
+    threshold of the bar specification, then a bar is created and sent to the
+    handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        self._imbalance = 0
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        self._apply_update(tick.price, tick.size, tick.ts_init)
+
+        if side == AggressorSide.BUYER:
+            self._imbalance += 1
+        else:
+            self._imbalance -= 1
+
+        if abs(self._imbalance) >= self.bar_type.spec.step:
+            self._build_now_and_send()
+            self._imbalance = 0
+
+
+cdef class TickRunsBarAggregator(BarAggregator):
+    """
+    Provides a means of building tick runs bars from ticks.
+
+    When consecutive ticks of the same aggressor side reach the step threshold
+    of the bar specification, then a bar is created and sent to the handler.
+    The run resets when the aggressor side changes.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+
+        self._current_run_side = AggressorSide.NO_AGGRESSOR
+        self._has_run_side = False
+        self._run_count = 0
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        if not self._has_run_side or self._current_run_side != side:
+            self._current_run_side = side
+            self._has_run_side = True
+            self._run_count = 0
+            self._builder.reset()
+
+        self._apply_update(tick.price, tick.size, tick.ts_init)
+        self._run_count += 1
+
+        if self._run_count >= self.bar_type.spec.step:
+            self._build_now_and_send()
+            self._run_count = 0
+            self._has_run_side = False
+
+
 cdef class VolumeBarAggregator(BarAggregator):
     """
     Provides a means of building volume bars from ticks.
@@ -519,6 +650,201 @@ cdef class VolumeBarAggregator(BarAggregator):
             # Decrement the update volume
             raw_volume_update -= raw_volume_diff
             assert raw_volume_update >= 0
+
+
+cdef class VolumeImbalanceBarAggregator(BarAggregator):
+    """
+    Provides a means of building volume imbalance bars from ticks.
+
+    When the absolute difference between buy and sell volume reaches the step
+    threshold of the bar specification, then a bar is created and sent to the
+    handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        cdef long long step_value = self.bar_type.spec.step
+        self._imbalance_raw = 0
+        self._raw_step = <long long>(step_value * FIXED_SCALAR)
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        cdef long long side_sign = 1 if side == AggressorSide.BUYER else -1
+        cdef double size_remaining = float(tick.size)
+        cdef double size_chunk
+        cdef double needed_qty
+        cdef long long imbalance_abs
+        cdef long long needed
+
+        while size_remaining > 0.0:
+            imbalance_abs = abs(self._imbalance_raw)
+            needed = self._raw_step - imbalance_abs
+            if needed <= 0:
+                needed = 1
+
+            # Convert needed from raw (10^9 scale) to quantity
+            needed_qty = <double>needed / <double>FIXED_SCALAR
+            if size_remaining <= needed_qty:
+                self._imbalance_raw += side_sign * <long long>(size_remaining * FIXED_SCALAR)
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_remaining, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+
+                if abs(self._imbalance_raw) >= self._raw_step:
+                    self._build_now_and_send()
+                    self._imbalance_raw = 0
+                break
+
+            size_chunk = needed_qty
+            self._apply_update(
+                tick.price,
+                Quantity(size_chunk, precision=tick.size.precision),
+                tick.ts_init,
+            )
+            self._imbalance_raw += side_sign * needed
+            size_remaining -= size_chunk
+
+            if abs(self._imbalance_raw) >= self._raw_step:
+                self._build_now_and_send()
+                self._imbalance_raw = 0
+
+
+cdef class VolumeRunsBarAggregator(BarAggregator):
+    """
+    Provides a means of building volume runs bars from ticks.
+
+    When consecutive volume of the same aggressor side reaches the step
+    threshold of the bar specification, then a bar is created and sent to the
+    handler. The run resets when the aggressor side changes.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        cdef long long step_value = self.bar_type.spec.step
+        self._current_run_side = AggressorSide.NO_AGGRESSOR
+        self._has_run_side = False
+        self._run_volume_raw = 0
+        self._raw_step = <long long>(step_value * FIXED_SCALAR)
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        if not self._has_run_side or self._current_run_side != side:
+            self._current_run_side = side
+            self._has_run_side = True
+            self._run_volume_raw = 0
+            self._builder.reset()
+
+        cdef double size_remaining = float(tick.size)
+        cdef double size_chunk
+        cdef double needed_qty
+        cdef long long needed
+
+        while size_remaining > 0.0:
+            needed = self._raw_step - self._run_volume_raw
+            if needed <= 0:
+                needed = 1
+
+            # Convert needed from raw (10^9 scale) to quantity
+            needed_qty = <double>needed / <double>FIXED_SCALAR
+            if size_remaining <= needed_qty:
+                self._run_volume_raw += <long long>(size_remaining * FIXED_SCALAR)
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_remaining, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+
+                if self._run_volume_raw >= self._raw_step:
+                    self._build_now_and_send()
+                    self._run_volume_raw = 0
+                    self._has_run_side = False
+                break
+
+            size_chunk = needed_qty
+            self._apply_update(
+                tick.price,
+                Quantity(size_chunk, precision=tick.size.precision),
+                tick.ts_init,
+            )
+            self._run_volume_raw += needed
+            size_remaining -= size_chunk
+
+            if self._run_volume_raw >= self._raw_step:
+                self._build_now_and_send()
+                self._run_volume_raw = 0
+                self._has_run_side = False
 
 
 cdef class ValueBarAggregator(BarAggregator):
@@ -633,6 +959,220 @@ cdef class ValueBarAggregator(BarAggregator):
             # Decrement the update volume
             volume_update -= volume_diff
             assert volume_update >= 0
+
+
+cdef class ValueImbalanceBarAggregator(BarAggregator):
+    """
+    Provides a means of building value imbalance bars from ticks.
+
+    When the absolute difference between buy and sell notional value reaches
+    the step threshold of the bar specification, then a bar is created and
+    sent to the handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        self._imbalance_value = 0.0
+        self._step_value = float(self.bar_type.spec.step)
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef double price_f64 = float(tick.price)
+        if price_f64 == 0.0:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        cdef double side_sign = 1.0 if side == AggressorSide.BUYER else -1.0
+        cdef double size_remaining = float(tick.size)
+        cdef double value_remaining
+        cdef double current_sign
+        cdef double needed
+        cdef double value_chunk
+        cdef double size_chunk
+        cdef double imbalance_abs
+        cdef double value_to_flatten
+
+        while size_remaining > 0.0:
+            value_remaining = price_f64 * size_remaining
+            current_sign = 0.0
+            if self._imbalance_value > 0.0:
+                current_sign = 1.0
+            elif self._imbalance_value < 0.0:
+                current_sign = -1.0
+
+            if current_sign == 0.0 or current_sign == side_sign:
+                needed = self._step_value - abs(self._imbalance_value)
+                if value_remaining <= needed:
+                    self._imbalance_value += side_sign * value_remaining
+                    self._apply_update(
+                        tick.price,
+                        Quantity(size_remaining, precision=tick.size.precision),
+                        tick.ts_init,
+                    )
+
+                    if abs(self._imbalance_value) >= self._step_value:
+                        self._build_now_and_send()
+                        self._imbalance_value = 0.0
+                    break
+
+                value_chunk = needed
+                size_chunk = value_chunk / price_f64
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_chunk, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+                self._imbalance_value += side_sign * value_chunk
+                size_remaining -= size_chunk
+
+                if abs(self._imbalance_value) >= self._step_value:
+                    self._build_now_and_send()
+                    self._imbalance_value = 0.0
+            else:
+                imbalance_abs = abs(self._imbalance_value)
+                value_to_flatten = value_remaining if value_remaining < imbalance_abs else imbalance_abs
+                size_chunk = value_to_flatten / price_f64
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_chunk, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+                self._imbalance_value += side_sign * value_to_flatten
+                size_remaining -= size_chunk
+
+
+cdef class ValueRunsBarAggregator(BarAggregator):
+    """
+    Provides a means of building value runs bars from ticks.
+
+    When consecutive notional value of the same aggressor side reaches the
+    step threshold of the bar specification, then a bar is created and sent
+    to the handler. The run resets when the aggressor side changes.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
+    """
+
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        handler not None: Callable[[Bar], None],
+    ) -> None:
+        super().__init__(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+        )
+        self._current_run_side = AggressorSide.NO_AGGRESSOR
+        self._has_run_side = False
+        self._run_value = 0.0
+        self._step_value = float(self.bar_type.spec.step)
+
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
+        self._builder.update(price, size, ts_init)
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
+
+    cpdef void handle_trade_tick(self, TradeTick tick):
+        Condition.not_none(tick, "tick")
+
+        cdef double price_f64 = float(tick.price)
+        if price_f64 == 0.0:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        cdef AggressorSide side = tick.aggressor_side
+        if side == AggressorSide.NO_AGGRESSOR:
+            self._apply_update(tick.price, tick.size, tick.ts_init)
+            return
+
+        if not self._has_run_side or self._current_run_side != side:
+            self._current_run_side = side
+            self._has_run_side = True
+            self._run_value = 0.0
+            self._builder.reset()
+
+        cdef double size_remaining = float(tick.size)
+        cdef double value_update
+        cdef double value_needed
+        cdef double size_chunk
+
+        while size_remaining > 0.0:
+            value_update = price_f64 * size_remaining
+            if self._run_value + value_update < self._step_value:
+                self._run_value += value_update
+                self._apply_update(
+                    tick.price,
+                    Quantity(size_remaining, precision=tick.size.precision),
+                    tick.ts_init,
+                )
+
+                if self._run_value >= self._step_value:
+                    self._build_now_and_send()
+                    self._run_value = 0.0
+                    self._has_run_side = False
+                break
+
+            value_needed = self._step_value - self._run_value
+            size_chunk = value_needed / price_f64
+            self._apply_update(
+                tick.price,
+                Quantity(size_chunk, precision=tick.size.precision),
+                tick.ts_init,
+            )
+
+            self._build_now_and_send()
+            self._run_value = 0.0
+            self._has_run_side = False
+            size_remaining -= size_chunk
 
 
 cdef class RenkoBarAggregator(BarAggregator):

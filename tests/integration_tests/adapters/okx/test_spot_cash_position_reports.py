@@ -41,7 +41,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.okx.conftest import _create_ws_mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client_with_spot_positions(
     event_loop,
     mock_http_client,

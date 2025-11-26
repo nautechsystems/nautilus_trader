@@ -33,7 +33,7 @@ from nautilus_trader.model.identifiers import Symbol
 from tests.integration_tests.adapters.okx.conftest import _create_ws_mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client_builder(
     event_loop,
     mock_http_client,

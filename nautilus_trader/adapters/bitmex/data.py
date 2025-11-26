@@ -123,7 +123,8 @@ class BitmexDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        masked_key = self._http_client.api_key_masked
+        self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # WebSocket API
         ws_url = self._determine_ws_url(config)  # TODO: Move this to Rust

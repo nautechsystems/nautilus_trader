@@ -98,6 +98,10 @@ All Rust files must include the standardized copyright header:
 // -------------------------------------------------------------------------------------------------
 ```
 
+:::info Automated enforcement
+The `check_copyright_year.sh` pre-commit hook verifies copyright headers include the current year.
+:::
+
 ### Code formatting
 
 Import formatting is automatically handled by rustfmt when running `make format`.
@@ -148,12 +152,20 @@ pub fn process_symbol(symbol: Symbol) -> anyhow::Result<()> {
 }
 ```
 
+:::info Automated enforcement
+The `check_anyhow_usage.sh` pre-commit hook enforces these anyhow conventions automatically.
+:::
+
 ### Logging
 
 - Fully qualify logging macros so the backend is explicit:
   - Use `log::…` (`log::info!`, `log::warn!`, etc.) inside synchronous core crates.
   - Use `tracing::…` (`tracing::debug!`, `tracing::info!`, etc.) for async runtimes, adapters, and peripheral components.
 - Start messages with a capitalised word, prefer complete sentences, and omit terminal periods (e.g. `"Processing batch"`, not `"Processing batch."`).
+
+:::info Automated enforcement
+The `check_logging_macro_usage.sh` pre-commit hook enforces fully qualified logging macros.
+:::
 
 ### Error handling
 
@@ -209,6 +221,10 @@ Use structured error handling patterns consistently:
    // Exception - proper nouns stay capitalized
    connect().context("BitMEX websocket did not become active")?;
    ```
+
+:::info Automated enforcement
+The `check_error_conventions.sh` and `check_anyhow_usage.sh` pre-commit hooks enforce these error handling patterns.
+:::
 
 ### Async patterns
 
@@ -598,11 +614,19 @@ pub fn py_do_something() -> PyResult<()> {
 }
 ```
 
+:::info Automated enforcement
+The `check_pyo3_conventions.sh` pre-commit hook enforces the `py_` prefix for PyO3 functions.
+:::
+
 ### Testing conventions
 
 - Use `mod tests` as the standard test module name unless you need to specifically compartmentalize.
 - Use `#[rstest]` attributes consistently, this standardization reduces cognitive overhead.
 - Do *not* use Arrange, Act, Assert separator comments in Rust tests.
+
+:::info Automated enforcement
+The `check_testing_conventions.sh` pre-commit hook enforces the use of `#[rstest]` over `#[test]`.
+:::
 
 #### Test organization
 

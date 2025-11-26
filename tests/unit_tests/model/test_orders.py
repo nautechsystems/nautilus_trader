@@ -595,7 +595,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
-        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        assert "init_id" in result
+        assert uuid.UUID(result["init_id"], version=4)
         del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
@@ -771,7 +772,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
-        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        assert "init_id" in result
+        assert uuid.UUID(result["init_id"], version=4)
         del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
@@ -853,7 +855,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
-        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        assert "init_id" in result
+        assert uuid.UUID(result["init_id"], version=4)
         del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
@@ -945,7 +948,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
-        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        assert "init_id" in result
+        assert uuid.UUID(result["init_id"], version=4)
         del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
@@ -1132,7 +1136,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
-        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        assert "init_id" in result
+        assert uuid.UUID(result["init_id"], version=4)
         del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
@@ -1188,7 +1193,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
-        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        assert "init_id" in result
+        assert uuid.UUID(result["init_id"], version=4)
         del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
@@ -1239,8 +1245,8 @@ class TestOrders:
             Quantity.from_int(100_000),
             price=Price.from_str("1.00000"),
             trigger_price=Price.from_str("1.10010"),
-            limit_offset=Decimal("5"),
-            trailing_offset=Decimal("10"),
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(10),
         )
 
         # Assert
@@ -1268,8 +1274,8 @@ class TestOrders:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            limit_offset=Decimal("5"),
-            trailing_offset=Decimal("10"),
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(10),
         )
 
         # Assert
@@ -1298,8 +1304,8 @@ class TestOrders:
             Quantity.from_int(100_000),
             activation_price=Price.from_str("1.00000"),
             price=Price.from_str("1.00000"),
-            limit_offset=Decimal("5"),
-            trailing_offset=Decimal("10"),
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(10),
         )
 
         # Assert
@@ -1332,8 +1338,8 @@ class TestOrders:
             OrderSide.BUY,
             Quantity.from_int(100_000),
             activation_price=Price.from_str("1.00000"),
-            limit_offset=Decimal("5"),
-            trailing_offset=Decimal("10"),
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(10),
         )
 
         # Assert
@@ -1367,8 +1373,8 @@ class TestOrders:
             Quantity.from_int(100_000),
             price=Price.from_str("1.00000"),
             trigger_price=Price.from_str("1.10010"),
-            limit_offset=Decimal("5"),
-            trailing_offset=Decimal("10"),
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(10),
             trigger_type=TriggerType.MARK_PRICE,
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
         )
@@ -1377,7 +1383,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
-        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        assert "init_id" in result
+        assert uuid.UUID(result["init_id"], version=4)
         del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",
@@ -1430,8 +1437,8 @@ class TestOrders:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            limit_offset=Decimal("5"),
-            trailing_offset=Decimal("10"),
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(10),
             trigger_type=TriggerType.MARK_PRICE,
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
         )
@@ -1440,7 +1447,8 @@ class TestOrders:
         result = order.to_dict()
 
         # Assert
-        assert "init_id" in result and uuid.UUID(result["init_id"], version=4)
+        assert "init_id" in result
+        assert uuid.UUID(result["init_id"], version=4)
         del result["init_id"]  # Random UUID4
         assert result == {
             "trader_id": "TESTER-000",

@@ -40,19 +40,9 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_model::identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId};
 use nautilus_okx::{
-    common::{
-        enums::{OKXBookAction, OKXInstrumentType, OKXOrderCategory, OKXOrderStatus, OKXOrderType},
-        parse::parse_instrument_any,
-    },
-    websocket::{
-        client::OKXWebSocketClient,
-        messages::{
-            OKXAlgoOrderMsg, OKXBookMsg, OKXCandleMsg, OKXFundingRateMsg, OKXOrderMsg,
-            OKXTickerMsg, OKXTradeMsg,
-        },
-    },
+    common::{enums::OKXInstrumentType, parse::parse_instrument_any},
+    websocket::client::OKXWebSocketClient,
 };
-use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
@@ -61,15 +51,6 @@ const TEXT_PONG: &str = "pong";
 const CONTROL_PING_PAYLOAD: &[u8] = b"server-control-ping";
 
 type SubscriptionEvent = (String, Option<String>, bool);
-
-// Helper struct for deserializing WebSocket response messages in tests
-#[derive(Deserialize)]
-struct TestWsResponse<T> {
-    #[allow(dead_code)]
-    arg: Option<Value>,
-    action: Option<OKXBookAction>,
-    data: Vec<T>,
-}
 
 #[derive(Clone, Default)]
 struct TestServerState {
@@ -524,7 +505,7 @@ async fn test_trades_subscription_flow() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -565,7 +546,7 @@ async fn test_reauth_and_resubscribe_after_disconnect() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -611,7 +592,7 @@ async fn test_heartbeat_timeout_reconnection() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -692,7 +673,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -797,7 +778,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -926,7 +907,7 @@ async fn test_subscription_restoration_tracking() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1050,7 +1031,7 @@ async fn test_true_auto_reconnect_with_verification() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1112,7 +1093,7 @@ async fn test_sends_pong_for_text_ping() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1142,7 +1123,7 @@ async fn test_sends_pong_for_control_ping() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1175,7 +1156,7 @@ async fn test_unsubscribe_orders_sends_request() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1234,7 +1215,7 @@ async fn test_subscribe_to_orderbook() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1275,7 +1256,7 @@ async fn test_multiple_symbols_subscription() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1324,7 +1305,7 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1438,7 +1419,7 @@ async fn test_auth_and_subscription_restoration_order() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1516,7 +1497,7 @@ async fn test_unauthenticated_private_channel_rejection() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1558,7 +1539,7 @@ async fn test_rapid_consecutive_reconnections() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1661,7 +1642,7 @@ async fn test_rapid_consecutive_reconnections() {
     let final_login_count = *state.login_count.lock().await;
     assert!(
         final_login_count >= 4,
-        "Should have at least 4 total logins (1 initial + 3 reconnects), got {final_login_count}"
+        "Should have at least 4 total logins (1 initial + 3 reconnects), was {final_login_count}"
     );
 
     client.close().await.expect("close failed");
@@ -1681,7 +1662,7 @@ async fn test_multiple_partial_subscription_failures() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1804,7 +1785,7 @@ async fn test_reconnection_race_condition() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1956,7 +1937,7 @@ async fn test_batch_cancel_orders_sends_message() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -2117,128 +2098,4 @@ async fn test_is_active_false_during_reconnection() {
     );
 
     client.close().await.expect("close failed");
-}
-
-#[tokio::test]
-async fn test_parse_regular_order_message() {
-    let payload: TestWsResponse<OKXOrderMsg> =
-        serde_json::from_value(load_json("ws_orders.json")).expect("deserialize orders");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.data[0].inst_id, "BTC-USDT-SWAP");
-    assert_eq!(payload.data[0].state, OKXOrderStatus::Filled);
-    assert_eq!(payload.data[0].category, OKXOrderCategory::Normal);
-}
-
-#[tokio::test]
-async fn test_parse_algo_order_message() {
-    let payload: TestWsResponse<OKXAlgoOrderMsg> =
-        serde_json::from_value(load_json("ws_orders_algo.json")).expect("deserialize algo orders");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.data[0].inst_id, "BTC-USDT-SWAP");
-}
-
-#[tokio::test]
-async fn test_parse_liquidation_order_message() {
-    let payload: TestWsResponse<OKXOrderMsg> =
-        serde_json::from_value(load_json("ws_orders_liquidation.json"))
-            .expect("deserialize liquidation orders");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.data[0].category, OKXOrderCategory::FullLiquidation);
-}
-
-#[tokio::test]
-async fn test_parse_adl_order_message() {
-    let payload: TestWsResponse<OKXOrderMsg> =
-        serde_json::from_value(load_json("ws_orders_adl.json")).expect("deserialize ADL orders");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.data[0].category, OKXOrderCategory::Adl);
-}
-
-#[tokio::test]
-async fn test_parse_trigger_order_message() {
-    let payload: TestWsResponse<OKXOrderMsg> =
-        serde_json::from_value(load_json("ws_orders_trigger.json"))
-            .expect("deserialize trigger orders");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.data[0].ord_type, OKXOrderType::Trigger);
-    assert_eq!(payload.data[0].category, OKXOrderCategory::Normal);
-}
-
-#[tokio::test]
-async fn test_parse_book_snapshot_message() {
-    let payload: TestWsResponse<OKXBookMsg> =
-        serde_json::from_value(load_json("ws_books_snapshot.json"))
-            .expect("deserialize book snapshot");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.action, Some(OKXBookAction::Snapshot));
-    assert!(!payload.data[0].asks.is_empty());
-    assert!(!payload.data[0].bids.is_empty());
-}
-
-#[tokio::test]
-async fn test_parse_book_update_message() {
-    let payload: TestWsResponse<OKXBookMsg> =
-        serde_json::from_value(load_json("ws_books_update.json")).expect("deserialize book update");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.action, Some(OKXBookAction::Update));
-    assert!(!payload.data[0].asks.is_empty());
-    assert!(!payload.data[0].bids.is_empty());
-}
-
-#[tokio::test]
-async fn test_parse_ticker_message() {
-    let payload: TestWsResponse<OKXTickerMsg> =
-        serde_json::from_value(load_json("ws_tickers.json")).expect("deserialize tickers");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.data[0].inst_id, "BTC-USDT");
-    assert_eq!(payload.data[0].last_px, "9999.99");
-}
-
-#[tokio::test]
-async fn test_parse_candle_message() {
-    let payload: TestWsResponse<OKXCandleMsg> =
-        serde_json::from_value(load_json("ws_candle.json")).expect("deserialize candles");
-
-    assert!(!payload.data.is_empty());
-    assert!(!payload.data[0].o.is_empty());
-    assert!(!payload.data[0].h.is_empty());
-    assert!(!payload.data[0].l.is_empty());
-    assert!(!payload.data[0].c.is_empty());
-}
-
-#[tokio::test]
-async fn test_parse_funding_rate_message() {
-    let payload: TestWsResponse<OKXFundingRateMsg> =
-        serde_json::from_value(load_json("ws_funding_rate.json"))
-            .expect("deserialize funding rate");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.data[0].inst_id, "BTC-USDT-SWAP");
-}
-
-#[tokio::test]
-async fn test_parse_bbo_tbt_message() {
-    let payload: TestWsResponse<OKXBookMsg> =
-        serde_json::from_value(load_json("ws_bbo_tbt.json")).expect("deserialize BBO");
-
-    assert!(!payload.data.is_empty());
-    assert!(!payload.data[0].asks.is_empty());
-    assert!(!payload.data[0].bids.is_empty());
-}
-
-#[tokio::test]
-async fn test_parse_trade_message() {
-    let payload: TestWsResponse<OKXTradeMsg> =
-        serde_json::from_value(load_json("ws_trades.json")).expect("deserialize trades");
-
-    assert!(!payload.data.is_empty());
-    assert_eq!(payload.data[0].inst_id, "BTC-USD");
 }

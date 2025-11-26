@@ -166,7 +166,7 @@ class TestRiskEngineWithCashAccount:
         assert risk_engine.is_bypassed
         assert risk_engine.max_order_submit_rate() == (5, timedelta(seconds=1))
         assert risk_engine.max_order_modify_rate() == (5, timedelta(seconds=1))
-        assert risk_engine.max_notionals_per_order() == {_GBPUSD_SIM.id: Decimal("2000000")}
+        assert risk_engine.max_notionals_per_order() == {_GBPUSD_SIM.id: Decimal(2000000)}
         assert risk_engine.max_notional_per_order(_GBPUSD_SIM.id) == 2_000_000
 
     def test_risk_engine_on_stop(self):
@@ -249,7 +249,7 @@ class TestRiskEngineWithCashAccount:
         max_notional = self.risk_engine.max_notional_per_order(_AUDUSD_SIM.id)
 
         # Assert
-        assert max_notionals == {_AUDUSD_SIM.id: Decimal("1000000")}
+        assert max_notionals == {_AUDUSD_SIM.id: Decimal(1000000)}
         assert max_notional == Decimal(1_000_000)
 
     def test_given_random_command_then_logs_and_continues(self):
@@ -3033,7 +3033,7 @@ class TestRiskEngineWithBettingAccount:
         self.exec_engine.start()
 
     @pytest.mark.parametrize(
-        "side,quantity,price,expected_status",
+        ("side", "quantity", "price", "expected_status"),
         [
             (OrderSide.SELL, 500, 2.0, OrderStatus.INITIALIZED),
             (OrderSide.SELL, 999, 2.0, OrderStatus.INITIALIZED),

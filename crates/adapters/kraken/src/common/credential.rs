@@ -79,6 +79,15 @@ impl KrakenCredential {
         // Encode signature as base64 and return with post_data
         Ok((STANDARD.encode(signature.as_ref()), post_data))
     }
+
+    /// Returns a masked version of the API key for logging purposes.
+    ///
+    /// Shows first 4 and last 4 characters with ellipsis in between.
+    /// For keys shorter than 8 characters, shows asterisks only.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        nautilus_core::string::mask_api_key(&self.api_key)
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -87,9 +96,11 @@ impl KrakenCredential {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_credential_creation() {
         let cred = KrakenCredential::new("test_key", "test_secret");
         assert_eq!(cred.api_key(), "test_key");

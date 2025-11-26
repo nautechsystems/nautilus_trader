@@ -37,6 +37,9 @@
 pub mod conversions;
 
 // Re-export generated modules for convenience.
+// Re-export conversion functions for use by other crates
+pub use conversions::order_side_to_capnp;
+
 pub use crate::{
     account_capnp, base_capnp, data_capnp, enums_capnp, identifiers_capnp, market_capnp,
     order_capnp, position_capnp, trading_capnp, types_capnp,
@@ -68,7 +71,9 @@ pub trait FromCapnp<'a> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
+    use rstest::rstest;
+
+    #[rstest]
     fn test_capnp_feature_enabled() {
         // This test ensures the capnp feature is properly configured
         assert!(cfg!(feature = "capnp"));

@@ -17,7 +17,7 @@
 
 use std::{
     any::Any,
-    collections::{BTreeMap, BinaryHeap, HashMap},
+    collections::{BTreeMap, BinaryHeap},
     fmt::Debug,
     ops::Deref,
     pin::Pin,
@@ -26,6 +26,7 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use nautilus_core::{
@@ -241,6 +242,161 @@ impl dyn Clock {
     }
 }
 
+/// Registry for timer event callbacks.
+///
+/// Provides shared callback registration and retrieval logic used by both
+/// `TestClock` and `LiveClock`.
+#[derive(Debug, Default)]
+struct CallbackRegistry {
+    default_callback: Option<TimeEventCallback>,
+    callbacks: AHashMap<Ustr, TimeEventCallback>,
+}
+
+impl CallbackRegistry {
+    fn new() -> Self {
+        Self {
+            default_callback: None,
+            callbacks: AHashMap::new(),
+        }
+    }
+
+    fn register_default_handler(&mut self, callback: TimeEventCallback) {
+        self.default_callback = Some(callback);
+    }
+
+    fn register_callback(&mut self, name: Ustr, callback: TimeEventCallback) {
+        self.callbacks.insert(name, callback);
+    }
+
+    fn has_any_callback(&self, name: &Ustr) -> bool {
+        self.callbacks.contains_key(name) || self.default_callback.is_some()
+    }
+
+    fn get_callback(&self, name: &Ustr) -> Option<TimeEventCallback> {
+        self.callbacks
+            .get(name)
+            .cloned()
+            .or_else(|| self.default_callback.clone())
+    }
+
+    fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
+        let callback = self
+            .get_callback(&event.name)
+            .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
+
+        TimeEventHandlerV2::new(event, callback)
+    }
+
+    fn clear(&mut self) {
+        self.callbacks.clear();
+    }
+}
+
+/// Validates and prepares parameters for setting a time alert.
+///
+/// Handles name validation, default value unwrapping, and past timestamp adjustment.
+///
+/// # Errors
+///
+/// Returns an error if the name is invalid or if the alert time is in the past when not allowed.
+fn validate_and_prepare_time_alert(
+    name: &str,
+    mut alert_time_ns: UnixNanos,
+    allow_past: Option<bool>,
+    ts_now: UnixNanos,
+) -> anyhow::Result<(Ustr, UnixNanos)> {
+    check_valid_string_utf8(name, stringify!(name))?;
+
+    let name = Ustr::from(name);
+    let allow_past = allow_past.unwrap_or(true);
+
+    if alert_time_ns < ts_now {
+        if allow_past {
+            alert_time_ns = ts_now;
+            log::warn!(
+                "Timer '{name}' alert time {} was in the past, adjusted to current time for immediate firing",
+                alert_time_ns.to_rfc3339(),
+            );
+        } else {
+            anyhow::bail!(
+                "Timer '{name}' alert time {} was in the past (current time is {ts_now})",
+                alert_time_ns.to_rfc3339(),
+            );
+        }
+    }
+
+    Ok((name, alert_time_ns))
+}
+
+/// Validates and prepares parameters for setting a timer.
+///
+/// Handles name and interval validation, default value unwrapping, start time normalization,
+/// and stop time validation.
+///
+/// # Errors
+///
+/// Returns an error if name is invalid, interval is not positive, or stop time validation fails.
+fn validate_and_prepare_timer(
+    name: &str,
+    interval_ns: u64,
+    start_time_ns: Option<UnixNanos>,
+    stop_time_ns: Option<UnixNanos>,
+    allow_past: Option<bool>,
+    fire_immediately: Option<bool>,
+    ts_now: UnixNanos,
+) -> anyhow::Result<(Ustr, UnixNanos, Option<UnixNanos>, bool, bool)> {
+    check_valid_string_utf8(name, stringify!(name))?;
+    check_positive_u64(interval_ns, stringify!(interval_ns))?;
+
+    let name = Ustr::from(name);
+    let allow_past = allow_past.unwrap_or(true);
+    let fire_immediately = fire_immediately.unwrap_or(false);
+
+    let mut start_time_ns = start_time_ns.unwrap_or_default();
+
+    if start_time_ns == 0 {
+        // Zero start time indicates no explicit start; we use the current time
+        start_time_ns = ts_now;
+    } else if !allow_past {
+        let next_event_time = if fire_immediately {
+            start_time_ns
+        } else {
+            start_time_ns + interval_ns
+        };
+
+        if next_event_time < ts_now {
+            anyhow::bail!(
+                "Timer '{name}' next event time {} would be in the past (current time is {ts_now})",
+                next_event_time.to_rfc3339(),
+            );
+        }
+    }
+
+    if let Some(stop_time) = stop_time_ns {
+        if stop_time <= start_time_ns {
+            anyhow::bail!(
+                "Timer '{name}' stop time {} must be after start time {}",
+                stop_time.to_rfc3339(),
+                start_time_ns.to_rfc3339(),
+            );
+        }
+        if !allow_past && stop_time <= ts_now {
+            anyhow::bail!(
+                "Timer '{name}' stop time {} is in the past (current time is {ts_now})",
+                stop_time.to_rfc3339(),
+            );
+        }
+    }
+
+    Ok((
+        name,
+        start_time_ns,
+        stop_time_ns,
+        allow_past,
+        fire_immediately,
+    ))
+}
+
 /// A static test clock.
 ///
 /// Stores the current timestamp internally which can be advanced.
@@ -253,8 +409,7 @@ pub struct TestClock {
     time: AtomicTime,
     // Use btree map to ensure stable ordering when scanning for timers in `advance_time`
     timers: BTreeMap<Ustr, TestTimer>,
-    default_callback: Option<TimeEventCallback>,
-    callbacks: HashMap<Ustr, TimeEventCallback>,
+    callbacks: CallbackRegistry,
     heap: BinaryHeap<ScheduledTimeEvent>, // TODO: Deprecated - move to global time event heap
 }
 
@@ -265,8 +420,7 @@ impl TestClock {
         Self {
             time: AtomicTime::new(false, UnixNanos::default()),
             timers: BTreeMap::new(),
-            default_callback: None,
-            callbacks: HashMap::new(),
+            callbacks: CallbackRegistry::new(),
             heap: BinaryHeap::new(),
         }
     }
@@ -390,17 +544,15 @@ impl TestClock {
     pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandlerV2> {
         events
             .into_iter()
-            .map(|event| {
-                let callback = self.callbacks.get(&event.name).cloned().unwrap_or_else(|| {
-                    // If callback_py is None, use the default_callback_py
-                    // TODO: clone for now
-                    self.default_callback
-                        .clone()
-                        .expect("Default callback should exist")
-                });
-                TimeEventHandlerV2::new(event, callback)
-            })
+            .map(|event| self.callbacks.get_handler(event))
             .collect()
+    }
+
+    fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
+        if self.timer_exists(name) {
+            self.cancel_timer(name.as_str());
+            log::warn!("Timer '{name}' replaced");
+        }
     }
 }
 
@@ -466,7 +618,7 @@ impl Clock for TestClock {
     }
 
     fn register_default_handler(&mut self, callback: TimeEventCallback) {
-        self.default_callback = Some(callback);
+        self.callbacks.register_default_handler(callback);
     }
 
     /// Returns the handler for the given `TimeEvent`.
@@ -475,67 +627,33 @@ impl Clock for TestClock {
     ///
     /// Panics if no event-specific or default callback has been registered for the event.
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
-        // Get the callback from either the event-specific callbacks or default callback
-        let callback = self
-            .callbacks
-            .get(&event.name)
-            .cloned()
-            .or_else(|| self.default_callback.clone())
-            .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
-
-        TimeEventHandlerV2::new(event, callback)
+        self.callbacks.get_handler(event)
     }
 
     fn set_time_alert_ns(
         &mut self,
         name: &str,
-        mut alert_time_ns: UnixNanos, // mut allows adjustment based on allow_past
+        alert_time_ns: UnixNanos,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string_utf8(name, stringify!(name))?;
+        let ts_now = self.get_time_ns();
+        let (name, alert_time_ns) =
+            validate_and_prepare_time_alert(name, alert_time_ns, allow_past, ts_now)?;
 
-        let name = Ustr::from(name);
-        let allow_past = allow_past.unwrap_or(true);
-
-        if self.timer_exists(&name) {
-            self.cancel_timer(name.as_str());
-            log::warn!("Timer '{name}' replaced");
-        }
+        self.replace_existing_timer_if_needed(&name);
 
         check_predicate_true(
-            callback.is_some()
-                | self.callbacks.contains_key(&name)
-                | self.default_callback.is_some(),
+            callback.is_some() | self.callbacks.has_any_callback(&name),
             "No callbacks provided",
         )?;
 
-        match callback {
-            Some(callback_py) => self.callbacks.insert(name, callback_py),
-            None => None,
-        };
-
-        let ts_now = self.get_time_ns();
-
-        if alert_time_ns < ts_now {
-            if allow_past {
-                alert_time_ns = ts_now;
-                log::warn!(
-                    "Timer '{name}' alert time {} was in the past, adjusted to current time for immediate firing",
-                    alert_time_ns.to_rfc3339(),
-                );
-            } else {
-                anyhow::bail!(
-                    "Timer '{name}' alert time {} was in the past (current time is {})",
-                    alert_time_ns.to_rfc3339(),
-                    ts_now.to_rfc3339(),
-                );
-            }
+        if let Some(callback) = callback {
+            self.callbacks.register_callback(name, callback);
         }
 
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
         let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
-        // When alert time equals current time, fire immediately
         let fire_immediately = alert_time_ns == ts_now;
 
         let timer = TestTimer::new(
@@ -560,66 +678,27 @@ impl Clock for TestClock {
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string_utf8(name, stringify!(name))?;
-        check_positive_u64(interval_ns, stringify!(interval_ns))?;
+        let ts_now = self.get_time_ns();
+        let (name, start_time_ns, stop_time_ns, _allow_past, fire_immediately) =
+            validate_and_prepare_timer(
+                name,
+                interval_ns,
+                start_time_ns,
+                stop_time_ns,
+                allow_past,
+                fire_immediately,
+                ts_now,
+            )?;
+
         check_predicate_true(
-            callback.is_some() | self.default_callback.is_some(),
+            callback.is_some() | self.callbacks.has_any_callback(&name),
             "No callbacks provided",
         )?;
 
-        let name = Ustr::from(name);
-        let allow_past = allow_past.unwrap_or(true);
-        let fire_immediately = fire_immediately.unwrap_or(false);
+        self.replace_existing_timer_if_needed(&name);
 
-        if self.timer_exists(&name) {
-            self.cancel_timer(name.as_str());
-            log::warn!("Timer '{name}' replaced");
-        }
-
-        match callback {
-            Some(callback_py) => self.callbacks.insert(name, callback_py),
-            None => None,
-        };
-
-        let mut start_time_ns = start_time_ns.unwrap_or_default();
-        let ts_now = self.get_time_ns();
-
-        if start_time_ns == 0 {
-            // Zero start time indicates no explicit start; we use the current time
-            start_time_ns = self.timestamp_ns();
-        } else if !allow_past {
-            // Calculate the next event time based on fire_immediately flag
-            let next_event_time = if fire_immediately {
-                start_time_ns
-            } else {
-                start_time_ns + interval_ns
-            };
-
-            // Check if the next event would be in the past
-            if next_event_time < ts_now {
-                anyhow::bail!(
-                    "Timer '{name}' next event time {} would be in the past (current time is {})",
-                    next_event_time.to_rfc3339(),
-                    ts_now.to_rfc3339(),
-                );
-            }
-        }
-
-        if let Some(stop_time) = stop_time_ns {
-            if stop_time <= start_time_ns {
-                anyhow::bail!(
-                    "Timer '{name}' stop time {} must be after start time {}",
-                    stop_time.to_rfc3339(),
-                    start_time_ns.to_rfc3339(),
-                );
-            }
-            if !allow_past && stop_time <= ts_now {
-                anyhow::bail!(
-                    "Timer '{name}' stop time {} is in the past (current time is {})",
-                    stop_time.to_rfc3339(),
-                    ts_now.to_rfc3339(),
-                );
-            }
+        if let Some(callback) = callback {
+            self.callbacks.register_callback(name, callback);
         }
 
         let interval_ns = create_valid_interval(interval_ns);
@@ -661,7 +740,7 @@ impl Clock for TestClock {
         self.time = AtomicTime::new(false, UnixNanos::default());
         self.timers = BTreeMap::new();
         self.heap = BinaryHeap::new();
-        self.callbacks = HashMap::new();
+        self.callbacks.clear();
     }
 }
 
@@ -675,9 +754,8 @@ impl Clock for TestClock {
 #[derive(Debug)]
 pub struct LiveClock {
     time: &'static AtomicTime,
-    timers: HashMap<Ustr, LiveTimer>,
-    default_callback: Option<TimeEventCallback>,
-    callbacks: HashMap<Ustr, TimeEventCallback>,
+    timers: AHashMap<Ustr, LiveTimer>,
+    callbacks: CallbackRegistry,
     sender: Option<Arc<dyn TimeEventSender>>,
 }
 
@@ -687,21 +765,26 @@ impl LiveClock {
     pub fn new(sender: Option<Arc<dyn TimeEventSender>>) -> Self {
         Self {
             time: get_atomic_clock_realtime(),
-            timers: HashMap::new(),
-            default_callback: None,
-            callbacks: HashMap::new(),
+            timers: AHashMap::new(),
+            callbacks: CallbackRegistry::new(),
             sender,
         }
     }
 
     #[must_use]
-    pub const fn get_timers(&self) -> &HashMap<Ustr, LiveTimer> {
+    pub const fn get_timers(&self) -> &AHashMap<Ustr, LiveTimer> {
         &self.timers
     }
 
-    // Clean up expired timers. Retain only live ones
     fn clear_expired_timers(&mut self) {
         self.timers.retain(|_, timer| !timer.is_expired());
+    }
+
+    fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
+        if self.timer_exists(name) {
+            self.cancel_timer(name.as_str());
+            log::warn!("Timer '{name}' replaced");
+        }
     }
 }
 
@@ -757,7 +840,7 @@ impl Clock for LiveClock {
     }
 
     fn register_default_handler(&mut self, handler: TimeEventCallback) {
-        self.default_callback = Some(handler);
+        self.callbacks.register_default_handler(handler);
     }
 
     /// # Panics
@@ -766,73 +849,35 @@ impl Clock for LiveClock {
     /// - The event does not have an associated handler (see trait documentation).
     #[allow(unused_variables)]
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
-        // Get the callback from either the event-specific callbacks or default callback
-        let callback = self
-            .callbacks
-            .get(&event.name)
-            .cloned()
-            .or_else(|| self.default_callback.clone())
-            .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
-
-        TimeEventHandlerV2::new(event, callback)
+        self.callbacks.get_handler(event)
     }
 
     fn set_time_alert_ns(
         &mut self,
         name: &str,
-        mut alert_time_ns: UnixNanos, // mut allows adjustment based on allow_past
+        alert_time_ns: UnixNanos,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string_utf8(name, stringify!(name))?;
+        let ts_now = self.get_time_ns();
+        let (name, alert_time_ns) =
+            validate_and_prepare_time_alert(name, alert_time_ns, allow_past, ts_now)?;
 
-        let name = Ustr::from(name);
-        let allow_past = allow_past.unwrap_or(true);
-
-        if self.timer_exists(&name) {
-            self.cancel_timer(name.as_str());
-            log::warn!("Timer '{name}' replaced");
-        }
+        self.replace_existing_timer_if_needed(&name);
 
         check_predicate_true(
-            callback.is_some()
-                | self.callbacks.contains_key(&name)
-                | self.default_callback.is_some(),
+            callback.is_some() | self.callbacks.has_any_callback(&name),
             "No callbacks provided",
         )?;
 
         let callback = if let Some(callback) = callback {
-            self.callbacks.insert(name, callback.clone());
+            self.callbacks.register_callback(name, callback.clone());
             callback
-        } else if let Some(existing) = self.callbacks.get(&name) {
-            existing.clone()
         } else {
-            let default = self
-                .default_callback
-                .clone()
-                .expect("Default callback should exist");
-            self.callbacks.insert(name, default.clone());
-            default
+            self.callbacks
+                .get_callback(&name)
+                .expect("Callback should exist")
         };
-
-        let ts_now = self.get_time_ns();
-
-        // Handle past timestamps based on flag
-        if alert_time_ns < ts_now {
-            if allow_past {
-                alert_time_ns = ts_now;
-                log::warn!(
-                    "Timer '{name}' alert time {} was in the past, adjusted to current time for immediate firing",
-                    alert_time_ns.to_rfc3339(),
-                );
-            } else {
-                anyhow::bail!(
-                    "Timer '{name}' alert time {} was in the past (current time is {})",
-                    alert_time_ns.to_rfc3339(),
-                    ts_now.to_rfc3339(),
-                );
-            }
-        }
 
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
         let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
@@ -865,59 +910,33 @@ impl Clock for LiveClock {
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
-        check_valid_string_utf8(name, stringify!(name))?;
-        check_positive_u64(interval_ns, stringify!(interval_ns))?;
+        let ts_now = self.get_time_ns();
+        let (name, start_time_ns, stop_time_ns, _allow_past, fire_immediately) =
+            validate_and_prepare_timer(
+                name,
+                interval_ns,
+                start_time_ns,
+                stop_time_ns,
+                allow_past,
+                fire_immediately,
+                ts_now,
+            )?;
+
         check_predicate_true(
-            callback.is_some() | self.default_callback.is_some(),
+            callback.is_some() | self.callbacks.has_any_callback(&name),
             "No callbacks provided",
         )?;
 
-        let name = Ustr::from(name);
-        let allow_past = allow_past.unwrap_or(true);
-        let fire_immediately = fire_immediately.unwrap_or(false);
+        self.replace_existing_timer_if_needed(&name);
 
-        if self.timer_exists(&name) {
-            self.cancel_timer(name.as_str());
-            log::warn!("Timer '{name}' replaced");
-        }
-
-        let callback = match callback {
-            Some(callback) => callback,
-            None => self.default_callback.clone().unwrap(),
+        let callback = if let Some(callback) = callback {
+            self.callbacks.register_callback(name, callback.clone());
+            callback
+        } else {
+            self.callbacks
+                .get_callback(&name)
+                .expect("Callback should exist")
         };
-
-        self.callbacks.insert(name, callback.clone());
-
-        let mut start_time_ns = start_time_ns.unwrap_or_default();
-        let ts_now = self.get_time_ns();
-
-        if start_time_ns == 0 {
-            // Zero start time indicates no explicit start; we use the current time
-            start_time_ns = self.timestamp_ns();
-        } else if start_time_ns < ts_now && !allow_past {
-            anyhow::bail!(
-                "Timer '{name}' start time {} was in the past (current time is {})",
-                start_time_ns.to_rfc3339(),
-                ts_now.to_rfc3339(),
-            );
-        }
-
-        if let Some(stop_time) = stop_time_ns {
-            if stop_time <= start_time_ns {
-                anyhow::bail!(
-                    "Timer '{name}' stop time {} must be after start time {}",
-                    stop_time.to_rfc3339(),
-                    start_time_ns.to_rfc3339(),
-                );
-            }
-            if !allow_past && stop_time <= ts_now {
-                anyhow::bail!(
-                    "Timer '{name}' stop time {} is in the past (current time is {})",
-                    stop_time.to_rfc3339(),
-                    ts_now.to_rfc3339(),
-                );
-            }
-        }
 
         let interval_ns = create_valid_interval(interval_ns);
 
@@ -1576,7 +1595,11 @@ mod tests {
             .set_time_alert_ns("alert-callback", alert_time, None, None)
             .unwrap();
 
-        assert!(clock.callbacks.contains_key(&Ustr::from("alert-callback")));
+        assert!(
+            clock
+                .callbacks
+                .has_any_callback(&Ustr::from("alert-callback"))
+        );
 
         clock.cancel_timers();
     }

@@ -111,7 +111,7 @@ class TestLiveExecutionPerformance:
             clock=self.clock,
         )
 
-        yield
+        return
 
     def submit_order(self):
         order = self.strategy.order_factory.market(
@@ -122,7 +122,7 @@ class TestLiveExecutionPerformance:
 
         self.strategy.submit_order(order)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     def test_execute_command(self, benchmark):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -144,7 +144,7 @@ class TestLiveExecutionPerformance:
 
         benchmark(execute_command)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_order(self, benchmark):
         self.exec_engine.start()
         await asyncio.sleep(1)
@@ -160,7 +160,7 @@ class TestLiveExecutionPerformance:
 
         benchmark(submit_order)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_order_end_to_end(self, benchmark):
         self.exec_engine.start()
         await asyncio.sleep(1)

@@ -68,6 +68,8 @@ cdef class OrderList:
         self.ts_init = first.ts_init
 
     def __eq__(self, OrderList other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:

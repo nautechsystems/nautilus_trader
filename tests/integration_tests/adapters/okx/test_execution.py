@@ -52,7 +52,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.okx.conftest import _create_ws_mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client_builder(
     event_loop,
     mock_http_client,

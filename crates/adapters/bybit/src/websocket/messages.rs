@@ -220,15 +220,25 @@ pub struct BybitWsRequest<T> {
 pub struct BybitWsHeader {
     /// Timestamp in milliseconds.
     pub x_bapi_timestamp: String,
+    /// Optional referer ID.
+    #[serde(rename = "Referer", skip_serializing_if = "Option::is_none")]
+    pub referer: Option<String>,
 }
 
 impl BybitWsHeader {
     /// Creates a new header with the current timestamp.
     #[must_use]
     pub fn now() -> Self {
+        Self::with_referer(None)
+    }
+
+    /// Creates a new header with the current timestamp and optional referer.
+    #[must_use]
+    pub fn with_referer(referer: Option<String>) -> Self {
         use nautilus_core::time::get_atomic_clock_realtime;
         Self {
             x_bapi_timestamp: get_atomic_clock_realtime().get_time_ms().to_string(),
+            referer,
         }
     }
 }

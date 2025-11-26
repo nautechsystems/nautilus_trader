@@ -28,10 +28,10 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 
 use crate::defi::{
-    AmmType, Chain, Dex, DexType, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain,
-    SharedDex, Token,
+    Chain, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
     data::{DexPoolData, PoolFeeCollect, block::BlockPosition},
     pool_analysis::{profiler::PoolProfiler, quote::SwapQuote},
+    stubs::{arbitrum, uniswap_v3},
     tick_map::{
         liquidity_math::tick_spacing_to_max_liquidity_per_tick,
         sqrt_price_math::{
@@ -48,26 +48,6 @@ static LOG_INDEX_COUNTER: AtomicU32 = AtomicU32::new(0);
 /// Gets the next log index for test events
 fn next_log_index() -> u32 {
     LOG_INDEX_COUNTER.fetch_add(1, Ordering::SeqCst)
-}
-
-fn arbitrum() -> SharedChain {
-    Arc::new(Chain::from_chain_id(42161).unwrap().clone())
-}
-
-fn uniswap_v3(arbitrum: SharedChain) -> SharedDex {
-    let dex = Dex::new(
-        (*arbitrum).clone(),
-        DexType::UniswapV3,
-        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-        0,
-        AmmType::CLAMM,
-        "PoolCreated",
-        "Swap",
-        "Mint",
-        "Burn",
-        "Collect",
-    );
-    Arc::new(dex)
 }
 
 const TICK_SPACING: i32 = 60;
@@ -87,7 +67,7 @@ pub fn pool_definition(
     initial_sqrt_price_x96: Option<U160>,
 ) -> Pool {
     let arbitrum = arbitrum();
-    let dex = uniswap_v3(arbitrum.clone());
+    let dex = uniswap_v3();
     let weth = Token::new(
         arbitrum.clone(),
         address!("0x37a645648dF29205C6261289983FB04ECD70b4B3"),
@@ -133,7 +113,7 @@ fn create_mint_event(
     );
     PoolLiquidityUpdate::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
         pool_definition.address,
         PoolLiquidityUpdateType::Mint,
@@ -168,7 +148,7 @@ fn create_burn_event(
     );
     PoolLiquidityUpdate::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
         pool_definition.address,
         PoolLiquidityUpdateType::Burn,
@@ -196,7 +176,7 @@ fn create_collect_event(
     let pool_definition = pool_definition(None, None, None);
     PoolFeeCollect::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
         pool_definition.address,
         100000,
@@ -327,7 +307,7 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
     let pool_definition = pool_definition(None, None, None);
     let mint_event = PoolLiquidityUpdate::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
         pool_definition.address,
         PoolLiquidityUpdateType::Mint,
@@ -602,7 +582,7 @@ fn test_execute_swap_equivalence() {
     let swap_quote = profiler1.swap_exact_in(amount0_in, true, None).unwrap();
     let swap_event = swap_quote.to_swap_event(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         &pool_address,
         create_block_position(),
         user_address(),
@@ -1851,7 +1831,7 @@ fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolPr
     let new_tick = uni_pool_profiler.state.current_tick;
     assert!(
         new_tick <= upper_tick,
-        "Price should have crossed to or below tick {}, got {}",
+        "Price should have crossed to or below tick {}, was {}",
         upper_tick,
         new_tick
     );
@@ -1919,7 +1899,7 @@ fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProf
     let new_tick = uni_pool_profiler.state.current_tick;
     assert!(
         new_tick >= lower_tick,
-        "Price should have crossed above or at tick {}, got {}",
+        "Price should have crossed above or at tick {}, was {}",
         lower_tick,
         new_tick
     );
@@ -2248,4 +2228,47 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
 #[rstest]
 fn test_swaps_for_pool_high_fee_1on1_price_2e18_max_liquidity() {
     test_pool_swaps(pool_high_fee_1on1_price_2e18_max_liquidity());
+}
+
+#[rstest]
+fn test_size_for_impact_bps_validation(medium_fee_pool_profiler: PoolProfiler) {
+    // Test a subset of BPS values that work with 2e18 liquidity
+    let bps_test_values = vec![100, 500, 1000];
+    for target_bps in &bps_test_values {
+        for zero_for_one in [true, false] {
+            // Get size for target impact
+            let result = medium_fee_pool_profiler
+                .size_for_impact_bps_detailed(*target_bps, zero_for_one)
+                .expect("Size estimation should succeed");
+
+            // Simulate swap with that size
+            let mut quote = medium_fee_pool_profiler
+                .swap_exact_in(result.size, zero_for_one, None)
+                .expect("Swap simulation should succeed");
+
+            // Calculate trade info
+            let pool = medium_fee_pool_profiler.pool.as_ref();
+            quote
+                .calculate_trade_info(&pool.token0, &pool.token1)
+                .expect("Trade info calculation should succeed");
+
+            // Extract and validate actual slippage
+            let trade_info = quote
+                .trade_info
+                .as_ref()
+                .expect("Trade info should be initialized");
+
+            let actual_slippage = trade_info.get_slippage_bps().expect("Should get slippage");
+
+            // Verify within tolerance (1 BPS)
+            let diff = actual_slippage.abs_diff(*target_bps);
+            assert!(
+                diff <= 1,
+                "Slippage should be within 1 BPS tolerance. Target: {}, Actual: {}, Diff: {}",
+                target_bps,
+                actual_slippage,
+                diff
+            );
+        }
+    }
 }

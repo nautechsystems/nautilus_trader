@@ -176,8 +176,14 @@ _SUPPORTED_BAR_AGGREGATIONS = (
     BarAggregation.MONTH,
     BarAggregation.YEAR,
     BarAggregation.TICK,
+    BarAggregation.TICK_IMBALANCE,
+    BarAggregation.TICK_RUNS,
     BarAggregation.VOLUME,
+    BarAggregation.VOLUME_IMBALANCE,
+    BarAggregation.VOLUME_RUNS,
     BarAggregation.VALUE,
+    BarAggregation.VALUE_IMBALANCE,
+    BarAggregation.VALUE_RUNS,
     BarAggregation.RENKO,
 )
 
@@ -527,6 +533,8 @@ cdef class BarSpecification:
         return cstr_to_pystr(bar_specification_to_cstr(&self._mem))
 
     def __eq__(self, BarSpecification other) -> bool:
+        if other is None:
+            return False
         return bar_specification_eq(&self._mem, &other._mem)
 
     def __lt__(self, BarSpecification other) -> bool:
@@ -1212,6 +1220,8 @@ cdef class BarType:
         return cstr_to_pystr(bar_type_to_cstr(&self._mem))
 
     def __eq__(self, BarType other) -> bool:
+        if other is None:
+            return False
         return self.to_str() == other.to_str()
 
     def __lt__(self, BarType other) -> bool:
@@ -1527,6 +1537,8 @@ cdef class Bar(Data):
             )
 
     def __eq__(self, Bar other) -> bool:
+        if other is None:
+            return False
         return self.to_str() == other.to_str()
 
     def __hash__(self) -> int:
@@ -2005,6 +2017,8 @@ cdef class DataType:
         self._hash = hash((self.type, self._key))  # Assign hash for improved time complexity
 
     def __eq__(self, DataType other) -> bool:
+        if other is None:
+            return False
         return self.type == other.type and self._key == other._key  # noqa
 
     def __lt__(self, DataType other) -> bool:
@@ -2139,6 +2153,8 @@ cdef class BookOrder:
         )
 
     def __eq__(self, BookOrder other) -> bool:
+        if other is None:
+            return False
         return book_order_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
@@ -2436,6 +2452,8 @@ cdef class OrderBookDelta(Data):
         )
 
     def __eq__(self, OrderBookDelta other) -> bool:
+        if other is None:
+            return False
         return orderbook_delta_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
@@ -3044,6 +3062,8 @@ cdef class OrderBookDeltas(Data):
             orderbook_deltas_drop(self._mem)
 
     def __eq__(self, OrderBookDeltas other) -> bool:
+        if other is None:
+            return False
         return OrderBookDeltas.to_dict_c(self) == OrderBookDeltas.to_dict_c(other)
 
     def __hash__(self) -> int:
@@ -3438,6 +3458,8 @@ cdef class OrderBookDepth10(Data):
             PyMem_Free(ask_counts_array)
 
     def __eq__(self, OrderBookDepth10 other) -> bool:
+        if other is None:
+            return False
         return orderbook_depth10_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
@@ -3847,6 +3869,8 @@ cdef class InstrumentStatus(Data):
         self._is_short_sell_restricted = is_short_sell_restricted
 
     def __eq__(self, InstrumentStatus other) -> bool:
+        if other is None:
+            return False
         return InstrumentStatus.to_dict_c(self) == InstrumentStatus.to_dict_c(other)
 
     def __hash__(self) -> int:
@@ -4066,6 +4090,8 @@ cdef class InstrumentClose(Data):
         self.ts_init = ts_init
 
     def __eq__(self, InstrumentClose other) -> bool:
+        if other is None:
+            return False
         return InstrumentClose.to_dict_c(self) == InstrumentClose.to_dict_c(other)
 
     def __hash__(self) -> int:
@@ -4319,6 +4345,8 @@ cdef class QuoteTick(Data):
         )
 
     def __eq__(self, QuoteTick other) -> bool:
+        if other is None:
+            return False
         return quote_tick_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
@@ -4940,6 +4968,8 @@ cdef class TradeTick(Data):
         )
 
     def __eq__(self, TradeTick other) -> bool:
+        if other is None:
+            return False
         return trade_tick_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
@@ -5439,6 +5469,8 @@ cdef class MarkPriceUpdate(Data):
         )
 
     def __eq__(self, MarkPriceUpdate other) -> bool:
+        if other is None:
+            return False
         return mark_price_update_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
@@ -5680,6 +5712,8 @@ cdef class IndexPriceUpdate(Data):
         )
 
     def __eq__(self, IndexPriceUpdate other) -> bool:
+        if other is None:
+            return False
         return index_price_update_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
@@ -5924,6 +5958,8 @@ cdef class FundingRateUpdate(Data):
         self._ts_init = ts_init
 
     def __eq__(self, FundingRateUpdate other) -> bool:
+        if other is None:
+            return False
         return (
             self.instrument_id == other.instrument_id
             and self.rate == other.rate

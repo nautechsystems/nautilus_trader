@@ -106,7 +106,7 @@ if __name__ == "__main__":
     strategy_config = EMACrossTrailingStopConfig(
         instrument_id=instrument.id,
         bar_type=bar_type,
-        trade_size=Decimal("1"),
+        trade_size=Decimal(1),
         fast_ema_period=10,
         slow_ema_period=20,
         atr_period=20,

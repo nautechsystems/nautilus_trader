@@ -3375,6 +3375,7 @@ cdef class Actor(Component):
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(bar_type, "bar_type")
+        Condition.is_true(bar_type.is_standard(), "Use a standard bar type with request_bars. Composite bar types can be used with request_aggregated_bars")
         Condition.callable_or_none(callback, "callback")
 
         start, end = self._validate_datetime_range(start, end)

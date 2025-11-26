@@ -37,7 +37,7 @@ def mock_ib_contract_calls(mocker, instrument_provider, contract_details: Contra
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_equity_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
@@ -63,7 +63,7 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
     assert 2, equity.price_precision
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_futures_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("CLZ3.NYMEX")
@@ -86,7 +86,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
     assert future.price_precision == 2
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_option_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("TSLA230120C00100000.MIAX")
@@ -114,7 +114,7 @@ async def test_load_option_contract_instrument(mocker, instrument_provider):
     assert option.price_precision == 2
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_forex_contract_instrument(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
@@ -137,7 +137,7 @@ async def test_load_forex_contract_instrument(mocker, instrument_provider):
     assert fx.price_precision == 5
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     # Arrange
     mock_ib_contract_calls(
@@ -155,7 +155,7 @@ async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     assert instrument_provider.contract_id_to_instrument_id == expected
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_load_instrument_using_contract_id(mocker, instrument_provider):
     # Arrange
     instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
@@ -177,7 +177,7 @@ async def test_load_instrument_using_contract_id(mocker, instrument_provider):
     assert fx.price_precision == 5
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_bag_contract_loading_invalid_no_combo_legs(instrument_provider):
     """
     Test that loading BAG contract without combo legs raises error.
@@ -196,7 +196,7 @@ async def test_bag_contract_loading_invalid_no_combo_legs(instrument_provider):
         await instrument_provider._load_bag_contract(bag_contract)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_bag_contract_venue_determination(instrument_provider):
     """
     Test venue determination for BAG contracts.

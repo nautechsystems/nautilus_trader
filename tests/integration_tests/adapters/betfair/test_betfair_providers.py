@@ -49,9 +49,9 @@ class TestBetfairInstrumentProvider:
         )
         self.parser = BetfairParser(currency="GBP")
 
-        yield
+        return
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_load_markets(self):
         markets = await load_markets(self.client)
         assert len(markets) == 13227
@@ -66,13 +66,13 @@ class TestBetfairInstrumentProvider:
         markets = await load_markets(self.client, market_ids=["1.177125728"])
         assert len(markets) == 1
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_load_markets_metadata(self):
         markets = await load_markets(self.client, event_type_names=["Basketball"])
         market_metadata = await load_markets_metadata(client=self.client, markets=markets)
         assert len(market_metadata) == 169
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_make_instruments(self):
         # Arrange
         list_market_catalogue_data = [
@@ -93,12 +93,12 @@ class TestBetfairInstrumentProvider:
         # Assert
         assert len(instruments) == 30412
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_load_all(self):
         await self.provider.load_all_async({"event_type_names": ["Tennis"]})
         assert len(self.provider.list_all()) == 4711
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_list_all(self):
         await self.provider.load_all_async({"event_type_names": ["Basketball"]})
         instruments = self.provider.list_all()

@@ -25,6 +25,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -331,7 +332,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_order_status_reports(instrument_id=instrument_id)
 
-            self._log.info(f"Generated {len(reports)} order status report(s)", LogColor.GREEN)
+            self._log_report_receipt(
+                len(reports),
+                "OrderStatusReport",
+                command.log_receipt_level,
+                "Generated",
+            )
             return reports
         except Exception as e:
             self._log.error(f"Failed to generate order status reports: {e}")
@@ -345,7 +351,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             instrument_id = command.instrument_id.value if command.instrument_id else None
             reports = await self._client.request_fill_reports(instrument_id=instrument_id)
 
-            self._log.info(f"Generated {len(reports)} fill report(s)", LogColor.GREEN)
+            self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO, "Generated")
             return reports
         except Exception as e:
             self._log.error(f"Failed to generate fill reports: {e}")
@@ -361,7 +367,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 instrument_id=instrument_id,
             )
 
-            self._log.info(f"Generated {len(reports)} position status report(s)", LogColor.GREEN)
+            self._log_report_receipt(
+                len(reports),
+                "PositionStatusReport",
+                command.log_receipt_level,
+            )
+
             return reports
         except Exception as e:
             self._log.error(f"Failed to generate position status reports: {e}")

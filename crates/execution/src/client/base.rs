@@ -21,7 +21,9 @@
 
 use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock, msgbus};
+use nautilus_common::{
+    cache::Cache, clock::Clock, msgbus, msgbus::switchboard::MessagingSwitchboard,
+};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
@@ -452,32 +454,32 @@ impl ExecutionClientCore {
     }
 
     fn send_account_state(&self, account_state: AccountState) {
-        let endpoint = "Portfolio.update_account".into();
+        let endpoint = MessagingSwitchboard::portfolio_update_account();
         msgbus::send_any(endpoint, &account_state as &dyn Any);
     }
 
     fn send_order_event(&self, event: OrderEventAny) {
-        let endpoint = "ExecEngine.process".into();
+        let endpoint = MessagingSwitchboard::exec_engine_process();
         msgbus::send_any(endpoint, &event as &dyn Any);
     }
 
     fn send_mass_status_report(&self, report: ExecutionMassStatus) {
-        let endpoint = "ExecEngine.reconcile_execution_mass_status".into();
+        let endpoint = MessagingSwitchboard::exec_engine_reconcile_execution_mass_status();
         msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_order_status_report(&self, report: OrderStatusReport) {
-        let endpoint = "ExecEngine.reconcile_execution_report".into();
+        let endpoint = MessagingSwitchboard::exec_engine_reconcile_execution_report();
         msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_fill_report(&self, report: FillReport) {
-        let endpoint = "ExecEngine.reconcile_execution_report".into();
+        let endpoint = MessagingSwitchboard::exec_engine_reconcile_execution_report();
         msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_position_report(&self, report: PositionStatusReport) {
-        let endpoint = "ExecEngine.reconcile_execution_report".into();
+        let endpoint = MessagingSwitchboard::exec_engine_reconcile_execution_report();
         msgbus::send_any(endpoint, &report as &dyn Any);
     }
 }

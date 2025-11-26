@@ -28,14 +28,46 @@ use crate::{
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
-        stubs::{
-            account_id, client_order_id, instrument_id_btc_usdt, strategy_id_ema_cross, trader_id,
-            uuid4, venue_order_id,
-        },
+        VenueOrderId, stubs as id_stubs,
     },
     types::{Currency, Money, Price, Quantity},
 };
+
+// Fixture wrappers for rstest - these are not glob-exported to avoid ambiguity
+#[fixture]
+pub fn trader_id() -> TraderId {
+    id_stubs::trader_id()
+}
+
+#[fixture]
+pub fn strategy_id_ema_cross() -> StrategyId {
+    id_stubs::strategy_id_ema_cross()
+}
+
+#[fixture]
+pub fn instrument_id_btc_usdt() -> InstrumentId {
+    id_stubs::instrument_id_btc_usdt()
+}
+
+#[fixture]
+pub fn client_order_id() -> ClientOrderId {
+    id_stubs::client_order_id()
+}
+
+#[fixture]
+pub fn venue_order_id() -> VenueOrderId {
+    id_stubs::venue_order_id()
+}
+
+#[fixture]
+pub fn account_id() -> AccountId {
+    id_stubs::account_id()
+}
+
+#[fixture]
+pub fn uuid4() -> UUID4 {
+    id_stubs::uuid4()
+}
 
 #[fixture]
 pub fn order_filled(

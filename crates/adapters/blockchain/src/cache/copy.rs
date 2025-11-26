@@ -197,7 +197,8 @@ impl<'a> PostgresCopyHandler<'a> {
         let copy_statement = r"
             COPY pool_swap_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, recipient, side, size, price, sqrt_price_x96, amount0, amount1
+                log_index, sender, recipient, sqrt_price_x96, liquidity, tick, amount0, amount1,
+                order_side, base_quantity, quote_quantity, spot_price, execution_price
             ) FROM STDIN WITH (FORMAT BINARY)";
 
         let mut copy_in = self
@@ -489,8 +490,10 @@ impl<'a> PostgresCopyHandler<'a> {
         use std::io::Write;
         let mut row_data = Vec::new();
 
-        // Number of fields (14)
-        row_data.write_all(&14u16.to_be_bytes())?;
+        // Number of fields (18): chain_id, pool_address, block, transaction_hash, transaction_index,
+        // log_index, sender, recipient, sqrt_price_x96, liquidity, tick, amount0, amount1,
+        // order_side, base_quantity, quote_quantity, spot_price, execution_price
+        row_data.write_all(&18u16.to_be_bytes())?;
 
         // chain_id (INT4)
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
@@ -532,37 +535,20 @@ impl<'a> PostgresCopyHandler<'a> {
         row_data.write_all(&(recipient_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(&recipient_bytes)?;
 
-        // side (TEXT or NULL)
-        if let Some(side) = swap.side {
-            let side_bytes = side.to_string().as_bytes().to_vec();
-            row_data.write_all(&(side_bytes.len() as i32).to_be_bytes())?;
-            row_data.write_all(&side_bytes)?;
-        } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
-        }
-
-        // size (TEXT or NULL)
-        if let Some(size) = swap.size {
-            let size_bytes = size.to_string().as_bytes().to_vec();
-            row_data.write_all(&(size_bytes.len() as i32).to_be_bytes())?;
-            row_data.write_all(&size_bytes)?;
-        } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
-        }
-
-        // price (TEXT or NULL)
-        if let Some(price) = swap.price {
-            let price_bytes = price.to_string().as_bytes().to_vec();
-            row_data.write_all(&(price_bytes.len() as i32).to_be_bytes())?;
-            row_data.write_all(&price_bytes)?;
-        } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
-        }
-
         // sqrt_price_x96 (U160)
         let sqrt_price_bytes = format_numeric(&swap.sqrt_price_x96).as_bytes().to_vec();
         row_data.write_all(&(sqrt_price_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(&sqrt_price_bytes)?;
+
+        // liquidity (U128)
+        let liquidity_bytes = format_numeric(&swap.liquidity).as_bytes().to_vec();
+        row_data.write_all(&(liquidity_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&liquidity_bytes)?;
+
+        // tick (INT4)
+        let tick_bytes = swap.tick.to_be_bytes();
+        row_data.write_all(&(tick_bytes.len() as i32).to_be_bytes())?;
+        row_data.write_all(&tick_bytes)?;
 
         // amount0 (I256)
         let amount0_bytes = format_numeric(&swap.amount0).as_bytes().to_vec();
@@ -573,6 +559,49 @@ impl<'a> PostgresCopyHandler<'a> {
         let amount1_bytes = format_numeric(&swap.amount1).as_bytes().to_vec();
         row_data.write_all(&(amount1_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(&amount1_bytes)?;
+
+        // New fields from trade_info: order_side, base_quantity, quote_quantity, spot_price, execution_price
+        if let Some(trade_info) = &swap.trade_info {
+            // order_side (TEXT)
+            let side_bytes = trade_info.order_side.to_string().as_bytes().to_vec();
+            row_data.write_all(&(side_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&side_bytes)?;
+
+            // base_quantity (NUMERIC) - convert Decimal to string representation
+            let base_qty_decimal = trade_info.quantity_base.as_decimal();
+            let base_qty_str = base_qty_decimal.to_string();
+            let base_qty_bytes = base_qty_str.as_bytes();
+            row_data.write_all(&(base_qty_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(base_qty_bytes)?;
+
+            // quote_quantity (NUMERIC) - convert Decimal to string representation
+            let quote_qty_decimal = trade_info.quantity_quote.as_decimal();
+            let quote_qty_str = quote_qty_decimal.to_string();
+            let quote_qty_bytes = quote_qty_str.as_bytes();
+            row_data.write_all(&(quote_qty_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(quote_qty_bytes)?;
+
+            // spot_price (NUMERIC) - convert Decimal to string representation
+            let spot_price_decimal = trade_info.spot_price.as_decimal();
+            let spot_price_str = spot_price_decimal.to_string();
+            let spot_price_bytes = spot_price_str.as_bytes();
+            row_data.write_all(&(spot_price_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(spot_price_bytes)?;
+
+            // execution_price (NUMERIC) - convert Decimal to string representation
+            let exec_price_decimal = trade_info.execution_price.as_decimal();
+            let exec_price_str = exec_price_decimal.to_string();
+            let exec_price_bytes = exec_price_str.as_bytes();
+            row_data.write_all(&(exec_price_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(exec_price_bytes)?;
+        } else {
+            // All 5 fields are NULL when trade_info is not available
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL for order_side
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL for base_quantity
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL for quote_quantity
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL for spot_price
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL for execution_price
+        }
 
         copy_in
             .send(row_data)

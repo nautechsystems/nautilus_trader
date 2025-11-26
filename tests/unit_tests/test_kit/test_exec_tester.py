@@ -154,7 +154,7 @@ def create_tester_factory(trader_id, portfolio, msgbus, cache, clock, setup_envi
         testers.append(tester)
         return tester
 
-    yield _create_tester
+    return _create_tester
 
 
 def test_on_start_initializes_instrument(
@@ -204,8 +204,8 @@ def test_maintains_buy_order_on_quote_tick(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=False,
+        enable_limit_buys=True,
+        enable_limit_sells=False,
     )
 
     tester = ExecTester(config)
@@ -252,8 +252,8 @@ def test_maintains_sell_order_on_quote_tick(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=False,
-        enable_sells=True,
+        enable_limit_buys=False,
+        enable_limit_sells=True,
     )
 
     tester = ExecTester(config)
@@ -300,8 +300,8 @@ def test_maintains_both_orders_on_quote_tick(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=True,
+        enable_limit_buys=True,
+        enable_limit_sells=True,
     )
 
     tester = ExecTester(config)
@@ -344,8 +344,8 @@ def test_bracket_buy_order_on_quote_tick(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=False,
+        enable_limit_buys=True,
+        enable_limit_sells=False,
         enable_brackets=True,
         bracket_offset_ticks=5,
         tob_offset_ticks=2,
@@ -412,8 +412,8 @@ def test_bracket_and_stop_orders_can_run_together(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=False,
+        enable_limit_buys=True,
+        enable_limit_sells=False,
         enable_brackets=True,
         enable_stop_buys=True,
         bracket_offset_ticks=5,
@@ -463,8 +463,8 @@ def test_post_only_with_test_reject(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=True,
+        enable_limit_buys=True,
+        enable_limit_sells=True,
         use_post_only=True,
         test_reject_post_only=True,
     )
@@ -510,8 +510,8 @@ def test_order_with_expiry_time(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=False,
+        enable_limit_buys=True,
+        enable_limit_sells=False,
         order_expire_time_delta_mins=5,
     )
 
@@ -557,8 +557,8 @@ def test_dry_run_mode_prevents_order_submission(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=True,
+        enable_limit_buys=True,
+        enable_limit_sells=True,
         dry_run=True,
     )
 
@@ -601,8 +601,8 @@ def test_on_order_book_maintains_orders(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=True,
+        enable_limit_buys=True,
+        enable_limit_sells=True,
     )
 
     tester = ExecTester(config)
@@ -646,7 +646,7 @@ def test_emulation_trigger_configuration(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
+        enable_limit_buys=True,
         emulation_trigger="BID_ASK",
     )
 
@@ -688,9 +688,9 @@ def test_use_quote_quantity(
     # Arrange
     config = ExecTesterConfig(
         instrument_id=instrument_id,
-        order_qty=Decimal("100"),  # Quote currency amount
-        enable_buys=True,
-        enable_sells=False,
+        order_qty=Decimal(100),  # Quote currency amount
+        enable_limit_buys=True,
+        enable_limit_sells=False,
         use_quote_quantity=True,
     )
 
@@ -846,8 +846,8 @@ def test_modifies_order_when_price_moves_with_modify_flag(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=False,
+        enable_limit_buys=True,
+        enable_limit_sells=False,
         modify_orders_to_maintain_tob_offset=True,
     )
 
@@ -908,8 +908,8 @@ def test_cancel_replace_when_price_moves_with_cancel_replace_flag(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=False,
-        enable_sells=True,
+        enable_limit_buys=False,
+        enable_limit_sells=True,
         cancel_replace_orders_to_maintain_tob_offset=True,
     )
 
@@ -972,8 +972,8 @@ def test_resubmits_order_when_not_active(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=False,
+        enable_limit_buys=True,
+        enable_limit_sells=False,
     )
 
     tester = ExecTester(config)
@@ -1364,7 +1364,7 @@ def test_invalid_emulation_trigger_raises_key_error(
 
 
 @pytest.mark.parametrize(
-    "trigger_type,expected_trigger",
+    ("trigger_type", "expected_trigger"),
     [
         ("NO_TRIGGER", TriggerType.NO_TRIGGER),
         ("DEFAULT", TriggerType.DEFAULT),
@@ -1393,7 +1393,7 @@ def test_emulation_trigger_types_parametrized(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
+        enable_limit_buys=True,
         emulation_trigger=trigger_type,
     )
 
@@ -1418,7 +1418,7 @@ def test_emulation_trigger_types_parametrized(
 
 
 @pytest.mark.parametrize(
-    "enable_buys,enable_sells,expected_orders",
+    ("enable_limit_buys", "enable_limit_sells", "expected_orders"),
     [
         (True, False, ("buy_order",)),
         (False, True, ("sell_order",)),
@@ -1434,8 +1434,8 @@ def test_order_creation_by_side_parametrized(
     instrument,
     instrument_id,
     setup_environment,
-    enable_buys,
-    enable_sells,
+    enable_limit_buys,
+    enable_limit_sells,
     expected_orders,
 ):
     """
@@ -1445,8 +1445,8 @@ def test_order_creation_by_side_parametrized(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=enable_buys,
-        enable_sells=enable_sells,
+        enable_limit_buys=enable_limit_buys,
+        enable_limit_sells=enable_limit_sells,
     )
 
     tester = ExecTester(config)
@@ -1494,8 +1494,8 @@ def test_post_only_flag_set_correctly(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=True,
+        enable_limit_buys=True,
+        enable_limit_sells=True,
         use_post_only=True,
     )
 
@@ -1536,7 +1536,7 @@ def test_order_expiry_time_within_tolerance(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
+        enable_limit_buys=True,
         order_expire_time_delta_mins=5,
     )
 
@@ -1588,7 +1588,7 @@ def test_use_quote_quantity_with_correct_precision(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("1000.0"),  # Quote amount
-        enable_buys=True,
+        enable_limit_buys=True,
         use_quote_quantity=True,
     )
 
@@ -1664,7 +1664,7 @@ def test_subscription_parameters_passed_correctly(
 
 
 @pytest.mark.parametrize(
-    "subscribe_quotes,subscribe_trades,subscribe_book",
+    ("subscribe_quotes", "subscribe_trades", "subscribe_book"),
     [
         (True, True, False),
         (True, False, True),
@@ -1861,8 +1861,8 @@ def test_no_modify_when_order_pending_update(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=False,
+        enable_limit_buys=True,
+        enable_limit_sells=False,
         modify_orders_to_maintain_tob_offset=True,
     )
 
@@ -1923,8 +1923,8 @@ def test_no_modify_when_order_pending_cancel(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=False,
+        enable_limit_buys=True,
+        enable_limit_sells=False,
         modify_orders_to_maintain_tob_offset=True,
     )
 
@@ -2804,8 +2804,8 @@ def test_both_regular_and_stop_orders_together(
     config = ExecTesterConfig(
         instrument_id=instrument_id,
         order_qty=Decimal("0.01"),
-        enable_buys=True,
-        enable_sells=True,
+        enable_limit_buys=True,
+        enable_limit_sells=True,
         enable_stop_buys=True,
         enable_stop_sells=True,
         stop_order_type=OrderType.STOP_MARKET,
@@ -2856,10 +2856,10 @@ def test_both_regular_and_stop_orders_together(
 
 
 @pytest.mark.parametrize(
-    "order_display_qty,expected_display",
+    ("order_display_qty", "expected_display"),
     [
         (Decimal("0.25"), 0.25),  # Partial display (iceberg)
-        (Decimal("0"), 0),  # Hidden order (zero display)
+        (Decimal(0), 0),  # Hidden order (zero display)
         (None, None),  # No display qty specified
     ],
 )
@@ -2886,8 +2886,8 @@ def test_order_display_qty_for_limit_orders(
         instrument_id=instrument_id,
         order_qty=Decimal("1.0"),
         order_display_qty=order_display_qty,
-        enable_buys=True,
-        enable_sells=True,
+        enable_limit_buys=True,
+        enable_limit_sells=True,
     )
 
     tester = ExecTester(config)
@@ -3067,8 +3067,8 @@ def test_order_without_display_qty(
         instrument_id=instrument_id,
         order_qty=Decimal("1.0"),
         # order_display_qty not set - should be None
-        enable_buys=True,
-        enable_sells=True,
+        enable_limit_buys=True,
+        enable_limit_sells=True,
     )
 
     tester = ExecTester(config)
@@ -3099,3 +3099,56 @@ def test_order_without_display_qty(
     expected_qty = instrument.make_qty(1.0)
     assert tester.buy_order.quantity == expected_qty
     assert tester.sell_order.quantity == expected_qty
+
+
+def test_reduce_only_opening_order_rejected(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument_id,
+    setup_environment,
+):
+    """
+    Test that opening orders with reduce_only=True get rejected.
+
+    When test_reject_reduce_only is enabled, the opening market order should have
+    reduce_only=True, which should cause rejection since there is no position to reduce.
+
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.1"),
+        open_position_on_start_qty=Decimal("0.1"),  # Open position on start
+        test_reject_reduce_only=True,  # Set reduce_only=True for opening order
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    # Track submitted orders
+    submitted_orders = []
+    original_submit = tester.submit_order
+
+    def capture_order(order, **kwargs):
+        submitted_orders.append(order)
+        return original_submit(order, **kwargs)
+
+    tester.submit_order = capture_order
+
+    # Act
+    tester.on_start()
+
+    # Assert - verify order was submitted with reduce_only=True
+    assert len(submitted_orders) == 1
+    order = submitted_orders[0]
+    assert isinstance(order, MarketOrder)
+    assert order.is_reduce_only is True

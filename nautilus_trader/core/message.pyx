@@ -62,6 +62,8 @@ cdef class Command:
         self.correlation_id = UUID4.from_str_c(state[2]) if state[2] is not None else None
 
     def __eq__(self, Command other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -107,6 +109,8 @@ cdef class Document:
         self.ts_init = state[1]
 
     def __eq__(self, Document other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -210,6 +214,8 @@ cdef class Request:
         self.correlation_id = UUID4.from_str_c(state[3]) if state[3] is not None else None
 
     def __eq__(self, Request other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -262,6 +268,8 @@ cdef class Response:
         self.ts_init = state[2]
 
     def __eq__(self, Response other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:

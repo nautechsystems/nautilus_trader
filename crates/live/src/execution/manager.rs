@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Reconciliation managers for live execution state.
+//! Execution state manager for live trading.
 //!
-//! This module provides managers for reconciling execution state between
-//! the local cache and connected venues during live trading.
+//! This module provides the execution manager for reconciling execution state between
+//! the local cache and connected venues, as well as purging old state during live trading.
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    rc::Rc,
+use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr};
+
+use ahash::{AHashMap, AHashSet};
+use nautilus_common::{
+    cache::Cache,
+    clock::Clock,
+    messages::execution::report::{GenerateOrderStatusReport, GeneratePositionReports},
 };
-
-use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::OrderStatus,
@@ -36,55 +36,146 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
-    reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
+    position::Position,
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::Quantity,
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
-/// Configuration for reconciliation manager.
+use crate::{config::LiveExecEngineConfig, execution::client::LiveExecutionClient};
+
+/// Configuration for execution manager.
 #[derive(Debug, Clone)]
-pub struct ReconciliationConfig {
+pub struct ExecutionManagerConfig {
+    /// If reconciliation is active at start-up.
+    pub reconciliation: bool,
+    /// The delay (seconds) before starting reconciliation at startup.
+    pub reconciliation_startup_delay_secs: f64,
     /// Number of minutes to look back during reconciliation.
     pub lookback_mins: Option<u64>,
+    /// Instrument IDs to include during reconciliation (empty => all).
+    pub reconciliation_instrument_ids: AHashSet<InstrumentId>,
+    /// Whether to filter unclaimed external orders.
+    pub filter_unclaimed_external: bool,
+    /// Whether to filter position status reports during reconciliation.
+    pub filter_position_reports: bool,
+    /// Client order IDs excluded from reconciliation.
+    pub filtered_client_order_ids: AHashSet<ClientOrderId>,
+    /// Whether to generate missing orders from reports.
+    pub generate_missing_orders: bool,
+    /// The interval (milliseconds) between checking whether in-flight orders have exceeded their threshold.
+    pub inflight_check_interval_ms: u32,
     /// Threshold in milliseconds for inflight order checks.
     pub inflight_threshold_ms: u64,
     /// Maximum number of retries for inflight checks.
     pub inflight_max_retries: u32,
-    /// Whether to filter unclaimed external orders.
-    pub filter_unclaimed_external: bool,
-    /// Whether to generate missing orders from reports.
-    pub generate_missing_orders: bool,
-    /// Client order IDs excluded from reconciliation.
-    pub filtered_client_order_ids: HashSet<ClientOrderId>,
+    /// The interval (seconds) between checks for open orders at the venue.
+    pub open_check_interval_secs: Option<f64>,
+    /// The lookback minutes for open order checks.
+    pub open_check_lookback_mins: Option<u64>,
     /// Threshold in nanoseconds before acting on venue discrepancies for open orders.
     pub open_check_threshold_ns: u64,
     /// Maximum retries before resolving an open order missing at the venue.
     pub open_check_missing_retries: u32,
     /// Whether open-order polling should only request open orders from the venue.
     pub open_check_open_only: bool,
-    /// Lookback window (minutes) for venue order status polling.
-    pub open_check_lookback_mins: Option<u64>,
-    /// Whether to filter position status reports during reconciliation.
-    pub filter_position_reports: bool,
-    /// Instrument IDs to include during reconciliation (empty => all).
-    pub reconciliation_instrument_ids: HashSet<InstrumentId>,
+    /// The maximum number of single-order queries per consistency check cycle.
+    pub max_single_order_queries_per_cycle: u32,
+    /// The delay (milliseconds) between consecutive single-order queries.
+    pub single_order_query_delay_ms: u32,
+    /// The interval (seconds) between checks for open positions at the venue.
+    pub position_check_interval_secs: Option<f64>,
+    /// The lookback minutes for position consistency checks.
+    pub position_check_lookback_mins: u64,
+    /// Threshold in nanoseconds before acting on venue discrepancies for positions.
+    pub position_check_threshold_ns: u64,
+    /// The time buffer (minutes) before closed orders can be purged.
+    pub purge_closed_orders_buffer_mins: Option<u32>,
+    /// The time buffer (minutes) before closed positions can be purged.
+    pub purge_closed_positions_buffer_mins: Option<u32>,
+    /// The time buffer (minutes) before account events can be purged.
+    pub purge_account_events_lookback_mins: Option<u32>,
+    /// If purge operations should also delete from the backing database.
+    pub purge_from_database: bool,
 }
 
-impl Default for ReconciliationConfig {
+impl Default for ExecutionManagerConfig {
     fn default() -> Self {
         Self {
+            reconciliation: true,
+            reconciliation_startup_delay_secs: 10.0,
             lookback_mins: Some(60),
-            inflight_threshold_ms: 5000,
-            inflight_max_retries: 5,
+            reconciliation_instrument_ids: AHashSet::new(),
             filter_unclaimed_external: false,
+            filter_position_reports: false,
+            filtered_client_order_ids: AHashSet::new(),
             generate_missing_orders: true,
-            filtered_client_order_ids: HashSet::new(),
+            inflight_check_interval_ms: 2_000,
+            inflight_threshold_ms: 5_000,
+            inflight_max_retries: 5,
+            open_check_interval_secs: None,
+            open_check_lookback_mins: Some(60),
             open_check_threshold_ns: 5_000_000_000,
             open_check_missing_retries: 5,
             open_check_open_only: true,
-            open_check_lookback_mins: Some(60),
-            filter_position_reports: false,
-            reconciliation_instrument_ids: HashSet::new(),
+            max_single_order_queries_per_cycle: 5,
+            single_order_query_delay_ms: 100,
+            position_check_interval_secs: None,
+            position_check_lookback_mins: 60,
+            position_check_threshold_ns: 60_000_000_000,
+            purge_closed_orders_buffer_mins: None,
+            purge_closed_positions_buffer_mins: None,
+            purge_account_events_lookback_mins: None,
+            purge_from_database: false,
+        }
+    }
+}
+
+impl From<&LiveExecEngineConfig> for ExecutionManagerConfig {
+    fn from(config: &LiveExecEngineConfig) -> Self {
+        let filtered_client_order_ids: AHashSet<ClientOrderId> = config
+            .filtered_client_order_ids
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|value| ClientOrderId::from(value.as_str()))
+            .collect();
+
+        let reconciliation_instrument_ids: AHashSet<InstrumentId> = config
+            .reconciliation_instrument_ids
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|value| InstrumentId::from(value.as_str()))
+            .collect();
+
+        Self {
+            reconciliation: config.reconciliation,
+            reconciliation_startup_delay_secs: config.reconciliation_startup_delay_secs,
+            lookback_mins: config.reconciliation_lookback_mins.map(|m| m as u64),
+            reconciliation_instrument_ids,
+            filter_unclaimed_external: config.filter_unclaimed_external_orders,
+            filter_position_reports: config.filter_position_reports,
+            filtered_client_order_ids,
+            generate_missing_orders: config.generate_missing_orders,
+            inflight_check_interval_ms: config.inflight_check_interval_ms,
+            inflight_threshold_ms: config.inflight_check_threshold_ms as u64,
+            inflight_max_retries: config.inflight_check_retries,
+            open_check_interval_secs: config.open_check_interval_secs,
+            open_check_lookback_mins: config.open_check_lookback_mins.map(|m| m as u64),
+            open_check_threshold_ns: (config.open_check_threshold_ms as u64) * 1_000_000,
+            open_check_missing_retries: config.open_check_missing_retries,
+            open_check_open_only: config.open_check_open_only,
+            max_single_order_queries_per_cycle: config.max_single_order_queries_per_cycle,
+            single_order_query_delay_ms: config.single_order_query_delay_ms,
+            position_check_interval_secs: config.position_check_interval_secs,
+            position_check_lookback_mins: config.position_check_lookback_mins as u64,
+            position_check_threshold_ns: (config.position_check_threshold_ms as u64) * 1_000_000,
+            purge_closed_orders_buffer_mins: config.purge_closed_orders_buffer_mins,
+            purge_closed_positions_buffer_mins: config.purge_closed_positions_buffer_mins,
+            purge_account_events_lookback_mins: config.purge_account_events_lookback_mins,
+            purge_from_database: config.purge_from_database,
         }
     }
 }
@@ -111,18 +202,19 @@ struct InflightCheck {
     pub last_query_ts: Option<UnixNanos>,
 }
 
-/// Manager for reconciling execution state between local cache and venues.
+/// Manager for execution state.
 ///
-/// The `ReconciliationManager` handles:
-/// - Startup reconciliation to align state on system start
-/// - Continuous reconciliation of inflight orders
-/// - External order discovery and claiming
-/// - Fill report processing and validation
+/// The `ExecutionManager` handles:
+/// - Startup reconciliation to align state on system start.
+/// - Continuous reconciliation of inflight orders.
+/// - External order discovery and claiming.
+/// - Fill report processing and validation.
+/// - Purging of old orders, positions, and account events.
 ///
 /// # Thread Safety
 ///
 /// This struct is **not thread-safe** and is designed for single-threaded use within
-/// an async runtime. Internal state is managed using `HashMap` without synchronization,
+/// an async runtime. Internal state is managed using `AHashMap` without synchronization,
 /// and the `clock` and `cache` use `Rc<RefCell<>>` which provide runtime borrow checking
 /// but no thread-safety guarantees.
 ///
@@ -130,24 +222,26 @@ struct InflightCheck {
 /// similar synchronization primitives. Alternatively, ensure that all methods are called
 /// from the same thread/task in the async runtime.
 ///
-/// **Warning:** Concurrent mutable access to internal HashMaps or concurrent borrows
+/// **Warning:** Concurrent mutable access to internal AHashMaps or concurrent borrows
 /// of `RefCell` contents will cause runtime panics.
 #[derive(Clone)]
-pub struct ReconciliationManager {
+pub struct ExecutionManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    config: ReconciliationConfig,
-    inflight_checks: HashMap<ClientOrderId, InflightCheck>,
-    external_order_claims: HashMap<InstrumentId, StrategyId>,
-    processed_fills: HashMap<TradeId, ClientOrderId>,
-    recon_check_retries: HashMap<ClientOrderId, u32>,
-    ts_last_query: HashMap<ClientOrderId, UnixNanos>,
-    order_local_activity_ns: HashMap<ClientOrderId, UnixNanos>,
+    config: ExecutionManagerConfig,
+    inflight_checks: AHashMap<ClientOrderId, InflightCheck>,
+    external_order_claims: AHashMap<InstrumentId, StrategyId>,
+    processed_fills: AHashMap<TradeId, ClientOrderId>,
+    recon_check_retries: AHashMap<ClientOrderId, u32>,
+    ts_last_query: AHashMap<ClientOrderId, UnixNanos>,
+    order_local_activity_ns: AHashMap<ClientOrderId, UnixNanos>,
+    position_local_activity_ns: AHashMap<InstrumentId, UnixNanos>,
+    recent_fills_cache: AHashMap<TradeId, UnixNanos>,
 }
 
-impl Debug for ReconciliationManager {
+impl Debug for ExecutionManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(ReconciliationManager))
+        f.debug_struct(stringify!(ExecutionManager))
             .field("config", &self.config)
             .field("inflight_checks", &self.inflight_checks)
             .field("external_order_claims", &self.external_order_claims)
@@ -157,23 +251,25 @@ impl Debug for ReconciliationManager {
     }
 }
 
-impl ReconciliationManager {
-    /// Creates a new [`ReconciliationManager`] instance.
+impl ExecutionManager {
+    /// Creates a new [`ExecutionManager`] instance.
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-        config: ReconciliationConfig,
+        config: ExecutionManagerConfig,
     ) -> Self {
         Self {
             clock,
             cache,
             config,
-            inflight_checks: HashMap::new(),
-            external_order_claims: HashMap::new(),
-            processed_fills: HashMap::new(),
-            recon_check_retries: HashMap::new(),
-            ts_last_query: HashMap::new(),
-            order_local_activity_ns: HashMap::new(),
+            inflight_checks: AHashMap::new(),
+            external_order_claims: AHashMap::new(),
+            processed_fills: AHashMap::new(),
+            recon_check_retries: AHashMap::new(),
+            ts_last_query: AHashMap::new(),
+            order_local_activity_ns: AHashMap::new(),
+            position_local_activity_ns: AHashMap::new(),
+            recent_fills_cache: AHashMap::new(),
         }
     }
 
@@ -207,8 +303,8 @@ impl ReconciliationManager {
                     && let Some(order) = self.get_order(client_order_id)
                 {
                     let mut order = order;
-                    // Get instrument for the order
                     let instrument_id = order.instrument_id();
+
                     if let Some(instrument) = self.get_instrument(&instrument_id)
                         && let Some(event) = self.create_order_fill(&mut order, fill, &instrument)
                     {
@@ -232,12 +328,10 @@ impl ReconciliationManager {
     ) -> anyhow::Result<Vec<OrderEventAny>> {
         let mut events = Vec::new();
 
-        // Remove from inflight checks if present
         self.clear_recon_tracking(&report.client_order_id, true);
 
         if let Some(order) = self.get_order(&report.client_order_id) {
             let mut order = order;
-            // Create an OrderStatusReport from the ExecutionReport
             let mut order_report = OrderStatusReport::new(
                 order.account_id().unwrap_or_default(),
                 order.instrument_id(),
@@ -316,11 +410,197 @@ impl ReconciliationManager {
         events
     }
 
-    /// Checks open orders against the venue state.
-    pub async fn check_open_orders(&mut self) -> Vec<OrderEventAny> {
-        // This would need to query the venue for open orders
-        // and reconcile any discrepancies
-        Vec::new()
+    /// Checks open orders consistency between cache and venue.
+    ///
+    /// This method validates that open orders in the cache match the venue's state,
+    /// comparing order status and filled quantities, and generating reconciliation
+    /// events for any discrepancies detected.
+    ///
+    /// # Returns
+    ///
+    /// A vector of order events generated to reconcile discrepancies.
+    pub async fn check_open_orders(
+        &mut self,
+        clients: &[Rc<dyn LiveExecutionClient>],
+    ) -> Vec<OrderEventAny> {
+        log::debug!("Checking order consistency between cached-state and venues");
+
+        let filtered_orders: Vec<OrderAny> = {
+            let cache = self.cache.borrow();
+            let open_orders = cache.orders_open(None, None, None, None);
+
+            if !self.config.reconciliation_instrument_ids.is_empty() {
+                open_orders
+                    .iter()
+                    .filter(|o| {
+                        self.config
+                            .reconciliation_instrument_ids
+                            .contains(&o.instrument_id())
+                    })
+                    .map(|o| (*o).clone())
+                    .collect()
+            } else {
+                open_orders.iter().map(|o| (*o).clone()).collect()
+            }
+        };
+
+        log::debug!(
+            "Found {} order{} open in cache",
+            filtered_orders.len(),
+            if filtered_orders.len() == 1 { "" } else { "s" }
+        );
+
+        let mut all_reports = Vec::new();
+        let mut venue_reported_ids = AHashSet::new();
+
+        for client in clients {
+            let cmd = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                self.clock.borrow().timestamp_ns(),
+                None, // instrument_id - query all
+                None, // client_order_id
+                None, // venue_order_id
+            );
+
+            match client.generate_order_status_reports(&cmd).await {
+                Ok(reports) => {
+                    for report in reports {
+                        if let Some(client_order_id) = &report.client_order_id {
+                            venue_reported_ids.insert(*client_order_id);
+                        }
+                        all_reports.push(report);
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "Failed to query order reports from {}: {e}",
+                        client.client_id()
+                    );
+                }
+            }
+        }
+
+        // Reconcile reports against cached orders
+        let mut events = Vec::new();
+        for report in all_reports {
+            if let Some(client_order_id) = &report.client_order_id
+                && let Some(mut order) = self.get_order(client_order_id)
+                && let Some(event) = self.reconcile_order_report(&mut order, &report)
+            {
+                events.push(event);
+            }
+        }
+
+        // Handle orders missing at venue
+        if !self.config.open_check_open_only {
+            let cached_ids: AHashSet<ClientOrderId> = filtered_orders
+                .iter()
+                .map(|o| o.client_order_id())
+                .collect();
+            let missing_at_venue: AHashSet<ClientOrderId> = cached_ids
+                .difference(&venue_reported_ids)
+                .copied()
+                .collect();
+
+            for client_order_id in missing_at_venue {
+                events.extend(self.handle_missing_order(client_order_id));
+            }
+        }
+
+        events
+    }
+
+    /// Checks position consistency between cache and venue.
+    ///
+    /// This method validates that positions in the cache match the venue's state,
+    /// detecting position drift and querying for missing fills when discrepancies
+    /// are found.
+    ///
+    /// # Returns
+    ///
+    /// A vector of fill events generated to reconcile position discrepancies.
+    pub async fn check_positions_consistency(
+        &mut self,
+        clients: &[Rc<dyn LiveExecutionClient>],
+    ) -> Vec<OrderEventAny> {
+        log::debug!("Checking position consistency between cached-state and venues");
+
+        let open_positions = {
+            let cache = self.cache.borrow();
+            let positions = cache.positions_open(None, None, None, None);
+
+            if !self.config.reconciliation_instrument_ids.is_empty() {
+                positions
+                    .iter()
+                    .filter(|p| {
+                        self.config
+                            .reconciliation_instrument_ids
+                            .contains(&p.instrument_id)
+                    })
+                    .map(|p| (*p).clone())
+                    .collect::<Vec<_>>()
+            } else {
+                positions.iter().map(|p| (*p).clone()).collect()
+            }
+        };
+
+        log::debug!(
+            "Found {} position{} to check",
+            open_positions.len(),
+            if open_positions.len() == 1 { "" } else { "s" }
+        );
+
+        // Query venue for position reports
+        let mut venue_positions = AHashMap::new();
+
+        for client in clients {
+            let cmd = GeneratePositionReports::new(
+                UUID4::new(),
+                self.clock.borrow().timestamp_ns(),
+                None, // instrument_id - query all
+                None, // start
+                None, // end
+            );
+
+            match client.generate_position_status_reports(&cmd).await {
+                Ok(reports) => {
+                    for report in reports {
+                        venue_positions.insert(report.instrument_id, report);
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "Failed to query position reports from {}: {e}",
+                        client.client_id()
+                    );
+                }
+            }
+        }
+
+        // Check for discrepancies
+        let mut events = Vec::new();
+
+        for position in &open_positions {
+            // Skip if not in filter
+            if !self.config.reconciliation_instrument_ids.is_empty()
+                && !self
+                    .config
+                    .reconciliation_instrument_ids
+                    .contains(&position.instrument_id)
+            {
+                continue;
+            }
+
+            let venue_report = venue_positions.get(&position.instrument_id);
+
+            if let Some(discrepancy_events) =
+                self.check_position_discrepancy(position, venue_report)
+            {
+                events.extend(discrepancy_events);
+            }
+        }
+
+        events
     }
 
     /// Registers an order as inflight for tracking.
@@ -362,6 +642,76 @@ impl ReconciliationManager {
             .insert(instrument_id, strategy_id);
     }
 
+    /// Records position activity for reconciliation tracking.
+    pub fn record_position_activity(&mut self, instrument_id: InstrumentId, ts_event: UnixNanos) {
+        self.position_local_activity_ns
+            .insert(instrument_id, ts_event);
+    }
+
+    /// Checks if a fill has been recently processed (for deduplication).
+    pub fn is_fill_recently_processed(&self, trade_id: &TradeId) -> bool {
+        self.recent_fills_cache.contains_key(trade_id)
+    }
+
+    /// Marks a fill as recently processed with current timestamp.
+    pub fn mark_fill_processed(&mut self, trade_id: TradeId) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        self.recent_fills_cache.insert(trade_id, ts_now);
+    }
+
+    /// Prunes expired fills from the recent fills cache.
+    ///
+    /// Default TTL is 60 seconds.
+    pub fn prune_recent_fills_cache(&mut self, ttl_secs: f64) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let ttl_ns = (ttl_secs * 1_000_000_000.0) as u64;
+
+        self.recent_fills_cache
+            .retain(|_, &mut ts_cached| ts_now - ts_cached <= ttl_ns);
+    }
+
+    /// Purges closed orders from the cache that are older than the configured buffer.
+    pub fn purge_closed_orders(&mut self) {
+        let Some(buffer_mins) = self.config.purge_closed_orders_buffer_mins else {
+            return;
+        };
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let buffer_secs = (buffer_mins as u64) * 60;
+
+        self.cache
+            .borrow_mut()
+            .purge_closed_orders(ts_now, buffer_secs);
+    }
+
+    /// Purges closed positions from the cache that are older than the configured buffer.
+    pub fn purge_closed_positions(&mut self) {
+        let Some(buffer_mins) = self.config.purge_closed_positions_buffer_mins else {
+            return;
+        };
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let buffer_secs = (buffer_mins as u64) * 60;
+
+        self.cache
+            .borrow_mut()
+            .purge_closed_positions(ts_now, buffer_secs);
+    }
+
+    /// Purges old account events from the cache based on the configured lookback.
+    pub fn purge_account_events(&mut self) {
+        let Some(lookback_mins) = self.config.purge_account_events_lookback_mins else {
+            return;
+        };
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let lookback_secs = (lookback_mins as u64) * 60;
+
+        self.cache
+            .borrow_mut()
+            .purge_account_events(ts_now, lookback_secs);
+    }
+
     // Private helper methods
 
     fn get_order(&self, client_order_id: &ClientOrderId) -> Option<OrderAny> {
@@ -370,6 +720,99 @@ impl ReconciliationManager {
 
     fn get_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
         self.cache.borrow().instrument(instrument_id).cloned()
+    }
+
+    fn handle_missing_order(&mut self, client_order_id: ClientOrderId) -> Vec<OrderEventAny> {
+        let mut events = Vec::new();
+
+        let Some(order) = self.get_order(&client_order_id) else {
+            return events;
+        };
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let ts_last = order.ts_last();
+
+        // Check if order is too recent
+        if (ts_now - ts_last) < self.config.open_check_threshold_ns {
+            return events;
+        }
+
+        // Check local activity threshold
+        if let Some(&last_activity) = self.order_local_activity_ns.get(&client_order_id)
+            && (ts_now - last_activity) < self.config.open_check_threshold_ns
+        {
+            return events;
+        }
+
+        // Increment retry counter
+        let retries = self.recon_check_retries.entry(client_order_id).or_insert(0);
+        *retries += 1;
+
+        // If max retries exceeded, generate rejection event
+        if *retries >= self.config.open_check_missing_retries {
+            log::warn!(
+                "Order {} not found at venue after {} retries, marking as REJECTED",
+                client_order_id,
+                retries
+            );
+
+            let rejected = self.create_order_rejected(&order, Some("NOT_FOUND_AT_VENUE"));
+            events.push(rejected);
+
+            self.clear_recon_tracking(&client_order_id, true);
+        } else {
+            log::debug!(
+                "Order {} not found at venue, retry {}/{}",
+                client_order_id,
+                retries,
+                self.config.open_check_missing_retries
+            );
+        }
+
+        events
+    }
+
+    fn check_position_discrepancy(
+        &mut self,
+        position: &Position,
+        venue_report: Option<&PositionStatusReport>,
+    ) -> Option<Vec<OrderEventAny>> {
+        let cached_qty = position.quantity.as_decimal();
+
+        let venue_qty = if let Some(report) = venue_report {
+            report.quantity.as_decimal()
+        } else {
+            Decimal::ZERO
+        };
+
+        // Check if quantities match (within tolerance)
+        let tolerance = Decimal::from_str("0.00000001").unwrap();
+        if (cached_qty - venue_qty).abs() <= tolerance {
+            return None; // No discrepancy
+        }
+
+        // Check activity threshold
+        let ts_now = self.clock.borrow().timestamp_ns();
+        if let Some(&last_activity) = self.position_local_activity_ns.get(&position.instrument_id)
+            && (ts_now - last_activity) < self.config.position_check_threshold_ns
+        {
+            log::debug!(
+                "Skipping position reconciliation for {}: recent activity within threshold",
+                position.instrument_id
+            );
+            return None;
+        }
+
+        log::warn!(
+            "Position discrepancy detected for {}: cached_qty={}, venue_qty={}",
+            position.instrument_id,
+            cached_qty,
+            venue_qty
+        );
+
+        // TODO: Query for missing fills to reconcile the discrepancy
+        // For now, just log the discrepancy
+        None
     }
 
     fn reconcile_order_report(
@@ -382,17 +825,18 @@ impl ReconciliationManager {
             return None; // Already in sync
         }
 
-        // Generate appropriate event based on status
-        match report.order_status {
-            OrderStatus::Accepted => Some(self.create_order_accepted(order, report)),
+        let event = match report.order_status {
+            OrderStatus::Accepted => self.create_order_accepted(order, report),
             OrderStatus::Rejected => {
-                Some(self.create_order_rejected(order, report.cancel_reason.as_deref()))
+                self.create_order_rejected(order, report.cancel_reason.as_deref())
             }
-            OrderStatus::Triggered => Some(self.create_order_triggered(order, report)),
-            OrderStatus::Canceled => Some(self.create_order_canceled(order, report)),
-            OrderStatus::Expired => Some(self.create_order_expired(order, report)),
-            _ => None,
-        }
+            OrderStatus::Triggered => self.create_order_triggered(order, report),
+            OrderStatus::Canceled => self.create_order_canceled(order, report),
+            OrderStatus::Expired => self.create_order_expired(order, report),
+            _ => return None,
+        };
+
+        Some(event)
     }
 
     fn handle_external_order(
@@ -400,8 +844,8 @@ impl ReconciliationManager {
         _report: &OrderStatusReport,
         _account_id: &AccountId,
     ) -> Option<OrderEventAny> {
-        // This would need to create a new order from the report
-        // For now, we'll skip external order handling
+        // TODO: This would need to create a new order from the report
+        // For now, we'll skip external order handling - WIP
         None
     }
 
@@ -473,22 +917,6 @@ impl ReconciliationManager {
         ))
     }
 
-    #[allow(dead_code)]
-    fn create_order_canceled_simple(&self, order: &OrderAny, ts_event: UnixNanos) -> OrderEventAny {
-        OrderEventAny::Canceled(OrderCanceled::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            UUID4::new(),
-            ts_event,
-            self.clock.borrow().timestamp_ns(),
-            false,
-            order.venue_order_id(),
-            order.account_id(),
-        ))
-    }
-
     fn create_order_expired(&self, order: &OrderAny, report: &OrderStatusReport) -> OrderEventAny {
         OrderEventAny::Expired(OrderExpired::new(
             order.trader_id(),
@@ -510,12 +938,10 @@ impl ReconciliationManager {
         fill: &FillReport,
         instrument: &InstrumentAny,
     ) -> Option<OrderEventAny> {
-        // Check if this fill was already processed
         if self.processed_fills.contains_key(&fill.trade_id) {
             return None;
         }
 
-        // Mark this fill as processed
         self.processed_fills
             .insert(fill.trade_id, order.client_order_id());
 
@@ -555,7 +981,7 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::OrderStatus,
-        identifiers::{AccountId, ClientId, ClientOrderId, VenueOrderId},
+        identifiers::{AccountId, ClientId, ClientOrderId, Venue, VenueOrderId},
         reports::ExecutionMassStatus,
         types::Quantity,
     };
@@ -563,11 +989,11 @@ mod tests {
 
     use super::*;
 
-    fn create_test_manager() -> ReconciliationManager {
+    fn create_test_manager() -> ExecutionManager {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let config = ReconciliationConfig::default();
-        ReconciliationManager::new(clock, cache, config)
+        let config = ExecutionManagerConfig::default();
+        ExecutionManager::new(clock, cache, config)
     }
 
     #[rstest]
@@ -609,11 +1035,9 @@ mod tests {
         let mut manager = create_test_manager();
         let client_order_id = ClientOrderId::from("O-123456");
 
-        // Register as inflight
         manager.register_inflight(client_order_id);
         assert_eq!(manager.inflight_checks.len(), 1);
 
-        // Create execution report
         let report = ExecutionReport {
             client_order_id,
             venue_order_id: Some(VenueOrderId::from("V-123456")),
@@ -632,12 +1056,12 @@ mod tests {
     fn test_check_inflight_orders_generates_rejection_after_max_retries() {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let config = ReconciliationConfig {
+        let config = ExecutionManagerConfig {
             inflight_threshold_ms: 100,
             inflight_max_retries: 2,
-            ..ReconciliationConfig::default()
+            ..ExecutionManagerConfig::default()
         };
-        let mut manager = ReconciliationManager::new(clock.clone(), cache, config);
+        let mut manager = ExecutionManager::new(clock.clone(), cache, config);
 
         let client_order_id = ClientOrderId::from("O-123456");
         manager.register_inflight(client_order_id);
@@ -670,12 +1094,12 @@ mod tests {
     fn test_check_inflight_orders_skips_recent_query() {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let config = ReconciliationConfig {
+        let config = ExecutionManagerConfig {
             inflight_threshold_ms: 100,
             inflight_max_retries: 3,
-            ..ReconciliationConfig::default()
+            ..ExecutionManagerConfig::default()
         };
-        let mut manager = ReconciliationManager::new(clock.clone(), cache, config);
+        let mut manager = ExecutionManager::new(clock.clone(), cache, config);
 
         let client_order_id = ClientOrderId::from("O-ABCDEF");
         manager.register_inflight(client_order_id);
@@ -712,10 +1136,10 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let filtered_id = ClientOrderId::from("O-FILTERED");
-        let mut config = ReconciliationConfig::default();
+        let mut config = ExecutionManagerConfig::default();
         config.filtered_client_order_ids.insert(filtered_id);
         config.inflight_threshold_ms = 100;
-        let mut manager = ReconciliationManager::new(clock.clone(), cache, config);
+        let mut manager = ExecutionManager::new(clock.clone(), cache, config);
 
         manager.register_inflight(filtered_id);
         clock
@@ -758,7 +1182,7 @@ mod tests {
     async fn test_reconcile_execution_mass_status_with_empty() {
         let mut manager = create_test_manager();
         let account_id = AccountId::from("ACCOUNT-001");
-        let venue = nautilus_model::identifiers::Venue::from("BINANCE");
+        let venue = Venue::from("BINANCE");
 
         let client_id = ClientId::from("BINANCE");
         let mass_status = ExecutionMassStatus::new(
@@ -775,7 +1199,7 @@ mod tests {
 
     #[rstest]
     fn test_reconciliation_config_default() {
-        let config = ReconciliationConfig::default();
+        let config = ExecutionManagerConfig::default();
 
         assert_eq!(config.lookback_mins, Some(60));
         assert_eq!(config.inflight_threshold_ms, 5000);

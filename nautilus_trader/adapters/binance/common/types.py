@@ -308,6 +308,8 @@ class BinanceTicker(Data):
         self._ts_init = ts_init
 
     def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
         if not isinstance(other, BinanceTicker):
             return False
         return self.instrument_id == other.instrument_id

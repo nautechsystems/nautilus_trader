@@ -30,7 +30,7 @@ class SimpleQuoterStrategyConfig(StrategyConfig, frozen=True):
     """
 
     instrument_id: InstrumentId
-    order_qty: Decimal = Decimal("1")
+    order_qty: Decimal = Decimal(1)
     tob_offset_ticks: int = 0
     log_data: bool = False
 
@@ -43,8 +43,8 @@ class SimpleQuoterStrategy(Strategy):
     def __init__(self, config: SimpleQuoterStrategyConfig) -> None:
         super().__init__(config)
         self.instrument = None
-        self._tick_size = Decimal("0")
-        self._price_offset = Decimal("0")
+        self._tick_size = Decimal(0)
+        self._price_offset = Decimal(0)
         self._order_qty = None
         self._bid_order = None
         self._ask_order = None

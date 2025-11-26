@@ -492,6 +492,10 @@ let handler = FeedHandler::new(
 
 Channel names reflect the data transformation stage, not the destination. Use `raw_*` only for raw WebSocket frames (`Message`), `msg_*` for venue-specific message types, and `out_*` for Nautilus domain messages.
 
+### Backpressure strategy
+
+WebSocket channels on latency-critical paths are intentionally **unbounded**. The platform is latency-first and prefers an explicit crash (OOM) over delaying or dropping data under pressure. Do not add bounded channels, buffering limits, or backpressure unless the latency requirement changes.
+
 #### Field naming: `inner` and command channels
 
 Structs holding references to lower-level components follow these conventions:

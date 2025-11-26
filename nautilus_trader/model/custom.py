@@ -60,7 +60,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
                 time_repr = (
                     f"{', ' if has_fields else ''}ts_event={unix_nanos_to_iso8601(self._ts_event)}, "
-                    + f"ts_init={unix_nanos_to_iso8601(self._ts_init)})"
+                     f"ts_init={unix_nanos_to_iso8601(self._ts_init)})"
                 )
 
                 return repr[:-1] + time_repr

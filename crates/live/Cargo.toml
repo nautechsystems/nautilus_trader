@@ -62,8 +62,10 @@ nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-system = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+futures = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

@@ -67,6 +67,7 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
+zeroize = { workspace = true }
 
 dotenvy = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }

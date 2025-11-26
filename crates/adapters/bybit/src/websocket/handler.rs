@@ -20,7 +20,7 @@ use std::{
     num::NonZero,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 
@@ -45,7 +45,7 @@ use ustr::Ustr;
 
 use super::{
     enums::BybitWsOperation,
-    error::BybitWsError,
+    error::{BybitWsError, create_bybit_timeout_error, should_retry_bybit_error},
     messages::{
         BybitWebSocketError, BybitWsHeader, BybitWsMessage, BybitWsRequest, NautilusWsMessage,
     },
@@ -58,7 +58,8 @@ use super::{
 };
 use crate::{
     common::{
-        enums::{BybitProductType, BybitWsOrderRequestOp},
+        consts::BYBIT_NAUTILUS_BROKER_ID,
+        enums::{BybitProductType, BybitTimeInForce, BybitWsOrderRequestOp},
         parse::{make_bybit_symbol, parse_price_with_precision, parse_quantity_with_precision},
     },
     websocket::messages::{
@@ -127,13 +128,25 @@ pub enum HandlerCommand {
 type FundingCache = Arc<RwLock<AHashMap<Ustr, (Option<String>, Option<String>)>>>;
 
 /// Data cached for pending place requests to correlate with responses.
-type PlaceRequestData = (TraderId, StrategyId, InstrumentId);
+type PlaceRequestData = (ClientOrderId, TraderId, StrategyId, InstrumentId);
 
 /// Data cached for pending cancel requests to correlate with responses.
-type CancelRequestData = (TraderId, StrategyId, InstrumentId, Option<VenueOrderId>);
+type CancelRequestData = (
+    ClientOrderId,
+    TraderId,
+    StrategyId,
+    InstrumentId,
+    Option<VenueOrderId>,
+);
 
 /// Data cached for pending amend requests to correlate with responses.
-type AmendRequestData = (TraderId, StrategyId, InstrumentId, Option<VenueOrderId>);
+type AmendRequestData = (
+    ClientOrderId,
+    TraderId,
+    StrategyId,
+    InstrumentId,
+    Option<VenueOrderId>,
+);
 
 /// Data for a single order in a batch request.
 type BatchOrderData = (ClientOrderId, PlaceRequestData);
@@ -151,6 +164,7 @@ pub(super) struct FeedHandler {
     subscriptions: SubscriptionState,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
     account_id: Option<AccountId>,
+    mm_level: Arc<AtomicU8>,
     product_type: Option<BybitProductType>,
     quote_cache: QuoteCache,
     funding_cache: FundingCache,
@@ -173,6 +187,7 @@ impl FeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: Option<AccountId>,
         product_type: Option<BybitProductType>,
+        mm_level: Arc<AtomicU8>,
         auth_tracker: AuthTracker,
         subscriptions: SubscriptionState,
         funding_cache: FundingCache,
@@ -187,6 +202,7 @@ impl FeedHandler {
             subscriptions,
             instruments_cache: AHashMap::new(),
             account_id,
+            mm_level,
             product_type,
             quote_cache: QuoteCache::new(),
             funding_cache,
@@ -207,6 +223,58 @@ impl FeedHandler {
     #[allow(dead_code)]
     pub(super) fn send(&self, msg: NautilusWsMessage) -> Result<(), ()> {
         self.out_tx.send(msg).map_err(|_| ())
+    }
+
+    fn generate_unique_request_id(&self) -> String {
+        UUID4::new().to_string()
+    }
+
+    fn find_and_remove_place_request_by_client_order_id(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Option<(String, PlaceRequestData)> {
+        self.pending_place_requests
+            .iter()
+            .find(|entry| entry.value().0 == *client_order_id)
+            .and_then(|entry| {
+                let key = entry.key().clone();
+                drop(entry);
+                self.pending_place_requests.remove(&key)
+            })
+    }
+
+    fn find_and_remove_cancel_request_by_client_order_id(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Option<(String, CancelRequestData)> {
+        self.pending_cancel_requests
+            .iter()
+            .find(|entry| entry.value().0 == *client_order_id)
+            .and_then(|entry| {
+                let key = entry.key().clone();
+                drop(entry);
+                self.pending_cancel_requests.remove(&key)
+            })
+    }
+
+    fn find_and_remove_amend_request_by_client_order_id(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> Option<(String, AmendRequestData)> {
+        self.pending_amend_requests
+            .iter()
+            .find(|entry| entry.value().0 == *client_order_id)
+            .and_then(|entry| {
+                let key = entry.key().clone();
+                drop(entry);
+                self.pending_amend_requests.remove(&key)
+            })
+    }
+
+    fn include_referer_header(&self, time_in_force: Option<BybitTimeInForce>) -> bool {
+        let is_post_only = matches!(time_in_force, Some(BybitTimeInForce::PostOnly));
+        let mm_level = self.mm_level.load(Ordering::Relaxed);
+        !(is_post_only && mm_level > 0)
     }
 
     /// Sends a WebSocket message with retry logic.
@@ -262,7 +330,7 @@ impl FeedHandler {
                 };
 
                 let reason = Ustr::from(ret_msg);
-                for (client_order_id, (trader_id, strategy_id, instrument_id)) in batch_data {
+                for (client_order_id, (_, trader_id, strategy_id, instrument_id)) in batch_data {
                     let rejected = OrderRejected::new(
                         trader_id,
                         strategy_id,
@@ -290,7 +358,7 @@ impl FeedHandler {
             );
 
             let reason = Ustr::from(ret_msg);
-            for (client_order_id, (trader_id, strategy_id, instrument_id, venue_order_id)) in
+            for (client_order_id, (_, trader_id, strategy_id, instrument_id, venue_order_id)) in
                 batch_data
             {
                 let rejected = OrderCancelRejected::new(
@@ -363,7 +431,7 @@ impl FeedHandler {
         let clock = get_atomic_clock_realtime();
         let ts_init = clock.get_time_ns();
 
-        for (idx, (client_order_id, (trader_id, strategy_id, instrument_id))) in
+        for (idx, (client_order_id, (_, trader_id, strategy_id, instrument_id))) in
             batch_data.into_iter().enumerate()
         {
             if let Some(error) = errors.get(idx)
@@ -404,7 +472,7 @@ impl FeedHandler {
         let clock = get_atomic_clock_realtime();
         let ts_init = clock.get_time_ns();
 
-        for (idx, (client_order_id, (trader_id, strategy_id, instrument_id, venue_order_id))) in
+        for (idx, (client_order_id, (_, trader_id, strategy_id, instrument_id, venue_order_id))) in
             batch_data.into_iter().enumerate()
         {
             if let Some(error) = errors.get(idx)
@@ -515,17 +583,23 @@ impl FeedHandler {
                             strategy_id,
                             instrument_id,
                         } => {
-                            let request_id = client_order_id.to_string();
+                            let request_id = self.generate_unique_request_id();
 
                             self.pending_place_requests.insert(
                                 request_id.clone(),
-                                (trader_id, strategy_id, instrument_id),
+                                (client_order_id, trader_id, strategy_id, instrument_id),
                             );
+
+                            let referer = if self.include_referer_header(params.time_in_force) {
+                                Some(BYBIT_NAUTILUS_BROKER_ID.to_string())
+                            } else {
+                                None
+                            };
 
                             let request = BybitWsRequest {
                                 req_id: Some(request_id.clone()),
                                 op: BybitWsOrderRequestOp::Create,
-                                header: BybitWsHeader::now(),
+                                header: BybitWsHeader::with_referer(referer),
                                 args: vec![params],
                             };
 
@@ -544,11 +618,11 @@ impl FeedHandler {
                             instrument_id,
                             venue_order_id,
                         } => {
-                            let request_id = client_order_id.to_string();
+                            let request_id = self.generate_unique_request_id();
 
                             self.pending_amend_requests.insert(
                                 request_id.clone(),
-                                (trader_id, strategy_id, instrument_id, venue_order_id),
+                                (client_order_id, trader_id, strategy_id, instrument_id, venue_order_id),
                             );
 
                             let request = BybitWsRequest {
@@ -573,11 +647,11 @@ impl FeedHandler {
                             instrument_id,
                             venue_order_id,
                         } => {
-                            let request_id = client_order_id.to_string();
+                            let request_id = self.generate_unique_request_id();
 
                             self.pending_cancel_requests.insert(
                                 request_id.clone(),
-                                (trader_id, strategy_id, instrument_id, venue_order_id),
+                                (client_order_id, trader_id, strategy_id, instrument_id, venue_order_id),
                             );
 
                             let request = BybitWsRequest {
@@ -1160,29 +1234,35 @@ impl FeedHandler {
                 }
             }
             BybitWsMessage::OrderResponse(resp) => {
-                // Try req_id field first, fall back to orderLinkId from data
-                let request_id = resp.req_id.clone().or_else(|| {
-                    resp.data
-                        .get("orderLinkId")
-                        .and_then(|v| v.as_str())
-                        .map(String::from)
-                });
-
                 if resp.ret_code == 0 {
                     tracing::debug!(op = %resp.op, ret_msg = %resp.ret_msg, "Order operation successful");
 
                     if resp.op.contains("batch") {
                         self.handle_batch_response(&resp, &mut result);
-                    } else if let Some(req_id) = request_id {
+                    } else if let Some(req_id) = &resp.req_id {
                         if resp.op.contains("create") {
-                            self.pending_place_requests.remove(&req_id);
+                            self.pending_place_requests.remove(req_id);
                         } else if resp.op.contains("cancel") {
-                            self.pending_cancel_requests.remove(&req_id);
+                            self.pending_cancel_requests.remove(req_id);
                         } else if resp.op.contains("amend") {
-                            self.pending_amend_requests.remove(&req_id);
+                            self.pending_amend_requests.remove(req_id);
+                        }
+                    } else if let Some(order_link_id) =
+                        resp.data.get("orderLinkId").and_then(|v| v.as_str())
+                    {
+                        // Bybit sometimes omits req_id, search by client_order_id instead
+                        let client_order_id = ClientOrderId::from(order_link_id);
+                        if resp.op.contains("create") {
+                            self.find_and_remove_place_request_by_client_order_id(&client_order_id);
+                        } else if resp.op.contains("cancel") {
+                            self.find_and_remove_cancel_request_by_client_order_id(
+                                &client_order_id,
+                            );
+                        } else if resp.op.contains("amend") {
+                            self.find_and_remove_amend_request_by_client_order_id(&client_order_id);
                         }
                     }
-                } else if let Some(req_id) = &request_id {
+                } else if let Some(req_id) = &resp.req_id {
                     let clock = get_atomic_clock_realtime();
                     let ts_init = clock.get_time_ns();
 
@@ -1195,7 +1275,7 @@ impl FeedHandler {
                             &mut result,
                         );
                     } else if resp.op.contains("create")
-                        && let Some((_, (trader_id, strategy_id, instrument_id))) =
+                        && let Some((_, (client_order_id, trader_id, strategy_id, instrument_id))) =
                             self.pending_place_requests.remove(req_id)
                     {
                         let Some(account_id) = self.account_id else {
@@ -1207,7 +1287,6 @@ impl FeedHandler {
                             return result;
                         };
 
-                        let client_order_id = ClientOrderId::from(req_id.as_str());
                         let rejected = OrderRejected::new(
                             trader_id,
                             strategy_id,
@@ -1223,10 +1302,17 @@ impl FeedHandler {
                         );
                         result.push(NautilusWsMessage::OrderRejected(rejected));
                     } else if resp.op.contains("cancel")
-                        && let Some((_, (trader_id, strategy_id, instrument_id, venue_order_id))) =
-                            self.pending_cancel_requests.remove(req_id)
+                        && let Some((
+                            _,
+                            (
+                                client_order_id,
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                venue_order_id,
+                            ),
+                        )) = self.pending_cancel_requests.remove(req_id)
                     {
-                        let client_order_id = ClientOrderId::from(req_id.as_str());
                         let rejected = OrderCancelRejected::new(
                             trader_id,
                             strategy_id,
@@ -1242,10 +1328,94 @@ impl FeedHandler {
                         );
                         result.push(NautilusWsMessage::OrderCancelRejected(rejected));
                     } else if resp.op.contains("amend")
-                        && let Some((_, (trader_id, strategy_id, instrument_id, venue_order_id))) =
-                            self.pending_amend_requests.remove(req_id)
+                        && let Some((
+                            _,
+                            (
+                                client_order_id,
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                venue_order_id,
+                            ),
+                        )) = self.pending_amend_requests.remove(req_id)
                     {
-                        let client_order_id = ClientOrderId::from(req_id.as_str());
+                        let rejected = OrderModifyRejected::new(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Ustr::from(&resp.ret_msg),
+                            UUID4::new(),
+                            ts_init,
+                            ts_init,
+                            false,
+                            venue_order_id,
+                            self.account_id,
+                        );
+                        result.push(NautilusWsMessage::OrderModifyRejected(rejected));
+                    }
+                } else if let Some(order_link_id) =
+                    resp.data.get("orderLinkId").and_then(|v| v.as_str())
+                {
+                    // Bybit sometimes omits req_id, search by client_order_id instead
+                    let clock = get_atomic_clock_realtime();
+                    let ts_init = clock.get_time_ns();
+                    let client_order_id = ClientOrderId::from(order_link_id);
+
+                    if resp.op.contains("create") {
+                        if let Some((_, (_, trader_id, strategy_id, instrument_id))) =
+                            self.find_and_remove_place_request_by_client_order_id(&client_order_id)
+                        {
+                            let Some(account_id) = self.account_id else {
+                                tracing::error!(
+                                    client_order_id = %client_order_id,
+                                    reason = %resp.ret_msg,
+                                    "Cannot create OrderRejected event: account_id is None"
+                                );
+                                return result;
+                            };
+
+                            let rejected = OrderRejected::new(
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                account_id,
+                                Ustr::from(&resp.ret_msg),
+                                UUID4::new(),
+                                ts_init,
+                                ts_init,
+                                false,
+                                false,
+                            );
+                            result.push(NautilusWsMessage::OrderRejected(rejected));
+                        }
+                    } else if resp.op.contains("cancel") {
+                        if let Some((
+                            _,
+                            (_, trader_id, strategy_id, instrument_id, venue_order_id),
+                        )) =
+                            self.find_and_remove_cancel_request_by_client_order_id(&client_order_id)
+                        {
+                            let rejected = OrderCancelRejected::new(
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                Ustr::from(&resp.ret_msg),
+                                UUID4::new(),
+                                ts_init,
+                                ts_init,
+                                false,
+                                venue_order_id,
+                                self.account_id,
+                            );
+                            result.push(NautilusWsMessage::OrderCancelRejected(rejected));
+                        }
+                    } else if resp.op.contains("amend")
+                        && let Some((_, (_, trader_id, strategy_id, instrument_id, venue_order_id))) =
+                            self.find_and_remove_amend_request_by_client_order_id(&client_order_id)
+                    {
                         let rejected = OrderModifyRejected::new(
                             trader_id,
                             strategy_id,
@@ -1344,24 +1514,122 @@ impl FeedHandler {
     }
 }
 
-/// Determines if a Bybit WebSocket error should trigger a retry.
-pub(crate) fn should_retry_bybit_error(error: &BybitWsError) -> bool {
-    match error {
-        BybitWsError::Transport(_) => true,
-        BybitWsError::Send(_) => true,
-        BybitWsError::ClientError(msg) => {
-            let msg_lower = msg.to_lowercase();
-            msg_lower.contains("timeout")
-                || msg_lower.contains("timed out")
-                || msg_lower.contains("connection")
-                || msg_lower.contains("network")
-        }
-        BybitWsError::NotConnected => true,
-        BybitWsError::Authentication(_) | BybitWsError::Json(_) => false,
-    }
-}
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
-/// Creates a timeout error for Bybit operations.
-pub(crate) fn create_bybit_timeout_error(msg: String) -> BybitWsError {
-    BybitWsError::ClientError(msg)
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::common::consts::BYBIT_WS_TOPIC_DELIMITER;
+
+    fn create_test_handler() -> FeedHandler {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let auth_tracker = AuthTracker::new();
+        let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER);
+        let funding_cache = Arc::new(RwLock::new(AHashMap::new()));
+
+        FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            None,
+            Arc::new(AtomicU8::new(0)),
+            auth_tracker,
+            subscriptions,
+            funding_cache,
+        )
+    }
+
+    #[rstest]
+    fn test_generate_unique_request_id_returns_different_ids() {
+        let handler = create_test_handler();
+
+        let id1 = handler.generate_unique_request_id();
+        let id2 = handler.generate_unique_request_id();
+        let id3 = handler.generate_unique_request_id();
+
+        assert_ne!(id1, id2);
+        assert_ne!(id2, id3);
+        assert_ne!(id1, id3);
+    }
+
+    #[rstest]
+    fn test_generate_unique_request_id_produces_valid_uuids() {
+        let handler = create_test_handler();
+
+        let id1 = handler.generate_unique_request_id();
+        let id2 = handler.generate_unique_request_id();
+
+        assert!(UUID4::from(id1.as_str()).to_string() == id1);
+        assert!(UUID4::from(id2.as_str()).to_string() == id2);
+    }
+
+    #[rstest]
+    fn test_multiple_place_orders_use_different_request_ids() {
+        let handler = create_test_handler();
+
+        let req_id_1 = handler.generate_unique_request_id();
+        let req_id_2 = handler.generate_unique_request_id();
+        let req_id_3 = handler.generate_unique_request_id();
+
+        assert_ne!(req_id_1, req_id_2);
+        assert_ne!(req_id_2, req_id_3);
+        assert_ne!(req_id_1, req_id_3);
+    }
+
+    #[rstest]
+    fn test_multiple_amends_use_different_request_ids() {
+        let handler = create_test_handler();
+
+        // Verifies fix for "Duplicate reqId" errors when amending same order multiple times
+        let req_id_1 = handler.generate_unique_request_id();
+        let req_id_2 = handler.generate_unique_request_id();
+        let req_id_3 = handler.generate_unique_request_id();
+
+        assert_ne!(
+            req_id_1, req_id_2,
+            "Multiple amends should generate different request IDs to avoid 'Duplicate reqId' errors"
+        );
+        assert_ne!(
+            req_id_2, req_id_3,
+            "Multiple amends should generate different request IDs to avoid 'Duplicate reqId' errors"
+        );
+    }
+
+    #[rstest]
+    fn test_multiple_cancels_use_different_request_ids() {
+        let handler = create_test_handler();
+
+        let req_id_1 = handler.generate_unique_request_id();
+        let req_id_2 = handler.generate_unique_request_id();
+
+        assert_ne!(
+            req_id_1, req_id_2,
+            "Multiple cancels should generate different request IDs"
+        );
+    }
+
+    #[rstest]
+    fn test_concurrent_request_id_generation() {
+        let handler = create_test_handler();
+
+        let mut ids = std::collections::HashSet::new();
+        for _ in 0..100 {
+            let id = handler.generate_unique_request_id();
+            assert!(
+                ids.insert(id.clone()),
+                "Generated duplicate request ID: {}",
+                id
+            );
+        }
+        assert_eq!(ids.len(), 100);
+    }
 }

@@ -56,14 +56,14 @@ def test_initialize_limit_order():
     assert (
         str(order)
         == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, "
-        + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, "
-        + "exec_algorithm_id=TWAP, exec_spawn_id=O-20210410-022422-001-001-1, tags=None)"
+         "client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, "
+         "exec_algorithm_id=TWAP, exec_spawn_id=O-20210410-022422-001-001-1, tags=None)"
     )
     assert (
         repr(order)
         == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, "
-        + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, "
-        + "exec_algorithm_id=TWAP, exec_spawn_id=O-20210410-022422-001-001-1, tags=None)"
+         "client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, "
+         "exec_algorithm_id=TWAP, exec_spawn_id=O-20210410-022422-001-001-1, tags=None)"
     )
 
 

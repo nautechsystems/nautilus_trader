@@ -3145,7 +3145,7 @@ class TestExecutionEngine:
         assert self.cache.position_id(sl_order.client_order_id) == position_id
 
     @pytest.mark.parametrize(
-        ("status, price, process_steps, expected_in_book"),
+        ("status", "price", "process_steps", "expected_in_book"),
         [
             (
                 OrderStatus.INITIALIZED,

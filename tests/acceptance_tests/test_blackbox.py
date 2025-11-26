@@ -100,7 +100,7 @@ class MACDStrategy(Strategy):
         ):
             self.log.info(
                 f"After limit order accepted with qty {self._limit_order.quantity} balances locked: "
-                + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
+                 f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
                 LogColor.MAGENTA,
             )
             return
@@ -108,7 +108,7 @@ class MACDStrategy(Strategy):
         if self.account.is_margin_account:
             self.log.info(
                 "After unidentified order accepted balances locked: "
-                + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
+                 f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
                 LogColor.MAGENTA,
             )
 
@@ -116,7 +116,7 @@ class MACDStrategy(Strategy):
         if self.account.is_margin_account:
             self.log.info(
                 f"After filled qty {event.last_qty} balances locked: "
-                + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
+                 f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
                 LogColor.CYAN,
             )
 
@@ -227,7 +227,7 @@ class MACDStrategy(Strategy):
         if self.account.is_margin_account:
             self.log.info(
                 f"After position changed to amount {self._position.quantity} balances locked: "
-                + f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
+                 f"{self.account.balances_locked()[self.account.base_currency].as_double()}",
                 LogColor.CYAN,
             )
 

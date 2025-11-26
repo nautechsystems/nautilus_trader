@@ -211,7 +211,7 @@ impl OrderStatusReport {
     pub fn with_avg_px(mut self, avg_px: f64) -> anyhow::Result<Self> {
         if !avg_px.is_finite() {
             anyhow::bail!(
-                "avg_px must be finite, got: {} (is_nan: {}, is_infinite: {})",
+                "avg_px must be finite, was: {} (is_nan: {}, is_infinite: {})",
                 avg_px,
                 avg_px.is_nan(),
                 avg_px.is_infinite()
@@ -498,6 +498,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::panic_in_result_fn)]
     fn test_order_status_report_builder_methods() -> anyhow::Result<()> {
         let report = test_order_status_report()
             .with_client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
@@ -656,6 +657,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::panic_in_result_fn)]
     fn test_order_status_report_with_optional_fields() -> anyhow::Result<()> {
         let mut report = test_order_status_report();
 

@@ -16,7 +16,10 @@
 use alloy_primitives::{U160, U256};
 
 use super::full_math::FullMath;
-use crate::defi::tick_map::tick_math::get_sqrt_ratio_at_tick;
+use crate::{
+    defi::tick_map::tick_math::get_sqrt_ratio_at_tick,
+    types::{PRICE_RAW_MAX, PRICE_RAW_MIN, Price, fixed::FIXED_PRECISION},
+};
 
 /// Encodes the sqrt ratio of two token amounts as a Q64.96 fixed point number.
 ///
@@ -323,6 +326,100 @@ pub fn get_amounts_for_liquidity(
 /// Expands an amount to 18 decimal places (multiplies by 10^18).
 pub fn expand_to_18_decimals(amount: u64) -> u128 {
     amount as u128 * 10u128.pow(18)
+}
+
+/// Converts a sqrt price X96 to a raw Price (token1/token0 ratio without decimal adjustment).
+///
+/// To get fixed-point representation: (sqrtPriceX96^2 * 10^FIXED_PRECISION) / 2^192
+/// We use FullMath::mul_div to handle the overflow from price_x192 * 10^FIXED_PRECISION
+///
+/// # Errors
+///
+/// Returns an error if the price calculation overflows or exceeds `PriceRaw` range.
+pub fn decode_sqrt_price_x96_to_price(sqrt_price_x96: U160) -> anyhow::Result<Price> {
+    let sqrt_price = U256::from(sqrt_price_x96);
+    let price_x192 = sqrt_price * sqrt_price;
+
+    let fixed_scalar = U256::from(10u128.pow(FIXED_PRECISION as u32));
+    let divisor = U256::from(1u128) << 192;
+    let price_raw_u256 = FullMath::mul_div(price_x192, fixed_scalar, divisor)?;
+
+    let price_raw = price_raw_u256.try_into().map_err(|_| {
+        anyhow::anyhow!("Price overflow: {} exceeds PriceRaw range", price_raw_u256)
+    })?;
+
+    Ok(Price::from_raw(price_raw, FIXED_PRECISION))
+}
+
+/// Converts a sqrt price X96 to a human-readable spot price adjusted for token decimals.
+///
+/// # Arguments
+/// * `sqrt_price_x96` - The sqrt price in X96 format from the pool
+/// * `token0_decimals` - Number of decimals for token0
+/// * `token1_decimals` - Number of decimals for token1
+/// * `invert` - If true, returns token0/token1; if false, returns token1/token0
+///
+/// # Pool Price Format
+/// Uniswap V3 pools always store price as **token1/token0** where tokens are sorted by address.
+///
+/// # Errors
+///
+/// Returns an error if the price calculation overflows or exceeds `PriceRaw` range.
+pub fn decode_sqrt_price_x96_to_price_tokens_adjusted(
+    sqrt_price_x96: U160,
+    token0_decimals: u8,
+    token1_decimals: u8,
+    invert: bool,
+) -> anyhow::Result<Price> {
+    let sqrt_price = U256::from(sqrt_price_x96);
+    let price_x192 = sqrt_price * sqrt_price;
+
+    let decimal_diff = token0_decimals as i32 - token1_decimals as i32;
+    let fixed_scalar = U256::from(10u128.pow(FIXED_PRECISION as u32));
+    let divisor_base = U256::from(1u128) << 192;
+
+    let numerator = if invert {
+        if decimal_diff >= 0 {
+            let decimal_adjustment = U256::from(10u128.pow(decimal_diff.unsigned_abs()));
+            let denominator = FullMath::mul_div(price_x192, decimal_adjustment, U256::from(1))?;
+            FullMath::mul_div(divisor_base, fixed_scalar, denominator)?
+        } else {
+            let decimal_adjustment = U256::from(10u128.pow(decimal_diff.unsigned_abs()));
+            let numerator_adjusted =
+                FullMath::mul_div(divisor_base, decimal_adjustment, U256::from(1))?;
+            FullMath::mul_div(numerator_adjusted, fixed_scalar, price_x192)?
+        }
+    } else if decimal_diff >= 0 {
+        let decimal_adjustment = U256::from(10u128.pow(decimal_diff.unsigned_abs()));
+        let temp = FullMath::mul_div(price_x192, decimal_adjustment, U256::from(1))?;
+        FullMath::mul_div(temp, fixed_scalar, divisor_base)?
+    } else {
+        let decimal_adjustment = U256::from(10u128.pow(decimal_diff.unsigned_abs()));
+        let divisor_adjusted = divisor_base * decimal_adjustment;
+        FullMath::mul_div(price_x192, fixed_scalar, divisor_adjusted)?
+    };
+
+    let price_raw: i128 = numerator
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Price overflow: {} exceeds PriceRaw range", numerator))?;
+
+    // Step 5: Validate price is within valid range before creating Price
+    if price_raw > PRICE_RAW_MAX {
+        anyhow::bail!(
+            "Price {} exceeds maximum valid price {}",
+            price_raw,
+            PRICE_RAW_MAX
+        );
+    }
+    if price_raw < PRICE_RAW_MIN {
+        anyhow::bail!(
+            "Price {} is below minimum valid price {}",
+            price_raw,
+            PRICE_RAW_MIN
+        );
+    }
+
+    Ok(Price::from_raw(price_raw, FIXED_PRECISION))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -679,5 +776,20 @@ mod tests {
         );
 
         assert_eq!(amount1_rounded_down, amount1 - U256::from(1));
+    }
+
+    #[rstest]
+    fn test_decode_sqrt_price_x96_to_price_and_decimal_adjustments() {
+        // Use values from https://blog.uniswap.org/uniswap-v3-math-primer
+        let sqrt_price_x96 =
+            U160::from_str_radix("2018382873588440326581633304624437", 10).unwrap();
+
+        let raw_price = decode_sqrt_price_x96_to_price(sqrt_price_x96).unwrap();
+        assert_eq!(raw_price.as_f64(), 649004842.70137);
+
+        // We want the adjusted price inverted as USDC is token0 and WETH is token1
+        let adjusted_price =
+            decode_sqrt_price_x96_to_price_tokens_adjusted(sqrt_price_x96, 6, 18, true).unwrap();
+        assert_eq!(adjusted_price.as_f64(), 1540.8205520280458);
     }
 }

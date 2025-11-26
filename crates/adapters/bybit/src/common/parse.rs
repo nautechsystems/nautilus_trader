@@ -102,14 +102,19 @@ where
     }
 }
 
+/// Deserializes a u8 from a string field.
+pub fn deserialize_string_to_u8<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    if s.is_empty() {
+        return Ok(0);
+    }
+    s.parse::<u8>().map_err(serde::de::Error::custom)
+}
+
 /// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
-///
-/// # Examples
-/// ```ignore
-/// assert_eq!(extract_raw_symbol("ETHUSDT-LINEAR"), "ETHUSDT");
-/// assert_eq!(extract_raw_symbol("BTCUSDT-SPOT"), "BTCUSDT");
-/// assert_eq!(extract_raw_symbol("ETHUSDT"), "ETHUSDT"); // No suffix
-/// ```
 #[must_use]
 pub fn extract_raw_symbol(symbol: &str) -> &str {
     symbol.rsplit_once('-').map_or(symbol, |(prefix, _)| prefix)
@@ -118,12 +123,6 @@ pub fn extract_raw_symbol(symbol: &str) -> &str {
 /// Constructs a full Bybit symbol from a raw symbol and product type.
 ///
 /// Returns a `Ustr` for efficient string interning and comparisons.
-///
-/// # Examples
-/// ```ignore
-/// let symbol = make_bybit_symbol("ETHUSDT", BybitProductType::Linear);
-/// assert_eq!(symbol.as_str(), "ETHUSDT-LINEAR");
-/// ```
 #[must_use]
 pub fn make_bybit_symbol<S: AsRef<str>>(raw_symbol: S, product_type: BybitProductType) -> Ustr {
     let raw = raw_symbol.as_ref();

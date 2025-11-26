@@ -1,5 +1,38 @@
 # Blockchain
 
+## Core Primitives
+
+Nautilus Trader's blockchain integration is built on foundational primitives defined in the DeFi domain model (`nautilus_model::defi`). These building blocks provide type-safe abstractions for working with EVM-based blockchains.
+
+### Chain
+
+The `Chain` struct represents a blockchain network with its connection endpoints and metadata. Each chain instance contains:
+
+**Fields:**
+
+- `name` (`Blockchain`): The blockchain network type (enum of 80+ supported chains)
+- `chain_id` (`u32`): Unique EVM chain identifier (e.g., 1 for Ethereum, 42161 for Arbitrum)
+- `hypersync_url` (`String`): Endpoint for high-performance Hypersync data streaming
+- `rpc_url` (`Option<String>`): Optional HTTP/WSS RPC endpoint for direct node communication
+- `native_currency_decimals` (`u8`): Decimal precision for the chain's native gas token (typically 18)
+
+**Chain Retrieval:**
+
+Chains can be retrieved by numeric ID or string name (case-insensitive):
+
+- **By Chain ID:** Lookup using EVM chain identifier with `from_chain_id`
+- **By Name:** Lookup using blockchain name (case-insensitive: "ethereum", "Ethereum", "ETHEREUM" all work) with `from_chain_name`
+- **Static Instances:** Pre-configured chains available as constants
+
+Each chain has a native currency used for gas fees. The `native_currency()` method returns a properly configured Currency instance:
+
+| Chain Family                                    | Code | Name         | Decimals |
+|-------------------------------------------------|------|--------------|----------|
+| Ethereum & L2s (Arbitrum, Base, Optimism, etc.) | ETH  | Ethereum     | 18       |
+| Polygon                                         | POL  | Polygon      | 18       |
+| Avalanche                                       | AVAX | Avalanche    | 18       |
+| BSC                                             | BNB  | Binance Coin | 18       |
+
 ## Contracts
 
 High-performance interface for querying EVM smart contracts with type-safe Rust abstractions. Supports token metadata, DEX pools, and DeFi protocols through efficient batch operations.

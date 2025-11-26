@@ -101,7 +101,7 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value", "precision", "expected"),
         [
-            [Price(2.15, precision=2), 0, Decimal("2")],
+            [Price(2.15, precision=2), 0, Decimal(2)],
             [Price(2.15, precision=2), 1, Decimal("2.2")],
             [Price(2.255, precision=3), 2, Decimal("2.26")],
         ],
@@ -116,10 +116,10 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Price(-0, precision=0), Decimal("0")],
-            [Price(0, precision=0), Decimal("0")],
-            [Price(1, precision=0), Decimal("1")],
-            [Price(-1, precision=0), Decimal("1")],
+            [Price(-0, precision=0), Decimal(0)],
+            [Price(0, precision=0), Decimal(0)],
+            [Price(1, precision=0), Decimal(1)],
+            [Price(-1, precision=0), Decimal(1)],
             [Price(-1.1, precision=1), Decimal("1.1")],
         ],
     )
@@ -135,9 +135,9 @@ class TestPrice:
         [
             [
                 Price(-1, precision=0),
-                Decimal("-1"),
+                Decimal(-1),
             ],  # Matches built-in decimal.Decimal behavior
-            [Price(0, 0), Decimal("0")],
+            [Price(0, 0), Decimal(0)],
         ],
     )
     def test_pos_with_various_values_returns_expected_decimal(self, value, expected):
@@ -150,8 +150,8 @@ class TestPrice:
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            [Price(1, precision=0), Decimal("-1")],
-            [Price(0, precision=0), Decimal("0")],
+            [Price(1, precision=0), Decimal(-1)],
+            [Price(0, precision=0), Decimal(0)],
         ],
     )
     def test_neg_with_various_values_returns_expected_decimal(self, value, expected):
@@ -828,6 +828,120 @@ class TestPrice:
         assert str(price) == expected_str
         assert price.as_double() == 0
 
+    def test_from_decimal_returns_expected_value(self):
+        # Arrange, Act
+        price = Price.from_decimal(Decimal("1.23456"))
+
+        # Assert
+        assert price == Price(1.23456, precision=5)
+        assert str(price) == "1.23456"
+        assert price.precision == 5
+
+    def test_from_decimal_with_integer_value(self):
+        # Arrange, Act
+        price = Price.from_decimal(Decimal(100))
+
+        # Assert
+        assert price == Price(100, precision=0)
+        assert str(price) == "100"
+        assert price.precision == 0
+
+    def test_from_decimal_with_high_precision(self):
+        if FIXED_PRECISION <= 9:
+            pytest.skip("High precision not supported on Windows")
+
+        # Arrange, Act
+        price = Price.from_decimal(Decimal("1.234567890123456"))
+
+        # Assert
+        assert price.precision == 15
+        assert str(price) == "1.234567890123456"
+
+    def test_from_decimal_equivalent_to_from_str(self):
+        test_values = [
+            Decimal(1),
+            Decimal("0.5"),
+            Decimal("100.25"),
+            Decimal("0.001"),
+            Decimal("1234.5678"),
+            Decimal("-99.99"),
+        ]
+
+        for decimal_val in test_values:
+            price_from_decimal = Price.from_decimal(decimal_val)
+            price_from_str = Price.from_str(str(decimal_val))
+            assert price_from_decimal == price_from_str
+            assert price_from_decimal.precision == price_from_str.precision
+
+    def test_from_decimal_precision_preservation(self):
+        # Whole numbers should have precision 0
+        assert Price.from_decimal(Decimal(100)).precision == 0
+        assert Price.from_decimal(Decimal(1000000)).precision == 0
+
+        # Decimal places should determine precision
+        assert Price.from_decimal(Decimal("100.0")).precision == 1
+        assert Price.from_decimal(Decimal("100.00")).precision == 2
+        assert Price.from_decimal(Decimal("100.12345")).precision == 5
+
+    def test_from_decimal_with_zero(self):
+        # Arrange, Act
+        price = Price.from_decimal(Decimal(0))
+
+        # Assert
+        assert price.as_double() == 0
+        assert str(price) == "0"
+        assert price.precision == 0
+
+    def test_from_decimal_with_negative_value(self):
+        # Arrange, Act
+        price = Price.from_decimal(Decimal("-50.25"))
+
+        # Assert
+        assert price.as_double() == -50.25
+        assert str(price) == "-50.25"
+        assert price.precision == 2
+
+    @pytest.mark.parametrize(
+        ("decimal_val", "expected_str", "expected_precision"),
+        [
+            (Decimal("1e-2"), "0.01", 2),
+            (Decimal("1.23e1"), "12.3", 1),
+            (Decimal("5e-5"), "0.00005", 5),
+        ],
+    )
+    def test_from_decimal_with_scientific_notation(
+        self,
+        decimal_val,
+        expected_str,
+        expected_precision,
+    ):
+        # Arrange, Act
+        price = Price.from_decimal(decimal_val)
+
+        # Assert
+        assert str(price) == expected_str
+        assert price.precision == expected_precision
+
+    def test_from_decimal_with_very_small_values(self):
+        if FIXED_PRECISION <= 9:
+            # Windows with 9 decimal max
+            price = Price.from_decimal(Decimal("0.000000001"))
+            assert str(price) == "0.000000001"
+            assert price.precision == 9
+        else:
+            # Linux/Mac with 16 decimal max
+            price = Price.from_decimal(Decimal("0.0000000000000001"))
+            assert str(price) == "0.0000000000000001"
+            assert price.precision == 16
+
+    def test_from_decimal_with_precision_exceeding_max_raises_value_error(self):
+        if FIXED_PRECISION <= 9:
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Price.from_decimal(Decimal("1.0000000001"))  # 10 decimals > 9
+        else:
+            with pytest.raises(ValueError, match="invalid `precision` greater than max"):
+                Price.from_decimal(Decimal("1.01234567890123456"))  # 17 decimals > 16
+
     def test_str_repr(self):
         # Arrange, Act
         price = Price(1.00000, precision=5)
@@ -845,3 +959,11 @@ class TestPrice:
 
         # Assert
         assert pickle.loads(pickled) == price  # noqa: S301 (testing pickle)
+
+    def test_price_equality_with_none_returns_false(self):
+        # Arrange
+        price = Price(100.0, 2)
+
+        # Act, Assert
+        assert (price == None) is False  # noqa: E711
+        assert (price != None) is True  # noqa: E711

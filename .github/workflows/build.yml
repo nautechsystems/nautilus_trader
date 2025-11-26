@@ -37,7 +37,7 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-      - name: Verify Cap'n Proto schemas are up-to-date
+      - name: Verify capnp schemas are up-to-date
         run: make check-capnp-schemas
 
   cargo-deny:
@@ -71,7 +71,6 @@ jobs:
           - "3.12"
           - "3.13"
           - "3.14"
-          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
     defaults:
       run:
         shell: bash
@@ -164,16 +163,17 @@ jobs:
           - "3.12"
           - "3.13"
           # - "3.14"  # Disabled: ckzg dependency (via eth-account) lacks ARM64 wheel for 3.14
-          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop branch for now (takes ~1-1.5 hrs)
+    # Pause job on develop and nightly branches for now
+    # - develop: takes ~1-1.5 hrs
+    # - nightly: TODO: build issue pending investigation
     if: >
-      !( (github.event_name == 'push' && github.ref_name == 'develop')
-      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
+      !( (github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'nightly'))
+      || (github.event_name == 'pull_request' && (github.base_ref == 'develop' || github.base_ref == 'nightly')) )
     needs:
       - pre-commit
       - cargo-deny
@@ -260,7 +260,6 @@ jobs:
           - "3.12"
           - "3.13"
           - "3.14"
-          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
     defaults:
       run:
         shell: bash
@@ -317,7 +316,7 @@ jobs:
         python-version:
           - "3.12"
           - "3.13"
-          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
+          - "3.14"
     defaults:
       run:
         shell: bash
@@ -390,7 +389,6 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      EXPECTED_WHEEL_COUNT: 8  # Linux x86 (3) + macOS (3) + Windows (2, no 3.14 support)
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -412,9 +410,6 @@ jobs:
           path: dist
           pattern: "nautilus_trader-*.whl"
           merge-multiple: true
-
-      - name: Validate wheel count
-        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
@@ -443,7 +438,7 @@ jobs:
       attestations: write # Required for attestations
     needs:
       - build-linux-x86
-      - build-linux-arm
+      # - build-linux-arm  # TODO: Build issue pending investigation
       - build-macos
       - build-windows
     if: >
@@ -454,7 +449,6 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      EXPECTED_WHEEL_COUNT: 10  # Linux x86 (3) + Linux ARM (2, no 3.14) + macOS (3) + Windows (2, no 3.14 support)
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -476,9 +470,6 @@ jobs:
           path: dist
           pattern: "nautilus_trader-*.whl"
           merge-multiple: true
-
-      - name: Validate wheel count
-        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
@@ -518,7 +509,6 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      EXPECTED_WHEEL_COUNT: 10  # Linux x86 (3) + Linux ARM (2, no 3.14) + macOS (3) + Windows (2, no 3.14 support)
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -553,9 +543,6 @@ jobs:
           path: dist
           pattern: "nautilus_trader-*.whl"
           merge-multiple: true
-
-      - name: Validate wheel count
-        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance

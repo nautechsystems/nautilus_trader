@@ -171,6 +171,8 @@ cdef extern from "../includes/model.h":
         MARGIN # = 2,
         # An account specific to betting markets.
         BETTING # = 3,
+        # An account which represents a blockchain wallet,
+        WALLET # = 4,
 
     # A broad financial market asset class.
     cpdef enum AssetClass:

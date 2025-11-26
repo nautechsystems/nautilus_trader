@@ -43,7 +43,7 @@ class TestBetfairSockets:
         self.loop = request.getfixturevalue("event_loop")
         self.client = BetfairTestStubs.betfair_client(loop=self.loop)
 
-        yield
+        return
 
     def _build_stream_client(
         self,
@@ -252,7 +252,7 @@ def test_betfair_messages_not_mistaken_for_fix():
 
 
 @pytest.mark.parametrize(
-    "raw_message,expected_type",
+    ("raw_message", "expected_type"),
     [
         (b'{"op":"connection","connectionId":"123"}\r\n', Connection),
         (

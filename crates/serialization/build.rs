@@ -49,8 +49,7 @@ fn compile_capnp_schemas() {
             e.path()
                 .extension()
                 .and_then(|s| s.to_str())
-                .map(|s| s == "capnp")
-                .unwrap_or(false)
+                .is_some_and(|s| s == "capnp")
         })
         .map(|e| e.path().to_path_buf())
         .collect();
@@ -64,7 +63,8 @@ fn compile_capnp_schemas() {
     let mut command = capnpc::CompilerCommand::new();
     command.src_prefix(&schema_dir).output_path(&out_dir);
 
-    for import_path in &[&schema_dir] {
+    {
+        let import_path = &(&schema_dir);
         command.import_path(import_path);
     }
 

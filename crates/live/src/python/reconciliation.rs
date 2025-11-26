@@ -33,7 +33,7 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
-use crate::reconciliation::calculations::{
+use crate::execution::reconciliation::{
     FillAdjustmentResult, FillSnapshot, VenuePositionSnapshot, adjust_fills_for_partial_window,
     calculate_reconciliation_price,
 };
@@ -431,12 +431,13 @@ fn py_tuple_from_reports(
 ) -> PyResult<Py<PyTuple>> {
     // Create order reports dict
     let orders_dict = PyDict::new(py);
+
     for (venue_order_id, order) in order_map {
         orders_dict.set_item(venue_order_id.to_string(), order.clone().into_py_any(py)?)?;
     }
 
-    // Create fill reports dict
     let fills_dict = PyDict::new(py);
+
     for (venue_order_id, fills) in fill_map {
         let fills_list: Result<Vec<_>, _> =
             fills.iter().map(|f| f.clone().into_py_any(py)).collect();

@@ -26,6 +26,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -54,8 +55,6 @@ from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
 
@@ -366,44 +365,33 @@ class HyperliquidDataClient(LiveMarketDataClient):
         else:
             self._log.info(f"Sent {len(instruments)} instruments")
 
-    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
-        try:
-            pyo3_trades = await self._http_client.request_trade_ticks(
-                request.instrument_id,
-                request.start,
-                request.end,
-                request.limit,
-            )
-            trade_ticks = TradeTick.from_pyo3_list(pyo3_trades)
-            for trade_tick in trade_ticks:
-                self._handle_data(trade_tick)
-        except Exception as e:
-            self._log.error(f"Error requesting trade ticks for {request.instrument_id}: {e}")
-
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        try:
-            pyo3_quotes = await self._http_client.request_quote_ticks(
-                request.instrument_id,
-                request.start,
-                request.end,
-                request.limit,
-            )
-            quote_ticks = QuoteTick.from_pyo3_list(pyo3_quotes)
-            for quote_tick in quote_ticks:
-                self._handle_data(quote_tick)
-        except Exception as e:
-            self._log.error(f"Error requesting quote ticks for {request.instrument_id}: {e}")
+        self._log.warning("Cannot request historical quotes: not supported by Hyperliquid")
+
+    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
+        self._log.warning("Cannot request historical trades: not supported by Hyperliquid")
 
     async def _request_bars(self, request: RequestBars) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(request.bar_type))
+        start = ensure_pydatetime_utc(request.start) if request.start else None
+        end = ensure_pydatetime_utc(request.end) if request.end else None
+
         try:
             pyo3_bars = await self._http_client.request_bars(
-                request.bar_type,
-                request.start,
-                request.end,
+                pyo3_bar_type,
+                start,
+                end,
                 request.limit,
             )
             bars = Bar.from_pyo3_list(pyo3_bars)
-            for bar in bars:
-                self._handle_data(bar)
+
+            self._handle_bars(
+                request.bar_type,
+                bars,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
         except Exception as e:
-            self._log.error(f"Error requesting bars for {request.bar_type}: {e}")
+            self._log.exception(f"Error requesting bars for {request.bar_type}", e)
