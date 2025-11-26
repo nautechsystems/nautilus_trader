@@ -169,6 +169,126 @@ pub struct WebSocketToken {
     pub expires: i32,
 }
 
+// Futures Models
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuturesMarginLevel {
+    pub contracts: i64,
+    #[serde(rename = "initialMargin")]
+    pub initial_margin: f64,
+    #[serde(rename = "maintenanceMargin")]
+    pub maintenance_margin: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuturesInstrument {
+    pub symbol: String,
+    #[serde(rename = "type")]
+    pub instrument_type: String,
+    pub underlying: String,
+    #[serde(rename = "tickSize")]
+    pub tick_size: f64,
+    #[serde(rename = "contractSize")]
+    pub contract_size: f64,
+    pub tradeable: bool,
+    #[serde(rename = "impactMidSize")]
+    pub impact_mid_size: f64,
+    #[serde(rename = "maxPositionSize")]
+    pub max_position_size: f64,
+    #[serde(rename = "openingDate")]
+    pub opening_date: String,
+    #[serde(rename = "marginLevels")]
+    pub margin_levels: Vec<FuturesMarginLevel>,
+    #[serde(rename = "fundingRateCoefficient", default)]
+    pub funding_rate_coefficient: Option<i32>,
+    #[serde(rename = "maxRelativeFundingRate", default)]
+    pub max_relative_funding_rate: Option<f64>,
+    #[serde(default)]
+    pub isin: Option<String>,
+    #[serde(rename = "contractValueTradePrecision")]
+    pub contract_value_trade_precision: i32,
+    #[serde(rename = "postOnly")]
+    pub post_only: bool,
+    #[serde(rename = "feeScheduleUid")]
+    pub fee_schedule_uid: String,
+    pub mtf: bool,
+    pub base: String,
+    pub quote: String,
+    pub pair: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuturesInstrumentsResponse {
+    pub result: String,
+    pub instruments: Vec<FuturesInstrument>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuturesTicker {
+    pub symbol: String,
+    pub last: f64,
+    #[serde(rename = "lastTime")]
+    pub last_time: String,
+    pub tag: String,
+    pub pair: String,
+    #[serde(rename = "markPrice")]
+    pub mark_price: f64,
+    pub bid: f64,
+    #[serde(rename = "bidSize")]
+    pub bid_size: f64,
+    pub ask: f64,
+    #[serde(rename = "askSize")]
+    pub ask_size: f64,
+    #[serde(rename = "vol24h")]
+    pub vol_24h: f64,
+    #[serde(rename = "volumeQuote")]
+    pub volume_quote: f64,
+    #[serde(rename = "openInterest")]
+    pub open_interest: f64,
+    #[serde(rename = "open24h")]
+    pub open_24h: f64,
+    #[serde(rename = "high24h")]
+    pub high_24h: f64,
+    #[serde(rename = "low24h")]
+    pub low_24h: f64,
+    #[serde(rename = "lastSize")]
+    pub last_size: f64,
+    #[serde(rename = "fundingRate", default)]
+    pub funding_rate: Option<f64>,
+    #[serde(rename = "fundingRatePrediction", default)]
+    pub funding_rate_prediction: Option<f64>,
+    pub suspended: bool,
+    #[serde(rename = "indexPrice")]
+    pub index_price: f64,
+    #[serde(rename = "postOnly")]
+    pub post_only: bool,
+    #[serde(rename = "change24h")]
+    pub change_24h: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuturesTickersResponse {
+    pub result: String,
+    #[serde(rename = "serverTime")]
+    pub server_time: String,
+    pub tickers: Vec<FuturesTicker>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuturesCandle {
+    pub time: i64,
+    pub open: String,
+    pub high: String,
+    pub low: String,
+    pub close: String,
+    pub volume: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuturesCandlesResponse {
+    pub candles: Vec<FuturesCandle>,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

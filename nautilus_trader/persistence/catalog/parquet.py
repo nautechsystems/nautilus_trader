@@ -1703,7 +1703,6 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
-        file_list = files if files else self._query_files(data_cls, identifiers, start, end)
         file_prefix = class_to_filename(data_cls)
 
         if session is None:
@@ -1713,31 +1712,90 @@ class ParquetDataCatalog(BaseDataCatalog):
         if self.fs_protocol != "file":
             self._register_object_store_with_session(session)
 
-        for file in file_list:
-            # Extract identifier from file path and filename to create meaningful table names
-            identifier = file.split("/")[-2]
-            safe_sql_identifier = (
-                urisafe_identifier(identifier)
-                .replace(".", "_")
-                .replace("-", "_")
-                .replace(" ", "_")
-                .replace("^", "_")
-                .lower()
-            )
-            safe_filename = _extract_sql_safe_filename(file)
-            table = f"{file_prefix}_{safe_sql_identifier}_{safe_filename}"
-            query = self._build_query(
-                table,
-                start=start,
-                end=end,
-                where=where,
-            )
-
-            file_uri = self._build_file_uri(file)
-
-            session.add_file(data_type, table, file_uri, query)
+        if files:
+            # If specific files are requested, register them individually
+            for file in files:
+                self._register_file_table(
+                    session=session,
+                    file=file,
+                    data_type=data_type,
+                    file_prefix=file_prefix,
+                    start=start,
+                    end=end,
+                    where=where,
+                )
+        else:
+            # Otherwise, group by directory (instrument) to reduce the number of
+            # registered tables and streams. This significantly reduces memory usage
+            # when dealing with many small files.
+            file_list = self._query_files(data_cls, identifiers, start, end)
+            directories = {os.path.dirname(file) for file in file_list}
+            for directory in directories:
+                self._register_directory_table(
+                    session=session,
+                    directory=directory,
+                    data_type=data_type,
+                    file_prefix=file_prefix,
+                    start=start,
+                    end=end,
+                    where=where,
+                )
 
         return session
+
+    def _register_file_table(
+        self,
+        session: DataBackendSession,
+        file: str,
+        data_type: NautilusDataType,
+        file_prefix: str,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        where: str | None = None,
+    ) -> None:
+        # Extract identifier from file path and filename to create meaningful table names
+        identifier = file.split("/")[-2]
+        safe_sql_identifier = _sanitize_sql_identifier(urisafe_identifier(identifier))
+        safe_filename = _extract_safe_filename(file)
+        table = f"{file_prefix}_{safe_sql_identifier}_{safe_filename}"
+
+        query = self._build_query(
+            table,
+            start=start,
+            end=end,
+            where=where,
+        )
+
+        file_uri = self._build_file_uri(file)
+        session.add_file(data_type, table, file_uri, query)
+
+    def _register_directory_table(
+        self,
+        session: DataBackendSession,
+        directory: str,
+        data_type: NautilusDataType,
+        file_prefix: str,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        where: str | None = None,
+    ) -> None:
+        # Extract identifier from directory path
+        identifier = directory.split("/")[-1]
+        safe_sql_identifier = _sanitize_sql_identifier(urisafe_identifier(identifier))
+        table = f"{file_prefix}_{safe_sql_identifier}"
+
+        query = self._build_query(
+            table,
+            start=start,
+            end=end,
+            where=where,
+        )
+
+        # Ensure directory URI ends with / to be treated as a directory by some backends
+        # although DataFusion usually handles it.
+        file_uri = self._build_file_uri(directory)
+        session.add_file(data_type, table, file_uri, query)
+
 
     def _build_file_uri(self, file: str) -> str:
         """
@@ -2529,16 +2587,21 @@ def _get_integer_interval_set(intervals: list[tuple[int, int]]) -> P.Interval:
     return union_result
 
 
-def _extract_sql_safe_filename(file_path: str) -> str:
+def _extract_safe_filename(file_path: str) -> str:
     if not file_path:
         return "unknown_file"
 
-    filename = file_path.split("/")[-1]
+    filename = file_path.split("/")[-1].replace(".parquet", "")
 
+    return _sanitize_sql_identifier(filename)
+
+
+def _sanitize_sql_identifier(identifier: str) -> str:
     return (
-        filename.replace(".parquet", "")
+        identifier.replace(".", "_")
         .replace("-", "_")
+        .replace(" ", "_")
+        .replace("^", "_")
         .replace(":", "_")
-        .replace(".", "_")
         .lower()
     )

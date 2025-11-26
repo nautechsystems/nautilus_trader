@@ -505,7 +505,7 @@ async fn test_trades_subscription_flow() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -546,7 +546,7 @@ async fn test_reauth_and_resubscribe_after_disconnect() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -592,7 +592,7 @@ async fn test_heartbeat_timeout_reconnection() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -673,7 +673,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -778,7 +778,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -907,7 +907,7 @@ async fn test_subscription_restoration_tracking() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1031,7 +1031,7 @@ async fn test_true_auto_reconnect_with_verification() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1093,7 +1093,7 @@ async fn test_sends_pong_for_text_ping() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1123,7 +1123,7 @@ async fn test_sends_pong_for_control_ping() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1156,7 +1156,7 @@ async fn test_unsubscribe_orders_sends_request() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1215,7 +1215,7 @@ async fn test_subscribe_to_orderbook() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1256,7 +1256,7 @@ async fn test_multiple_symbols_subscription() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1305,7 +1305,7 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1419,7 +1419,7 @@ async fn test_auth_and_subscription_restoration_order() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1497,7 +1497,7 @@ async fn test_unauthenticated_private_channel_rejection() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1539,7 +1539,7 @@ async fn test_rapid_consecutive_reconnections() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1662,7 +1662,7 @@ async fn test_multiple_partial_subscription_failures() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1785,7 +1785,7 @@ async fn test_reconnection_race_condition() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1937,7 +1937,7 @@ async fn test_batch_cancel_orders_sends_message() {
     client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 

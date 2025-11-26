@@ -19,7 +19,10 @@
 //! parts of the NautilusTrader system, including data requests, execution commands,
 //! and system control messages.
 
-use nautilus_model::{data::Data, events::OrderEventAny};
+use nautilus_model::{
+    data::Data,
+    events::{AccountState, OrderEventAny},
+};
 use strum::Display;
 
 pub mod data;
@@ -49,4 +52,5 @@ pub enum DataEvent {
 pub enum ExecutionEvent {
     Order(OrderEventAny),
     Report(ExecutionReport),
+    Account(AccountState),
 }

@@ -102,6 +102,18 @@ where
     }
 }
 
+/// Deserializes a u8 from a string field.
+pub fn deserialize_string_to_u8<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    if s.is_empty() {
+        return Ok(0);
+    }
+    s.parse::<u8>().map_err(serde::de::Error::custom)
+}
+
 /// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
 #[must_use]
 pub fn extract_raw_symbol(symbol: &str) -> &str {

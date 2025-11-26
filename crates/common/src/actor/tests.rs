@@ -262,7 +262,7 @@ impl TestDataActor {
         }
     }
 
-    #[allow(dead_code, reason = "TODO: Under development")]
+    #[allow(dead_code)]
     pub fn custom_function(&mut self) {}
 }
 

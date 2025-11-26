@@ -54,6 +54,21 @@ This needs to be adhered to consistently to ensure the docs build correctly.
 This convention aligns with the prevailing style of the Python ecosystem and makes generated
 documentation feel natural to end-users.
 
+#### Private methods
+
+Do not add docstrings to private methods (prefixed with `_`):
+
+- Docstrings generate public-facing API documentation.
+- Docstrings on private methods incorrectly imply they are part of the public API.
+- Private methods are implementation details not intended for end-users.
+
+Exceptions where docstrings are acceptable:
+
+- Very complex methods with non-trivial logic, multiple steps, or important edge cases.
+- Methods requiring detailed parameter or return value documentation due to complexity.
+
+When a private method needs context (such as a tricky precondition or side effect), prefer a short inline comment (`#`) near the relevant logic rather than a docstring.
+
 ### Test naming
 
 Descriptive names explaining the scenario:

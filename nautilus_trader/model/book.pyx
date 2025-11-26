@@ -800,6 +800,8 @@ cdef class BookLevel:
             level_drop(self._mem)
 
     def __eq__(self, BookLevel other) -> bool:
+        if other is None:
+            return False
         return self.price._mem.raw == other.price._mem.raw
 
     def __lt__(self, BookLevel other) -> bool:

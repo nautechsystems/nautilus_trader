@@ -1121,10 +1121,12 @@ mod tests {
         let bar = parse_trade_bin(bins[0].clone(), &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
-        let expected_open = Price::from_decimal(Decimal::from_str("98900.0").unwrap(), precision)
-            .expect("open price");
-        let expected_close = Price::from_decimal(Decimal::from_str("98950.0").unwrap(), precision)
-            .expect("close price");
+        let expected_open =
+            Price::from_decimal_dp(Decimal::from_str("98900.0").unwrap(), precision)
+                .expect("open price");
+        let expected_close =
+            Price::from_decimal_dp(Decimal::from_str("98950.0").unwrap(), precision)
+                .expect("close price");
 
         assert_eq!(bar.bar_type, bar_type);
         assert_eq!(bar.open, expected_open);
@@ -1163,12 +1165,14 @@ mod tests {
         let bar = parse_trade_bin(bin, &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
-        let expected_high = Price::from_decimal(Decimal::from_str("50010.0").unwrap(), precision)
-            .expect("high price");
-        let expected_low = Price::from_decimal(Decimal::from_str("49990.0").unwrap(), precision)
+        let expected_high =
+            Price::from_decimal_dp(Decimal::from_str("50010.0").unwrap(), precision)
+                .expect("high price");
+        let expected_low = Price::from_decimal_dp(Decimal::from_str("49990.0").unwrap(), precision)
             .expect("low price");
-        let expected_open = Price::from_decimal(Decimal::from_str("50000.0").unwrap(), precision)
-            .expect("open price");
+        let expected_open =
+            Price::from_decimal_dp(Decimal::from_str("50000.0").unwrap(), precision)
+                .expect("open price");
 
         assert_eq!(bar.high, expected_high);
         assert_eq!(bar.low, expected_low);

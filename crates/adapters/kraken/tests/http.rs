@@ -165,10 +165,72 @@ async fn mock_rate_limit_error() -> Response {
         .unwrap()
 }
 
+async fn mock_futures_instruments() -> Response {
+    let data = load_test_data("http_futures_instruments.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_tickers() -> Response {
+    let data = load_test_data("http_futures_tickers.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_candles(req: Request) -> Response {
+    let path = req.uri().path();
+    let parts: Vec<&str> = path.split('/').collect();
+
+    if parts.len() >= 6 {
+        let tick_type = parts[4];
+        let filename = match tick_type {
+            "trade" => "http_futures_candles_trade.json",
+            "mark" => "http_futures_candles_mark.json",
+            "spot" => "http_futures_candles_spot.json",
+            _ => "http_futures_candles_trade.json",
+        };
+
+        let data = load_test_data(filename);
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(data.to_string()))
+            .unwrap()
+    } else {
+        Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Invalid candles path"))
+            .unwrap()
+    }
+}
+
 async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
     state.request_count.fetch_add(1, Ordering::Relaxed);
 
-    match req.uri().path() {
+    let path = req.uri().path();
+
+    if path.starts_with("/derivatives/api/v3/") {
+        return match path {
+            "/derivatives/api/v3/instruments" => mock_futures_instruments().await,
+            "/derivatives/api/v3/tickers" => mock_futures_tickers().await,
+            _ => Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from("Futures endpoint not found"))
+                .unwrap(),
+        };
+    }
+
+    if path.starts_with("/api/charts/v1/") {
+        return mock_futures_candles(req).await;
+    }
+
+    match path {
         "/0/public/Time" => mock_server_time().await,
         "/0/public/SystemStatus" => mock_system_status().await,
         "/0/public/AssetPairs" => mock_asset_pairs().await,
@@ -294,8 +356,7 @@ async fn test_http_request_instruments() {
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    let client =
-        KrakenRawHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
+    let client = KrakenHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
 
     let result = client.request_instruments(None).await;
     assert!(result.is_ok(), "Failed to request instruments: {result:?}");
@@ -331,7 +392,7 @@ async fn test_http_get_ticker() {
 
 #[rstest]
 #[tokio::test]
-async fn test_http_get_order_book() {
+async fn test_http_get_book_depth() {
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -347,8 +408,8 @@ async fn test_http_get_order_book() {
     let client =
         KrakenRawHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
 
-    let result = client.get_order_book("XBTUSDT", None).await;
-    assert!(result.is_ok(), "Failed to get order book: {result:?}");
+    let result = client.get_book_depth("XBTUSDT", None).await;
+    assert!(result.is_ok(), "Failed to get book depth: {result:?}");
 
     let book = result.unwrap();
     assert!(book.contains_key("XBTUSDT"));
@@ -616,4 +677,263 @@ async fn test_http_multiple_requests_increment_count() {
 
     let final_count = state.request_count.load(Ordering::Relaxed);
     assert_eq!(final_count - initial_count, 3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_instruments_futures() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let client =
+        KrakenRawHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
+
+    let result = client.get_instruments_futures().await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures instruments: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert_eq!(response.result, "success");
+    assert!(!response.instruments.is_empty());
+    assert_eq!(response.instruments[0].symbol, "PI_XBTUSD");
+    assert_eq!(response.instruments[0].base, "BTC");
+    assert_eq!(response.instruments[0].quote, "USD");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_tickers_futures() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let client =
+        KrakenRawHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
+
+    let result = client.get_tickers_futures().await;
+    assert!(result.is_ok(), "Failed to get futures tickers: {result:?}");
+
+    let response = result.unwrap();
+    assert_eq!(response.result, "success");
+    assert!(!response.tickers.is_empty());
+
+    let ticker = &response.tickers[0];
+    assert_eq!(ticker.symbol, "PI_XBTUSD");
+    assert!(ticker.mark_price > 0.0);
+    assert!(ticker.index_price > 0.0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_ohlc_futures_trade() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let client =
+        KrakenRawHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
+
+    let result = client
+        .get_ohlc_futures("trade", "PI_XBTUSD", "1h", None, None)
+        .await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures trade candles: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert!(!response.candles.is_empty());
+    assert_eq!(response.candles.len(), 3);
+
+    let candle = &response.candles[0];
+    assert_eq!(candle.time, 1_731_715_200_000);
+    assert_eq!(candle.open, "91069");
+    assert_eq!(candle.close, "91045.5");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_ohlc_futures_mark() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let client =
+        KrakenRawHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
+
+    let result = client
+        .get_ohlc_futures("mark", "PI_XBTUSD", "1h", None, None)
+        .await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures mark candles: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert!(!response.candles.is_empty());
+
+    let candle = &response.candles[0];
+    assert_eq!(candle.time, 1_731_715_200_000);
+    assert!(candle.open.contains('.'));
+    assert_eq!(candle.volume, "0");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_get_ohlc_futures_spot() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let client =
+        KrakenRawHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
+
+    let result = client
+        .get_ohlc_futures("spot", "PI_XBTUSD", "1h", None, None)
+        .await;
+    assert!(
+        result.is_ok(),
+        "Failed to get futures spot/index candles: {result:?}"
+    );
+
+    let response = result.unwrap();
+    assert!(!response.candles.is_empty());
+
+    let candle = &response.candles[0];
+    assert_eq!(candle.time, 1_731_715_200_000);
+    assert!(candle.open.contains('.'));
+    assert_eq!(candle.volume, "0");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_mark_price_fails_on_spot_client() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // Create spot client (no "futures" in URL)
+    let client = KrakenHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
+
+    let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+    let result = client.request_mark_price(instrument_id).await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Mark price is only available for futures"),
+        "Expected futures-only error, got: {err}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_index_price_fails_on_spot_client() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // Create spot client (no "futures" in URL)
+    let client = KrakenHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
+
+    let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+    let result = client.request_index_price(instrument_id).await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Index price is only available for futures"),
+        "Expected futures-only error, got: {err}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_trades_fails_on_futures_client() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}/futures");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // Create futures client ("futures" in URL)
+    let client = KrakenHttpClient::new(Some(base_url), Some(10), None, None, None, None).unwrap();
+
+    let instrument_id = InstrumentId::from("PI_XBTUSD.KRAKEN");
+    let result = client.request_trades(instrument_id, None, None, None).await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Trade history is not yet implemented for futures"),
+        "Expected not-implemented error, got: {err}"
+    );
 }

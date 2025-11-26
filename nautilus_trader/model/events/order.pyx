@@ -333,6 +333,8 @@ cdef class OrderInitialized(OrderEvent):
         self.tags = tags
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -680,6 +682,8 @@ cdef class OrderDenied(OrderEvent):
         )
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -939,6 +943,8 @@ cdef class OrderEmulated(OrderEvent):
         )
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -1186,6 +1192,8 @@ cdef class OrderReleased(OrderEvent):
         )
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -1452,6 +1460,8 @@ cdef class OrderSubmitted(OrderEvent):
         )
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -1722,6 +1732,8 @@ cdef class OrderAccepted(OrderEvent):
         )
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -1997,6 +2009,8 @@ cdef class OrderRejected(OrderEvent):
         )
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -2293,6 +2307,8 @@ cdef class OrderCanceled(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -2563,6 +2579,8 @@ cdef class OrderExpired(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -2835,6 +2853,8 @@ cdef class OrderTriggered(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -3106,6 +3126,8 @@ cdef class OrderPendingUpdate(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -3377,6 +3399,8 @@ cdef class OrderPendingCancel(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -3653,6 +3677,8 @@ cdef class OrderModifyRejected(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -3945,6 +3971,8 @@ cdef class OrderCancelRejected(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -4251,6 +4279,8 @@ cdef class OrderUpdated(OrderEvent):
         self.trigger_price = trigger_price
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -4589,6 +4619,8 @@ cdef class OrderFilled(OrderEvent):
         self.info = info
 
     def __eq__(self, Event other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:

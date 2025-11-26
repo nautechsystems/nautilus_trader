@@ -38,6 +38,18 @@ impl TardisHttpClient {
         Self::new(api_key, base_url, timeout_secs, normalize_symbols).map_err(to_pyruntime_err)
     }
 
+    #[getter]
+    #[pyo3(name = "api_key")]
+    fn py_api_key(&self) -> Option<&str> {
+        self.credential().map(|c| c.api_key())
+    }
+
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    fn py_api_key_masked(&self) -> Option<String> {
+        self.credential().map(|c| c.api_key_masked())
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "instruments")]
     #[pyo3(signature = (exchange, symbol=None, base_currency=None, quote_currency=None, instrument_type=None, contract_type=None, active=None, start=None, end=None, available_offset=None, effective=None, ts_init=None))]

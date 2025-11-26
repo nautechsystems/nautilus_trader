@@ -257,9 +257,9 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	done; \
 	[ $$outdated_count -eq 0 ] && printf "$(GREEN)  All tools up to date ✓$(RESET)\n"
 
-.PHONY: update cargo-update
+.PHONY: update
 update: cargo-update  #-- Update all dependencies (cargo and uv)
-	uv lock --upgrade
+	uv self update && uv lock --upgrade
 
 .PHONY: install-tools
 install-tools:  #-- Install required development tools (Rust tools from Cargo.toml, uv from uv-version)
@@ -273,14 +273,11 @@ install-tools:  #-- Install required development tools (Rust tools from Cargo.to
 #== Security
 
 .PHONY: security-audit
-security-audit: check-audit-installed  #-- Run security audit for Rust and Python dependencies
+security-audit: check-audit-installed  #-- Run security audit for Rust dependencies (osv-scanner runs via pre-commit)
 	$(info $(M) Running security audit for Rust dependencies...)
 	@printf "$(CYAN)Checking Rust dependencies for known vulnerabilities...$(RESET)\n"
 	cargo audit --color never || true
-	@printf "\n$(CYAN)Installed Python packages:$(RESET)\n"
-	@pip list --format=freeze 2>/dev/null | grep -E "^(aiohttp|requests|urllib3|cryptography|pyyaml|jinja2)" || echo "  (key security-relevant packages not found in pip list)"
-	@printf "\n$(YELLOW)Note: For comprehensive Python vulnerability scanning, install and run:$(RESET)\n"
-	@printf "  pip install pip-audit && pip-audit\n"
+	@printf "\n$(CYAN)Note: Python dependency scanning (osv-scanner) runs via pre-commit hooks$(RESET)\n"
 
 .PHONY: cargo-deny
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
@@ -343,6 +340,7 @@ check-audit-installed:  #-- Verify cargo-audit is installed
 		exit 1; \
 	fi
 
+
 .PHONY: check-deny-installed
 check-deny-installed:  #-- Verify cargo-deny is installed
 	@if ! cargo deny --version >/dev/null 2>&1; then \
@@ -386,7 +384,8 @@ check-features: check-hack-installed
 check-capnp-schemas:
 	$(info $(M) Checking if Cap'n Proto schemas are up-to-date...)
 	@bash scripts/regen_capnp.sh > /dev/null 2>&1 || true
-	@if ! git diff --quiet crates/serialization/generated/capnp; then \
+	@DIFF_OUTPUT="$$(git diff -I\"ENCODED_NODE\" -- crates/serialization/generated/capnp)"; \
+	if [ -n "$$DIFF_OUTPUT" ]; then \
 		echo "$(RED)Error: Cap'n Proto generated files are out of date$(RESET)"; \
 		echo "Please run: ./scripts/regen_capnp.sh"; \
 		echo "Or: make regen-capnp"; \

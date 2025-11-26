@@ -40,7 +40,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpClientError},
+    http::{HttpClient, HttpClientError, HttpResponse},
     ratelimiter::quota::Quota,
 };
 use reqwest::{Method, header::USER_AGENT};
@@ -92,17 +92,16 @@ use crate::{
 pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_minute(NonZeroU32::new(1200).unwrap()));
 
-/// Provides a lower-level HTTP client for connecting to the [Hyperliquid](https://hyperliquid.xyz/) REST API.
+/// Provides a raw HTTP client for low-level Hyperliquid REST API operations.
 ///
-/// This client wraps the underlying `HttpClient` to handle functionality
-/// specific to Hyperliquid, such as request signing (for authenticated endpoints),
-/// forming request URLs, and deserializing responses into specific data models.
+/// This client handles HTTP infrastructure, request signing, and raw API calls
+/// that closely match Hyperliquid endpoint specifications.
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
-pub struct HyperliquidHttpClient {
+pub struct HyperliquidRawHttpClient {
     client: HttpClient,
     is_testnet: bool,
     base_info: String,
@@ -114,23 +113,10 @@ pub struct HyperliquidHttpClient {
     rate_limit_backoff_base: Duration,
     rate_limit_backoff_cap: Duration,
     rate_limit_max_attempts_info: u32,
-    instruments: Arc<RwLock<AHashMap<Ustr, InstrumentAny>>>,
-    instruments_by_coin: Arc<RwLock<AHashMap<(Ustr, HyperliquidProductType), InstrumentAny>>>,
-    account_id: Option<AccountId>,
 }
 
-impl Default for HyperliquidHttpClient {
-    fn default() -> Self {
-        Self::new(true, None, None).expect("Failed to create default Hyperliquid HTTP client")
-    }
-}
-
-impl HyperliquidHttpClient {
-    /// Creates a new [`HyperliquidHttpClient`] using the default Hyperliquid HTTP URL,
-    /// optionally overridden with a custom timeout.
-    ///
-    /// This version of the client has **no credentials**, so it can only
-    /// call publicly accessible endpoints.
+impl HyperliquidRawHttpClient {
+    /// Creates a new [`HyperliquidRawHttpClient`] for public endpoints only.
     ///
     /// # Errors
     ///
@@ -159,13 +145,10 @@ impl HyperliquidHttpClient {
             rate_limit_backoff_base: Duration::from_millis(125),
             rate_limit_backoff_cap: Duration::from_secs(5),
             rate_limit_max_attempts_info: 3,
-            instruments: Arc::new(RwLock::new(AHashMap::new())),
-            instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
-            account_id: None,
         })
     }
 
-    /// Creates a new [`HyperliquidHttpClient`] configured with credentials
+    /// Creates a new [`HyperliquidRawHttpClient`] configured with credentials
     /// for authenticated requests.
     ///
     /// # Errors
@@ -198,9 +181,6 @@ impl HyperliquidHttpClient {
             rate_limit_backoff_base: Duration::from_millis(125),
             rate_limit_backoff_cap: Duration::from_secs(5),
             rate_limit_max_attempts_info: 3,
-            instruments: Arc::new(RwLock::new(AHashMap::new())),
-            instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
-            account_id: None,
         })
     }
 
@@ -208,8 +188,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if required environment variables
-    /// are not set.
+    /// Returns [`Error::Auth`] if required environment variables are not set.
     pub fn from_env() -> Result<Self> {
         let secrets =
             Secrets::from_env().map_err(|_| Error::auth("missing credentials in environment"))?;
@@ -217,7 +196,7 @@ impl HyperliquidHttpClient {
             .map_err(|e| Error::auth(format!("Failed to create HTTP client: {e}")))
     }
 
-    /// Creates a new [`HyperliquidHttpClient`] configured with explicit credentials.
+    /// Creates a new [`HyperliquidRawHttpClient`] configured with explicit credentials.
     ///
     /// # Errors
     ///
@@ -262,177 +241,22 @@ impl HyperliquidHttpClient {
             .address()
     }
 
-    /// Caches a single instrument.
-    ///
-    /// This is required for parsing orders, fills, and positions into reports.
-    /// Any existing instrument with the same symbol will be replaced.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the instrument lock cannot be acquired.
-    pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        let full_symbol = instrument.symbol().inner();
-        let coin = instrument.raw_symbol().inner();
-
-        {
-            let mut instruments = self
-                .instruments
-                .write()
-                .expect("Failed to acquire write lock");
-
-            instruments.insert(full_symbol, instrument.clone());
-
-            // HTTP responses only include coins, external code may lookup by coin
-            instruments.insert(coin, instrument.clone());
-        }
-
-        // Composite key allows disambiguating same coin across PERP and SPOT
-        if let Ok(product_type) = HyperliquidProductType::from_symbol(full_symbol.as_str()) {
-            let mut instruments_by_coin = self
-                .instruments_by_coin
-                .write()
-                .expect("Failed to acquire write lock");
-            instruments_by_coin.insert((coin, product_type), instrument);
-        } else {
-            tracing::warn!(
-                "Unable to determine product type for symbol: {}",
-                full_symbol
-            );
-        }
-    }
-
-    /// Get an instrument from cache, or create a synthetic one for vault tokens.
-    ///
-    /// Vault tokens (starting with "vntls:") are not available in the standard spotMeta API.
-    /// This method creates synthetic CurrencyPair instruments for vault tokens on-the-fly
-    /// to allow order/fill/position parsing to continue.
-    ///
-    /// For non-vault tokens that are not in cache, returns None and logs a warning.
-    /// This can happen if instruments weren't loaded properly or if there are new instruments
-    /// that weren't present during initialization.
-    ///
-    /// The synthetic instruments use reasonable defaults:
-    /// - Quote currency: USDC (most common quote for vault tokens)
-    /// - Price/size decimals: 8 (standard precision)
-    /// - Price increment: 0.00000001
-    /// - Size increment: 0.00000001
-    fn get_or_create_instrument(
-        &self,
-        coin: &Ustr,
-        product_type: Option<HyperliquidProductType>,
-    ) -> Option<InstrumentAny> {
-        if let Some(pt) = product_type {
-            let instruments_by_coin = self
-                .instruments_by_coin
-                .read()
-                .expect("Failed to acquire read lock");
-
-            if let Some(instrument) = instruments_by_coin.get(&(*coin, pt)) {
-                return Some(instrument.clone());
-            }
-        }
-
-        // HTTP responses lack product type context, try PERP then SPOT
-        if product_type.is_none() {
-            let instruments_by_coin = self
-                .instruments_by_coin
-                .read()
-                .expect("Failed to acquire read lock");
-
-            if let Some(instrument) =
-                instruments_by_coin.get(&(*coin, HyperliquidProductType::Perp))
-            {
-                return Some(instrument.clone());
-            }
-            if let Some(instrument) =
-                instruments_by_coin.get(&(*coin, HyperliquidProductType::Spot))
-            {
-                return Some(instrument.clone());
-            }
-        }
-
-        // Vault tokens aren't in standard API, create synthetic instruments
-        if coin.as_str().starts_with("vntls:") {
-            tracing::info!("Creating synthetic instrument for vault token: {coin}");
-
-            let clock = nautilus_core::time::get_atomic_clock_realtime();
-            let ts_event = clock.get_time_ns();
-
-            // Create synthetic vault token instrument
-            let symbol_str = format!("{coin}-USDC-SPOT");
-            let symbol = nautilus_model::identifiers::Symbol::new(&symbol_str);
-            let venue = *HYPERLIQUID_VENUE;
-            let instrument_id = nautilus_model::identifiers::InstrumentId::new(symbol, venue);
-
-            // Create currencies
-            let base_currency = nautilus_model::types::Currency::new(
-                coin.as_str(),
-                8, // precision
-                0, // ISO code (not applicable)
-                coin.as_str(),
-                nautilus_model::enums::CurrencyType::Crypto,
-            );
-
-            let quote_currency = nautilus_model::types::Currency::new(
-                "USDC",
-                6, // USDC standard precision
-                0,
-                "USDC",
-                nautilus_model::enums::CurrencyType::Crypto,
-            );
-
-            let price_increment = nautilus_model::types::Price::from("0.00000001");
-            let size_increment = nautilus_model::types::Quantity::from("0.00000001");
-
-            let instrument =
-                InstrumentAny::CurrencyPair(nautilus_model::instruments::CurrencyPair::new(
-                    instrument_id,
-                    symbol,
-                    base_currency,
-                    quote_currency,
-                    8, // price_precision
-                    8, // size_precision
-                    price_increment,
-                    size_increment,
-                    None, // price_increment
-                    None, // size_increment
-                    None, // maker_fee
-                    None, // taker_fee
-                    None, // margin_init
-                    None, // margin_maint
-                    None, // lot_size
-                    None, // max_quantity
-                    None, // min_quantity
-                    None, // max_notional
-                    None, // min_notional
-                    None, // max_price
-                    ts_event,
-                    ts_event,
-                ));
-
-            self.cache_instrument(instrument.clone());
-
-            Some(instrument)
-        } else {
-            // For non-vault tokens, log warning and return None
-            tracing::warn!("Instrument not found in cache: {coin}");
-            None
-        }
-    }
-
-    /// Set the account ID for this client.
-    ///
-    /// This is required for generating reports with the correct account ID.
-    pub fn set_account_id(&mut self, account_id: AccountId) {
-        self.account_id = Some(account_id);
-    }
-
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([
             (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
             ("Content-Type".to_string(), "application/json".to_string()),
         ])
+    }
+
+    fn signer_id(&self) -> Result<SignerId> {
+        Ok(SignerId("hyperliquid:default".into()))
+    }
+
+    /// Parse Retry-After from response headers (simplified)
+    fn parse_retry_after_simple(&self, headers: &HashMap<String, String>) -> Option<u64> {
+        let retry_after = headers.get("retry-after")?;
+        retry_after.parse::<u64>().ok().map(|s| s * 1000) // convert seconds to ms
     }
 
     /// Get metadata about available markets.
@@ -461,49 +285,6 @@ impl HyperliquidHttpClient {
         let request = InfoRequest::spot_meta_and_asset_ctxs();
         let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
-    }
-
-    /// Fetch and parse all available instrument definitions from Hyperliquid.
-    pub async fn request_instruments(&self) -> Result<Vec<InstrumentAny>> {
-        let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
-
-        match self.load_perp_meta().await {
-            Ok(perp_meta) => match parse_perp_instruments(&perp_meta) {
-                Ok(perp_defs) => {
-                    tracing::debug!(
-                        count = perp_defs.len(),
-                        "Loaded Hyperliquid perp definitions"
-                    );
-                    defs.extend(perp_defs);
-                }
-                Err(e) => {
-                    tracing::warn!(%e, "Failed to parse Hyperliquid perp instruments");
-                }
-            },
-            Err(e) => {
-                tracing::warn!(%e, "Failed to load Hyperliquid perp metadata");
-            }
-        }
-
-        match self.get_spot_meta().await {
-            Ok(spot_meta) => match parse_spot_instruments(&spot_meta) {
-                Ok(spot_defs) => {
-                    tracing::debug!(
-                        count = spot_defs.len(),
-                        "Loaded Hyperliquid spot definitions"
-                    );
-                    defs.extend(spot_defs);
-                }
-                Err(e) => {
-                    tracing::warn!(%e, "Failed to parse Hyperliquid spot instruments");
-                }
-            },
-            Err(e) => {
-                tracing::warn!(%e, "Failed to load Hyperliquid spot metadata");
-            }
-        }
-
-        Ok(instruments_from_defs_owned(defs))
     }
 
     pub(crate) async fn load_perp_meta(&self) -> Result<PerpMeta> {
@@ -646,11 +427,8 @@ impl HyperliquidHttpClient {
         }
     }
 
-    /// Raw HTTP roundtrip for info requests - returns the original HttpResponse
-    async fn http_roundtrip_info(
-        &self,
-        request: &InfoRequest,
-    ) -> Result<nautilus_network::http::HttpResponse> {
+    /// Raw HTTP roundtrip for info requests - returns the original HttpResponse.
+    async fn http_roundtrip_info(&self, request: &InfoRequest) -> Result<HttpResponse> {
         let url = &self.base_info;
         let body = serde_json::to_value(request).map_err(Error::Serde)?;
         let body_bytes = serde_json::to_string(&body)
@@ -670,14 +448,6 @@ impl HyperliquidHttpClient {
             .await
             .map_err(Error::from_http_client)
     }
-
-    /// Parse Retry-After from response headers (simplified)
-    fn parse_retry_after_simple(&self, headers: &HashMap<String, String>) -> Option<u64> {
-        let retry_after = headers.get("retry-after")?;
-        retry_after.parse::<u64>().ok().map(|s| s * 1000) // convert seconds to ms
-    }
-
-    // ---------------- EXCHANGE ENDPOINTS ---------------------------------------
 
     /// Send a signed action to the exchange.
     pub async fn post_action(
@@ -878,464 +648,9 @@ impl HyperliquidHttpClient {
 
     /// Submit a single order to the Hyperliquid exchange.
     ///
-    /// Uses the existing order conversion logic from `common::parse::order_to_hyperliquid_request`
-    /// to avoid code duplication and ensure consistency.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing, order validation fails, serialization fails,
-    /// or the API returns an error.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn submit_order(
-        &self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        order_side: OrderSide,
-        order_type: OrderType,
-        quantity: Quantity,
-        time_in_force: TimeInForce,
-        price: Option<Price>,
-        trigger_price: Option<Price>,
-        post_only: bool,
-        reduce_only: bool,
-    ) -> Result<OrderStatusReport> {
-        let symbol = instrument_id.symbol.as_str();
-        let asset = extract_asset_id_from_symbol(symbol)
-            .map_err(|e| Error::bad_request(format!("Failed to extract asset ID: {e}")))?;
-
-        let is_buy = matches!(order_side, OrderSide::Buy);
-
-        // Convert price to decimal
-        let price_decimal = match price {
-            Some(px) => Decimal::from_str(&px.to_string())
-                .map_err(|e| Error::bad_request(format!("Failed to convert price: {e}")))?,
-            None => {
-                if matches!(
-                    order_type,
-                    OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched
-                ) {
-                    Decimal::ZERO
-                } else {
-                    return Err(Error::bad_request("Limit orders require a price"));
-                }
-            }
-        };
-
-        // Convert quantity to decimal
-        let size_decimal = Decimal::from_str(&quantity.to_string())
-            .map_err(|e| Error::bad_request(format!("Failed to convert quantity: {e}")))?;
-
-        // Determine order kind based on order type
-        let kind = match order_type {
-            OrderType::Market => HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams {
-                    tif: HyperliquidExecTif::Ioc,
-                },
-            },
-            OrderType::Limit => {
-                let tif = if post_only {
-                    HyperliquidExecTif::Alo
-                } else {
-                    match time_in_force {
-                        TimeInForce::Gtc => HyperliquidExecTif::Gtc,
-                        TimeInForce::Ioc => HyperliquidExecTif::Ioc,
-                        TimeInForce::Fok => HyperliquidExecTif::Ioc, // Hyperliquid doesn't have FOK
-                        TimeInForce::Day
-                        | TimeInForce::Gtd
-                        | TimeInForce::AtTheOpen
-                        | TimeInForce::AtTheClose => {
-                            return Err(Error::bad_request(format!(
-                                "Time in force {:?} not supported",
-                                time_in_force
-                            )));
-                        }
-                    }
-                };
-                HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams { tif },
-                }
-            }
-            OrderType::StopMarket
-            | OrderType::StopLimit
-            | OrderType::MarketIfTouched
-            | OrderType::LimitIfTouched => {
-                if let Some(trig_px) = trigger_price {
-                    let trigger_price_decimal =
-                        Decimal::from_str(&trig_px.to_string()).map_err(|e| {
-                            Error::bad_request(format!("Failed to convert trigger price: {e}"))
-                        })?;
-
-                    // Determine TP/SL type based on order type
-                    // StopMarket/StopLimit are always Sl (protective stops)
-                    // MarketIfTouched/LimitIfTouched are always Tp (profit-taking/entry)
-                    let tpsl = match order_type {
-                        OrderType::StopMarket | OrderType::StopLimit => HyperliquidExecTpSl::Sl,
-                        OrderType::MarketIfTouched | OrderType::LimitIfTouched => {
-                            HyperliquidExecTpSl::Tp
-                        }
-                        _ => unreachable!(),
-                    };
-
-                    let is_market = matches!(
-                        order_type,
-                        OrderType::StopMarket | OrderType::MarketIfTouched
-                    );
-
-                    HyperliquidExecOrderKind::Trigger {
-                        trigger: HyperliquidExecTriggerParams {
-                            is_market,
-                            trigger_px: trigger_price_decimal,
-                            tpsl,
-                        },
-                    }
-                } else {
-                    return Err(Error::bad_request("Trigger orders require a trigger price"));
-                }
-            }
-            _ => {
-                return Err(Error::bad_request(format!(
-                    "Order type {:?} not supported",
-                    order_type
-                )));
-            }
-        };
-
-        // Build the order request
-        let hyperliquid_order =
-            HyperliquidExecPlaceOrderRequest {
-                asset,
-                is_buy,
-                price: price_decimal,
-                size: size_decimal,
-                reduce_only,
-                kind,
-                cloid: Some(Cloid::from_hex(client_order_id).map_err(|e| {
-                    Error::bad_request(format!("Invalid client order ID format: {e}"))
-                })?),
-            };
-
-        // Create action
-        let action = HyperliquidExecAction::Order {
-            orders: vec![hyperliquid_order],
-            grouping: HyperliquidExecGrouping::Na,
-            builder: None,
-        };
-
-        // Submit to exchange
-        let response = self.post_action_exec(&action).await?;
-
-        // Parse response
-        match response {
-            HyperliquidExchangeResponse::Status {
-                status,
-                response: response_data,
-            } if status == "ok" => {
-                let data_value = if let Some(data) = response_data.get("data") {
-                    data.clone()
-                } else {
-                    response_data
-                };
-
-                let order_response: HyperliquidExecOrderResponseData =
-                    serde_json::from_value(data_value).map_err(|e| {
-                        Error::bad_request(format!("Failed to parse order response: {e}"))
-                    })?;
-
-                let order_status = order_response
-                    .statuses
-                    .first()
-                    .ok_or_else(|| Error::bad_request("No order status in response"))?;
-
-                let symbol_str = instrument_id.symbol.as_str();
-                let asset_str = symbol_str
-                    .trim_end_matches("-PERP")
-                    .trim_end_matches("-USD");
-
-                let product_type = HyperliquidProductType::from_symbol(symbol_str).ok();
-                let instrument = self
-                    .get_or_create_instrument(&Ustr::from(asset_str), product_type)
-                    .ok_or_else(|| {
-                        Error::bad_request(format!("Instrument not found for {asset_str}"))
-                    })?;
-
-                let account_id = self
-                    .account_id
-                    .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-                let ts_init = nautilus_core::UnixNanos::default();
-
-                match order_status {
-                    HyperliquidExecOrderStatus::Resting { resting } => self
-                        .create_order_status_report(
-                            instrument_id,
-                            Some(client_order_id),
-                            nautilus_model::identifiers::VenueOrderId::new(resting.oid.to_string()),
-                            order_side,
-                            order_type,
-                            quantity,
-                            time_in_force,
-                            price,
-                            trigger_price,
-                            nautilus_model::enums::OrderStatus::Accepted,
-                            nautilus_model::types::Quantity::new(0.0, instrument.size_precision()),
-                            &instrument,
-                            account_id,
-                            ts_init,
-                        ),
-                    HyperliquidExecOrderStatus::Filled { filled } => {
-                        let filled_qty = nautilus_model::types::Quantity::new(
-                            filled.total_sz.to_string().parse::<f64>().unwrap_or(0.0),
-                            instrument.size_precision(),
-                        );
-                        self.create_order_status_report(
-                            instrument_id,
-                            Some(client_order_id),
-                            nautilus_model::identifiers::VenueOrderId::new(filled.oid.to_string()),
-                            order_side,
-                            order_type,
-                            quantity,
-                            time_in_force,
-                            price,
-                            trigger_price,
-                            nautilus_model::enums::OrderStatus::Filled,
-                            filled_qty,
-                            &instrument,
-                            account_id,
-                            ts_init,
-                        )
-                    }
-                    HyperliquidExecOrderStatus::Error { error } => {
-                        Err(Error::bad_request(format!("Order rejected: {error}")))
-                    }
-                }
-            }
-            HyperliquidExchangeResponse::Error { error } => Err(Error::bad_request(format!(
-                "Order submission failed: {error}"
-            ))),
-            _ => Err(Error::bad_request("Unexpected response format")),
-        }
+    pub async fn rest_limiter_snapshot(&self) -> RateLimitSnapshot {
+        self.rest_limiter.snapshot().await
     }
-
-    /// Submit an order using an OrderAny object.
-    ///
-    /// This is a convenience method that wraps submit_order.
-    pub async fn submit_order_from_order_any(&self, order: &OrderAny) -> Result<OrderStatusReport> {
-        self.submit_order(
-            order.instrument_id(),
-            order.client_order_id(),
-            order.order_side(),
-            order.order_type(),
-            order.quantity(),
-            order.time_in_force(),
-            order.price(),
-            order.trigger_price(),
-            order.is_post_only(),
-            order.is_reduce_only(),
-        )
-        .await
-    }
-
-    /// Create an OrderStatusReport from order submission details.
-    #[allow(clippy::too_many_arguments)]
-    fn create_order_status_report(
-        &self,
-        instrument_id: nautilus_model::identifiers::InstrumentId,
-        client_order_id: Option<nautilus_model::identifiers::ClientOrderId>,
-        venue_order_id: nautilus_model::identifiers::VenueOrderId,
-        order_side: nautilus_model::enums::OrderSide,
-        order_type: nautilus_model::enums::OrderType,
-        quantity: nautilus_model::types::Quantity,
-        time_in_force: nautilus_model::enums::TimeInForce,
-        price: Option<nautilus_model::types::Price>,
-        trigger_price: Option<nautilus_model::types::Price>,
-        order_status: nautilus_model::enums::OrderStatus,
-        filled_qty: nautilus_model::types::Quantity,
-        _instrument: &nautilus_model::instruments::InstrumentAny,
-        account_id: nautilus_model::identifiers::AccountId,
-        ts_init: nautilus_core::UnixNanos,
-    ) -> Result<OrderStatusReport> {
-        let clock = get_atomic_clock_realtime();
-        let ts_accepted = clock.get_time_ns();
-        let ts_last = ts_accepted;
-        let report_id = UUID4::new();
-
-        let mut report = OrderStatusReport::new(
-            account_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            order_side,
-            order_type,
-            time_in_force,
-            order_status,
-            quantity,
-            filled_qty,
-            ts_accepted,
-            ts_last,
-            ts_init,
-            Some(report_id),
-        );
-
-        // Add price if present
-        if let Some(px) = price {
-            report = report.with_price(px);
-        }
-
-        // Add trigger price if present
-        if let Some(trig_px) = trigger_price {
-            report = report
-                .with_trigger_price(trig_px)
-                .with_trigger_type(nautilus_model::enums::TriggerType::Default);
-        }
-
-        Ok(report)
-    }
-
-    /// Submit multiple orders to the Hyperliquid exchange in a single request.
-    ///
-    /// Uses the existing order conversion logic from `common::parse::orders_to_hyperliquid_requests`
-    /// to avoid code duplication and ensure consistency.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials are missing, order validation fails, serialization fails,
-    /// or the API returns an error.
-    pub async fn submit_orders(&self, orders: &[&OrderAny]) -> Result<Vec<OrderStatusReport>> {
-        // Use the existing parsing function from common::parse
-        let hyperliquid_orders = orders_to_hyperliquid_requests(orders)
-            .map_err(|e| Error::bad_request(format!("Failed to convert orders: {e}")))?;
-
-        // Create typed action using HyperliquidExecAction (same as working Rust binary)
-        let action = HyperliquidExecAction::Order {
-            orders: hyperliquid_orders,
-            grouping: HyperliquidExecGrouping::Na,
-            builder: None,
-        };
-
-        // Submit to exchange using the typed exec endpoint
-        let response = self.post_action_exec(&action).await?;
-
-        // Parse the response to extract order statuses
-        match response {
-            HyperliquidExchangeResponse::Status {
-                status,
-                response: response_data,
-            } if status == "ok" => {
-                // Extract the 'data' field from the response if it exists (new format)
-                // Otherwise use response_data directly (old format)
-                let data_value = if let Some(data) = response_data.get("data") {
-                    data.clone()
-                } else {
-                    response_data
-                };
-
-                // Parse the response data to extract order statuses
-                let order_response: HyperliquidExecOrderResponseData =
-                    serde_json::from_value(data_value).map_err(|e| {
-                        Error::bad_request(format!("Failed to parse order response: {e}"))
-                    })?;
-
-                let account_id = self
-                    .account_id
-                    .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-                let ts_init = nautilus_core::UnixNanos::default();
-
-                // Validate we have the same number of statuses as orders submitted
-                if order_response.statuses.len() != orders.len() {
-                    return Err(Error::bad_request(format!(
-                        "Mismatch between submitted orders ({}) and response statuses ({})",
-                        orders.len(),
-                        order_response.statuses.len()
-                    )));
-                }
-
-                let mut reports = Vec::new();
-
-                // Create OrderStatusReport for each order
-                for (order, order_status) in orders.iter().zip(order_response.statuses.iter()) {
-                    // Extract asset from instrument symbol
-                    let instrument_id = order.instrument_id();
-                    let symbol = instrument_id.symbol.as_str();
-                    let asset = symbol.trim_end_matches("-PERP").trim_end_matches("-USD");
-
-                    let product_type = HyperliquidProductType::from_symbol(symbol).ok();
-                    let instrument = self
-                        .get_or_create_instrument(&Ustr::from(asset), product_type)
-                        .ok_or_else(|| {
-                            Error::bad_request(format!("Instrument not found for {asset}"))
-                        })?;
-
-                    // Create OrderStatusReport based on the order status
-                    let report = match order_status {
-                        HyperliquidExecOrderStatus::Resting { resting } => {
-                            // Order is resting on the order book
-                            self.create_order_status_report(
-                                order.instrument_id(),
-                                Some(order.client_order_id()),
-                                nautilus_model::identifiers::VenueOrderId::new(
-                                    resting.oid.to_string(),
-                                ),
-                                order.order_side(),
-                                order.order_type(),
-                                order.quantity(),
-                                order.time_in_force(),
-                                order.price(),
-                                order.trigger_price(),
-                                nautilus_model::enums::OrderStatus::Accepted,
-                                nautilus_model::types::Quantity::new(
-                                    0.0,
-                                    instrument.size_precision(),
-                                ),
-                                &instrument,
-                                account_id,
-                                ts_init,
-                            )?
-                        }
-                        HyperliquidExecOrderStatus::Filled { filled } => {
-                            // Order was filled immediately
-                            let filled_qty = nautilus_model::types::Quantity::new(
-                                filled.total_sz.to_string().parse::<f64>().unwrap_or(0.0),
-                                instrument.size_precision(),
-                            );
-                            self.create_order_status_report(
-                                order.instrument_id(),
-                                Some(order.client_order_id()),
-                                nautilus_model::identifiers::VenueOrderId::new(
-                                    filled.oid.to_string(),
-                                ),
-                                order.order_side(),
-                                order.order_type(),
-                                order.quantity(),
-                                order.time_in_force(),
-                                order.price(),
-                                order.trigger_price(),
-                                nautilus_model::enums::OrderStatus::Filled,
-                                filled_qty,
-                                &instrument,
-                                account_id,
-                                ts_init,
-                            )?
-                        }
-                        HyperliquidExecOrderStatus::Error { error } => {
-                            return Err(Error::bad_request(format!(
-                                "Order {} rejected: {error}",
-                                order.client_order_id()
-                            )));
-                        }
-                    };
-
-                    reports.push(report);
-                }
-
-                Ok(reports)
-            }
-            HyperliquidExchangeResponse::Error { error } => Err(Error::bad_request(format!(
-                "Order submission failed: {error}"
-            ))),
-            _ => Err(Error::bad_request("Unexpected response format")),
-        }
-    }
-
-    /// Raw HTTP roundtrip for exchange requests
     async fn http_roundtrip_exchange<T>(
         &self,
         request: &HyperliquidExchangeRequest<T>,
@@ -1362,6 +677,409 @@ impl HyperliquidHttpClient {
             .map_err(Error::from_http_client)?;
 
         Ok(response)
+    }
+}
+
+/// Provides a high-level HTTP client for the [Hyperliquid](https://hyperliquid.xyz/) REST API.
+///
+/// This domain client wraps [`HyperliquidRawHttpClient`] and provides methods that work
+/// with Nautilus domain types. It maintains an instrument cache and handles conversions
+/// between Hyperliquid API responses and Nautilus domain models.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
+pub struct HyperliquidHttpClient {
+    pub(crate) inner: Arc<HyperliquidRawHttpClient>,
+    instruments: Arc<RwLock<AHashMap<Ustr, InstrumentAny>>>,
+    instruments_by_coin: Arc<RwLock<AHashMap<(Ustr, HyperliquidProductType), InstrumentAny>>>,
+    account_id: Option<AccountId>,
+}
+
+impl Default for HyperliquidHttpClient {
+    fn default() -> Self {
+        Self::new(true, None, None).expect("Failed to create default Hyperliquid HTTP client")
+    }
+}
+
+impl HyperliquidHttpClient {
+    /// Creates a new [`HyperliquidHttpClient`] for public endpoints only.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new(
+        is_testnet: bool,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> std::result::Result<Self, HttpClientError> {
+        let raw_client = HyperliquidRawHttpClient::new(is_testnet, timeout_secs, proxy_url)?;
+        Ok(Self {
+            inner: Arc::new(raw_client),
+            instruments: Arc::new(RwLock::new(AHashMap::new())),
+            instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
+            account_id: None,
+        })
+    }
+
+    /// Creates a new [`HyperliquidHttpClient`] configured with credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn with_credentials(
+        secrets: &Secrets,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> std::result::Result<Self, HttpClientError> {
+        let raw_client =
+            HyperliquidRawHttpClient::with_credentials(secrets, timeout_secs, proxy_url)?;
+        Ok(Self {
+            inner: Arc::new(raw_client),
+            instruments: Arc::new(RwLock::new(AHashMap::new())),
+            instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
+            account_id: None,
+        })
+    }
+
+    /// Creates an authenticated client from environment variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Auth`] if required environment variables are not set.
+    pub fn from_env() -> Result<Self> {
+        let raw_client = HyperliquidRawHttpClient::from_env()?;
+        Ok(Self {
+            inner: Arc::new(raw_client),
+            instruments: Arc::new(RwLock::new(AHashMap::new())),
+            instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
+            account_id: None,
+        })
+    }
+
+    /// Creates a new [`HyperliquidHttpClient`] configured with explicit credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Auth`] if the private key is invalid or cannot be parsed.
+    pub fn from_credentials(
+        private_key: &str,
+        vault_address: Option<&str>,
+        is_testnet: bool,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> Result<Self> {
+        let raw_client = HyperliquidRawHttpClient::from_credentials(
+            private_key,
+            vault_address,
+            is_testnet,
+            timeout_secs,
+            proxy_url,
+        )?;
+        Ok(Self {
+            inner: Arc::new(raw_client),
+            instruments: Arc::new(RwLock::new(AHashMap::new())),
+            instruments_by_coin: Arc::new(RwLock::new(AHashMap::new())),
+            account_id: None,
+        })
+    }
+
+    /// Returns whether this client is configured for testnet.
+    #[must_use]
+    pub fn is_testnet(&self) -> bool {
+        self.inner.is_testnet()
+    }
+
+    /// Gets the user address derived from the private key (if client has credentials).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Auth`] if the client has no signer configured.
+    pub fn get_user_address(&self) -> Result<String> {
+        self.inner.get_user_address()
+    }
+
+    /// Caches a single instrument.
+    ///
+    /// This is required for parsing orders, fills, and positions into reports.
+    /// Any existing instrument with the same symbol will be replaced.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument lock cannot be acquired.
+    pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        let full_symbol = instrument.symbol().inner();
+        let coin = instrument.raw_symbol().inner();
+
+        {
+            let mut instruments = self
+                .instruments
+                .write()
+                .expect("Failed to acquire write lock");
+
+            instruments.insert(full_symbol, instrument.clone());
+
+            // HTTP responses only include coins, external code may lookup by coin
+            instruments.insert(coin, instrument.clone());
+        }
+
+        // Composite key allows disambiguating same coin across PERP and SPOT
+        if let Ok(product_type) = HyperliquidProductType::from_symbol(full_symbol.as_str()) {
+            let mut instruments_by_coin = self
+                .instruments_by_coin
+                .write()
+                .expect("Failed to acquire write lock");
+            instruments_by_coin.insert((coin, product_type), instrument);
+        } else {
+            tracing::warn!(
+                "Unable to determine product type for symbol: {}",
+                full_symbol
+            );
+        }
+    }
+
+    /// Get an instrument from cache, or create a synthetic one for vault tokens.
+    ///
+    /// Vault tokens (starting with "vntls:") are not available in the standard spotMeta API.
+    /// This method creates synthetic CurrencyPair instruments for vault tokens on-the-fly
+    /// to allow order/fill/position parsing to continue.
+    ///
+    /// For non-vault tokens that are not in cache, returns None and logs a warning.
+    /// This can happen if instruments weren't loaded properly or if there are new instruments
+    /// that weren't present during initialization.
+    ///
+    /// The synthetic instruments use reasonable defaults:
+    /// - Quote currency: USDC (most common quote for vault tokens)
+    /// - Price/size decimals: 8 (standard precision)
+    /// - Price increment: 0.00000001
+    /// - Size increment: 0.00000001
+    fn get_or_create_instrument(
+        &self,
+        coin: &Ustr,
+        product_type: Option<HyperliquidProductType>,
+    ) -> Option<InstrumentAny> {
+        if let Some(pt) = product_type {
+            let instruments_by_coin = self
+                .instruments_by_coin
+                .read()
+                .expect("Failed to acquire read lock");
+
+            if let Some(instrument) = instruments_by_coin.get(&(*coin, pt)) {
+                return Some(instrument.clone());
+            }
+        }
+
+        // HTTP responses lack product type context, try PERP then SPOT
+        if product_type.is_none() {
+            let instruments_by_coin = self
+                .instruments_by_coin
+                .read()
+                .expect("Failed to acquire read lock");
+
+            if let Some(instrument) =
+                instruments_by_coin.get(&(*coin, HyperliquidProductType::Perp))
+            {
+                return Some(instrument.clone());
+            }
+            if let Some(instrument) =
+                instruments_by_coin.get(&(*coin, HyperliquidProductType::Spot))
+            {
+                return Some(instrument.clone());
+            }
+        }
+
+        // Vault tokens aren't in standard API, create synthetic instruments
+        if coin.as_str().starts_with("vntls:") {
+            tracing::info!("Creating synthetic instrument for vault token: {coin}");
+
+            let clock = nautilus_core::time::get_atomic_clock_realtime();
+            let ts_event = clock.get_time_ns();
+
+            // Create synthetic vault token instrument
+            let symbol_str = format!("{coin}-USDC-SPOT");
+            let symbol = nautilus_model::identifiers::Symbol::new(&symbol_str);
+            let venue = *HYPERLIQUID_VENUE;
+            let instrument_id = nautilus_model::identifiers::InstrumentId::new(symbol, venue);
+
+            // Create currencies
+            let base_currency = nautilus_model::types::Currency::new(
+                coin.as_str(),
+                8, // precision
+                0, // ISO code (not applicable)
+                coin.as_str(),
+                nautilus_model::enums::CurrencyType::Crypto,
+            );
+
+            let quote_currency = nautilus_model::types::Currency::new(
+                "USDC",
+                6, // USDC standard precision
+                0,
+                "USDC",
+                nautilus_model::enums::CurrencyType::Crypto,
+            );
+
+            let price_increment = nautilus_model::types::Price::from("0.00000001");
+            let size_increment = nautilus_model::types::Quantity::from("0.00000001");
+
+            let instrument =
+                InstrumentAny::CurrencyPair(nautilus_model::instruments::CurrencyPair::new(
+                    instrument_id,
+                    symbol,
+                    base_currency,
+                    quote_currency,
+                    8, // price_precision
+                    8, // size_precision
+                    price_increment,
+                    size_increment,
+                    None, // price_increment
+                    None, // size_increment
+                    None, // maker_fee
+                    None, // taker_fee
+                    None, // margin_init
+                    None, // margin_maint
+                    None, // lot_size
+                    None, // max_quantity
+                    None, // min_quantity
+                    None, // max_notional
+                    None, // min_notional
+                    None, // max_price
+                    ts_event,
+                    ts_event,
+                ));
+
+            self.cache_instrument(instrument.clone());
+
+            Some(instrument)
+        } else {
+            // For non-vault tokens, log warning and return None
+            tracing::warn!("Instrument not found in cache: {coin}");
+            None
+        }
+    }
+
+    /// Set the account ID for this client.
+    ///
+    /// This is required for generating reports with the correct account ID.
+    pub fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = Some(account_id);
+    }
+
+    /// Fetch and parse all available instrument definitions from Hyperliquid.
+    pub async fn request_instruments(&self) -> Result<Vec<InstrumentAny>> {
+        let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
+
+        match self.inner.load_perp_meta().await {
+            Ok(perp_meta) => match parse_perp_instruments(&perp_meta) {
+                Ok(perp_defs) => {
+                    tracing::debug!(
+                        count = perp_defs.len(),
+                        "Loaded Hyperliquid perp definitions"
+                    );
+                    defs.extend(perp_defs);
+                }
+                Err(e) => {
+                    tracing::warn!(%e, "Failed to parse Hyperliquid perp instruments");
+                }
+            },
+            Err(e) => {
+                tracing::warn!(%e, "Failed to load Hyperliquid perp metadata");
+            }
+        }
+
+        match self.inner.get_spot_meta().await {
+            Ok(spot_meta) => match parse_spot_instruments(&spot_meta) {
+                Ok(spot_defs) => {
+                    tracing::debug!(
+                        count = spot_defs.len(),
+                        "Loaded Hyperliquid spot definitions"
+                    );
+                    defs.extend(spot_defs);
+                }
+                Err(e) => {
+                    tracing::warn!(%e, "Failed to parse Hyperliquid spot instruments");
+                }
+            },
+            Err(e) => {
+                tracing::warn!(%e, "Failed to load Hyperliquid spot metadata");
+            }
+        }
+
+        Ok(instruments_from_defs_owned(defs))
+    }
+
+    /// Get perpetuals metadata (internal helper).
+    pub(crate) async fn load_perp_meta(&self) -> Result<PerpMeta> {
+        self.inner.load_perp_meta().await
+    }
+
+    /// Get spot metadata (internal helper).
+    pub(crate) async fn get_spot_meta(&self) -> Result<SpotMeta> {
+        self.inner.get_spot_meta().await
+    }
+
+    /// Get L2 order book for a coin.
+    pub async fn info_l2_book(&self, coin: &str) -> Result<HyperliquidL2Book> {
+        self.inner.info_l2_book(coin).await
+    }
+
+    /// Get user fills (trading history).
+    pub async fn info_user_fills(&self, user: &str) -> Result<HyperliquidFills> {
+        self.inner.info_user_fills(user).await
+    }
+
+    /// Get order status for a user.
+    pub async fn info_order_status(&self, user: &str, oid: u64) -> Result<HyperliquidOrderStatus> {
+        self.inner.info_order_status(user, oid).await
+    }
+
+    /// Get all open orders for a user.
+    pub async fn info_open_orders(&self, user: &str) -> Result<Value> {
+        self.inner.info_open_orders(user).await
+    }
+
+    /// Get frontend open orders (includes more detail) for a user.
+    pub async fn info_frontend_open_orders(&self, user: &str) -> Result<Value> {
+        self.inner.info_frontend_open_orders(user).await
+    }
+
+    /// Get clearinghouse state (balances, positions, margin) for a user.
+    pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
+        self.inner.info_clearinghouse_state(user).await
+    }
+
+    /// Get candle/bar data for a coin.
+    pub async fn info_candle_snapshot(
+        &self,
+        coin: &str,
+        interval: HyperliquidBarInterval,
+        start_time: u64,
+        end_time: u64,
+    ) -> Result<HyperliquidCandleSnapshot> {
+        self.inner
+            .info_candle_snapshot(coin, interval, start_time, end_time)
+            .await
+    }
+
+    /// Post an action to the exchange endpoint (low-level delegation).
+    pub async fn post_action(
+        &self,
+        action: &ExchangeAction,
+    ) -> Result<HyperliquidExchangeResponse> {
+        self.inner.post_action(action).await
+    }
+
+    /// Post an execution action (low-level delegation).
+    pub async fn post_action_exec(
+        &self,
+        action: &HyperliquidExecAction,
+    ) -> Result<HyperliquidExchangeResponse> {
+        self.inner.post_action_exec(action).await
+    }
+
+    /// Get metadata about available markets (low-level delegation).
+    pub async fn info_meta(&self) -> Result<HyperliquidMeta> {
+        self.inner.info_meta().await
     }
 
     /// Cancel an order on the Hyperliquid exchange.
@@ -1414,7 +1132,7 @@ impl HyperliquidHttpClient {
         };
 
         // Submit cancellation
-        let response = self.post_action_exec(&action).await?;
+        let response = self.inner.post_action_exec(&action).await?;
 
         // Check response - only check for error status
         match response {
@@ -1721,18 +1439,467 @@ impl HyperliquidHttpClient {
         );
         Ok(bars)
     }
+    /// Uses the existing order conversion logic from `common::parse::order_to_hyperliquid_request`
+    /// to avoid code duplication and ensure consistency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, order validation fails, serialization fails,
+    /// or the API returns an error.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_order(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        post_only: bool,
+        reduce_only: bool,
+    ) -> Result<OrderStatusReport> {
+        let symbol = instrument_id.symbol.as_str();
+        let asset = extract_asset_id_from_symbol(symbol)
+            .map_err(|e| Error::bad_request(format!("Failed to extract asset ID: {e}")))?;
 
-    /// Best-effort gauge for diagnostics/metrics
-    pub async fn rest_limiter_snapshot(&self) -> RateLimitSnapshot {
-        self.rest_limiter.snapshot().await
+        let is_buy = matches!(order_side, OrderSide::Buy);
+
+        // Convert price to decimal
+        let price_decimal = match price {
+            Some(px) => Decimal::from_str(&px.to_string())
+                .map_err(|e| Error::bad_request(format!("Failed to convert price: {e}")))?,
+            None => {
+                if matches!(
+                    order_type,
+                    OrderType::Market | OrderType::StopMarket | OrderType::MarketIfTouched
+                ) {
+                    Decimal::ZERO
+                } else {
+                    return Err(Error::bad_request("Limit orders require a price"));
+                }
+            }
+        };
+
+        // Convert quantity to decimal
+        let size_decimal = Decimal::from_str(&quantity.to_string())
+            .map_err(|e| Error::bad_request(format!("Failed to convert quantity: {e}")))?;
+
+        // Determine order kind based on order type
+        let kind = match order_type {
+            OrderType::Market => HyperliquidExecOrderKind::Limit {
+                limit: HyperliquidExecLimitParams {
+                    tif: HyperliquidExecTif::Ioc,
+                },
+            },
+            OrderType::Limit => {
+                let tif = if post_only {
+                    HyperliquidExecTif::Alo
+                } else {
+                    match time_in_force {
+                        TimeInForce::Gtc => HyperliquidExecTif::Gtc,
+                        TimeInForce::Ioc => HyperliquidExecTif::Ioc,
+                        TimeInForce::Fok => HyperliquidExecTif::Ioc, // Hyperliquid doesn't have FOK
+                        TimeInForce::Day
+                        | TimeInForce::Gtd
+                        | TimeInForce::AtTheOpen
+                        | TimeInForce::AtTheClose => {
+                            return Err(Error::bad_request(format!(
+                                "Time in force {:?} not supported",
+                                time_in_force
+                            )));
+                        }
+                    }
+                };
+                HyperliquidExecOrderKind::Limit {
+                    limit: HyperliquidExecLimitParams { tif },
+                }
+            }
+            OrderType::StopMarket
+            | OrderType::StopLimit
+            | OrderType::MarketIfTouched
+            | OrderType::LimitIfTouched => {
+                if let Some(trig_px) = trigger_price {
+                    let trigger_price_decimal =
+                        Decimal::from_str(&trig_px.to_string()).map_err(|e| {
+                            Error::bad_request(format!("Failed to convert trigger price: {e}"))
+                        })?;
+
+                    // Determine TP/SL type based on order type
+                    // StopMarket/StopLimit are always Sl (protective stops)
+                    // MarketIfTouched/LimitIfTouched are always Tp (profit-taking/entry)
+                    let tpsl = match order_type {
+                        OrderType::StopMarket | OrderType::StopLimit => HyperliquidExecTpSl::Sl,
+                        OrderType::MarketIfTouched | OrderType::LimitIfTouched => {
+                            HyperliquidExecTpSl::Tp
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    let is_market = matches!(
+                        order_type,
+                        OrderType::StopMarket | OrderType::MarketIfTouched
+                    );
+
+                    HyperliquidExecOrderKind::Trigger {
+                        trigger: HyperliquidExecTriggerParams {
+                            is_market,
+                            trigger_px: trigger_price_decimal,
+                            tpsl,
+                        },
+                    }
+                } else {
+                    return Err(Error::bad_request("Trigger orders require a trigger price"));
+                }
+            }
+            _ => {
+                return Err(Error::bad_request(format!(
+                    "Order type {:?} not supported",
+                    order_type
+                )));
+            }
+        };
+
+        // Build the order request
+        let hyperliquid_order =
+            HyperliquidExecPlaceOrderRequest {
+                asset,
+                is_buy,
+                price: price_decimal,
+                size: size_decimal,
+                reduce_only,
+                kind,
+                cloid: Some(Cloid::from_hex(client_order_id).map_err(|e| {
+                    Error::bad_request(format!("Invalid client order ID format: {e}"))
+                })?),
+            };
+
+        // Create action
+        let action = HyperliquidExecAction::Order {
+            orders: vec![hyperliquid_order],
+            grouping: HyperliquidExecGrouping::Na,
+            builder: None,
+        };
+
+        // Submit to exchange
+        let response = self.inner.post_action_exec(&action).await?;
+
+        // Parse response
+        match response {
+            HyperliquidExchangeResponse::Status {
+                status,
+                response: response_data,
+            } if status == "ok" => {
+                let data_value = if let Some(data) = response_data.get("data") {
+                    data.clone()
+                } else {
+                    response_data
+                };
+
+                let order_response: HyperliquidExecOrderResponseData =
+                    serde_json::from_value(data_value).map_err(|e| {
+                        Error::bad_request(format!("Failed to parse order response: {e}"))
+                    })?;
+
+                let order_status = order_response
+                    .statuses
+                    .first()
+                    .ok_or_else(|| Error::bad_request("No order status in response"))?;
+
+                let symbol_str = instrument_id.symbol.as_str();
+                let asset_str = symbol_str
+                    .trim_end_matches("-PERP")
+                    .trim_end_matches("-USD");
+
+                let product_type = HyperliquidProductType::from_symbol(symbol_str).ok();
+                let instrument = self
+                    .get_or_create_instrument(&Ustr::from(asset_str), product_type)
+                    .ok_or_else(|| {
+                        Error::bad_request(format!("Instrument not found for {asset_str}"))
+                    })?;
+
+                let account_id = self
+                    .account_id
+                    .ok_or_else(|| Error::bad_request("Account ID not set"))?;
+                let ts_init = nautilus_core::UnixNanos::default();
+
+                match order_status {
+                    HyperliquidExecOrderStatus::Resting { resting } => self
+                        .create_order_status_report(
+                            instrument_id,
+                            Some(client_order_id),
+                            nautilus_model::identifiers::VenueOrderId::new(resting.oid.to_string()),
+                            order_side,
+                            order_type,
+                            quantity,
+                            time_in_force,
+                            price,
+                            trigger_price,
+                            nautilus_model::enums::OrderStatus::Accepted,
+                            nautilus_model::types::Quantity::new(0.0, instrument.size_precision()),
+                            &instrument,
+                            account_id,
+                            ts_init,
+                        ),
+                    HyperliquidExecOrderStatus::Filled { filled } => {
+                        let filled_qty = nautilus_model::types::Quantity::new(
+                            filled.total_sz.to_string().parse::<f64>().unwrap_or(0.0),
+                            instrument.size_precision(),
+                        );
+                        self.create_order_status_report(
+                            instrument_id,
+                            Some(client_order_id),
+                            nautilus_model::identifiers::VenueOrderId::new(filled.oid.to_string()),
+                            order_side,
+                            order_type,
+                            quantity,
+                            time_in_force,
+                            price,
+                            trigger_price,
+                            nautilus_model::enums::OrderStatus::Filled,
+                            filled_qty,
+                            &instrument,
+                            account_id,
+                            ts_init,
+                        )
+                    }
+                    HyperliquidExecOrderStatus::Error { error } => {
+                        Err(Error::bad_request(format!("Order rejected: {error}")))
+                    }
+                }
+            }
+            HyperliquidExchangeResponse::Error { error } => Err(Error::bad_request(format!(
+                "Order submission failed: {error}"
+            ))),
+            _ => Err(Error::bad_request("Unexpected response format")),
+        }
     }
 
-    // ---------------- INTERNALS -----------------------------------------------
+    /// Submit an order using an OrderAny object.
+    ///
+    /// This is a convenience method that wraps submit_order.
+    pub async fn submit_order_from_order_any(&self, order: &OrderAny) -> Result<OrderStatusReport> {
+        self.submit_order(
+            order.instrument_id(),
+            order.client_order_id(),
+            order.order_side(),
+            order.order_type(),
+            order.quantity(),
+            order.time_in_force(),
+            order.price(),
+            order.trigger_price(),
+            order.is_post_only(),
+            order.is_reduce_only(),
+        )
+        .await
+    }
 
-    fn signer_id(&self) -> Result<SignerId> {
-        Ok(SignerId("hyperliquid:default".into()))
+    /// Create an OrderStatusReport from order submission details.
+    #[allow(clippy::too_many_arguments)]
+    fn create_order_status_report(
+        &self,
+        instrument_id: nautilus_model::identifiers::InstrumentId,
+        client_order_id: Option<nautilus_model::identifiers::ClientOrderId>,
+        venue_order_id: nautilus_model::identifiers::VenueOrderId,
+        order_side: nautilus_model::enums::OrderSide,
+        order_type: nautilus_model::enums::OrderType,
+        quantity: nautilus_model::types::Quantity,
+        time_in_force: nautilus_model::enums::TimeInForce,
+        price: Option<nautilus_model::types::Price>,
+        trigger_price: Option<nautilus_model::types::Price>,
+        order_status: nautilus_model::enums::OrderStatus,
+        filled_qty: nautilus_model::types::Quantity,
+        _instrument: &nautilus_model::instruments::InstrumentAny,
+        account_id: nautilus_model::identifiers::AccountId,
+        ts_init: nautilus_core::UnixNanos,
+    ) -> Result<OrderStatusReport> {
+        let clock = get_atomic_clock_realtime();
+        let ts_accepted = clock.get_time_ns();
+        let ts_last = ts_accepted;
+        let report_id = UUID4::new();
+
+        let mut report = OrderStatusReport::new(
+            account_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            order_side,
+            order_type,
+            time_in_force,
+            order_status,
+            quantity,
+            filled_qty,
+            ts_accepted,
+            ts_last,
+            ts_init,
+            Some(report_id),
+        );
+
+        // Add price if present
+        if let Some(px) = price {
+            report = report.with_price(px);
+        }
+
+        // Add trigger price if present
+        if let Some(trig_px) = trigger_price {
+            report = report
+                .with_trigger_price(trig_px)
+                .with_trigger_type(nautilus_model::enums::TriggerType::Default);
+        }
+
+        Ok(report)
+    }
+
+    /// Submit multiple orders to the Hyperliquid exchange in a single request.
+    ///
+    /// Uses the existing order conversion logic from `common::parse::orders_to_hyperliquid_requests`
+    /// to avoid code duplication and ensure consistency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, order validation fails, serialization fails,
+    /// or the API returns an error.
+    pub async fn submit_orders(&self, orders: &[&OrderAny]) -> Result<Vec<OrderStatusReport>> {
+        // Use the existing parsing function from common::parse
+        let hyperliquid_orders = orders_to_hyperliquid_requests(orders)
+            .map_err(|e| Error::bad_request(format!("Failed to convert orders: {e}")))?;
+
+        // Create typed action using HyperliquidExecAction (same as working Rust binary)
+        let action = HyperliquidExecAction::Order {
+            orders: hyperliquid_orders,
+            grouping: HyperliquidExecGrouping::Na,
+            builder: None,
+        };
+
+        // Submit to exchange using the typed exec endpoint
+        let response = self.inner.post_action_exec(&action).await?;
+
+        // Parse the response to extract order statuses
+        match response {
+            HyperliquidExchangeResponse::Status {
+                status,
+                response: response_data,
+            } if status == "ok" => {
+                // Extract the 'data' field from the response if it exists (new format)
+                // Otherwise use response_data directly (old format)
+                let data_value = if let Some(data) = response_data.get("data") {
+                    data.clone()
+                } else {
+                    response_data
+                };
+
+                // Parse the response data to extract order statuses
+                let order_response: HyperliquidExecOrderResponseData =
+                    serde_json::from_value(data_value).map_err(|e| {
+                        Error::bad_request(format!("Failed to parse order response: {e}"))
+                    })?;
+
+                let account_id = self
+                    .account_id
+                    .ok_or_else(|| Error::bad_request("Account ID not set"))?;
+                let ts_init = nautilus_core::UnixNanos::default();
+
+                // Validate we have the same number of statuses as orders submitted
+                if order_response.statuses.len() != orders.len() {
+                    return Err(Error::bad_request(format!(
+                        "Mismatch between submitted orders ({}) and response statuses ({})",
+                        orders.len(),
+                        order_response.statuses.len()
+                    )));
+                }
+
+                let mut reports = Vec::new();
+
+                // Create OrderStatusReport for each order
+                for (order, order_status) in orders.iter().zip(order_response.statuses.iter()) {
+                    // Extract asset from instrument symbol
+                    let instrument_id = order.instrument_id();
+                    let symbol = instrument_id.symbol.as_str();
+                    let asset = symbol.trim_end_matches("-PERP").trim_end_matches("-USD");
+
+                    let product_type = HyperliquidProductType::from_symbol(symbol).ok();
+                    let instrument = self
+                        .get_or_create_instrument(&Ustr::from(asset), product_type)
+                        .ok_or_else(|| {
+                            Error::bad_request(format!("Instrument not found for {asset}"))
+                        })?;
+
+                    // Create OrderStatusReport based on the order status
+                    let report = match order_status {
+                        HyperliquidExecOrderStatus::Resting { resting } => {
+                            // Order is resting on the order book
+                            self.create_order_status_report(
+                                order.instrument_id(),
+                                Some(order.client_order_id()),
+                                nautilus_model::identifiers::VenueOrderId::new(
+                                    resting.oid.to_string(),
+                                ),
+                                order.order_side(),
+                                order.order_type(),
+                                order.quantity(),
+                                order.time_in_force(),
+                                order.price(),
+                                order.trigger_price(),
+                                nautilus_model::enums::OrderStatus::Accepted,
+                                nautilus_model::types::Quantity::new(
+                                    0.0,
+                                    instrument.size_precision(),
+                                ),
+                                &instrument,
+                                account_id,
+                                ts_init,
+                            )?
+                        }
+                        HyperliquidExecOrderStatus::Filled { filled } => {
+                            // Order was filled immediately
+                            let filled_qty = nautilus_model::types::Quantity::new(
+                                filled.total_sz.to_string().parse::<f64>().unwrap_or(0.0),
+                                instrument.size_precision(),
+                            );
+                            self.create_order_status_report(
+                                order.instrument_id(),
+                                Some(order.client_order_id()),
+                                nautilus_model::identifiers::VenueOrderId::new(
+                                    filled.oid.to_string(),
+                                ),
+                                order.order_side(),
+                                order.order_type(),
+                                order.quantity(),
+                                order.time_in_force(),
+                                order.price(),
+                                order.trigger_price(),
+                                nautilus_model::enums::OrderStatus::Filled,
+                                filled_qty,
+                                &instrument,
+                                account_id,
+                                ts_init,
+                            )?
+                        }
+                        HyperliquidExecOrderStatus::Error { error } => {
+                            return Err(Error::bad_request(format!(
+                                "Order {} rejected: {error}",
+                                order.client_order_id()
+                            )));
+                        }
+                    };
+
+                    reports.push(report);
+                }
+
+                Ok(reports)
+            }
+            HyperliquidExchangeResponse::Error { error } => Err(Error::bad_request(format!(
+                "Order submission failed: {error}"
+            ))),
+            _ => Err(Error::bad_request("Unexpected response format")),
+        }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

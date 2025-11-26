@@ -76,6 +76,14 @@ echo -e "${YELLOW}Copying generated files to repository...${NC}"
 mkdir -p crates/serialization/generated/capnp
 cp -r "${OUT_DIR}/"* crates/serialization/generated/capnp/
 
+# Format the generated files (requires nightly)
+if rustup toolchain list | grep -q "nightly"; then
+  echo -e "${YELLOW}Formatting generated files...${NC}"
+  make format
+else
+  echo -e "${YELLOW}Warning: Nightly toolchain not found. Skipping formatting.${NC}"
+  echo "Please run 'make format' manually after installing Rust nightly."
+fi
 # Show what was generated
 echo -e "${GREEN}Successfully regenerated Cap'n Proto schemas!${NC}"
 echo ""

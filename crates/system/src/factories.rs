@@ -57,7 +57,7 @@ pub trait DataClientFactory: Send + Sync + Debug {
 ///
 /// Implementations of this trait should create specific execution client types
 /// (e.g., Binance, Bybit, Interactive Brokers) based on the provided configuration.
-pub trait ExecutionClientFactory: Send + Sync + std::fmt::Debug {
+pub trait ExecutionClientFactory: Send + Sync + Debug {
     /// Create a new execution client instance.
     ///
     /// # Errors

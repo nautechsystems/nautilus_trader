@@ -120,7 +120,7 @@ class HistoricInteractiveBrokersClient:
 
     async def request_instruments(
         self,
-        instrument_ids: list[str] | None = None,
+        instrument_ids: list[str | InstrumentId] | None = None,
         contracts: list[IBContract] | None = None,
         instrument_provider_config: InteractiveBrokersInstrumentProviderConfig | None = None,
     ) -> list[Instrument]:
@@ -130,8 +130,9 @@ class HistoricInteractiveBrokersClient:
 
         Parameters
         ----------
-        instrument_ids : list[str], default 'None'
+        instrument_ids : list[str | InstrumentId], default 'None'
             Instrument IDs (e.g. AAPL.NASDAQ) defining which instruments to retrieve.
+            Can be strings or InstrumentId objects.
         contracts : list[IBContract], default 'None'
             IBContracts defining which instruments to retrieve.
         instrument_provider_config : InteractiveBrokersInstrumentProviderConfig
@@ -150,7 +151,14 @@ class HistoricInteractiveBrokersClient:
             self._clock,
             instrument_provider_config,
         )
-        await instrument_provider.load_ids_async((instrument_ids or []) + (contracts or []))
+
+        # Convert string instrument_ids to InstrumentId objects
+        converted_instrument_ids = [
+            InstrumentId.from_str(instrument_id) if isinstance(instrument_id, str) else instrument_id
+            for instrument_id in (instrument_ids or [])
+        ]
+
+        await instrument_provider.load_ids_async(converted_instrument_ids + (contracts or []))
 
         return list(instrument_provider._instruments.values())
 
@@ -162,7 +170,7 @@ class HistoricInteractiveBrokersClient:
         start_date_time: datetime.datetime | None = None,
         duration: str | None = None,
         contracts: list[IBContract] | None = None,
-        instrument_ids: list[str] | None = None,
+        instrument_ids: list[str | InstrumentId] | None = None,
         instrument_provider_config: InteractiveBrokersInstrumentProviderConfig | None = None,
         use_rth: bool = True,
         timeout: int = 120,
@@ -189,8 +197,9 @@ class HistoricInteractiveBrokersClient:
             for seconds, days, weeks, months, or years respectively.
         contracts : list[IBContract], default 'None'
             IBContracts defining which bars to retrieve.
-        instrument_ids : list[str], default 'None'
+        instrument_ids : list[str | InstrumentId], default 'None'
             Instrument IDs (e.g. AAPL.NASDAQ) defining which bars to retrieve.
+            Can be strings or InstrumentId objects.
         instrument_provider_config : InteractiveBrokersInstrumentProviderConfig, optional
             Configuration for the instrument provider to determine venues and handle symbology.
         use_rth : bool, default 'True'
@@ -239,11 +248,11 @@ class HistoricInteractiveBrokersClient:
             instrument_provider_config,
         )
 
-        # Convert instrument_id strings to IBContracts
+        # Convert instrument_id strings or InstrumentId objects to IBContracts
         contracts.extend(
             [
                 await instrument_provider.instrument_id_to_ib_contract(
-                    InstrumentId.from_str(instrument_id),
+                    InstrumentId.from_str(instrument_id) if isinstance(instrument_id, str) else instrument_id,
                 )
                 for instrument_id in instrument_ids
             ],
@@ -303,7 +312,7 @@ class HistoricInteractiveBrokersClient:
         end_date_time: datetime.datetime,
         tz_name: str,
         contracts: list[IBContract] | None = None,
-        instrument_ids: list[str] | None = None,
+        instrument_ids: list[str | InstrumentId] | None = None,
         instrument_provider_config: InteractiveBrokersInstrumentProviderConfig | None = None,
         use_rth: bool = True,
         timeout: int = 60,
@@ -324,8 +333,9 @@ class HistoricInteractiveBrokersClient:
             The timezone to use. (e.g. 'America/New_York', 'UTC')
         contracts : list[IBContract], default 'None'
             IBContracts defining which ticks to retrieve.
-        instrument_ids : list[str], default 'None'
+        instrument_ids : list[str | InstrumentId], default 'None'
             Instrument IDs (e.g. AAPL.NASDAQ) defining which ticks to retrieve.
+            Can be strings or InstrumentId objects.
         instrument_provider_config : InteractiveBrokersInstrumentProviderConfig, optional
             Configuration for the instrument provider to determine venues and handle symbology.
         use_rth : bool, default 'True'
@@ -370,11 +380,11 @@ class HistoricInteractiveBrokersClient:
             instrument_provider_config,
         )
 
-        # Convert instrument_id strings to IBContracts
+        # Convert instrument_id strings or InstrumentId objects to IBContracts
         contracts.extend(
             [
                 await instrument_provider.instrument_id_to_ib_contract(
-                    InstrumentId.from_str(instrument_id),
+                    InstrumentId.from_str(instrument_id) if isinstance(instrument_id, str) else instrument_id,
                 )
                 for instrument_id in instrument_ids
             ],

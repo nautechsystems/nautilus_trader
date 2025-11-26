@@ -2042,7 +2042,7 @@ async fn test_http_network_error_invalid_port() {
     let base_url = "http://127.0.0.1:1".to_string();
 
     let client =
-        OKXRawHttpClient::new(Some(base_url), Some(1), None, None, None, false, None).unwrap();
+        OKXRawHttpClient::new(Some(base_url), Some(1), Some(0), None, None, false, None).unwrap();
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -2221,7 +2221,7 @@ async fn test_http_503_service_unavailable() {
 
     let base_url = format!("http://{}", addr);
     let client =
-        OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
+        OKXRawHttpClient::new(Some(base_url), Some(60), Some(0), None, None, false, None).unwrap();
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -2324,7 +2324,7 @@ async fn test_http_rate_limit_error_different_code() {
         "test_passphrase".to_string(),
         base_url,
         Some(60),
-        None,
+        Some(0),
         None,
         None,
         false,

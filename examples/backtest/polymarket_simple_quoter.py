@@ -131,7 +131,7 @@ async def run_backtest(
     # Configure strategy
     strategy_config = OrderBookImbalanceConfig(
         instrument_id=instrument.id,
-        max_trade_size=Decimal("20"),
+        max_trade_size=Decimal(20),
         min_seconds_between_triggers=1.0,
     )
 

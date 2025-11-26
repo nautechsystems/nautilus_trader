@@ -79,6 +79,7 @@ use crate::{
 
 const DEFAULT_HEARTBEAT_SECS: u64 = 20;
 const WEBSOCKET_AUTH_WINDOW_MS: i64 = 5_000;
+const BATCH_PROCESSING_LIMIT: usize = 20;
 
 /// Type alias for the funding rate cache.
 type FundingCache = Arc<RwLock<AHashMap<Ustr, (Option<String>, Option<String>)>>>;
@@ -100,8 +101,9 @@ pub struct BybitWebSocketClient {
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: SubscriptionState,
     is_authenticated: Arc<AtomicBool>,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     account_id: Option<AccountId>,
+    mm_level: Arc<AtomicU8>,
+    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     funding_cache: FundingCache,
     cancellation_token: CancellationToken,
 }
@@ -136,8 +138,9 @@ impl Clone for BybitWebSocketClient {
             task_handle: None, // Each clone gets its own task handle
             subscriptions: self.subscriptions.clone(),
             is_authenticated: Arc::clone(&self.is_authenticated),
-            instruments_cache: Arc::clone(&self.instruments_cache),
             account_id: self.account_id,
+            mm_level: Arc::clone(&self.mm_level),
+            instruments_cache: Arc::clone(&self.instruments_cache),
             funding_cache: Arc::clone(&self.funding_cache),
             cancellation_token: self.cancellation_token.clone(),
         }
@@ -191,6 +194,7 @@ impl BybitWebSocketClient {
             account_id: None,
             funding_cache: Arc::new(RwLock::new(AHashMap::new())),
             cancellation_token: CancellationToken::new(),
+            mm_level: Arc::new(AtomicU8::new(0)),
         }
     }
 
@@ -229,6 +233,7 @@ impl BybitWebSocketClient {
             account_id: None,
             funding_cache: Arc::new(RwLock::new(AHashMap::new())),
             cancellation_token: CancellationToken::new(),
+            mm_level: Arc::new(AtomicU8::new(0)),
         }
     }
 
@@ -267,6 +272,7 @@ impl BybitWebSocketClient {
             account_id: None,
             funding_cache: Arc::new(RwLock::new(AHashMap::new())),
             cancellation_token: CancellationToken::new(),
+            mm_level: Arc::new(AtomicU8::new(0)),
         }
     }
 
@@ -304,6 +310,7 @@ impl BybitWebSocketClient {
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
+            reconnect_max_attempts: None,
         };
 
         // Retry initial connection with exponential backoff to handle transient DNS/network issues
@@ -412,6 +419,7 @@ impl BybitWebSocketClient {
         let funding_cache = Arc::clone(&self.funding_cache);
         let account_id = self.account_id;
         let product_type = self.product_type;
+        let mm_level = Arc::clone(&self.mm_level);
         let cmd_tx_for_reconnect = cmd_tx.clone();
         let auth_tracker = self.auth_tracker.clone();
         let is_authenticated = Arc::clone(&self.is_authenticated);
@@ -424,6 +432,7 @@ impl BybitWebSocketClient {
                 out_tx.clone(),
                 account_id,
                 product_type,
+                mm_level.clone(),
                 auth_tracker,
                 subscriptions.clone(),
                 funding_cache.clone(),
@@ -825,15 +834,20 @@ impl BybitWebSocketClient {
         tracing::info!("Bybit instrument cache initialized with {count} instruments");
     }
 
+    /// Sets the account ID for account message parsing.
+    pub fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = Some(account_id);
+    }
+
+    /// Sets the account market maker level.
+    pub fn set_mm_level(&self, mm_level: u8) {
+        self.mm_level.store(mm_level, Ordering::Relaxed);
+    }
+
     /// Returns a reference to the instruments cache.
     #[must_use]
     pub fn instruments(&self) -> &Arc<DashMap<Ustr, InstrumentAny>> {
         &self.instruments_cache
-    }
-
-    /// Sets the account ID for account message parsing.
-    pub fn set_account_id(&mut self, account_id: AccountId) {
-        self.account_id = Some(account_id);
     }
 
     /// Returns the account ID if set.
@@ -1208,15 +1222,24 @@ impl BybitWebSocketClient {
         }
 
         if orders.is_empty() {
+            tracing::warn!("Batch place orders called with empty orders list");
             return Ok(());
         }
 
-        if orders.len() > 20 {
-            return Err(BybitWsError::ClientError(
-                "Batch order limit is 20 orders per request".to_string(),
-            ));
+        for chunk in orders.chunks(BATCH_PROCESSING_LIMIT) {
+            self.batch_place_orders_chunk(trader_id, strategy_id, chunk.to_vec())
+                .await?;
         }
 
+        Ok(())
+    }
+
+    async fn batch_place_orders_chunk(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        orders: Vec<BybitWsPlaceOrderParams>,
+    ) -> BybitWsResult<()> {
         let category = orders[0].category;
 
         let batch_req_id = UUID4::new().to_string();
@@ -1226,14 +1249,15 @@ impl BybitWebSocketClient {
         for order in &orders {
             if let Some(order_link_id_str) = &order.order_link_id {
                 let client_order_id = ClientOrderId::from(order_link_id_str.as_str());
+                let cache_key = make_bybit_symbol(order.symbol.as_str(), category);
                 let instrument_id = self
                     .instruments_cache
-                    .get(&order.symbol)
+                    .get(&cache_key)
                     .map(|inst| inst.id())
                     .ok_or_else(|| {
                         BybitWsError::ClientError(format!(
                             "Instrument {} not found in cache",
-                            order.symbol
+                            cache_key
                         ))
                     })?;
                 batch_order_data.push((
@@ -1254,7 +1278,16 @@ impl BybitWebSocketClient {
             }
         }
 
-        // Convert params to batch items (category moved to args level)
+        let mm_level = self.mm_level.load(Ordering::Relaxed);
+        let has_non_post_only = orders
+            .iter()
+            .any(|o| !matches!(o.time_in_force, Some(BybitTimeInForce::PostOnly)));
+        let referer = if has_non_post_only || mm_level == 0 {
+            Some(BYBIT_NAUTILUS_BROKER_ID.to_string())
+        } else {
+            None
+        };
+
         let request_items: Vec<BybitWsBatchPlaceItem> = orders
             .into_iter()
             .map(|order| BybitWsBatchPlaceItem {
@@ -1294,7 +1327,7 @@ impl BybitWebSocketClient {
         let request = BybitWsRequest {
             req_id: Some(batch_req_id),
             op: BybitWsOrderRequestOp::CreateBatch,
-            header: BybitWsHeader::now(),
+            header: BybitWsHeader::with_referer(referer),
             args: vec![args],
         };
 
@@ -1320,12 +1353,25 @@ impl BybitWebSocketClient {
             ));
         }
 
-        if orders.len() > 20 {
-            return Err(BybitWsError::ClientError(
-                "Batch amend limit is 20 orders per request".to_string(),
-            ));
+        if orders.is_empty() {
+            tracing::warn!("Batch amend orders called with empty orders list");
+            return Ok(());
         }
 
+        for chunk in orders.chunks(BATCH_PROCESSING_LIMIT) {
+            self.batch_amend_orders_chunk(trader_id, strategy_id, chunk.to_vec())
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn batch_amend_orders_chunk(
+        &self,
+        #[allow(unused_variables)] trader_id: TraderId,
+        #[allow(unused_variables)] strategy_id: StrategyId,
+        orders: Vec<BybitWsAmendOrderParams>,
+    ) -> BybitWsResult<()> {
         let request = BybitWsRequest {
             req_id: None,
             op: BybitWsOrderRequestOp::AmendBatch,
@@ -1354,15 +1400,21 @@ impl BybitWebSocketClient {
         }
 
         if orders.is_empty() {
+            tracing::warn!("Batch cancel orders called with empty orders list");
             return Ok(());
         }
 
-        if orders.len() > 20 {
-            return Err(BybitWsError::ClientError(
-                "Batch cancel limit is 20 orders per request".to_string(),
-            ));
+        for chunk in orders.chunks(BATCH_PROCESSING_LIMIT) {
+            self.batch_cancel_orders_chunk(chunk.to_vec()).await?;
         }
 
+        Ok(())
+    }
+
+    async fn batch_cancel_orders_chunk(
+        &self,
+        orders: Vec<BybitWsCancelOrderParams>,
+    ) -> BybitWsResult<()> {
         // Extract category from first order (all orders must have the same category)
         let category = orders[0].category;
 
@@ -1430,7 +1482,6 @@ impl BybitWebSocketClient {
             }
         };
 
-        // Determine the base order type for Bybit API
         // For stop/conditional orders, Bybit uses Market/Limit with trigger parameters
         let (bybit_order_type, is_stop_order) = match order_type {
             OrderType::Market => (BybitOrderType::Market, false),
@@ -1444,8 +1495,9 @@ impl BybitWebSocketClient {
             }
         };
 
-        // If post_only is true, use PostOnly time in force, otherwise use provided time_in_force
-        let bybit_tif = if post_only == Some(true) {
+        let bybit_tif = if bybit_order_type == BybitOrderType::Market {
+            None
+        } else if post_only == Some(true) {
             Some(BybitTimeInForce::PostOnly)
         } else if let Some(tif) = time_in_force {
             Some(match tif {
@@ -1517,11 +1569,7 @@ impl BybitWebSocketClient {
                 is_leverage: is_leverage_value,
                 market_unit: market_unit.clone(),
                 price: price.map(|p| p.to_string()),
-                time_in_force: if bybit_order_type == BybitOrderType::Market {
-                    None
-                } else {
-                    bybit_tif
-                },
+                time_in_force: bybit_tif,
                 order_link_id: Some(client_order_id.to_string()),
                 reduce_only: reduce_only.filter(|&r| r),
                 close_on_trigger: None,
@@ -2001,7 +2049,6 @@ impl BybitWebSocketClient {
         vec![
             ("Content-Type".to_string(), "application/json".to_string()),
             ("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Referer".to_string(), BYBIT_NAUTILUS_BROKER_ID.to_string()),
         ]
     }
 

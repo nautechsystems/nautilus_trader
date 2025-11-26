@@ -84,15 +84,15 @@ impl KrakenHttpClient {
     #[getter]
     #[pyo3(name = "api_key")]
     #[must_use]
-    pub fn py_api_key(&self) -> Option<String> {
-        self.inner.credential().map(|c| {
-            let key = c.api_key();
-            if key.len() > 8 {
-                format!("{}...{}", &key[..4], &key[key.len() - 4..])
-            } else {
-                "***".to_string()
-            }
-        })
+    pub fn py_api_key(&self) -> Option<&str> {
+        self.inner.credential().map(|c| c.api_key())
+    }
+
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    #[must_use]
+    pub fn py_api_key_masked(&self) -> Option<String> {
+        self.inner.credential().map(|c| c.api_key_masked())
     }
 
     #[pyo3(name = "cache_instrument")]
@@ -125,139 +125,39 @@ impl KrakenHttpClient {
         })
     }
 
-    #[pyo3(name = "get_system_status")]
-    fn py_get_system_status<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let system_status = client
-                .inner
-                .get_system_status()
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            let json_string = serde_json::to_string(&system_status)
-                .map_err(|e| to_pyruntime_err(format!("Failed to serialize response: {e}")))?;
-
-            Ok(json_string)
-        })
-    }
-
-    #[pyo3(name = "get_asset_pairs")]
-    #[pyo3(signature = (pairs=None))]
-    fn py_get_asset_pairs<'py>(
+    #[pyo3(name = "request_mark_price")]
+    fn py_request_mark_price<'py>(
         &self,
         py: Python<'py>,
-        pairs: Option<Vec<String>>,
+        instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let asset_pairs = client
-                .inner
-                .get_asset_pairs(pairs)
+            let mark_price = client
+                .request_mark_price(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
 
-            let json_string = serde_json::to_string(&asset_pairs)
-                .map_err(|e| to_pyruntime_err(format!("Failed to serialize response: {e}")))?;
-
-            Ok(json_string)
+            Ok(mark_price)
         })
     }
 
-    #[pyo3(name = "get_ticker")]
-    fn py_get_ticker<'py>(
+    #[pyo3(name = "request_index_price")]
+    fn py_request_index_price<'py>(
         &self,
         py: Python<'py>,
-        pairs: Vec<String>,
+        instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let ticker = client
-                .inner
-                .get_ticker(pairs)
+            let index_price = client
+                .request_index_price(instrument_id)
                 .await
                 .map_err(to_pyruntime_err)?;
 
-            let json_string = serde_json::to_string(&ticker)
-                .map_err(|e| to_pyruntime_err(format!("Failed to serialize response: {e}")))?;
-
-            Ok(json_string)
-        })
-    }
-
-    #[pyo3(name = "get_ohlc")]
-    #[pyo3(signature = (pair, interval=None, since=None))]
-    fn py_get_ohlc<'py>(
-        &self,
-        py: Python<'py>,
-        pair: String,
-        interval: Option<u32>,
-        since: Option<i64>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let ohlc = client
-                .inner
-                .get_ohlc(&pair, interval, since)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            let json_string = serde_json::to_string(&ohlc)
-                .map_err(|e| to_pyruntime_err(format!("Failed to serialize response: {e}")))?;
-
-            Ok(json_string)
-        })
-    }
-
-    #[pyo3(name = "get_order_book")]
-    #[pyo3(signature = (pair, count=None))]
-    fn py_get_order_book<'py>(
-        &self,
-        py: Python<'py>,
-        pair: String,
-        count: Option<u32>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let order_book = client
-                .inner
-                .get_order_book(&pair, count)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            let json_string = serde_json::to_string(&order_book)
-                .map_err(|e| to_pyruntime_err(format!("Failed to serialize response: {e}")))?;
-
-            Ok(json_string)
-        })
-    }
-
-    #[pyo3(name = "get_trades")]
-    #[pyo3(signature = (pair, since=None))]
-    fn py_get_trades<'py>(
-        &self,
-        py: Python<'py>,
-        pair: String,
-        since: Option<String>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let trades = client
-                .inner
-                .get_trades(&pair, since)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            let json_string = serde_json::to_string(&trades)
-                .map_err(|e| to_pyruntime_err(format!("Failed to serialize response: {e}")))?;
-
-            Ok(json_string)
+            Ok(index_price)
         })
     }
 
@@ -331,6 +231,37 @@ impl KrakenHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
                 .request_bars(bar_type, start, end, limit)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            Python::attach(|py| {
+                let py_bars: Vec<_> = bars
+                    .into_iter()
+                    .map(|bar| data_to_pycapsule(py, Data::Bar(bar)))
+                    .collect();
+                let pylist = PyList::new(py, py_bars).unwrap();
+                Ok(pylist.unbind())
+            })
+        })
+    }
+
+    #[pyo3(name = "request_bars_with_tick_type")]
+    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, tick_type=None))]
+    fn py_request_bars_with_tick_type<'py>(
+        &self,
+        py: Python<'py>,
+        bar_type: BarType,
+        start: Option<u64>,
+        end: Option<u64>,
+        limit: Option<u64>,
+        tick_type: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let tick_type_ref = tick_type.as_deref();
+            let bars = client
+                .request_bars_with_tick_type(bar_type, start, end, limit, tick_type_ref)
                 .await
                 .map_err(to_pyruntime_err)?;
 

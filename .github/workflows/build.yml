@@ -37,7 +37,7 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-      - name: Verify Cap'n Proto schemas are up-to-date
+      - name: Verify capnp schemas are up-to-date
         run: make check-capnp-schemas
 
   cargo-deny:
@@ -316,6 +316,7 @@ jobs:
         python-version:
           - "3.12"
           - "3.13"
+          - "3.14"
     defaults:
       run:
         shell: bash

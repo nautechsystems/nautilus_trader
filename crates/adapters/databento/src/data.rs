@@ -19,6 +19,7 @@
 //! handles live market data subscriptions, and provides access to historical data on demand.
 
 use std::{
+    fmt::Debug,
     path::PathBuf,
     sync::{
         Arc, Mutex, RwLock,
@@ -51,6 +52,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    common::Credential,
     historical::{DatabentoHistoricalClient, RangeQueryParams},
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
     loader::DatabentoDataLoader,
@@ -59,10 +61,10 @@ use crate::{
 };
 
 /// Configuration for the Databento data client.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DatabentoDataClientConfig {
-    /// Databento API key.
-    pub api_key: String,
+    /// Databento API credential.
+    credential: Credential,
     /// Path to publishers.json file.
     pub publishers_filepath: PathBuf,
     /// Whether to use exchange as venue for GLBX instruments.
@@ -77,17 +79,31 @@ pub struct DatabentoDataClientConfig {
     pub ws_proxy_url: Option<String>,
 }
 
+impl Debug for DatabentoDataClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DatabentoDataClientConfig")
+            .field("credential", &"<redacted>")
+            .field("publishers_filepath", &self.publishers_filepath)
+            .field("use_exchange_as_venue", &self.use_exchange_as_venue)
+            .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
+            .field("reconnect_timeout_mins", &self.reconnect_timeout_mins)
+            .field("http_proxy_url", &self.http_proxy_url)
+            .field("ws_proxy_url", &self.ws_proxy_url)
+            .finish()
+    }
+}
+
 impl DatabentoDataClientConfig {
     /// Creates a new [`DatabentoDataClientConfig`] instance.
     #[must_use]
-    pub const fn new(
-        api_key: String,
+    pub fn new(
+        api_key: impl Into<String>,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
     ) -> Self {
         Self {
-            api_key,
+            credential: Credential::new(api_key),
             publishers_filepath,
             use_exchange_as_venue,
             bars_timestamp_on_close,
@@ -95,6 +111,18 @@ impl DatabentoDataClientConfig {
             http_proxy_url: None,
             ws_proxy_url: None,
         }
+    }
+
+    /// Returns the API key associated with this config.
+    #[must_use]
+    pub fn api_key(&self) -> &str {
+        self.credential.api_key()
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        self.credential.api_key_masked()
     }
 }
 
@@ -142,7 +170,7 @@ impl DatabentoDataClient {
         clock: &'static AtomicTime,
     ) -> anyhow::Result<Self> {
         let historical = DatabentoHistoricalClient::new(
-            config.api_key.clone(),
+            config.api_key().to_string(),
             config.publishers_filepath.clone(),
             clock,
             config.use_exchange_as_venue,
@@ -238,7 +266,7 @@ impl DatabentoDataClient {
         let (msg_tx, msg_rx) = tokio::sync::mpsc::channel(1000);
 
         let mut feed_handler = DatabentoFeedHandler::new(
-            self.config.api_key.clone(),
+            self.config.api_key().to_string(),
             dataset,
             cmd_rx,
             msg_tx,

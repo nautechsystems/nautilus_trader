@@ -70,7 +70,7 @@ pub fn channel_message_handler() -> (
 #[derive(Debug)]
 pub(crate) enum WriterCommand {
     /// Update the writer reference with a new one after reconnection.
-    Update(MessageWriter),
+    Update(MessageWriter, tokio::sync::oneshot::Sender<bool>),
     /// Send message to the server.
     Send(Message),
 }

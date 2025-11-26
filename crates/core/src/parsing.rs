@@ -18,7 +18,10 @@
 /// Clamps a length to `u8::MAX` with optional debug logging.
 #[inline]
 #[must_use]
-#[allow(clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Intentional for parsing, value range validated"
+)]
 fn clamp_precision_with_log(len: usize, context: &str, input: &str) -> u8 {
     if len > u8::MAX as usize {
         log::debug!(
@@ -68,7 +71,10 @@ fn parse_scientific_exponent(exponent_str: &str, strict: bool) -> Option<u8> {
 /// Panics if the input string is malformed (e.g., "1e-" with no exponent value, or non-numeric
 /// exponents like "1e-abc").
 #[must_use]
-#[allow(clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Intentional for parsing, value range validated"
+)]
 pub fn precision_from_str(s: &str) -> u8 {
     let s = s.trim().to_ascii_lowercase();
 
@@ -97,7 +103,10 @@ pub fn precision_from_str(s: &str) -> u8 {
 /// For scientific notation with large negative exponents (e.g., "1e-300"), the precision
 /// is clamped to `u8::MAX` (255) to match the behavior of `precision_from_str`.
 #[must_use]
-#[allow(clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "Intentional for parsing, value range validated"
+)]
 pub fn min_increment_precision_from_str(s: &str) -> u8 {
     let s = s.trim().to_ascii_lowercase();
 

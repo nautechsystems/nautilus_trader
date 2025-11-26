@@ -397,7 +397,7 @@ class TestPosition:
         assert position.peak_qty == Quantity.from_int(100_000)
         assert position.size_precision == 0
         assert position.closing_order_side() == OrderSide.SELL
-        assert position.signed_decimal_qty() == Decimal("100000")
+        assert position.signed_decimal_qty() == Decimal(100000)
         assert position.signed_qty == 100_000.0
         assert position.entry == OrderSide.BUY
         assert position.side == PositionSide.LONG
@@ -448,7 +448,7 @@ class TestPosition:
         assert position.peak_qty == Quantity.from_int(100_000)
         assert position.size_precision == 0
         assert position.closing_order_side() == OrderSide.BUY
-        assert position.signed_decimal_qty() == Decimal("-100000")
+        assert position.signed_decimal_qty() == Decimal(-100000)
         assert position.signed_qty == -100_000.0
         assert position.side == PositionSide.SHORT
         assert position.ts_opened == 0
@@ -1501,8 +1501,8 @@ class TestPosition:
     @pytest.mark.parametrize(
         ("order_side", "quantity", "expected_signed_qty", "expected_decimal_qty"),
         [
-            [OrderSide.BUY, 25, 25.0, Decimal("25")],
-            [OrderSide.SELL, 25, -25.0, Decimal("-25")],
+            [OrderSide.BUY, 25, 25.0, Decimal(25)],
+            [OrderSide.SELL, 25, -25.0, Decimal(-25)],
         ],
     )
     def test_signed_qty_decimal_qty_for_equity(
@@ -2119,8 +2119,8 @@ class TestPosition:
         short_position = Position(instrument=AUDUSD_SIM, fill=sell_fill)
 
         # Assert
-        assert long_position.signed_decimal_qty() == Decimal("100000")
-        assert short_position.signed_decimal_qty() == Decimal("-75000")
+        assert long_position.signed_decimal_qty() == Decimal(100000)
+        assert short_position.signed_decimal_qty() == Decimal(-75000)
 
     def test_notional_value_calculation(self) -> None:
         """

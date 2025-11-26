@@ -48,7 +48,7 @@ class TestBybitFactories:
         self.cache_db = MockCacheDatabase()
         self.cache = Cache(database=self.cache_db)
 
-        yield
+        return
 
     @pytest.mark.parametrize(
         ("environment", "expected"),

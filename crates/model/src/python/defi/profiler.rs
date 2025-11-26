@@ -24,7 +24,7 @@ use pyo3::prelude::*;
 use crate::{
     defi::{
         Pool,
-        pool_analysis::{PoolProfiler, quote::SwapQuote},
+        pool_analysis::{PoolProfiler, quote::SwapQuote, size_estimator::SizeForImpactResult},
     },
     identifiers::InstrumentId,
 };
@@ -179,6 +179,23 @@ impl PoolProfiler {
         };
 
         self.swap_exact_out(amount_out, zero_for_one, sqrt_price_limit)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "size_for_impact_bps")]
+    fn py_size_for_impact_bps(&self, impact_bps: u32, zero_for_one: bool) -> PyResult<String> {
+        self.size_for_impact_bps(impact_bps, zero_for_one)
+            .map(|size| size.to_string())
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "size_for_impact_bps_detailed")]
+    fn py_size_for_impact_bps_detailed(
+        &self,
+        impact_bps: u32,
+        zero_for_one: bool,
+    ) -> PyResult<SizeForImpactResult> {
+        self.size_for_impact_bps_detailed(impact_bps, zero_for_one)
             .map_err(to_pyvalue_err)
     }
 }

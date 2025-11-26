@@ -43,9 +43,11 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-network = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 aws-lc-rs = { workspace = true }
 hex = { workspace = true }
+log = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
@@ -56,4 +58,5 @@ pyo3 = { workspace = true, optional = true }
 [dev-dependencies]
 axum = { workspace = true }
 rstest = { workspace = true }
+rust_decimal = { workspace = true }
 tempfile = { workspace = true }

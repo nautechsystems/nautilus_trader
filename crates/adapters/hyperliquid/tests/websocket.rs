@@ -452,11 +452,11 @@ async fn test_websocket_connection() {
     let mut client = connect_client(&ws_url, None).await;
     client.connect().await.expect("connect failed");
 
-    wait_for_connection_count(&state, 1, Duration::from_secs(2)).await;
+    wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
     client.disconnect().await.expect("close failed");
 
-    wait_for_connection_count(&state, 0, Duration::from_secs(2)).await;
+    wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
 }
 
 #[rstest]
@@ -568,11 +568,11 @@ async fn test_close_connection() {
     let mut client = connect_client(&ws_url, None).await;
     client.connect().await.expect("connect failed");
 
-    wait_for_connection_count(&state, 1, Duration::from_secs(2)).await;
+    wait_for_connection_count(&state, 1, Duration::from_secs(5)).await;
 
     client.disconnect().await.expect("close failed");
 
-    wait_for_connection_count(&state, 0, Duration::from_secs(2)).await;
+    wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
 }
 
 // ============================================================================

@@ -2229,3 +2229,46 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
 fn test_swaps_for_pool_high_fee_1on1_price_2e18_max_liquidity() {
     test_pool_swaps(pool_high_fee_1on1_price_2e18_max_liquidity());
 }
+
+#[rstest]
+fn test_size_for_impact_bps_validation(medium_fee_pool_profiler: PoolProfiler) {
+    // Test a subset of BPS values that work with 2e18 liquidity
+    let bps_test_values = vec![100, 500, 1000];
+    for target_bps in &bps_test_values {
+        for zero_for_one in [true, false] {
+            // Get size for target impact
+            let result = medium_fee_pool_profiler
+                .size_for_impact_bps_detailed(*target_bps, zero_for_one)
+                .expect("Size estimation should succeed");
+
+            // Simulate swap with that size
+            let mut quote = medium_fee_pool_profiler
+                .swap_exact_in(result.size, zero_for_one, None)
+                .expect("Swap simulation should succeed");
+
+            // Calculate trade info
+            let pool = medium_fee_pool_profiler.pool.as_ref();
+            quote
+                .calculate_trade_info(&pool.token0, &pool.token1)
+                .expect("Trade info calculation should succeed");
+
+            // Extract and validate actual slippage
+            let trade_info = quote
+                .trade_info
+                .as_ref()
+                .expect("Trade info should be initialized");
+
+            let actual_slippage = trade_info.get_slippage_bps().expect("Should get slippage");
+
+            // Verify within tolerance (1 BPS)
+            let diff = actual_slippage.abs_diff(*target_bps);
+            assert!(
+                diff <= 1,
+                "Slippage should be within 1 BPS tolerance. Target: {}, Actual: {}, Diff: {}",
+                target_bps,
+                actual_slippage,
+                diff
+            );
+        }
+    }
+}

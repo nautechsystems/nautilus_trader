@@ -44,7 +44,7 @@ async def fixture_test_server(
     return server
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_get(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -59,7 +59,7 @@ async def test_client_get(test_server: Coroutine) -> None:
     assert len(response.body) > 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_post(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -74,7 +74,7 @@ async def test_client_post(test_server: Coroutine) -> None:
     assert len(response.body) > 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_post_with_body(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -91,7 +91,7 @@ async def test_client_post_with_body(test_server: Coroutine) -> None:
     assert len(response.body) > 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_patch(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server
@@ -106,7 +106,7 @@ async def test_client_patch(test_server: Coroutine) -> None:
     assert len(response.body) > 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_delete(test_server: Coroutine) -> None:
     # Arrange
     server: TestServer = await test_server

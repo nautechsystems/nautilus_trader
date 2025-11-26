@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, num::NonZeroU32};
+use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 
+use alloy::primitives::{Address, U256};
 use bytes::Bytes;
 use nautilus_model::defi::rpc::RpcNodeHttpResponse;
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
@@ -96,7 +97,7 @@ impl BlockchainHttpRpcClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP RPC request fails or the response cannot be parsed.
-    pub async fn execute_eth_call<T: DeserializeOwned>(
+    pub async fn execute_rpc_call<T: DeserializeOwned>(
         &self,
         rpc_request: serde_json::Value,
     ) -> anyhow::Result<T> {
@@ -169,6 +170,31 @@ impl BlockchainHttpRpcClient {
             "id": 1,
             "method": "eth_call",
             "params": [call, block_param]
+        })
+    }
+
+    /// Retrieves the balance of the specified Ethereum address at the given block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or if the returned balance string cannot be parsed as a valid U256.
+    pub async fn get_balance(&self, address: &Address, block: Option<u64>) -> anyhow::Result<U256> {
+        let block_param = if let Some(block_number) = block {
+            serde_json::json!(format!("0x{:x}", block_number))
+        } else {
+            serde_json::json!("latest")
+        };
+
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_getBalance",
+            "params": [address, block_param]
+        });
+        let hex_string: String = self.execute_rpc_call(request).await?;
+
+        U256::from_str(&hex_string).map_err(|e| {
+            anyhow::anyhow!("Failed to parse balance hex string '{}': {}", hex_string, e)
         })
     }
 }

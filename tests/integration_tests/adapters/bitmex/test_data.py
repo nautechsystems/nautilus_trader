@@ -25,7 +25,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 
 
-@pytest.fixture()
+@pytest.fixture
 def bitmex_data_client(
     event_loop,
     mock_http_client,

@@ -133,6 +133,12 @@ pub struct DydxDataClientConfig {
     pub http_proxy_url: Option<String>,
     /// WebSocket proxy URL.
     pub ws_proxy_url: Option<String>,
+    /// Orderbook snapshot refresh interval in seconds (prevents stale books from missed messages).
+    /// Set to None to disable periodic refresh. Default: 60 seconds.
+    pub orderbook_refresh_interval_secs: Option<u64>,
+    /// Instrument refresh interval in seconds (updates instrument definitions periodically).
+    /// Set to None to disable periodic refresh. Default: 3600 seconds (60 minutes).
+    pub instrument_refresh_interval_secs: Option<u64>,
 }
 
 impl Default for DydxDataClientConfig {
@@ -147,6 +153,50 @@ impl Default for DydxDataClientConfig {
             is_testnet: false,
             http_proxy_url: None,
             ws_proxy_url: None,
+            orderbook_refresh_interval_secs: Some(60),
+            instrument_refresh_interval_secs: Some(3600),
+        }
+    }
+}
+
+/// Configuration for the dYdX execution client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DYDXExecClientConfig {
+    /// gRPC endpoint URL.
+    pub grpc_endpoint: String,
+    /// WebSocket endpoint URL.
+    pub ws_endpoint: String,
+    /// Wallet mnemonic for signing transactions.
+    pub mnemonic: Option<String>,
+    /// Wallet address.
+    pub wallet_address: Option<String>,
+    /// Subaccount number (default: 0).
+    pub subaccount_number: u32,
+    /// HTTP request timeout in seconds.
+    pub http_timeout_secs: Option<u64>,
+    /// Maximum number of retry attempts.
+    pub max_retries: Option<u64>,
+    /// Initial retry delay in milliseconds.
+    pub retry_delay_initial_ms: Option<u64>,
+    /// Maximum retry delay in milliseconds.
+    pub retry_delay_max_ms: Option<u64>,
+    /// Whether this is a testnet configuration.
+    pub is_testnet: bool,
+}
+
+impl Default for DYDXExecClientConfig {
+    fn default() -> Self {
+        Self {
+            grpc_endpoint: DYDX_GRPC_URLS[0].to_string(),
+            ws_endpoint: DYDX_WS_URL.to_string(),
+            mnemonic: None,
+            wallet_address: None,
+            subaccount_number: 0,
+            http_timeout_secs: Some(60),
+            max_retries: Some(3),
+            retry_delay_initial_ms: Some(100),
+            retry_delay_max_ms: Some(5000),
+            is_testnet: false,
         }
     }
 }

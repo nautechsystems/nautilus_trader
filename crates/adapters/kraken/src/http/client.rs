@@ -44,11 +44,17 @@ use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
-use super::{error::KrakenHttpError, models::*};
+use super::{
+    error::KrakenHttpError,
+    models::{FuturesCandlesResponse, FuturesInstrumentsResponse, FuturesTickersResponse, *},
+};
 use crate::common::{
     credential::KrakenCredential,
     enums::{KrakenEnvironment, KrakenProductType},
-    parse::{parse_bar, parse_spot_instrument, parse_trade_tick_from_array},
+    parse::{
+        bar_type_to_futures_resolution, bar_type_to_spot_interval, parse_bar,
+        parse_futures_instrument, parse_spot_instrument, parse_trade_tick_from_array,
+    },
     urls::get_http_base_url,
 };
 
@@ -89,22 +95,6 @@ impl Debug for KrakenRawHttpClient {
 }
 
 impl KrakenRawHttpClient {
-    pub fn base_url(&self) -> &str {
-        &self.base_url
-    }
-
-    pub fn credential(&self) -> Option<&KrakenCredential> {
-        self.credential.as_ref()
-    }
-
-    pub fn cancel_all_requests(&self) {
-        self.cancellation_token.cancel();
-    }
-
-    pub fn cancellation_token(&self) -> &CancellationToken {
-        &self.cancellation_token
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
@@ -187,6 +177,22 @@ impl KrakenRawHttpClient {
             retry_manager,
             cancellation_token: CancellationToken::new(),
         })
+    }
+
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    pub fn credential(&self) -> Option<&KrakenCredential> {
+        self.credential.as_ref()
+    }
+
+    pub fn cancel_all_requests(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        &self.cancellation_token
     }
 
     fn default_headers() -> HashMap<String, String> {
@@ -340,6 +346,75 @@ impl KrakenRawHttpClient {
             .await
     }
 
+    async fn send_futures_request<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        url: String,
+    ) -> anyhow::Result<T, KrakenHttpError> {
+        let endpoint = endpoint.to_string();
+        let method_clone = method.clone();
+        let url_clone = url.clone();
+
+        let operation = || {
+            let url = url_clone.clone();
+            let method = method_clone.clone();
+            let endpoint = endpoint.clone();
+
+            async move {
+                let headers = Self::default_headers();
+                let rate_limit_keys = Self::rate_limit_keys(&endpoint);
+
+                let response = self
+                    .client
+                    .request(
+                        method,
+                        url,
+                        None,
+                        Some(headers),
+                        None,
+                        None,
+                        Some(rate_limit_keys),
+                    )
+                    .await
+                    .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+
+                if response.status.as_u16() >= 400 {
+                    let body = String::from_utf8_lossy(&response.body).to_string();
+                    return Err(KrakenHttpError::NetworkError(format!(
+                        "HTTP error {}: {body}",
+                        response.status.as_u16()
+                    )));
+                }
+
+                let response_text = String::from_utf8(response.body.to_vec()).map_err(|e| {
+                    KrakenHttpError::ParseError(format!("Failed to parse response as UTF-8: {e}"))
+                })?;
+
+                serde_json::from_str(&response_text).map_err(|e| {
+                    KrakenHttpError::ParseError(format!(
+                        "Failed to deserialize futures response: {e}"
+                    ))
+                })
+            }
+        };
+
+        let should_retry =
+            |error: &KrakenHttpError| -> bool { matches!(error, KrakenHttpError::NetworkError(_)) };
+
+        let create_error = |msg: String| -> KrakenHttpError { KrakenHttpError::NetworkError(msg) };
+
+        self.retry_manager
+            .execute_with_retry_with_cancel(
+                &endpoint,
+                operation,
+                should_retry,
+                create_error,
+                &self.cancellation_token,
+            )
+            .await
+    }
+
     fn generate_ts_init(&self) -> UnixNanos {
         get_atomic_clock_realtime().get_time_ns()
     }
@@ -422,7 +497,7 @@ impl KrakenRawHttpClient {
         })
     }
 
-    pub async fn get_order_book(
+    pub async fn get_book_depth(
         &self,
         pair: &str,
         count: Option<u32>,
@@ -438,7 +513,7 @@ impl KrakenRawHttpClient {
             .await?;
 
         response.result.ok_or_else(|| {
-            KrakenHttpError::ParseError("Missing result in order book response".to_string())
+            KrakenHttpError::ParseError("Missing result in book depth response".to_string())
         })
     }
 
@@ -478,27 +553,50 @@ impl KrakenRawHttpClient {
         })
     }
 
-    pub async fn request_instruments(
+    pub async fn get_instruments_futures(
         &self,
-        pairs: Option<Vec<String>>,
-    ) -> anyhow::Result<Vec<InstrumentAny>, KrakenHttpError> {
-        let ts_init = self.generate_ts_init();
-        let asset_pairs = self.get_asset_pairs(pairs).await?;
+    ) -> anyhow::Result<FuturesInstrumentsResponse, KrakenHttpError> {
+        let endpoint = "/derivatives/api/v3/instruments";
+        let url = format!("{}{endpoint}", self.base_url);
 
-        let instruments: Vec<InstrumentAny> = asset_pairs
-            .iter()
-            .filter_map(|(pair_name, definition)| {
-                match parse_spot_instrument(pair_name, definition, ts_init, ts_init) {
-                    Ok(instrument) => Some(instrument),
-                    Err(e) => {
-                        tracing::warn!("Failed to parse instrument {pair_name}: {e}");
-                        None
-                    }
-                }
-            })
-            .collect();
+        self.send_futures_request(Method::GET, endpoint, url).await
+    }
 
-        Ok(instruments)
+    pub async fn get_tickers_futures(
+        &self,
+    ) -> anyhow::Result<FuturesTickersResponse, KrakenHttpError> {
+        let endpoint = "/derivatives/api/v3/tickers";
+        let url = format!("{}{endpoint}", self.base_url);
+
+        self.send_futures_request(Method::GET, endpoint, url).await
+    }
+
+    pub async fn get_ohlc_futures(
+        &self,
+        tick_type: &str,
+        symbol: &str,
+        resolution: &str,
+        from: Option<i64>,
+        to: Option<i64>,
+    ) -> anyhow::Result<FuturesCandlesResponse, KrakenHttpError> {
+        let endpoint = format!("/api/charts/v1/{tick_type}/{symbol}/{resolution}");
+
+        let mut url = format!("{}{endpoint}", self.base_url);
+
+        let mut query_params = Vec::new();
+        if let Some(from_ts) = from {
+            query_params.push(format!("from={from_ts}"));
+        }
+        if let Some(to_ts) = to {
+            query_params.push(format!("to={to_ts}"));
+        }
+
+        if !query_params.is_empty() {
+            url.push('?');
+            url.push_str(&query_params.join("&"));
+        }
+
+        self.send_futures_request(Method::GET, &endpoint, url).await
     }
 }
 
@@ -588,6 +686,10 @@ impl KrakenHttpClient {
         })
     }
 
+    fn is_futures(&self) -> bool {
+        self.inner.base_url().contains("futures")
+    }
+
     pub fn cancel_all_requests(&self) {
         self.inner.cancel_all_requests();
     }
@@ -610,21 +712,125 @@ impl KrakenHttpClient {
         self.cache_initialized.store(true, Ordering::Release);
     }
 
-    pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
+    pub fn get_cached_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
         self.instruments_cache
             .get(symbol)
             .map(|entry| entry.value().clone())
+    }
+
+    pub async fn get_websockets_token(&self) -> anyhow::Result<WebSocketToken, KrakenHttpError> {
+        self.inner.get_websockets_token().await
     }
 
     pub async fn request_instruments(
         &self,
         pairs: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<InstrumentAny>, KrakenHttpError> {
-        self.inner.request_instruments(pairs).await
+        let ts_init = self.inner.generate_ts_init();
+
+        if self.is_futures() {
+            let response = self.inner.get_instruments_futures().await?;
+
+            let instruments: Vec<InstrumentAny> = response
+                .instruments
+                .iter()
+                .filter_map(|fut_instrument| {
+                    match parse_futures_instrument(fut_instrument, ts_init, ts_init) {
+                        Ok(instrument) => Some(instrument),
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to parse futures instrument {}: {e}",
+                                fut_instrument.symbol
+                            );
+                            None
+                        }
+                    }
+                })
+                .collect();
+
+            return Ok(instruments);
+        }
+
+        let asset_pairs = self.inner.get_asset_pairs(pairs).await?;
+
+        let instruments: Vec<InstrumentAny> = asset_pairs
+            .iter()
+            .filter_map(|(pair_name, definition)| {
+                match parse_spot_instrument(pair_name, definition, ts_init, ts_init) {
+                    Ok(instrument) => Some(instrument),
+                    Err(e) => {
+                        tracing::warn!("Failed to parse instrument {pair_name}: {e}");
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        Ok(instruments)
     }
 
-    pub async fn get_websockets_token(&self) -> anyhow::Result<WebSocketToken, KrakenHttpError> {
-        self.inner.get_websockets_token().await
+    pub async fn request_mark_price(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<f64, KrakenHttpError> {
+        if !self.is_futures() {
+            return Err(KrakenHttpError::ParseError(
+                "Mark price is only available for futures instruments. Use a futures client (base URL must contain 'futures')".to_string(),
+            ));
+        }
+
+        let instrument = self
+            .get_cached_instrument(&instrument_id.symbol.inner())
+            .ok_or_else(|| {
+                KrakenHttpError::ParseError(format!(
+                    "Instrument not found in cache: {}",
+                    instrument_id
+                ))
+            })?;
+
+        let raw_symbol = instrument.raw_symbol().to_string();
+        let tickers = self.inner.get_tickers_futures().await?;
+
+        tickers
+            .tickers
+            .iter()
+            .find(|t| t.symbol == raw_symbol)
+            .map(|t| t.mark_price)
+            .ok_or_else(|| {
+                KrakenHttpError::ParseError(format!("Symbol {} not found in tickers", raw_symbol))
+            })
+    }
+
+    pub async fn request_index_price(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<f64, KrakenHttpError> {
+        if !self.is_futures() {
+            return Err(KrakenHttpError::ParseError(
+                "Index price is only available for futures instruments. Use a futures client (base URL must contain 'futures')".to_string(),
+            ));
+        }
+
+        let instrument = self
+            .get_cached_instrument(&instrument_id.symbol.inner())
+            .ok_or_else(|| {
+                KrakenHttpError::ParseError(format!(
+                    "Instrument not found in cache: {}",
+                    instrument_id
+                ))
+            })?;
+
+        let raw_symbol = instrument.raw_symbol().to_string();
+        let tickers = self.inner.get_tickers_futures().await?;
+
+        tickers
+            .tickers
+            .iter()
+            .find(|t| t.symbol == raw_symbol)
+            .map(|t| t.index_price)
+            .ok_or_else(|| {
+                KrakenHttpError::ParseError(format!("Symbol {} not found in tickers", raw_symbol))
+            })
     }
 
     pub async fn request_trades(
@@ -634,8 +840,14 @@ impl KrakenHttpClient {
         end: Option<u64>,
         limit: Option<u64>,
     ) -> anyhow::Result<Vec<TradeTick>, KrakenHttpError> {
+        if self.is_futures() {
+            return Err(KrakenHttpError::ParseError(
+                "Trade history is not yet implemented for futures instruments. Use a spot client instead.".to_string(),
+            ));
+        }
+
         let instrument = self
-            .get_instrument(&instrument_id.symbol.inner())
+            .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| {
                 KrakenHttpError::ParseError(format!(
                     "Instrument not found in cache: {}",
@@ -688,9 +900,21 @@ impl KrakenHttpClient {
         end: Option<u64>,
         limit: Option<u64>,
     ) -> anyhow::Result<Vec<Bar>, KrakenHttpError> {
+        self.request_bars_with_tick_type(bar_type, start, end, limit, None)
+            .await
+    }
+
+    pub async fn request_bars_with_tick_type(
+        &self,
+        bar_type: BarType,
+        start: Option<u64>,
+        end: Option<u64>,
+        limit: Option<u64>,
+        tick_type: Option<&str>,
+    ) -> anyhow::Result<Vec<Bar>, KrakenHttpError> {
         let instrument_id = bar_type.instrument_id();
         let instrument = self
-            .get_instrument(&instrument_id.symbol.inner())
+            .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| {
                 KrakenHttpError::ParseError(format!(
                     "Instrument not found in cache: {}",
@@ -699,26 +923,69 @@ impl KrakenHttpClient {
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
+        let ts_init = self.inner.generate_ts_init();
 
-        // Convert bar aggregation to Kraken interval, respecting the bar step/compression
-        let step = bar_type.spec().step.get() as u32;
-        let base_interval = match bar_type.spec().aggregation {
-            nautilus_model::enums::BarAggregation::Minute => 1,
-            nautilus_model::enums::BarAggregation::Hour => 60,
-            nautilus_model::enums::BarAggregation::Day => 1440,
-            _ => {
-                return Err(KrakenHttpError::ParseError(format!(
-                    "Unsupported bar aggregation: {:?}",
-                    bar_type.spec().aggregation
-                )));
+        if self.is_futures() {
+            let tick_type = tick_type.unwrap_or("trade");
+            let resolution = bar_type_to_futures_resolution(bar_type)
+                .map_err(|e| KrakenHttpError::ParseError(e.to_string()))?;
+
+            // Kraken Futures API expects millisecond timestamps
+            let from = start.map(|s| (s / 1_000_000) as i64);
+            let to = end.map(|e| (e / 1_000_000) as i64);
+
+            let response = self
+                .inner
+                .get_ohlc_futures(tick_type, &raw_symbol, resolution, from, to)
+                .await?;
+
+            let mut bars = Vec::new();
+            for candle in response.candles {
+                let ohlc = OhlcData {
+                    time: candle.time / 1000,
+                    open: candle.open,
+                    high: candle.high,
+                    low: candle.low,
+                    close: candle.close,
+                    vwap: "0".to_string(),
+                    volume: candle.volume,
+                    count: 0,
+                };
+
+                match parse_bar(&ohlc, &instrument, bar_type, ts_init) {
+                    Ok(bar) => {
+                        // Filter by end time if specified
+                        if let Some(end_ns) = end
+                            && bar.ts_event.as_u64() > end_ns
+                        {
+                            continue;
+                        }
+                        bars.push(bar);
+
+                        // Check limit
+                        if let Some(limit_count) = limit
+                            && bars.len() >= limit_count as usize
+                        {
+                            return Ok(bars);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse futures bar: {e}");
+                    }
+                }
             }
-        };
-        let interval = Some(base_interval * step);
+
+            return Ok(bars);
+        }
+
+        let interval = Some(
+            bar_type_to_spot_interval(bar_type)
+                .map_err(|e| KrakenHttpError::ParseError(e.to_string()))?,
+        );
 
         // Convert start time from nanoseconds to seconds
         let since = start.map(|s| (s / 1_000_000_000) as i64);
 
-        let ts_init = self.inner.generate_ts_init();
         let response = self.inner.get_ohlc(&raw_symbol, interval, since).await?;
 
         let mut bars = Vec::new();

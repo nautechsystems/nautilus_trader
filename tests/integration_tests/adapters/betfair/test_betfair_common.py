@@ -91,7 +91,7 @@ class TestBettingInstrument:
         assert instrument == new_instrument
 
     @pytest.mark.parametrize(
-        "price, quantity, expected",
+        ("price", "quantity", "expected"),
         [
             (5.0, 100.0, 100),
             (1.50, 100.0, 100),

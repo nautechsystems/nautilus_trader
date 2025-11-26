@@ -151,7 +151,8 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        masked_key = self._http_client.api_key_masked
+        self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # Determine HTTP base URL for broadcasters
         http_url = config.base_url_http or nautilus_pyo3.get_bitmex_http_base_url(config.testnet)
@@ -352,14 +353,11 @@ class BitmexExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 reports.append(OrderStatusReport.from_pyo3(pyo3_report))
 
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-            if command.log_receipt_level == LogLevel.INFO:
-                self._log.info(receipt_log)
-            else:
-                self._log.debug(receipt_log)
+            self._log_report_receipt(
+                len(reports),
+                "OrderStatusReport",
+                command.log_receipt_level,
+            )
 
             return reports
         except Exception as e:
@@ -389,9 +387,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 reports.append(FillReport.from_pyo3(pyo3_report))
 
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            self._log.info(f"Received {len(reports)} FillReport{plural}")
+            self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
             return reports
         except Exception as e:
@@ -410,9 +406,11 @@ class BitmexExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 reports.append(PositionStatusReport.from_pyo3(pyo3_report))
 
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+            self._log_report_receipt(
+                len(reports),
+                "PositionStatusReport",
+                command.log_receipt_level,
+            )
 
             return reports
         except Exception as e:

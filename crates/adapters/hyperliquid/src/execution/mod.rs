@@ -15,11 +15,10 @@
 
 //! Live execution client implementation for the Hyperliquid adapter.
 
-use std::{cell::Ref, str::FromStr, sync::Mutex};
+use std::{str::FromStr, sync::Mutex};
 
 use anyhow::Context;
 use nautilus_common::{
-    clock::Clock,
     messages::{
         ExecutionEvent, ExecutionReport as NautilusExecutionReport,
         execution::{
@@ -32,7 +31,6 @@ use nautilus_common::{
 };
 use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
-use nautilus_live::execution::LiveExecutionClientExt;
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderType},
@@ -842,13 +840,23 @@ use async_trait::async_trait;
 use nautilus_common::messages::execution::{
     GenerateFillReports, GenerateOrderStatusReport, GeneratePositionReports,
 };
-use nautilus_execution::client::LiveExecutionClient;
+use nautilus_live::execution::client::LiveExecutionClient;
 use nautilus_model::reports::{
     ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport,
 };
 
 #[async_trait(?Send)]
 impl LiveExecutionClient for HyperliquidExecutionClient {
+    fn get_message_channel(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedSender<nautilus_common::messages::ExecutionEvent> {
+        get_exec_event_sender()
+    }
+
+    fn get_clock(&self) -> std::cell::Ref<'_, dyn nautilus_common::clock::Clock> {
+        self.core.clock().borrow()
+    }
+
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             return Ok(());
@@ -882,10 +890,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
             tracing::warn!("Failed to start WebSocket stream: {e}");
         }
 
-        tracing::info!(
-            "Hyperliquid execution client {} connected",
-            self.core.client_id
-        );
+        tracing::info!(client_id = %self.core.client_id, "Connected");
         Ok(())
     }
 
@@ -905,10 +910,7 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         self.connected = false;
         self.core.set_connected(false);
 
-        tracing::info!(
-            "Hyperliquid execution client {} disconnected",
-            self.core.client_id
-        );
+        tracing::info!(client_id = %self.core.client_id, "Disconnected");
         Ok(())
     }
 
@@ -1014,16 +1016,6 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         // 3. Query all positions
         // 4. Combine into ExecutionMassStatus
         Ok(None)
-    }
-}
-
-impl LiveExecutionClientExt for HyperliquidExecutionClient {
-    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
-        get_exec_event_sender()
-    }
-
-    fn get_clock(&self) -> Ref<'_, dyn Clock> {
-        self.core.clock().borrow()
     }
 }
 

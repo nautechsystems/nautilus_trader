@@ -219,6 +219,7 @@ cdef class Order:
         # Execution
         self.filled_qty = Quantity.zero_c(self.quantity._mem.precision)
         self.leaves_qty = init.quantity
+        self.overfill_qty = Quantity.zero_c(self.quantity._mem.precision)
         self.avg_px = 0.0  # No fills yet
         self.slippage = 0.0
 
@@ -231,6 +232,8 @@ cdef class Order:
         self.ts_last = init.ts_init
 
     def __eq__(self, Order other) -> bool:
+        if other is None:
+            return False
         return self.client_order_id == other.client_order_id
 
     def __hash__(self) -> int:
@@ -1095,6 +1098,16 @@ cdef class Order:
         self._events.append(event)
         self.ts_last = event.ts_event
 
+    cdef Quantity calculate_overfill_c(self, Quantity fill_qty):
+        cdef QuantityRaw potential_filled_raw = self.filled_qty._mem.raw + fill_qty._mem.raw
+
+        if potential_filled_raw > self.quantity._mem.raw:
+            return Quantity.from_raw_c(
+                potential_filled_raw - self.quantity._mem.raw,
+                fill_qty._mem.precision,
+            )
+        return Quantity.zero_c(fill_qty._mem.precision)
+
     cdef void _denied(self, OrderDenied event):
         self.ts_closed = event.ts_event
 
@@ -1143,14 +1156,13 @@ cdef class Order:
 
         # Using `PriceRaw` as temporary hack to access int128_t so that negative values can be represented
         cdef PriceRaw raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
+
         if raw_leaves_qty < 0:
-            raise ValueError(
-                f"invalid order.leaves_qty: was {raw_leaves_qty / FIXED_SCALAR}, "
-                f"order.quantity={self.quantity}, "
-                f"order.filled_qty={self.filled_qty}, "
-                f"fill.last_qty={fill.last_qty}, "
-                f"fill={fill}",
+            self.overfill_qty = self.overfill_qty.add(
+                Quantity.from_raw_c(-raw_leaves_qty, fill.last_qty._mem.precision)
             )
+            raw_leaves_qty = 0  # Clamp to zero
+
         self.filled_qty.add_assign(fill.last_qty)
         self.leaves_qty = Quantity.from_raw_c(<QuantityRaw>raw_leaves_qty, fill.last_qty._mem.precision)
         self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())

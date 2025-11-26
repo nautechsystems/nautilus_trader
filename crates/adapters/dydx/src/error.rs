@@ -66,6 +66,22 @@ pub enum DydxError {
     #[error("Invalid data: {0}")]
     InvalidData(String),
 
+    /// Invalid order side error.
+    #[error("Invalid order side: {0}")]
+    InvalidOrderSide(String),
+
+    /// Unsupported order type error.
+    #[error("Unsupported order type: {0}")]
+    UnsupportedOrderType(String),
+
+    /// Feature not yet implemented.
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
+
+    /// Order construction and submission errors.
+    #[error("Order error: {0}")]
+    Order(String),
+
     /// Nautilus core errors.
     #[error("Nautilus error: {0}")]
     Nautilus(#[from] anyhow::Error),

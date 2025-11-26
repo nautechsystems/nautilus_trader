@@ -1023,6 +1023,8 @@ cdef class TimeEvent(Event):
         return ustr_to_pystr(self._mem.name)
 
     def __eq__(self, TimeEvent other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -1129,18 +1131,28 @@ cdef class TimeEventHandler:
         self._handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return False
         return self.event.ts_event == other.event.ts_event
 
     def __lt__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.event.ts_event < other.event.ts_event
 
     def __le__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.event.ts_event <= other.event.ts_event
 
     def __gt__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.event.ts_event > other.event.ts_event
 
     def __ge__(self, TimeEventHandler other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.event.ts_event >= other.event.ts_event
 
     def __repr__(self) -> str:
@@ -1700,6 +1712,8 @@ cdef class Component:
             self._initialize()
 
     def __eq__(self, Component other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:
@@ -2870,6 +2884,8 @@ cdef class Subscription:
         self.priority = priority
 
     def __eq__(self, Subscription other) -> bool:
+        if other is None:
+            return False
         return self.topic == other.topic and self.handler == other.handler
 
     def __lt__(self, Subscription other) -> bool:

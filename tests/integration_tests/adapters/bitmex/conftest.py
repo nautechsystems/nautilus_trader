@@ -43,17 +43,17 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     return BITMEX_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_id(venue) -> AccountId:
     return AccountId(f"{venue.value}-1234567")
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument() -> CryptoPerpetual:
     """
     Create a test XBTUSD perpetual instrument.
@@ -78,7 +78,7 @@ def instrument() -> CryptoPerpetual:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state(account_id) -> AccountState:
     """
     Create a test account state with BitMEX-style margins.
@@ -118,7 +118,7 @@ def account_state(account_id) -> AccountState:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_http_client():
     """
     Create a mock BitMEX HTTP client.
@@ -181,7 +181,7 @@ def mock_http_client():
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_ws_client():
     """
     Create a mock BitMEX WebSocket client.
@@ -237,7 +237,7 @@ def mock_ws_client():
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_submitter():
     """
     Create a mock BitMEX submit broadcaster.
@@ -257,7 +257,7 @@ def mock_submitter():
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_canceller():
     """
     Create a mock BitMEX cancel broadcaster.
@@ -279,7 +279,7 @@ def mock_canceller():
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_instrument_provider(instrument):
     """
     Create a mock BitMEX instrument provider.
@@ -296,7 +296,7 @@ def mock_instrument_provider(instrument):
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client(
     event_loop,
     mock_http_client,
@@ -356,7 +356,7 @@ def exec_client(
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument_provider():
     """
     Return None as we're using mock_instrument_provider in exec_client.
@@ -364,7 +364,7 @@ def instrument_provider():
     return None
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     """
     Return None as we're focusing on execution tests.

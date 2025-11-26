@@ -44,7 +44,10 @@ impl UUID4 {
     }
 
     /// Sets the state of the `UUID4` instance during unpickling.
-    #[allow(clippy::needless_pass_by_value)]
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "Python FFI requires owned types"
+    )]
     fn __setstate__(&mut self, py: Python<'_>, state: Py<PyAny>) -> PyResult<()> {
         let bytes: &Bound<'_, PyBytes> = state.cast_bound::<PyBytes>(py)?;
         let slice = bytes.as_bytes();
@@ -93,7 +96,10 @@ impl UUID4 {
 
     /// A safe constructor used during unpickling to ensure the correct initialization of `UUID4`.
     #[staticmethod]
-    #[allow(clippy::unnecessary_wraps)]
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "Python FFI requires Result return type"
+    )]
     fn _safe_constructor() -> PyResult<Self> {
         Ok(Self::new()) // Safe default
     }
@@ -108,7 +114,11 @@ impl UUID4 {
     }
 
     /// Returns a hash value for the `UUID4` instance.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Intentional cast for Python interop"
+    )]
     fn __hash__(&self) -> isize {
         let mut h = DefaultHasher::new();
         self.hash(&mut h);

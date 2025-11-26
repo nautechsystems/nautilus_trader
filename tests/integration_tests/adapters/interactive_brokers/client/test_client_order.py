@@ -53,7 +53,7 @@ def test_place_order(ib_client):
     # Additional assertions to verify the attributes of the order
     assert ib_order.orderId == 1
     assert ib_order.action == "BUY"
-    assert ib_order.totalQuantity == Decimal("100")
+    assert ib_order.totalQuantity == Decimal(100)
     assert ib_order.orderType == "MKT"
     assert ib_order.account == "DU123456"
     assert ib_order.tif == "IOC"
@@ -217,8 +217,8 @@ async def test_orderStatus(ib_client):
     await ib_client.process_order_status(
         order_id=1,
         status="Filled",
-        filled=Decimal("100"),
-        remaining=Decimal("0"),
+        filled=Decimal(100),
+        remaining=Decimal(0),
         avg_fill_price=100.0,
         perm_id=1916994655,
         parent_id=0,
@@ -234,8 +234,8 @@ async def test_orderStatus(ib_client):
         order_ref=1,
         order_status="Filled",
         avg_fill_price=100.0,
-        filled=Decimal("100"),
-        remaining=Decimal("0"),
+        filled=Decimal(100),
+        remaining=Decimal(0),
     )
 
 
@@ -253,8 +253,8 @@ async def test_orderStatus_with_zero_avg_fill_price(ib_client):
     await ib_client.process_order_status(
         order_id=1,
         status="PartiallyFilled",
-        filled=Decimal("50"),
-        remaining=Decimal("50"),
+        filled=Decimal(50),
+        remaining=Decimal(50),
         avg_fill_price=0.0,
         perm_id=1916994655,
         parent_id=0,
@@ -270,8 +270,8 @@ async def test_orderStatus_with_zero_avg_fill_price(ib_client):
         order_ref=1,
         order_status="PartiallyFilled",
         avg_fill_price=0.0,
-        filled=Decimal("50"),
-        remaining=Decimal("50"),
+        filled=Decimal(50),
+        remaining=Decimal(50),
     )
 
 

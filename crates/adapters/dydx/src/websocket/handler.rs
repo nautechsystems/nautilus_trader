@@ -67,6 +67,10 @@ pub enum HandlerCommand {
     UpdateInstrument(Box<InstrumentAny>),
     /// Initialize instruments in bulk.
     InitializeInstruments(Vec<InstrumentAny>),
+    /// Register a bar type for candle subscriptions.
+    RegisterBarType { topic: String, bar_type: BarType },
+    /// Unregister a bar type for candle subscriptions.
+    UnregisterBarType { topic: String },
     /// Send a text message via WebSocket.
     SendText(String),
 }
@@ -177,8 +181,23 @@ impl FeedHandler {
                                     serde_json::from_value::<DydxWsConnectedMsg>(val)
                                         .map(DydxWsMessage::Connected)
                                 } else if meta.is_subscribed() {
-                                    serde_json::from_value::<DydxWsSubscriptionMsg>(val)
-                                        .map(DydxWsMessage::Subscribed)
+                                    // Check if this is a subaccounts subscription with initial state
+                                    if let Ok(sub_msg) =
+                                        serde_json::from_value::<DydxWsSubscriptionMsg>(val.clone())
+                                    {
+                                        if sub_msg.channel == DydxWsChannel::Subaccounts {
+                                            // Parse as subaccounts-specific subscription message
+                                            serde_json::from_value::<
+                                                crate::schemas::ws::DydxWsSubaccountsSubscribed,
+                                            >(val)
+                                            .map(DydxWsMessage::SubaccountsSubscribed)
+                                        } else {
+                                            Ok(DydxWsMessage::Subscribed(sub_msg))
+                                        }
+                                    } else {
+                                        serde_json::from_value::<DydxWsSubscriptionMsg>(val)
+                                            .map(DydxWsMessage::Subscribed)
+                                    }
                                 } else if meta.is_unsubscribed() {
                                     serde_json::from_value::<DydxWsSubscriptionMsg>(val)
                                         .map(DydxWsMessage::Unsubscribed)
@@ -256,6 +275,12 @@ impl FeedHandler {
                     self.instruments.insert(symbol, instrument);
                 }
             }
+            HandlerCommand::RegisterBarType { topic, bar_type } => {
+                self.bar_types.insert(topic, bar_type);
+            }
+            HandlerCommand::UnregisterBarType { topic } => {
+                self.bar_types.remove(&topic);
+            }
             HandlerCommand::SendText(text) => {
                 if let Err(e) = self.client.send_text(text, None).await {
                     tracing::error!("Failed to send WebSocket text: {e}");
@@ -289,6 +314,10 @@ impl FeedHandler {
             DydxWsMessage::Subscribed(sub) => {
                 tracing::debug!("Subscribed to {} (id: {:?})", sub.channel, sub.id);
                 Ok(None)
+            }
+            DydxWsMessage::SubaccountsSubscribed(msg) => {
+                tracing::debug!("Subaccounts subscribed with initial state");
+                self.parse_subaccounts_subscribed(&msg)
             }
             DydxWsMessage::Unsubscribed(unsub) => {
                 tracing::debug!("Unsubscribed from {} (id: {:?})", unsub.channel, unsub.id);
@@ -367,10 +396,10 @@ impl FeedHandler {
 
             let tick = TradeTick::new(
                 instrument_id,
-                Price::from_decimal(price, instrument.price_precision()).map_err(|e| {
+                Price::from_decimal_dp(price, instrument.price_precision()).map_err(|e| {
                     DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
                 })?,
-                Quantity::from_decimal(size, instrument.size_precision()).map_err(|e| {
+                Quantity::from_decimal_dp(size, instrument.size_precision()).map_err(|e| {
                     DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
                 })?,
                 aggressor_side,
@@ -503,10 +532,10 @@ impl FeedHandler {
 
             let order = BookOrder::new(
                 OrderSide::Buy,
-                Price::from_decimal(price, price_precision).map_err(|e| {
+                Price::from_decimal_dp(price, price_precision).map_err(|e| {
                     DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
                 })?,
-                Quantity::from_decimal(size, size_precision).map_err(|e| {
+                Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
                     DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
                 })?,
                 0,
@@ -535,10 +564,10 @@ impl FeedHandler {
 
             let order = BookOrder::new(
                 OrderSide::Sell,
-                Price::from_decimal(price, price_precision).map_err(|e| {
+                Price::from_decimal_dp(price, price_precision).map_err(|e| {
                     DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
                 })?,
-                Quantity::from_decimal(size, size_precision).map_err(|e| {
+                Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
                     DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
                 })?,
                 0,
@@ -605,7 +634,7 @@ impl FeedHandler {
             let size = Decimal::from_str(size_str)
                 .map_err(|e| DydxWsError::Parse(format!("Failed to parse bid size: {e}")))?;
 
-            let qty = Quantity::from_decimal(size, size_precision).map_err(|e| {
+            let qty = Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
                 DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
             })?;
             let action = if qty.is_zero() {
@@ -616,7 +645,7 @@ impl FeedHandler {
 
             let order = BookOrder::new(
                 OrderSide::Buy,
-                Price::from_decimal(price, price_precision).map_err(|e| {
+                Price::from_decimal_dp(price, price_precision).map_err(|e| {
                     DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
                 })?,
                 qty,
@@ -644,7 +673,7 @@ impl FeedHandler {
             let size = Decimal::from_str(size_str)
                 .map_err(|e| DydxWsError::Parse(format!("Failed to parse ask size: {e}")))?;
 
-            let qty = Quantity::from_decimal(size, size_precision).map_err(|e| {
+            let qty = Quantity::from_decimal_dp(size, size_precision).map_err(|e| {
                 DydxWsError::Parse(format!("Failed to create Quantity from decimal: {e}"))
             })?;
             let action = if qty.is_zero() {
@@ -655,7 +684,7 @@ impl FeedHandler {
 
             let order = BookOrder::new(
                 OrderSide::Sell,
-                Price::from_decimal(price, price_precision).map_err(|e| {
+                Price::from_decimal_dp(price, price_precision).map_err(|e| {
                     DydxWsError::Parse(format!("Failed to create Price from decimal: {e}"))
                 })?,
                 qty,
@@ -720,19 +749,19 @@ impl FeedHandler {
 
         let bar = Bar::new(
             *bar_type,
-            Price::from_decimal(open, instrument.price_precision()).map_err(|e| {
+            Price::from_decimal_dp(open, instrument.price_precision()).map_err(|e| {
                 DydxWsError::Parse(format!("Failed to create open Price from decimal: {e}"))
             })?,
-            Price::from_decimal(high, instrument.price_precision()).map_err(|e| {
+            Price::from_decimal_dp(high, instrument.price_precision()).map_err(|e| {
                 DydxWsError::Parse(format!("Failed to create high Price from decimal: {e}"))
             })?,
-            Price::from_decimal(low, instrument.price_precision()).map_err(|e| {
+            Price::from_decimal_dp(low, instrument.price_precision()).map_err(|e| {
                 DydxWsError::Parse(format!("Failed to create low Price from decimal: {e}"))
             })?,
-            Price::from_decimal(close, instrument.price_precision()).map_err(|e| {
+            Price::from_decimal_dp(close, instrument.price_precision()).map_err(|e| {
                 DydxWsError::Parse(format!("Failed to create close Price from decimal: {e}"))
             })?,
-            Quantity::from_decimal(volume, instrument.size_precision()).map_err(|e| {
+            Quantity::from_decimal_dp(volume, instrument.size_precision()).map_err(|e| {
                 DydxWsError::Parse(format!(
                     "Failed to create volume Quantity from decimal: {e}"
                 ))
@@ -751,15 +780,14 @@ impl FeedHandler {
         let contents: DydxMarketsContents = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse markets contents: {e}")))?;
 
-        // Markets channel is primarily for oracle price updates
-        // Python implementation publishes custom DYDXOraclePrice data type
-        // For now, we just log the update
+        // Markets channel provides oracle price updates needed for margin calculations
+        // Forward to execution client to update oracle_prices map
         if let Some(oracle_prices) = contents.oracle_prices {
             tracing::debug!(
-                "Received oracle price updates for {} markets",
+                "Forwarding oracle price updates for {} markets to execution client",
                 oracle_prices.len()
             );
-            // TODO: Implement custom oracle price data type if needed
+            return Ok(Some(NautilusWsMessage::OraclePrices(oracle_prices)));
         }
 
         Ok(None)
@@ -769,34 +797,54 @@ impl FeedHandler {
         &self,
         data: &DydxWsChannelDataMsg,
     ) -> DydxWsResult<Option<NautilusWsMessage>> {
-        use crate::schemas::ws::DydxWsSubaccountsChannelContents;
+        use crate::schemas::ws::{DydxWsSubaccountsChannelContents, DydxWsSubaccountsChannelData};
 
         let contents: DydxWsSubaccountsChannelContents =
             serde_json::from_value(data.contents.clone()).map_err(|e| {
                 DydxWsError::Parse(format!("Failed to parse subaccounts contents: {e}"))
             })?;
 
-        // Handle orders
-        if let Some(orders) = contents.orders
-            && !orders.is_empty()
-        {
-            tracing::debug!("Received {} order update(s)", orders.len());
-            // Orders are handled by execution client, not data client
-            // For now, log and skip
-            return Ok(None);
-        }
+        // Check if we have any orders or fills
+        let has_orders = contents.orders.as_ref().is_some_and(|o| !o.is_empty());
+        let has_fills = contents.fills.as_ref().is_some_and(|f| !f.is_empty());
 
-        // Handle fills
-        if let Some(fills) = contents.fills
-            && !fills.is_empty()
-        {
-            tracing::debug!("Received {} fill update(s)", fills.len());
-            // Fills are handled by execution client, not data client
-            // For now, log and skip
-            return Ok(None);
+        if has_orders || has_fills {
+            // Forward raw channel data to execution client for parsing
+            // The execution client has the clob_pair_id and instrument mappings needed
+            tracing::debug!(
+                "Received {} order(s), {} fill(s) - forwarding to execution client",
+                contents.orders.as_ref().map_or(0, |o| o.len()),
+                contents.fills.as_ref().map_or(0, |f| f.len())
+            );
+
+            let channel_data = DydxWsSubaccountsChannelData {
+                msg_type: data.msg_type,
+                connection_id: data.connection_id.clone(),
+                message_id: data.message_id,
+                id: data.id.clone().unwrap_or_default(),
+                channel: data.channel,
+                version: data.version.clone().unwrap_or_default(),
+                contents,
+            };
+
+            return Ok(Some(NautilusWsMessage::SubaccountsChannelData(Box::new(
+                channel_data,
+            ))));
         }
 
         Ok(None)
+    }
+
+    fn parse_subaccounts_subscribed(
+        &self,
+        msg: &crate::schemas::ws::DydxWsSubaccountsSubscribed,
+    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+        // Pass raw subaccount subscription to execution client for parsing
+        // The execution client has access to instruments and oracle prices needed for margin calculations
+        tracing::debug!("Forwarding subaccount subscription to execution client");
+        Ok(Some(NautilusWsMessage::SubaccountSubscribed(Box::new(
+            msg.clone(),
+        ))))
     }
 
     fn parse_instrument_id(&self, symbol: &str) -> DydxWsResult<InstrumentId> {

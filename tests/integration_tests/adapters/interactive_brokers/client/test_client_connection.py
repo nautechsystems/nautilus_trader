@@ -104,9 +104,10 @@ async def test_reconnect_fail(ib_client):
     # Simulating a failed reconnection by having isConnected return False both times
     ib_client.isConnected = MagicMock(side_effect=[False, False])
 
+    await ib_client.disconnect()
+
     # Attempting to reconnect and expecting an exception due to failed reconnection
     with pytest.raises(Exception, match="Failed to reconnect"):
-        await ib_client.disconnect()
         await ib_client.connect()
 
     # Assertions to ensure disconnect and connect methods were called

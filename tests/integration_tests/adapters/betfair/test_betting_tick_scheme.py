@@ -230,7 +230,7 @@ def test_betting_instrument_tick_scheme_next_bid_prices() -> None:
 
 
 @pytest.mark.parametrize(
-    "instrument, expected_bids, expected_asks",
+    ("instrument", "expected_bids", "expected_asks"),
     [
         (betting_instrument(), 10, 20),
     ],

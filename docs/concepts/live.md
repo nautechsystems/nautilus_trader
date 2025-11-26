@@ -271,6 +271,7 @@ The following additional options provide further control over execution behavior
 
 | Setting                            | Default | Description                                                                                                |
 |------------------------------------|---------|------------------------------------------------------------------------------------------------------------|
+| `allow_overfills`                  | False   | If enabled, allows order fills that exceed the order quantity (logs warning instead of raising). Useful when position reconciliation races with exchange fill events. |
 | `generate_missing_orders`          | True    | If `LIMIT` order events will be generated during reconciliation to align position discrepancies. These orders use strategy ID `EXTERNAL` with tag `RECONCILIATION`, ensuring proper position netting. |
 | `snapshot_orders`                  | False   | If order snapshots should be taken on order events.                                                        |
 | `snapshot_positions`               | False   | If position snapshots should be taken on position events.                                                  |

@@ -55,6 +55,7 @@ impl WebSocketConfig {
         reconnect_delay_max_ms=30_000,
         reconnect_backoff_factor=1.5,
         reconnect_jitter_ms=100,
+        reconnect_max_attempts=None,
     ))]
     fn py_new(
         url: String,
@@ -68,6 +69,7 @@ impl WebSocketConfig {
         reconnect_delay_max_ms: Option<u64>,
         reconnect_backoff_factor: Option<f64>,
         reconnect_jitter_ms: Option<u64>,
+        reconnect_max_attempts: Option<u32>,
     ) -> Self {
         // Create function pointer that calls Python handler
         let handler_clone = clone_py_object(&handler);
@@ -114,6 +116,7 @@ impl WebSocketConfig {
             reconnect_delay_max_ms,
             reconnect_backoff_factor,
             reconnect_jitter_ms,
+            reconnect_max_attempts,
         }
     }
 }
@@ -308,9 +311,9 @@ impl WebSocketClient {
         data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
         let writer_tx = slf.writer_tx.clone();
         let mode = slf.connection_mode.clone();
+        let data_len = data.len();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if !ConnectionMode::from_atomic(&mode).is_active() {
@@ -320,7 +323,7 @@ impl WebSocketClient {
                 );
                 return Err(to_pyruntime_err(e));
             }
-            tracing::trace!("Sending pong: {data_str}");
+            tracing::trace!("Sending pong frame ({data_len} bytes)");
 
             let msg = Message::Pong(data.into());
             writer_tx
@@ -369,6 +372,7 @@ mod tests {
     }
 
     impl Callback for TestCallback {
+        #[allow(clippy::panic_in_result_fn)]
         fn on_request(
             self,
             request: &server::Request,
@@ -512,6 +516,7 @@ counter = Counter()
             None,
             None,
             None,
+            None,
         );
         let client = WebSocketClient::connect(config, None, Vec::new(), None)
             .await
@@ -583,6 +588,7 @@ counter = Counter()
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
+            None,
             None,
             None,
             None,

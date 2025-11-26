@@ -98,8 +98,9 @@ class TestBarSpecification:
     )
     def test_timedelta_for_unsupported_aggregations_raises_value_error(self, aggregation):
         # Arrange, Act, Assert
+        spec = BarSpecification(1, aggregation, price_type=PriceType.LAST)
+
         with pytest.raises(ValueError):
-            spec = BarSpecification(1, aggregation, price_type=PriceType.LAST)
             _ = spec.timedelta
 
     @pytest.mark.parametrize(

@@ -76,7 +76,7 @@ use crate::common::credential::DydxCredential;
 /// - **Inner handler**: Owns WebSocketClient exclusively and processes messages in a dedicated task
 ///
 /// Communication uses lock-free channels:
-/// - Commands flow from client → handler via `handler_cmd_tx`
+/// - Commands flow from client → handler via `cmd_tx`
 /// - Parsed events flow from handler → client via `out_rx`
 #[derive(Debug)]
 #[cfg_attr(
@@ -107,7 +107,7 @@ pub struct DydxWebSocketClient {
     /// Optional heartbeat interval in seconds.
     heartbeat: Option<u64>,
     /// Command channel sender to handler.
-    handler_cmd_tx: Arc<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
+    cmd_tx: Arc<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
     /// Receiver for parsed Nautilus messages from handler.
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
     /// Background handler task handle.
@@ -127,7 +127,7 @@ impl Clone for DydxWebSocketClient {
             instruments_cache: self.instruments_cache.clone(),
             account_id: self.account_id,
             heartbeat: self.heartbeat,
-            handler_cmd_tx: self.handler_cmd_tx.clone(),
+            cmd_tx: self.cmd_tx.clone(),
             out_rx: None,       // Cannot clone receiver - only one owner allowed
             handler_task: None, // Cannot clone task handle
         }
@@ -156,7 +156,7 @@ impl DydxWebSocketClient {
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
             heartbeat: _heartbeat,
-            handler_cmd_tx: Arc::new(cmd_tx),
+            cmd_tx: Arc::new(cmd_tx),
             out_rx: None,
             handler_task: None,
         }
@@ -188,7 +188,7 @@ impl DydxWebSocketClient {
             instruments_cache: Arc::new(DashMap::new()),
             account_id: Some(account_id),
             heartbeat: _heartbeat,
-            handler_cmd_tx: Arc::new(cmd_tx),
+            cmd_tx: Arc::new(cmd_tx),
             out_rx: None,
             handler_task: None,
         }
@@ -245,7 +245,7 @@ impl DydxWebSocketClient {
 
         // Send command to handler if connected
         if let Err(e) = self
-            .handler_cmd_tx
+            .cmd_tx
             .send(HandlerCommand::UpdateInstrument(Box::new(instrument)))
         {
             tracing::debug!("Failed to send UpdateInstrument command to handler: {e}");
@@ -263,7 +263,7 @@ impl DydxWebSocketClient {
 
         // Send command to handler if connected
         if let Err(e) = self
-            .handler_cmd_tx
+            .cmd_tx
             .send(HandlerCommand::InitializeInstruments(instruments))
         {
             tracing::debug!("Failed to send InitializeInstruments command to handler: {e}");
@@ -319,6 +319,7 @@ impl DydxWebSocketClient {
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(200),
+            reconnect_max_attempts: None,
         };
 
         let client = WebSocketClient::connect(cfg, None, vec![], None)
@@ -332,7 +333,7 @@ impl DydxWebSocketClient {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
 
-        self.handler_cmd_tx = Arc::new(cmd_tx.clone());
+        self.cmd_tx = Arc::new(cmd_tx.clone());
         self.out_rx = Some(out_rx);
 
         // Replay cached instruments to the new handler
@@ -384,11 +385,23 @@ impl DydxWebSocketClient {
 
     /// Sends a text message via the handler.
     async fn send_text_inner(&self, text: &str) -> DydxWsResult<()> {
-        self.handler_cmd_tx
+        self.cmd_tx
             .send(HandlerCommand::SendText(text.to_string()))
             .map_err(|e| {
                 DydxWsError::Transport(format!("Failed to send command to handler: {e}"))
             })?;
+        Ok(())
+    }
+
+    /// Sends a command to the handler.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler task has terminated.
+    pub fn send_command(&self, cmd: HandlerCommand) -> DydxWsResult<()> {
+        self.cmd_tx.send(cmd).map_err(|e| {
+            DydxWsError::Transport(format!("Failed to send command to handler: {e}"))
+        })?;
         Ok(())
     }
 
@@ -487,7 +500,7 @@ impl DydxWebSocketClient {
         resolution: &str,
     ) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
-        let id = format!("{ticker}-{resolution}");
+        let id = format!("{ticker}/{resolution}");
         let sub = super::messages::DydxSubscription {
             op: super::enums::DydxWsOperation::Subscribe,
             channel: super::enums::DydxWsChannel::Candles,
@@ -508,7 +521,7 @@ impl DydxWebSocketClient {
         resolution: &str,
     ) -> DydxWsResult<()> {
         let ticker = Self::ticker_from_instrument_id(&instrument_id);
-        let id = format!("{ticker}-{resolution}");
+        let id = format!("{ticker}/{resolution}");
         let sub = super::messages::DydxSubscription {
             op: super::enums::DydxWsOperation::Unsubscribe,
             channel: super::enums::DydxWsChannel::Candles,

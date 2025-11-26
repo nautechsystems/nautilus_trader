@@ -128,9 +128,9 @@ class TestBinanceSpotExecutionClient:
             clock=self.clock,
         )
 
-        yield
+        return
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_unsupported_order_logs_error(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -160,7 +160,7 @@ class TestBinanceSpotExecutionClient:
         # Assert
         assert mock_send_request.call_args is None
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -198,7 +198,7 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["newClientOrderId"] is not None
         assert request[1]["payload"]["recvWindow"] == "5000"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -238,7 +238,7 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_order_with_price_match_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -274,7 +274,7 @@ class TestBinanceSpotExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "only supported for Binance futures" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_stop_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -318,7 +318,7 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_if_touched_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -362,7 +362,7 @@ class TestBinanceSpotExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["signature"] is not None
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_query_order(self, mocker):
         # Arrange
         mock_query_order = mocker.patch(

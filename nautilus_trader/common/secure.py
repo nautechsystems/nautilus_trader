@@ -153,6 +153,8 @@ class SecureString:
             True if values are equal.
 
         """
+        if other is None:
+            return False
         if isinstance(other, SecureString):
             if self._is_cleared or other._is_cleared:
                 return False

@@ -28,7 +28,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.kraken.conftest import _create_ws_mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client_builder(
     event_loop,
     mock_http_client,

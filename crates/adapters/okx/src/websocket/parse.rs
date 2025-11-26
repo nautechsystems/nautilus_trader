@@ -942,7 +942,7 @@ pub fn parse_order_status_report(
         // Convert quote quantity to base: quantity_base = sz_quote / price
         let quantity_base = if let Some(price) = conversion_price_dec {
             if !price.is_zero() {
-                Quantity::from_decimal(sz_quote_dec / price, size_precision)?
+                Quantity::from_decimal_dp(sz_quote_dec / price, size_precision)?
             } else {
                 parse_quantity(&msg.sz, size_precision)?
             }

@@ -104,7 +104,7 @@ if __name__ == "__main__":
                         "bar_type": "AUD/USD.SIM-15-MINUTE-BID-INTERNAL",
                         "fast_ema_period": 10,
                         "slow_ema_period": 20,
-                        "trade_size": Decimal("100_000"),
+                        "trade_size": Decimal(100_000),
                     },
                 ),
             ]

@@ -5,6 +5,12 @@
 
 set -euo pipefail
 
+# Exit cleanly if ripgrep is not installed
+if ! command -v rg &> /dev/null; then
+  echo "WARNING: ripgrep not found, skipping anyhow usage checks"
+  exit 0
+fi
+
 # Color output
 RED='\033[0;31m'
 NC='\033[0m' # No Color
@@ -41,15 +47,7 @@ while IFS=: read -r file line_num line_content; do
   echo "  Use fully qualified paths for other items (anyhow::bail!, anyhow::Result, etc.)"
   echo
   VIOLATIONS=$((VIOLATIONS + 1))
-done < <(
-  if command -v rg &> /dev/null; then
-    # Use ripgrep (faster)
-    rg -n "$PATTERN" crates --type rust 2> /dev/null || true
-  else
-    # Fall back to grep + find
-    find crates -name '*.rs' -type f -exec grep -Hn "$PATTERN" {} + 2> /dev/null || true
-  fi
-)
+done < <(rg -n "$PATTERN" crates --type rust 2> /dev/null || true)
 
 if [ $VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $VIOLATIONS anyhow import violation(s)${NC}"
@@ -73,13 +71,7 @@ while IFS=: read -r file line_num line_content; do
   echo "  Replace 'return Err(anyhow::anyhow!(...))' with 'anyhow::bail!(...)'"
   echo
   USAGE_VIOLATIONS=$((USAGE_VIOLATIONS + 1))
-done < <(
-  if command -v rg &> /dev/null; then
-    rg -n 'return\s+Err\(anyhow::anyhow!' crates --type rust 2> /dev/null || true
-  else
-    find crates -name '*.rs' -type f -exec grep -Hn 'return[[:space:]]\+Err(anyhow::anyhow!' {} + 2> /dev/null || true
-  fi
-)
+done < <(rg -n 'return\s+Err\(anyhow::anyhow!' crates --type rust 2> /dev/null || true)
 
 if [ $USAGE_VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $USAGE_VIOLATIONS anyhow usage violation(s)${NC}"

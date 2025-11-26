@@ -542,10 +542,12 @@ def test_round_infinity():
     assert math.isinf(result)
 
     result = round_up(-math.inf, 1.0)
-    assert math.isinf(result) and result < 0
+    assert math.isinf(result)
+    assert result < 0
 
     result = round_down(-math.inf, 1.0)
-    assert math.isinf(result) and result < 0
+    assert math.isinf(result)
+    assert result < 0
 
 
 def test_round_nan():

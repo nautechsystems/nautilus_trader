@@ -180,6 +180,13 @@ impl From<uuid::Uuid> for UUID4 {
     }
 }
 
+impl From<UUID4> for uuid::Uuid {
+    /// Creates a [`uuid::Uuid`] from a [`UUID4`].
+    fn from(value: UUID4) -> Self {
+        Self::from_bytes(value.as_bytes())
+    }
+}
+
 impl Default for UUID4 {
     /// Creates a new default [`UUID4`] instance.
     ///
@@ -191,7 +198,7 @@ impl Default for UUID4 {
 
 impl Debug for UUID4 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}('{}')", stringify!(UUID4), self)
+        write!(f, "{}({})", stringify!(UUID4), self)
     }
 }
 
@@ -355,7 +362,7 @@ mod tests {
     fn test_debug() {
         let uuid_string = "2d89666b-1a1e-4a75-b193-4eb3b454c757";
         let uuid = UUID4::from(uuid_string);
-        assert_eq!(format!("{uuid:?}"), format!("UUID4('{uuid_string}')"));
+        assert_eq!(format!("{uuid:?}"), format!("UUID4({uuid_string})"));
     }
 
     #[rstest]

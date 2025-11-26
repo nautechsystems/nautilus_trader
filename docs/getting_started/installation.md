@@ -140,6 +140,30 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | g
 - `develop` branch wheels (`.dev`): We retain only the most recent wheel build.
 - `nightly` branch wheels (`a`): We retain only the 30 most recent wheel builds.
 
+### Verifying build provenance
+
+All release artifacts (wheels and source distributions) published to PyPI, GitHub Releases,
+and the Nautech Systems package index include cryptographic attestations that prove their authenticity and build provenance.
+
+These attestations are generated automatically during the CI/CD pipeline using [SLSA](https://slsa.dev/) build provenance, and can be verified to ensure:
+
+- The artifact was built by the official NautilusTrader GitHub Actions workflow.
+- The artifact corresponds to a specific commit SHA in the repository.
+- The artifact hasn't been tampered with since it was built.
+
+To verify a wheel file using the GitHub CLI:
+
+```bash
+gh attestation verify nautilus_trader-1.220.0-*.whl --owner nautechsystems
+```
+
+This provides supply chain security by allowing you to cryptographically verify that the installed package came from the official NautilusTrader build process.
+
+:::note
+Attestation verification requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed.
+Development wheels from `develop` and `nightly` branches are also attested and can be verified the same way.
+:::
+
 ## From source
 
 It's possible to install from source using pip if you first install the build dependencies as specified in the `pyproject.toml`.
@@ -147,67 +171,56 @@ It's possible to install from source using pip if you first install the build de
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
 
-```bash
-curl https://sh.rustup.rs -sSf | sh
-```
+     ```bash
+     curl https://sh.rustup.rs -sSf | sh
+     ```
 
-- Windows:
-  - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-  - Install "Desktop development with C++" using [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-- Verify (any system):
-    from a terminal session run: `rustc --version`
+   - Windows:
+     - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
+     - Install "Desktop development with C++" using [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+   - Verify (any system): From a terminal session run `rustc --version`
 
 2. Enable `cargo` in the current shell:
    - Linux and macOS:
 
-```bash
-source $HOME/.cargo/env
-```
+     ```bash
+     source $HOME/.cargo/env
+     ```
 
-- Windows:
-  - Start a new PowerShell
+   - Windows: Start a new PowerShell
 
-     1. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
-- Linux:
+3. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
+   - Linux:
 
-```bash
-sudo apt-get install clang
-```
+     ```bash
+     sudo apt-get install clang
+     ```
 
-- Windows:
+   - Windows:
+     1. Add Clang to your [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/):
+        - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (latest) = checked | Modify
+     2. Enable `clang` in the current shell:
 
-1. Add Clang to your [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/):
+        ```powershell
+        [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
+        ```
 
-- Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (latest) = checked | Modify
+   - Verify (any system): From a terminal session run `clang --version`
 
-2. Enable `clang` in the current shell:
-
-```powershell
-[System.Environment]::SetEnvironmentVariable('path', "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
-```
-
-- Verify (any system):
-  from a terminal session run:
-
-```bash
-clang --version
-```
-
-3. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
-
+4. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
    - Linux and macOS:
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
+     ```bash
+     curl -LsSf https://astral.sh/uv/install.sh | sh
+     ```
 
-- Windows (PowerShell):
+   - Windows (PowerShell):
 
-```powershell
-irm https://astral.sh/uv/install.ps1 | iex
-```
+     ```powershell
+     irm https://astral.sh/uv/install.ps1 | iex
+     ```
 
-4. Clone the source with `git`, and install from the project's root directory:
+5. Clone the source with `git`, and install from the project's root directory:
 
 ```bash
 git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
@@ -219,7 +232,7 @@ uv sync --all-extras
 The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 :::
 
-5. Set environment variables for PyO3 compilation (Linux and macOS only):
+6. Set environment variables for PyO3 compilation (Linux and macOS only):
 
 ```bash
 # Set the library path for the Python interpreter (in this case Python 3.13.4)
@@ -227,11 +240,17 @@ export LD_LIBRARY_PATH="$HOME/.local/share/uv/python/cpython-3.13.4-linux-x86_64
 
 # Set the Python executable path for PyO3
 export PYO3_PYTHON=$(pwd)/.venv/bin/python
+
+# Required for Rust tests when using uv-installed Python
+export PYTHONHOME=$(python -c "import sys; print(sys.base_prefix)")
 ```
 
 :::note
 Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match your system.
 Use `uv python list` to find the exact path for your Python installation.
+
+The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`-installed Python.
+Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 :::
 
 ## From GitHub release
@@ -249,7 +268,7 @@ NautilusTrader is still under active development. Some features may be incomplet
 the API is becoming more stable, breaking changes can occur between releases.
 We strive to document these changes in the release notes on a **best-effort basis**.
 
-We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
+We aim to follow a **bi-weekly release schedule**, though experimental or larger features may cause delays.
 
 Use NautilusTrader only if you are prepared to adapt to these changes.
 

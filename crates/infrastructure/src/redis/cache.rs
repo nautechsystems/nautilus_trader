@@ -801,15 +801,15 @@ fn get_index_key(key: &str) -> anyhow::Result<&str> {
         })
 }
 
-#[allow(dead_code, reason = "Under development")]
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct RedisCacheDatabaseAdapter {
     pub encoding: SerializationEncoding,
     pub database: RedisCacheDatabase,
 }
 
-#[allow(dead_code, reason = "Under development")]
-#[allow(unused, reason = "Under development")]
+#[allow(dead_code)]
+#[allow(unused)]
 #[async_trait::async_trait]
 impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()> {

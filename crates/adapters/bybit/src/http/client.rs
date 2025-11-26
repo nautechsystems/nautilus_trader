@@ -55,9 +55,10 @@ use ustr::Ustr;
 use super::{
     error::BybitHttpError,
     models::{
-        BybitFeeRate, BybitFeeRateResponse, BybitInstrumentInverseResponse,
-        BybitInstrumentLinearResponse, BybitInstrumentOptionResponse, BybitInstrumentSpotResponse,
-        BybitKlinesResponse, BybitOpenOrdersResponse, BybitOrderHistoryResponse,
+        BybitAccountDetailsResponse, BybitBorrowResponse, BybitFeeRate, BybitFeeRateResponse,
+        BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
+        BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
+        BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrderHistoryResponse,
         BybitPlaceOrderResponse, BybitPositionListResponse, BybitServerTimeResponse,
         BybitSetLeverageResponse, BybitSetMarginModeResponse, BybitSetTradingStopResponse,
         BybitSwitchModeResponse, BybitTradeHistoryResponse, BybitTradesResponse,
@@ -66,9 +67,10 @@ use super::{
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
         BybitBatchCancelOrderEntryBuilder, BybitBatchCancelOrderParamsBuilder,
-        BybitBatchPlaceOrderEntryBuilder, BybitCancelAllOrdersParamsBuilder,
-        BybitCancelOrderParamsBuilder, BybitFeeRateParams, BybitInstrumentsInfoParams,
-        BybitKlinesParams, BybitKlinesParamsBuilder, BybitOpenOrdersParamsBuilder,
+        BybitBatchPlaceOrderEntryBuilder, BybitBorrowParamsBuilder,
+        BybitCancelAllOrdersParamsBuilder, BybitCancelOrderParamsBuilder, BybitFeeRateParams,
+        BybitInstrumentsInfoParams, BybitKlinesParams, BybitKlinesParamsBuilder,
+        BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
         BybitOrderHistoryParamsBuilder, BybitPlaceOrderParamsBuilder, BybitPositionListParams,
         BybitSetLeverageParamsBuilder, BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams,
         BybitSwitchModeParamsBuilder, BybitTickersParams, BybitTradeHistoryParams,
@@ -106,7 +108,15 @@ pub static BYBIT_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
     Quota::per_second(NonZeroU32::new(10).expect("Should be a valid non-zero u32"))
 });
 
+/// Bybit repay endpoint rate limit.
+///
+/// Conservative limit to avoid hitting API restrictions when repaying small borrows.
+pub static BYBIT_REPAY_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(1).expect("Should be a valid non-zero u32"))
+});
+
 const BYBIT_GLOBAL_RATE_KEY: &str = "bybit:global";
+const BYBIT_REPAY_ROUTE_KEY: &str = "bybit:/v5/account/no-convert-repay";
 
 /// Raw HTTP client for low-level Bybit API operations.
 ///
@@ -257,7 +267,10 @@ impl BybitRawHttpClient {
     }
 
     fn rate_limiter_quotas() -> Vec<(String, Quota)> {
-        vec![(BYBIT_GLOBAL_RATE_KEY.to_string(), *BYBIT_REST_QUOTA)]
+        vec![
+            (BYBIT_GLOBAL_RATE_KEY.to_string(), *BYBIT_REST_QUOTA),
+            (BYBIT_REPAY_ROUTE_KEY.to_string(), *BYBIT_REPAY_QUOTA),
+        ]
     }
 
     fn rate_limit_keys(endpoint: &str) -> Vec<String> {
@@ -643,6 +656,20 @@ impl BybitRawHttpClient {
         .await
     }
 
+    /// Fetches account details (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/apikey-info>
+    pub async fn get_account_details(&self) -> Result<BybitAccountDetailsResponse, BybitHttpError> {
+        self.send_request::<_, ()>(Method::GET, "/v5/user/query-api", None, None, true)
+            .await
+    }
+
     /// Fetches trading fee rates for symbols.
     ///
     /// # Errors
@@ -818,6 +845,97 @@ impl BybitRawHttpClient {
             true,
         )
         .await
+    }
+
+    /// Manually borrows coins for margin trading.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Insufficient collateral for the borrow.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameter builder fails (should never happen with valid inputs).
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/borrow>
+    pub async fn borrow(
+        &self,
+        coin: &str,
+        amount: &str,
+    ) -> Result<BybitBorrowResponse, BybitHttpError> {
+        let params = BybitBorrowParamsBuilder::default()
+            .coin(coin.to_string())
+            .amount(amount.to_string())
+            .build()
+            .expect("Failed to build BybitBorrowParams");
+
+        let body = serde_json::to_vec(&params)?;
+        self.send_request::<_, ()>(Method::POST, "/v5/account/borrow", None, Some(body), true)
+            .await
+    }
+
+    /// Manually repays borrowed coins without asset conversion.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Called between 04:00-05:30 UTC (interest calculation window).
+    /// - Insufficient spot balance for repayment.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parameter builder fails (should never happen with valid inputs).
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/no-convert-repay>
+    pub async fn no_convert_repay(
+        &self,
+        coin: &str,
+        amount: Option<&str>,
+    ) -> Result<BybitNoConvertRepayResponse, BybitHttpError> {
+        let mut builder = BybitNoConvertRepayParamsBuilder::default();
+        builder.coin(coin.to_string());
+
+        if let Some(amt) = amount {
+            builder.amount(amt.to_string());
+        }
+
+        let params = builder
+            .build()
+            .expect("Failed to build BybitNoConvertRepayParams");
+
+        // TODO: Logging for visibility during development
+        if let Ok(params_json) = serde_json::to_string(&params) {
+            tracing::debug!("Repay request params: {params_json}");
+        }
+
+        let body = serde_json::to_vec(&params)?;
+        let result = self
+            .send_request::<_, ()>(
+                Method::POST,
+                "/v5/account/no-convert-repay",
+                None,
+                Some(body),
+                true,
+            )
+            .await;
+
+        // TODO: Logging for visibility during development
+        if let Err(ref e) = result
+            && let Ok(params_json) = serde_json::to_string(&params)
+        {
+            tracing::error!("Repay request failed with params {params_json}: {e}");
+        }
+
+        result
     }
 
     /// Fetches tickers for market data.
@@ -1261,6 +1379,21 @@ impl BybitHttpClient {
         self.inner.get_wallet_balance(params).await
     }
 
+    /// Fetches API key information including account details (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/apikey-info>
+    pub async fn get_account_details(&self) -> Result<BybitAccountDetailsResponse, BybitHttpError> {
+        self.inner.get_account_details().await
+    }
+
     /// Fetches position information (requires authentication).
     ///
     /// # Errors
@@ -1385,6 +1518,93 @@ impl BybitHttpClient {
         self.inner.set_trading_stop(params).await
     }
 
+    /// Get the outstanding spot borrow amount for a specific coin.
+    ///
+    /// Returns zero if no borrow exists.
+    ///
+    /// # Parameters
+    ///
+    /// - `coin`: The coin to check (e.g., "BTC", "ETH")
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The coin is not found in the wallet.
+    pub async fn get_spot_borrow_amount(&self, coin: &str) -> anyhow::Result<Decimal> {
+        let params = BybitWalletBalanceParams {
+            account_type: BybitAccountType::Unified,
+            coin: Some(coin.to_string()),
+        };
+
+        let response = self.inner.get_wallet_balance(&params).await?;
+
+        let borrow_amount = response
+            .result
+            .list
+            .first()
+            .and_then(|wallet| wallet.coin.iter().find(|c| c.coin.as_str() == coin))
+            .map_or(Decimal::ZERO, |balance| balance.spot_borrow);
+
+        Ok(borrow_amount)
+    }
+
+    /// Borrows coins for spot margin trading.
+    ///
+    /// This should be called before opening short spot positions.
+    ///
+    /// # Parameters
+    ///
+    /// - `coin`: The coin to repay (e.g., "BTC", "ETH")
+    /// - `amount`: Optional amount to borrow. If None, repays all outstanding borrows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Insufficient collateral for the borrow.
+    pub async fn borrow_spot(
+        &self,
+        coin: &str,
+        amount: Quantity,
+    ) -> anyhow::Result<BybitBorrowResponse> {
+        let amount_str = amount.to_string();
+        self.inner
+            .borrow(coin, &amount_str)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to borrow {} {}: {}", amount, coin, e))
+    }
+
+    /// Repays spot borrows for a specific coin.
+    ///
+    /// This should be called after closing short spot positions to avoid accruing interest.
+    ///
+    /// # Parameters
+    ///
+    /// - `coin`: The coin to repay (e.g., "BTC", "ETH")
+    /// - `amount`: Optional amount to repay. If None, repays all outstanding borrows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Called between 04:00-05:30 UTC (interest calculation window).
+    /// - Insufficient spot balance for repayment.
+    pub async fn repay_spot_borrow(
+        &self,
+        coin: &str,
+        amount: Option<Quantity>,
+    ) -> anyhow::Result<BybitNoConvertRepayResponse> {
+        let amount_str = amount.as_ref().map(|q| q.to_string());
+        self.inner
+            .no_convert_repay(coin, amount_str.as_deref())
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to repay spot borrow for {coin}: {e}"))
+    }
+
     /// Generate SPOT position reports from wallet balances.
     ///
     /// # Errors
@@ -1409,7 +1629,7 @@ impl BybitHttpClient {
 
         for wallet in &response.result.list {
             for coin_balance in &wallet.coin {
-                let balance = coin_balance.wallet_balance;
+                let balance = coin_balance.wallet_balance - coin_balance.spot_borrow;
                 *wallet_by_coin
                     .entry(coin_balance.coin)
                     .or_insert(Decimal::ZERO) += balance;
@@ -1426,17 +1646,16 @@ impl BybitHttpClient {
                 let coin = base_currency.code;
                 let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
-                // Handle negative balances (borrowed assets) by using absolute value
-                let balance_f64 = wallet_balance.to_string().parse::<f64>().unwrap_or(0.0);
-                let quantity = Quantity::new(balance_f64.abs(), instrument.size_precision());
-
-                let side = if balance_f64 > 0.0 {
+                let side = if wallet_balance > Decimal::ZERO {
                     PositionSideSpecified::Long
-                } else if balance_f64 < 0.0 {
+                } else if wallet_balance < Decimal::ZERO {
                     PositionSideSpecified::Short
                 } else {
                     PositionSideSpecified::Flat
                 };
+
+                let abs_balance = wallet_balance.abs();
+                let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
 
                 let report = PositionStatusReport::new(
                     account_id,
@@ -1474,21 +1693,20 @@ impl BybitHttpClient {
                     continue;
                 }
 
-                // Handle negative balances (borrowed assets) by using absolute value
-                let balance_f64 = wallet_balance.to_string().parse::<f64>().unwrap_or(0.0);
-                let quantity = Quantity::new(balance_f64.abs(), instrument.size_precision());
-
-                if quantity.raw == 0 {
-                    continue;
-                }
-
-                let side = if balance_f64 > 0.0 {
+                let side = if wallet_balance > Decimal::ZERO {
                     PositionSideSpecified::Long
-                } else if balance_f64 < 0.0 {
+                } else if wallet_balance < Decimal::ZERO {
                     PositionSideSpecified::Short
                 } else {
                     PositionSideSpecified::Flat
                 };
+
+                let abs_balance = wallet_balance.abs();
+                let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
+
+                if quantity.is_zero() {
+                    continue;
+                }
 
                 let report = PositionStatusReport::new(
                     account_id,
@@ -2186,15 +2404,6 @@ impl BybitHttpClient {
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let ts_init = self.generate_ts_init();
 
-        let params = BybitInstrumentsInfoParams {
-            category: product_type,
-            symbol,
-            status: None,
-            base_coin: None,
-            limit: None,
-            cursor: None,
-        };
-
         let mut instruments = Vec::new();
 
         let default_fee_rate = |symbol: ustr::Ustr| BybitFeeRate {
@@ -2206,9 +2415,6 @@ impl BybitHttpClient {
 
         match product_type {
             BybitProductType::Spot => {
-                let response: BybitInstrumentSpotResponse =
-                    self.inner.get_instruments(&params).await?;
-
                 // Try to get fee rates, use defaults if credentials are missing
                 let fee_map: HashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
@@ -2232,22 +2438,40 @@ impl BybitHttpClient {
                     }
                 };
 
-                for definition in response.result.list {
-                    let fee_rate = fee_map
-                        .get(&definition.symbol)
-                        .cloned()
-                        .unwrap_or_else(|| default_fee_rate(definition.symbol));
-                    if let Ok(instrument) =
-                        parse_spot_instrument(&definition, &fee_rate, ts_init, ts_init)
-                    {
-                        instruments.push(instrument);
+                let mut cursor: Option<String> = None;
+
+                loop {
+                    let params = BybitInstrumentsInfoParams {
+                        category: product_type,
+                        symbol: symbol.clone(),
+                        status: None,
+                        base_coin: None,
+                        limit: Some(1000),
+                        cursor: cursor.clone(),
+                    };
+
+                    let response: BybitInstrumentSpotResponse =
+                        self.inner.get_instruments(&params).await?;
+
+                    for definition in response.result.list {
+                        let fee_rate = fee_map
+                            .get(&definition.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(definition.symbol));
+                        if let Ok(instrument) =
+                            parse_spot_instrument(&definition, &fee_rate, ts_init, ts_init)
+                        {
+                            instruments.push(instrument);
+                        }
+                    }
+
+                    cursor = response.result.next_page_cursor;
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        break;
                     }
                 }
             }
             BybitProductType::Linear => {
-                let response: BybitInstrumentLinearResponse =
-                    self.inner.get_instruments(&params).await?;
-
                 // Try to get fee rates, use defaults if credentials are missing
                 let fee_map: HashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
@@ -2271,22 +2495,40 @@ impl BybitHttpClient {
                     }
                 };
 
-                for definition in response.result.list {
-                    let fee_rate = fee_map
-                        .get(&definition.symbol)
-                        .cloned()
-                        .unwrap_or_else(|| default_fee_rate(definition.symbol));
-                    if let Ok(instrument) =
-                        parse_linear_instrument(&definition, &fee_rate, ts_init, ts_init)
-                    {
-                        instruments.push(instrument);
+                let mut cursor: Option<String> = None;
+
+                loop {
+                    let params = BybitInstrumentsInfoParams {
+                        category: product_type,
+                        symbol: symbol.clone(),
+                        status: None,
+                        base_coin: None,
+                        limit: Some(1000),
+                        cursor: cursor.clone(),
+                    };
+
+                    let response: BybitInstrumentLinearResponse =
+                        self.inner.get_instruments(&params).await?;
+
+                    for definition in response.result.list {
+                        let fee_rate = fee_map
+                            .get(&definition.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(definition.symbol));
+                        if let Ok(instrument) =
+                            parse_linear_instrument(&definition, &fee_rate, ts_init, ts_init)
+                        {
+                            instruments.push(instrument);
+                        }
+                    }
+
+                    cursor = response.result.next_page_cursor;
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        break;
                     }
                 }
             }
             BybitProductType::Inverse => {
-                let response: BybitInstrumentInverseResponse =
-                    self.inner.get_instruments(&params).await?;
-
                 // Try to get fee rates, use defaults if credentials are missing
                 let fee_map: HashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
@@ -2310,25 +2552,66 @@ impl BybitHttpClient {
                     }
                 };
 
-                for definition in response.result.list {
-                    let fee_rate = fee_map
-                        .get(&definition.symbol)
-                        .cloned()
-                        .unwrap_or_else(|| default_fee_rate(definition.symbol));
-                    if let Ok(instrument) =
-                        parse_inverse_instrument(&definition, &fee_rate, ts_init, ts_init)
-                    {
-                        instruments.push(instrument);
+                let mut cursor: Option<String> = None;
+
+                loop {
+                    let params = BybitInstrumentsInfoParams {
+                        category: product_type,
+                        symbol: symbol.clone(),
+                        status: None,
+                        base_coin: None,
+                        limit: Some(1000),
+                        cursor: cursor.clone(),
+                    };
+
+                    let response: BybitInstrumentInverseResponse =
+                        self.inner.get_instruments(&params).await?;
+
+                    for definition in response.result.list {
+                        let fee_rate = fee_map
+                            .get(&definition.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(definition.symbol));
+                        if let Ok(instrument) =
+                            parse_inverse_instrument(&definition, &fee_rate, ts_init, ts_init)
+                        {
+                            instruments.push(instrument);
+                        }
+                    }
+
+                    cursor = response.result.next_page_cursor;
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        break;
                     }
                 }
             }
             BybitProductType::Option => {
-                let response: BybitInstrumentOptionResponse =
-                    self.inner.get_instruments(&params).await?;
+                let mut cursor: Option<String> = None;
 
-                for definition in response.result.list {
-                    if let Ok(instrument) = parse_option_instrument(&definition, ts_init, ts_init) {
-                        instruments.push(instrument);
+                loop {
+                    let params = BybitInstrumentsInfoParams {
+                        category: product_type,
+                        symbol: symbol.clone(),
+                        status: None,
+                        base_coin: None,
+                        limit: Some(1000),
+                        cursor: cursor.clone(),
+                    };
+
+                    let response: BybitInstrumentOptionResponse =
+                        self.inner.get_instruments(&params).await?;
+
+                    for definition in response.result.list {
+                        if let Ok(instrument) =
+                            parse_option_instrument(&definition, ts_init, ts_init)
+                        {
+                            instruments.push(instrument);
+                        }
+                    }
+
+                    cursor = response.result.next_page_cursor;
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                        break;
                     }
                 }
             }
@@ -2600,12 +2883,15 @@ impl BybitHttpClient {
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
+    #[allow(clippy::too_many_arguments)]
     pub async fn request_order_status_reports(
         &self,
         account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         // Extract symbol parameter from instrument_id if provided
@@ -2687,7 +2973,7 @@ impl BybitHttpClient {
                     all_orders.extend(response.result.list);
 
                     cursor = response.result.next_page_cursor;
-                    if cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
                         break;
                     }
                 }
@@ -2778,6 +3064,12 @@ impl BybitHttpClient {
                     }
                     if let Some(coin) = settle_coin.clone() {
                         history_params.settle_coin(coin);
+                    }
+                    if let Some(start) = start {
+                        history_params.start_time(start.timestamp_millis());
+                    }
+                    if let Some(end) = end {
+                        history_params.end_time(end.timestamp_millis());
                     }
                     history_params.limit(page_limit as u32);
                     if let Some(c) = cursor {
@@ -3056,7 +3348,7 @@ impl BybitHttpClient {
                     }
 
                     cursor = response.result.next_page_cursor;
-                    if cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty()) {
+                    if cursor.as_ref().is_none_or(|c| c.is_empty()) {
                         break;
                     }
                 }

@@ -22,6 +22,7 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+defi = ["nautilus-model/defi"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -57,6 +58,8 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 log = { workspace = true }
+indexmap = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true }
 ustr = { workspace = true }
 
@@ -64,3 +67,4 @@ pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+serde_json = { workspace = true }

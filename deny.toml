@@ -76,6 +76,15 @@ version = "*"
 expression = "MIT"
 license-files = [{ path = "LICENSE", hash = 0xb0803f0e }]
 
+# dydx-proto uses "LicenseRef-dYdX-Custom" but is effectively MIT licensed.
+# The dYdX custom license is a permissive license compatible with MIT terms.
+# See: https://github.com/dydxprotocol/v4-chain/blob/main/LICENSE
+[[licenses.clarify]]
+name = "dydx-proto"
+version = "*"
+expression = "MIT"
+license-files = []
+
 [licenses.private]
 # Ignore workspace crates that aren't published
 # Note: All workspace crates in this project are LGPL-3.0 (project license)

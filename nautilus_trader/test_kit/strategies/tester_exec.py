@@ -70,8 +70,8 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     book_levels_to_print: PositiveInt = 10
     open_position_on_start_qty: Decimal | None = None
     open_position_time_in_force: TimeInForce = TimeInForce.GTC
-    enable_buys: bool = True
-    enable_sells: bool = True
+    enable_limit_buys: bool = True
+    enable_limit_sells: bool = True
     enable_stop_buys: bool = False
     enable_stop_sells: bool = False
     tob_offset_ticks: PositiveInt = 500  # Definitely out of the market
@@ -98,6 +98,7 @@ class ExecTesterConfig(StrategyConfig, frozen=True):
     dry_run: bool = False
     log_data: bool = True
     test_reject_post_only: bool = False
+    test_reject_reduce_only: bool = False
     can_unsubscribe: bool = True
 
 
@@ -232,10 +233,10 @@ class ExecTester(Strategy):
         if self.instrument is None or self.config.dry_run:
             return
 
-        if self.config.enable_buys:
+        if self.config.enable_limit_buys:
             self.maintain_buy_orders(self.instrument, best_bid, best_ask)
 
-        if self.config.enable_sells:
+        if self.config.enable_limit_sells:
             self.maintain_sell_orders(self.instrument, best_bid, best_ask)
 
         if self.config.enable_stop_buys:
@@ -323,6 +324,7 @@ class ExecTester(Strategy):
             quantity=quantity,
             time_in_force=self.config.open_position_time_in_force,
             quote_quantity=self.config.use_quote_quantity,
+            reduce_only=self.config.test_reject_reduce_only,
         )
 
         self.submit_order(
@@ -346,10 +348,10 @@ class ExecTester(Strategy):
             self.log.warning(f"Dry run, skipping create {order_side} order")
             return
 
-        if order_side == OrderSide.BUY and not self.config.enable_buys:
+        if order_side == OrderSide.BUY and not self.config.enable_limit_buys:
             self.log.warning("BUY orders not enabled, skipping")
             return
-        elif order_side == OrderSide.SELL and not self.config.enable_sells:
+        elif order_side == OrderSide.SELL and not self.config.enable_limit_sells:
             self.log.warning("SELL orders not enabled, skipping")
             return
 
@@ -419,10 +421,10 @@ class ExecTester(Strategy):
             self.log.warning(f"Dry run, skipping create {order_side} bracket order")
             return
 
-        if order_side == OrderSide.BUY and not self.config.enable_buys:
+        if order_side == OrderSide.BUY and not self.config.enable_limit_buys:
             self.log.warning("BUY orders not enabled, skipping")
             return
-        elif order_side == OrderSide.SELL and not self.config.enable_sells:
+        elif order_side == OrderSide.SELL and not self.config.enable_limit_sells:
             self.log.warning("SELL orders not enabled, skipping")
             return
 

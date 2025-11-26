@@ -46,8 +46,8 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::HyperliquidTriggerPriceType>()?;
     m.add_class::<crate::common::enums::HyperliquidConditionalOrderType>()?;
     m.add_class::<crate::common::enums::HyperliquidTrailingOffsetType>()?;
-    m.add_function(wrap_pyfunction!(urls::get_hyperliquid_http_base_url, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::get_hyperliquid_ws_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_hyperliquid_http_base_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_hyperliquid_ws_url, m)?)?;
     m.add_function(wrap_pyfunction!(
         py_hyperliquid_product_type_from_symbol,
         m

@@ -2493,7 +2493,7 @@ class TestActor:
     # Derived from combining the above two lists
     REQUEST_METHODS_ALL = REQUEST_METHODS_INSTRUMENT + REQUEST_METHODS_WITHOUT_NONE_START_HANDLING
 
-    @pytest.mark.parametrize("method_name,args", REQUEST_METHODS_INSTRUMENT)
+    @pytest.mark.parametrize(("method_name", "args"), REQUEST_METHODS_INSTRUMENT)
     def test_none_start_and_end_replaced_with_current_time(self, method_name, args):
         """
         Test that None start and end values are replaced with current time.
@@ -2514,7 +2514,7 @@ class TestActor:
         # Assert
         self.assert_successful_request(actor, request_id, method_name)
 
-    @pytest.mark.parametrize("method_name,args", REQUEST_METHODS_INSTRUMENT)
+    @pytest.mark.parametrize(("method_name", "args"), REQUEST_METHODS_INSTRUMENT)
     def test_none_start_replaced_with_current_time(self, method_name, args):
         """
         Test that None start value is replaced with current time.
@@ -2536,7 +2536,7 @@ class TestActor:
         # Assert
         self.assert_successful_request(actor, request_id, method_name)
 
-    @pytest.mark.parametrize("method_name,args", REQUEST_METHODS_INSTRUMENT)
+    @pytest.mark.parametrize(("method_name", "args"), REQUEST_METHODS_INSTRUMENT)
     def test_none_end_replaced_with_current_time(self, method_name, args):
         """
         Test that None end value is replaced with current time.
@@ -2559,7 +2559,7 @@ class TestActor:
         self.assert_successful_request(actor, request_id, method_name)
 
     @pytest.mark.parametrize(
-        "request_method_name,method_args",
+        ("request_method_name", "method_args"),
         REQUEST_METHODS_WITHOUT_NONE_START_HANDLING,
     )
     def test_start_parameter_none_causes_failure(self, request_method_name, method_args):
@@ -2582,7 +2582,7 @@ class TestActor:
         with pytest.raises(TypeError, match=r"'start' argument was `None`"):
             request_method(**method_args, start=None, end=end_time)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_start_parameter_future_time_causes_failure(self, request_method_name, method_args):
         """
         Test that future start times cause failure for all request methods.
@@ -2603,7 +2603,7 @@ class TestActor:
         with pytest.raises(ValueError, match="start was > now"):
             request_method(**method_args, start=future_start, end=end_time)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_end_parameter_none_succeeds(self, request_method_name, method_args):
         """
         Test that end=None succeeds for all request methods (replaces with current
@@ -2625,7 +2625,7 @@ class TestActor:
         # Assert
         self.assert_successful_request(actor, request_id, request_method_name)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_end_parameter_future_time_causes_failure(self, request_method_name, method_args):
         """
         Test that future end times cause failure for all request methods.
@@ -2646,7 +2646,7 @@ class TestActor:
         with pytest.raises(ValueError, match="end was > now"):
             request_method(**method_args, start=start_time, end=future_end)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_start_after_end_causes_failure(self, request_method_name, method_args):
         """
         Test that start > end causes failure for all request methods.
@@ -2668,7 +2668,7 @@ class TestActor:
         with pytest.raises(ValueError, match="start was > end"):
             request_method(**method_args, start=start_time, end=end_time)
 
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_start_equals_end_succeeds(self, request_method_name, method_args):
         """
         Test that start == end succeeds for all request methods.
@@ -2691,7 +2691,7 @@ class TestActor:
         self.assert_successful_request(actor, request_id, request_method_name)
 
     # Additional start/stop relationship validation test
-    @pytest.mark.parametrize("request_method_name,method_args", REQUEST_METHODS_ALL)
+    @pytest.mark.parametrize(("request_method_name", "method_args"), REQUEST_METHODS_ALL)
     def test_start_before_stop_succeeds(self, request_method_name, method_args):
         """
         Test that start < stop succeeds for all request methods.

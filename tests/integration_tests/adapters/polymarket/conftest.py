@@ -32,26 +32,26 @@ def live_logger():
     return Logger("TEST_LOGGER")
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     raise POLYMARKET_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state():
     pass

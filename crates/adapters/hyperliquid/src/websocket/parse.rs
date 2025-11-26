@@ -31,7 +31,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity, price::PriceRaw, quantity::QuantityRaw},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::{
     Decimal,
@@ -213,28 +213,11 @@ pub fn parse_ws_candle(
     bar_type: &BarType,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
-    let price_precision = instrument.price_precision();
-    let size_precision = instrument.size_precision();
-
-    let open_decimal = Decimal::from_str(&candle.o).context("failed to parse open price")?;
-    let open_raw = open_decimal.mantissa() as PriceRaw;
-    let open = Price::from_raw(open_raw, price_precision);
-
-    let high_decimal = Decimal::from_str(&candle.h).context("failed to parse high price")?;
-    let high_raw = high_decimal.mantissa() as PriceRaw;
-    let high = Price::from_raw(high_raw, price_precision);
-
-    let low_decimal = Decimal::from_str(&candle.l).context("failed to parse low price")?;
-    let low_raw = low_decimal.mantissa() as PriceRaw;
-    let low = Price::from_raw(low_raw, price_precision);
-
-    let close_decimal = Decimal::from_str(&candle.c).context("failed to parse close price")?;
-    let close_raw = close_decimal.mantissa() as PriceRaw;
-    let close = Price::from_raw(close_raw, price_precision);
-
-    let volume_decimal = Decimal::from_str(&candle.v).context("failed to parse volume")?;
-    let volume_raw = volume_decimal.mantissa().unsigned_abs() as QuantityRaw;
-    let volume = Quantity::from_raw(volume_raw, size_precision);
+    let open = parse_price(&candle.o, instrument, "candle.o")?;
+    let high = parse_price(&candle.h, instrument, "candle.h")?;
+    let low = parse_price(&candle.l, instrument, "candle.l")?;
+    let close = parse_price(&candle.c, instrument, "candle.c")?;
+    let volume = parse_quantity(&candle.v, instrument, "candle.v")?;
 
     let ts_event = parse_millis_to_nanos(candle.t);
 

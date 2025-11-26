@@ -26,7 +26,7 @@ use crate::common::consts::{info_url, ws_url};
 /// The HTTP base URL string.
 #[pyfunction]
 #[pyo3(name = "get_hyperliquid_http_base_url")]
-pub fn get_hyperliquid_http_base_url(is_testnet: bool) -> String {
+pub fn py_get_hyperliquid_http_base_url(is_testnet: bool) -> String {
     info_url(is_testnet).to_string()
 }
 
@@ -37,6 +37,6 @@ pub fn get_hyperliquid_http_base_url(is_testnet: bool) -> String {
 /// The WebSocket URL string.
 #[pyfunction]
 #[pyo3(name = "get_hyperliquid_ws_url")]
-pub fn get_hyperliquid_ws_url(is_testnet: bool) -> String {
+pub fn py_get_hyperliquid_ws_url(is_testnet: bool) -> String {
     ws_url(is_testnet).to_string()
 }

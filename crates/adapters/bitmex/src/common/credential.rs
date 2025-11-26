@@ -63,6 +63,15 @@ impl Credential {
         let signature = hmac::sign(&key, sign_message.as_bytes());
         hex::encode(signature.as_ref())
     }
+
+    /// Returns a masked version of the API key for logging purposes.
+    ///
+    /// Shows first 4 and last 4 characters with ellipsis in between.
+    /// For keys shorter than 8 characters, shows asterisks only.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        nautilus_core::string::mask_api_key(self.api_key.as_str())
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

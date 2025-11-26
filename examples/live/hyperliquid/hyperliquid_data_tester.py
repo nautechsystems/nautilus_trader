@@ -80,12 +80,12 @@ if __name__ == "__main__":
         bar_types=bar_types,
         # subscribe_book_at_interval=True,
         # book_interval_ms=10,
-        subscribe_quotes=True,
+        # subscribe_quotes=True,
         subscribe_trades=True,
-        subscribe_bars=True,
         subscribe_mark_prices=True,
         subscribe_index_prices=True,
         subscribe_funding_rates=True,
+        # subscribe_bars=True,
         # request_bars=True,
     )
     # Instantiate your strategy

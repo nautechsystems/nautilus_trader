@@ -493,7 +493,7 @@ impl DataClient for HyperliquidDataClient {
             .context("failed to spawn WebSocket client")?;
 
         self.is_connected.store(true, Ordering::Relaxed);
-        tracing::info!("Hyperliquid data client connected");
+        tracing::info!(client_id = %self.client_id, "Connected");
 
         Ok(())
     }
@@ -525,7 +525,7 @@ impl DataClient for HyperliquidDataClient {
         }
 
         self.is_connected.store(false, Ordering::Relaxed);
-        tracing::info!("Hyperliquid data client disconnected");
+        tracing::info!(client_id = %self.client_id, "Disconnected");
 
         Ok(())
     }

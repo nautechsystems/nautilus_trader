@@ -317,6 +317,12 @@ impl OKXWebSocketClient {
         self.credential.clone().map(|c| c.api_key.as_str())
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> Option<String> {
+        self.credential.clone().map(|c| c.api_key_masked())
+    }
+
     /// Returns a value indicating whether the client is active.
     pub fn is_active(&self) -> bool {
         let connection_mode_arc = self.connection_mode.load();
@@ -409,6 +415,7 @@ impl OKXWebSocketClient {
             reconnect_delay_max_ms: None,     // Use default
             reconnect_backoff_factor: None,   // Use default
             reconnect_jitter_ms: None,        // Use default
+            reconnect_max_attempts: None,
         };
 
         // Configure rate limits for different operation types
@@ -904,7 +911,7 @@ impl OKXWebSocketClient {
             .map_err(|e| OKXWsError::ClientError(format!("Failed to send subscribe command: {e}")))
     }
 
-    #[allow(clippy::collapsible_if, reason = "Clearer uncollapsed")]
+    #[allow(clippy::collapsible_if)]
     async fn unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
         for arg in &args {
             let topic = topic_from_subscription_arg(arg);

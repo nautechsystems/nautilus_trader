@@ -21,7 +21,7 @@ from nautilus_trader.adapters._template.providers import TemplateInstrumentProvi
 pytestmark = pytest.mark.skip(reason="template")
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument_provider():
     return TemplateInstrumentProvider()
 

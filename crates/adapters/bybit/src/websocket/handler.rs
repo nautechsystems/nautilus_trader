@@ -20,7 +20,7 @@ use std::{
     num::NonZero,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 
@@ -58,7 +58,8 @@ use super::{
 };
 use crate::{
     common::{
-        enums::{BybitProductType, BybitWsOrderRequestOp},
+        consts::BYBIT_NAUTILUS_BROKER_ID,
+        enums::{BybitProductType, BybitTimeInForce, BybitWsOrderRequestOp},
         parse::{make_bybit_symbol, parse_price_with_precision, parse_quantity_with_precision},
     },
     websocket::messages::{
@@ -163,6 +164,7 @@ pub(super) struct FeedHandler {
     subscriptions: SubscriptionState,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
     account_id: Option<AccountId>,
+    mm_level: Arc<AtomicU8>,
     product_type: Option<BybitProductType>,
     quote_cache: QuoteCache,
     funding_cache: FundingCache,
@@ -185,6 +187,7 @@ impl FeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: Option<AccountId>,
         product_type: Option<BybitProductType>,
+        mm_level: Arc<AtomicU8>,
         auth_tracker: AuthTracker,
         subscriptions: SubscriptionState,
         funding_cache: FundingCache,
@@ -199,6 +202,7 @@ impl FeedHandler {
             subscriptions,
             instruments_cache: AHashMap::new(),
             account_id,
+            mm_level,
             product_type,
             quote_cache: QuoteCache::new(),
             funding_cache,
@@ -265,6 +269,12 @@ impl FeedHandler {
                 drop(entry);
                 self.pending_amend_requests.remove(&key)
             })
+    }
+
+    fn include_referer_header(&self, time_in_force: Option<BybitTimeInForce>) -> bool {
+        let is_post_only = matches!(time_in_force, Some(BybitTimeInForce::PostOnly));
+        let mm_level = self.mm_level.load(Ordering::Relaxed);
+        !(is_post_only && mm_level > 0)
     }
 
     /// Sends a WebSocket message with retry logic.
@@ -580,10 +590,16 @@ impl FeedHandler {
                                 (client_order_id, trader_id, strategy_id, instrument_id),
                             );
 
+                            let referer = if self.include_referer_header(params.time_in_force) {
+                                Some(BYBIT_NAUTILUS_BROKER_ID.to_string())
+                            } else {
+                                None
+                            };
+
                             let request = BybitWsRequest {
                                 req_id: Some(request_id.clone()),
                                 op: BybitWsOrderRequestOp::Create,
-                                header: BybitWsHeader::now(),
+                                header: BybitWsHeader::with_referer(referer),
                                 args: vec![params],
                             };
 
@@ -1525,6 +1541,7 @@ mod tests {
             out_tx,
             None,
             None,
+            Arc::new(AtomicU8::new(0)),
             auth_tracker,
             subscriptions,
             funding_cache,

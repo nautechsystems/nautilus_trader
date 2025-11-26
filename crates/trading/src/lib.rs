@@ -48,6 +48,9 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod sessions;
+pub mod strategy;
+
+pub use strategy::{Strategy, StrategyConfig, StrategyCore};
 
 #[cfg(feature = "python")]
 pub mod python;

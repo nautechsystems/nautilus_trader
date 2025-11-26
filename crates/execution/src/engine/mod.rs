@@ -152,6 +152,58 @@ impl ExecutionEngine {
         self.external_order_claims.keys().copied().collect()
     }
 
+    #[must_use]
+    /// Returns the configured external client IDs.
+    pub fn get_external_client_ids(&self) -> HashSet<ClientId> {
+        self.external_clients.clone()
+    }
+
+    #[must_use]
+    /// Returns any external order claim for the given instrument ID.
+    pub fn get_external_order_claim(&self, instrument_id: &InstrumentId) -> Option<StrategyId> {
+        self.external_order_claims.get(instrument_id).copied()
+    }
+
+    #[must_use]
+    /// Returns all execution clients corresponding to the given orders.
+    pub fn get_clients_for_orders(&self, orders: &[OrderAny]) -> Vec<Rc<dyn ExecutionClient>> {
+        let mut client_ids: HashSet<ClientId> = HashSet::new();
+        let mut venues: HashSet<Venue> = HashSet::new();
+
+        for order in orders {
+            venues.insert(order.venue());
+            if let Some(client_id) = self.cache.borrow().client_id(&order.client_order_id()) {
+                client_ids.insert(*client_id);
+            }
+        }
+
+        let mut clients: Vec<Rc<dyn ExecutionClient>> = Vec::new();
+
+        for client_id in &client_ids {
+            if let Some(client) = self.clients.get(client_id)
+                && !clients.iter().any(|c| c.client_id() == client.client_id())
+            {
+                clients.push(client.clone());
+            }
+        }
+
+        for venue in &venues {
+            if let Some(client_id) = self.routing_map.get(venue) {
+                if let Some(client) = self.clients.get(client_id)
+                    && !clients.iter().any(|c| c.client_id() == client.client_id())
+                {
+                    clients.push(client.clone());
+                }
+            } else if let Some(client) = &self.default_client
+                && !clients.iter().any(|c| c.client_id() == client.client_id())
+            {
+                clients.push(client.clone());
+            }
+        }
+
+        clients
+    }
+
     // -- REGISTRATION ----------------------------------------------------------------------------
 
     /// Registers a new execution client.
@@ -203,10 +255,47 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    // TODO: Implement `Strategy`
-    // pub fn register_external_order_claims(&mut self, strategy: Strategy) -> anyhow::Result<()> {
-    //     todo!();
-    // }
+    /// Registers the OMS (Order Management System) type for a strategy.
+    ///
+    /// If an OMS type is already registered for this strategy, it will be overridden.
+    pub fn register_oms_type(&mut self, strategy_id: StrategyId, oms_type: OmsType) {
+        self.oms_overrides.insert(strategy_id, oms_type);
+        log::info!("Registered OMS::{oms_type:?} for {strategy_id}");
+    }
+
+    /// Registers external order claims for a strategy.
+    ///
+    /// This operation is atomic: either all instruments are registered or none are.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any instrument already has a registered claim.
+    pub fn register_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+        instrument_ids: HashSet<InstrumentId>,
+    ) -> anyhow::Result<()> {
+        // Validate all instruments first
+        for instrument_id in &instrument_ids {
+            if let Some(existing) = self.external_order_claims.get(instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} already exists for {existing}"
+                );
+            }
+        }
+
+        // If validation passed, insert all claims
+        for instrument_id in &instrument_ids {
+            self.external_order_claims
+                .insert(*instrument_id, strategy_id);
+        }
+
+        if !instrument_ids.is_empty() {
+            log::info!("Registered external order claims for {strategy_id}: {instrument_ids:?}");
+        }
+
+        Ok(())
+    }
 
     /// # Errors
     ///
@@ -220,6 +309,82 @@ impl ExecutionEngine {
             Ok(())
         } else {
             anyhow::bail!("No client registered with ID {client_id}")
+        }
+    }
+
+    /// Connects the engine by calling connect on all registered clients.
+    ///
+    /// # Note
+    ///
+    /// This base implementation only logs connection status. Actual client lifecycle
+    /// management (calling `start()`) must be done before registration, or is handled
+    /// by `LiveExecutionEngine` which overrides this method. Clients are stored with
+    /// shared ownership (`Rc`) and cannot be mutated after registration.
+    pub fn connect(&self) {
+        if !self.clients.is_empty() {
+            log::info!("Connecting {} client(s)...", self.clients.len());
+        } else {
+            log::info!("No clients registered");
+        }
+    }
+
+    /// Disconnects the engine by calling disconnect on all registered clients.
+    ///
+    /// # Note
+    ///
+    /// This base implementation only logs disconnection status. Actual client lifecycle
+    /// management (calling `stop()`) must be done after deregistration, or is handled
+    /// by `LiveExecutionEngine` which overrides this method. Clients are stored with
+    /// shared ownership (`Rc`) and cannot be mutated after registration.
+    pub fn disconnect(&self) {
+        if !self.clients.is_empty() {
+            log::info!("Disconnecting {} client(s)...", self.clients.len());
+        } else {
+            log::info!("No clients registered");
+        }
+    }
+
+    /// Sets the `manage_own_order_books` configuration option.
+    pub fn set_manage_own_order_books(&mut self, value: bool) {
+        self.config.manage_own_order_books = value;
+    }
+
+    /// Sets the `convert_quote_qty_to_base` configuration option.
+    pub fn set_convert_quote_qty_to_base(&mut self, value: bool) {
+        self.config.convert_quote_qty_to_base = value;
+    }
+
+    /// Starts the position snapshot timer if configured.
+    ///
+    /// Timer functionality requires a live execution context with an active clock.
+    pub fn start_snapshot_timer(&mut self) {
+        if let Some(interval_secs) = self.config.snapshot_positions_interval_secs {
+            log::info!(
+                "Starting position snapshots timer at {} second intervals",
+                interval_secs
+            );
+        }
+    }
+
+    /// Stops the position snapshot timer if running.
+    pub fn stop_snapshot_timer(&mut self) {
+        if self.config.snapshot_positions_interval_secs.is_some() {
+            log::info!("Canceling position snapshots timer");
+        }
+    }
+
+    /// Creates snapshots of all open positions.
+    pub fn snapshot_open_position_states(&self) {
+        let positions: Vec<Position> = self
+            .cache
+            .borrow()
+            .positions_open(None, None, None, None)
+            .into_iter()
+            .cloned()
+            .collect();
+
+        for position in positions {
+            self.create_position_state_snapshot(&position);
         }
     }
 
@@ -617,22 +782,23 @@ impl ExecutionEngine {
         };
 
         drop(cache);
+
         match event {
             OrderEventAny::Filled(fill) => {
                 let oms_type = self.determine_oms_type(fill);
                 let position_id = self.determine_position_id(*fill, oms_type, Some(&order));
 
-                // Create a new fill with the determined position ID
                 let mut fill = *fill;
                 if fill.position_id.is_none() {
                     fill.position_id = Some(position_id);
                 }
 
-                self.apply_event_to_order(&mut order, OrderEventAny::Filled(fill));
-                self.handle_order_fill(&order, fill, oms_type);
+                if self.apply_fill_to_order(&mut order, fill).is_ok() {
+                    self.handle_order_fill(&order, fill, oms_type);
+                }
             }
             _ => {
-                self.apply_event_to_order(&mut order, event.clone());
+                let _ = self.apply_event_to_order(&mut order, event.clone());
             }
         }
     }
@@ -724,19 +890,38 @@ impl ExecutionEngine {
         PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
     }
 
-    fn apply_event_to_order(&self, order: &mut OrderAny, event: OrderEventAny) {
+    fn apply_fill_to_order(&self, order: &mut OrderAny, fill: OrderFilled) -> anyhow::Result<()> {
+        self.check_overfill(order, &fill)?;
+        let event = OrderEventAny::Filled(fill);
+        self.apply_order_event(order, event)
+    }
+
+    fn apply_event_to_order(
+        &self,
+        order: &mut OrderAny,
+        event: OrderEventAny,
+    ) -> anyhow::Result<()> {
+        self.apply_order_event(order, event)
+    }
+
+    fn apply_order_event(&self, order: &mut OrderAny, event: OrderEventAny) -> anyhow::Result<()> {
         if let Err(e) = order.apply(event.clone()) {
-            if matches!(e, OrderError::InvalidStateTransition) {
-                log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
-            } else {
-                // ValueError: Protection against invalid IDs
-                // KeyError: Protection against duplicate fills
-                log::error!("Error applying event: {e}, did not apply {event}");
-                if should_handle_own_book_order(order) {
-                    self.cache.borrow_mut().update_own_order_book(order);
+            match e {
+                OrderError::InvalidStateTransition => {
+                    // Event already applied to order (e.g., from reconciliation or duplicate processing)
+                    // Log warning and continue with downstream processing (cache update, publishing, etc.)
+                    log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
+                }
+                _ => {
+                    // ValueError: Protection against invalid IDs
+                    // KeyError: Protection against duplicate fills
+                    log::error!("Error applying event: {e}, did not apply {event}");
+                    if should_handle_own_book_order(order) {
+                        self.cache.borrow_mut().update_own_order_book(order);
+                    }
+                    anyhow::bail!("{e}");
                 }
             }
-            return;
         }
 
         if let Err(e) = self.cache.borrow_mut().update_order(order) {
@@ -749,6 +934,38 @@ impl ExecutionEngine {
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(order);
         }
+
+        Ok(())
+    }
+
+    fn check_overfill(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
+        let potential_overfill = order.calculate_overfill(fill.last_qty);
+
+        if potential_overfill.is_positive() {
+            if self.config.allow_overfills {
+                log::warn!(
+                    "Order overfill detected: {} potential_overfill={}, current_filled={}, last_qty={}, quantity={}",
+                    order.client_order_id(),
+                    potential_overfill,
+                    order.filled_qty(),
+                    fill.last_qty,
+                    order.quantity()
+                );
+            } else {
+                let msg = format!(
+                    "Order overfill rejected: {} potential_overfill={}, current_filled={}, last_qty={}, quantity={}. \
+                Set `allow_overfills=true` in ExecutionEngineConfig to allow overfills.",
+                    order.client_order_id(),
+                    potential_overfill,
+                    order.filled_qty(),
+                    fill.last_qty,
+                    order.quantity()
+                );
+                anyhow::bail!("{msg}");
+            }
+        }
+
+        Ok(())
     }
 
     fn handle_order_fill(&mut self, order: &OrderAny, fill: OrderFilled, oms_type: OmsType) {
@@ -866,31 +1083,66 @@ impl ExecutionEngine {
         position: Option<&Position>,
         fill: OrderFilled,
         oms_type: OmsType,
-    ) -> anyhow::Result<Position> {
-        let position = if let Some(position) = position {
-            // Always snapshot opening positions to handle NETTING OMS
-            self.cache.borrow_mut().snapshot_position(position)?;
-            let mut position = position.clone();
-            position.apply(&fill);
-            self.cache.borrow_mut().update_position(&position)?;
-            position
-        } else {
-            let position = Position::new(&instrument, fill);
-            self.cache
-                .borrow_mut()
-                .add_position(position.clone(), oms_type)?;
-            if self.config.snapshot_positions {
-                self.create_position_state_snapshot(&position);
+    ) -> anyhow::Result<()> {
+        if let Some(position) = position {
+            if Self::is_duplicate_closed_fill(position, &fill) {
+                log::warn!(
+                    "Ignoring duplicate fill {} for closed position {}; no position reopened (side={:?}, qty={}, px={})",
+                    fill.trade_id,
+                    position.id,
+                    fill.order_side,
+                    fill.last_qty,
+                    fill.last_px
+                );
+                return Ok(());
             }
-            position
-        };
+            self.reopen_position(position, oms_type)?;
+        }
+
+        let position = Position::new(&instrument, fill);
+        self.cache
+            .borrow_mut()
+            .add_position(position.clone(), oms_type)?; // TODO: Remove clone (change method)
+
+        if self.config.snapshot_positions {
+            self.create_position_state_snapshot(&position);
+        }
 
         let ts_init = self.clock.borrow().timestamp_ns();
         let event = PositionOpened::create(&position, &fill, UUID4::new(), ts_init);
         let topic = switchboard::get_event_positions_topic(event.strategy_id);
         msgbus::publish(topic, &event);
 
-        Ok(position)
+        Ok(())
+    }
+
+    fn is_duplicate_closed_fill(position: &Position, fill: &OrderFilled) -> bool {
+        position.events.iter().any(|event| {
+            event.trade_id == fill.trade_id
+                && event.order_side == fill.order_side
+                && event.last_px == fill.last_px
+                && event.last_qty == fill.last_qty
+        })
+    }
+
+    fn reopen_position(&self, position: &Position, oms_type: OmsType) -> anyhow::Result<()> {
+        if oms_type == OmsType::Netting {
+            if position.is_open() {
+                anyhow::bail!(
+                    "Cannot reopen position {} (oms_type=NETTING): reopening is only valid for closed positions in NETTING mode",
+                    position.id
+                );
+            }
+            // Snapshot closed position if reopening (NETTING mode)
+            self.cache.borrow_mut().snapshot_position(position)?;
+        } else {
+            // HEDGING mode
+            log::warn!(
+                "Received fill for closed position {} in HEDGING mode; creating new position and ignoring previous state",
+                position.id
+            );
+        }
+        Ok(())
     }
 
     fn update_position(&self, position: &mut Position, fill: OrderFilled) {
@@ -989,6 +1241,13 @@ impl ExecutionEngine {
             ));
 
             self.update_position(position, fill_split1.unwrap());
+
+            // Snapshot closed position before reusing ID (NETTING mode)
+            if oms_type == OmsType::Netting
+                && let Err(e) = self.cache.borrow_mut().snapshot_position(position)
+            {
+                log::error!("Failed to snapshot position during flip: {e:?}");
+            }
         }
 
         // Guard against flipping a position with a zero fill size
@@ -1039,6 +1298,7 @@ impl ExecutionEngine {
             log::warn!("Closing position {fill_split1:?}");
             log::warn!("Flipping position {fill_split2:?}");
         }
+
         // Open flipped position
         if let Err(e) = self.open_position(instrument, None, fill_split2, oms_type) {
             log::error!("Failed to open flipped position: {e:?}");

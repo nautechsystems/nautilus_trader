@@ -23,7 +23,7 @@ from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesIns
 from nautilus_trader.common.component import LiveClock
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_binance_futures_testnet_market_http_client():
     clock = LiveClock()
 

@@ -561,7 +561,7 @@ mod tests {
             OrderListId::new("OL-001"),
             InstrumentId::from("BTCUSDT.BINANCE"),
             order1.strategy_id(),
-            vec![order1.clone(), order2.clone()],
+            vec![order1.clone(), order2],
             ts_init,
         );
 

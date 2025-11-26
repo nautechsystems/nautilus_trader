@@ -291,13 +291,14 @@ pub mod trading_command_header {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 115] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 116] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(202, 99, 120, 210, 213, 238, 239, 210),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(6, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(101, 1, 0, 0, 105, 2, 0, 0),
       ::capnp::word(21, 0, 0, 0, 98, 1, 0, 0),
       ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1548,13 +1549,14 @@ pub mod order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 726] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 727] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(227, 82, 120, 115, 226, 23, 220, 199),
       ::capnp::word(23, 0, 0, 0, 1, 0, 5, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(31, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(224, 2, 0, 0, 185, 12, 0, 0),
       ::capnp::word(21, 0, 0, 0, 234, 0, 0, 0),
       ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -3223,13 +3225,14 @@ pub mod position {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 585] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 586] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(121, 206, 212, 181, 123, 73, 44, 167),
       ::capnp::word(23, 0, 0, 0, 1, 0, 7, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(23, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(3, 13, 0, 0, 78, 19, 0, 0),
       ::capnp::word(21, 0, 0, 0, 2, 1, 0, 0),
       ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4070,13 +4073,14 @@ pub mod order_list {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 70] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 71] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(106, 50, 214, 69, 0, 8, 129, 165),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(120, 19, 0, 0, 4, 20, 0, 0),
       ::capnp::word(21, 0, 0, 0, 10, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4546,13 +4550,14 @@ pub mod trading_command {
   impl Pipeline  {
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 148] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 149] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(237, 63, 84, 179, 43, 0, 213, 237),
       ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(1, 0, 7, 0, 0, 0, 8, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(33, 20, 0, 0, 144, 21, 0, 0),
       ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4944,13 +4949,14 @@ pub mod submit_order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 66] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 67] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(88, 251, 76, 212, 89, 5, 63, 205),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(146, 21, 0, 0, 40, 22, 0, 0),
       ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5240,13 +5246,14 @@ pub mod submit_order_list {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 70] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 71] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(126, 172, 30, 125, 130, 27, 69, 196),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(42, 22, 0, 0, 203, 22, 0, 0),
       ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5624,13 +5631,14 @@ pub mod modify_order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 113] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 114] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(130, 152, 94, 47, 7, 143, 225, 216),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(6, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(205, 22, 0, 0, 198, 23, 0, 0),
       ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5973,13 +5981,14 @@ pub mod cancel_order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 66] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 67] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(176, 142, 211, 36, 212, 96, 52, 132),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(200, 23, 0, 0, 99, 24, 0, 0),
       ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6230,13 +6239,14 @@ pub mod cancel_all_orders {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 50] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 51] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(243, 7, 26, 231, 73, 7, 196, 246),
       ::capnp::word(23, 0, 0, 0, 1, 0, 1, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(1, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(101, 24, 0, 0, 199, 24, 0, 0),
       ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6482,13 +6492,14 @@ pub mod batch_cancel_orders {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 55] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 56] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(223, 141, 216, 17, 7, 160, 29, 196),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(201, 24, 0, 0, 51, 25, 0, 0),
       ::capnp::word(21, 0, 0, 0, 74, 1, 0, 0),
       ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6769,13 +6780,14 @@ pub mod query_order {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 66] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 67] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(220, 9, 75, 94, 17, 9, 171, 143),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(53, 25, 0, 0, 207, 25, 0, 0),
       ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -7095,13 +7107,14 @@ pub mod query_account {
     }
   }
   mod _private {
-    pub static ENCODED_NODE: [::capnp::Word; 82] = [
-      ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
+    pub static ENCODED_NODE: [::capnp::Word; 83] = [
+      ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
       ::capnp::word(225, 57, 71, 190, 93, 235, 24, 233),
       ::capnp::word(23, 0, 0, 0, 1, 0, 0, 0),
       ::capnp::word(48, 41, 24, 7, 246, 229, 212, 195),
       ::capnp::word(4, 0, 7, 0, 0, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+      ::capnp::word(209, 25, 0, 0, 117, 26, 0, 0),
       ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
       ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
       ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),

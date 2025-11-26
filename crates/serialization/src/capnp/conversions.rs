@@ -588,6 +588,7 @@ pub fn account_type_to_capnp(value: AccountType) -> enums_capnp::AccountType {
         AccountType::Cash => enums_capnp::AccountType::Cash,
         AccountType::Margin => enums_capnp::AccountType::Margin,
         AccountType::Betting => enums_capnp::AccountType::Betting,
+        AccountType::Wallet => enums_capnp::AccountType::Wallet,
     }
 }
 
@@ -597,6 +598,7 @@ pub fn account_type_from_capnp(value: enums_capnp::AccountType) -> AccountType {
         enums_capnp::AccountType::Cash => AccountType::Cash,
         enums_capnp::AccountType::Margin => AccountType::Margin,
         enums_capnp::AccountType::Betting => AccountType::Betting,
+        enums_capnp::AccountType::Wallet => AccountType::Wallet,
     }
 }
 
@@ -1192,10 +1194,10 @@ impl<'a> ToCapnp<'a> for Currency {
     type Builder = types_capnp::currency::Builder<'a>;
 
     fn to_capnp(&self, mut builder: Self::Builder) {
-        builder.set_code(&self.code);
+        builder.set_code(self.code);
         builder.set_precision(self.precision);
         builder.set_iso4217(self.iso4217);
-        builder.set_name(&self.name);
+        builder.set_name(self.name);
         builder.set_currency_type(currency_type_to_capnp(self.currency_type));
     }
 }
@@ -4542,7 +4544,7 @@ impl<'a> FromCapnp<'a> for PositionAdjusted {
 mod tests {
     use capnp::message::Builder;
     use nautilus_core::UnixNanos;
-    use nautilus_model::{data::stubs::*, events::order::stubs::*, identifiers::stubs::*};
+    use nautilus_model::{data::stubs::*, events::order::stubs::*};
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;

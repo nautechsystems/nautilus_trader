@@ -20,6 +20,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport TimeEvent
+from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
@@ -84,14 +85,48 @@ cdef class TickBarAggregator(BarAggregator):
     pass
 
 
+cdef class TickImbalanceBarAggregator(BarAggregator):
+    cdef long long _imbalance
+
+
+cdef class TickRunsBarAggregator(BarAggregator):
+    cdef AggressorSide _current_run_side
+    cdef bint _has_run_side
+    cdef long long _run_count
+
+
 cdef class VolumeBarAggregator(BarAggregator):
     pass
+
+
+cdef class VolumeImbalanceBarAggregator(BarAggregator):
+    cdef long long _imbalance_raw
+    cdef long long _raw_step
+
+
+cdef class VolumeRunsBarAggregator(BarAggregator):
+    cdef AggressorSide _current_run_side
+    cdef bint _has_run_side
+    cdef long long _run_volume_raw
+    cdef long long _raw_step
 
 
 cdef class ValueBarAggregator(BarAggregator):
     cdef object _cum_value
 
     cpdef object get_cumulative_value(self)
+
+
+cdef class ValueImbalanceBarAggregator(BarAggregator):
+    cdef double _imbalance_value
+    cdef double _step_value
+
+
+cdef class ValueRunsBarAggregator(BarAggregator):
+    cdef AggressorSide _current_run_side
+    cdef bint _has_run_side
+    cdef double _run_value
+    cdef double _step_value
 
 
 cdef class RenkoBarAggregator(BarAggregator):

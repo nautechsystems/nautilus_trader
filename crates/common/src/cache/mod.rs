@@ -1805,6 +1805,7 @@ impl Cache {
         self.positions.insert(position.id, position.clone());
         self.index.positions.insert(position.id);
         self.index.positions_open.insert(position.id);
+        self.index.positions_closed.remove(&position.id); // Cleanup for NETTING reopen
 
         log::debug!("Adding {position}");
 

@@ -165,6 +165,7 @@ impl HyperliquidWebSocketClient {
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(200),
+            reconnect_max_attempts: None,
         };
         let client = WebSocketClient::connect(cfg, None, vec![], None).await?;
 
@@ -196,7 +197,6 @@ impl HyperliquidWebSocketClient {
         // Spawn handler task
         let signal = Arc::clone(&self.signal);
         let account_id = self.account_id;
-        let auth_tracker = self.auth_tracker.clone();
         let subscriptions = self.subscriptions.clone();
         let cmd_tx_for_reconnect = cmd_tx.clone();
 
@@ -207,7 +207,6 @@ impl HyperliquidWebSocketClient {
                 raw_rx,
                 out_tx,
                 account_id,
-                auth_tracker,
                 subscriptions.clone(),
             );
 

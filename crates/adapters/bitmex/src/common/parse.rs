@@ -148,7 +148,7 @@ pub fn derive_contract_decimal_and_increment(
     }
     contract_decimal = contract_decimal.normalize();
     let contract_precision = contract_decimal.scale() as u8;
-    let size_increment = Quantity::from_decimal(contract_decimal, contract_precision)?;
+    let size_increment = Quantity::from_decimal_dp(contract_decimal, contract_precision)?;
 
     Ok((contract_decimal, size_increment))
 }
@@ -177,7 +177,7 @@ pub fn convert_contract_quantity(
             }
             let decimal = decimal.normalize();
             let precision = decimal.scale() as u8;
-            Quantity::from_decimal(decimal, precision)
+            Quantity::from_decimal_dp(decimal, precision)
         })
         .transpose()
 }

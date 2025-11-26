@@ -430,7 +430,7 @@ impl DataClient for BitmexDataClient {
         self.maybe_spawn_instrument_refresh()?;
 
         self.is_connected.store(true, Ordering::Relaxed);
-        tracing::info!("BitMEX data client connected");
+        tracing::info!("Connected");
         Ok(())
     }
 
@@ -461,7 +461,7 @@ impl DataClient for BitmexDataClient {
             .clear();
         self.instrument_refresh_active = false;
 
-        tracing::info!("BitMEX data client disconnected");
+        tracing::info!("Disconnected");
         Ok(())
     }
 

@@ -159,32 +159,35 @@ class TestTradingNodeOperation:
         assert loop == node.kernel.loop
 
     def test_build_called_twice_raises_runtime_error(self):
-        # Arrange, # Act
+        # Arrange
+        config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
+        node = TradingNode(config=config)
+        node.build()
+
+        # Act
         with pytest.raises(RuntimeError):
-            config = TradingNodeConfig(logging=LoggingConfig(bypass_logging=True))
-            node = TradingNode(config=config)
-            node.build()
             node.build()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_run_when_not_built_raises_runtime_error(self):
         # Arrange, Act, Assert
         loop = asyncio.get_running_loop()
 
+        config = TradingNodeConfig(
+            logging=LoggingConfig(bypass_logging=True),
+            data_clients={
+                "BINANCE": BinanceDataClientConfig(),
+            },
+            exec_clients={
+                "BINANCE": BinanceExecClientConfig(),
+            },
+        )
+        node = TradingNode(config=config, loop=loop)
+
         with pytest.raises(RuntimeError):
-            config = TradingNodeConfig(
-                logging=LoggingConfig(bypass_logging=True),
-                data_clients={
-                    "BINANCE": BinanceDataClientConfig(),
-                },
-                exec_clients={
-                    "BINANCE": BinanceExecClientConfig(),
-                },
-            )
-            node = TradingNode(config=config, loop=loop)
             await node.run_async()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_run_and_stop_with_client_factories(self, monkeypatch):
         # Arrange
         loop = asyncio.get_running_loop()

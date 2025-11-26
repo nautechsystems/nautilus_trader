@@ -570,6 +570,8 @@ impl DataClient for OKXDataClient {
             self.config.instrument_types.clone()
         };
 
+        self.spawn_public_stream()?;
+
         let public_clone = self.public_ws()?.clone();
 
         self.spawn_ws(
@@ -586,8 +588,6 @@ impl DataClient for OKXDataClient {
             },
             "instrument subscription",
         );
-
-        self.spawn_public_stream()?;
 
         if self.ws_business.is_some() {
             {
@@ -607,7 +607,7 @@ impl DataClient for OKXDataClient {
         self.maybe_spawn_instrument_refresh()?;
 
         self.is_connected.store(true, Ordering::Relaxed);
-        tracing::info!("OKX data client connected");
+        tracing::info!(client_id = %self.client_id, "Connected");
         Ok(())
     }
 
@@ -615,8 +615,6 @@ impl DataClient for OKXDataClient {
         if self.is_disconnected() {
             return Ok(());
         }
-
-        self.cancellation_token.cancel();
 
         if let Some(ws) = self.ws_public.as_ref()
             && let Err(e) = ws.unsubscribe_all().await
@@ -629,8 +627,10 @@ impl DataClient for OKXDataClient {
             tracing::warn!("Failed to unsubscribe all from business websocket: {e:?}");
         }
 
-        // Brief delay to allow unsubscribe confirmations to be processed
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Allow time for unsubscribe confirmations to be processed
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        self.cancellation_token.cancel();
 
         if let Some(ws) = self.ws_public.as_mut() {
             let _ = ws.close().await;
@@ -652,7 +652,8 @@ impl DataClient for OKXDataClient {
             .expect("book channel cache lock poisoned")
             .clear();
         self.instrument_refresh_active = false;
-        tracing::info!("OKX data client disconnected");
+
+        tracing::info!(client_id = %self.client_id, "Disconnected");
         Ok(())
     }
 

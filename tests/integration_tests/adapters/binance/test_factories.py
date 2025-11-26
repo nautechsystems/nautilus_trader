@@ -55,7 +55,7 @@ class TestBinanceFactories:
             database=self.cache_db,
         )
 
-        yield
+        return
 
     @pytest.mark.parametrize(
         ("account_type", "is_testnet", "is_us", "expected"),

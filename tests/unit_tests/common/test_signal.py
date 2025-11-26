@@ -65,7 +65,7 @@ class TestSignalSerialization:
         assert callable(SignalClass.from_dict)
 
     @pytest.mark.parametrize(
-        "value_type,test_value,signal_name",
+        ("value_type", "test_value", "signal_name"),
         [
             (int, 42, "roundtrip_int"),
             (float, 3.14159, "roundtrip_float"),

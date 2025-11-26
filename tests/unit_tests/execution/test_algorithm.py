@@ -227,7 +227,7 @@ class TestExecAlgorithm:
         primary_order = self.strategy.order_factory.market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
-            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1")),
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
         )
@@ -236,7 +236,7 @@ class TestExecAlgorithm:
         with pytest.raises(ValueError):
             exec_algorithm.spawn_market(
                 primary=primary_order,
-                quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("2")),  # <-- Greater than primary
+                quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(2)),  # <-- Greater than primary
                 time_in_force=TimeInForce.FOK,
                 reduce_only=True,
                 tags=["EXIT"],
@@ -261,7 +261,7 @@ class TestExecAlgorithm:
         primary_order = self.strategy.order_factory.market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
-            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1")),
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
         )
@@ -306,7 +306,7 @@ class TestExecAlgorithm:
         primary_order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
-            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1")),
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
             price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
@@ -356,7 +356,7 @@ class TestExecAlgorithm:
         primary_order = self.strategy.order_factory.market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
-            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1")),
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
         )
@@ -400,7 +400,7 @@ class TestExecAlgorithm:
         primary_order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
-            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1")),
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
             price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
@@ -447,7 +447,7 @@ class TestExecAlgorithm:
         primary_order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
-            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1")),
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal(1)),
             price=ETHUSDT_PERP_BINANCE.make_price(Decimal("5000.25")),
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},

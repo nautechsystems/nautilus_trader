@@ -84,8 +84,8 @@ def test_order_book(book: nautilus_pyo3.OrderBook) -> None:
 
 
 def test_group_bids_asks_empty(book: nautilus_pyo3.OrderBook) -> None:
-    grouped_bids = book.group_bids(Decimal("1"), 10)
-    grouped_asks = book.group_asks(Decimal("1"), 10)
+    grouped_bids = book.group_bids(Decimal(1), 10)
+    grouped_asks = book.group_asks(Decimal(1), 10)
     assert grouped_bids == {}
     assert grouped_asks == {}
 
@@ -105,11 +105,11 @@ def test_group_bids_asks_with_depth_limit(book: nautilus_pyo3.OrderBook) -> None
         ],
     )
 
-    grouped_bids = book.group_bids(Decimal("1"), 2)
-    grouped_asks = book.group_asks(Decimal("1"), 2)
+    grouped_bids = book.group_bids(Decimal(1), 2)
+    grouped_asks = book.group_asks(Decimal(1), 2)
 
-    assert grouped_bids == {Decimal("2"): Decimal("2"), Decimal("3"): Decimal("3")}
-    assert grouped_asks == {Decimal("4"): Decimal("1"), Decimal("5"): Decimal("2")}
+    assert grouped_bids == {Decimal(2): Decimal(2), Decimal(3): Decimal(3)}
+    assert grouped_asks == {Decimal(4): Decimal(1), Decimal(5): Decimal(2)}
 
 
 def test_group_bids_asks(book: nautilus_pyo3.OrderBook) -> None:
@@ -129,14 +129,14 @@ def test_group_bids_asks(book: nautilus_pyo3.OrderBook) -> None:
         ],
     )
 
-    grouped_bids = book.group_bids(Decimal("2"), 10)
-    grouped_asks = book.group_asks(Decimal("2"), 10)
+    grouped_bids = book.group_bids(Decimal(2), 10)
+    grouped_asks = book.group_asks(Decimal(2), 10)
 
     assert grouped_bids == {
-        Decimal("100.0"): Decimal("1000"),
-        Decimal("98.0"): Decimal("5000"),  # 2000 + 3000 grouped
+        Decimal("100.0"): Decimal(1000),
+        Decimal("98.0"): Decimal(5000),  # 2000 + 3000 grouped
     }
     assert grouped_asks == {
-        Decimal("102.0"): Decimal("3000"),  # 1000 + 2000 grouped
-        Decimal("104.0"): Decimal("3000"),
+        Decimal("102.0"): Decimal(3000),  # 1000 + 2000 grouped
+        Decimal("104.0"): Decimal(3000),
     }

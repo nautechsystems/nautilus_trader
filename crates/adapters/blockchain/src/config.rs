@@ -13,8 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::any::Any;
+
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
-use nautilus_model::defi::{DexType, SharedChain};
+use nautilus_model::{
+    defi::{Chain, DexType, SharedChain},
+    identifiers::{AccountId, TraderId},
+};
+use nautilus_system::ClientConfig;
 
 /// Defines filtering criteria for the DEX pool universe that the data client will operate on.
 #[derive(Debug, Clone)]
@@ -120,5 +126,47 @@ impl BlockchainDataClientConfig {
             pool_filters: pools_filters.unwrap_or_default(),
             postgres_cache_database_config,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockchainExecutionClientConfig {
+    /// The trader ID for the client.
+    pub trader_id: TraderId,
+    /// The account ID for the client.
+    pub client_id: AccountId,
+    /// The blockchain chain configuration.
+    pub chain: Chain,
+    /// The wallet address of the execution client.
+    pub wallet_address: String,
+    /// The HTTP URL for the blockchain RPC endpoint.
+    pub http_rpc_url: String,
+    /// The maximum number of RPC requests allowed per second.
+    pub rpc_requests_per_second: Option<u32>,
+}
+
+impl BlockchainExecutionClientConfig {
+    pub fn new(
+        trader_id: TraderId,
+        client_id: AccountId,
+        chain: Chain,
+        wallet_address: String,
+        http_rpc_url: String,
+        rpc_requests_per_second: Option<u32>,
+    ) -> Self {
+        Self {
+            trader_id,
+            client_id,
+            chain,
+            wallet_address,
+            http_rpc_url,
+            rpc_requests_per_second,
+        }
+    }
+}
+
+impl ClientConfig for BlockchainExecutionClientConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

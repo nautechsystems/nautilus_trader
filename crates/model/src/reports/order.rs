@@ -498,6 +498,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::panic_in_result_fn)]
     fn test_order_status_report_builder_methods() -> anyhow::Result<()> {
         let report = test_order_status_report()
             .with_client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
@@ -656,6 +657,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::panic_in_result_fn)]
     fn test_order_status_report_with_optional_fields() -> anyhow::Result<()> {
         let mut report = test_order_status_report();
 

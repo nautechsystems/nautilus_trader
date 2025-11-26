@@ -37,6 +37,7 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.config import BinanceInstrumentProviderConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
@@ -99,6 +100,7 @@ __all__ = [
     "BinanceExecClientConfig",
     "BinanceFuturesInstrumentProvider",
     "BinanceFuturesMarkPriceUpdate",
+    "BinanceInstrumentProviderConfig",
     "BinanceKeyType",
     "BinanceLiveDataClientFactory",
     "BinanceLiveExecClientFactory",
