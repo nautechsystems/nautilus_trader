@@ -66,8 +66,9 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dydx-proto = { workspace = true }
 hex = { workspace = true }
-prost = { workspace = true }
-prost-types = { workspace = true }
+# Override prost to match dydx-proto's version (0.13.x) to avoid trait bound conflicts
+prost = { version = "0.13.5", default-features = false, features = ["std"] }
+prost-types = "0.13.5"
 rand = { workspace = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
@@ -79,7 +80,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
-tonic = { workspace = true }
+# Override tonic to match dydx-proto's version (0.13.x) to avoid trait bound conflicts
+tonic = { version = "0.13.1", features = ["channel", "transport"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true } # Needed for bin scripts
 urlencoding = { workspace = true }
