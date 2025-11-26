@@ -44,7 +44,10 @@ cdef class FillModel:
     prob_slippage : double
         The probability of order fill prices slipping by one tick.
     random_seed : int, optional
-        The random seed (if None then no random seed).
+        The random seed for the internal random number generator. When provided,
+        ensures reproducible backtest results by initializing Python's random
+        module with a deterministic seed. If None, the random module is
+        reseeded with system entropy for non-deterministic behavior.
     config : FillModelConfig, optional
         The configuration for the model.
 
@@ -54,6 +57,21 @@ cdef class FillModel:
         If any probability argument is not within range [0, 1].
     TypeError
         If `random_seed` is not None and not of type `int`.
+
+    Notes
+    -----
+    **Reproducibility in Backtests**:
+    To ensure reproducible backtest results when using probabilistic fill
+    modeling, always provide a `random_seed` value. The same seed will produce
+    identical fill/slippage outcomes across multiple backtest runs, which is
+    essential for:
+
+    - Comparing strategy variations fairly
+    - Debugging and troubleshooting strategy behavior
+    - Scientific validation of trading strategies
+    - Regression testing of strategy changes
+
+    Example: ``FillModel(prob_slippage=0.1, random_seed=42)``
     """
 
     def __init__(

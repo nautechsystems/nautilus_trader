@@ -222,19 +222,21 @@ class BinanceWebSocketClient:
         self._log.debug(f"ws-client {client_id}: Connecting to {ws_url}...")
         self._is_connecting[client_id] = True
 
-        config = WebSocketConfig(
-            url=ws_url,
-            handler=self._handler,
-            heartbeat=60,
-            headers=[],
-            ping_handler=lambda raw: self._handle_ping(client_id, raw),
-        )
+        try:
+            config = WebSocketConfig(
+                url=ws_url,
+                handler=self._handler,
+                heartbeat=60,
+                headers=[],
+                ping_handler=lambda raw: self._handle_ping(client_id, raw),
+            )
 
-        self._clients[client_id] = await WebSocketClient.connect(
-            config=config,
-            post_reconnection=lambda: self._handle_reconnect(client_id),
-        )
-        self._is_connecting[client_id] = False
+            self._clients[client_id] = await WebSocketClient.connect(
+                config=config,
+                post_reconnection=lambda: self._handle_reconnect(client_id),
+            )
+        finally:
+            self._is_connecting[client_id] = False
         self._log.info(f"ws-client {client_id}: Connected to {self._base_url}", LogColor.BLUE)
         self._log.debug(f"ws-client {client_id}: Subscribed to {initial_stream}")
 

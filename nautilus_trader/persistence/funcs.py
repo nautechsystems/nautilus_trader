@@ -72,8 +72,17 @@ def filename_to_class(filename: str) -> type | None:
 def urisafe_identifier(identifier: InstrumentId | BarType | str) -> str:
     """
     Convert an instrument_id into a valid URI for writing to a file path.
+
+    Sanitizes the identifier by removing characters that could enable path
+    traversal attacks or cause filesystem issues.
     """
-    return str(identifier).replace("/", "")
+    sanitized = str(identifier)
+    # Remove path traversal sequences and dangerous characters
+    sanitized = sanitized.replace("..", "")  # Prevent directory traversal
+    sanitized = sanitized.replace("/", "")   # Remove forward slashes
+    sanitized = sanitized.replace("\\", "")  # Remove backslashes
+    sanitized = sanitized.replace("\x00", "")  # Remove null bytes
+    return sanitized
 
 
 def combine_filters(*filters):

@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import random
-
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition

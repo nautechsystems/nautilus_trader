@@ -338,7 +338,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
             if len(self.password) >= 4:
                 redacted_password = f"{self.password[:2]}...{self.password[-2:]}"
             else:
-                redacted_password = self.password
+                redacted_password = "***"  # Redact short passwords for security
         return (
             f"{type(self).__name__}("
             f"type={self.type}, "
