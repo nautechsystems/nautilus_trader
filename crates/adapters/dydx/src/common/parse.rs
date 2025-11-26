@@ -18,6 +18,7 @@
 use std::str::FromStr;
 
 use nautilus_model::{
+    enums::{OrderSide, TimeInForce},
     identifiers::{InstrumentId, Symbol},
     types::{Currency, Price, Quantity},
 };
@@ -25,6 +26,41 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::consts::DYDX_VENUE;
+use crate::proto::dydxprotocol::clob::order::{
+    Side as ProtoOrderSide, TimeInForce as ProtoTimeInForce,
+};
+
+/// Converts Nautilus `OrderSide` to dYdX proto `OrderSide`.
+#[must_use]
+pub fn order_side_to_proto(side: OrderSide) -> ProtoOrderSide {
+    match side {
+        OrderSide::Buy => ProtoOrderSide::Buy,
+        OrderSide::Sell => ProtoOrderSide::Sell,
+        _ => ProtoOrderSide::Unspecified,
+    }
+}
+
+/// Converts Nautilus `TimeInForce` to dYdX proto `TimeInForce`.
+///
+/// dYdX v4 protocol mappings:
+/// - `IOC` → `ProtoTimeInForce::Ioc` (Immediate or Cancel)
+/// - `FOK` → `ProtoTimeInForce::FillOrKill` (Fill or Kill)
+/// - `GTC` → `ProtoTimeInForce::Unspecified` (Good Till Cancel - protocol default)
+/// - `GTD` → `ProtoTimeInForce::Unspecified` (Good Till Date - uses `good_til_block_time` or `good_til_block`)
+/// - Others → `ProtoTimeInForce::Unspecified` (protocol default)
+///
+/// Note: `Unspecified` (proto enum value 0) is the protocol default and represents GTC behavior.
+/// GTD orders specify expiration separately via `good_til_block` or `good_til_block_time` fields.
+#[must_use]
+pub fn time_in_force_to_proto(tif: TimeInForce) -> ProtoTimeInForce {
+    match tif {
+        TimeInForce::Ioc => ProtoTimeInForce::Ioc,
+        TimeInForce::Fok => ProtoTimeInForce::FillOrKill,
+        TimeInForce::Gtc => ProtoTimeInForce::Unspecified,
+        TimeInForce::Gtd => ProtoTimeInForce::Unspecified,
+        _ => ProtoTimeInForce::Unspecified,
+    }
+}
 
 /// Returns a currency from the internal map or creates a new crypto currency.
 ///

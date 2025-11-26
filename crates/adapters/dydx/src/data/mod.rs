@@ -35,6 +35,7 @@ use nautilus_common::{
         },
     },
     runner::get_data_event_sender,
+    symbols::extract_raw_symbol,
 };
 use nautilus_core::{
     UnixNanos,
@@ -123,18 +124,6 @@ pub struct DydxDataClient {
 }
 
 impl DydxDataClient {
-    /// Derives the dYdX candle topic ticker from a Nautilus InstrumentId.
-    ///
-    /// dYdX candle topics use the exchange symbol without the `-PERP` suffix.
-    /// For example, `BTC-USD-PERP.DYDX` → `BTC-USD`.
-    ///
-    /// This must match the topic format used in WebSocket candle subscription
-    /// and incoming candle messages.
-    fn dydx_candle_ticker_from_instrument(instrument_id: &InstrumentId) -> String {
-        let symbol = instrument_id.symbol.as_str();
-        symbol.strip_suffix("-PERP").unwrap_or(symbol).to_string()
-    }
-
     /// Maps Nautilus BarType spec to dYdX candle resolution string.
     ///
     /// # Errors
@@ -607,7 +596,7 @@ impl DataClient for DydxDataClient {
         self.spawn_ws(
             async move {
                 // Register bar type BEFORE subscribing to avoid race condition
-                let ticker = Self::dydx_candle_ticker_from_instrument(&instrument_id);
+                let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
                 let topic = format!("{ticker}/{resolution}");
                 if let Err(e) =
                     ws.send_command(crate::websocket::handler::HandlerCommand::RegisterBarType {
@@ -762,7 +751,8 @@ impl DataClient for DydxDataClient {
             .remove(&(instrument_id, resolution.to_string()));
 
         // Unregister bar type from handler
-        let ticker = Self::dydx_candle_ticker_from_instrument(&instrument_id);
+        let symbol_str = instrument_id.symbol.to_string();
+        let ticker = extract_raw_symbol(&symbol_str);
         let topic = format!("{ticker}/{resolution}");
         if let Err(e) =
             ws.send_command(crate::websocket::handler::HandlerCommand::UnregisterBarType { topic })
@@ -1844,7 +1834,7 @@ impl DydxDataClient {
                         let ws_clone = ws.clone();
 
                         // Re-register bar type with handler
-                        let ticker = Self::dydx_candle_ticker_from_instrument(&instrument_id);
+                        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
                         let topic = format!("{ticker}/{resolution}");
                         if let Err(e) = ws.send_command(
                             crate::websocket::handler::HandlerCommand::RegisterBarType {
@@ -7616,29 +7606,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case("BTC-USD-PERP", "DYDX", "BTC-USD")]
-    #[case("ETH-USD-PERP", "DYDX", "ETH-USD")]
-    #[case("SOL-USD-PERP", "DYDX", "SOL-USD")]
-    #[case("BTC-USD", "DYDX", "BTC-USD")] // Without -PERP suffix
-    fn test_dydx_candle_ticker_from_instrument(
-        #[case] symbol: &str,
-        #[case] venue: &str,
-        #[case] expected: &str,
-    ) {
-        let instrument_id = InstrumentId::new(Symbol::from(symbol), Venue::from(venue));
-        let ticker = DydxDataClient::dydx_candle_ticker_from_instrument(&instrument_id);
-        assert_eq!(ticker, expected);
-    }
-
-    #[rstest]
     fn test_candle_topic_format() {
-        // Test that the topic format matches what WebSocket subscriptions use
         let instrument_id = InstrumentId::new(Symbol::from("BTC-USD-PERP"), Venue::from("DYDX"));
-        let ticker = DydxDataClient::dydx_candle_ticker_from_instrument(&instrument_id);
+        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let resolution = "1MIN";
         let topic = format!("{ticker}/{resolution}");
 
-        // Topic should be BTC-USD/1MIN, not BTC-USD-PERP/1MIN or BTC-USD-PERP.DYDX/1MIN
         assert_eq!(topic, "BTC-USD/1MIN");
         assert!(!topic.contains("-PERP"));
         assert!(!topic.contains(".DYDX"));

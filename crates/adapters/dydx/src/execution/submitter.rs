@@ -21,6 +21,7 @@ use nautilus_model::{
 use rust_decimal::{Decimal, prelude::FromStr};
 
 use crate::{
+    common::parse::{order_side_to_proto, time_in_force_to_proto},
     error::DydxError,
     grpc::{
         DydxGrpcClient, OrderBuilder, OrderGoodUntil, OrderMarketParams,
@@ -29,10 +30,7 @@ use crate::{
     http::client::DydxHttpClient,
     proto::{
         ToAny,
-        dydxprotocol::clob::{
-            MsgCancelOrder, MsgPlaceOrder,
-            order::{Side as ProtoOrderSide, TimeInForce as ProtoTimeInForce},
-        },
+        dydxprotocol::clob::{MsgCancelOrder, MsgPlaceOrder},
     },
 };
 
@@ -93,7 +91,7 @@ impl OrderSubmitter {
             client_order_id,
         );
 
-        let proto_side = self.convert_order_side(side);
+        let proto_side = order_side_to_proto(side);
         let size_decimal = Decimal::from_str(&quantity.to_string())
             .map_err(|e| DydxError::Parse(format!("Failed to convert quantity: {e}")))?;
 
@@ -158,7 +156,7 @@ impl OrderSubmitter {
             client_order_id,
         );
 
-        let proto_side = self.convert_order_side(side);
+        let proto_side = order_side_to_proto(side);
         let price_decimal = Decimal::from_str(&price.to_string())
             .map_err(|e| DydxError::Parse(format!("Failed to convert price: {e}")))?;
         let size_decimal = Decimal::from_str(&quantity.to_string())
@@ -167,7 +165,7 @@ impl OrderSubmitter {
         builder = builder.limit(proto_side, price_decimal, size_decimal);
 
         // Set time in force
-        let proto_tif = self.convert_time_in_force(time_in_force);
+        let proto_tif = time_in_force_to_proto(time_in_force);
         builder = builder.time_in_force(proto_tif);
 
         // Set order flags
@@ -393,26 +391,6 @@ impl OrderSubmitter {
         Err(DydxError::NotImplemented(
             "Trailing stop orders not yet supported by dYdX v4 protocol".to_string(),
         ))
-    }
-
-    /// Convert Nautilus OrderSide to proto OrderSide.
-    fn convert_order_side(&self, side: OrderSide) -> ProtoOrderSide {
-        match side {
-            OrderSide::Buy => ProtoOrderSide::Buy,
-            OrderSide::Sell => ProtoOrderSide::Sell,
-            _ => ProtoOrderSide::Unspecified, // Should never happen after validation
-        }
-    }
-
-    /// Convert Nautilus TimeInForce to proto TimeInForce.
-    fn convert_time_in_force(&self, tif: TimeInForce) -> ProtoTimeInForce {
-        match tif {
-            TimeInForce::Ioc => ProtoTimeInForce::Ioc,
-            TimeInForce::Fok => ProtoTimeInForce::FillOrKill,
-            TimeInForce::Gtc => ProtoTimeInForce::Unspecified, // GTC uses default
-            TimeInForce::Gtd => ProtoTimeInForce::Unspecified, // GTD uses good_til_block_time
-            _ => ProtoTimeInForce::Unspecified,
-        }
     }
 
     /// Get market params from instrument cache.
