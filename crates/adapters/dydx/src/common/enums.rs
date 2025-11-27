@@ -741,6 +741,10 @@ mod tests {
 )]
 #[strum(serialize_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
 pub enum DydxNetwork {
     /// dYdX mainnet (dydx-mainnet-1)
     #[default]

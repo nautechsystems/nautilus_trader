@@ -16,6 +16,8 @@
 Define the dYdX configuration classes.
 """
 
+from typing import Literal
+
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveInt
@@ -31,8 +33,11 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
         The dYdX wallet address.
         If ``None`` then will source `DYDX_WALLET_ADDRESS` or
         `DYDX_TESTNET_WALLET_ADDRESS` environment variables.
-    testnet : bool, default False
-        If the client is connecting to the dYdX testnet API.
+    network : Literal["mainnet", "testnet"], default "mainnet"
+        The dYdX network environment (mainnet or testnet).
+        This is the canonical network control; `is_testnet` is deprecated.
+    is_testnet : bool, default False
+        Deprecated: Use `network` instead. Kept for backward compatibility.
     update_instruments_interval_mins : PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
     max_retries : PositiveInt, optional
@@ -47,6 +52,7 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
     """
 
     wallet_address: str | None = None
+    network: Literal["mainnet", "testnet"] = "mainnet"
     is_testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
     max_retries: PositiveInt | None = None
@@ -77,8 +83,11 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
+    network : Literal["mainnet", "testnet"], default "mainnet"
+        The dYdX network environment (mainnet or testnet).
+        This is the canonical network control; `is_testnet` is deprecated.
     is_testnet : bool, default False
-        If the client is connecting to the dYdX testnet API.
+        Deprecated: Use `network` instead. Kept for backward compatibility.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
@@ -95,6 +104,7 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     mnemonic: str | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    network: Literal["mainnet", "testnet"] = "mainnet"
     is_testnet: bool = False
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
