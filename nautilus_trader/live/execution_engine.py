@@ -3124,12 +3124,19 @@ class LiveExecutionEngine(ExecutionEngine):
         # Check if fill would cause overfill
         potential_filled_qty = order.filled_qty + report.last_qty
         if potential_filled_qty > order.quantity:
+            if not self.allow_overfills:
+                self._log.warning(
+                    f"Rejecting fill that would cause overfill for {order.client_order_id!r}: "
+                    f"order.quantity={order.quantity}, order.filled_qty={order.filled_qty}, "
+                    f"fill.last_qty={report.last_qty}, would result in filled_qty={potential_filled_qty}",
+                )
+                return False  # Reject fill to prevent overfill
+            # allow_overfills=True: log warning but allow the fill through
             self._log.warning(
-                f"Rejecting fill that would cause overfill for {order.client_order_id!r}: "
+                f"Allowing overfill during reconciliation for {order.client_order_id!r}: "
                 f"order.quantity={order.quantity}, order.filled_qty={order.filled_qty}, "
-                f"fill.last_qty={report.last_qty}, would result in filled_qty={potential_filled_qty}",
+                f"fill.last_qty={report.last_qty}, will result in filled_qty={potential_filled_qty}",
             )
-            return False  # Reject fill to prevent overfill
 
         # Verify total fills consistency BEFORE applying
         current_total = sum(

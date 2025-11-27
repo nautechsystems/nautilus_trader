@@ -1329,6 +1329,123 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 0
 
+    def test_duplicate_fill_with_same_trade_id_and_data_is_skipped(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # First fill with specific trade_id
+        fill1 = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        self.exec_engine.process(fill1)
+
+        # Assert first fill applied
+        assert order.filled_qty == Quantity.from_int(50_000)
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.event_count == 4  # init, submitted, accepted, filled
+
+        # Act - try to apply exact duplicate fill (same trade_id, side, qty, px)
+        fill2_duplicate = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),  # Same trade_id
+        )
+        self.exec_engine.process(fill2_duplicate)
+
+        # Assert duplicate was skipped
+        assert order.filled_qty == Quantity.from_int(50_000)  # Unchanged
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.event_count == 4  # Still 4, duplicate not applied
+
+    def test_fill_with_same_trade_id_but_different_data_is_rejected_at_order_level(self) -> None:
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # First fill with specific trade_id
+        fill1 = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        self.exec_engine.process(fill1)
+
+        # Assert first fill applied
+        assert order.filled_qty == Quantity.from_int(50_000)
+
+        # Act - fill with same trade_id but different quantity
+        # Not an exact duplicate, so passes engine check but rejected at order level
+        fill2_different_qty = TestEventStubs.order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(30_000),  # Different quantity
+            trade_id=TradeId("TRADE-001"),  # Same trade_id
+        )
+        self.exec_engine.process(fill2_different_qty)
+
+        # Order level rejects due to duplicate trade_id (KeyError from Condition.not_in)
+        assert order.filled_qty == Quantity.from_int(50_000)
+
     def test_handle_position_opening_with_position_id_none(self) -> None:
         # Arrange
         self.exec_engine.start()
@@ -3661,41 +3778,66 @@ class TestExecutionEngine:
         assert Decimal("1.15") not in current_bids
 
     def test_own_book_order_overfill_removes_from_book(self) -> None:
-        # Arrange
-        self.exec_engine.set_manage_own_order_books(True)
-        self.exec_engine.start()
-
-        strategy = Strategy()
-        strategy.register(
+        # Arrange - need allow_overfills=True to test overfill handling
+        # Create fresh msgbus, cache, and exec_engine for isolation
+        msgbus = MessageBus(
             trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
             clock=self.clock,
         )
+        cache = Cache(database=MockCacheDatabase())
+        cache.add_instrument(AUDUSD_SIM)
+
+        config = ExecEngineConfig(allow_overfills=True, debug=True)
+        exec_engine = ExecutionEngine(
+            msgbus=msgbus,
+            cache=cache,
+            clock=self.clock,
+            config=config,
+        )
+
+        # Register mock client for order routing
+        exec_client = MockExecutionClient(
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=msgbus,
+            cache=cache,
+            clock=self.clock,
+        )
+        exec_engine.register_client(exec_client)
+        exec_engine.set_manage_own_order_books(True)
+        exec_engine.start()
 
         instrument = AUDUSD_SIM
 
-        order = strategy.order_factory.limit(
+        order = self.order_factory.limit(
             instrument_id=instrument.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(100_000),
             price=Price.from_str("1.00000"),
         )
 
-        # Submit and accept the order
-        strategy.submit_order(order)
-        self.exec_engine.process(TestEventStubs.order_submitted(order))
-        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        # Add order to cache and submit via execute command
+        submit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        exec_engine.execute(submit)
+        exec_engine.process(TestEventStubs.order_submitted(order))
+        exec_engine.process(TestEventStubs.order_accepted(order))
 
         # Verify order is in the own book
-        own_book = self.cache.own_order_book(instrument.id)
+        own_book = cache.own_order_book(instrument.id)
         assert own_book.update_count == 3
         assert len(own_book.bids_to_dict()) == 1
         assert Decimal("1.00000") in own_book.bids_to_dict()
 
         # Partially fill the order with 50% of quantity
-        self.exec_engine.process(
+        exec_engine.process(
             TestEventStubs.order_filled(
                 order,
                 instrument,
@@ -3705,12 +3847,12 @@ class TestExecutionEngine:
 
         # Verify order is still in the book with updated status
         assert order.status == OrderStatus.PARTIALLY_FILLED
-        own_book = self.cache.own_order_book(instrument.id)
+        own_book = cache.own_order_book(instrument.id)
         assert len(own_book.bids_to_dict()) == 1
         assert Decimal("1.00000") in own_book.bids_to_dict()
 
         # Act - overfill the order (60K more when only 50K remains)
-        self.exec_engine.process(
+        exec_engine.process(
             TestEventStubs.order_filled(
                 order,
                 instrument,
@@ -3720,13 +3862,13 @@ class TestExecutionEngine:
         )
 
         # Assert
-        own_book = self.cache.own_order_book(instrument.id)
+        own_book = cache.own_order_book(instrument.id)
         assert order.status == OrderStatus.FILLED
         assert (
             len(own_book.bids_to_dict()) == 0
         ), "Order should be removed from own book despite overfill"
         assert (
-            self.cache.own_bid_orders(instrument.id) == {}
+            cache.own_bid_orders(instrument.id) == {}
         ), "Own book cache should be empty after overfill"
 
     def test_own_book_order_denied_removes_from_book(self) -> None:

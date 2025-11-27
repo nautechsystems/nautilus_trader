@@ -64,6 +64,8 @@ cdef class ExecutionEngine(Component):
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly bint allow_overfills
+    """If order fills exceeding order quantity are allowed (logs warning instead of raising).\n\n:returns: `bool`"""
     cdef readonly bint convert_quote_qty_to_base
     """If quote-denominated order quantities should be converted to base units before submission.\n\n:returns: `bool`"""
     cdef readonly bint manage_own_order_books
@@ -148,7 +150,8 @@ cdef class ExecutionEngine(Component):
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type, Order order=*)
     cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill, Order order=*)
     cpdef PositionId _determine_netting_position_id(self, OrderFilled fill)
-    cpdef void _apply_event_to_order(self, Order order, OrderEvent event)
+    cdef bint _check_overfill(self, Order order, OrderFilled fill)
+    cpdef bint _apply_event_to_order(self, Order order, OrderEvent event)
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type)
     cdef bint _is_leg_fill(self, OrderFilled fill)
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type)

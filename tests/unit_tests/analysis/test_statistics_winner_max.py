@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import math
+
 import pandas as pd
 from numpy import float64
 
@@ -30,7 +32,7 @@ class TestMaxWinnerPortfolioStatistic:
         # Assert
         assert result == "Max Winner"
 
-    def test_calculate_given_empty_series_returns_zero(self):
+    def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
         stat = MaxWinner()
         data = pd.Series([], dtype=float64)
@@ -39,7 +41,7 @@ class TestMaxWinnerPortfolioStatistic:
         result = stat.calculate_from_realized_pnls(data)
 
         # Assert
-        assert result == 0.0
+        assert math.isnan(result)
 
     def test_calculate_given_mix_of_pnls1_returns_expected(self):
         # Arrange

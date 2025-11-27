@@ -235,8 +235,8 @@ class TestOrders:
                 TimeInForce.AT_THE_CLOSE,  # <-- invalid
             )
 
-    def test_overfill_limit_buy_order_raises_value_error(self):
-        # Arrange, Act, Assert
+    def test_overfill_limit_buy_order_tracks_overfill_qty(self):
+        # Arrange
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -252,9 +252,126 @@ class TestOrders:
             last_qty=Quantity.from_int(110_000),  # <-- overfill
         )
 
+        # Act
+        order.apply(over_fill)
+
+        # Assert - order should track overfill instead of raising
+        assert order.overfill_qty == Quantity.from_int(10_000)
+        assert order.filled_qty == Quantity.from_int(110_000)
+        assert order.leaves_qty == Quantity.from_int(0)
+        assert order.status == OrderStatus.FILLED
+
+    def test_overfill_market_order_tracks_overfill_qty(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # Apply first partial fill
+        fill1 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(80_000),
+        )
+        order.apply(fill1)
+
+        # Apply second fill that causes overfill
+        fill2 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            trade_id=TradeId("E-2"),
+            last_qty=Quantity.from_int(30_000),  # Total 110k > 100k order qty
+        )
+
+        # Act
+        order.apply(fill2)
+
         # Assert
-        with pytest.raises(ValueError):
-            order.apply(over_fill)
+        assert order.overfill_qty == Quantity.from_int(10_000)
+        assert order.filled_qty == Quantity.from_int(110_000)
+        assert order.leaves_qty == Quantity.from_int(0)
+        assert order.status == OrderStatus.FILLED
+
+    def test_no_overfill_leaves_overfill_qty_zero(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(100_000),  # Exact fill
+        )
+
+        # Act
+        order.apply(fill)
+
+        # Assert
+        assert order.overfill_qty == Quantity.from_int(0)
+        assert order.filled_qty == Quantity.from_int(100_000)
+        assert order.leaves_qty == Quantity.from_int(0)
+
+    def test_partial_fill_then_overfill_with_fractional_quantities(self):
+        # Arrange - simulates real exchange scenario with fractional fills
+        # Order for 2450.5 units, partially filled 1202.5, then fill of 1285.5 arrives
+        # Total filled: 2488.0, overfill: 37.5
+        order = LimitOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity.from_str("2450.5"),
+            Price.from_str("1.00000"),
+            UUID4(),
+            0,
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # First partial fill
+        fill1 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            trade_id=TradeId("E-1"),
+            last_qty=Quantity.from_str("1202.5"),
+        )
+        order.apply(fill1)
+
+        # Verify state after first fill
+        assert order.filled_qty == Quantity.from_str("1202.5")
+        assert order.leaves_qty == Quantity.from_str("1248.0")
+        assert order.overfill_qty == Quantity.from_str("0.0")
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+
+        # Second fill that exceeds remaining quantity (causes overfill)
+        fill2 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            trade_id=TradeId("E-2"),
+            last_qty=Quantity.from_str("1285.5"),  # 1202.5 + 1285.5 = 2488 > 2450.5
+        )
+
+        # Act - this should NOT raise, but track the overfill
+        order.apply(fill2)
+
+        # Assert - overfill is tracked, order completes normally
+        assert order.overfill_qty == Quantity.from_str("37.5")
+        assert order.filled_qty == Quantity.from_str("2488.0")
+        assert order.leaves_qty == Quantity.from_str("0.0")
+        assert order.status == OrderStatus.FILLED
 
     def test_reset_order_factory(self):
         # Arrange
@@ -2481,3 +2598,114 @@ class TestOrders:
         assert own_order.status == nautilus_pyo3.OrderStatus.INITIALIZED
         assert own_order.ts_last == 0
         assert own_order.ts_init == 0
+
+    def test_is_duplicate_fill_returns_true_for_exact_duplicate(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        fill = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        order.apply(fill)
+
+        # Act - check with same fill (exact duplicate)
+        result = order.is_duplicate_fill(fill)
+
+        # Assert
+        assert result is True
+
+    def test_is_duplicate_fill_returns_false_for_different_trade_id(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        fill1 = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        order.apply(fill1)
+
+        # Act - check with different trade_id
+        fill2 = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-002"),  # Different trade_id
+        )
+        result = order.is_duplicate_fill(fill2)
+
+        # Assert
+        assert result is False
+
+    def test_is_duplicate_fill_returns_false_for_same_trade_id_different_qty(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        fill1 = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        order.apply(fill1)
+
+        # Act - check with same trade_id but different qty
+        fill2 = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(30_000),  # Different qty
+            trade_id=TradeId("TRADE-001"),  # Same trade_id
+        )
+        result = order.is_duplicate_fill(fill2)
+
+        # Assert
+        assert result is False
+
+    def test_is_duplicate_fill_returns_false_when_no_fills(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        fill = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+
+        # Act - check before any fill is applied
+        result = order.is_duplicate_fill(fill)
+
+        # Assert
+        assert result is False

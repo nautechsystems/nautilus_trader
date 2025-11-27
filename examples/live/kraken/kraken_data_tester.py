@@ -21,6 +21,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -36,6 +37,7 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # SPOT examples: "BTC/USD", "ETH/USD", "SOL/USD"
 # PERP examples: "PF_XBTUSD", "PF_ETHUSD", "PF_SOLUSD"
 symbol = "ETH/USD"  # Spot pair
+# symbol = "PF_XBTUSD"  # Perpetual
 instrument_id = InstrumentId.from_str(f"{symbol}.{KRAKEN}")
 
 # Configure the trading node
@@ -53,6 +55,7 @@ config_node = TradingNodeConfig(
         KRAKEN: KrakenDataClientConfig(
             api_key=None,  # 'KRAKEN_API_KEY' env var
             api_secret=None,  # 'KRAKEN_API_SECRET' env var
+            product_types=(KrakenProductType.SPOT, KrakenProductType.FUTURES),
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
@@ -74,6 +77,8 @@ config_tester = DataTesterConfig(
     subscribe_instrument=True,
     subscribe_quotes=True,
     subscribe_trades=True,
+    subscribe_mark_prices=True,
+    subscribe_index_prices=True,
     # subscribe_bars=True,
     # subscribe_book_deltas=True,
     # subscribe_book_depth=True,

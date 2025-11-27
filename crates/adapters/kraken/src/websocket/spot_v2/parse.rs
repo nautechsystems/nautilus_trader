@@ -16,6 +16,7 @@
 //! WebSocket message parsers for converting Kraken streaming data to Nautilus domain models.
 
 use anyhow::Context;
+use chrono::DateTime;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, QuoteTick, TradeTick},
@@ -25,12 +26,8 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
-use crate::{
-    common::enums::KrakenOrderSide,
-    websocket::messages::{
-        KrakenWsBookData, KrakenWsBookLevel, KrakenWsTickerData, KrakenWsTradeData,
-    },
-};
+use super::messages::{KrakenWsBookData, KrakenWsBookLevel, KrakenWsTickerData, KrakenWsTradeData};
+use crate::common::enums::KrakenOrderSide;
 
 /// Parses Kraken WebSocket ticker data into a Nautilus quote tick.
 ///
@@ -223,8 +220,6 @@ fn parse_book_level(
 }
 
 fn parse_rfc3339_timestamp(value: &str, field: &str) -> anyhow::Result<UnixNanos> {
-    use chrono::DateTime;
-
     let dt = DateTime::parse_from_rfc3339(value)
         .with_context(|| format!("Failed to parse {field}='{value}' as RFC3339 timestamp"))?;
 
@@ -244,7 +239,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{common::consts::KRAKEN_VENUE, websocket::messages::KrakenWsMessage};
+    use crate::{common::consts::KRAKEN_VENUE, websocket::spot_v2::messages::KrakenWsMessage};
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
 

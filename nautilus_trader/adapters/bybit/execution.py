@@ -22,6 +22,9 @@ WebSocket clients exposed via PyO3 for performance.
 """
 
 import asyncio
+import contextlib
+from asyncio import Queue
+from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.accounting.factory import AccountFactory
@@ -52,6 +55,7 @@ from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -211,6 +215,17 @@ class BybitExecutionClient(LiveExecutionClient):
         # Hot cache for accumulating spot borrow fills (only)
         self._order_filled_qty: dict[ClientOrderId, Quantity] = {}
 
+        # Repayment queue system: one queue per base currency
+        self._repay_queues: dict[str, Queue[Decimal]] = {}
+        self._repay_enqueuers: dict[str, ThrottledEnqueuer[Decimal]] = {}
+        self._repay_queue_interval_secs = config.repay_queue_interval_secs
+
+        # Start repayment processor coroutine
+        self._repay_task = loop.create_task(
+            self._process_repayment_queues(),
+            name="repay_processor",
+        )
+
     @property
     def bybit_instrument_provider(self) -> BybitInstrumentProvider:
         return self._instrument_provider  # type: ignore
@@ -276,6 +291,16 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._log.warning("Timeout while waiting for websockets shutdown to complete")
 
         self._ws_client_futures.clear()
+
+        # Cancel repayment processor task
+        if self._repay_task and not self._repay_task.done():
+            self._repay_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._repay_task
+
+        # Cancel pending enqueuer tasks
+        for enqueuer in self._repay_enqueuers.values():
+            enqueuer.cancel_pending_tasks()
 
     async def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
@@ -1273,30 +1298,73 @@ class BybitExecutionClient(LiveExecutionClient):
                 if product_type != BybitProductType.SPOT:
                     return
 
-                filled_current = self._order_filled_qty.get(order.client_order_id, order.filled_qty)
-                if filled_current >= order.quantity:
-                    return  # Already triggered repayment
-
+                # Get current filled quantity (from tracking or order state)
+                filled_current = self._order_filled_qty.get(order.client_order_id, Quantity.zero())
                 filled_new = filled_current + report.last_qty
 
                 if filled_new >= order.quantity:
-                    # Order is now fully filled: clean up and trigger repayment
+                    # Order is now fully filled: enqueue repayment and clean up tracking
                     self._order_filled_qty.pop(order.client_order_id, None)
                     base_currency = instrument.base_currency.code
-                    self.create_task(
-                        self._repay_spot_borrow_if_needed(base_currency, order.quantity),
-                    )
+
+                    # Ensure queue and enqueuer exist for this currency
+                    if base_currency not in self._repay_queues:
+                        self._repay_queues[base_currency] = Queue(maxsize=1000)
+                        self._repay_enqueuers[base_currency] = ThrottledEnqueuer(
+                            qname=f"repay_queue_{base_currency}",
+                            queue=self._repay_queues[base_currency],
+                            loop=self._loop,
+                            clock=self._clock,
+                            logger=self._log,
+                        )
+
+                    # Enqueue the filled quantity for repayment
+                    qty_decimal = order.quantity.as_decimal()
+                    self._repay_enqueuers[base_currency].enqueue(qty_decimal)
                 else:
                     # Partial fill: update tracking
                     self._order_filled_qty[order.client_order_id] = filled_new
             except Exception as e:
-                self._log.warning(f"Failed to check for spot borrow repayment: {e}")
+                self._log.warning(f"Failed to enqueue spot borrow repayment: {e}")
 
     def _handle_position_status_report_pyo3(self, msg: nautilus_pyo3.PositionStatusReport) -> None:
         report = PositionStatusReport.from_pyo3(msg)
         self._log.debug(f"Received {report}", LogColor.MAGENTA)
         # Do not send position reports from WebSocket stream - we use HTTP endpoint for reconciliation
         # to avoid noise from position updates every time a fill occurs
+
+    async def _process_repayment_queues(self) -> None:
+        self._log.debug("Repayment queue processor starting")
+        try:
+            while True:
+                await asyncio.sleep(self._repay_queue_interval_secs)
+
+                for base_currency, queue in list(self._repay_queues.items()):
+                    try:
+                        # Accumulate all pending quantities for this currency
+                        total_qty = Decimal(0)
+
+                        while not queue.empty():
+                            try:
+                                qty = queue.get_nowait()
+                                total_qty += qty
+                            except asyncio.QueueEmpty:
+                                break
+
+                        # If we have accumulated quantity, trigger repayment
+                        if total_qty > 0:
+                            qty_obj = Quantity.from_str(str(total_qty))
+                            await self._repay_spot_borrow_if_needed(base_currency, qty_obj)
+                    except Exception as e:
+                        self._log.error(
+                            f"Error processing repayment queue for {base_currency}: {e}",
+                        )
+        except asyncio.CancelledError:
+            self._log.debug("Repayment queue processor cancelled")
+        except Exception as e:
+            self._log.error(f"Unexpected error in repayment queue processor: {e}")
+        finally:
+            self._log.debug("Repayment queue processor stopped")
 
     async def _repay_spot_borrow_if_needed(self, coin: str, bought_qty: Quantity) -> None:
         # Repay outstanding spot borrows for a specific coin, this method is called when

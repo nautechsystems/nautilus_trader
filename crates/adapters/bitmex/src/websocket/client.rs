@@ -341,7 +341,7 @@ impl BitmexWebSocketClient {
                                     continue;
                                 }
 
-                                for symbol in symbols.iter() {
+                                for symbol in symbols {
                                     if symbol.is_empty() {
                                         topics.push(channel.to_string());
                                     } else {
@@ -1264,7 +1264,7 @@ mod tests {
         let mut topics_to_restore = Vec::new();
         for entry in subs.iter() {
             let (channel, symbols) = entry.pair();
-            for symbol in symbols.iter() {
+            for symbol in symbols {
                 if symbol.is_empty() {
                     topics_to_restore.push(channel.to_string());
                 } else {
@@ -1370,7 +1370,7 @@ mod tests {
         let mut topics_to_restore = Vec::new();
         for entry in subs.iter() {
             let (channel, symbols) = entry.pair();
-            for symbol in symbols.iter() {
+            for symbol in symbols {
                 if symbol.is_empty() {
                     topics_to_restore.push(channel.to_string());
                 } else {

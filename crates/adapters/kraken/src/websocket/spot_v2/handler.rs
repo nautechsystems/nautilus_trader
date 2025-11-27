@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! WebSocket message handler for Kraken.
+//! WebSocket message handler for Kraken Spot v2.
 
 use std::sync::{
     Arc,
@@ -23,7 +23,7 @@ use std::sync::{
 use ahash::AHashMap;
 use nautilus_core::{AtomicTime, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::Data,
+    data::{Data, OrderBookDeltas},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::websocket::WebSocketClient;
@@ -46,7 +46,7 @@ use super::{
     clippy::large_enum_variant,
     reason = "Commands are ephemeral and immediately consumed"
 )]
-pub enum HandlerCommand {
+pub enum SpotHandlerCommand {
     /// Set the WebSocketClient for the handler to use.
     SetClient(WebSocketClient),
     /// Disconnect the WebSocket connection.
@@ -60,21 +60,21 @@ pub enum HandlerCommand {
 }
 
 /// WebSocket message handler for Kraken.
-pub(super) struct FeedHandler {
+pub(super) struct SpotFeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
     client: Option<WebSocketClient>,
-    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
     book_sequence: u64,
 }
 
-impl FeedHandler {
+impl SpotFeedHandler {
     /// Creates a new [`FeedHandler`] instance.
     pub(super) fn new(
         signal: Arc<AtomicBool>,
-        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     ) -> Self {
         Self {
@@ -102,29 +102,31 @@ impl FeedHandler {
             tokio::select! {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
-                        HandlerCommand::SetClient(client) => {
+                        SpotHandlerCommand::SetClient(client) => {
                             tracing::debug!("WebSocketClient received by handler");
                             self.client = Some(client);
                         }
-                        HandlerCommand::Disconnect => {
+                        SpotHandlerCommand::Disconnect => {
                             tracing::debug!("Disconnect command received");
                             if let Some(client) = self.client.take() {
                                 client.disconnect().await;
                             }
                         }
-                        HandlerCommand::SendText { payload } => {
+                        SpotHandlerCommand::SendText { payload } => {
                             if let Some(client) = &self.client
                                 && let Err(e) = client.send_text(payload.clone(), None).await
                             {
                                 tracing::error!(error = %e, "Failed to send text");
                             }
                         }
-                        HandlerCommand::InitializeInstruments(instruments) => {
+                        SpotHandlerCommand::InitializeInstruments(instruments) => {
                             for inst in instruments {
+                                // Cache by symbol (ISO 4217-A3 format like "ETH/USD")
+                                // which matches what v2 WebSocket messages use
                                 self.instruments_cache.insert(inst.symbol().inner(), inst);
                             }
                         }
-                        HandlerCommand::UpdateInstrument(inst) => {
+                        SpotHandlerCommand::UpdateInstrument(inst) => {
                             self.instruments_cache.insert(inst.symbol().inner(), inst);
                         }
                     }
@@ -312,7 +314,6 @@ impl FeedHandler {
         if all_deltas.is_empty() {
             None
         } else {
-            use nautilus_model::data::OrderBookDeltas;
             let deltas = OrderBookDeltas::new(instrument_id?, all_deltas);
             Some(NautilusWsMessage::Deltas(deltas))
         }

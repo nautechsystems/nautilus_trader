@@ -1,0 +1,9 @@
+{
+  "result": "success",
+  "serverTime": "2024-01-15T10:30:45.123Z",
+  "sendStatus": {
+    "order_id": "c8a35168-8d52-4609-944f-3f32bb0d5c77",
+    "status": "placed",
+    "cli_ord_id": "test-order-001"
+  }
+}

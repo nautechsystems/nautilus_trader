@@ -15,6 +15,8 @@
 
 //! Configuration structures for the OKX adapter.
 
+use nautilus_model::identifiers::{AccountId, TraderId};
+
 use crate::common::{
     enums::{OKXContractType, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
     urls::{
@@ -138,6 +140,10 @@ impl OKXDataClientConfig {
 /// Configuration for the OKX execution client.
 #[derive(Clone, Debug)]
 pub struct OKXExecClientConfig {
+    /// The trader ID for the client.
+    pub trader_id: TraderId,
+    /// The account ID for the client.
+    pub account_id: AccountId,
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<String>,
     /// Optional API secret for authenticated endpoints.
@@ -187,6 +193,8 @@ pub struct OKXExecClientConfig {
 impl Default for OKXExecClientConfig {
     fn default() -> Self {
         Self {
+            trader_id: TraderId::from("TRADER-001"),
+            account_id: AccountId::from("OKX-001"),
             api_key: None,
             api_secret: None,
             api_passphrase: None,

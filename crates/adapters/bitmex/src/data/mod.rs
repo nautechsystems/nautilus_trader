@@ -316,7 +316,7 @@ impl BitmexDataClient {
                                         .write()
                                         .expect("instrument cache lock poisoned");
                                     guard.clear();
-                                    for instrument in instruments.iter() {
+                                    for instrument in &instruments {
                                         guard.insert(instrument.id(), instrument.clone());
                                     }
                                 }

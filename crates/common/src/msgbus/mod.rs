@@ -220,7 +220,7 @@ pub fn subscribe(pattern: MStr<Pattern>, handler: ShareableMessageHandler, prior
     }
 
     // Find existing patterns which match this topic
-    for (topic, subs) in msgbus_ref_mut.topics.iter_mut() {
+    for (topic, subs) in &mut msgbus_ref_mut.topics {
         if is_matching_backtracking(*topic, sub.pattern) {
             // TODO: Consider binary_search and then insert
             subs.push(sub.clone());

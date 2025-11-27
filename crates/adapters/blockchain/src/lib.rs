@@ -52,12 +52,14 @@ pub mod constants;
 pub mod contracts;
 pub mod decode;
 pub mod events;
-pub mod execution;
 pub mod math;
 pub mod rpc;
 
 #[cfg(feature = "hypersync")]
 pub mod cache;
+
+#[cfg(feature = "hypersync")]
+pub mod execution;
 
 #[cfg(feature = "hypersync")]
 pub mod data;

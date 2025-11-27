@@ -74,7 +74,7 @@ repos:
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.29.1
+    rev: v8.30.0
     hooks:
       - id: gitleaks
         name: gitleaks (secrets scan)
@@ -105,8 +105,8 @@ repos:
       - id: zizmor
         name: zizmor (security)
         description: Scans GitHub Actions workflows for security misconfigurations
-        args: ["--no-online-audits", "--min-severity", "medium"]
-        files: ^\.github/(workflows|actions)/.*\.yml$
+        args: ["--no-online-audits", "--min-severity", "medium", ".github/"]
+        pass_filenames: false
 
   ##############################################################################
   #  Custom hooks
@@ -283,7 +283,7 @@ repos:
     rev: v1.7.7
     hooks:
       - id: docformatter
-        language_version: python3.13 # Pin to 3.13 due to untokenize incompatibility with 3.14
+        language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         additional_dependencies: [tomli]
         args: [
           "--wrap-summaries", "88",
@@ -299,6 +299,7 @@ repos:
     rev: v1.18.2
     hooks:
       - id: mypy
+        language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         exclude: (^python/|^nautilus_trader/.*\.pyi$)
         args: [
           "--config", "pyproject.toml",
@@ -314,7 +315,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.12 # Must match uv-version file
+    rev: 0.9.13 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

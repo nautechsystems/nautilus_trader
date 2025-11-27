@@ -1683,6 +1683,7 @@ async def test_recent_fills_cache_prevents_duplicate_reconciliation(
     trader_id,
     account_id,
     order_factory,
+    portfolio,
 ):
     """
     Test that recent fills cache prevents duplicate reconciliation of fills.
@@ -1754,7 +1755,7 @@ async def test_recent_fills_cache_prevents_duplicate_reconciliation(
         last_qty=Quantity.from_int(100_000),
         last_px=Price.from_str("1.00000"),
     )
-    order.apply(fill_event)
+    # Don't apply manually - let exec_engine.process handle it
     exec_engine.process(fill_event)
 
     # Allow async processing to complete
@@ -1941,6 +1942,7 @@ async def test_position_reconciliation_handles_generate_fill_reports_exception(
     trader_id,
     account_id,
     order_factory,
+    portfolio,
 ):
     """
     Test position reconciliation handles exceptions from generate_fill_reports
@@ -2011,7 +2013,6 @@ async def test_position_reconciliation_handles_generate_fill_reports_exception(
         last_qty=Quantity.from_int(50_000),
         last_px=Price.from_str("1.00000"),
     )
-    order.apply(fill_event)
     exec_engine.process(fill_event)
 
     # Allow async processing

@@ -23,7 +23,7 @@ use nautilus_model::identifiers::{ClientId, InstrumentId, TraderId};
 use nautilus_okx::{
     common::enums::OKXInstrumentType, config::OKXDataClientConfig, factories::OKXDataClientFactory,
 };
-use nautilus_testkit::actors::{DataTester, DataTesterConfig};
+use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

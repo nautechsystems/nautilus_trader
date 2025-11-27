@@ -7615,81 +7615,14 @@ class KrakenProductType(Enum):
     SPOT = "spot"
     FUTURES = "futures"
 
-class KrakenOrderType(Enum):
-    MARKET = "market"
-    LIMIT = "limit"
-    STOP_LOSS = "stop-loss"
-    TAKE_PROFIT = "take-profit"
-    STOP_LOSS_LIMIT = "stop-loss-limit"
-    TAKE_PROFIT_LIMIT = "take-profit-limit"
-    SETTLE_POSITION = "settle-position"
-
-class KrakenOrderSide(Enum):
-    BUY = "buy"
-    SELL = "sell"
-
-class KrakenTimeInForce(Enum):
-    GTC = "GTC"
-    IOC = "IOC"
-    GTD = "GTD"
-
-class KrakenOrderStatus(Enum):
-    PENDING = "pending"
-    OPEN = "open"
-    CLOSED = "closed"
-    CANCELED = "canceled"
-    EXPIRED = "expired"
-
-class KrakenPositionSide(Enum):
-    LONG = "long"
-    SHORT = "short"
-
-class KrakenPairStatus(Enum):
-    ONLINE = "online"
-    CANCEL_ONLY = "cancel_only"
-    POST_ONLY = "post_only"
-    LIMIT_ONLY = "limit_only"
-    REDUCE_ONLY = "reduce_only"
-
-class KrakenSystemStatus(Enum):
-    ONLINE = "online"
-    MAINTENANCE = "maintenance"
-    CANCEL_ONLY = "cancel_only"
-    POST_ONLY = "post_only"
-
-class KrakenAssetClass(Enum):
-    CURRENCY = "currency"
-
-class KrakenWsMethod(Enum):
-    SUBSCRIBE = "subscribe"
-    UNSUBSCRIBE = "unsubscribe"
-    PING = "ping"
-    PONG = "pong"
-
-class KrakenWsChannel(Enum):
-    TICKER = "ticker"
-    TRADE = "trade"
-    BOOK = "book"
-    OHLC = "ohlc"
-    SPREAD = "spread"
-    EXECUTIONS = "executions"
-    BALANCES = "balances"
-
-class KrakenWsEventType(Enum):
-    HEARTBEAT = "heartbeat"
-    STATUS = "status"
-    SUBSCRIBE = "subscribe"
-    UNSUBSCRIBE = "unsubscribe"
-    UPDATE = "update"
-    SNAPSHOT = "snapshot"
-    ERROR = "error"
-
 class KrakenHttpClient:
     def __init__(
         self,
+        product_type: KrakenProductType = ...,
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
+        testnet: bool = False,
         timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
@@ -7698,6 +7631,8 @@ class KrakenHttpClient:
     ) -> None: ...
     @property
     def base_url(self) -> str: ...
+    @property
+    def product_type(self) -> KrakenProductType: ...
     @property
     def api_key(self) -> str | None: ...
     @property
@@ -7743,8 +7678,13 @@ class KrakenHttpClient:
         limit: int | None = None,
     ) -> list[Bar]: ...
 
-class KrakenWebSocketClient:
-    def __init__(self, url: str) -> None: ...
+class KrakenSpotWebSocketClient:
+    def __init__(
+        self,
+        environment: KrakenEnvironment | None = None,
+        base_url: str | None = None,
+        heartbeat_secs: int | None = None,
+    ) -> None: ...
     @property
     def url(self) -> str: ...
     def is_connected(self) -> bool: ...
@@ -7769,6 +7709,40 @@ class KrakenWebSocketClient:
     async def unsubscribe_trades(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_bars(self, bar_type: BarType) -> None: ...
     async def send_ping(self) -> None: ...
+
+class KrakenFuturesWebSocketClient:
+    def __init__(
+        self,
+        environment: KrakenEnvironment | None = None,
+        base_url: str | None = None,
+        heartbeat_secs: int | None = None,
+    ) -> None: ...
+    @property
+    def url(self) -> str: ...
+    def is_closed(self) -> bool: ...
+    def cache_instruments(self, instruments: list[Instrument]) -> None: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
+    async def connect(self, callback: Callable) -> None: ...
+    async def disconnect(self) -> None: ...
+    async def close(self) -> None: ...
+    async def subscribe_mark_price(self, product_id: str) -> None: ...
+    async def unsubscribe_mark_price(self, product_id: str) -> None: ...
+    async def subscribe_index_price(self, product_id: str) -> None: ...
+    async def unsubscribe_index_price(self, product_id: str) -> None: ...
+
+def kraken_product_type_from_symbol(symbol: str) -> KrakenProductType: ...
+def get_kraken_http_base_url(
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+) -> str: ...
+def get_kraken_ws_public_url(
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+) -> str: ...
+def get_kraken_ws_private_url(
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+) -> str: ...
 
 # Greeks
 

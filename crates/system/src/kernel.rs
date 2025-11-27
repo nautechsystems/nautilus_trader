@@ -77,9 +77,9 @@ pub struct NautilusKernel {
     /// The data engine instance.
     pub data_engine: Rc<RefCell<DataEngine>>,
     /// The risk engine instance.
-    pub risk_engine: RiskEngine,
+    pub risk_engine: Rc<RefCell<RiskEngine>>,
     /// The execution engine instance.
-    pub exec_engine: ExecutionEngine,
+    pub exec_engine: Rc<RefCell<ExecutionEngine>>,
     /// The trader component.
     pub trader: Trader,
     /// The UNIX timestamp (nanoseconds) when the kernel was created.
@@ -133,13 +133,17 @@ impl NautilusKernel {
         set_message_bus(msgbus);
 
         let portfolio = Portfolio::new(cache.clone(), clock.clone(), config.portfolio());
+
         let risk_engine = RiskEngine::new(
             config.risk_engine().unwrap_or_default(),
             Portfolio::new(cache.clone(), clock.clone(), config.portfolio()),
             clock.clone(),
             cache.clone(),
         );
+        let risk_engine = Rc::new(RefCell::new(risk_engine));
+
         let exec_engine = ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine());
+        let exec_engine = Rc::new(RefCell::new(exec_engine));
 
         let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
         let data_engine = Rc::new(RefCell::new(data_engine));
@@ -366,13 +370,13 @@ impl NautilusKernel {
 
     /// Returns the kernel's risk engine.
     #[must_use]
-    pub const fn risk_engine(&self) -> &RiskEngine {
+    pub const fn risk_engine(&self) -> &Rc<RefCell<RiskEngine>> {
         &self.risk_engine
     }
 
     /// Returns the kernel's execution engine.
     #[must_use]
-    pub const fn exec_engine(&self) -> &ExecutionEngine {
+    pub const fn exec_engine(&self) -> &Rc<RefCell<ExecutionEngine>> {
         &self.exec_engine
     }
 
@@ -484,16 +488,32 @@ impl NautilusKernel {
     /// Connects all engine clients.
     #[allow(clippy::await_holding_refcell_ref)]
     async fn connect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
-        let mut data_engine = self.data_engine.borrow_mut();
-        let mut data_adapters = data_engine.get_clients_mut();
-        let mut futures = Vec::with_capacity(data_adapters.len());
+        let mut errors = Vec::new();
 
-        for adapter in &mut data_adapters {
-            futures.push(adapter.connect());
+        {
+            let mut exec_engine = self.exec_engine.borrow_mut();
+            let exec_adapters = exec_engine.get_clients_mut();
+
+            for adapter in exec_adapters {
+                if let Err(e) = adapter.start() {
+                    log::error!("Error starting execution client {}: {e}", adapter.client_id);
+                    errors.push(e);
+                }
+            }
         }
 
-        let results = join_all(futures).await;
-        let errors: Vec<anyhow::Error> = results.into_iter().filter_map(Result::err).collect();
+        {
+            let mut data_engine = self.data_engine.borrow_mut();
+            let mut data_adapters = data_engine.get_clients_mut();
+            let mut futures = Vec::with_capacity(data_adapters.len());
+
+            for adapter in &mut data_adapters {
+                futures.push(adapter.connect());
+            }
+
+            let results = join_all(futures).await;
+            errors.extend(results.into_iter().filter_map(Result::err));
+        }
 
         if errors.is_empty() {
             Ok(())
@@ -505,16 +525,32 @@ impl NautilusKernel {
     /// Disconnects all engine clients.
     #[allow(clippy::await_holding_refcell_ref)]
     async fn disconnect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
-        let mut data_engine = self.data_engine.borrow_mut();
-        let mut data_adapters = data_engine.get_clients_mut();
-        let mut futures = Vec::with_capacity(data_adapters.len());
+        let mut errors = Vec::new();
 
-        for adapter in &mut data_adapters {
-            futures.push(adapter.disconnect());
+        {
+            let mut exec_engine = self.exec_engine.borrow_mut();
+            let exec_adapters = exec_engine.get_clients_mut();
+
+            for adapter in exec_adapters {
+                if let Err(e) = adapter.stop() {
+                    log::error!("Error stopping execution client {}: {e}", adapter.client_id);
+                    errors.push(e);
+                }
+            }
         }
 
-        let results = join_all(futures).await;
-        let errors: Vec<anyhow::Error> = results.into_iter().filter_map(Result::err).collect();
+        {
+            let mut data_engine = self.data_engine.borrow_mut();
+            let mut data_adapters = data_engine.get_clients_mut();
+            let mut futures = Vec::with_capacity(data_adapters.len());
+
+            for adapter in &mut data_adapters {
+                futures.push(adapter.disconnect());
+            }
+
+            let results = join_all(futures).await;
+            errors.extend(results.into_iter().filter_map(Result::err));
+        }
 
         if errors.is_empty() {
             Ok(())

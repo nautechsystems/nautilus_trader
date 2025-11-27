@@ -23,6 +23,7 @@ subpackage's top level, so downstream code can simply import from
 ``nautilus_trader.adapters.kraken``.
 
 """
+
 from nautilus_trader.adapters.kraken.config import KrakenDataClientConfig
 from nautilus_trader.adapters.kraken.constants import KRAKEN
 from nautilus_trader.adapters.kraken.constants import KRAKEN_CLIENT_ID
@@ -32,6 +33,8 @@ from nautilus_trader.adapters.kraken.factories import KrakenLiveDataClientFactor
 from nautilus_trader.adapters.kraken.providers import KrakenInstrumentProvider
 from nautilus_trader.adapters.kraken.types import KRAKEN_INSTRUMENT_TYPES
 from nautilus_trader.adapters.kraken.types import KrakenInstrument
+from nautilus_trader.core.nautilus_pyo3 import KrakenEnvironment
+from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
 
 
 __all__ = [
@@ -41,7 +44,9 @@ __all__ = [
     "KRAKEN_VENUE",
     "KrakenDataClient",
     "KrakenDataClientConfig",
+    "KrakenEnvironment",
     "KrakenInstrument",
     "KrakenInstrumentProvider",
     "KrakenLiveDataClientFactory",
+    "KrakenProductType",
 ]

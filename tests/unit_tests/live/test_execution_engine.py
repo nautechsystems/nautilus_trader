@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
@@ -1247,3 +1248,210 @@ class TestLiveExecutionEngine:
         # Assert
         assert result is None  # Order not found (correct behavior)
         assert order.venue_order_id is None  # Order still has no venue_order_id
+
+    @pytest.mark.asyncio
+    async def test_overfill_rejects_fill_when_not_allowed(self):
+        """
+        Test that overfill rejects fill (without mutating state) when allow_overfills is
+        False.
+        """
+        # Verify config is correct
+        assert self.exec_engine.allow_overfills is False
+
+        # Arrange
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        self.cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # Capture initial state (copy qty since it's returned by reference)
+        initial_filled_qty = Quantity.from_raw(order.filled_qty.raw, order.filled_qty.precision)
+        initial_status = order.status
+
+        # Create overfill event (110k > 100k order qty)
+        overfill_event = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(110_000),
+        )
+
+        # Act - should reject fill without mutating order state
+        self.exec_engine.process(overfill_event)
+
+        # Assert - order state unchanged (fill was rejected)
+        assert order.filled_qty == initial_filled_qty
+        assert order.status == initial_status
+
+    @pytest.mark.asyncio
+    async def test_overfill_logs_warning_when_allowed(self):
+        """
+        Test that overfill logs a warning but doesn't raise when allow_overfills is
+        True.
+        """
+        # Arrange - create fresh msgbus and engine with allow_overfills=True
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        new_engine = LiveExecutionEngine(
+            loop=self.loop,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=LiveExecEngineConfig(debug=True, allow_overfills=True),
+        )
+        self._engines_to_cleanup.append(new_engine)
+        new_engine.start()
+
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        self.cache.add_order(order)
+        # Process events through engine to maintain proper state
+        new_engine.process(TestEventStubs.order_submitted(order))
+        new_engine.process(TestEventStubs.order_accepted(order))
+
+        # Create overfill event (110k > 100k order qty)
+        overfill_event = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(110_000),
+        )
+
+        # Act - should not raise when allow_overfills=True
+        new_engine.process(overfill_event)
+
+        # Allow async processing
+        await asyncio.sleep(0.1)
+
+        # Assert - order should have tracked the overfill
+        assert order.overfill_qty == Quantity.from_int(10_000)
+        assert order.filled_qty == Quantity.from_int(110_000)
+        assert order.status == OrderStatus.FILLED
+
+    def test_reconcile_fill_report_rejects_overfill_when_not_allowed(self):
+        """
+        Test that _reconcile_fill_report rejects overfills when allow_overfills=False
+        (default).
+        """
+        # Arrange - create a partially filled order
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("2450.5"),
+        )
+
+        self.cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # First partial fill
+        fill1 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            trade_id=TradeId("FILL-1"),
+            last_qty=Quantity.from_str("1202.5"),
+        )
+        order.apply(fill1)
+        self.cache.update_order(order)
+
+        # Create fill report that would cause overfill (1202.5 + 1285.5 = 2488 > 2450.5)
+        overfill_report = FillReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            trade_id=TradeId("FILL-2"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_str("1285.5"),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.TAKER,
+            report_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act - reconcile should reject the overfill
+        result = self.exec_engine._reconcile_fill_report(order, overfill_report, AUDUSD_SIM)
+
+        # Assert - fill rejected, order unchanged
+        assert result is False
+        assert order.filled_qty == Quantity.from_str("1202.5")
+        assert order.overfill_qty == Quantity.from_str("0.0")
+
+    def test_reconcile_fill_report_allows_overfill_when_configured(self):
+        """
+        Test that _reconcile_fill_report allows overfills when allow_overfills=True.
+        """
+        # Arrange - create engine with allow_overfills=True
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        new_engine = LiveExecutionEngine(
+            loop=self.loop,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=LiveExecEngineConfig(debug=True, allow_overfills=True),
+        )
+        self._engines_to_cleanup.append(new_engine)
+
+        # Create a partially filled order
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("2450.5"),
+        )
+
+        self.cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # First partial fill
+        fill1 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            trade_id=TradeId("FILL-1"),
+            last_qty=Quantity.from_str("1202.5"),
+        )
+        order.apply(fill1)
+        self.cache.update_order(order)
+
+        # Create fill report that would cause overfill (1202.5 + 1285.5 = 2488 > 2450.5)
+        overfill_report = FillReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            trade_id=TradeId("FILL-2"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_str("1285.5"),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.TAKER,
+            report_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act - reconcile should allow the overfill
+        result = new_engine._reconcile_fill_report(order, overfill_report, AUDUSD_SIM)
+
+        # Assert - fill accepted, overfill tracked
+        assert result is True
+        assert order.filled_qty == Quantity.from_str("2488.0")
+        assert order.overfill_qty == Quantity.from_str("37.5")
+        assert order.leaves_qty == Quantity.from_str("0.0")
+        assert order.status == OrderStatus.FILLED

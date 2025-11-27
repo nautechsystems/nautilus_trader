@@ -27,6 +27,8 @@ This release adds support for Python 3.14 with the following limitations:
 - Added Bybit spot margin auto-borrow and auto-repay with `auto_repay_spot_borrows` config option
 - Added Polymarket Gamma API support for instrument loading (#3141), thanks @DeirhX
 - Added OKX historical trades requests
+- Added `allow_overfills` config option to `ExecEngineConfig` (default `False`) to handle order fills exceeding order quantity with warning instead of raising
+- Added `overfill_qty` field to orders for tracking fill quantities exceeding original order quantity
 - Introduced `PositionAdjusted` events for tracking quantity/PnL changes outside normal order fills (base currency commissions, funding payments, manual adjustments)
 - Upgraded continuous reconciliation for execution engine using position reports to detect missed fills
 
@@ -52,8 +54,9 @@ TBD
 
 ### Fixes
 - Fixed cache dropped same-timestamp market data on insert
-- Fixed NETTING position flip snapshots and cache index cleanup (#3081), thanks @SarunasSS
 - Fixed race condition in InstrumentProvider causing duplicate instrument initialization in shared providers
+- Fixed portfolio statistics various bugs and edge cases
+- Fixed NETTING position flip snapshots and cache index cleanup (#3081), thanks @SarunasSS
 - Fixed `BacktestResult.total_positions` to match tearsheet count (#3148), thanks for reporting @2-5
 - Fixed risk engine negative price handling for spread instruments (#3136), thanks for reporting @q351941406
 - Fixed risk engine trailing stop order risk validations (#3160), thanks for reporting @GianC0
@@ -78,11 +81,13 @@ TBD
 - Fixed Polymarket websocket client cancellation on concurrent subscriptions (#3169), thanks @DeirhX
 - Fixed Polymarket maker fills parsing for cross-asset matching and multiple concurrent fills (#3172), thanks @petioptrv
 - Fixed Polymarket account balance update timing issue (#3161), thanks for reporting @santivazq
+- Fixed Polymarket handling of overfilled FOK orders using `allow_overfills` execution engine config option (#3221), thanks for reporting @Javdu10
 
 ### Internal Improvements
 - Added BitMEX submit broadcaster
 - Added Bybit start/end time filtering for order status reports (#3209), thanks @sunlei
 - Added non-mutating swap quote simulation for Pool tickmap profiling (#3123), thanks @filipmacek
+- Added ERC20 token balance tracking to BlockchainExecutionClient (#3224), thanks @filipmacek
 - Added dYdX v4 crate (#3138), thanks @nicolad
 - Added dYdX v4 WebSocket in Rust (#3158), thanks @nicolad
 - Added dYdX v4 DataClient in Rust (#3162), thanks @nicolad
@@ -101,6 +106,7 @@ TBD
 - Improved `Actor.request_bars` to enforce standard bar types (#3216), thanks @faysou
 - Improved Betfair execution error handling and edge cases
 - Improved Betfair order rejection and duplicate fills handling
+- Improved Bybit spot borrow repayments (#3223), thanks @vcraciun
 - Improved Databento live connection stability and reconnects
 - Improved dYdX adapter test coverage (#3212), thanks @nicolad
 - Improved Polymarket position querying using Gamma API (#3142), thanks @DeirhX

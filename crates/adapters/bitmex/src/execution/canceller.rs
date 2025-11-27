@@ -803,6 +803,7 @@ impl CancelBroadcaster {
         }
     }
 
+    #[must_use]
     pub fn clone_for_async(&self) -> Self {
         Self {
             config: self.config.clone(),

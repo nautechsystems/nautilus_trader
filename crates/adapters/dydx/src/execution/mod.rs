@@ -1035,7 +1035,7 @@ impl LiveExecutionClient for DydxExecutionClient {
                                         positions.len()
                                     );
 
-                                    for (market, ws_position) in positions.iter() {
+                                    for (market, ws_position) in positions {
                                         match crate::websocket::parse::parse_ws_position_report(
                                             ws_position,
                                             &instruments,
@@ -1164,7 +1164,7 @@ impl LiveExecutionClient for DydxExecutionClient {
                                 );
 
                                 // Update oracle_prices map with new prices
-                                for (market_symbol, oracle_data) in oracle_prices_map.iter() {
+                                for (market_symbol, oracle_data) in &oracle_prices_map {
                                     // Parse oracle price
                                     match oracle_data.oracle_price.parse::<rust_decimal::Decimal>()
                                     {

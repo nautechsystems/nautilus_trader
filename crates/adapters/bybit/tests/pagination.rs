@@ -493,7 +493,7 @@ fn test_pagination_loop_pattern() {
     let mut all_items: Vec<String> = Vec::new();
     let mut page_count = 0;
 
-    for response_json in responses.iter() {
+    for response_json in &responses {
         #[derive(serde::Deserialize)]
         struct MockResponse {
             result: MockResult,

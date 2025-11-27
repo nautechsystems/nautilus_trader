@@ -573,8 +573,9 @@ impl LiveNodeBuilder {
 
                 log::info!("Registering execution client '{name}' with execution engine");
 
-                // TODO: Implement when ExecutionEngine has a register_client method
-                // kernel.exec_engine().register_client(client);
+                kernel.exec_engine.borrow_mut().register_client(client)?;
+
+                log::info!("Successfully registered execution client '{name}'");
             } else {
                 log::warn!("No config found for execution client factory '{name}'");
             }

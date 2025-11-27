@@ -47,6 +47,7 @@ use crate::exchange::SimulatedExchange;
 /// backtesting environments, handling order management and trade execution
 /// through simulated exchanges. It processes trading commands and coordinates
 /// with the simulation infrastructure to provide realistic execution behavior.
+#[derive(Clone)]
 pub struct BacktestExecutionClient {
     core: ExecutionClientCore,
     exchange: WeakCell<SimulatedExchange>,

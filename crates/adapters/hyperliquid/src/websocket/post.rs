@@ -346,6 +346,8 @@ impl OrderBuilder {
     pub fn new() -> Self {
         Self::default()
     }
+
+    #[must_use]
     pub fn grouping(mut self, g: Grouping) -> Self {
         self.grouping = g;
         self
@@ -353,6 +355,7 @@ impl OrderBuilder {
 
     /// Create a limit order with individual parameters (legacy method)
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn push_limit(
         self,
         asset: u32,
@@ -376,6 +379,7 @@ impl OrderBuilder {
     }
 
     /// Create a limit order using parameters struct
+    #[must_use]
     pub fn push_limit_order(mut self, params: LimitOrderParams) -> Self {
         self.orders.push(OrderRequest {
             a: params.asset,
@@ -391,6 +395,7 @@ impl OrderBuilder {
 
     /// Create a trigger order with individual parameters (legacy method)
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn push_trigger(
         self,
         asset: u32,
@@ -418,6 +423,7 @@ impl OrderBuilder {
     }
 
     /// Create a trigger order using parameters struct
+    #[must_use]
     pub fn push_trigger_order(mut self, params: TriggerOrderParams) -> Self {
         self.orders.push(OrderRequest {
             a: params.asset,

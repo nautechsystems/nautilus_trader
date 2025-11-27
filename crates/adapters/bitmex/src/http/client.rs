@@ -1056,11 +1056,7 @@ impl BitmexHttpClient {
                 if !linked.is_empty() {
                     if let Some(parent_id) = order_list_parents.get(&order_list_id) {
                         if client_order_id != *parent_id {
-                            linked.sort_by_key(
-                                |candidate| {
-                                    if candidate == parent_id { 0 } else { 1 }
-                                },
-                            );
+                            linked.sort_by_key(|candidate| i32::from(candidate != parent_id));
                             report.parent_order_id = Some(*parent_id);
                         } else {
                             report.parent_order_id = None;
@@ -1104,11 +1100,7 @@ impl BitmexHttpClient {
                 if !linked.is_empty() {
                     if let Some(parent_id) = prefix_parents.get(base) {
                         if client_order_id != *parent_id {
-                            linked.sort_by_key(
-                                |candidate| {
-                                    if candidate == parent_id { 0 } else { 1 }
-                                },
-                            );
+                            linked.sort_by_key(|candidate| i32::from(candidate != parent_id));
                             report.parent_order_id = Some(*parent_id);
                         } else {
                             report.parent_order_id = None;

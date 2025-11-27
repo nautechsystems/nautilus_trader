@@ -1,0 +1,22 @@
+{
+  "result": "success",
+  "serverTime": "2023-04-07T16:12:15.410Z",
+  "openPositions": [
+    {
+      "side": "short",
+      "symbol": "PI_XBTUSD",
+      "price": 27523.749993345933,
+      "fillTime": "2023-04-05T12:31:21.410Z",
+      "size": 8000.0,
+      "unrealizedFunding": 0.00005879463852989987
+    },
+    {
+      "side": "long",
+      "symbol": "PI_ETHUSD",
+      "price": 1750.25,
+      "fillTime": "2023-04-06T08:15:30.250Z",
+      "size": 12000.0,
+      "unrealizedFunding": -0.00002345
+    }
+  ]
+}

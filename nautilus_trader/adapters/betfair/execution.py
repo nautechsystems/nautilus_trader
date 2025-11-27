@@ -284,10 +284,13 @@ class BetfairExecutionClient(LiveExecutionClient):
                     self._send_account_state(account_state)
                 except BetfairError as e:
                     await self.on_api_exception(error=e)
+                except Exception as e:
+                    # Log and continue on transient errors to keep the update loop running
+                    self._log.exception("Error updating account state", e)
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_account_state'")
         except Exception as e:
-            self._log.exception("Error updating account state", e)
+            self._log.exception("Fatal error in account state update loop", e)
 
     async def request_account_state(self) -> AccountState:
         self._log.debug("Requesting account state")
@@ -302,6 +305,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             reported=True,
             ts_event=timestamp,
             ts_init=timestamp,
+            fallback_currency=self.base_currency,
         )
         self._log.debug(f"Received account state: {account_state}")
 

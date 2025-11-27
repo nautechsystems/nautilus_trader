@@ -100,5 +100,5 @@ name = "kraken-http-public"
 path = "bin/http_public.rs"
 
 [[bin]]
-name = "kraken-ws-data"
-path = "bin/ws_data.rs"
+name = "kraken-ws-spot-data"
+path = "bin/ws_spot_data.rs"

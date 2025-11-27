@@ -1,9 +1,9 @@
 *.c
-*.o
-*.so
 *.exp
-*.obj
 *.lib
+*.o
+*.obj
+*.so
 *.xml
 
 # Git
@@ -70,6 +70,8 @@ _build/
 build/
 dist/
 env/
+*.bak
+*.sh
 *tmp/
 *temp/
 
@@ -119,4 +121,3 @@ tests/test_data/**/backtest/**
 !tests/test_data/nautilus/*/**.parquet
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*
-*.sh

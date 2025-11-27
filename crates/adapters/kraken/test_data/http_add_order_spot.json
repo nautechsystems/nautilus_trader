@@ -1,0 +1,15 @@
+{
+  "error": [],
+  "result": {
+    "descr": {
+      "order": "buy 0.01000000 XBTUSD @ limit 50000.0",
+      "pair": "XBTUSD",
+      "type": "buy",
+      "ordertype": "limit",
+      "price": "50000.0",
+      "price2": "0",
+      "leverage": "none"
+    },
+    "txid": ["OUF4EM-FRGI2-MQMWZD"]
+  }
+}

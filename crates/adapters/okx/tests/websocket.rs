@@ -993,7 +993,7 @@ async fn test_subscription_restoration_tracking() {
         loop {
             let events = state.subscription_events().await;
             let mut restored = HashSet::new();
-            for (key, _, ok) in events.iter() {
+            for (key, _, ok) in &events {
                 if *ok {
                     restored.insert(key.clone());
                 }

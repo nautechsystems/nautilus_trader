@@ -42,7 +42,7 @@ impl PortfolioStatistic for AvgWinner {
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         if realized_pnls.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
         let winners: Vec<f64> = realized_pnls
@@ -52,7 +52,7 @@ impl PortfolioStatistic for AvgWinner {
             .collect();
 
         if winners.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
         let sum: f64 = winners.iter().sum();
@@ -84,7 +84,7 @@ mod tests {
         let avg_winner = AvgWinner {};
         let result = avg_winner.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -93,7 +93,7 @@ mod tests {
         let realized_pnls = vec![-100.0, -50.0, -200.0];
         let result = avg_winner.calculate_from_realized_pnls(&realized_pnls);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]

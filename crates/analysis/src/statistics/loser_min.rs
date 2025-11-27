@@ -42,18 +42,17 @@ impl PortfolioStatistic for MinLoser {
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         if realized_pnls.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
-        // Match old Python behavior: filters for x <= 0.0 (includes zero)
         let losers: Vec<f64> = realized_pnls
             .iter()
-            .filter(|&&pnl| pnl <= 0.0)
+            .filter(|&&pnl| pnl < 0.0)
             .copied()
             .collect();
 
         if losers.is_empty() {
-            return Some(0.0); // Match old Python behavior
+            return Some(f64::NAN);
         }
 
         losers
@@ -87,7 +86,7 @@ mod tests {
         let min_loser = MinLoser {};
         let result = min_loser.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -96,8 +95,7 @@ mod tests {
         let pnls = vec![10.0, 20.0, 30.0];
         let result = min_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        // Returns 0.0 when no losers (matches old Python behavior)
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -124,8 +122,8 @@ mod tests {
         let pnls = vec![10.0, 0.0, -20.0, -30.0];
         let result = min_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        // Includes zero in losers (x <= 0.0), so max is 0.0 (matches old Python behavior)
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        // Zero is excluded, so min loser is -20.0 (least negative loss)
+        assert!(approx_eq!(f64, result.unwrap(), -20.0, epsilon = 1e-9));
     }
 
     #[rstest]

@@ -23,6 +23,8 @@ use std::{
     str::FromStr,
 };
 
+#[cfg(feature = "defi")]
+use alloy_primitives::U256;
 use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -368,6 +370,40 @@ impl Quantity {
     pub fn from_decimal(decimal: Decimal) -> anyhow::Result<Self> {
         let precision = decimal.scale() as u8;
         Self::from_decimal_dp(decimal, precision)
+    }
+
+    /// Creates a new [`Quantity`] from a U256 amount with specified precision.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Overflow occurs during scaling when precision is less than [`FIXED_PRECISION`].
+    /// - The scaled U256 amount exceeds the `QuantityRaw` range.
+    #[cfg(feature = "defi")]
+    pub fn from_u256(amount: U256, precision: u8) -> anyhow::Result<Self> {
+        // Quantity expects raw values scaled to at least FIXED_PRECISION or higher(WEI)
+        let scaled_amount = if precision < FIXED_PRECISION {
+            amount
+                .checked_mul(U256::from(10u128.pow((FIXED_PRECISION - precision) as u32)))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Amount overflow during scaling to fixed precision: {} * 10^{}",
+                        amount,
+                        FIXED_PRECISION - precision
+                    )
+                })?
+        } else {
+            amount
+        };
+
+        let raw = QuantityRaw::try_from(scaled_amount).map_err(|_| {
+            anyhow::anyhow!(
+                "U256 scaled amount {} exceeds QuantityRaw range",
+                scaled_amount
+            )
+        })?;
+
+        Ok(Self::from_raw(raw, precision))
     }
 }
 
@@ -1296,6 +1332,31 @@ mod tests {
         let deserialized: Quantity = serde_json::from_str(&json_str).unwrap();
         assert_eq!(deserialized, original);
         assert_eq!(deserialized.precision, 3);
+    }
+
+    /// Tests `Quantity::from_u256` using real swap event data from Arbitrum transactions, result values sourced from DexScreener.
+    /// Data sourced from:
+    /// - Sell tx: https://arbiscan.io/tx/0xb417009ce3bd9b9f2dde7d52277ffc9f1b1733ecedfcc7f8e3dedd5d87160325
+    #[rstest]
+    #[cfg(feature = "defi")]
+    #[case::sell_tx_rain_amount(
+        U256::from_str_radix("42193532365637161405123", 10).unwrap(),
+        18,
+        "42193.532365637161405123"
+    )]
+    #[case::sell_tx_weth_amount(
+        U256::from_str_radix("112633187203033110", 10).unwrap(),
+        18,
+        "0.112633187203033110"
+    )]
+    fn test_from_u256_real_swap_data(
+        #[case] amount: U256,
+        #[case] precision: u8,
+        #[case] expected_str: &str,
+    ) {
+        let qty = Quantity::from_u256(amount, precision).unwrap();
+        assert_eq!(qty.precision, precision);
+        assert_eq!(qty.as_decimal().to_string(), expected_str);
     }
 }
 

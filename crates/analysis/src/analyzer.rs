@@ -123,6 +123,7 @@ impl PortfolioAnalyzer {
     pub fn reset(&mut self) {
         self.account_balances_starting.clear();
         self.account_balances.clear();
+        self.positions.clear();
         self.realized_pnls.clear();
         self.returns.clear();
     }
@@ -146,9 +147,13 @@ impl PortfolioAnalyzer {
     }
 
     /// Calculates statistics based on account and position data.
+    ///
+    /// This clears all previous state before calculating, so can be called
+    /// multiple times without accumulating stale data.
     pub fn calculate_statistics(&mut self, account: &dyn Account, positions: &[Position]) {
         self.account_balances_starting = account.starting_balances();
         self.account_balances = account.balances_total();
+        self.positions.clear();
         self.realized_pnls.clear();
         self.returns.clear();
 
@@ -185,16 +190,31 @@ impl PortfolioAnalyzer {
     }
 
     /// Retrieves realized PnLs for a specific currency.
+    ///
+    /// Returns `None` if no PnLs exist, or if multiple currencies exist
+    /// without an explicit currency specified.
     #[must_use]
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() {
             return None;
         }
-        let currency = currency.or_else(|| self.account_balances.keys().next())?;
+
+        // Require explicit currency for multi-currency portfolios to avoid nondeterminism
+        let currency = match currency {
+            Some(c) => c,
+            None if self.account_balances.len() == 1 => self.account_balances.keys().next()?,
+            None => return None,
+        };
+
         self.realized_pnls.get(currency).cloned()
     }
 
     /// Calculates total PnL including unrealized PnL if provided.
+    ///
+    /// # Panics
+    ///
+    /// This function does not panic. The internal `expect` is guarded by a length
+    /// check ensuring at least one currency exists.
     ///
     /// # Errors
     ///
@@ -211,9 +231,15 @@ impl PortfolioAnalyzer {
             return Ok(0.0);
         }
 
-        let currency = currency
-            .or_else(|| self.account_balances.keys().next())
-            .ok_or("Currency not specified for multi-currency portfolio")?;
+        // Require explicit currency for multi-currency portfolios to avoid nondeterminism
+        let currency = match currency {
+            Some(c) => c,
+            None if self.account_balances.len() == 1 => {
+                // SAFETY: Length is 1, so next() always returns Some
+                self.account_balances.keys().next().expect("len is 1")
+            }
+            None => return Err("Currency must be specified for multi-currency portfolio"),
+        };
 
         if let Some(unrealized_pnl) = unrealized_pnl
             && unrealized_pnl.currency != *currency
@@ -238,6 +264,11 @@ impl PortfolioAnalyzer {
 
     /// Calculates total PnL as a percentage of starting balance.
     ///
+    /// # Panics
+    ///
+    /// This function does not panic. The internal `expect` is guarded by a length
+    /// check ensuring at least one currency exists.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -253,9 +284,15 @@ impl PortfolioAnalyzer {
             return Ok(0.0);
         }
 
-        let currency = currency
-            .or_else(|| self.account_balances.keys().next())
-            .ok_or("Currency not specified for multi-currency portfolio")?;
+        // Require explicit currency for multi-currency portfolios to avoid nondeterminism
+        let currency = match currency {
+            Some(c) => c,
+            None if self.account_balances.len() == 1 => {
+                // SAFETY: Length is 1, so next() always returns Some
+                self.account_balances.keys().next().expect("len is 1")
+            }
+            None => return Err("Currency must be specified for multi-currency portfolio"),
+        };
 
         if let Some(unrealized_pnl) = unrealized_pnl
             && unrealized_pnl.currency != *currency
@@ -852,7 +889,45 @@ mod tests {
 
         assert!(analyzer.account_balances_starting.is_empty());
         assert!(analyzer.account_balances.is_empty());
+        assert!(analyzer.positions.is_empty());
         assert!(analyzer.realized_pnls.is_empty());
         assert!(analyzer.returns.is_empty());
+    }
+
+    #[rstest]
+    fn test_calculate_statistics_clears_previous_positions() {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let currency = Currency::USD();
+
+        let positions1 = vec![create_mock_position(
+            "pos1".to_owned(),
+            100.0,
+            0.1,
+            currency,
+        )];
+        let positions2 = vec![create_mock_position(
+            "pos2".to_owned(),
+            200.0,
+            0.2,
+            currency,
+        )];
+
+        let mut starting_balances = HashMap::new();
+        starting_balances.insert(currency, Money::new(1000.0, currency));
+        let mut current_balances = HashMap::new();
+        current_balances.insert(currency, Money::new(1500.0, currency));
+
+        let account = MockAccount {
+            starting_balances,
+            current_balances,
+        };
+
+        // First calculation
+        analyzer.calculate_statistics(&account, &positions1);
+        assert_eq!(analyzer.positions.len(), 1);
+
+        // Second calculation should NOT accumulate
+        analyzer.calculate_statistics(&account, &positions2);
+        assert_eq!(analyzer.positions.len(), 1);
     }
 }

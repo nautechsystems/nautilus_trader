@@ -46,6 +46,7 @@ nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }

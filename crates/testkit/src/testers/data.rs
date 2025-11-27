@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Test actors for live testing and development.
+//! Data tester actor for live testing market data subscriptions.
 
 use std::{
     num::NonZeroUsize,
@@ -21,7 +21,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
     actor::{DataActor, DataActorConfig, DataActorCore},
     enums::LogColor,
@@ -226,7 +226,7 @@ impl DataActor for DataTester {
 
         // Request instruments if configured
         if self.config.request_instruments {
-            let mut venues = std::collections::HashSet::new();
+            let mut venues = AHashSet::new();
             for instrument_id in &instrument_ids {
                 venues.insert(instrument_id.venue);
             }
