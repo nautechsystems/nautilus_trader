@@ -55,6 +55,11 @@ pub struct DydxAdapterConfig {
     #[serde(default)]
     pub subaccount: u32,
     /// Whether this is a testnet configuration.
+    ///
+    /// Precedence: `network` is canonical. If both `network` and `is_testnet`
+    /// are provided and conflict, `network` takes precedence internally.
+    /// This flag exists for backwards compatibility and may be derived from
+    /// `network` in future versions.
     #[serde(default)]
     pub is_testnet: bool,
     /// Mnemonic phrase for wallet (optional, loaded from environment if not provided).
@@ -103,6 +108,15 @@ impl DydxAdapterConfig {
     #[must_use]
     pub const fn get_chain_id(&self) -> crate::grpc::types::ChainId {
         self.network.chain_id()
+    }
+
+    /// Convenience: compute `is_testnet` from `network`.
+    ///
+    /// Prefer `network` as the source of truth; this method is provided to
+    /// avoid ambiguity when legacy configs include `is_testnet`.
+    #[must_use]
+    pub const fn compute_is_testnet(&self) -> bool {
+        matches!(self.network, DydxNetwork::Testnet)
     }
 }
 

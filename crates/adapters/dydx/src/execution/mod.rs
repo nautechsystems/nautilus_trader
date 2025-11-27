@@ -180,8 +180,13 @@ impl DydxExecutionClient {
     /// - Different `client_order_id` strings → different `u32` values
     /// - Thread-safe for concurrent calls
     ///
-    /// Attempts to parse the client_order_id as an integer first. If that fails,
-    /// allocates a new sequential value from the atomic counter.
+    /// Behavior:
+    /// - Parses numeric `client_order_id` directly to `u32` for stability across restarts
+    /// - For non-numeric IDs, allocates a new sequential value from an atomic counter
+    /// - Mapping is kept in-memory only; non-numeric IDs will not be recoverable after restart
+    ///
+    /// Notes:
+    /// - Atomic counter uses `Relaxed` ordering — uniqueness is required, not cross-thread sequencing
     fn generate_client_order_id_int(&self, client_order_id: &str) -> u32 {
         // Fast path: already mapped
         if let Some(existing) = self.client_id_to_int.get(client_order_id) {
