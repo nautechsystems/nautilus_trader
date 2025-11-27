@@ -324,8 +324,18 @@ def betfair_account_to_account_state(
     ts_init,
     reported,
     account_id="001",
+    fallback_currency: Currency | None = None,
 ) -> AccountState:
-    currency = Currency.from_str(account_detail.currency_code)
+    currency_code = account_detail.currency_code
+    if currency_code:
+        currency = Currency.from_str(currency_code)
+    elif fallback_currency is not None:
+        currency = fallback_currency
+    else:
+        raise ValueError(
+            f"Cannot determine account currency: currency_code={currency_code!r}, "
+            f"fallback_currency={fallback_currency}",
+        )
     free = float(account_funds.available_to_bet_balance)
     locked = -float(account_funds.exposure)
     total = free + locked

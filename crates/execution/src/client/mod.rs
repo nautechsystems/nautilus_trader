@@ -15,7 +15,10 @@
 
 //! Execution client implementations for trading venue connectivity.
 
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
 
 use nautilus_common::messages::execution::{
     BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
@@ -150,4 +153,57 @@ pub trait ExecutionClient {
 #[inline(always)]
 fn log_not_implemented<T: Debug>(cmd: &T) {
     log::warn!("{cmd:?} – handler not implemented");
+}
+
+/// Wraps an [`ExecutionClient`], managing its lifecycle and providing access to the client.
+pub struct ExecutionClientAdapter {
+    pub(crate) client: Box<dyn ExecutionClient>,
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub account_id: AccountId,
+    pub oms_type: OmsType,
+}
+
+impl Deref for ExecutionClientAdapter {
+    type Target = Box<dyn ExecutionClient>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.client
+    }
+}
+
+impl DerefMut for ExecutionClientAdapter {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.client
+    }
+}
+
+impl Debug for ExecutionClientAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ExecutionClientAdapter))
+            .field("client_id", &self.client_id)
+            .field("venue", &self.venue)
+            .field("account_id", &self.account_id)
+            .field("oms_type", &self.oms_type)
+            .finish()
+    }
+}
+
+impl ExecutionClientAdapter {
+    /// Creates a new [`ExecutionClientAdapter`] with the given client.
+    #[must_use]
+    pub fn new(client: Box<dyn ExecutionClient>) -> Self {
+        let client_id = client.client_id();
+        let venue = client.venue();
+        let account_id = client.account_id();
+        let oms_type = client.oms_type();
+
+        Self {
+            client,
+            client_id,
+            venue,
+            account_id,
+            oms_type,
+        }
+    }
 }

@@ -198,7 +198,7 @@ impl OrderBook {
         // Collect prices to remove for asks (prices <= best_bid)
         let mut ask_prices_to_remove = Vec::new();
         if clear_asks {
-            for (bp, _level) in self.asks.levels.iter() {
+            for bp in self.asks.levels.keys() {
                 if bp.value <= best_bid {
                     ask_prices_to_remove.push(*bp);
                 } else {
@@ -210,7 +210,7 @@ impl OrderBook {
         // Collect prices to remove for bids (prices >= best_ask)
         let mut bid_prices_to_remove = Vec::new();
         if clear_bids {
-            for (bp, _level) in self.bids.levels.iter() {
+            for bp in self.bids.levels.keys() {
                 if bp.value >= best_ask {
                     bid_prices_to_remove.push(*bp);
                 } else {

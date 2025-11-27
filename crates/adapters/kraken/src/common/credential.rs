@@ -51,12 +51,10 @@ impl KrakenCredential {
         nonce: u64,
         params: &HashMap<String, String>,
     ) -> anyhow::Result<(String, String)> {
-        // Decode the secret from base64
         let secret = STANDARD
             .decode(&self.api_secret)
             .map_err(|e| anyhow::anyhow!("Failed to decode API secret: {e}"))?;
 
-        // Create POST data string
         let mut post_data = format!("nonce={nonce}");
         if !params.is_empty() {
             let encoded = serde_urlencoded::to_string(params)
@@ -65,19 +63,34 @@ impl KrakenCredential {
             post_data.push_str(&encoded);
         }
 
-        // Hash the nonce + POST data with SHA256
         let hash = digest::digest(&digest::SHA256, post_data.as_bytes());
-
-        // Concatenate path + hash
         let mut message = path.as_bytes().to_vec();
         message.extend_from_slice(hash.as_ref());
-
-        // Sign with HMAC-SHA512
         let key = hmac::Key::new(hmac::HMAC_SHA512, &secret);
         let signature = hmac::sign(&key, &message);
 
-        // Encode signature as base64 and return with post_data
         Ok((STANDARD.encode(signature.as_ref()), post_data))
+    }
+
+    /// Sign a request for Kraken Futures API v3.
+    ///
+    /// Kraken Futures uses a different authentication method:
+    /// 1. Concatenate: POST params + nonce + endpoint path
+    /// 2. SHA256 hash the concatenation
+    /// 3. Base64 decode the secret
+    /// 4. HMAC-SHA512 of the SHA256 hash using decoded secret
+    /// 5. Base64 encode the result
+    pub fn sign_futures(&self, path: &str, post_data: &str, nonce: u64) -> anyhow::Result<String> {
+        let secret = STANDARD
+            .decode(&self.api_secret)
+            .map_err(|e| anyhow::anyhow!("Failed to decode API secret: {e}"))?;
+
+        let message = format!("{post_data}{nonce}{path}");
+        let hash = digest::digest(&digest::SHA256, message.as_bytes());
+        let key = hmac::Key::new(hmac::HMAC_SHA512, &secret);
+        let signature = hmac::sign(&key, hash.as_ref());
+
+        Ok(STANDARD.encode(signature.as_ref()))
     }
 
     /// Returns a masked version of the API key for logging purposes.
@@ -104,5 +117,45 @@ mod tests {
     fn test_credential_creation() {
         let cred = KrakenCredential::new("test_key", "test_secret");
         assert_eq!(cred.api_key(), "test_key");
+    }
+
+    #[rstest]
+    fn test_sign_futures_uses_url_encoded_post_data() {
+        // This test documents that sign_futures expects URL-encoded post data,
+        // which must match the body actually sent in the HTTP request.
+        // Using a valid base64-encoded secret (24 bytes -> 32 base64 chars)
+        let secret = STANDARD.encode(b"test_secret_key_24bytes!");
+        let cred = KrakenCredential::new("test_key", secret);
+
+        let endpoint = "/derivatives/api/v3/sendorder";
+        let nonce = 1700000000000u64;
+
+        // Create params and URL-encode them (same format as HTTP client)
+        let mut params = HashMap::new();
+        params.insert("symbol".to_string(), "PI_XBTUSD".to_string());
+        params.insert("side".to_string(), "buy".to_string());
+        params.insert("orderType".to_string(), "lmt".to_string());
+        params.insert("size".to_string(), "100".to_string());
+        params.insert("limitPrice".to_string(), "50000.5".to_string());
+
+        let post_data = serde_urlencoded::to_string(&params).unwrap();
+
+        // Sign the URL-encoded data
+        let signature = cred.sign_futures(endpoint, &post_data, nonce).unwrap();
+
+        // Signature should be non-empty base64
+        assert!(!signature.is_empty());
+        assert!(STANDARD.decode(&signature).is_ok());
+
+        // Same params should produce same signature (deterministic)
+        let signature2 = cred.sign_futures(endpoint, &post_data, nonce).unwrap();
+        assert_eq!(signature, signature2);
+
+        // Different post_data should produce different signature
+        let different_post_data = "symbol=PI_ETHUSD&side=sell";
+        let different_sig = cred
+            .sign_futures(endpoint, different_post_data, nonce)
+            .unwrap();
+        assert_ne!(signature, different_sig);
     }
 }

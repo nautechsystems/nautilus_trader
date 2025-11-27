@@ -15,6 +15,8 @@
 
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import PositiveInt
+from nautilus_trader.core.nautilus_pyo3 import KrakenEnvironment
+from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
 
 
 class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -25,21 +27,25 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     ----------
     api_key : str, optional
         The Kraken API public key.
-        If ``None`` then will source the `KRAKEN_API_KEY`
-        environment variable.
+        If ``None`` then will source the `KRAKEN_API_KEY` or `KRAKEN_TESTNET_API_KEY`
+        environment variable (depending on environment setting).
     api_secret : str, optional
         The Kraken API secret key.
-        If ``None`` then will source the `KRAKEN_API_SECRET`
-        environment variable.
-    product_types : tuple[str, ...], optional
+        If ``None`` then will source the `KRAKEN_API_SECRET` or `KRAKEN_TESTNET_API_SECRET`
+        environment variable (depending on environment setting).
+    environment : KrakenEnvironment, optional
+        The Kraken environment to connect to.
+        If ``None`` then defaults to ``KrakenEnvironment.Mainnet``.
+        Note: testnet is only available for Futures.
+    product_types : tuple[KrakenProductType, ...], optional
         The Kraken product types for the client.
-        Options: ("spot", "futures"). If ``None`` then defaults to ("spot",).
+        If ``None`` then defaults to ``(KrakenProductType.SPOT,)``.
     base_url_http : str, optional
         The base URL for Kraken HTTP API.
-        If ``None`` then will use the default production URL.
+        If ``None`` then will use the default URL based on environment and product_type.
     base_url_ws : str, optional
         The base URL for Kraken WebSocket API.
-        If ``None`` then will use the default production URL.
+        If ``None`` then will use the default URL based on environment and product_type.
     http_proxy_url : str, optional
         Optional HTTP proxy URL.
     ws_proxy_url : str, optional
@@ -61,7 +67,8 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
 
     api_key: str | None = None
     api_secret: str | None = None
-    product_types: tuple[str, ...] | None = None
+    environment: KrakenEnvironment | None = None
+    product_types: tuple[KrakenProductType, ...] | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
     http_proxy_url: str | None = None

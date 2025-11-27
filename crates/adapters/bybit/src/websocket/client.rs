@@ -486,7 +486,7 @@ impl BybitWebSocketClient {
                             let mut topics = Vec::new();
                             for entry in confirmed.iter() {
                                 let (channel, symbols) = entry.pair();
-                                for symbol in symbols.iter() {
+                                for symbol in symbols {
                                     if symbol.is_empty() {
                                         topics.push(channel.to_string());
                                     } else {

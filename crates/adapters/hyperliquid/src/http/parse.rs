@@ -98,7 +98,7 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
 
     let mut defs = Vec::new();
 
-    for asset in meta.universe.iter() {
+    for asset in &meta.universe {
         // Include delisted assets but mark them as inactive
         // This allows parsing of historical data for delisted instruments
         let is_delisted = asset.is_delisted.unwrap_or(false);

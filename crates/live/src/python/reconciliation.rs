@@ -80,7 +80,7 @@ pub fn py_adjust_fills_for_partial_window(
             let fills_dict = PyDict::new(py);
 
             // Add all orders for this instrument
-            for (venue_order_id, order) in all_orders.iter() {
+            for (venue_order_id, order) in &all_orders {
                 if order.instrument_id == instrument_id {
                     orders_dict
                         .set_item(venue_order_id.to_string(), order.clone().into_py_any(py)?)?;
@@ -88,7 +88,7 @@ pub fn py_adjust_fills_for_partial_window(
             }
 
             // Add all fills for this instrument
-            for (venue_order_id, fills) in all_fills.iter() {
+            for (venue_order_id, fills) in &all_fills {
                 if let Some(first_fill) = fills.first()
                     && first_fill.instrument_id == instrument_id
                 {

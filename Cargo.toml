@@ -459,12 +459,15 @@ redundant_closure = "warn"
 needless_return = "warn"
 collapsible_if = "warn"
 useless_conversion = "warn"
+from_iter_instead_of_collect = "warn"
 
 # Style/idioms
 use_self = "warn"
 redundant_field_names = "warn"
 match_like_matches_macro = "warn"
 manual_map = "warn"
+bool_to_int_with_if = "warn"
+explicit_iter_loop = "warn"
 
 # Pedantic (explicitness and clarity)
 semicolon_if_nothing_returned = "warn"
@@ -473,11 +476,15 @@ filter_map_next = "warn"
 flat_map_option = "warn"
 map_unwrap_or = "warn"
 implicit_clone = "warn"
+return_self_not_must_use = "warn"
 
 # Security and robustness
 suspicious_doc_comments = "warn"
 large_stack_arrays = "warn"
 panic_in_result_fn = "warn"
+
+# Explicitly allowed (opinionated lints we disagree with)
+redundant_else = "allow" # Sometimes explicit else blocks improve readability
 
 # TODO: Enable these incrementally (widespread usage in codebase)
 # unwrap_used = "warn"        # Forces explicit error handling instead of panics

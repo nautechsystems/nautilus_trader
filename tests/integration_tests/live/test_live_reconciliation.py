@@ -2013,7 +2013,6 @@ async def test_position_reconciliation_handles_generate_fill_reports_exception(
         last_qty=Quantity.from_int(50_000),
         last_px=Price.from_str("1.00000"),
     )
-    order.apply(fill_event)
     exec_engine.process(fill_event)
 
     # Allow async processing

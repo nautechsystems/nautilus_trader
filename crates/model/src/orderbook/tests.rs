@@ -629,14 +629,14 @@ fn test_book_apply_depth_partial_snapshot() {
     assert_eq!(ask_levels.len(), 3, "Should have exactly 3 ask levels");
 
     // Verify no zero-price levels
-    for level in bid_levels.iter() {
+    for level in &bid_levels {
         assert!(
             level.price.value > Price::from("0.0"),
             "No zero-price bid levels"
         );
         assert!(level.size() > 0.0, "No zero-size bid levels");
     }
-    for level in ask_levels.iter() {
+    for level in &ask_levels {
         assert!(
             level.price.value > Price::from("0.0"),
             "No zero-price ask levels"

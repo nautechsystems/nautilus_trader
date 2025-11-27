@@ -20,6 +20,7 @@ use std::{
     rc::Rc,
 };
 
+use ahash::AHashMap;
 use nautilus_common::{
     actor::{DataActorConfig, DataActorCore},
     cache::Cache,
@@ -28,8 +29,9 @@ use nautilus_common::{
 };
 use nautilus_core::time::get_atomic_clock_static;
 use nautilus_execution::order_manager::manager::OrderManager;
-use nautilus_model::identifiers::{ActorId, StrategyId, TraderId};
+use nautilus_model::identifiers::{ActorId, ClientOrderId, StrategyId, TraderId};
 use nautilus_portfolio::portfolio::Portfolio;
+use ustr::Ustr;
 
 use super::config::StrategyConfig;
 
@@ -49,6 +51,8 @@ pub struct StrategyCore {
     pub order_factory: Option<OrderFactory>,
     /// The portfolio.
     pub portfolio: Option<Rc<RefCell<Portfolio>>>,
+    /// Maps client order IDs to GTD expiry timer names.
+    pub gtd_timers: AHashMap<ClientOrderId, Ustr>,
 }
 
 impl Debug for StrategyCore {
@@ -79,6 +83,7 @@ impl StrategyCore {
             order_manager: None,
             order_factory: None,
             portfolio: None,
+            gtd_timers: AHashMap::new(),
         }
     }
 

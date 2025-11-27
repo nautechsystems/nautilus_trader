@@ -30,6 +30,7 @@ use std::{
     time::SystemTime,
 };
 
+use ahash::{AHashMap, AHashSet};
 use config::ExecutionEngineConfig;
 use nautilus_common::{
     cache::Cache,
@@ -60,7 +61,7 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 
-use crate::client::ExecutionClient;
+use crate::client::{ExecutionClient, ExecutionClientAdapter};
 
 /// Central execution engine responsible for orchestrating order routing and execution.
 ///
@@ -71,8 +72,8 @@ use crate::client::ExecutionClient;
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    clients: HashMap<ClientId, Rc<dyn ExecutionClient>>,
-    default_client: Option<Rc<dyn ExecutionClient>>,
+    clients: AHashMap<ClientId, ExecutionClientAdapter>,
+    default_client: Option<ExecutionClientAdapter>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
@@ -100,7 +101,7 @@ impl ExecutionEngine {
         Self {
             clock: clock.clone(),
             cache,
-            clients: HashMap::new(),
+            clients: AHashMap::new(),
             default_client: None,
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
@@ -164,46 +165,6 @@ impl ExecutionEngine {
         self.external_order_claims.get(instrument_id).copied()
     }
 
-    #[must_use]
-    /// Returns all execution clients corresponding to the given orders.
-    pub fn get_clients_for_orders(&self, orders: &[OrderAny]) -> Vec<Rc<dyn ExecutionClient>> {
-        let mut client_ids: HashSet<ClientId> = HashSet::new();
-        let mut venues: HashSet<Venue> = HashSet::new();
-
-        for order in orders {
-            venues.insert(order.venue());
-            if let Some(client_id) = self.cache.borrow().client_id(&order.client_order_id()) {
-                client_ids.insert(*client_id);
-            }
-        }
-
-        let mut clients: Vec<Rc<dyn ExecutionClient>> = Vec::new();
-
-        for client_id in &client_ids {
-            if let Some(client) = self.clients.get(client_id)
-                && !clients.iter().any(|c| c.client_id() == client.client_id())
-            {
-                clients.push(client.clone());
-            }
-        }
-
-        for venue in &venues {
-            if let Some(client_id) = self.routing_map.get(venue) {
-                if let Some(client) = self.clients.get(client_id)
-                    && !clients.iter().any(|c| c.client_id() == client.client_id())
-                {
-                    clients.push(client.clone());
-                }
-            } else if let Some(client) = &self.default_client
-                && !clients.iter().any(|c| c.client_id() == client.client_id())
-            {
-                clients.push(client.clone());
-            }
-        }
-
-        clients
-    }
-
     // -- REGISTRATION ----------------------------------------------------------------------------
 
     /// Registers a new execution client.
@@ -211,29 +172,92 @@ impl ExecutionEngine {
     /// # Errors
     ///
     /// Returns an error if a client with the same ID is already registered.
-    pub fn register_client(&mut self, client: Rc<dyn ExecutionClient>) -> anyhow::Result<()> {
-        if self.clients.contains_key(&client.client_id()) {
-            anyhow::bail!("Client already registered with ID {}", client.client_id());
+    pub fn register_client(&mut self, client: Box<dyn ExecutionClient>) -> anyhow::Result<()> {
+        let client_id = client.client_id();
+        let venue = client.venue();
+
+        if self.clients.contains_key(&client_id) {
+            anyhow::bail!("Client already registered with ID {client_id}");
         }
 
-        // If client has venue, register routing
-        self.routing_map.insert(client.venue(), client.client_id());
+        let adapter = ExecutionClientAdapter::new(client);
 
-        log::info!("Registered client {}", client.client_id());
-        self.clients.insert(client.client_id(), client);
+        self.routing_map.insert(venue, client_id);
+
+        log::info!("Registered client {client_id}");
+        self.clients.insert(client_id, adapter);
         Ok(())
     }
 
     /// Registers a default execution client for fallback routing.
-    pub fn register_default_client(&mut self, client: Rc<dyn ExecutionClient>) {
-        log::info!("Registered default client {}", client.client_id());
-        self.default_client = Some(client);
+    pub fn register_default_client(&mut self, client: Box<dyn ExecutionClient>) {
+        let client_id = client.client_id();
+        let adapter = ExecutionClientAdapter::new(client);
+
+        log::info!("Registered default client {client_id}");
+        self.default_client = Some(adapter);
     }
 
     #[must_use]
-    /// Returns the execution client registered with the given ID.
-    pub fn get_client(&self, client_id: &ClientId) -> Option<Rc<dyn ExecutionClient>> {
-        self.clients.get(client_id).cloned()
+    /// Returns a reference to the execution client registered with the given ID.
+    pub fn get_client(&self, client_id: &ClientId) -> Option<&dyn ExecutionClient> {
+        self.clients.get(client_id).map(|a| a.client.as_ref())
+    }
+
+    #[must_use]
+    /// Returns mutable access to all registered execution clients.
+    pub fn get_clients_mut(&mut self) -> Vec<&mut ExecutionClientAdapter> {
+        let mut adapters: Vec<_> = self.clients.values_mut().collect();
+        if let Some(default) = &mut self.default_client {
+            adapters.push(default);
+        }
+        adapters
+    }
+
+    #[must_use]
+    /// Returns execution clients that would handle the given orders.
+    ///
+    /// This method first attempts to resolve each order's originating client from the cache,
+    /// then falls back to venue routing for any orders without a cached client.
+    pub fn get_clients_for_orders(&self, orders: &[OrderAny]) -> Vec<&dyn ExecutionClient> {
+        let mut client_ids: AHashSet<ClientId> = AHashSet::new();
+        let mut venues: AHashSet<Venue> = AHashSet::new();
+
+        // Collect client IDs from cache and venues for fallback
+        for order in orders {
+            venues.insert(order.instrument_id().venue);
+            if let Some(client_id) = self.cache.borrow().client_id(&order.client_order_id()) {
+                client_ids.insert(*client_id);
+            }
+        }
+
+        let mut clients: Vec<&dyn ExecutionClient> = Vec::new();
+
+        // Add clients for cached client IDs (orders go back to originating client)
+        for client_id in &client_ids {
+            if let Some(adapter) = self.clients.get(client_id)
+                && !clients.iter().any(|c| c.client_id() == adapter.client_id)
+            {
+                clients.push(adapter.client.as_ref());
+            }
+        }
+
+        // Add clients for venue routing (for orders not in cache)
+        for venue in &venues {
+            if let Some(client_id) = self.routing_map.get(venue) {
+                if let Some(adapter) = self.clients.get(client_id)
+                    && !clients.iter().any(|c| c.client_id() == adapter.client_id)
+                {
+                    clients.push(adapter.client.as_ref());
+                }
+            } else if let Some(adapter) = &self.default_client
+                && !clients.iter().any(|c| c.client_id() == adapter.client_id)
+            {
+                clients.push(adapter.client.as_ref());
+            }
+        }
+
+        clients
     }
 
     /// Sets routing for a specific venue to a given client ID.
@@ -461,7 +485,7 @@ impl ExecutionEngine {
             return;
         }
 
-        let client: Rc<dyn ExecutionClient> = if let Some(client) = self
+        let client = if let Some(adapter) = self
             .clients
             .get(&command.client_id())
             .or_else(|| {
@@ -471,7 +495,7 @@ impl ExecutionEngine {
             })
             .or(self.default_client.as_ref())
         {
-            client.clone()
+            adapter.client.as_ref()
         } else {
             log::error!(
                 "No execution client found for command: client_id={:?}, venue={}, command={command:?}",
@@ -493,7 +517,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order(&self, client: Rc<dyn ExecutionClient>, cmd: &SubmitOrder) {
+    fn handle_submit_order(&self, client: &dyn ExecutionClient, cmd: &SubmitOrder) {
         let mut order = cmd.order.clone();
         let client_order_id = order.client_order_id();
         let instrument_id = order.instrument_id();
@@ -566,7 +590,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order_list(&self, client: Rc<dyn ExecutionClient>, cmd: &SubmitOrderList) {
+    fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: &SubmitOrderList) {
         let orders = cmd.order_list.orders.clone();
 
         let mut cache = self.cache.borrow_mut();
@@ -661,37 +685,37 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_modify_order(&self, client: Rc<dyn ExecutionClient>, cmd: &ModifyOrder) {
+    fn handle_modify_order(&self, client: &dyn ExecutionClient, cmd: &ModifyOrder) {
         if let Err(e) = client.modify_order(cmd) {
             log::error!("Error modifying order: {e}");
         }
     }
 
-    fn handle_cancel_order(&self, client: Rc<dyn ExecutionClient>, cmd: &CancelOrder) {
+    fn handle_cancel_order(&self, client: &dyn ExecutionClient, cmd: &CancelOrder) {
         if let Err(e) = client.cancel_order(cmd) {
             log::error!("Error canceling order: {e}");
         }
     }
 
-    fn handle_cancel_all_orders(&self, client: Rc<dyn ExecutionClient>, cmd: &CancelAllOrders) {
+    fn handle_cancel_all_orders(&self, client: &dyn ExecutionClient, cmd: &CancelAllOrders) {
         if let Err(e) = client.cancel_all_orders(cmd) {
             log::error!("Error canceling all orders: {e}");
         }
     }
 
-    fn handle_batch_cancel_orders(&self, client: Rc<dyn ExecutionClient>, cmd: &BatchCancelOrders) {
+    fn handle_batch_cancel_orders(&self, client: &dyn ExecutionClient, cmd: &BatchCancelOrders) {
         if let Err(e) = client.batch_cancel_orders(cmd) {
             log::error!("Error batch canceling orders: {e}");
         }
     }
 
-    fn handle_query_account(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryAccount) {
+    fn handle_query_account(&self, client: &dyn ExecutionClient, cmd: &QueryAccount) {
         if let Err(e) = client.query_account(cmd) {
             log::error!("Error querying account: {e}");
         }
     }
 
-    fn handle_query_order(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryOrder) {
+    fn handle_query_order(&self, client: &dyn ExecutionClient, cmd: &QueryOrder) {
         if let Err(e) = client.query_order(cmd) {
             log::error!("Error querying order: {e}");
         }
@@ -891,6 +915,15 @@ impl ExecutionEngine {
     }
 
     fn apply_fill_to_order(&self, order: &mut OrderAny, fill: OrderFilled) -> anyhow::Result<()> {
+        if order.is_duplicate_fill(&fill) {
+            log::warn!(
+                "Duplicate fill: {} trade_id={} already applied, skipping",
+                order.client_order_id(),
+                fill.trade_id
+            );
+            anyhow::bail!("Duplicate fill");
+        }
+
         self.check_overfill(order, &fill)?;
         let event = OrderEventAny::Filled(fill);
         self.apply_order_event(order, event)
@@ -912,9 +945,15 @@ impl ExecutionEngine {
                     // Log warning and continue with downstream processing (cache update, publishing, etc.)
                     log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
                 }
+                OrderError::DuplicateFill(trade_id) => {
+                    // Duplicate fill detected at order level (secondary safety check)
+                    log::warn!(
+                        "Duplicate fill rejected at order level: trade_id={trade_id}, did not apply {event}"
+                    );
+                    anyhow::bail!("{e}");
+                }
                 _ => {
-                    // ValueError: Protection against invalid IDs
-                    // KeyError: Protection against duplicate fills
+                    // Protection against invalid IDs and other invariants
                     log::error!("Error applying event: {e}, did not apply {event}");
                     if should_handle_own_book_order(order) {
                         self.cache.borrow_mut().update_own_order_book(order);
@@ -1456,10 +1495,3 @@ impl ExecutionEngine {
         RefMut::map(cache, |c| c.own_order_book_mut(instrument_id).unwrap())
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-mod stubs;
-#[cfg(test)]
-mod tests;

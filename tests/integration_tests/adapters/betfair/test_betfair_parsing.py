@@ -20,6 +20,8 @@ from copy import copy
 
 import msgspec
 import pytest
+from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
+from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
 from betfair_parser.spec.betting.enums import PersistenceType
 from betfair_parser.spec.betting.enums import Side
 from betfair_parser.spec.betting.orders import CancelOrders
@@ -468,6 +470,40 @@ class TestBetfairParsing:
             ts_init=result.ts_init,
         )
         assert result == expected
+
+    def test_account_state_fallback_currency(self):
+        detail = AccountDetailsResponse(
+            currency_code=None,
+            first_name="Test",
+            last_name="User",
+            locale_code="en",
+            region="GBR",
+            timezone="Europe/London",
+            discount_rate=0.0,
+            points_balance=0,
+            country_code="GB",
+        )
+        funds = AccountFundsResponse(
+            available_to_bet_balance=1000.0,
+            exposure=0.0,
+            retained_commission=0.0,
+            exposure_limit=0.0,
+            discount_rate=0.0,
+            points_balance=0,
+        )
+
+        result = betfair_account_to_account_state(
+            account_detail=detail,
+            account_funds=funds,
+            event_id=self.uuid,
+            reported=True,
+            ts_event=0,
+            ts_init=0,
+            fallback_currency=GBP,
+        )
+
+        assert result.base_currency == GBP
+        assert result.balances[0].total == Money(1000.0, GBP)
 
     @pytest.mark.asyncio
     async def test_merge_order_book_deltas(self):

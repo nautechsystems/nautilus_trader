@@ -225,7 +225,7 @@ impl TestOrdersGenerator {
 
     pub fn build(&self) -> Vec<OrderAny> {
         let mut orders = Vec::new();
-        for (venue, total_instruments) in self.venue_instruments.iter() {
+        for (venue, total_instruments) in &self.venue_instruments {
             for i in 0..*total_instruments {
                 let instrument_id = InstrumentId::from(format!("SYMBOL-{i}.{venue}"));
                 for order_index in 0..self.orders_per_instrument {

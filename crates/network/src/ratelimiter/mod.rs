@@ -175,7 +175,10 @@ where
     pub fn new_with_quota(base_quota: Option<Quota>, keyed_quotas: Vec<(K, Quota)>) -> Self {
         let clock = MonotonicClock {};
         let start = MonotonicClock::now(&clock);
-        let gcra = DashMap::from_iter(keyed_quotas.into_iter().map(|(k, q)| (k, Gcra::new(q))));
+        let gcra: DashMap<_, _> = keyed_quotas
+            .into_iter()
+            .map(|(k, q)| (k, Gcra::new(q)))
+            .collect();
         Self {
             default_gcra: base_quota.map(Gcra::new),
             state: DashMapStateStore::new(),

@@ -45,14 +45,14 @@ impl PortfolioStatistic for ReturnsAverageWin {
             return Some(f64::NAN);
         }
 
-        let negative_returns: Vec<f64> = returns.values().copied().filter(|&x| x > 0.0).collect();
+        let positive_returns: Vec<f64> = returns.values().copied().filter(|&x| x > 0.0).collect();
 
-        if negative_returns.is_empty() {
+        if positive_returns.is_empty() {
             return Some(f64::NAN);
         }
 
-        let sum: f64 = negative_returns.iter().sum();
-        let count = negative_returns.len() as f64;
+        let sum: f64 = positive_returns.iter().sum();
+        let count = positive_returns.len() as f64;
 
         Some(sum / count)
     }

@@ -42,7 +42,7 @@ impl PortfolioStatistic for MaxLoser {
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         if realized_pnls.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
         let losers: Vec<f64> = realized_pnls
@@ -52,7 +52,7 @@ impl PortfolioStatistic for MaxLoser {
             .collect();
 
         if losers.is_empty() {
-            return Some(0.0); // Match old Python behavior
+            return Some(f64::NAN);
         }
 
         losers
@@ -86,7 +86,7 @@ mod tests {
         let max_loser = MaxLoser {};
         let result = max_loser.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -95,8 +95,7 @@ mod tests {
         let pnls = vec![10.0, 20.0, 30.0];
         let result = max_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        // Returns 0.0 when no losers (matches old Python behavior)
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]

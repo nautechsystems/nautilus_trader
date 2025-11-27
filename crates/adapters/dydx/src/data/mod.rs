@@ -6971,7 +6971,7 @@ mod tests {
             assert_eq!(trade_ticks.len(), 2, "Should contain 2 TradeTick elements");
 
             // Each element is a TradeTick
-            for tick in trade_ticks.iter() {
+            for tick in &trade_ticks {
                 assert_eq!(tick.instrument_id, instrument_id);
             }
         }
@@ -7054,7 +7054,7 @@ mod tests {
             );
 
             // Verify all trade ticks have the same instrument_id
-            for tick in resp.data.iter() {
+            for tick in &resp.data {
                 assert_eq!(
                     tick.instrument_id, instrument_id,
                     "Each TradeTick should have correct instrument_id"

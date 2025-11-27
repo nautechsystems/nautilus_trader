@@ -57,22 +57,36 @@ impl PortfolioStatistic for Expectancy {
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         if realized_pnls.is_empty() {
+            return Some(f64::NAN);
+        }
+
+        // Treat NaN as 0.0 for expectancy calculation (no winners/losers = no contribution)
+        let avg_winner = AvgWinner {}
+            .calculate_from_realized_pnls(realized_pnls)
+            .map_or(0.0, |v| if v.is_nan() { 0.0 } else { v });
+        let avg_loser = AvgLoser {}
+            .calculate_from_realized_pnls(realized_pnls)
+            .map_or(0.0, |v| if v.is_nan() { 0.0 } else { v });
+
+        // Count only non-zero trades (zeros are breakeven, neither winners nor losers)
+        let winners: Vec<f64> = realized_pnls
+            .iter()
+            .filter(|&&pnl| pnl > 0.0)
+            .copied()
+            .collect();
+        let losers: Vec<f64> = realized_pnls
+            .iter()
+            .filter(|&&pnl| pnl < 0.0)
+            .copied()
+            .collect();
+
+        let total_trades = winners.len() + losers.len();
+        if total_trades == 0 {
             return Some(0.0);
         }
 
-        let avg_winner = AvgWinner {}
-            .calculate_from_realized_pnls(realized_pnls)
-            .unwrap_or(0.0);
-        let avg_loser = AvgLoser {}
-            .calculate_from_realized_pnls(realized_pnls)
-            .unwrap_or(0.0);
-
-        let (winners, losers): (Vec<f64>, Vec<f64>) =
-            realized_pnls.iter().partition(|&&pnl| pnl > 0.0);
-
-        let total_trades = winners.len() + losers.len();
-        let win_rate = winners.len() as f64 / total_trades.max(1) as f64;
-        let loss_rate = 1.0 - win_rate;
+        let win_rate = winners.len() as f64 / total_trades as f64;
+        let loss_rate = losers.len() as f64 / total_trades as f64;
 
         Some(avg_winner.mul_add(win_rate, avg_loser * loss_rate))
     }
@@ -101,7 +115,7 @@ mod tests {
         let expectancy = Expectancy {};
         let result = expectancy.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -154,6 +168,31 @@ mod tests {
         // Expected: avg_winner = 10.0, win_rate = 1.0, loss_rate = 0.0
         // Expectancy = (10.0 * 1.0) + (0.0 * 0.0) = 10.0
         assert!(approx_eq!(f64, result.unwrap(), 10.0, epsilon = 1e-9));
+    }
+
+    #[rstest]
+    fn test_zeros_excluded_from_win_loss_rates() {
+        let expectancy = Expectancy {};
+        let pnls = vec![10.0, 0.0, -10.0];
+        let result = expectancy.calculate_from_realized_pnls(&pnls);
+
+        assert!(result.is_some());
+        // Zeros excluded: only [10.0, -10.0] counted
+        // avg_winner = 10.0, win_rate = 0.5
+        // avg_loser = -10.0, loss_rate = 0.5
+        // Expectancy = (10.0 * 0.5) + (-10.0 * 0.5) = 0.0
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+    }
+
+    #[rstest]
+    fn test_only_zeros() {
+        let expectancy = Expectancy {};
+        let pnls = vec![0.0, 0.0, 0.0];
+        let result = expectancy.calculate_from_realized_pnls(&pnls);
+
+        assert!(result.is_some());
+        // No winners or losers, expectancy = 0.0
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]

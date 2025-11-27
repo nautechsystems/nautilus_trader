@@ -139,6 +139,8 @@ pub struct BlockchainExecutionClientConfig {
     pub chain: Chain,
     /// The wallet address of the execution client.
     pub wallet_address: String,
+    /// Token universe: set of ERC-20 token addresses to monitor for balance tracking.
+    pub tokens: Option<Vec<String>>,
     /// The HTTP URL for the blockchain RPC endpoint.
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
@@ -151,6 +153,7 @@ impl BlockchainExecutionClientConfig {
         client_id: AccountId,
         chain: Chain,
         wallet_address: String,
+        tokens: Option<Vec<String>>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
     ) -> Self {
@@ -159,6 +162,7 @@ impl BlockchainExecutionClientConfig {
             client_id,
             chain,
             wallet_address,
+            tokens,
             http_rpc_url,
             rpc_requests_per_second,
         }

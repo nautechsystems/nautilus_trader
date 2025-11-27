@@ -23,6 +23,9 @@ use ustr::Ustr;
 pub const KRAKEN: &str = "KRAKEN";
 pub static KRAKEN_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(KRAKEN)));
 
+// API Partner integration identifier
+pub const NAUTILUS_KRAKEN_BROKER_ID: &str = "AA36 N84G VVFC BKUQ";
+
 // WebSocket-specific constants
 pub const KRAKEN_PONG: &str = "pong";
 pub const KRAKEN_WS_TOPIC_DELIMITER: char = '.';

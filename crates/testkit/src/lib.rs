@@ -54,9 +54,12 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
-pub mod actors;
 pub mod common;
 pub mod files;
+pub mod testers;
+
+// Re-export for convenience
+pub use testers::{DataTester, DataTesterConfig, ExecTester, ExecTesterConfig};
 
 #[cfg(feature = "python")]
 pub mod python;

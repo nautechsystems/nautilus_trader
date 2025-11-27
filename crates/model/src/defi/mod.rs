@@ -37,6 +37,7 @@ pub mod tick_map;
 pub mod token;
 pub mod types;
 pub mod validation;
+pub mod wallet;
 
 #[cfg(test)]
 pub mod stubs;

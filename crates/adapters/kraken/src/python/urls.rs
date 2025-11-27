@@ -19,32 +19,32 @@ use pyo3::prelude::*;
 
 use crate::common::{
     enums::{KrakenEnvironment, KrakenProductType},
-    urls::{get_http_base_url, get_ws_private_url, get_ws_public_url},
+    urls::{get_kraken_http_base_url, get_kraken_ws_private_url, get_kraken_ws_public_url},
 };
 
 #[pyfunction]
-#[pyo3(name = "get_http_base_url")]
-pub fn py_get_http_base_url(
+#[pyo3(name = "get_kraken_http_base_url")]
+pub fn py_kraken_get_http_base_url(
     product_type: KrakenProductType,
     environment: KrakenEnvironment,
 ) -> String {
-    get_http_base_url(product_type, environment).to_string()
+    get_kraken_http_base_url(product_type, environment).to_string()
 }
 
 #[pyfunction]
-#[pyo3(name = "get_ws_public_url")]
-pub fn py_get_ws_public_url(
+#[pyo3(name = "get_kraken_ws_public_url")]
+pub fn py_get_kraken_ws_public_url(
     product_type: KrakenProductType,
     environment: KrakenEnvironment,
 ) -> String {
-    get_ws_public_url(product_type, environment).to_string()
+    get_kraken_ws_public_url(product_type, environment).to_string()
 }
 
 #[pyfunction]
-#[pyo3(name = "get_ws_private_url")]
-pub fn py_get_ws_private_url(
+#[pyo3(name = "get_kraken_ws_private_url")]
+pub fn py_get_kraken_ws_private_url(
     product_type: KrakenProductType,
     environment: KrakenEnvironment,
 ) -> String {
-    get_ws_private_url(product_type, environment).to_string()
+    get_kraken_ws_private_url(product_type, environment).to_string()
 }

@@ -54,11 +54,11 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 log = { workspace = true }
-indexmap = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true }
 ustr = { workspace = true }

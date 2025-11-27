@@ -196,6 +196,7 @@ cdef class Order:
     cpdef void apply(self, OrderEvent event)
 
     cdef Quantity calculate_overfill_c(self, Quantity fill_qty)
+    cdef bint is_duplicate_fill_c(self, OrderFilled fill)
     cdef void _denied(self, OrderDenied event)
     cdef void _submitted(self, OrderSubmitted event)
     cdef void _rejected(self, OrderRejected event)

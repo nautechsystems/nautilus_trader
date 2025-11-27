@@ -141,6 +141,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         This prevents interest accrual on borrowed coins after closing short positions.
         Repayment is skipped during Bybit's blackout window (04:00-05:30 UTC daily).
         Only triggers on fully filled orders to avoid excessive API calls.
+    repay_queue_interval_secs : PositiveFloat, default 1.0
+        The interval (seconds) between processing repayment queues for spot borrows.
     ignore_uncached_instrument_executions : bool, default False
         If True, execution message for instruments not contained in the cache are ignored instead of raising an error.
     max_retries : PositiveInt, optional
@@ -183,6 +185,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     use_http_batch_api: bool = False
     ignore_uncached_instrument_executions: bool = False
     auto_repay_spot_borrows: bool = True
+    repay_queue_interval_secs: PositiveFloat = 1.0
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None

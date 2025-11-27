@@ -215,6 +215,7 @@ impl HyperliquidRawHttpClient {
     }
 
     /// Configure rate limiting parameters (chainable).
+    #[must_use]
     pub fn with_rate_limits(mut self) -> Self {
         self.rest_limiter = Arc::new(WeightedLimiter::per_minute(1200));
         self.rate_limit_backoff_base = Duration::from_millis(125);

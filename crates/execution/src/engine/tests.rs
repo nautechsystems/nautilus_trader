@@ -110,7 +110,7 @@ fn test_register_client_success(
 ) {
     let client_id = stub_client.client_id();
 
-    let result = execution_engine.register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>);
+    let result = execution_engine.register_client(Box::new(stub_client));
 
     assert!(
         result.is_ok(),
@@ -132,7 +132,7 @@ fn test_register_venue_routing_success(
     let venue = Venue::from("STUB_VENUE");
 
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     let result = execution_engine.register_venue_routing(client_id, venue);
@@ -155,7 +155,7 @@ fn test_deregister_client_removes_client(
 ) {
     let client_id = stub_client.client_id();
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     assert!(
@@ -193,7 +193,7 @@ fn test_check_connected_when_client_connected_returns_true(mut execution_engine:
     // Start the client before registering to ensure is_connected = true
     stub_client.start().unwrap();
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     let is_connected = execution_engine.check_connected();
@@ -215,7 +215,7 @@ fn test_check_connected_when_client_disconnected_returns_false(
 
     // Register the client while disconnected (default state)
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     let is_connected = execution_engine.check_connected();
@@ -240,7 +240,7 @@ fn test_check_disconnected_when_client_disconnected_returns_true(
 
     // Register the client while disconnected (default state)
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     let is_disconnected = execution_engine.check_disconnected();
@@ -355,7 +355,7 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -438,7 +438,7 @@ fn test_submit_order_for_random_venue_logs(mut execution_engine: ExecutionEngine
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -509,7 +509,7 @@ fn test_order_filled_with_unrecognized_strategy_id(mut execution_engine: Executi
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -606,7 +606,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -762,7 +762,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -860,7 +860,7 @@ fn test_submit_order_with_cleared_cache_logs_error(mut execution_engine: Executi
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -966,7 +966,7 @@ fn test_when_applying_event_to_order_with_invalid_state_trigger_logs(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -1123,7 +1123,7 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -1263,7 +1263,7 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -1411,7 +1411,7 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -1566,7 +1566,7 @@ fn test_process_event_with_no_venue_order_id_logs_and_does_nothing(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -1646,7 +1646,7 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -1780,7 +1780,7 @@ fn test_handle_order_event_with_different_client_order_id_but_matching_venue_ord
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -1865,7 +1865,7 @@ fn test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -1951,7 +1951,7 @@ fn test_handle_duplicate_order_events_logs_error_and_does_not_apply(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -2047,7 +2047,7 @@ fn test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create order
@@ -2163,7 +2163,7 @@ fn test_handle_order_fill_event(mut execution_engine: ExecutionEngine) {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -2378,7 +2378,7 @@ fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngin
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -2632,7 +2632,7 @@ fn test_handle_position_opening_with_position_id_none(mut execution_engine: Exec
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -2794,7 +2794,7 @@ fn test_add_to_existing_position_on_order_fill(mut execution_engine: ExecutionEn
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument to cache
@@ -3027,7 +3027,7 @@ fn test_close_position_on_order_fill(mut execution_engine: ExecutionEngine) {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument and account to cache
@@ -3246,7 +3246,7 @@ fn test_multiple_strategy_positions_opened(mut execution_engine: ExecutionEngine
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument and account to cache
@@ -3533,7 +3533,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument and account to cache
@@ -3779,7 +3779,7 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument and account to cache
@@ -4026,7 +4026,7 @@ fn test_flip_position_on_flat_position_then_filled_reusing_position_id(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument and account to cache
@@ -4225,7 +4225,7 @@ fn test_flip_position_when_netting_oms(mut execution_engine: ExecutionEngine) {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client))
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Add instrument and account to cache
@@ -4512,7 +4512,7 @@ fn test_submit_order_with_quote_quantity_and_no_prices_denies(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create submit order command
@@ -4595,7 +4595,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create bracket order components with quote quantity
@@ -4812,7 +4812,7 @@ fn test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantit
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit order with quote quantity
@@ -4961,7 +4961,7 @@ fn test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quanti
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit order with quote quantity
@@ -5126,7 +5126,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create bracket order with quote quantity
@@ -5356,7 +5356,7 @@ fn test_submit_market_should_not_add_to_own_book() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create market order
@@ -5442,7 +5442,7 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit order with FOK or IOC time in force
@@ -5528,7 +5528,7 @@ fn test_submit_order_adds_to_own_book_bid() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit buy order
@@ -5691,7 +5691,7 @@ fn test_submit_order_adds_to_own_book_ask() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit sell order
@@ -5854,7 +5854,7 @@ fn test_cancel_order_removes_from_own_book() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit orders using OrderTestBuilder
@@ -6031,7 +6031,7 @@ fn test_own_book_status_filtering() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit orders using OrderTestBuilder
@@ -6245,7 +6245,7 @@ fn test_filled_order_removes_from_own_book() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit orders using OrderTestBuilder
@@ -6462,7 +6462,7 @@ fn test_order_updates_in_own_book() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit orders using OrderTestBuilder
@@ -6720,7 +6720,7 @@ fn test_position_flip_with_own_order_book() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create initial long position with buy order
@@ -6982,7 +6982,7 @@ fn test_own_book_with_crossed_orders() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create limit orders using OrderTestBuilder
@@ -7155,7 +7155,7 @@ fn test_own_book_with_contingent_orders() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create a bracket order with limit entry, limit TP and limit SL
@@ -7439,7 +7439,7 @@ fn test_own_book_order_status_filtering_parameterized(
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create the order
@@ -7622,7 +7622,7 @@ fn test_own_book_combined_status_filtering() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create orders with different statuses
@@ -7922,7 +7922,7 @@ fn test_own_book_status_integrity_during_transitions() {
         None,
     );
     execution_engine
-        .register_client(Rc::new(stub_client) as Rc<dyn ExecutionClient>)
+        .register_client(Box::new(stub_client))
         .unwrap();
 
     // Create initial orders at different price levels
@@ -8406,9 +8406,9 @@ fn test_own_book_status_integrity_during_transitions() {
         mut execution_engine: ExecutionEngine,
         stub_client: StubExecutionClient,
     ) {
-        let client_rc = Rc::new(stub_client);
+        let client_id = stub_client.client_id();
 
-        execution_engine.register_default_client(client_rc.clone());
+        execution_engine.register_default_client(Box::new(stub_client));
 
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let order = OrderTestBuilder::new(OrderType::Market)
@@ -8419,7 +8419,7 @@ fn test_own_book_status_integrity_during_transitions() {
 
         let clients = execution_engine.get_clients_for_orders(&[order]);
         assert_eq!(clients.len(), 1);
-        assert_eq!(clients[0].client_id(), client_rc.client_id());
+        assert_eq!(clients[0].client_id(), client_id);
     }
 
     // =============================================================================================
@@ -8517,7 +8517,7 @@ fn test_own_book_status_integrity_during_transitions() {
             None,
         );
         execution_engine
-            .register_client(Rc::new(stub_client))
+            .register_client(Box::new(stub_client))
             .unwrap();
 
         execution_engine
@@ -8653,7 +8653,7 @@ fn test_own_book_status_integrity_during_transitions() {
             None,
         );
         execution_engine
-            .register_client(Rc::new(stub_client))
+            .register_client(Box::new(stub_client))
             .unwrap();
 
         execution_engine
@@ -8784,7 +8784,7 @@ fn test_own_book_status_integrity_during_transitions() {
             None,
         );
         execution_engine
-            .register_client(Rc::new(stub_client))
+            .register_client(Box::new(stub_client))
             .unwrap();
 
         execution_engine
