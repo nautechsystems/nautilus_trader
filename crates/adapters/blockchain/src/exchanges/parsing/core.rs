@@ -88,10 +88,7 @@ pub fn validate_signature_bytes(
     let actual_hex = hex::encode(actual);
     anyhow::ensure!(
         actual_hex == expected_hex,
-        "Invalid event signature for '{}': expected {}, got {}",
-        event_name,
-        expected_hex,
-        actual_hex
+        "Invalid event signature for '{event_name}': expected {expected_hex}, got {actual_hex}",
     );
     Ok(())
 }

@@ -29,7 +29,7 @@ use crate::exchanges::parsing::core;
 ///
 /// Returns an error if the hex string is invalid.
 pub fn decode_hex(hex: &str) -> anyhow::Result<Vec<u8>> {
-    hex::decode(hex.trim_start_matches("0x")).map_err(|e| anyhow::anyhow!("Invalid hex: {}", e))
+    hex::decode(hex.trim_start_matches("0x")).map_err(|e| anyhow::anyhow!("Invalid hex: {e}"))
 }
 
 /// Parse hex string to u64.
@@ -39,7 +39,7 @@ pub fn decode_hex(hex: &str) -> anyhow::Result<Vec<u8>> {
 /// Returns an error if the hex string cannot be parsed as u64.
 pub fn parse_hex_u64(hex: &str) -> anyhow::Result<u64> {
     u64::from_str_radix(hex.trim_start_matches("0x"), 16)
-        .map_err(|e| anyhow::anyhow!("Invalid hex u64: {}", e))
+        .map_err(|e| anyhow::anyhow!("Invalid hex u64: {e}"))
 }
 
 /// Parse hex string to u32.
@@ -49,7 +49,7 @@ pub fn parse_hex_u64(hex: &str) -> anyhow::Result<u64> {
 /// Returns an error if the hex string cannot be parsed as u32.
 pub fn parse_hex_u32(hex: &str) -> anyhow::Result<u32> {
     u32::from_str_radix(hex.trim_start_matches("0x"), 16)
-        .map_err(|e| anyhow::anyhow!("Invalid hex u32: {}", e))
+        .map_err(|e| anyhow::anyhow!("Invalid hex u32: {e}"))
 }
 
 /// Extract block number from RPC log.
@@ -121,7 +121,7 @@ pub fn extract_topic_bytes(log: &RpcLog, index: usize) -> anyhow::Result<Vec<u8>
     let hex = log
         .topics
         .get(index)
-        .ok_or_else(|| anyhow::anyhow!("Missing topic at index {}", index))?;
+        .ok_or_else(|| anyhow::anyhow!("Missing topic at index {index}"))?;
     decode_hex(hex)
 }
 
@@ -136,7 +136,7 @@ pub fn extract_address_from_topic(
     description: &str,
 ) -> anyhow::Result<Address> {
     let bytes = extract_topic_bytes(log, index)
-        .map_err(|_| anyhow::anyhow!("Missing {} address in topic{}", description, index))?;
+        .map_err(|_| anyhow::anyhow!("Missing {description} address in topic{index}"))?;
     core::extract_address_from_bytes(&bytes)
 }
 
