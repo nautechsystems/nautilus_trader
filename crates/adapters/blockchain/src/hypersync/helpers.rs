@@ -15,6 +15,8 @@
 
 use alloy::primitives::Address;
 
+use crate::exchanges::parsing::core;
+
 /// Extracts an address from a specific topic in a log entry
 ///
 /// # Errors
@@ -26,13 +28,8 @@ pub fn extract_address_from_topic(
     description: &str,
 ) -> anyhow::Result<Address> {
     match log.topics.get(topic_index).and_then(|t| t.as_ref()) {
-        Some(topic) => {
-            // Address is stored in the last 20 bytes of the 32-byte topic
-            Ok(Address::from_slice(&topic.as_ref()[12..32]))
-        }
-        None => {
-            anyhow::bail!("Missing {description} address in topic{topic_index} when parsing event")
-        }
+        Some(topic) => core::extract_address_from_bytes(topic.as_ref()),
+        None => anyhow::bail!("Missing {description} address in topic{topic_index} when parsing event")
     }
 }
 
@@ -126,11 +123,8 @@ pub fn validate_event_signature_hash(
     target_event_signature_hash: &str,
     log: &hypersync_client::simple_types::Log,
 ) -> anyhow::Result<()> {
-    let event_signature = extract_event_signature(log)?;
-    if event_signature.as_str() != target_event_signature_hash {
-        anyhow::bail!("Invalid event signature for event '{event_name}'");
-    }
-    Ok(())
+    let sig_bytes = extract_event_signature_bytes(log)?;
+    core::validate_signature_bytes(sig_bytes, target_event_signature_hash, event_name)
 }
 
 #[cfg(test)]
@@ -240,9 +234,11 @@ mod tests {
 
         let result = validate_event_signature_hash("Transfer", wrong_hash, &swap_log_1);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid event signature for event 'Transfer'"
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid event signature for 'Transfer'")
         );
     }
 
