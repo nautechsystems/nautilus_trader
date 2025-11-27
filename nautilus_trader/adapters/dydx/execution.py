@@ -923,7 +923,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 break
 
             if self._block_height >= int(good_til_block):
-                self._log.info(f"Order {client_order_id} reached good til block {good_til_block} at block height {self._block_height}. Sending cancel request...")
+                self._log.info(f"Order {client_order_id} reached good til block {good_til_block} at block height {self._block_height}. Sending cancel event...")
 
                 self.generate_order_canceled(
                     strategy_id=order.strategy_id,
