@@ -30,10 +30,14 @@ use crate::proto::dydxprotocol::clob::order::{
     Side as ProtoOrderSide, TimeInForce as ProtoTimeInForce,
 };
 
-/// Extracts the raw symbol from a Nautilus symbol that may contain suffix (e.g., "BTC-USD-PERP.DYDX" -> "BTC-USD-PERP").
+/// Extracts the raw dYdX ticker from a Nautilus symbol.
+///
+/// Removes both the venue suffix (`.DYDX`) and the perpetual suffix (`-PERP`).
+/// This produces the base ticker format required by dYdX WebSocket subscriptions.
 #[must_use]
 pub fn extract_raw_symbol(symbol: &str) -> &str {
-    symbol.split('.').next().unwrap_or(symbol)
+    let without_venue = symbol.split('.').next().unwrap_or(symbol);
+    without_venue.strip_suffix("-PERP").unwrap_or(without_venue)
 }
 
 /// Converts Nautilus `OrderSide` to dYdX proto `OrderSide`.
