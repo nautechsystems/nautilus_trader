@@ -49,15 +49,19 @@ pub struct RpcNodeHttpResponse<T>
 where
     T: DeserializeOwned,
 {
-    /// JSON-RPC version identifier.
-    pub jsonrpc: String,
-    /// Request identifier returned by the server.
-    pub id: u64,
+    /// JSON-RPC version identifier (optional for non-standard error responses like rate limits).
+    pub jsonrpc: Option<String>,
+    /// Request identifier returned by the server (optional for non-standard error responses).
+    pub id: Option<u64>,
     /// Deserialized result.
     #[serde(bound(deserialize = ""))]
     pub result: Option<T>,
     /// Error information if the request failed.
     pub error: Option<RpcError>,
+    /// Error code (for non-standard rate limit responses).
+    pub code: Option<i32>,
+    /// Error message (for non-standard rate limit responses).
+    pub message: Option<String>,
 }
 
 /// JSON-RPC error structure.

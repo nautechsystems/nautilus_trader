@@ -104,6 +104,14 @@ impl BlockchainHttpRpcClient {
         match self.send_rpc_request(rpc_request).await {
             Ok(bytes) => match serde_json::from_slice::<RpcNodeHttpResponse<T>>(bytes.as_ref()) {
                 Ok(parsed) => {
+                    // Check for non-standard rate limit error (e.g., Infura)
+                    // These responses have code/message at top level without jsonrpc field
+                    if parsed.jsonrpc.is_none()
+                        && let (Some(code), Some(message)) = (parsed.code, parsed.message)
+                    {
+                        anyhow::bail!("RPC provider error {}: {}", code, message);
+                    }
+
                     if let Some(error) = parsed.error {
                         Err(anyhow::anyhow!(
                             "RPC error {}: {}",
