@@ -252,13 +252,6 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._connect_account_timeout_secs = 10
 
 
-        # Reconciliation
-        # TODO. Make configurable again.
-        # self._reconciliation_interval_secs = config.reconciliation_interval_secs
-        self._reconciliation_interval_secs = 60
-        self._reconciliation_task: asyncio.Task | None = None
-
-
         # WebSocket API
         self._ws_client = DYDXWebsocketClient(
             clock=clock,
@@ -341,14 +334,6 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         await self._set_leverage()
 
-        if self._reconciliation_interval_secs:
-            self._log.info(
-                f"Starting periodic position reconciliation every {self._reconciliation_interval_secs} seconds.",
-            )
-            self._reconciliation_task = self.create_task(
-                self._run_periodic_reconciliation(),
-            )
-
     async def _set_leverage(self) -> None:
         timeout = self._clock.utc_now() + pd.Timedelta(seconds=self._connect_account_timeout_secs)
         account = self.get_account()
@@ -368,10 +353,6 @@ class DYDXExecutionClient(LiveExecutionClient):
             account.set_leverage(instrument_id, leverage)
 
     async def _disconnect(self) -> None:
-        if self._reconciliation_task:
-            self._log.debug("Canceling position reconciliation task")
-            self._reconciliation_task.cancel()
-
         await self._ws_client.unsubscribe_markets()
         await self._ws_client.unsubscribe_block_height()
         await self._ws_client.unsubscribe_account_update(
@@ -384,70 +365,6 @@ class DYDXExecutionClient(LiveExecutionClient):
 
     def _stop(self) -> None:
         self._retry_manager_pool.shutdown()
-
-    async def _run_periodic_reconciliation(self) -> None:
-        if self._reconciliation_interval_secs:
-             await asyncio.sleep(self._reconciliation_interval_secs)
-
-        while True:
-            try:
-                self._log.info("Running periodic position reconciliation check...")
-                await self._reconcile_positions()
-            except asyncio.CancelledError:
-                self._log.info("Position reconciliation task cancelled.")
-                break
-            except Exception as e:
-                self._log.exception("Error during periodic position reconciliation", e)
-
-            await asyncio.sleep(self._reconciliation_interval_secs)
-
-    async def _reconcile_positions(self) -> None:
-        try:
-            command = GeneratePositionStatusReports(
-                instrument_id=None,  # None fetches for all instruments
-                start=None,
-                end=None,
-                command_id=UUID4(),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            broker_reports = await self.generate_position_status_reports(command)
-
-            broker_quantities = {}
-            for report in broker_reports:
-                if report.instrument_id not in broker_quantities:
-                    broker_quantities[report.instrument_id] = 0.
-
-                if report.position_side == PositionSide.LONG:
-                    broker_quantities[report.instrument_id] += report.quantity.as_double()
-
-                elif report.position_side == PositionSide.SHORT:
-                    broker_quantities[report.instrument_id] -= report.quantity.as_double()
-
-        except Exception as e:
-            self._log.error(f"Could not fetch broker positions for reconciliation: {e}")
-            return  # Cannot proceed without the actual state
-
-        internal_positions = self._cache.positions_open()
-
-        internal_quantities = {}
-        for position in internal_positions:
-            if position.instrument_id not in internal_quantities:
-                internal_quantities[position.instrument_id] = 0.
-
-            internal_quantities[position.instrument_id] += position.signed_qty
-
-        self._log.debug(f"Broker quantities: {broker_quantities}, internal quantities: {internal_quantities}")
-
-        all_instrument_ids = set(broker_quantities.keys()) | set(internal_quantities.keys())
-
-        for instrument_id in all_instrument_ids:
-            broker_quantity = broker_quantities.get(instrument_id, 0.0)
-            internal_quantity = internal_quantities.get(instrument_id, 0.0)
-
-            if broker_quantity != internal_quantity:
-                self._log.error(
-                    f"Broker quantity ( {broker_quantity} ) does not match internal quantity ( {internal_quantity} ) for {instrument_id.value}: ",
-                )
 
     async def _get_order_status_report(
         self,
