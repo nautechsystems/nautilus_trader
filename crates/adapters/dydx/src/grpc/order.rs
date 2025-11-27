@@ -209,6 +209,7 @@ impl OrderBuilder {
     /// Set as Market order.
     ///
     /// An instruction to immediately buy or sell an asset at the best available price when the order is placed.
+    #[must_use]
     pub fn market(mut self, side: OrderSide, size: Decimal) -> Self {
         self.order_type = Some(OrderType::Market);
         self.side = Some(side);
@@ -220,6 +221,7 @@ impl OrderBuilder {
     ///
     /// With a limit order, a trader specifies the price at which they're willing to buy or sell an asset.
     /// Unlike market orders, limit orders don't go into effect until the market price hits a trader's "limit price."
+    #[must_use]
     pub fn limit(mut self, side: OrderSide, price: Decimal, size: Decimal) -> Self {
         self.order_type = Some(OrderType::Limit);
         self.price = Some(price);
@@ -231,6 +233,7 @@ impl OrderBuilder {
     /// Set as Stop Limit order.
     ///
     /// Stop-limit orders use a stop `trigger_price` and a limit `price` to give investors greater control over their trades.
+    #[must_use]
     pub fn stop_limit(
         mut self,
         side: OrderSide,
@@ -249,6 +252,7 @@ impl OrderBuilder {
     /// Set as Stop Market order.
     ///
     /// When using a stop order, the trader sets a `trigger_price` to trigger a buy or sell order on their exchange.
+    #[must_use]
     pub fn stop_market(mut self, side: OrderSide, trigger_price: Decimal, size: Decimal) -> Self {
         self.order_type = Some(OrderType::StopMarket);
         self.trigger_price = Some(trigger_price);
@@ -260,6 +264,7 @@ impl OrderBuilder {
     /// Set as Take Profit Limit order.
     ///
     /// The order enters in force if the price reaches `trigger_price` and is executed at `price` after that.
+    #[must_use]
     pub fn take_profit_limit(
         mut self,
         side: OrderSide,
@@ -278,6 +283,7 @@ impl OrderBuilder {
     /// Set as Take Profit Market order.
     ///
     /// The order enters in force if the price reaches `trigger_price` and converts to an ordinary market order.
+    #[must_use]
     pub fn take_profit_market(
         mut self,
         side: OrderSide,
@@ -292,48 +298,56 @@ impl OrderBuilder {
     }
 
     /// Set order as a long-term order.
+    #[must_use]
     pub fn long_term(mut self) -> Self {
         self.flags = OrderFlags::LongTerm;
         self
     }
 
     /// Set order as a short-term order.
+    #[must_use]
     pub fn short_term(mut self) -> Self {
         self.flags = OrderFlags::ShortTerm;
         self
     }
 
     /// Set order as a conditional order, triggered using `trigger_price`.
+    #[must_use]
     pub fn conditional(mut self) -> Self {
         self.flags = OrderFlags::Conditional;
         self
     }
 
     /// Set the limit price for Limit orders.
+    #[must_use]
     pub fn price(mut self, price: Decimal) -> Self {
         self.price = Some(price);
         self
     }
 
     /// Set position size.
+    #[must_use]
     pub fn size(mut self, size: Decimal) -> Self {
         self.size = Some(size);
         self
     }
 
     /// Set [time execution options](https://docs.dydx.xyz/types/time_in_force#time-in-force).
+    #[must_use]
     pub fn time_in_force(mut self, tif: OrderTimeInForce) -> Self {
         self.time_in_force = Some(tif);
         self
     }
 
     /// Set an order as [reduce-only](https://docs.dydx.xyz/concepts/trading/orders#types).
+    #[must_use]
     pub fn reduce_only(mut self, reduce: bool) -> Self {
         self.reduce_only = Some(reduce);
         self
     }
 
     /// Set order's expiration.
+    #[must_use]
     pub fn until(mut self, gtof: OrderGoodUntil) -> Self {
         self.until = Some(gtof);
         self
