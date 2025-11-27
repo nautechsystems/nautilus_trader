@@ -948,35 +948,6 @@ impl DydxHttpClient {
             .map_err(Into::into)
     }
 
-    /// Helper to get instrument or fetch if not cached.
-    ///
-    /// This is a convenience method that first checks the cache, and if the
-    /// instrument is not found, fetches it from the API. This is useful for
-    /// ensuring an instrument is available without explicitly managing the cache.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The HTTP request fails.
-    /// - The instrument is not found on the exchange.
-    ///
-    #[allow(dead_code)]
-    async fn instrument_or_fetch(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
-        if let Some(instrument) = self.get_instrument(&symbol) {
-            return Ok(instrument);
-        }
-
-        // Fetch from API
-        let instruments = self
-            .request_instruments(Some(symbol.to_string()), None, None)
-            .await?;
-
-        instruments
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {symbol}"))
-    }
-
     /// Exposes raw HTTP client for testing and advanced use cases.
     ///
     /// This provides access to the underlying [`DydxRawHttpClient`] for cases

@@ -479,29 +479,36 @@ impl DydxGrpcClient {
 
 #[cfg(test)]
 mod tests {
-    #![allow(dead_code)] // Tests disabled until we can properly mock Channel
-
     use rstest::rstest;
 
+    use super::*;
+
     #[rstest]
-    #[ignore = "Disabled until we can properly mock Channel"]
-    fn test_current_url_tracked() {
-        // TODO: Reimplement with proper Channel mocking
-        // Channel::from_static returns Endpoint, not Channel
-        unimplemented!("Test disabled - requires Channel mock");
+    fn test_height_ordering() {
+        let h1 = Height(100);
+        let h2 = Height(200);
+        assert!(h1 < h2);
+        assert_eq!(h1, Height(100));
     }
 
     #[tokio::test]
-    #[ignore = "Disabled until we can properly mock Channel"]
     async fn test_new_with_fallback_empty_urls() {
-        // TODO: Reimplement with proper Channel mocking
-        unimplemented!("Test disabled - requires Channel mock");
+        let result = DydxGrpcClient::new_with_fallback(&[] as &[&str]).await;
+        assert!(result.is_err());
+        if let Err(DydxError::Config(msg)) = result {
+            assert_eq!(msg, "No gRPC URLs provided");
+        } else {
+            panic!("Expected Config error");
+        }
     }
 
     #[tokio::test]
-    #[ignore = "Disabled until we can properly mock Channel"]
-    async fn test_reconnect_with_fallback_empty_urls() {
-        // TODO: Reimplement with proper Channel mocking
-        unimplemented!("Test disabled - requires Channel mock");
+    async fn test_new_with_fallback_invalid_urls() {
+        // Test with invalid URLs that will fail to connect
+        let invalid_urls = vec!["invalid://bad-url", "http://0.0.0.0:1"];
+        let result = DydxGrpcClient::new_with_fallback(&invalid_urls).await;
+
+        // Should fail with either Config or Grpc error
+        assert!(result.is_err());
     }
 }

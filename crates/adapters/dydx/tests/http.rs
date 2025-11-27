@@ -39,7 +39,6 @@ struct TestServerState {
     request_count: Arc<Mutex<usize>>,
 }
 
-#[allow(dead_code)]
 fn load_test_instruments() -> Value {
     json!({
         "markets": {
@@ -87,7 +86,6 @@ fn load_test_instruments() -> Value {
     })
 }
 
-#[allow(dead_code)]
 fn load_test_candles() -> Value {
     json!({
         "candles": [
@@ -123,7 +121,6 @@ fn load_test_candles() -> Value {
     })
 }
 
-#[allow(dead_code)]
 fn load_test_trades() -> Value {
     json!({
         "trades": [
@@ -158,7 +155,6 @@ fn load_test_trades() -> Value {
     })
 }
 
-#[allow(dead_code)]
 async fn handle_get_markets(State(state): State<TestServerState>) -> impl IntoResponse {
     let mut count = state.request_count.lock().await;
     *count += 1;
@@ -166,7 +162,6 @@ async fn handle_get_markets(State(state): State<TestServerState>) -> impl IntoRe
     Json(load_test_instruments())
 }
 
-#[allow(dead_code)]
 async fn handle_get_candles(
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
@@ -185,12 +180,10 @@ async fn handle_get_candles(
     Json(load_test_candles()).into_response()
 }
 
-#[allow(dead_code)]
 async fn handle_get_trades() -> impl IntoResponse {
     Json(load_test_trades())
 }
 
-#[allow(dead_code)]
 async fn handle_rate_limit(
     axum::extract::State(state): axum::extract::State<TestServerState>,
 ) -> impl IntoResponse {
@@ -212,7 +205,6 @@ async fn handle_rate_limit(
     Json(load_test_instruments()).into_response()
 }
 
-#[allow(dead_code)]
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/v4/perpetualMarkets", get(handle_get_markets))

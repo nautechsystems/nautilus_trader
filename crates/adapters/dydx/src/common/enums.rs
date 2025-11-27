@@ -721,3 +721,50 @@ mod tests {
         );
     }
 }
+
+/// dYdX network environment (mainnet vs testnet).
+///
+/// This selects the underlying Cosmos chain for transaction submission.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[strum(serialize_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+pub enum DydxNetwork {
+    /// dYdX mainnet (dydx-mainnet-1)
+    #[default]
+    Mainnet,
+    /// dYdX testnet (dydx-testnet-4)
+    Testnet,
+}
+
+impl DydxNetwork {
+    /// Map the logical network to the underlying gRPC chain identifier.
+    #[must_use]
+    pub const fn chain_id(self) -> crate::grpc::types::ChainId {
+        match self {
+            Self::Mainnet => crate::grpc::types::ChainId::Mainnet1,
+            Self::Testnet => crate::grpc::types::ChainId::Testnet4,
+        }
+    }
+
+    /// Return the canonical lowercase string used in config/env.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mainnet => "mainnet",
+            Self::Testnet => "testnet",
+        }
+    }
+}

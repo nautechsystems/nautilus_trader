@@ -17,11 +17,17 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::common::consts::{DYDX_CHAIN_ID, DYDX_GRPC_URLS, DYDX_HTTP_URL, DYDX_WS_URL};
+use crate::common::{
+    consts::{DYDX_CHAIN_ID, DYDX_GRPC_URLS, DYDX_TESTNET_CHAIN_ID, DYDX_WS_URL},
+    enums::DydxNetwork,
+    urls,
+};
 
 /// Configuration for the dYdX adapter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxAdapterConfig {
+    /// Network environment (mainnet or testnet).
+    pub network: DydxNetwork,
     /// Base URL for the HTTP API.
     pub base_url: String,
     /// Base URL for the WebSocket API.
@@ -90,20 +96,37 @@ impl DydxAdapterConfig {
             vec![self.grpc_url.clone()]
         }
     }
+
+    /// Map the configured network to the underlying chain ID.
+    ///
+    /// This is the recommended way to get the chain ID for transaction submission.
+    #[must_use]
+    pub const fn get_chain_id(&self) -> crate::grpc::types::ChainId {
+        self.network.chain_id()
+    }
 }
 
 impl Default for DydxAdapterConfig {
     fn default() -> Self {
+        let network = DydxNetwork::default();
+        let is_testnet = matches!(network, DydxNetwork::Testnet);
+        let grpc_urls = urls::grpc_urls(is_testnet);
         Self {
-            base_url: DYDX_HTTP_URL.to_string(),
-            ws_url: DYDX_WS_URL.to_string(),
-            grpc_url: DYDX_GRPC_URLS[0].to_string(),
-            grpc_urls: DYDX_GRPC_URLS.iter().map(|&s| s.to_string()).collect(),
-            chain_id: DYDX_CHAIN_ID.to_string(),
+            network,
+            base_url: urls::http_base_url(is_testnet).to_string(),
+            ws_url: urls::ws_url(is_testnet).to_string(),
+            grpc_url: grpc_urls[0].to_string(),
+            grpc_urls: grpc_urls.iter().map(|&s| s.to_string()).collect(),
+            chain_id: if is_testnet {
+                DYDX_TESTNET_CHAIN_ID
+            } else {
+                DYDX_CHAIN_ID
+            }
+            .to_string(),
             timeout_secs: 30,
             wallet_address: None,
             subaccount: 0,
-            is_testnet: false,
+            is_testnet,
             mnemonic: None,
             max_retries: default_max_retries(),
             retry_delay_initial_ms: default_retry_delay_initial_ms(),

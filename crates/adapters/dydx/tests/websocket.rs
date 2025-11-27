@@ -66,23 +66,10 @@ impl Default for TestServerState {
 }
 
 impl TestServerState {
-    #[allow(dead_code)]
-    async fn reset(&self) {
-        *self.connection_count.lock().await = 0;
-        self.subscriptions.lock().await.clear();
-        self.subscription_events.lock().await.clear();
-        self.fail_next_subscriptions.lock().await.clear();
-        self.disconnect_trigger.store(false, Ordering::Relaxed);
-        self.ping_count.store(0, Ordering::Relaxed);
-        self.pong_count.store(0, Ordering::Relaxed);
-    }
-
-    #[allow(dead_code)]
     async fn set_subscription_failures(&self, channels: Vec<String>) {
         *self.fail_next_subscriptions.lock().await = channels;
     }
 
-    #[allow(dead_code)]
     async fn subscription_events(&self) -> Vec<(String, bool)> {
         self.subscription_events.lock().await.clone()
     }

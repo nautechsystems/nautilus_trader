@@ -38,7 +38,8 @@ use anyhow::Context;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
-    identifiers::{InstrumentId, Symbol},
+    events::AccountState,
+    identifiers::{InstrumentId, Symbol, Venue},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::Currency,
 };
@@ -959,7 +960,7 @@ pub fn parse_account_state(
     oracle_prices: &std::collections::HashMap<InstrumentId, Decimal>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> anyhow::Result<nautilus_model::events::AccountState> {
+) -> anyhow::Result<AccountState> {
     use std::collections::HashMap;
 
     use nautilus_model::{
@@ -1093,10 +1094,7 @@ pub fn parse_account_state(
 
         // Create synthetic instrument ID for account-level margin
         // Format: ACCOUNT.DYDX (similar to OKX pattern)
-        let margin_instrument_id = InstrumentId::new(
-            Symbol::new("ACCOUNT"),
-            nautilus_model::identifiers::Venue::new("DYDX"),
-        );
+        let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("DYDX"));
 
         let margin_balance =
             MarginBalance::new(initial_money, maintenance_money, margin_instrument_id);

@@ -42,9 +42,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     mode::ConnectionMode,
-    websocket::{
-        AuthTracker, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
-    },
+    websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use ustr::Ustr;
 
@@ -90,12 +88,6 @@ pub struct DydxWebSocketClient {
     credential: Option<Arc<DydxCredential>>,
     /// Whether authentication is required for this client.
     requires_auth: bool,
-    /// Authentication tracker for WebSocket connections.
-    #[allow(dead_code)]
-    auth_tracker: AuthTracker,
-    /// Subscription state tracker for managing channel subscriptions.
-    #[allow(dead_code)]
-    subscriptions: SubscriptionState,
     /// Shared connection state (lock-free atomic).
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     /// Manual disconnect signal.
@@ -120,8 +112,6 @@ impl Clone for DydxWebSocketClient {
             url: self.url.clone(),
             credential: self.credential.clone(),
             requires_auth: self.requires_auth,
-            auth_tracker: AuthTracker::new(),
-            subscriptions: SubscriptionState::new(':'),
             connection_mode: self.connection_mode.clone(),
             signal: self.signal.clone(),
             instruments_cache: self.instruments_cache.clone(),
@@ -147,8 +137,6 @@ impl DydxWebSocketClient {
             url,
             credential: None,
             requires_auth: false,
-            auth_tracker: AuthTracker::new(),
-            subscriptions: SubscriptionState::new(':'), // dYdX uses ":" as delimiter (e.g., "v4_markets:BTC-USD")
             connection_mode: Arc::new(ArcSwap::from_pointee(AtomicU8::new(
                 ConnectionMode::Closed as u8,
             ))),
@@ -179,8 +167,6 @@ impl DydxWebSocketClient {
             url,
             credential: Some(Arc::new(credential)),
             requires_auth: true,
-            auth_tracker: AuthTracker::new(),
-            subscriptions: SubscriptionState::new(':'), // dYdX uses ":" as delimiter
             connection_mode: Arc::new(ArcSwap::from_pointee(AtomicU8::new(
                 ConnectionMode::Closed as u8,
             ))),

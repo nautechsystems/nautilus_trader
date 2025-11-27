@@ -15,7 +15,10 @@
 
 //! Live execution client implementation for the dYdX adapter.
 
-use std::sync::{Arc, Mutex, atomic::AtomicU64};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU32, AtomicU64},
+};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -53,7 +56,7 @@ use crate::{
     common::{consts::DYDX_VENUE, credential::DydxCredential},
     config::DydxAdapterConfig,
     execution::submitter::OrderSubmitter,
-    grpc::{DydxGrpcClient, OrderBuilder, Wallet},
+    grpc::{DydxGrpcClient, Wallet},
     http::client::DydxHttpClient,
     websocket::{client::DydxWebSocketClient, messages::NautilusWsMessage},
 };
@@ -87,7 +90,6 @@ enum ExecutionReport {
 /// This matches the pattern used in OKX and other exchange adapters, ensuring
 /// consistent behavior across the Nautilus ecosystem.
 #[derive(Debug)]
-#[allow(dead_code)] // TODO: Remove once implementation is complete
 pub struct DydxExecutionClient {
     core: ExecutionClientCore,
     config: DydxAdapterConfig,
@@ -95,8 +97,6 @@ pub struct DydxExecutionClient {
     ws_client: DydxWebSocketClient,
     grpc_client: Arc<tokio::sync::RwLock<DydxGrpcClient>>,
     wallet: Arc<tokio::sync::RwLock<Option<Wallet>>>,
-    order_builders: DashMap<InstrumentId, OrderBuilder>,
-    // NOTE: Currently unpopulated - instrument loading not yet implemented
     instruments: DashMap<InstrumentId, InstrumentAny>,
     market_to_instrument: DashMap<String, InstrumentId>,
     clob_pair_id_to_instrument: DashMap<u32, InstrumentId>,
@@ -104,6 +104,7 @@ pub struct DydxExecutionClient {
     oracle_prices: DashMap<InstrumentId, Decimal>,
     client_id_to_int: DashMap<String, u32>,
     int_to_client_id: DashMap<u32, String>,
+    next_client_id: AtomicU32,
     wallet_address: String,
     subaccount_number: u32,
     started: bool,
@@ -154,7 +155,6 @@ impl DydxExecutionClient {
             ws_client,
             grpc_client,
             wallet: Arc::new(tokio::sync::RwLock::new(None)),
-            order_builders: DashMap::new(),
             instruments: DashMap::new(),
             market_to_instrument: DashMap::new(),
             clob_pair_id_to_instrument: DashMap::new(),
@@ -162,6 +162,7 @@ impl DydxExecutionClient {
             oracle_prices: DashMap::new(),
             client_id_to_int: DashMap::new(),
             int_to_client_id: DashMap::new(),
+            next_client_id: AtomicU32::new(1),
             wallet_address,
             subaccount_number,
             started: false,
@@ -174,10 +175,20 @@ impl DydxExecutionClient {
 
     /// Generate a unique client order ID integer and store the mapping.
     ///
+    /// Invariants:
+    /// - Same `client_order_id` string → same `u32` for the lifetime of this process
+    /// - Different `client_order_id` strings → different `u32` values
+    /// - Thread-safe for concurrent calls
+    ///
     /// Attempts to parse the client_order_id as an integer first. If that fails,
-    /// generates a random value within the valid range [0, MAX_CLIENT_ID).
-    #[allow(dead_code)] // TODO: Remove once used in submit_order
+    /// allocates a new sequential value from the atomic counter.
     fn generate_client_order_id_int(&self, client_order_id: &str) -> u32 {
+        // Fast path: already mapped
+        if let Some(existing) = self.client_id_to_int.get(client_order_id) {
+            return *existing.value();
+        }
+
+        // Try parsing as direct integer
         if let Ok(id) = client_order_id.parse::<u32>() {
             self.client_id_to_int
                 .insert(client_order_id.to_string(), id);
@@ -186,19 +197,26 @@ impl DydxExecutionClient {
             return id;
         }
 
-        // Generate random value if parsing fails
-        let id = rand::random::<u32>();
-        self.client_id_to_int
-            .insert(client_order_id.to_string(), id);
-        self.int_to_client_id
-            .insert(id, client_order_id.to_string());
-        id
+        // Allocate new ID from atomic counter
+        use dashmap::mapref::entry::Entry;
+
+        match self.client_id_to_int.entry(client_order_id.to_string()) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(vacant) => {
+                let id = self
+                    .next_client_id
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                vacant.insert(id);
+                self.int_to_client_id
+                    .insert(id, client_order_id.to_string());
+                id
+            }
+        }
     }
 
     /// Retrieve the client order ID integer from the cache.
     ///
     /// Returns `None` if the mapping doesn't exist.
-    #[allow(dead_code)] // TODO: Remove once used in cancel_order
     fn get_client_order_id_int(&self, client_order_id: &str) -> Option<u32> {
         // Try parsing first
         if let Ok(id) = client_order_id.parse::<u32>() {
@@ -211,15 +229,11 @@ impl DydxExecutionClient {
             .map(|entry| *entry.value())
     }
 
-    /// Retrieve the client order ID string from the integer value.
+    /// Get chain ID from config network field.
     ///
-    /// Returns the integer as a string if no mapping exists.
-    #[allow(dead_code)] // TODO: Remove once used in handle_order_message
-    fn get_client_order_id(&self, client_order_id_int: u32) -> String {
-        self.int_to_client_id.get(&client_order_id_int).map_or_else(
-            || client_order_id_int.to_string(),
-            |entry| entry.value().clone(),
-        )
+    /// This is the recommended way to get chain_id for all transaction submissions.
+    fn get_chain_id(&self) -> crate::grpc::types::ChainId {
+        self.config.get_chain_id()
     }
 
     /// Cache instruments from HTTP client into execution client's lookup maps.
@@ -544,8 +558,12 @@ impl ExecutionClient for DydxExecutionClient {
         let client_order_id = order.client_order_id();
         let instrument_id = order.instrument_id();
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
+        let chain_id = self.get_chain_id();
         #[allow(clippy::redundant_clone)]
         let order_clone = order.clone();
+
+        // Generate client_order_id as u32 before async block (dYdX requires u32 client IDs)
+        let client_id_u32 = self.generate_client_order_id_int(client_order_id.as_str());
 
         self.spawn_order_task(
             "submit_order",
@@ -564,20 +582,8 @@ impl ExecutionClient for DydxExecutionClient {
                     http_client.clone(),
                     wallet_address,
                     subaccount_number,
+                    chain_id,
                 );
-
-                // Generate client_order_id as u32 (dYdX requires u32 client IDs)
-                // TODO: Implement proper client_order_id to u32 mapping
-                let client_id_u32 = client_order_id.as_str().parse::<u32>().unwrap_or_else(|_| {
-                    // Fallback: use hash of client_order_id
-                    use std::{
-                        collections::hash_map::DefaultHasher,
-                        hash::{Hash, Hasher},
-                    };
-                    let mut hasher = DefaultHasher::new();
-                    client_order_id.as_str().hash(&mut hasher);
-                    (hasher.finish() % (MAX_CLIENT_ID as u64)) as u32
-                });
 
                 // Submit order based on type
                 match order_clone.order_type() {
@@ -709,9 +715,19 @@ impl ExecutionClient for DydxExecutionClient {
         let wallet_address = self.wallet_address.clone();
         let subaccount_number = self.subaccount_number;
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
+        let chain_id = self.get_chain_id();
         let trader_id = cmd.trader_id;
         let strategy_id = cmd.strategy_id;
         let venue_order_id = cmd.venue_order_id;
+
+        // Convert client_order_id to u32 before async block
+        let client_id_u32 = match self.get_client_order_id_int(client_order_id.as_str()) {
+            Some(id) => id,
+            None => {
+                tracing::error!("Client order ID {} not found in cache", client_order_id);
+                anyhow::bail!("Client order ID not found in cache")
+            }
+        };
 
         self.spawn_task("cancel_order", async move {
             let wallet_guard = wallet.read().await;
@@ -725,19 +741,8 @@ impl ExecutionClient for DydxExecutionClient {
                 http_client.clone(),
                 wallet_address,
                 subaccount_number,
+                chain_id,
             );
-
-            // Convert client_order_id to u32 (same logic as submit_order)
-            let client_id_u32 = client_order_id.as_str().parse::<u32>().unwrap_or_else(|_| {
-                // Fallback: use hash of client_order_id
-                use std::{
-                    collections::hash_map::DefaultHasher,
-                    hash::{Hash, Hasher},
-                };
-                let mut hasher = DefaultHasher::new();
-                client_order_id.as_str().hash(&mut hasher);
-                (hasher.finish() % (MAX_CLIENT_ID as u64)) as u32
-            });
 
             // Attempt cancellation via submitter
             match submitter
@@ -818,7 +823,7 @@ impl ExecutionClient for DydxExecutionClient {
         }
 
         tracing::info!(
-            "[STUB] Cancel all orders: total={}, short_term={}, long_term={}, instrument_id={}, order_side={:?}",
+            "Cancel all orders: total={}, short_term={}, long_term={}, instrument_id={}, order_side={:?}",
             open_orders.len(),
             short_term_orders.len(),
             long_term_orders.len(),
@@ -826,12 +831,62 @@ impl ExecutionClient for DydxExecutionClient {
             cmd.order_side
         );
 
-        // TODO: Implement actual cancellation when proto is generated
-        // Short-term orders: Cancel via MsgCancelOrder (immediate, best-effort)
-        // Long-term orders: Cancel via MsgCancelOrder with good_til_block_time
-        //
-        // Note: dYdX v4 requires separate blockchain transactions for each cancellation.
-        // There is no batch cancel API - each order must be cancelled individually.
+        // Cancel each order individually (dYdX requires separate transactions)
+        let grpc_client = self.grpc_client.clone();
+        let wallet = self.wallet.clone();
+        let http_client = self.http_client.clone();
+        let wallet_address = self.wallet_address.clone();
+        let subaccount_number = self.subaccount_number;
+        let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
+        let chain_id = self.get_chain_id();
+
+        // Collect client order IDs and convert to u32
+        let mut order_ids_to_cancel = Vec::new();
+        for order in &open_orders {
+            let client_order_id = order.client_order_id();
+            if let Some(client_id_u32) = self.get_client_order_id_int(client_order_id.as_str()) {
+                order_ids_to_cancel.push(client_id_u32);
+            } else {
+                tracing::warn!(
+                    "Cannot cancel order {}: client_order_id not found in cache",
+                    client_order_id
+                );
+            }
+        }
+
+        self.spawn_task("cancel_all_orders", async move {
+            let wallet_guard = wallet.read().await;
+            let wallet_ref = wallet_guard
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?;
+
+            let grpc_guard = grpc_client.read().await;
+            let submitter = OrderSubmitter::new(
+                (*grpc_guard).clone(),
+                http_client.clone(),
+                wallet_address,
+                subaccount_number,
+                chain_id,
+            );
+
+            // Cancel orders using batch method (executes sequentially to avoid nonce conflicts)
+            match submitter
+                .cancel_orders_batch(wallet_ref, &order_ids_to_cancel, block_height)
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!(
+                        "Successfully cancelled {} orders",
+                        order_ids_to_cancel.len()
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Batch cancel failed: {:?}", e);
+                }
+            }
+
+            Ok(())
+        });
 
         Ok(())
     }

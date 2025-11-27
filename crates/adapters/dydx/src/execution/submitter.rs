@@ -40,6 +40,7 @@ pub struct OrderSubmitter {
     http_client: DydxHttpClient,
     wallet_address: String,
     subaccount_number: u32,
+    chain_id: crate::grpc::types::ChainId,
 }
 
 impl OrderSubmitter {
@@ -48,12 +49,14 @@ impl OrderSubmitter {
         http_client: DydxHttpClient,
         wallet_address: String,
         subaccount_number: u32,
+        chain_id: crate::grpc::types::ChainId,
     ) -> Self {
         Self {
             grpc_client,
             http_client,
             wallet_address,
             subaccount_number,
+            chain_id,
         }
     }
 
@@ -436,15 +439,12 @@ impl OrderSubmitter {
             .map_err(|e| DydxError::Wallet(format!("Failed to derive account: {e}")))?;
 
         // Build transaction
-        let tx_builder = TxBuilder::new(
-            crate::grpc::types::ChainId::Mainnet1, // TODO: Use config
-            "adydx".to_string(),
-        )
-        .map_err(|e| {
-            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
-                "TxBuilder init failed: {e}"
-            ))))
-        })?;
+        let tx_builder =
+            TxBuilder::new(self.chain_id.clone(), "adydx".to_string()).map_err(|e| {
+                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                    "TxBuilder init failed: {e}"
+                ))))
+            })?;
 
         // Convert message to Any
         let any_msg = msg.to_any();
@@ -490,15 +490,12 @@ impl OrderSubmitter {
             .map_err(|e| DydxError::Wallet(format!("Failed to derive account: {e}")))?;
 
         // Build transaction
-        let tx_builder = TxBuilder::new(
-            crate::grpc::types::ChainId::Mainnet1, // TODO: Use config
-            "adydx".to_string(),
-        )
-        .map_err(|e| {
-            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
-                "TxBuilder init failed: {e}"
-            ))))
-        })?;
+        let tx_builder =
+            TxBuilder::new(self.chain_id.clone(), "adydx".to_string()).map_err(|e| {
+                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                    "TxBuilder init failed: {e}"
+                ))))
+            })?;
 
         // Convert message to Any
         let any_msg = msg.to_any();
