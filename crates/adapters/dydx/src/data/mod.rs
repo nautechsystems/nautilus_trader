@@ -35,7 +35,6 @@ use nautilus_common::{
         },
     },
     runner::get_data_event_sender,
-    symbols::extract_raw_symbol,
 };
 use nautilus_core::{
     UnixNanos,
@@ -58,7 +57,9 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
-    common::consts::DYDX_VENUE, config::DydxDataClientConfig, http::client::DydxHttpClient,
+    common::{consts::DYDX_VENUE, parse::extract_raw_symbol},
+    config::DydxDataClientConfig,
+    http::client::DydxHttpClient,
     websocket::client::DydxWebSocketClient,
 };
 

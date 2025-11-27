@@ -30,6 +30,12 @@ use crate::proto::dydxprotocol::clob::order::{
     Side as ProtoOrderSide, TimeInForce as ProtoTimeInForce,
 };
 
+/// Extracts the raw symbol from a Nautilus symbol that may contain suffix (e.g., "BTC-USD-PERP.DYDX" -> "BTC-USD-PERP").
+#[must_use]
+pub fn extract_raw_symbol(symbol: &str) -> &str {
+    symbol.split('.').next().unwrap_or(symbol)
+}
+
 /// Converts Nautilus `OrderSide` to dYdX proto `OrderSide`.
 #[must_use]
 pub fn order_side_to_proto(side: OrderSide) -> ProtoOrderSide {
