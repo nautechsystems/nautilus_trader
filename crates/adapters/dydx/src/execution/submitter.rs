@@ -21,7 +21,7 @@ use nautilus_model::{
 use rust_decimal::{Decimal, prelude::FromStr};
 
 use crate::{
-    common::parse::{order_side_to_proto, time_in_force_to_proto},
+    common::parse::order_side_to_proto,
     error::DydxError,
     grpc::{
         DydxGrpcClient, OrderBuilder, OrderGoodUntil, OrderMarketParams,
@@ -167,11 +167,12 @@ impl OrderSubmitter {
 
         builder = builder.limit(proto_side, price_decimal, size_decimal);
 
-        // Set time in force
-        let proto_tif = time_in_force_to_proto(time_in_force);
+        // Set time in force (post_only orders use TimeInForce::PostOnly in dYdX)
+        use crate::common::parse::time_in_force_to_proto_with_post_only;
+        let proto_tif = time_in_force_to_proto_with_post_only(time_in_force, post_only);
         builder = builder.time_in_force(proto_tif);
 
-        // Set order flags
+        // Set reduce_only flag
         if reduce_only {
             builder = builder.reduce_only(true);
         }
@@ -203,16 +204,28 @@ impl OrderSubmitter {
 
     /// Cancels an order on dYdX via gRPC.
     ///
+    /// Requires instrument_id to retrieve correct clob_pair_id from market params.
+    /// For now, assumes short-term orders (order_flags=0). Future enhancement:
+    /// track order_flags when placing orders to handle long-term cancellations.
+    ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC cancellation fails.
+    /// Returns `DydxError` if gRPC cancellation fails or market params not found.
     pub async fn cancel_order(
         &self,
         wallet: &Wallet,
+        instrument_id: InstrumentId,
         client_order_id: u32,
         block_height: u32,
     ) -> Result<(), DydxError> {
-        tracing::info!("Cancelling order: client_id={}", client_order_id);
+        tracing::info!(
+            "Cancelling order: client_id={}, instrument={}",
+            client_order_id,
+            instrument_id
+        );
+
+        // Get market params to retrieve clob_pair_id
+        let market_params = self.get_market_params(instrument_id)?;
 
         // Create MsgCancelOrder
         let msg_cancel = MsgCancelOrder {
@@ -222,8 +235,8 @@ impl OrderSubmitter {
                     number: self.subaccount_number,
                 }),
                 client_id: client_order_id,
-                order_flags: 0,  // Short-term order flag
-                clob_pair_id: 0, // Will be set from cache in future
+                order_flags: 0, // Short-term orders (0), long-term (64), conditional (32)
+                clob_pair_id: market_params.clob_pair_id,
             }),
             good_til_oneof: Some(
                 crate::proto::dydxprotocol::clob::msg_cancel_order::GoodTilOneof::GoodTilBlock(
@@ -245,9 +258,9 @@ impl OrderSubmitter {
     /// Returns `DydxError` if any gRPC cancellation fails.
     pub async fn cancel_orders_batch(
         &self,
-        wallet: &Wallet,
+        _wallet: &Wallet,
         client_order_ids: &[u32],
-        block_height: u32,
+        _block_height: u32,
     ) -> Result<(), DydxError> {
         tracing::info!(
             "Batch cancelling {} orders: ids={:?}",
@@ -260,13 +273,15 @@ impl OrderSubmitter {
         let mut failed_cancels = Vec::new();
 
         for &client_order_id in client_order_ids {
-            if let Err(e) = self
-                .cancel_order(wallet, client_order_id, block_height)
-                .await
-            {
-                tracing::error!("Failed to cancel order {}: {:?}", client_order_id, e);
-                failed_cancels.push((client_order_id, e));
-            }
+            // TODO: Batch cancel needs instrument_id per order - requires refactoring
+            // For now this will fail with proper error message
+            tracing::warn!("Batch cancel not fully implemented - needs instrument_id per order");
+            failed_cancels.push((
+                client_order_id,
+                DydxError::NotImplemented(
+                    "Batch cancel requires instrument_id mapping".to_string(),
+                ),
+            ));
         }
 
         if !failed_cancels.is_empty() {
@@ -425,17 +440,21 @@ impl OrderSubmitter {
         })
     }
 
-    /// Broadcast order placement message via gRPC.
-    async fn broadcast_order_message(
+    /// Broadcasts a transaction message to dYdX via gRPC.
+    ///
+    /// Generic method for broadcasting any transaction type that implements `ToAny`.
+    /// Handles signing, serialization, and gRPC transmission.
+    async fn broadcast_tx_message<T: ToAny>(
         &self,
         wallet: &Wallet,
-        msg: MsgPlaceOrder,
+        msg: T,
+        operation: &str,
     ) -> Result<(), DydxError> {
         use crate::grpc::TxBuilder;
 
         // Get account for signing
         let account = wallet
-            .account_offline(0)
+            .account_offline(self.subaccount_number)
             .map_err(|e| DydxError::Wallet(format!("Failed to derive account: {e}")))?;
 
         // Build transaction
@@ -472,8 +491,17 @@ impl OrderSubmitter {
             ))))
         })?;
 
-        tracing::info!("Order placed successfully: tx_hash={}", tx_hash);
+        tracing::info!("{} successfully: tx_hash={}", operation, tx_hash);
         Ok(())
+    }
+
+    /// Broadcast order placement message via gRPC.
+    async fn broadcast_order_message(
+        &self,
+        wallet: &Wallet,
+        msg: MsgPlaceOrder,
+    ) -> Result<(), DydxError> {
+        self.broadcast_tx_message(wallet, msg, "Order placed").await
     }
 
     /// Broadcast order cancellation message via gRPC.
@@ -482,48 +510,7 @@ impl OrderSubmitter {
         wallet: &Wallet,
         msg: MsgCancelOrder,
     ) -> Result<(), DydxError> {
-        use crate::grpc::TxBuilder;
-
-        // Get account for signing
-        let account = wallet
-            .account_offline(0)
-            .map_err(|e| DydxError::Wallet(format!("Failed to derive account: {e}")))?;
-
-        // Build transaction
-        let tx_builder =
-            TxBuilder::new(self.chain_id.clone(), "adydx".to_string()).map_err(|e| {
-                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
-                    "TxBuilder init failed: {e}"
-                ))))
-            })?;
-
-        // Convert message to Any
-        let any_msg = msg.to_any();
-
-        // Build and sign transaction
-        let tx_raw = tx_builder
-            .build_transaction(&account, vec![any_msg], None)
-            .map_err(|e| {
-                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
-                    "Failed to build tx: {e}"
-                ))))
-            })?;
-
-        // Broadcast transaction
-        let tx_bytes = tx_raw.to_bytes().map_err(|e| {
-            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
-                "Failed to serialize tx: {e}"
-            ))))
-        })?;
-
-        let mut grpc_client = self.grpc_client.clone();
-        let tx_hash = grpc_client.broadcast_tx(tx_bytes).await.map_err(|e| {
-            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
-                "Broadcast failed: {e}"
-            ))))
-        })?;
-
-        tracing::info!("Order cancelled successfully: tx_hash={}", tx_hash);
-        Ok(())
+        self.broadcast_tx_message(wallet, msg, "Order cancelled")
+            .await
     }
 }

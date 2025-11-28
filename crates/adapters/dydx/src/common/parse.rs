@@ -61,6 +61,7 @@ pub fn order_side_to_proto(side: OrderSide) -> ProtoOrderSide {
 ///
 /// Note: `Unspecified` (proto enum value 0) is the protocol default and represents GTC behavior.
 /// GTD orders specify expiration separately via `good_til_block` or `good_til_block_time` fields.
+/// For post-only orders, use `time_in_force_to_proto_with_post_only()` which returns `ProtoTimeInForce::PostOnly`.
 #[must_use]
 pub fn time_in_force_to_proto(tif: TimeInForce) -> ProtoTimeInForce {
     match tif {
@@ -69,6 +70,22 @@ pub fn time_in_force_to_proto(tif: TimeInForce) -> ProtoTimeInForce {
         TimeInForce::Gtc => ProtoTimeInForce::Unspecified,
         TimeInForce::Gtd => ProtoTimeInForce::Unspecified,
         _ => ProtoTimeInForce::Unspecified,
+    }
+}
+
+/// Converts Nautilus `TimeInForce` to dYdX proto `TimeInForce` with post_only flag support.
+///
+/// When `post_only` is true, returns `ProtoTimeInForce::PostOnly` regardless of the input TIF.
+/// Otherwise, delegates to `time_in_force_to_proto()`.
+#[must_use]
+pub fn time_in_force_to_proto_with_post_only(
+    tif: TimeInForce,
+    post_only: bool,
+) -> ProtoTimeInForce {
+    if post_only {
+        ProtoTimeInForce::PostOnly
+    } else {
+        time_in_force_to_proto(tif)
     }
 }
 

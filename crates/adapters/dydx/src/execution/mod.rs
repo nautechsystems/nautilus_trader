@@ -751,7 +751,7 @@ impl ExecutionClient for DydxExecutionClient {
 
             // Attempt cancellation via submitter
             match submitter
-                .cancel_order(wallet_ref, client_id_u32, block_height)
+                .cancel_order(wallet_ref, instrument_id, client_id_u32, block_height)
                 .await
             {
                 Ok(_) => {
