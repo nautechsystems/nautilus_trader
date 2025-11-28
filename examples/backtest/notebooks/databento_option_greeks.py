@@ -52,6 +52,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.greeks_data import GreeksData
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick_scheme import TieredTickScheme
@@ -328,7 +329,7 @@ strategies = [
 streaming = StreamingConfig(
     catalog_path=catalog.path,
     fs_protocol="file",
-    include_types=[GreeksData, Bar],
+    include_types=[GreeksData, Bar, FuturesContract],
 )
 
 logging = LoggingConfig(
@@ -452,10 +453,16 @@ if not load_greeks:
         results[0].instance_id,
         GreeksData,
     )
+
     catalog.convert_stream_to_data(
         results[0].instance_id,
         Bar,
         identifiers=("2-MINUTE",),
+    )
+
+    catalog.convert_stream_to_data(
+        results[0].instance_id,
+        FuturesContract,
     )
 
 # %% [markdown]

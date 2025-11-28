@@ -18,6 +18,8 @@ from collections import Counter
 
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -27,12 +29,24 @@ from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.test_kit.mocks.data import NewsEventData
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -453,13 +467,6 @@ class TestPersistenceStreaming:
         catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
-        from nautilus_trader.cache.cache import Cache
-        from nautilus_trader.common.component import TestClock
-        from nautilus_trader.model.data import Bar
-        from nautilus_trader.persistence.writer import StreamingFeatherWriter
-        from nautilus_trader.test_kit.providers import TestInstrumentProvider
-        from nautilus_trader.test_kit.stubs.data import TestDataStubs
-
         self.catalog = catalog_betfair
 
         # Create test infrastructure
@@ -559,19 +566,6 @@ class TestPersistenceStreaming:
         catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
-        from nautilus_trader.cache.cache import Cache
-        from nautilus_trader.common.component import TestClock
-        from nautilus_trader.model.data import Bar
-        from nautilus_trader.model.data import BarSpecification
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.enums import AggregationSource
-        from nautilus_trader.model.enums import BarAggregation
-        from nautilus_trader.model.enums import PriceType
-        from nautilus_trader.model.objects import Price
-        from nautilus_trader.model.objects import Quantity
-        from nautilus_trader.persistence.writer import StreamingFeatherWriter
-        from nautilus_trader.test_kit.providers import TestInstrumentProvider
-
         self.catalog = catalog_betfair
 
         # Create test infrastructure
@@ -627,3 +621,48 @@ class TestPersistenceStreaming:
         # Check that the bar has EXTERNAL aggregation source
         assert bars[0].bar_type.aggregation_source == AggregationSource.EXTERNAL
         assert str(bars[0].bar_type).endswith("-EXTERNAL")
+
+    def test_feather_write_instrument_convert_to_parquet(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange
+        self.catalog = catalog_betfair
+
+        # Create test infrastructure
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.btcusdt_perp_binance()
+        cache.add_instrument(instrument)
+
+        # Create writer with CryptoPerpetual in include_types
+        instance_id = "test_instance_instrument"
+        writer = StreamingFeatherWriter(
+            path=f"{self.catalog.path}/backtest/{instance_id}",
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[CryptoPerpetual],
+        )
+
+        # Act - write instrument
+        writer.write(instrument)
+        writer.close()
+
+        # Verify feather file was created
+        feather_files = list(self.catalog.fs.glob(f"{self.catalog.path}/backtest/{instance_id}/crypto_perpetual*.feather"))
+        assert len(feather_files) >= 1, "No feather files found for crypto_perpetual"
+
+        # Convert feather to parquet
+        self.catalog.convert_stream_to_data(
+            instance_id,
+            CryptoPerpetual,
+        )
+
+        # Assert - read instrument back from parquet catalog
+        instruments = self.catalog.instruments(instrument_type=CryptoPerpetual)
+        assert len(instruments) == 1
+
+        # Verify the instrument is the same as the original
+        read_instrument = instruments[0]
+        assert read_instrument == instrument
