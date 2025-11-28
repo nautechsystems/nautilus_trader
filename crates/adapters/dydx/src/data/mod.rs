@@ -35,7 +35,6 @@ use nautilus_common::{
         },
     },
     runner::get_data_event_sender,
-    symbols::extract_raw_symbol,
 };
 use nautilus_core::{
     UnixNanos,

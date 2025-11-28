@@ -18,7 +18,6 @@
 use std::{convert::TryFrom, str::FromStr};
 
 use anyhow::Context;
-pub use nautilus_common::symbols::extract_raw_symbol;
 use nautilus_core::{UUID4, datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
@@ -113,6 +112,12 @@ where
         return Ok(0);
     }
     s.parse::<u8>().map_err(serde::de::Error::custom)
+}
+
+/// Extracts the raw symbol from a Bybit symbol by removing the product type suffix.
+#[must_use]
+pub fn extract_raw_symbol(symbol: &str) -> &str {
+    symbol.rsplit_once('-').map_or(symbol, |(prefix, _)| prefix)
 }
 
 /// Constructs a full Bybit symbol from a raw symbol and product type.
