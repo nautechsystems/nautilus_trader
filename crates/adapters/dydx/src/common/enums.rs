@@ -19,6 +19,8 @@ use nautilus_model::enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, Po
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
+use crate::grpc::types::ChainId;
+
 use crate::error::DydxError;
 
 /// dYdX order status throughout its lifecycle.
@@ -720,6 +722,44 @@ mod tests {
             OrderType::StopLimit
         );
     }
+
+    #[rstest]
+    fn test_dydx_network_chain_id_mapping() {
+        // Test canonical chain ID mapping
+        assert_eq!(DydxNetwork::Mainnet.chain_id(), ChainId::Mainnet1);
+        assert_eq!(DydxNetwork::Testnet.chain_id(), ChainId::Testnet4);
+    }
+
+    #[rstest]
+    fn test_dydx_network_as_str() {
+        // Test string representation for config/env
+        assert_eq!(DydxNetwork::Mainnet.as_str(), "mainnet");
+        assert_eq!(DydxNetwork::Testnet.as_str(), "testnet");
+    }
+
+    #[rstest]
+    fn test_dydx_network_default() {
+        // Test default is mainnet
+        assert_eq!(DydxNetwork::default(), DydxNetwork::Mainnet);
+    }
+
+    #[rstest]
+    fn test_dydx_network_serde_lowercase() {
+        // Test lowercase serialization/deserialization
+        let mainnet = DydxNetwork::Mainnet;
+        let json = serde_json::to_string(&mainnet).unwrap();
+        assert_eq!(json, "\"mainnet\"");
+
+        let deserialized: DydxNetwork = serde_json::from_str("\"mainnet\"").unwrap();
+        assert_eq!(deserialized, DydxNetwork::Mainnet);
+
+        let testnet = DydxNetwork::Testnet;
+        let json = serde_json::to_string(&testnet).unwrap();
+        assert_eq!(json, "\"testnet\"");
+
+        let deserialized: DydxNetwork = serde_json::from_str("\"testnet\"").unwrap();
+        assert_eq!(deserialized, DydxNetwork::Testnet);
+    }
 }
 
 /// dYdX network environment (mainnet vs testnet).
@@ -756,10 +796,10 @@ pub enum DydxNetwork {
 impl DydxNetwork {
     /// Map the logical network to the underlying gRPC chain identifier.
     #[must_use]
-    pub const fn chain_id(self) -> crate::grpc::types::ChainId {
+    pub const fn chain_id(self) -> ChainId {
         match self {
-            Self::Mainnet => crate::grpc::types::ChainId::Mainnet1,
-            Self::Testnet => crate::grpc::types::ChainId::Testnet4,
+            Self::Mainnet => ChainId::Mainnet1,
+            Self::Testnet => ChainId::Testnet4,
         }
     }
 

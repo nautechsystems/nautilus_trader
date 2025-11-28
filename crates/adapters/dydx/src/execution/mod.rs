@@ -56,14 +56,18 @@ use crate::{
     common::{consts::DYDX_VENUE, credential::DydxCredential},
     config::DydxAdapterConfig,
     execution::submitter::OrderSubmitter,
-    grpc::{DydxGrpcClient, Wallet},
+    grpc::{DydxGrpcClient, Wallet, types::ChainId},
     http::client::DydxHttpClient,
     websocket::{client::DydxWebSocketClient, messages::NautilusWsMessage},
 };
 
 pub mod submitter;
 
-/// Maximum client order ID value for dYdX.
+/// Maximum client order ID value for dYdX (informational - not enforced by adapter).
+///
+/// dYdX protocol accepts u32 client IDs. The current implementation uses sequential
+/// allocation starting from 1, which will wrap at u32::MAX. If dYdX has a stricter
+/// limit, this constant should be updated and enforced in `generate_client_order_id_int`.
 pub const MAX_CLIENT_ID: u32 = u32::MAX;
 
 /// Execution report types dispatched from WebSocket message handler.
@@ -175,18 +179,23 @@ impl DydxExecutionClient {
 
     /// Generate a unique client order ID integer and store the mapping.
     ///
-    /// Invariants:
+    /// # Invariants
+    ///
     /// - Same `client_order_id` string → same `u32` for the lifetime of this process
-    /// - Different `client_order_id` strings → different `u32` values
+    /// - Different `client_order_id` strings → different `u32` values (except on u32 wrap)
     /// - Thread-safe for concurrent calls
     ///
-    /// Behavior:
+    /// # Behavior
+    ///
     /// - Parses numeric `client_order_id` directly to `u32` for stability across restarts
     /// - For non-numeric IDs, allocates a new sequential value from an atomic counter
     /// - Mapping is kept in-memory only; non-numeric IDs will not be recoverable after restart
+    /// - Counter starts at 1 and increments without bound checking (will wrap at u32::MAX)
     ///
-    /// Notes:
+    /// # Notes
+    ///
     /// - Atomic counter uses `Relaxed` ordering — uniqueness is required, not cross-thread sequencing
+    /// - If dYdX enforces a maximum client ID below u32::MAX, additional range validation is needed
     fn generate_client_order_id_int(&self, client_order_id: &str) -> u32 {
         // Fast path: already mapped
         if let Some(existing) = self.client_id_to_int.get(client_order_id) {
@@ -237,7 +246,7 @@ impl DydxExecutionClient {
     /// Get chain ID from config network field.
     ///
     /// This is the recommended way to get chain_id for all transaction submissions.
-    fn get_chain_id(&self) -> crate::grpc::types::ChainId {
+    fn get_chain_id(&self) -> ChainId {
         self.config.get_chain_id()
     }
 
@@ -845,12 +854,12 @@ impl ExecutionClient for DydxExecutionClient {
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
         let chain_id = self.get_chain_id();
 
-        // Collect client order IDs and convert to u32
-        let mut order_ids_to_cancel = Vec::new();
+        // Collect (instrument_id, client_id) tuples for batch cancel
+        let mut orders_to_cancel = Vec::new();
         for order in &open_orders {
             let client_order_id = order.client_order_id();
             if let Some(client_id_u32) = self.get_client_order_id_int(client_order_id.as_str()) {
-                order_ids_to_cancel.push(client_id_u32);
+                orders_to_cancel.push((instrument_id, client_id_u32));
             } else {
                 tracing::warn!(
                     "Cannot cancel order {}: client_order_id not found in cache",
@@ -876,16 +885,14 @@ impl ExecutionClient for DydxExecutionClient {
 
             // Cancel orders using batch method (executes sequentially to avoid nonce conflicts)
             match submitter
-                .cancel_orders_batch(wallet_ref, &order_ids_to_cancel, block_height)
+                .cancel_orders_batch(wallet_ref, &orders_to_cancel, block_height)
                 .await
             {
                 Ok(_) => {
-                    tracing::info!(
-                        "Successfully cancelled {} orders",
-                        order_ids_to_cancel.len()
-                    );
+                    tracing::info!("Successfully cancelled {} orders", orders_to_cancel.len());
                 }
                 Err(e) => {
+                    // NotImplemented is expected until batch cancel is fully implemented
                     tracing::error!("Batch cancel failed: {:?}", e);
                 }
             }

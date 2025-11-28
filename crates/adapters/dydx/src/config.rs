@@ -17,16 +17,20 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::common::{
-    consts::{DYDX_CHAIN_ID, DYDX_GRPC_URLS, DYDX_TESTNET_CHAIN_ID, DYDX_WS_URL},
-    enums::DydxNetwork,
-    urls,
+use crate::{
+    common::{
+        consts::{DYDX_CHAIN_ID, DYDX_GRPC_URLS, DYDX_TESTNET_CHAIN_ID, DYDX_WS_URL},
+        enums::DydxNetwork,
+        urls,
+    },
+    grpc::types::ChainId,
 };
 
 /// Configuration for the dYdX adapter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DydxAdapterConfig {
     /// Network environment (mainnet or testnet).
+    #[serde(default)]
     pub network: DydxNetwork,
     /// Base URL for the HTTP API.
     pub base_url: String,
@@ -106,7 +110,7 @@ impl DydxAdapterConfig {
     ///
     /// This is the recommended way to get the chain ID for transaction submission.
     #[must_use]
-    pub const fn get_chain_id(&self) -> crate::grpc::types::ChainId {
+    pub const fn get_chain_id(&self) -> ChainId {
         self.network.chain_id()
     }
 
@@ -235,5 +239,106 @@ impl Default for DYDXExecClientConfig {
             retry_delay_max_ms: Some(5000),
             is_testnet: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_config_get_chain_id_mainnet() {
+        let config = DydxAdapterConfig {
+            network: DydxNetwork::Mainnet,
+            ..Default::default()
+        };
+        assert_eq!(config.get_chain_id(), ChainId::Mainnet1);
+    }
+
+    #[rstest]
+    fn test_config_get_chain_id_testnet() {
+        let config = DydxAdapterConfig {
+            network: DydxNetwork::Testnet,
+            ..Default::default()
+        };
+        assert_eq!(config.get_chain_id(), ChainId::Testnet4);
+    }
+
+    #[rstest]
+    fn test_config_compute_is_testnet() {
+        let mainnet_config = DydxAdapterConfig {
+            network: DydxNetwork::Mainnet,
+            ..Default::default()
+        };
+        assert!(!mainnet_config.compute_is_testnet());
+
+        let testnet_config = DydxAdapterConfig {
+            network: DydxNetwork::Testnet,
+            ..Default::default()
+        };
+        assert!(testnet_config.compute_is_testnet());
+    }
+
+    #[rstest]
+    fn test_config_default_uses_mainnet() {
+        let config = DydxAdapterConfig::default();
+        assert_eq!(config.network, DydxNetwork::Mainnet);
+        assert!(!config.is_testnet);
+    }
+
+    #[rstest]
+    fn test_config_network_canonical_over_is_testnet() {
+        // When network=mainnet but is_testnet=true, get_chain_id uses network
+        let config = DydxAdapterConfig {
+            network: DydxNetwork::Mainnet,
+            is_testnet: true, // Conflicting value
+            ..Default::default()
+        };
+        assert_eq!(config.get_chain_id(), ChainId::Mainnet1); // network wins
+        assert!(!config.compute_is_testnet()); // compute_is_testnet derives from network
+    }
+
+    #[rstest]
+    fn test_config_serde_backwards_compat() {
+        // Test that configs missing network field can deserialize with default
+        let json = r#"{"base_url":"https://indexer.dydx.trade","ws_url":"wss://indexer.dydx.trade/v4/ws","grpc_url":"https://dydx-ops-grpc.kingnodes.com:443","grpc_urls":[],"chain_id":"dydx-mainnet-1","timeout_secs":30,"subaccount":0,"is_testnet":false,"max_retries":3,"retry_delay_initial_ms":1000,"retry_delay_max_ms":10000}"#;
+
+        let config: Result<DydxAdapterConfig, _> = serde_json::from_str(json);
+        assert!(config.is_ok());
+        let config = config.unwrap();
+        // Should default to Mainnet when network field is missing
+        assert_eq!(config.network, DydxNetwork::Mainnet);
+    }
+
+    #[rstest]
+    fn test_config_get_grpc_urls_fallback() {
+        let config = DydxAdapterConfig {
+            grpc_url: "https://primary.example.com".to_string(),
+            grpc_urls: vec![],
+            ..Default::default()
+        };
+
+        let urls = config.get_grpc_urls();
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0], "https://primary.example.com");
+    }
+
+    #[rstest]
+    fn test_config_get_grpc_urls_multiple() {
+        let config = DydxAdapterConfig {
+            grpc_url: "https://primary.example.com".to_string(),
+            grpc_urls: vec![
+                "https://fallback1.example.com".to_string(),
+                "https://fallback2.example.com".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        let urls = config.get_grpc_urls();
+        assert_eq!(urls.len(), 2);
+        assert_eq!(urls[0], "https://fallback1.example.com");
+        assert_eq!(urls[1], "https://fallback2.example.com");
     }
 }

@@ -178,6 +178,52 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn test_extract_raw_symbol() {
+        assert_eq!(extract_raw_symbol("BTC-USD-PERP.DYDX"), "BTC-USD");
+        assert_eq!(extract_raw_symbol("BTC-USD-PERP"), "BTC-USD");
+        assert_eq!(extract_raw_symbol("ETH-USD.DYDX"), "ETH-USD");
+        assert_eq!(extract_raw_symbol("SOL-USD"), "SOL-USD");
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, ProtoOrderSide::Buy)]
+    #[case(OrderSide::Sell, ProtoOrderSide::Sell)]
+    #[case(OrderSide::NoOrderSide, ProtoOrderSide::Unspecified)]
+    fn test_order_side_to_proto(#[case] side: OrderSide, #[case] expected: ProtoOrderSide) {
+        assert_eq!(order_side_to_proto(side), expected);
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Ioc, ProtoTimeInForce::Ioc)]
+    #[case(TimeInForce::Fok, ProtoTimeInForce::FillOrKill)]
+    #[case(TimeInForce::Gtc, ProtoTimeInForce::Unspecified)]
+    #[case(TimeInForce::Gtd, ProtoTimeInForce::Unspecified)]
+    #[case(TimeInForce::Day, ProtoTimeInForce::Unspecified)]
+    fn test_time_in_force_to_proto(#[case] tif: TimeInForce, #[case] expected: ProtoTimeInForce) {
+        assert_eq!(time_in_force_to_proto(tif), expected);
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Gtc, false, ProtoTimeInForce::Unspecified)]
+    #[case(TimeInForce::Gtc, true, ProtoTimeInForce::PostOnly)]
+    #[case(TimeInForce::Ioc, false, ProtoTimeInForce::Ioc)]
+    #[case(TimeInForce::Ioc, true, ProtoTimeInForce::PostOnly)]
+    #[case(TimeInForce::Fok, false, ProtoTimeInForce::FillOrKill)]
+    #[case(TimeInForce::Fok, true, ProtoTimeInForce::PostOnly)]
+    #[case(TimeInForce::Gtd, false, ProtoTimeInForce::Unspecified)]
+    #[case(TimeInForce::Gtd, true, ProtoTimeInForce::PostOnly)]
+    fn test_time_in_force_to_proto_with_post_only(
+        #[case] tif: TimeInForce,
+        #[case] post_only: bool,
+        #[case] expected: ProtoTimeInForce,
+    ) {
+        assert_eq!(
+            time_in_force_to_proto_with_post_only(tif, post_only),
+            expected
+        );
+    }
+
+    #[rstest]
     fn test_get_currency() {
         let btc = get_currency("BTC");
         assert_eq!(btc.code.as_str(), "BTC");
