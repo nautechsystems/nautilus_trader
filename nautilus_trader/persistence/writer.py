@@ -37,6 +37,7 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import urisafe_identifier
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
@@ -204,6 +205,18 @@ class StreamingFeatherWriter:
                 writer = self._instrument_writers[key]
             else:
                 return
+        elif isinstance(obj, Instrument):
+            # Handle per-instrument writers for custom data with instrument_id
+            key = (table, obj.id.value)
+            instrument = self.cache.instrument(obj.id)
+
+            if key not in self._instrument_writers and instrument is not None:
+                self._create_identifier_writer(cls=cls, obj=obj)
+
+            if key in self._instrument_writers:
+                writer = self._instrument_writers[key]
+            else:
+                return
         elif use_per_instrument_writer:
             # Handle per-instrument writers for custom data with instrument_id
             key = (table, actual_data.instrument_id.value)
@@ -246,6 +259,8 @@ class StreamingFeatherWriter:
             # Use the appropriate key for file size tracking
             if isinstance(obj, Bar):
                 size_key = (table, str(obj.bar_type))
+            elif isinstance(obj, Instrument):
+                size_key = (table, obj.id.value)
             elif use_per_instrument_writer:
                 size_key = (table, actual_data.instrument_id.value)
             else:
@@ -340,7 +355,12 @@ class StreamingFeatherWriter:
         table_name = class_to_filename(cls)
 
         # Extract identifier: bar_type for bars, instrument_id for other data
-        identifier_str = str(obj.bar_type) if isinstance(obj, Bar) else obj.instrument_id.value
+        if isinstance(obj, Bar):
+            identifier_str = str(obj.bar_type)
+        elif isinstance(obj, Instrument):
+            identifier_str = obj.id.value
+        else:
+            identifier_str = obj.instrument_id.value
 
         key = (table_name, identifier_str)
 
@@ -394,7 +414,12 @@ class StreamingFeatherWriter:
         schema = self._schemas[mapped_cls].with_metadata(metadata)
         table_name = class_to_filename(cls)
 
-        identifier_str = str(obj.bar_type) if isinstance(obj, Bar) else obj.instrument_id.value
+        if isinstance(obj, Bar):
+            identifier_str = str(obj.bar_type)
+        elif isinstance(obj, Instrument):
+            identifier_str = obj.id.value
+        else:
+            identifier_str = obj.instrument_id.value
 
         folder = f"{self.path}/{table_name}/{urisafe_identifier(identifier_str)}"
         key = (table_name, identifier_str)
@@ -420,7 +445,7 @@ class StreamingFeatherWriter:
         if self.include_types is not None and cls not in self.include_types:
             return
 
-        table_name = table_name if table_name else class_to_filename(cls)
+        table_name = class_to_filename(cls) if not table_name else table_name
 
         if table_name in self._writers:
             return
@@ -453,6 +478,8 @@ class StreamingFeatherWriter:
     ) -> dict[bytes, bytes]:
         if isinstance(obj, Bar):
             instrument_id = obj.bar_type.instrument_id
+        elif isinstance(obj, Instrument):
+            instrument_id = obj.id
         elif hasattr(obj, "instrument_id"):
             instrument_id = obj.instrument_id
         else:
@@ -469,6 +496,14 @@ class StreamingFeatherWriter:
                     b"bar_type": str(obj.bar_type).encode(),
                     b"price_precision": str(instrument.price_precision).encode(),
                     b"size_precision": str(instrument.size_precision).encode(),
+                },
+            )
+        elif isinstance(obj, Instrument):
+            metadata.update(
+                {
+                    b"price_precision": str(instrument.price_precision).encode(),
+                    b"size_precision": str(instrument.size_precision).encode(),
+                    b"type": str(instrument.__class__.__name__).encode(),
                 },
             )
         else:
