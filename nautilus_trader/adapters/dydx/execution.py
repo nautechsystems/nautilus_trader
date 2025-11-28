@@ -111,10 +111,6 @@ from nautilus_trader.model.orders import Order
 if TYPE_CHECKING:
     from nautilus_trader.model.objects import Currency
 
-# TODO. Make this configurable again.
-TRACK_CANCEL_TIMEOUT_SECS = 60
-TRACK_CANCEL_INTERVAL_SECS = 0.1
-
 
 class ClientOrderIdHelper:
     """
@@ -242,6 +238,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             is_testnet=config.is_testnet,
         )
         self._subaccount = config.subaccount
+        self._track_cancel_timeout_secs = config.track_cancel_timeout_secs
+        self._track_cancel_interval_secs = config.track_cancel_interval_secs
 
         self._enum_parser = DYDXEnumParser()
         self._client_order_id_generator = ClientOrderIdHelper(cache=cache)
@@ -915,7 +913,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         start = self._clock.timestamp_ns()
 
-        while self._clock.timestamp_ns() - start < TRACK_CANCEL_TIMEOUT_SECS * 1e9:
+        while self._clock.timestamp_ns() - start < self._track_cancel_timeout_secs * 1e9:
             order = self._cache.order(client_order_id)
 
             if order.status != OrderStatus.ACCEPTED:
@@ -935,7 +933,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
                 break
 
-            await asyncio.sleep( TRACK_CANCEL_INTERVAL_SECS)
+            await asyncio.sleep(self._track_cancel_interval_secs)
 
     def _handle_order_message(  # noqa: C901
         self,

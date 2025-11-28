@@ -1,5 +1,3 @@
-
-
 class DYDXOrderBroadcastError(Exception):
     """
     Define the class for all dYdX specific errors.
