@@ -627,3 +627,46 @@ class TestPersistenceStreaming:
         # Check that the bar has EXTERNAL aggregation source
         assert bars[0].bar_type.aggregation_source == AggregationSource.EXTERNAL
         assert str(bars[0].bar_type).endswith("-EXTERNAL")
+
+    def test_feather_write_instrument(self, catalog: ParquetDataCatalog):
+        # Arrange
+        from nautilus_trader.cache.cache import Cache
+        from nautilus_trader.common.component import TestClock
+        from nautilus_trader.model.instruments import CryptoPerpetual
+        from nautilus_trader.persistence.writer import StreamingFeatherWriter
+        from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
+        self.catalog = catalog
+
+        # Create test infrastructure
+        clock = TestClock()
+        cache = Cache()
+        instrument = TestInstrumentProvider.btcusdt_perp_binance()
+        cache.add_instrument(instrument)
+
+        # Create writer with Bar in include_types
+        writer = StreamingFeatherWriter(
+            path=f"{self.catalog.path}/backtest/test_instance",
+            cache=cache,
+            clock=clock,
+            fs_protocol="file",
+            include_types=[CryptoPerpetual],
+        )
+
+        # Act - write bars
+        writer.write(instrument)
+        writer.close()
+
+        # Assert - check that bars were written to per-bar-type subdirectories
+        crypto_perpetual_dir = f"{self.catalog.path}/backtest/test_instance/crypto_perpetual"
+
+        # Verify directory structure exists
+        assert self.catalog.fs.isdir(crypto_perpetual_dir)
+
+        # Verify subdirectories for each bar type exist
+        subdirs = [d for d in self.catalog.fs.glob(f"{crypto_perpetual_dir}/*") if self.catalog.fs.isdir(d)]
+        assert len(subdirs) == 1  # One for each bar type
+
+        # Verify feather files exist in subdirectories
+        feather_files = list(self.catalog.fs.glob(f"{crypto_perpetual_dir}/**/*.feather"))
+        assert len(feather_files) == 1  # One file per bar type
