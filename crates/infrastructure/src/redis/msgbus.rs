@@ -26,13 +26,13 @@ use std::{
 use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
+    live::runtime::get_runtime,
     logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
         BusMessage,
         database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
         switchboard::CLOSE_TOPIC,
     },
-    runtime::get_runtime,
 };
 use nautilus_core::{
     UUID4,
@@ -42,7 +42,6 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
 use redis::{AsyncCommands, streams};
 use streams::StreamReadOptions;
-use tokio::time::Instant;
 use ustr::Ustr;
 
 use super::{REDIS_MINID, REDIS_XTRIM, await_handle};
@@ -327,7 +326,7 @@ pub async fn publish_messages(
                 }
 
                 // Schedule the next tick
-                flush_timer.as_mut().reset(Instant::now() + buffer_interval);
+                flush_timer.as_mut().reset(tokio::time::Instant::now() + buffer_interval);
             }
         }
     }

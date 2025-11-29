@@ -22,7 +22,6 @@
 pub mod core;
 pub mod database;
 pub mod handler;
-pub mod listener;
 pub mod matching;
 pub mod message;
 pub mod stubs;

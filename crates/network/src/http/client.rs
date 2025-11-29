@@ -459,7 +459,7 @@ fn encode_url_params(
 
     // Check if URL already has a query string
     let separator = if url.contains('?') { '&' } else { '?' };
-    Ok(format!("{}{}{}", url, separator, query_string))
+    Ok(format!("{url}{separator}{query_string}"))
 }
 
 ////////////////////////////////////////////////////////////////////////////////

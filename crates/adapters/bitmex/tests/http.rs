@@ -36,17 +36,16 @@ use nautilus_bitmex::{
 use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};
 use rstest::rstest;
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct TestServerState {
-    request_count: Arc<Mutex<usize>>,
+    request_count: Arc<tokio::sync::Mutex<usize>>,
 }
 
 impl Default for TestServerState {
     fn default() -> Self {
         Self {
-            request_count: Arc::new(Mutex::new(0)),
+            request_count: Arc::new(tokio::sync::Mutex::new(0)),
         }
     }
 }
@@ -54,7 +53,7 @@ impl Default for TestServerState {
 // Load test data from existing files
 fn load_test_data(filename: &str) -> Value {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let path = format!("{}/test_data/{}", manifest_dir, filename);
+    let path = format!("{manifest_dir}/test_data/{filename}");
     let content = std::fs::read_to_string(path).unwrap();
     serde_json::from_str(&content).unwrap()
 }
@@ -170,7 +169,7 @@ async fn handle_post_order(headers: axum::http::HeaderMap, body: String) -> Resp
     // Create a mock order response
     Json(json!({
         "orderID": "new-order-id-12345",
-        "clOrdID": params.get("clOrdID").unwrap_or(&"".to_string()),
+        "clOrdID": params.get("clOrdID").unwrap_or(&String::new()),
         "symbol": params.get("symbol").unwrap(),
         "orderQty": params.get("orderQty").unwrap().parse::<i64>().unwrap_or(0),
         "side": params.get("side").unwrap_or(&"Buy".to_string()),
@@ -260,7 +259,7 @@ async fn start_test_server()
 #[tokio::test]
 async fn test_get_instruments() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexRawHttpClient::new(
         Some(base_url),
@@ -284,7 +283,7 @@ async fn test_get_instruments() {
 #[tokio::test]
 async fn test_get_instrument_single_result() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexRawHttpClient::new(
         Some(base_url),
@@ -308,7 +307,7 @@ async fn test_get_instrument_single_result() {
 #[tokio::test]
 async fn test_request_instrument() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexHttpClient::new(
         Some(base_url),
@@ -338,7 +337,7 @@ async fn test_request_instrument() {
 #[tokio::test]
 async fn test_get_wallet_requires_auth() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     // Test without credentials - should fail
     let client = BitmexRawHttpClient::new(
@@ -379,7 +378,7 @@ async fn test_get_wallet_requires_auth() {
 #[tokio::test]
 async fn test_get_orders() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexRawHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -407,7 +406,7 @@ async fn test_get_orders() {
 #[tokio::test]
 async fn test_place_order() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexRawHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -446,7 +445,7 @@ async fn test_place_order() {
 #[tokio::test]
 async fn test_cancel_order() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexRawHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -493,7 +492,7 @@ async fn test_cancel_order() {
 #[ignore = "Slow integration test (~8s) - optimized from 7 to 6 requests"]
 async fn test_rate_limiting() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexRawHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -526,7 +525,7 @@ async fn test_rate_limiting() {
 #[tokio::test]
 async fn test_client_creation() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexRawHttpClient::new(
         Some(base_url),
@@ -549,7 +548,7 @@ async fn test_client_creation() {
 #[tokio::test]
 async fn test_client_with_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexRawHttpClient::with_credentials(
         "test_key".to_string(),
@@ -574,7 +573,7 @@ async fn test_client_with_credentials() {
 #[tokio::test]
 async fn test_get_positions_requires_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BitmexRawHttpClient::new(
         Some(base_url),
@@ -644,7 +643,7 @@ async fn test_http_500_internal_server_error() {
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client = BitmexRawHttpClient::new(
         Some(base_url),
         Some(60),

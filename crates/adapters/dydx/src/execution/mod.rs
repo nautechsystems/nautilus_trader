@@ -15,12 +15,16 @@
 
 //! Live execution client implementation for the dYdX adapter.
 
-use std::sync::{Arc, Mutex, atomic::AtomicU64};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU32, AtomicU64},
+};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
+    live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::{
         ExecutionEvent,
         execution::{
@@ -30,8 +34,6 @@ use nautilus_common::{
         },
     },
     msgbus,
-    runner::get_exec_event_sender,
-    runtime::get_runtime,
 };
 use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
 use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
@@ -53,14 +55,18 @@ use crate::{
     common::{consts::DYDX_VENUE, credential::DydxCredential},
     config::DydxAdapterConfig,
     execution::submitter::OrderSubmitter,
-    grpc::{DydxGrpcClient, OrderBuilder, Wallet},
+    grpc::{DydxGrpcClient, Wallet, types::ChainId},
     http::client::DydxHttpClient,
-    websocket::client::DydxWebSocketClient,
+    websocket::{client::DydxWebSocketClient, messages::NautilusWsMessage},
 };
 
 pub mod submitter;
 
-/// Maximum client order ID value for dYdX.
+/// Maximum client order ID value for dYdX (informational - not enforced by adapter).
+///
+/// dYdX protocol accepts u32 client IDs. The current implementation uses sequential
+/// allocation starting from 1, which will wrap at u32::MAX. If dYdX has a stricter
+/// limit, this constant should be updated and enforced in `generate_client_order_id_int`.
 pub const MAX_CLIENT_ID: u32 = u32::MAX;
 
 /// Execution report types dispatched from WebSocket message handler.
@@ -87,7 +93,6 @@ enum ExecutionReport {
 /// This matches the pattern used in OKX and other exchange adapters, ensuring
 /// consistent behavior across the Nautilus ecosystem.
 #[derive(Debug)]
-#[allow(dead_code)] // TODO: Remove once implementation is complete
 pub struct DydxExecutionClient {
     core: ExecutionClientCore,
     config: DydxAdapterConfig,
@@ -95,8 +100,6 @@ pub struct DydxExecutionClient {
     ws_client: DydxWebSocketClient,
     grpc_client: Arc<tokio::sync::RwLock<DydxGrpcClient>>,
     wallet: Arc<tokio::sync::RwLock<Option<Wallet>>>,
-    order_builders: DashMap<InstrumentId, OrderBuilder>,
-    // NOTE: Currently unpopulated - instrument loading not yet implemented
     instruments: DashMap<InstrumentId, InstrumentAny>,
     market_to_instrument: DashMap<String, InstrumentId>,
     clob_pair_id_to_instrument: DashMap<u32, InstrumentId>,
@@ -104,6 +107,7 @@ pub struct DydxExecutionClient {
     oracle_prices: DashMap<InstrumentId, Decimal>,
     client_id_to_int: DashMap<String, u32>,
     int_to_client_id: DashMap<u32, String>,
+    next_client_id: AtomicU32,
     wallet_address: String,
     subaccount_number: u32,
     started: bool,
@@ -154,7 +158,6 @@ impl DydxExecutionClient {
             ws_client,
             grpc_client,
             wallet: Arc::new(tokio::sync::RwLock::new(None)),
-            order_builders: DashMap::new(),
             instruments: DashMap::new(),
             market_to_instrument: DashMap::new(),
             clob_pair_id_to_instrument: DashMap::new(),
@@ -162,6 +165,7 @@ impl DydxExecutionClient {
             oracle_prices: DashMap::new(),
             client_id_to_int: DashMap::new(),
             int_to_client_id: DashMap::new(),
+            next_client_id: AtomicU32::new(1),
             wallet_address,
             subaccount_number,
             started: false,
@@ -174,10 +178,30 @@ impl DydxExecutionClient {
 
     /// Generate a unique client order ID integer and store the mapping.
     ///
-    /// Attempts to parse the client_order_id as an integer first. If that fails,
-    /// generates a random value within the valid range [0, MAX_CLIENT_ID).
-    #[allow(dead_code)] // TODO: Remove once used in submit_order
+    /// # Invariants
+    ///
+    /// - Same `client_order_id` string → same `u32` for the lifetime of this process
+    /// - Different `client_order_id` strings → different `u32` values (except on u32 wrap)
+    /// - Thread-safe for concurrent calls
+    ///
+    /// # Behavior
+    ///
+    /// - Parses numeric `client_order_id` directly to `u32` for stability across restarts
+    /// - For non-numeric IDs, allocates a new sequential value from an atomic counter
+    /// - Mapping is kept in-memory only; non-numeric IDs will not be recoverable after restart
+    /// - Counter starts at 1 and increments without bound checking (will wrap at u32::MAX)
+    ///
+    /// # Notes
+    ///
+    /// - Atomic counter uses `Relaxed` ordering — uniqueness is required, not cross-thread sequencing
+    /// - If dYdX enforces a maximum client ID below u32::MAX, additional range validation is needed
     fn generate_client_order_id_int(&self, client_order_id: &str) -> u32 {
+        // Fast path: already mapped
+        if let Some(existing) = self.client_id_to_int.get(client_order_id) {
+            return *existing.value();
+        }
+
+        // Try parsing as direct integer
         if let Ok(id) = client_order_id.parse::<u32>() {
             self.client_id_to_int
                 .insert(client_order_id.to_string(), id);
@@ -186,19 +210,26 @@ impl DydxExecutionClient {
             return id;
         }
 
-        // Generate random value if parsing fails
-        let id = rand::random::<u32>();
-        self.client_id_to_int
-            .insert(client_order_id.to_string(), id);
-        self.int_to_client_id
-            .insert(id, client_order_id.to_string());
-        id
+        // Allocate new ID from atomic counter
+        use dashmap::mapref::entry::Entry;
+
+        match self.client_id_to_int.entry(client_order_id.to_string()) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(vacant) => {
+                let id = self
+                    .next_client_id
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                vacant.insert(id);
+                self.int_to_client_id
+                    .insert(id, client_order_id.to_string());
+                id
+            }
+        }
     }
 
     /// Retrieve the client order ID integer from the cache.
     ///
     /// Returns `None` if the mapping doesn't exist.
-    #[allow(dead_code)] // TODO: Remove once used in cancel_order
     fn get_client_order_id_int(&self, client_order_id: &str) -> Option<u32> {
         // Try parsing first
         if let Ok(id) = client_order_id.parse::<u32>() {
@@ -211,15 +242,11 @@ impl DydxExecutionClient {
             .map(|entry| *entry.value())
     }
 
-    /// Retrieve the client order ID string from the integer value.
+    /// Get chain ID from config network field.
     ///
-    /// Returns the integer as a string if no mapping exists.
-    #[allow(dead_code)] // TODO: Remove once used in handle_order_message
-    fn get_client_order_id(&self, client_order_id_int: u32) -> String {
-        self.int_to_client_id.get(&client_order_id_int).map_or_else(
-            || client_order_id_int.to_string(),
-            |entry| entry.value().clone(),
-        )
+    /// This is the recommended way to get chain_id for all transaction submissions.
+    fn get_chain_id(&self) -> ChainId {
+        self.config.get_chain_id()
     }
 
     /// Cache instruments from HTTP client into execution client's lookup maps.
@@ -393,6 +420,8 @@ impl DydxExecutionClient {
         }
     }
 }
+
+#[async_trait(?Send)]
 impl ExecutionClient for DydxExecutionClient {
     fn is_connected(&self) -> bool {
         self.connected
@@ -512,7 +541,7 @@ impl ExecutionClient for DydxExecutionClient {
                 return Ok(());
             }
             order_type => {
-                let reason = format!("Order type {:?} not supported by dYdX", order_type);
+                let reason = format!("Order type {order_type:?} not supported by dYdX");
                 tracing::error!("{}", reason);
                 self.core.generate_order_rejected(
                     order.strategy_id(),
@@ -536,12 +565,18 @@ impl ExecutionClient for DydxExecutionClient {
 
         let grpc_client = self.grpc_client.clone();
         let wallet = self.wallet.clone();
+        let http_client = self.http_client.clone();
         let wallet_address = self.wallet_address.clone();
         let subaccount_number = self.subaccount_number;
         let client_order_id = order.client_order_id();
+        let instrument_id = order.instrument_id();
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
+        let chain_id = self.get_chain_id();
         #[allow(clippy::redundant_clone)]
         let order_clone = order.clone();
+
+        // Generate client_order_id as u32 before async block (dYdX requires u32 client IDs)
+        let client_id_u32 = self.generate_client_order_id_int(client_order_id.as_str());
 
         self.spawn_order_task(
             "submit_order",
@@ -555,21 +590,13 @@ impl ExecutionClient for DydxExecutionClient {
                     .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?;
 
                 let grpc_guard = grpc_client.read().await;
-                let submitter =
-                    OrderSubmitter::new((*grpc_guard).clone(), wallet_address, subaccount_number);
-
-                // Generate client_order_id as u32 (dYdX requires u32 client IDs)
-                // TODO: Implement proper client_order_id to u32 mapping
-                let client_id_u32 = client_order_id.as_str().parse::<u32>().unwrap_or_else(|_| {
-                    // Fallback: use hash of client_order_id
-                    use std::{
-                        collections::hash_map::DefaultHasher,
-                        hash::{Hash, Hasher},
-                    };
-                    let mut hasher = DefaultHasher::new();
-                    client_order_id.as_str().hash(&mut hasher);
-                    (hasher.finish() % (MAX_CLIENT_ID as u64)) as u32
-                });
+                let submitter = OrderSubmitter::new(
+                    (*grpc_guard).clone(),
+                    http_client.clone(),
+                    wallet_address,
+                    subaccount_number,
+                    chain_id,
+                );
 
                 // Submit order based on type
                 match order_clone.order_type() {
@@ -577,6 +604,7 @@ impl ExecutionClient for DydxExecutionClient {
                         submitter
                             .submit_market_order(
                                 wallet_ref,
+                                instrument_id,
                                 client_id_u32,
                                 order_clone.order_side(),
                                 order_clone.quantity(),
@@ -592,6 +620,7 @@ impl ExecutionClient for DydxExecutionClient {
                         submitter
                             .submit_limit_order(
                                 wallet_ref,
+                                instrument_id,
                                 client_id_u32,
                                 order_clone.order_side(),
                                 order_clone
@@ -695,12 +724,23 @@ impl ExecutionClient for DydxExecutionClient {
 
         let grpc_client = self.grpc_client.clone();
         let wallet = self.wallet.clone();
+        let http_client = self.http_client.clone();
         let wallet_address = self.wallet_address.clone();
         let subaccount_number = self.subaccount_number;
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
+        let chain_id = self.get_chain_id();
         let trader_id = cmd.trader_id;
         let strategy_id = cmd.strategy_id;
         let venue_order_id = cmd.venue_order_id;
+
+        // Convert client_order_id to u32 before async block
+        let client_id_u32 = match self.get_client_order_id_int(client_order_id.as_str()) {
+            Some(id) => id,
+            None => {
+                tracing::error!("Client order ID {} not found in cache", client_order_id);
+                anyhow::bail!("Client order ID not found in cache")
+            }
+        };
 
         self.spawn_task("cancel_order", async move {
             let wallet_guard = wallet.read().await;
@@ -709,24 +749,17 @@ impl ExecutionClient for DydxExecutionClient {
                 .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?;
 
             let grpc_guard = grpc_client.read().await;
-            let submitter =
-                OrderSubmitter::new((*grpc_guard).clone(), wallet_address, subaccount_number);
-
-            // Convert client_order_id to u32 (same logic as submit_order)
-            let client_id_u32 = client_order_id.as_str().parse::<u32>().unwrap_or_else(|_| {
-                // Fallback: use hash of client_order_id
-                use std::{
-                    collections::hash_map::DefaultHasher,
-                    hash::{Hash, Hasher},
-                };
-                let mut hasher = DefaultHasher::new();
-                client_order_id.as_str().hash(&mut hasher);
-                (hasher.finish() % (MAX_CLIENT_ID as u64)) as u32
-            });
+            let submitter = OrderSubmitter::new(
+                (*grpc_guard).clone(),
+                http_client.clone(),
+                wallet_address,
+                subaccount_number,
+                chain_id,
+            );
 
             // Attempt cancellation via submitter
             match submitter
-                .cancel_order(wallet_ref, client_id_u32, block_height)
+                .cancel_order(wallet_ref, instrument_id, client_id_u32, block_height)
                 .await
             {
                 Ok(_) => {
@@ -803,7 +836,7 @@ impl ExecutionClient for DydxExecutionClient {
         }
 
         tracing::info!(
-            "[STUB] Cancel all orders: total={}, short_term={}, long_term={}, instrument_id={}, order_side={:?}",
+            "Cancel all orders: total={}, short_term={}, long_term={}, instrument_id={}, order_side={:?}",
             open_orders.len(),
             short_term_orders.len(),
             long_term_orders.len(),
@@ -811,12 +844,60 @@ impl ExecutionClient for DydxExecutionClient {
             cmd.order_side
         );
 
-        // TODO: Implement actual cancellation when proto is generated
-        // Short-term orders: Cancel via MsgCancelOrder (immediate, best-effort)
-        // Long-term orders: Cancel via MsgCancelOrder with good_til_block_time
-        //
-        // Note: dYdX v4 requires separate blockchain transactions for each cancellation.
-        // There is no batch cancel API - each order must be cancelled individually.
+        // Cancel each order individually (dYdX requires separate transactions)
+        let grpc_client = self.grpc_client.clone();
+        let wallet = self.wallet.clone();
+        let http_client = self.http_client.clone();
+        let wallet_address = self.wallet_address.clone();
+        let subaccount_number = self.subaccount_number;
+        let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
+        let chain_id = self.get_chain_id();
+
+        // Collect (instrument_id, client_id) tuples for batch cancel
+        let mut orders_to_cancel = Vec::new();
+        for order in &open_orders {
+            let client_order_id = order.client_order_id();
+            if let Some(client_id_u32) = self.get_client_order_id_int(client_order_id.as_str()) {
+                orders_to_cancel.push((instrument_id, client_id_u32));
+            } else {
+                tracing::warn!(
+                    "Cannot cancel order {}: client_order_id not found in cache",
+                    client_order_id
+                );
+            }
+        }
+
+        self.spawn_task("cancel_all_orders", async move {
+            let wallet_guard = wallet.read().await;
+            let wallet_ref = wallet_guard
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?;
+
+            let grpc_guard = grpc_client.read().await;
+            let submitter = OrderSubmitter::new(
+                (*grpc_guard).clone(),
+                http_client.clone(),
+                wallet_address,
+                subaccount_number,
+                chain_id,
+            );
+
+            // Cancel orders using batch method (executes sequentially to avoid nonce conflicts)
+            match submitter
+                .cancel_orders_batch(wallet_ref, &orders_to_cancel, block_height)
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!("Successfully cancelled {} orders", orders_to_cancel.len());
+                }
+                Err(e) => {
+                    // NotImplemented is expected until batch cancel is fully implemented
+                    tracing::error!("Batch cancel failed: {:?}", e);
+                }
+            }
+
+            Ok(())
+        });
 
         Ok(())
     }
@@ -832,70 +913,6 @@ impl ExecutionClient for DydxExecutionClient {
     fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
         Ok(())
     }
-}
-
-/// Dispatches account state events to the portfolio.
-///
-/// AccountState events are routed to the Portfolio (not ExecEngine) via msgbus.
-/// This follows the pattern used by BitMEX, OKX, and other reference adapters.
-fn dispatch_account_state(state: nautilus_model::events::AccountState) {
-    use std::any::Any;
-    msgbus::send_any("Portfolio.update_account".into(), &state as &dyn Any);
-}
-
-/// Dispatches execution reports to the execution engine.
-///
-/// This follows the standard adapter pattern where WebSocket handlers parse messages
-/// into reports, and a dispatch function sends them via the execution event system.
-/// The execution engine then handles cache lookups and event generation.
-///
-/// # Architecture
-///
-/// Per `docs/developer_guide/adapters.md`, adapters should:
-/// 1. Parse WebSocket messages into ExecutionReports in the handler
-/// 2. Dispatch reports via `get_exec_event_sender()`
-/// 3. Let the execution engine handle event generation (has cache access)
-///
-/// This pattern is used by Hyperliquid, OKX, BitMEX, and other reference adapters.
-fn dispatch_execution_report(report: ExecutionReport) {
-    let sender = get_exec_event_sender();
-    match report {
-        ExecutionReport::Order(order_report) => {
-            tracing::debug!(
-                "Dispatching order report: status={:?}, venue_order_id={:?}, client_order_id={:?}",
-                order_report.order_status,
-                order_report.venue_order_id,
-                order_report.client_order_id
-            );
-            let exec_report = nautilus_common::messages::ExecutionReport::OrderStatus(order_report);
-            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                tracing::warn!("Failed to send order status report: {e}");
-            }
-        }
-        ExecutionReport::Fill(fill_report) => {
-            tracing::debug!(
-                "Dispatching fill report: venue_order_id={}, trade_id={}",
-                fill_report.venue_order_id,
-                fill_report.trade_id
-            );
-            let exec_report = nautilus_common::messages::ExecutionReport::Fill(fill_report);
-            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
-                tracing::warn!("Failed to send fill report: {e}");
-            }
-        }
-    }
-}
-
-#[async_trait(?Send)]
-impl LiveExecutionClient for DydxExecutionClient {
-    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
-        get_exec_event_sender()
-    }
-
-    fn get_clock(&self) -> std::cell::Ref<'_, dyn nautilus_common::clock::Clock> {
-        self.core.clock().borrow()
-    }
-
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             tracing::warn!("dYdX execution client already connected");
@@ -949,8 +966,6 @@ impl LiveExecutionClient for DydxExecutionClient {
             // Spawn WebSocket message processing task following standard adapter pattern
             // Per docs/developer_guide/adapters.md: Parse -> Dispatch -> Engine handles events
             if let Some(mut rx) = self.ws_client.take_receiver() {
-                use crate::websocket::messages::NautilusWsMessage;
-
                 // Clone data needed for account state parsing in spawned task
                 let account_id = self.core.account_id;
                 let instruments = self.instruments.clone();
@@ -1171,8 +1186,7 @@ impl LiveExecutionClient for DydxExecutionClient {
                                         Ok(price) => {
                                             // Find instrument by symbol (oracle uses raw symbol like "BTC-USD")
                                             // Append "-PERP" to match instrument IDs
-                                            let symbol_with_perp =
-                                                format!("{}-PERP", market_symbol);
+                                            let symbol_with_perp = format!("{market_symbol}-PERP");
 
                                             // Find matching instrument
                                             if let Some(entry) = instruments.iter().find(|entry| {
@@ -1274,7 +1288,62 @@ impl LiveExecutionClient for DydxExecutionClient {
         tracing::info!(client_id = %self.core.client_id, "Disconnected");
         Ok(())
     }
+}
 
+/// Dispatches account state events to the portfolio.
+///
+/// AccountState events are routed to the Portfolio (not ExecEngine) via msgbus.
+/// This follows the pattern used by BitMEX, OKX, and other reference adapters.
+fn dispatch_account_state(state: nautilus_model::events::AccountState) {
+    use std::any::Any;
+    msgbus::send_any("Portfolio.update_account".into(), &state as &dyn Any);
+}
+
+/// Dispatches execution reports to the execution engine.
+///
+/// This follows the standard adapter pattern where WebSocket handlers parse messages
+/// into reports, and a dispatch function sends them via the execution event system.
+/// The execution engine then handles cache lookups and event generation.
+///
+/// # Architecture
+///
+/// Per `docs/developer_guide/adapters.md`, adapters should:
+/// 1. Parse WebSocket messages into ExecutionReports in the handler
+/// 2. Dispatch reports via `get_exec_event_sender()`
+/// 3. Let the execution engine handle event generation (has cache access)
+///
+/// This pattern is used by Hyperliquid, OKX, BitMEX, and other reference adapters.
+fn dispatch_execution_report(report: ExecutionReport) {
+    let sender = get_exec_event_sender();
+    match report {
+        ExecutionReport::Order(order_report) => {
+            tracing::debug!(
+                "Dispatching order report: status={:?}, venue_order_id={:?}, client_order_id={:?}",
+                order_report.order_status,
+                order_report.venue_order_id,
+                order_report.client_order_id
+            );
+            let exec_report = nautilus_common::messages::ExecutionReport::OrderStatus(order_report);
+            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
+                tracing::warn!("Failed to send order status report: {e}");
+            }
+        }
+        ExecutionReport::Fill(fill_report) => {
+            tracing::debug!(
+                "Dispatching fill report: venue_order_id={}, trade_id={}",
+                fill_report.venue_order_id,
+                fill_report.trade_id
+            );
+            let exec_report = nautilus_common::messages::ExecutionReport::Fill(fill_report);
+            if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
+                tracing::warn!("Failed to send fill report: {e}");
+            }
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl LiveExecutionClient for DydxExecutionClient {
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
@@ -1557,7 +1626,7 @@ impl LiveExecutionClient for DydxExecutionClient {
             "Generating mass execution status{}",
             lookback_mins.map_or_else(
                 || " (unbounded)".to_string(),
-                |mins| format!(" (lookback: {} minutes)", mins)
+                |mins| format!(" (lookback: {mins} minutes)")
             )
         );
 
@@ -1891,11 +1960,9 @@ mod tests {
     #[rstest]
     fn test_market_ticker_invalid_format() {
         let ticker = "BTCUSD";
-        let parts: Vec<&str> = ticker.split('-').collect();
-        assert_eq!(parts.len(), 1); // No separator
+        assert_eq!(ticker.split('-').count(), 1); // No separator
 
         let ticker = "BTC-USD-PERP";
-        let parts: Vec<&str> = ticker.split('-').collect();
-        assert_eq!(parts.len(), 3); // Too many parts
+        assert_eq!(ticker.split('-').count(), 3); // Too many parts
     }
 }

@@ -18,6 +18,7 @@
 pub mod enums;
 pub mod http;
 pub mod params;
+pub mod types;
 pub mod urls;
 pub mod websocket;
 
@@ -90,12 +91,16 @@ fn py_bybit_product_type_from_symbol(
 pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(BYBIT_NAUTILUS_BROKER_ID), BYBIT_NAUTILUS_BROKER_ID)?;
     m.add_class::<crate::common::enums::BybitAccountType>()?;
+    m.add_class::<crate::common::enums::BybitMarginAction>()?;
     m.add_class::<crate::common::enums::BybitMarginMode>()?;
     m.add_class::<crate::common::enums::BybitPositionMode>()?;
     m.add_class::<crate::common::enums::BybitProductType>()?;
     m.add_class::<crate::common::enums::BybitEnvironment>()?;
     m.add_class::<crate::http::client::BybitHttpClient>()?;
     m.add_class::<crate::http::models::BybitTickerData>()?;
+    m.add_class::<crate::common::types::BybitMarginBorrowResult>()?;
+    m.add_class::<crate::common::types::BybitMarginRepayResult>()?;
+    m.add_class::<crate::common::types::BybitMarginStatusResult>()?;
     m.add_class::<crate::websocket::client::BybitWebSocketClient>()?;
     m.add_class::<crate::websocket::messages::BybitWebSocketError>()?;
     m.add_class::<params::BybitWsPlaceOrderParams>()?;

@@ -16,11 +16,11 @@
 //! A `Position` for the trading domain model.
 
 use std::{
-    collections::{HashMap, HashSet},
     fmt::Display,
     hash::{Hash, Hasher},
 };
 
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::{
     UUID4, UnixNanos,
     correctness::{FAILED, check_equal, check_predicate_true},
@@ -86,7 +86,7 @@ pub struct Position {
     pub trade_ids: Vec<TradeId>,
     pub buy_qty: Quantity,
     pub sell_qty: Quantity,
-    pub commissions: HashMap<Currency, Money>,
+    pub commissions: AHashMap<Currency, Money>,
 }
 
 impl Position {
@@ -116,7 +116,7 @@ impl Position {
             trade_ids: Vec::<TradeId>::new(),
             buy_qty: Quantity::zero(instrument.size_precision()),
             sell_qty: Quantity::zero(instrument.size_precision()),
-            commissions: HashMap::<Currency, Money>::new(),
+            commissions: AHashMap::<Currency, Money>::new(),
             trader_id: fill.trader_id,
             strategy_id: fill.strategy_id,
             instrument_id: fill.instrument_id,
@@ -579,10 +579,7 @@ impl Position {
         // Runtime check to prevent division by zero even in release builds
         if total_qty <= 0.0 {
             anyhow::bail!(
-                "Total quantity unexpectedly zero or negative in average price calculation: qty={}, last_qty={}, total_qty={}",
-                qty,
-                last_qty,
-                total_qty
+                "Total quantity unexpectedly zero or negative in average price calculation: qty={qty}, last_qty={last_qty}, total_qty={total_qty}"
             );
         }
 
@@ -592,7 +589,7 @@ impl Position {
     fn calculate_avg_px_open_px(&self, last_px: f64, last_qty: f64) -> f64 {
         self.calculate_avg_px(self.quantity.as_f64(), self.avg_px_open, last_px, last_qty)
             .unwrap_or_else(|e| {
-                log::error!("Error calculating average open price: {}", e);
+                log::error!("Error calculating average open price: {e}");
                 last_px
             })
     }
@@ -608,7 +605,7 @@ impl Position {
         };
         self.calculate_avg_px(closing_qty.as_f64(), avg_px_close, last_px, last_qty)
             .unwrap_or_else(|e| {
-                log::error!("Error calculating average close price: {}", e);
+                log::error!("Error calculating average close price: {e}");
                 last_px
             })
     }
@@ -628,14 +625,12 @@ impl Position {
         // Invalid state: zero or near-zero prices should never occur in valid market data
         if avg_px_open.abs() < EPSILON {
             anyhow::bail!(
-                "Cannot calculate inverse points: open price is zero or too small ({})",
-                avg_px_open
+                "Cannot calculate inverse points: open price is zero or too small ({avg_px_open})"
             );
         }
         if avg_px_close.abs() < EPSILON {
             anyhow::bail!(
-                "Cannot calculate inverse points: close price is zero or too small ({})",
-                avg_px_close
+                "Cannot calculate inverse points: close price is zero or too small ({avg_px_close})"
             );
         }
 
@@ -653,8 +648,7 @@ impl Position {
         // Prevent division by zero in return calculation
         if avg_px_open == 0.0 {
             anyhow::bail!(
-                "Cannot calculate return: open price is zero (close price: {})",
-                avg_px_close
+                "Cannot calculate return: open price is zero (close price: {avg_px_close})"
             );
         }
         Ok(self.calculate_points(avg_px_open, avg_px_close) / avg_px_open)
@@ -749,7 +743,7 @@ impl Position {
             .events
             .iter()
             .map(|event| event.client_order_id)
-            .collect::<HashSet<ClientOrderId>>()
+            .collect::<AHashSet<ClientOrderId>>()
             .into_iter()
             .collect::<Vec<ClientOrderId>>();
         result.sort_unstable();
@@ -763,7 +757,7 @@ impl Position {
             .events
             .iter()
             .map(|event| event.venue_order_id)
-            .collect::<HashSet<VenueOrderId>>()
+            .collect::<AHashSet<VenueOrderId>>()
             .into_iter()
             .collect::<Vec<VenueOrderId>>();
         result.sort_unstable();
@@ -776,7 +770,7 @@ impl Position {
             .events
             .iter()
             .map(|event| event.trade_id)
-            .collect::<HashSet<TradeId>>()
+            .collect::<AHashSet<TradeId>>()
             .into_iter()
             .collect::<Vec<TradeId>>();
         result.sort_unstable();
@@ -2731,16 +2725,14 @@ mod tests {
         let total_commission: f64 = position.commissions().iter().map(|c| c.as_f64()).sum();
         assert!(
             (total_commission - 1.0).abs() < 1e-10,
-            "Commission accumulation should be accurate: expected 1.0, was {}",
-            total_commission
+            "Commission accumulation should be accurate: expected 1.0, was {total_commission}"
         );
 
         // Verify average price is reasonable (should be around 1.0005)
         let avg_px = position.avg_px_open;
         assert!(
             avg_px > 1.0 && avg_px < 1.001,
-            "Average price should be reasonable: got {}",
-            avg_px
+            "Average price should be reasonable: got {avg_px}"
         );
     }
 
@@ -2862,8 +2854,7 @@ mod tests {
         let realized = position.realized_pnl.unwrap().as_f64();
         assert!(
             (realized - (-1.0)).abs() < 1e-10,
-            "Realized PnL should be exactly -1.0 USD (commissions), was {}",
-            realized
+            "Realized PnL should be exactly -1.0 USD (commissions), was {realized}"
         );
     }
 

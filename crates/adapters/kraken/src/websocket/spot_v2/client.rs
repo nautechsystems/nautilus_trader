@@ -22,13 +22,12 @@ use std::sync::{
 
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_model::{data::BarType, identifiers::InstrumentId, instruments::InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
 };
-use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -38,7 +37,7 @@ use super::{
     messages::{KrakenWsParams, KrakenWsRequest, NautilusWsMessage},
 };
 use crate::{
-    config::KrakenDataClientConfig, http::client::KrakenHttpClient, websocket::error::KrakenWsError,
+    config::KrakenDataClientConfig, http::KrakenSpotHttpClient, websocket::error::KrakenWsError,
 };
 
 #[derive(Debug)]
@@ -56,8 +55,8 @@ pub struct KrakenSpotWebSocketClient {
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: Arc<DashMap<String, KrakenWsChannel>>,
     cancellation_token: CancellationToken,
-    req_id_counter: Arc<RwLock<u64>>,
-    auth_token: Arc<RwLock<Option<String>>>,
+    req_id_counter: Arc<tokio::sync::RwLock<u64>>,
+    auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
 }
 
 impl Clone for KrakenSpotWebSocketClient {
@@ -95,8 +94,8 @@ impl KrakenSpotWebSocketClient {
             task_handle: None,
             subscriptions: Arc::new(DashMap::new()),
             cancellation_token,
-            req_id_counter: Arc::new(RwLock::new(0)),
-            auth_token: Arc::new(RwLock::new(None)),
+            req_id_counter: Arc::new(tokio::sync::RwLock::new(0)),
+            auth_token: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -271,10 +270,9 @@ impl KrakenSpotWebSocketClient {
                 KrakenWsError::AuthenticationError("Missing API secret".to_string())
             })?;
 
-        let http_client = KrakenHttpClient::with_credentials(
+        let http_client = KrakenSpotHttpClient::with_credentials(
             api_key,
             api_secret,
-            self.config.product_type,
             self.config.environment,
             Some(self.config.http_base_url()),
             self.config.timeout_secs,

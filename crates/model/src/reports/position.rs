@@ -411,7 +411,7 @@ mod tests {
             report.avg_px_open,
             Some(rust_decimal::Decimal::from_str("1.23456").unwrap())
         );
-        assert!(format!("{}", report).contains("avg_px_open=Some(1.23456)"));
+        assert!(format!("{report}").contains("avg_px_open=Some(1.23456)"));
     }
 
     #[rstest]

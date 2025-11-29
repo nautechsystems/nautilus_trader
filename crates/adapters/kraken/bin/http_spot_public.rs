@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_kraken::http::client::KrakenHttpClient;
+use nautilus_kraken::http::spot::client::KrakenSpotHttpClient;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,9 +23,9 @@ async fn main() -> anyhow::Result<()> {
             .finish(),
     )?;
 
-    tracing::info!("Kraken HTTP client example (public data methods)");
+    tracing::info!("Kraken Spot HTTP client example (public data methods)");
 
-    let _client = KrakenHttpClient::default();
+    let _client = KrakenSpotHttpClient::default();
 
     tracing::info!("Client created successfully");
     tracing::info!("TODO: Implement request_instruments, request_bars, request_trades methods");

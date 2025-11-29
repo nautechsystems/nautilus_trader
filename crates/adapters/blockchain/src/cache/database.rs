@@ -1189,17 +1189,14 @@ impl BlockchainCacheDatabase {
         pool_address: &Address,
     ) -> anyhow::Result<Option<u64>> {
         let query = format!(
-            "SELECT MAX(block) FROM {} WHERE chain_id = $1 AND pool_address = $2",
-            table_name
+            "SELECT MAX(block) FROM {table_name} WHERE chain_id = $1 AND pool_address = $2"
         );
         let result = sqlx::query_as::<_, (Option<i64>,)>(query.as_str())
             .bind(chain_id as i32)
             .bind(pool_address.to_string())
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to get table last block for {}: {e}", table_name)
-            })?;
+            .map_err(|e| anyhow::anyhow!("Failed to get table last block for {table_name}: {e}"))?;
 
         Ok(result.and_then(|(block_number,)| block_number.map(|b| b as u64)))
     }
@@ -1674,7 +1671,7 @@ impl BlockchainCacheDatabase {
         .bind(pool_address.to_string())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load latest valid pool snapshot: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load latest valid pool snapshot: {e}"))?;
 
         if let Some(row) = result {
             // Parse snapshot state
@@ -1737,10 +1734,10 @@ impl BlockchainCacheDatabase {
 
             let dex_name: String = row.get("dex_name");
             let chain = nautilus_model::defi::Chain::from_chain_id(chain_id)
-                .ok_or_else(|| anyhow::anyhow!("Unknown chain_id: {}", chain_id))?;
+                .ok_or_else(|| anyhow::anyhow!("Unknown chain_id: {chain_id}"))?;
 
             let dex_type = nautilus_model::defi::DexType::from_dex_name(&dex_name)
-                .ok_or_else(|| anyhow::anyhow!("Unknown dex_name: {}", dex_name))?;
+                .ok_or_else(|| anyhow::anyhow!("Unknown dex_name: {dex_name}"))?;
 
             let dex_extended = crate::exchanges::get_dex_extended(chain.name, &dex_type)
                 .ok_or_else(|| {
@@ -1795,7 +1792,7 @@ impl BlockchainCacheDatabase {
         .execute(&self.pool)
         .await
         .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to mark pool snapshot as valid: {}", e))
+        .map_err(|e| anyhow::anyhow!("Failed to mark pool snapshot as valid: {e}"))
     }
 
     /// Loads all positions for a specific snapshot.
@@ -1834,7 +1831,7 @@ impl BlockchainCacheDatabase {
         .bind(snapshot_log_index as i32)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load pool positions: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load pool positions: {e}"))?;
 
         rows.iter()
             .map(|row| {
@@ -1904,7 +1901,7 @@ impl BlockchainCacheDatabase {
         .bind(snapshot_log_index as i32)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load pool ticks: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load pool ticks: {e}"))?;
 
         rows.iter()
             .map(|row| {
@@ -2204,9 +2201,9 @@ impl BlockchainCacheDatabase {
         let stream = query.map(move |row_result| match row_result {
             Ok(row) => {
                 transform_row_to_dex_pool_data(&row, chain.clone(), dex.clone(), instrument_id)
-                    .map_err(|e| anyhow::anyhow!("Steam pool event transform error: {}", e))
+                    .map_err(|e| anyhow::anyhow!("Steam pool event transform error: {e}"))
             }
-            Err(e) => Err(anyhow::anyhow!("Stream pool events database error: {}", e)),
+            Err(e) => Err(anyhow::anyhow!("Stream pool events database error: {e}")),
         });
 
         Box::pin(stream)

@@ -58,7 +58,9 @@ const RUNTIME_SHUTDOWN_TIMEOUT_SECS: u64 = 10;
 
 #[pyfunction]
 fn _shutdown_nautilus_runtime() -> PyResult<()> {
-    nautilus_common::runtime::shutdown_runtime(Duration::from_secs(RUNTIME_SHUTDOWN_TIMEOUT_SECS));
+    nautilus_common::live::runtime::shutdown_runtime(Duration::from_secs(
+        RUNTIME_SHUTDOWN_TIMEOUT_SECS,
+    ));
     Ok(())
 }
 

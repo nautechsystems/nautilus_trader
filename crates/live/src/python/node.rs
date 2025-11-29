@@ -21,8 +21,8 @@ use nautilus_common::{
     actor::data_actor::{DataActorConfig, ImportableActorConfig},
     component::{Component, register_component_actor_by_ref},
     enums::Environment,
+    live::runtime::get_runtime,
     python::actor::PyDataActor,
-    runtime::get_runtime,
 };
 use nautilus_core::{UUID4, python::to_pyruntime_err};
 use nautilus_model::identifiers::{ActorId, TraderId};

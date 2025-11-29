@@ -15,8 +15,7 @@
 
 //! Pool profiling utilities for analyzing DeFi pool event data.
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use alloy_primitives::{Address, I256, U160, U256};
 
 use crate::defi::{
@@ -71,7 +70,7 @@ pub struct PoolProfiler {
     /// Pool definition.
     pub pool: SharedPool,
     /// Position tracking by position key (owner:tick_lower:tick_upper).
-    positions: HashMap<String, PoolPosition>,
+    positions: AHashMap<String, PoolPosition>,
     /// Tick map managing liquidity distribution across price ranges.
     pub tick_map: TickMap,
     /// Global pool state including current price, tick, and cumulative flows with fees.
@@ -99,7 +98,7 @@ impl PoolProfiler {
         let tick_spacing = pool.tick_spacing.expect("Pool tick spacing must be set");
         Self {
             pool,
-            positions: HashMap::new(),
+            positions: AHashMap::new(),
             tick_map: TickMap::new(tick_spacing),
             state: PoolState::default(),
             analytics: PoolAnalytics::default(),
@@ -1339,21 +1338,19 @@ impl PoolProfiler {
     /// - Ticks are outside MIN_TICK/MAX_TICK bounds.
     fn validate_ticks(&self, tick_lower: i32, tick_upper: i32) -> anyhow::Result<()> {
         if tick_lower >= tick_upper {
-            anyhow::bail!("Invalid tick range: {} >= {}", tick_lower, tick_upper)
+            anyhow::bail!("Invalid tick range: {tick_lower} >= {tick_upper}")
         }
 
         if tick_lower % self.pool.tick_spacing.unwrap() as i32 != 0
             || tick_upper % self.pool.tick_spacing.unwrap() as i32 != 0
         {
             anyhow::bail!(
-                "Ticks {} and {} must be multiples of the tick spacing",
-                tick_lower,
-                tick_upper
+                "Ticks {tick_lower} and {tick_upper} must be multiples of the tick spacing"
             )
         }
 
         if tick_lower < PoolTick::MIN_TICK || tick_upper > PoolTick::MAX_TICK {
-            anyhow::bail!("Invalid tick bounds for {} and {}", tick_lower, tick_upper);
+            anyhow::bail!("Invalid tick bounds for {tick_lower} and {tick_upper}");
         }
         Ok(())
     }
@@ -1433,7 +1430,7 @@ impl PoolProfiler {
         self.analytics.total_fee_collects = snapshot.analytics.total_fee_collects;
         self.analytics.total_flashes = snapshot.analytics.total_flashes;
 
-        // Rebuild positions HashMap
+        // Rebuild positions AHashMap
         self.positions.clear();
         for position in snapshot.positions {
             let key = PoolPosition::get_position_key(

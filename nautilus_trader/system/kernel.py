@@ -598,6 +598,7 @@ class NautilusKernel:
             rotation_interval=config.rotation_interval,
             rotation_time=config.rotation_time,
             rotation_timezone=config.rotation_timezone,
+            replace=config.replace_existing,
         )
         self._trader.subscribe("*", self._writer.write)
         self._log.info(f"Writing data & events to {path}")

@@ -47,7 +47,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
@@ -71,6 +71,7 @@ prost-types = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
+rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -109,3 +110,7 @@ path = "bin/ws_data.rs"
 [[bin]]
 name = "dydx-live-integration"
 path = "bin/live_integration.rs"
+
+[[bin]]
+name = "dydx-grpc-exec"
+path = "bin/grpc_exec.rs"

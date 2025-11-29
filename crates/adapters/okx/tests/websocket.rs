@@ -44,7 +44,6 @@ use nautilus_okx::{
     websocket::client::OKXWebSocketClient,
 };
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 const TEXT_PING: &str = "ping";
 const TEXT_PONG: &str = "pong";
@@ -54,22 +53,22 @@ type SubscriptionEvent = (String, Option<String>, bool);
 
 #[derive(Clone, Default)]
 struct TestServerState {
-    connection_count: Arc<Mutex<usize>>,
-    login_count: Arc<Mutex<usize>>,
-    subscriptions: Arc<Mutex<Vec<Value>>>,
-    unsubscriptions: Arc<Mutex<Vec<Value>>>,
+    connection_count: Arc<tokio::sync::Mutex<usize>>,
+    login_count: Arc<tokio::sync::Mutex<usize>>,
+    subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     drop_next_connection: Arc<AtomicBool>,
     send_text_ping: Arc<AtomicBool>,
     send_control_ping: Arc<AtomicBool>,
     received_text_pong: Arc<AtomicBool>,
-    received_control_pong: Arc<Mutex<Option<Vec<u8>>>>,
+    received_control_pong: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
     authenticated: Arc<AtomicBool>,
-    subscription_events: Arc<Mutex<Vec<SubscriptionEvent>>>,
-    fail_next_subscriptions: Arc<Mutex<Vec<String>>>,
-    auth_response_delay_ms: Arc<Mutex<Option<u64>>>,
+    subscription_events: Arc<tokio::sync::Mutex<Vec<SubscriptionEvent>>>,
+    fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
+    auth_response_delay_ms: Arc<tokio::sync::Mutex<Option<u64>>>,
     suppress_login_ack: Arc<AtomicBool>,
     suppress_control_pong: Arc<AtomicBool>,
-    control_ping_count: Arc<Mutex<usize>>,
+    control_ping_count: Arc<tokio::sync::Mutex<usize>>,
     fail_next_login: Arc<AtomicBool>,
 }
 

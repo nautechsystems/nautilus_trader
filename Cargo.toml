@@ -95,7 +95,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
 # -----------------------------------------------------------------------------
 # Dependencies
 # -----------------------------------------------------------------------------
-ahash = "0.8.12"
+ahash = { version = "0.8.12", features = ["serde"] }
 alloy = { version = "1.1.2", default-features = false, features = [
   "sol-types",
   "contract",
@@ -192,8 +192,9 @@ parquet = { version = "57.1.0", default-features = false, features = [
   "async",
 ] }
 pem = "3.0.6"
-prost = { version = "0.14.1", default-features = false, features = ["std"] }
-prost-types = "0.14.1"
+# Keep prost in sync with dydx-proto
+prost = { version = "0.13.5", default-features = false, features = ["std"] }
+prost-types = "0.13.5"
 pyo3 = { version = "0.27.1", default-features = false, features = [
   "chrono",
   "hashbrown",
@@ -253,7 +254,7 @@ serde_json = { version = "1.0.145", default-features = false, features = [
 ] }
 serde_repr = "0.1.20"
 serde_urlencoded = "0.7.1"
-serde_with = "3.16.0"
+serde_with = "3.16.1"
 simple_logger = "5.1.0"
 static_assertions = "1.1.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
@@ -295,7 +296,8 @@ tokio-tungstenite = { version = "0.28.0", features = [
   "rustls-tls-webpki-roots",
 ] }
 tokio-util = { version = "0.7.17", default-features = false, features = ["io"] }
-tonic = { version = "0.14.2", default-features = false, features = [
+# Keep tonic in sync with dydx-proto
+tonic = { version = "0.13.1", default-features = false, features = [
   "channel",
   "tls-aws-lc",
   "tls-webpki-roots",
@@ -304,12 +306,12 @@ toml = { version = "0.9.8", default-features = false, features = [
   "parse",
   "serde",
 ] }
-tracing = { version = "0.1.41", default-features = false, features = [
+tracing = { version = "0.1.43", default-features = false, features = [
   "std",
   "attributes",
 ] }
 # Disable default feature "tracing-log" since it interferes with custom logging
-tracing-subscriber = { version = "0.3.20", default-features = false, features = [
+tracing-subscriber = { version = "0.3.22", default-features = false, features = [
   "smallvec",
   "fmt",
   "ansi",
@@ -456,10 +458,42 @@ cloned_instead_of_copied = "warn"
 
 # Code simplification
 redundant_closure = "warn"
+# redundant_closure_for_method_calls = "warn" # Causes clippy ICE (rust-lang/rust-clippy#14756)
 needless_return = "warn"
+needless_bool = "warn"
+needless_collect = "warn"
 collapsible_if = "warn"
+collapsible_else_if = "warn"
 useless_conversion = "warn"
 from_iter_instead_of_collect = "warn"
+map_identity = "warn"
+if_same_then_else = "warn"
+get_first = "warn"
+single_char_pattern = "warn"
+identity_op = "warn"
+
+# Iterator simplifications
+manual_flatten = "warn"
+iter_kv_map = "warn"
+bytes_count_to_len = "warn"
+unnecessary_filter_map = "warn"
+
+# Option/Result simplifications
+unnecessary_lazy_evaluations = "warn"
+option_as_ref_deref = "warn"
+
+# Manual pattern simplifications
+manual_filter = "warn"
+manual_find = "warn"
+manual_while_let_some = "warn"
+range_plus_one = "warn"
+checked_conversions = "warn"
+manual_strip = "warn"
+manual_split_once = "warn"
+manual_is_ascii_check = "warn"
+manual_range_contains = "warn"
+manual_string_new = "warn"
+manual_instant_elapsed = "warn"
 
 # Style/idioms
 use_self = "warn"
@@ -468,6 +502,7 @@ match_like_matches_macro = "warn"
 manual_map = "warn"
 bool_to_int_with_if = "warn"
 explicit_iter_loop = "warn"
+uninlined_format_args = "warn"
 
 # Pedantic (explicitness and clarity)
 semicolon_if_nothing_returned = "warn"
@@ -485,6 +520,10 @@ panic_in_result_fn = "warn"
 
 # Explicitly allowed (opinionated lints we disagree with)
 redundant_else = "allow" # Sometimes explicit else blocks improve readability
+single_match_else = "allow" # Match can be clearer than if-let-else for some patterns
+manual_let_else = "allow" # Match can be clearer than let-else for some patterns
+or_fun_call = "allow" # Used consistently for display with map_or("None".to_string(), ...)
+option_if_let_else = "allow" # if-let can be clearer than map_or/map_or_else
 
 # TODO: Enable these incrementally (widespread usage in codebase)
 # unwrap_used = "warn"        # Forces explicit error handling instead of panics

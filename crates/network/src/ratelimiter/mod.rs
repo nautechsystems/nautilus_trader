@@ -31,7 +31,6 @@ use std::{
 
 use dashmap::DashMap;
 use futures_util::StreamExt;
-use tokio::time::sleep;
 
 use self::{
     clock::{Clock, FakeRelativeClock, MonotonicClock},
@@ -233,7 +232,7 @@ where
                     break;
                 }
                 Err(e) => {
-                    sleep(e.wait_time_from(self.clock.now())).await;
+                    tokio::time::sleep(e.wait_time_from(self.clock.now())).await;
                 }
             }
         }

@@ -50,16 +50,15 @@ use nautilus_okx::{
 };
 use rstest::rstest;
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 use ustr::Ustr;
 
 #[derive(Clone, Default)]
 struct TestServerState {
-    request_count: Arc<Mutex<usize>>,
-    last_history_trades_query: Arc<Mutex<Option<HashMap<String, String>>>>,
-    last_pending_orders_query: Arc<Mutex<Option<HashMap<String, String>>>>,
-    last_order_history_query: Arc<Mutex<Option<HashMap<String, String>>>>,
-    last_order_detail_query: Arc<Mutex<Option<HashMap<String, String>>>>,
+    request_count: Arc<tokio::sync::Mutex<usize>>,
+    last_history_trades_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    last_pending_orders_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    last_order_history_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    last_order_detail_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
 }
 
 fn manifest_path() -> PathBuf {
@@ -409,7 +408,7 @@ async fn start_test_server(state: Arc<TestServerState>) -> SocketAddr {
 #[tokio::test]
 async fn test_http_get_instruments_returns_data() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -436,7 +435,7 @@ async fn test_http_get_instruments_returns_data() {
 #[tokio::test]
 async fn test_http_get_balance_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
@@ -453,7 +452,7 @@ async fn test_http_get_balance_requires_credentials() {
 #[tokio::test]
 async fn test_http_get_balance_with_credentials_succeeds() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = OKXRawHttpClient::with_credentials(
         "test_key".to_string(),
@@ -479,7 +478,7 @@ async fn test_http_get_balance_with_credentials_succeeds() {
 async fn test_http_get_instruments_handles_rate_limit_error() {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let params = GetInstrumentsParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -517,7 +516,7 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
 #[tokio::test]
 async fn test_http_get_pending_orders_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
@@ -543,7 +542,7 @@ async fn test_http_get_pending_orders_requires_credentials() {
 async fn test_http_get_pending_orders_returns_live_orders() {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = OKXRawHttpClient::with_credentials(
         "key".to_string(),
@@ -590,7 +589,7 @@ async fn test_http_get_pending_orders_returns_live_orders() {
 async fn test_http_get_order_history_applies_filters() {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = OKXRawHttpClient::with_credentials(
         "key".to_string(),
@@ -633,7 +632,7 @@ async fn test_http_get_order_history_applies_filters() {
 async fn test_http_get_order_by_client_and_exchange_ids() {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = OKXRawHttpClient::with_credentials(
         "key".to_string(),
@@ -671,7 +670,7 @@ async fn test_http_get_order_by_client_and_exchange_ids() {
 async fn test_request_trades_pagination_parameters() {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
@@ -768,7 +767,7 @@ async fn test_request_trades_latest_mode() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -870,7 +869,7 @@ async fn test_request_trades_chronological_order() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -1008,7 +1007,7 @@ async fn test_request_trades_range_mode_pagination() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -1164,7 +1163,7 @@ async fn test_request_bars_range_mode_pagination() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -1214,7 +1213,7 @@ async fn test_request_trades_multi_page_chronological_order() {
     // fetches multiple pages (each page contains older trades than the previous)
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
@@ -1319,7 +1318,7 @@ async fn test_request_trades_overlapping_pages_chronological_order() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -1427,7 +1426,7 @@ async fn test_request_trades_default_limit_with_end_only() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -1567,7 +1566,7 @@ async fn test_request_trades_historical_with_filtered_pages() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -1663,7 +1662,7 @@ async fn test_request_trades_multiple_trades_same_id() {
             .unwrap();
     });
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -1702,22 +1701,18 @@ async fn test_request_trades_multiple_trades_same_id() {
     }
 
     // Verify the 3 trades with same ID are all present (different timestamps)
-    let id_1003_trades: Vec<_> = trades
+    let id_1003_count = trades
         .iter()
         .filter(|t| t.trade_id.to_string() == "1003")
-        .collect();
-    assert_eq!(
-        id_1003_trades.len(),
-        3,
-        "Should have all 3 trades with ID 1003"
-    );
+        .count();
+    assert_eq!(id_1003_count, 3, "Should have all 3 trades with ID 1003");
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_http_get_order_algo_pending_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
@@ -1739,7 +1734,7 @@ async fn test_http_get_order_algo_pending_requires_credentials() {
 #[tokio::test]
 async fn test_http_get_order_algo_pending_returns_data() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let params = GetAlgoOrdersParamsBuilder::default()
         .inst_type(OKXInstrumentType::Swap)
@@ -1770,7 +1765,7 @@ async fn test_http_get_order_algo_pending_returns_data() {
 #[tokio::test]
 async fn test_http_get_order_algo_history_returns_data() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let params = GetAlgoOrdersParamsBuilder::default()
         .inst_type(OKXInstrumentType::Swap)
@@ -1804,7 +1799,7 @@ async fn test_http_get_order_algo_history_returns_data() {
 #[tokio::test]
 async fn test_http_set_position_mode_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
@@ -1826,7 +1821,7 @@ async fn test_http_set_position_mode_requires_credentials() {
 #[tokio::test]
 async fn test_http_set_position_mode_returns_response() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = OKXRawHttpClient::with_credentials(
         "test_key".to_string(),
@@ -1856,7 +1851,7 @@ async fn test_http_set_position_mode_returns_response() {
 #[tokio::test]
 async fn test_http_get_position_tiers_returns_data() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let params = GetPositionTiersParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -1887,7 +1882,7 @@ async fn test_http_get_position_tiers_returns_data() {
 #[tokio::test]
 async fn test_http_get_trade_fee_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
@@ -1911,7 +1906,7 @@ async fn test_http_get_trade_fee_requires_credentials() {
 #[tokio::test]
 async fn test_http_get_trade_fee_returns_data() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let params = GetTradeFeeParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
@@ -1943,7 +1938,7 @@ async fn test_http_get_trade_fee_returns_data() {
 #[tokio::test]
 async fn test_http_get_positions_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
@@ -1962,7 +1957,7 @@ async fn test_http_get_positions_requires_credentials() {
 #[tokio::test]
 async fn test_http_get_positions_returns_data() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let params = GetPositionsParamsBuilder::default().build().unwrap();
     let client = OKXRawHttpClient::with_credentials(
@@ -1989,7 +1984,7 @@ async fn test_http_get_positions_returns_data() {
 #[tokio::test]
 async fn test_http_get_fills_requires_credentials() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
@@ -2010,7 +2005,7 @@ async fn test_http_get_fills_requires_credentials() {
 #[tokio::test]
 async fn test_http_get_fills_returns_data() {
     let addr = start_test_server(Arc::new(TestServerState::default())).await;
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let params = GetTransactionDetailsParamsBuilder::default()
         .build()
@@ -2086,7 +2081,7 @@ async fn test_http_okx_error_response() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -2129,7 +2124,7 @@ async fn test_http_malformed_json_response() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -2175,7 +2170,7 @@ async fn test_http_500_internal_server_error() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -2219,7 +2214,7 @@ async fn test_http_503_service_unavailable() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), Some(0), None, None, false, None).unwrap();
 
@@ -2269,7 +2264,7 @@ async fn test_http_invalid_response_structure() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 
@@ -2317,7 +2312,7 @@ async fn test_http_rate_limit_error_different_code() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client = OKXRawHttpClient::with_credentials(
         "test_key".to_string(),
         "test_secret".to_string(),
@@ -2372,7 +2367,7 @@ async fn test_http_empty_response_data() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
     let client =
         OKXRawHttpClient::new(Some(base_url), Some(60), None, None, None, false, None).unwrap();
 

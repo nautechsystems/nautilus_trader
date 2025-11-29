@@ -102,7 +102,7 @@ def account_state(account_id) -> AccountState:
 
 @pytest.fixture
 def mock_http_client():
-    mock = MagicMock(spec=nautilus_pyo3.KrakenHttpClient)
+    mock = MagicMock(spec=nautilus_pyo3.KrakenSpotHttpClient)
     mock.api_key = "test_api_key"
     mock.api_secret = "test_api_secret"
 

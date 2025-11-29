@@ -35,11 +35,12 @@ use ustr::Ustr;
 
 use super::config::StrategyConfig;
 
-/// The core component of a [`Strategy`], managing data, orders, and state.
+/// The core component of a [`Strategy`](super::Strategy), managing data, orders, and state.
 ///
 /// This struct is intended to be held as a member within a user's custom strategy struct.
 /// The user's struct should then `Deref` and `DerefMut` to this `StrategyCore` instance
-/// to satisfy the trait bounds of [`Strategy`] and [`DataActor`].
+/// to satisfy the trait bounds of [`Strategy`](super::Strategy) and
+/// [`DataActor`](nautilus_common::actor::data_actor::DataActor).
 pub struct StrategyCore {
     /// The underlying data actor core.
     pub actor: DataActorCore,

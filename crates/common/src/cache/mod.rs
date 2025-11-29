@@ -27,7 +27,7 @@ mod index;
 mod tests;
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::VecDeque,
     fmt::Debug,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -2045,9 +2045,9 @@ impl Cache {
 
     /// Gets position snapshot IDs for the `instrument_id`.
     #[must_use]
-    pub fn position_snapshot_ids(&self, instrument_id: &InstrumentId) -> HashSet<PositionId> {
+    pub fn position_snapshot_ids(&self, instrument_id: &InstrumentId) -> AHashSet<PositionId> {
         // Get snapshot position IDs that match the instrument
-        let mut result = HashSet::new();
+        let mut result = AHashSet::new();
         for (position_id, _) in &self.position_snapshots {
             // Check if this position is for the requested instrument
             if let Some(position) = self.positions.get(position_id)
@@ -3426,7 +3426,7 @@ impl Cache {
 
         // Build union of open and inflight orders for audit,
         // this prevents false positives for SUBMITTED orders during venue latency.
-        let valid_order_ids: HashSet<ClientOrderId> = self
+        let valid_order_ids: AHashSet<ClientOrderId> = self
             .index
             .orders_open
             .union(&self.index.orders_inflight)

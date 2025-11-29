@@ -1236,10 +1236,7 @@ impl OKXWsFeedHandler {
                         );
                         let error = OKXWebSocketError {
                             code,
-                            message: format!(
-                                "Mass cancel failed for {}: {}",
-                                instrument_id, error_msg
-                            ),
+                            message: format!("Mass cancel failed for {instrument_id}: {error_msg}"),
                             conn_id: None,
                             timestamp: ts_event.as_u64(),
                         };
@@ -1295,7 +1292,7 @@ impl OKXWsFeedHandler {
                     // Emit generic error for the batch operation
                     let error = OKXWebSocketError {
                         code,
-                        message: format!("Batch cancel failed: {}", error_msg),
+                        message: format!("Batch cancel failed: {error_msg}"),
                         conn_id: None,
                         timestamp: ts_event.as_u64(),
                     };
@@ -1867,7 +1864,7 @@ impl OKXWsFeedHandler {
 
                 let error = OKXWebSocketError {
                     code: "CLIENT_ERROR".to_string(),
-                    message: format!("Mass cancel failed for {}: {}", instrument_id, e),
+                    message: format!("Mass cancel failed for {instrument_id}: {e}"),
                     conn_id: None,
                     timestamp: self.clock.get_time_ns().as_u64(),
                 };

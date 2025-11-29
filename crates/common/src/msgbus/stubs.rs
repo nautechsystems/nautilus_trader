@@ -24,9 +24,8 @@ use std::{
     },
 };
 
-use nautilus_core::message::Message;
+use nautilus_core::{UUID4, message::Message};
 use ustr::Ustr;
-use uuid::Uuid;
 
 use crate::msgbus::{ShareableMessageHandler, handler::MessageHandler};
 
@@ -64,7 +63,7 @@ pub fn get_stub_shareable_handler(id: Option<Ustr>) -> ShareableMessageHandler {
     // TODO: This reduces the need to come up with ID strings in tests.
     // In Python we do something like `hash((self.topic, str(self.handler)))` for the hash
     // which includes the memory address, just went with a UUID4 here.
-    let unique_id = id.unwrap_or_else(|| Ustr::from(&Uuid::new_v4().to_string()));
+    let unique_id = id.unwrap_or_else(|| Ustr::from(&UUID4::new().to_string()));
     ShareableMessageHandler(Rc::new(StubMessageHandler {
         id: unique_id,
         callback: Arc::new(|m: Message| {
@@ -106,7 +105,7 @@ pub fn get_call_check_shareable_handler(id: Option<Ustr>) -> ShareableMessageHan
     // TODO: This reduces the need to come up with ID strings in tests.
     // In Python we do something like `hash((self.topic, str(self.handler)))` for the hash
     // which includes the memory address, just went with a UUID4 here.
-    let unique_id = id.unwrap_or_else(|| Ustr::from(&Uuid::new_v4().to_string()));
+    let unique_id = id.unwrap_or_else(|| Ustr::from(&UUID4::new().to_string()));
     ShareableMessageHandler(Rc::new(CallCheckMessageHandler {
         id: unique_id,
         called: Arc::new(AtomicBool::new(false)),
@@ -171,7 +170,7 @@ pub fn get_message_saving_handler<T: Clone + 'static>(id: Option<Ustr>) -> Share
     // TODO: This reduces the need to come up with ID strings in tests.
     // In Python we do something like `hash((self.topic, str(self.handler)))` for the hash
     // which includes the memory address, just went with a UUID4 here.
-    let unique_id = id.unwrap_or_else(|| Ustr::from(&Uuid::new_v4().to_string()));
+    let unique_id = id.unwrap_or_else(|| Ustr::from(&UUID4::new().to_string()));
     ShareableMessageHandler(Rc::new(MessageSavingHandler::<T> {
         id: unique_id,
         messages: Rc::new(RefCell::new(Vec::new())),

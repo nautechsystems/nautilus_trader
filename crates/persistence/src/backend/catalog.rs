@@ -69,6 +69,7 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashMap;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::StreamExt;
 use heck::ToSnakeCase;
@@ -178,7 +179,7 @@ impl ParquetDataCatalog {
     #[must_use]
     pub fn new(
         base_path: PathBuf,
-        storage_options: Option<std::collections::HashMap<String, String>>,
+        storage_options: Option<AHashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<parquet::basic::Compression>,
         max_row_group_size: Option<usize>,
@@ -228,7 +229,7 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use std::collections::HashMap;
+    /// use ahash::AHashMap;
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// // Local filesystem
@@ -270,7 +271,7 @@ impl ParquetDataCatalog {
     /// ```
     pub fn from_uri(
         uri: &str,
-        storage_options: Option<std::collections::HashMap<String, String>>,
+        storage_options: Option<AHashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<parquet::basic::Compression>,
         max_row_group_size: Option<usize>,
@@ -1612,7 +1613,7 @@ impl ParquetDataCatalog {
     where
         F: std::future::Future<Output = anyhow::Result<R>>,
     {
-        let rt = nautilus_common::runtime::get_runtime();
+        let rt = nautilus_common::live::runtime::get_runtime();
         rt.block_on(future)
     }
 }

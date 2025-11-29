@@ -77,7 +77,7 @@ impl PoolPosition {
     /// Generates a unique string key for a position based on owner and tick range.
     #[must_use]
     pub fn get_position_key(owner: &Address, tick_lower: i32, tick_upper: i32) -> String {
-        format!("{}:{}:{}", owner, tick_lower, tick_upper)
+        format!("{owner}:{tick_lower}:{tick_upper}")
     }
 
     /// Updates the liquidity amount by the given delta.
@@ -200,7 +200,7 @@ mod tests {
         let tick_upper = 100;
 
         let key = PoolPosition::get_position_key(&owner, tick_lower, tick_upper);
-        let expected = format!("{:?}:{}:{}", owner, tick_lower, tick_upper);
+        let expected = format!("{owner:?}:{tick_lower}:{tick_upper}");
         assert_eq!(key, expected);
     }
 

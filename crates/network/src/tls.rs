@@ -208,21 +208,13 @@ fn load_private_key(path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
 
-    let pkcs8_keys: Vec<_> = rustls_pemfile::pkcs8_private_keys(&mut reader)
-        .filter_map(std::result::Result::ok)
-        .collect();
-
-    if let Some(key) = pkcs8_keys.into_iter().next() {
+    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader).find_map(Result::ok) {
         return Ok(key.into());
     }
 
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
-    let rsa_keys: Vec<_> = rustls_pemfile::rsa_private_keys(&mut reader)
-        .filter_map(std::result::Result::ok)
-        .collect();
-
-    if let Some(key) = rsa_keys.into_iter().next() {
+    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader).find_map(Result::ok) {
         return Ok(key.into());
     }
 

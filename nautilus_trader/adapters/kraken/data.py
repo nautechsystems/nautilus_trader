@@ -68,8 +68,10 @@ class KrakenDataClient(LiveMarketDataClient):
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    http_clients : dict[KrakenProductType, nautilus_pyo3.KrakenHttpClient]
-        The Kraken HTTP clients keyed by product type.
+    http_client_spot : nautilus_pyo3.KrakenSpotHttpClient, optional
+        The Kraken Spot HTTP client.
+    http_client_futures : nautilus_pyo3.KrakenFuturesHttpClient, optional
+        The Kraken Futures HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -88,7 +90,8 @@ class KrakenDataClient(LiveMarketDataClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        http_clients: dict[KrakenProductType, nautilus_pyo3.KrakenHttpClient],
+        http_client_spot: nautilus_pyo3.KrakenSpotHttpClient | None,
+        http_client_futures: nautilus_pyo3.KrakenFuturesHttpClient | None,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -111,20 +114,23 @@ class KrakenDataClient(LiveMarketDataClient):
         product_types = config.product_types or [KrakenProductType.SPOT]
 
         self._log.info(f"product_types={product_types}", LogColor.BLUE)
-        self._log.info(f"{config.base_url_http=}", LogColor.BLUE)
+        self._log.info(f"{config.base_url_http_spot=}", LogColor.BLUE)
+        self._log.info(f"{config.base_url_http_futures=}", LogColor.BLUE)
         self._log.info(f"{config.base_url_ws=}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.ws_heartbeat_secs=}", LogColor.BLUE)
 
-        # HTTP API clients (one per product type)
-        self._http_clients = http_clients
-        self._http_client_spot = http_clients.get(KrakenProductType.SPOT)
-        self._http_client_futures = http_clients.get(KrakenProductType.FUTURES)
+        # HTTP API clients
+        self._http_client_spot = http_client_spot
+        self._http_client_futures = http_client_futures
 
         # Log API keys for configured clients
-        for pt, client in http_clients.items():
-            masked_key = client.api_key_masked
-            self._log.info(f"{pt} REST API key {masked_key}", LogColor.BLUE)
+        if http_client_spot is not None:
+            masked_key = http_client_spot.api_key_masked
+            self._log.info(f"SPOT REST API key {masked_key}", LogColor.BLUE)
+        if http_client_futures is not None:
+            masked_key = http_client_futures.api_key_masked
+            self._log.info(f"FUTURES REST API key {masked_key}", LogColor.BLUE)
 
         # Determine environment
         environment = config.environment or KrakenEnvironment.MAINNET
@@ -159,12 +165,13 @@ class KrakenDataClient(LiveMarketDataClient):
     def _get_http_client_for_symbol(
         self,
         symbol: str,
-    ) -> nautilus_pyo3.KrakenHttpClient | None:
-        """
-        Return the appropriate HTTP client based on the symbol's product type.
-        """
+    ) -> nautilus_pyo3.KrakenSpotHttpClient | nautilus_pyo3.KrakenFuturesHttpClient | None:
         product_type = nautilus_pyo3.kraken_product_type_from_symbol(symbol)
-        return self._http_clients.get(product_type)
+        if product_type == KrakenProductType.SPOT:
+            return self._http_client_spot
+        elif product_type == KrakenProductType.FUTURES:
+            return self._http_client_futures
+        return None
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
@@ -188,8 +195,10 @@ class KrakenDataClient(LiveMarketDataClient):
             )
 
     async def _disconnect(self) -> None:
-        for client in self._http_clients.values():
-            client.cancel_all_requests()
+        if self._http_client_spot is not None:
+            self._http_client_spot.cancel_all_requests()
+        if self._http_client_futures is not None:
+            self._http_client_futures.cancel_all_requests()
 
         if self._update_instruments_task:
             self._log.debug("Canceling task 'update_instruments'")
@@ -438,8 +447,11 @@ class KrakenDataClient(LiveMarketDataClient):
         all_pyo3_instruments = []
 
         # Request instruments from all configured HTTP clients
-        for client in self._http_clients.values():
-            pyo3_instruments = await client.request_instruments()
+        if self._http_client_spot is not None:
+            pyo3_instruments = await self._http_client_spot.request_instruments()
+            all_pyo3_instruments.extend(pyo3_instruments)
+        if self._http_client_futures is not None:
+            pyo3_instruments = await self._http_client_futures.request_instruments()
             all_pyo3_instruments.extend(pyo3_instruments)
 
         instruments = []
@@ -611,14 +623,15 @@ class KrakenDataClient(LiveMarketDataClient):
             self._log.exception("Error handling websocket message", e)
 
     def _handle_instrument_update(self, pyo3_instrument: KrakenInstrument) -> None:
-        # Cache in appropriate HTTP client
         client = self._get_http_client_for_symbol(str(pyo3_instrument.raw_symbol))
         if client:
             client.cache_instrument(pyo3_instrument)
 
-        # Cache in WebSocket clients
-        if self._ws_client is not None:
-            self._ws_client.cache_instrument(pyo3_instrument)
+        if self._ws_client_spot is not None:
+            self._ws_client_spot.cache_instrument(pyo3_instrument)
+
+        if self._ws_client_futures_connected:
+            self._ws_client_futures.cache_instrument(pyo3_instrument)
 
         instrument = transform_instrument_from_pyo3(pyo3_instrument)
 

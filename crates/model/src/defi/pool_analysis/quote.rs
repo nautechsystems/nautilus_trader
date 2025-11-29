@@ -204,7 +204,7 @@ impl SwapQuote {
     pub fn get_price_impact_bps(&mut self) -> anyhow::Result<u32> {
         match self.check_if_trade_info_initialized() {
             Ok(trade_info) => trade_info.get_price_impact_bps(),
-            Err(e) => anyhow::bail!("Failed to calculate price impact: {}", e),
+            Err(e) => anyhow::bail!("Failed to calculate price impact: {e}"),
         }
     }
 
@@ -222,7 +222,7 @@ impl SwapQuote {
     pub fn get_slippage_bps(&mut self) -> anyhow::Result<u32> {
         match self.check_if_trade_info_initialized() {
             Ok(trade_info) => trade_info.get_slippage_bps(),
-            Err(e) => anyhow::bail!("Failed to calculate slippage: {}", e),
+            Err(e) => anyhow::bail!("Failed to calculate slippage: {e}"),
         }
     }
 
@@ -233,9 +233,7 @@ impl SwapQuote {
         let actual_slippage = self.get_slippage_bps()?;
         if actual_slippage > max_slippage_bps {
             anyhow::bail!(
-                "Slippage {} bps exceeds tolerance {} bps",
-                actual_slippage,
-                max_slippage_bps
+                "Slippage {actual_slippage} bps exceeds tolerance {max_slippage_bps} bps"
             );
         }
         Ok(())
@@ -249,9 +247,7 @@ impl SwapQuote {
         let actual_out = self.get_output_amount();
         if actual_out < amount_out_requested {
             anyhow::bail!(
-                "Insufficient liquidity: requested {}, available {}",
-                amount_out_requested,
-                actual_out
+                "Insufficient liquidity: requested {amount_out_requested}, available {actual_out}"
             );
         }
         Ok(())

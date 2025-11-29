@@ -171,8 +171,7 @@ impl Money {
         check_predicate_true(
             raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
             &format!(
-                "`raw` value {raw} exceeded bounds [{}, {}] for Money",
-                MONEY_RAW_MIN, MONEY_RAW_MAX
+                "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
             ),
         )
         .expect(FAILED);

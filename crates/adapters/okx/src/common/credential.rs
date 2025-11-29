@@ -202,10 +202,8 @@ mod tests {
         assert!(BASE64_STANDARD.decode(&signature).is_ok());
 
         // Verify the message is constructed correctly
-        let expected_message = format!(
-            "2025-01-20T10:30:45.123ZPOST/api/v5/trade/order-algo{}",
-            body
-        );
+        let expected_message =
+            format!("2025-01-20T10:30:45.123ZPOST/api/v5/trade/order-algo{body}");
 
         // Recreate signature to verify message construction
         let key = hmac::Key::new(hmac::HMAC_SHA256, API_SECRET.as_bytes());
@@ -221,7 +219,7 @@ mod tests {
             API_SECRET.to_string(),
             API_PASSPHRASE.to_string(),
         );
-        let dbg_out = format!("{:?}", credential);
+        let dbg_out = format!("{credential:?}");
         assert!(dbg_out.contains("api_secret: \"<redacted>\""));
         assert!(!dbg_out.contains("chNOO"));
         let secret_bytes_dbg = format!("{:?}", API_SECRET.as_bytes());

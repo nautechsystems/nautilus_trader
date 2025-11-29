@@ -40,9 +40,12 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     product_types : tuple[KrakenProductType, ...], optional
         The Kraken product types for the client.
         If ``None`` then defaults to ``(KrakenProductType.SPOT,)``.
-    base_url_http : str, optional
-        The base URL for Kraken HTTP API.
-        If ``None`` then will use the default URL based on environment and product_type.
+    base_url_http_spot : str, optional
+        The base URL for Kraken Spot HTTP API.
+        If ``None`` then will use the default URL based on environment.
+    base_url_http_futures : str, optional
+        The base URL for Kraken Futures HTTP API.
+        If ``None`` then will use the default URL based on environment.
     base_url_ws : str, optional
         The base URL for Kraken WebSocket API.
         If ``None`` then will use the default URL based on environment and product_type.
@@ -69,7 +72,8 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     api_secret: str | None = None
     environment: KrakenEnvironment | None = None
     product_types: tuple[KrakenProductType, ...] | None = None
-    base_url_http: str | None = None
+    base_url_http_spot: str | None = None
+    base_url_http_futures: str | None = None
     base_url_ws: str | None = None
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None

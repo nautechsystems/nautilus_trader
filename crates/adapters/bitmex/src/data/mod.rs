@@ -28,6 +28,7 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use nautilus_common::{
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -40,7 +41,6 @@ use nautilus_common::{
             UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
-    runner::get_data_event_sender,
 };
 use nautilus_core::{
     UnixNanos,
@@ -349,7 +349,7 @@ fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
         .map(UnixNanos::from)
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for BitmexDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id

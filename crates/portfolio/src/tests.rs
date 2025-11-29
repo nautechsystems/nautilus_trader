@@ -106,7 +106,7 @@ fn portfolio(
     )
 }
 
-use std::collections::HashMap;
+use ahash::AHashMap;
 
 // Helpers
 fn get_cash_account(accountid: Option<&str>) -> AccountState {
@@ -360,19 +360,19 @@ fn test_account_when_account_returns_the_account_facade(mut portfolio: Portfolio
 #[rstest]
 fn test_balances_locked_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
     let result = portfolio.balances_locked(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
 fn test_margins_init_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
     let result = portfolio.margins_init(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
 fn test_margins_maint_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
     let result = portfolio.margins_maint(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
@@ -390,7 +390,7 @@ fn test_unrealized_pnl_for_venue_when_no_account_returns_empty_dict(
     venue: Venue,
 ) {
     let result = portfolio.unrealized_pnls(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
@@ -408,7 +408,7 @@ fn test_realized_pnl_for_venue_when_no_account_returns_empty_dict(
     venue: Venue,
 ) {
     let result = portfolio.realized_pnls(&venue);
-    assert_eq!(result, HashMap::new());
+    assert_eq!(result, AHashMap::new());
 }
 
 #[rstest]
@@ -1383,7 +1383,10 @@ fn test_opening_several_positions_updates_portfolio(
         dec!(-12.2)
     );
     // FIX: TODO: should not be empty
-    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+    assert_eq!(
+        portfolio.margins_maint(&Venue::from("SIM")),
+        AHashMap::new()
+    );
     assert_eq!(
         portfolio
             .net_exposure(&instrument_audusd.id())
@@ -1551,7 +1554,10 @@ fn test_modifying_position_updates_portfolio(
         dec!(-12.2)
     );
     // FIX: TODO: should not be empty
-    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+    assert_eq!(
+        portfolio.margins_maint(&Venue::from("SIM")),
+        AHashMap::new()
+    );
     assert_eq!(
         portfolio
             .net_exposure(&instrument_audusd.id())
@@ -1583,11 +1589,11 @@ fn test_modifying_position_updates_portfolio(
     assert!(!portfolio.is_completely_flat());
     assert_eq!(
         portfolio.unrealized_pnls(&Venue::from("BINANCE")),
-        HashMap::new()
+        AHashMap::new()
     );
     assert_eq!(
         portfolio.realized_pnls(&Venue::from("BINANCE")),
-        HashMap::new()
+        AHashMap::new()
     );
     assert_eq!(portfolio.net_exposures(&Venue::from("BINANCE")), None);
 }
@@ -1738,7 +1744,10 @@ fn test_closing_position_updates_portfolio(
             || unrealized_pnl_instrument.unwrap().as_decimal() == dec!(0.0)
     );
 
-    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new()); // No maintenance margins
+    assert_eq!(
+        portfolio.margins_maint(&Venue::from("SIM")),
+        AHashMap::new()
+    ); // No maintenance margins
 
     let net_exposure = portfolio.net_exposure(&instrument_audusd.id());
     assert!(net_exposure.is_none() || net_exposure.unwrap().as_decimal() == dec!(0.0)); // Zero net exposure
@@ -1957,7 +1966,10 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
             .is_zero(),
     );
     // FIX: TODO: should not be empty
-    assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+    assert_eq!(
+        portfolio.margins_maint(&Venue::from("SIM")),
+        AHashMap::new()
+    );
 }
 
 #[rstest]

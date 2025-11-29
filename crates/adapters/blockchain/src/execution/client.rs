@@ -17,16 +17,10 @@ use std::{collections::HashSet, sync::Arc};
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use nautilus_common::{
-    messages::{
-        ExecutionEvent,
-        execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount,
-            QueryOrder, SubmitOrder, SubmitOrderList,
-        },
-    },
-    runner::get_exec_event_sender,
+use nautilus_common::messages::execution::{
+    BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+    GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount, QueryOrder,
+    SubmitOrder, SubmitOrderList,
 };
 use nautilus_core::UnixNanos;
 use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
@@ -192,6 +186,7 @@ impl BlockchainExecutionClient {
     }
 }
 
+#[async_trait(?Send)]
 impl ExecutionClient for BlockchainExecutionClient {
     fn is_connected(&self) -> bool {
         self.connected
@@ -266,10 +261,7 @@ impl ExecutionClient for BlockchainExecutionClient {
     fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
         todo!("implement query_order")
     }
-}
 
-#[async_trait(?Send)]
-impl LiveExecutionClient for BlockchainExecutionClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             tracing::warn!("Blockchain execution client already connected");
@@ -292,17 +284,13 @@ impl LiveExecutionClient for BlockchainExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        todo!("implement disconnect")
+        self.connected = false;
+        Ok(())
     }
+}
 
-    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
-        get_exec_event_sender()
-    }
-
-    fn get_clock(&self) -> std::cell::Ref<'_, dyn nautilus_common::clock::Clock> {
-        self.core.clock().borrow()
-    }
-
+#[async_trait(?Send)]
+impl LiveExecutionClient for BlockchainExecutionClient {
     async fn generate_order_status_report(
         &self,
         _cmd: &GenerateOrderStatusReport,

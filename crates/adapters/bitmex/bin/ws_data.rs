@@ -13,12 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::env;
+use std::{env, time::Duration};
 
 use futures_util::StreamExt;
 use nautilus_bitmex::{http::client::BitmexHttpClient, websocket::client::BitmexWebSocketClient};
 use nautilus_model::{data::bar::BarType, identifiers::InstrumentId};
-use tokio::time::Duration;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]

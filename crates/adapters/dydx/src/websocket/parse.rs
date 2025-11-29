@@ -69,16 +69,14 @@ pub fn parse_ws_order_report(
                 .map(|entry| *entry.key())
                 .collect();
             anyhow::anyhow!(
-                "No instrument cached for clob_pair_id {}. Available: {:?}",
-                clob_pair_id,
-                available
+                "No instrument cached for clob_pair_id {clob_pair_id}. Available: {available:?}"
             )
         })?
         .value();
 
     let instrument = instruments
         .get(&instrument_id)
-        .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", instrument_id))?
+        .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?
         .value()
         .clone();
 
@@ -929,7 +927,7 @@ mod tests {
         #[case] total_filled: &str,
     ) {
         let ws_order = DydxWsOrderSubaccountMessageContents {
-            id: format!("order_{:?}", status),
+            id: format!("order_{status:?}"),
             subaccount_id: "dydx1test/0".to_string(),
             client_id: "99999".to_string(),
             clob_pair_id: "1".to_string(),
@@ -973,8 +971,7 @@ mod tests {
 
         assert!(
             result.is_ok(),
-            "Failed to parse order with status {:?}",
-            status
+            "Failed to parse order with status {status:?}"
         );
         let report = result.unwrap();
 

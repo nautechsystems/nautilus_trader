@@ -21,6 +21,7 @@
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -108,6 +109,7 @@ impl BacktestExecutionClient {
     }
 }
 
+#[async_trait(?Send)]
 impl ExecutionClient for BacktestExecutionClient {
     fn is_connected(&self) -> bool {
         self.is_connected

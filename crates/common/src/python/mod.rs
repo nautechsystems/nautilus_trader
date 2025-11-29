@@ -24,6 +24,7 @@ pub mod handler;
 pub mod listener;
 pub mod logging;
 pub mod msgbus;
+pub mod runtime;
 pub mod signal;
 pub mod timer;
 pub mod xrate;
@@ -55,7 +56,6 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::actor::data_actor::DataActorConfig>()?;
     m.add_class::<crate::actor::data_actor::ImportableActorConfig>()?;
     m.add_class::<crate::msgbus::BusMessage>()?;
-    m.add_class::<crate::msgbus::listener::MessageBusListener>()?;
     m.add_class::<crate::enums::ComponentState>()?;
     m.add_class::<crate::enums::ComponentTrigger>()?;
     m.add_class::<crate::enums::Environment>()?;
@@ -83,6 +83,9 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_msgbus_deregister, m)?)?;
     m.add_function(wrap_pyfunction!(py_msgbus_is_subscribed, m)?)?;
     m.add_function(wrap_pyfunction!(py_msgbus_is_registered, m)?)?;
+
+    #[cfg(feature = "live")]
+    m.add_class::<crate::live::listener::MessageBusListener>()?;
 
     Ok(())
 }

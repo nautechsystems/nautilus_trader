@@ -22,6 +22,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -32,7 +33,6 @@ use nautilus_common::{
             UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
-    runner::get_data_event_sender,
 };
 use nautilus_core::{
     UnixNanos,
@@ -427,7 +427,7 @@ impl HyperliquidDataClient {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for HyperliquidDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
@@ -820,7 +820,7 @@ impl DataClient for HyperliquidDataClient {
         let instruments = self.instruments.read().unwrap();
         let instrument_id = subscription.bar_type.instrument_id();
         if !instruments.contains_key(&instrument_id) {
-            anyhow::bail!("Instrument {} not found", instrument_id);
+            anyhow::bail!("Instrument {instrument_id} not found");
         }
 
         drop(instruments);

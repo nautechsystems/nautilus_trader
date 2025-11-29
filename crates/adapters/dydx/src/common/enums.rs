@@ -19,7 +19,7 @@ use nautilus_model::enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, Po
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
-use crate::error::DydxError;
+use crate::{error::DydxError, grpc::types::ChainId};
 
 /// dYdX order status throughout its lifecycle.
 #[derive(
@@ -719,5 +719,94 @@ mod tests {
             OrderType::from(DydxOrderType::StopLimit),
             OrderType::StopLimit
         );
+    }
+
+    #[rstest]
+    fn test_dydx_network_chain_id_mapping() {
+        // Test canonical chain ID mapping
+        assert_eq!(DydxNetwork::Mainnet.chain_id(), ChainId::Mainnet1);
+        assert_eq!(DydxNetwork::Testnet.chain_id(), ChainId::Testnet4);
+    }
+
+    #[rstest]
+    fn test_dydx_network_as_str() {
+        // Test string representation for config/env
+        assert_eq!(DydxNetwork::Mainnet.as_str(), "mainnet");
+        assert_eq!(DydxNetwork::Testnet.as_str(), "testnet");
+    }
+
+    #[rstest]
+    fn test_dydx_network_default() {
+        // Test default is mainnet
+        assert_eq!(DydxNetwork::default(), DydxNetwork::Mainnet);
+    }
+
+    #[rstest]
+    fn test_dydx_network_serde_lowercase() {
+        // Test lowercase serialization/deserialization
+        let mainnet = DydxNetwork::Mainnet;
+        let json = serde_json::to_string(&mainnet).unwrap();
+        assert_eq!(json, "\"mainnet\"");
+
+        let deserialized: DydxNetwork = serde_json::from_str("\"mainnet\"").unwrap();
+        assert_eq!(deserialized, DydxNetwork::Mainnet);
+
+        let testnet = DydxNetwork::Testnet;
+        let json = serde_json::to_string(&testnet).unwrap();
+        assert_eq!(json, "\"testnet\"");
+
+        let deserialized: DydxNetwork = serde_json::from_str("\"testnet\"").unwrap();
+        assert_eq!(deserialized, DydxNetwork::Testnet);
+    }
+}
+
+/// dYdX network environment (mainnet vs testnet).
+///
+/// This selects the underlying Cosmos chain for transaction submission.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[strum(serialize_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx")
+)]
+pub enum DydxNetwork {
+    /// dYdX mainnet (dydx-mainnet-1)
+    #[default]
+    Mainnet,
+    /// dYdX testnet (dydx-testnet-4)
+    Testnet,
+}
+
+impl DydxNetwork {
+    /// Map the logical network to the underlying gRPC chain identifier.
+    #[must_use]
+    pub const fn chain_id(self) -> ChainId {
+        match self {
+            Self::Mainnet => ChainId::Mainnet1,
+            Self::Testnet => ChainId::Testnet4,
+        }
+    }
+
+    /// Return the canonical lowercase string used in config/env.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mainnet => "mainnet",
+            Self::Testnet => "testnet",
+        }
     }
 }

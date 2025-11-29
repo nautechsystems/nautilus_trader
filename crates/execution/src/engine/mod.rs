@@ -21,6 +21,10 @@
 //! endpoints via its registered execution clients.
 
 pub mod config;
+pub mod stubs;
+
+#[cfg(test)]
+mod tests;
 
 use std::{
     cell::{RefCell, RefMut},
@@ -32,6 +36,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use config::ExecutionEngineConfig;
+use futures::future::join_all;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -132,13 +137,23 @@ impl ExecutionEngine {
     #[must_use]
     /// Returns true if all registered execution clients are connected.
     pub fn check_connected(&self) -> bool {
-        self.clients.values().all(|c| c.is_connected())
+        let clients_connected = self.clients.values().all(|c| c.is_connected());
+        let default_connected = self
+            .default_client
+            .as_ref()
+            .is_none_or(|c| c.is_connected());
+        clients_connected && default_connected
     }
 
     #[must_use]
     /// Returns true if all registered execution clients are disconnected.
     pub fn check_disconnected(&self) -> bool {
-        self.clients.values().all(|c| !c.is_connected())
+        let clients_disconnected = self.clients.values().all(|c| !c.is_connected());
+        let default_disconnected = self
+            .default_client
+            .as_ref()
+            .is_none_or(|c| !c.is_connected());
+        clients_disconnected && default_disconnected
     }
 
     #[must_use]
@@ -336,35 +351,55 @@ impl ExecutionEngine {
         }
     }
 
-    /// Connects the engine by calling connect on all registered clients.
+    /// Connects all registered execution clients concurrently.
     ///
-    /// # Note
+    /// # Errors
     ///
-    /// This base implementation only logs connection status. Actual client lifecycle
-    /// management (calling `start()`) must be done before registration, or is handled
-    /// by `LiveExecutionEngine` which overrides this method. Clients are stored with
-    /// shared ownership (`Rc`) and cannot be mutated after registration.
-    pub fn connect(&self) {
-        if !self.clients.is_empty() {
-            log::info!("Connecting {} client(s)...", self.clients.len());
+    /// Returns an error if any client fails to connect.
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
+        let futures: Vec<_> = self
+            .get_clients_mut()
+            .into_iter()
+            .map(|client| client.connect())
+            .collect();
+
+        let results = join_all(futures).await;
+        let errors: Vec<_> = results.into_iter().filter_map(Result::err).collect();
+
+        if errors.is_empty() {
+            Ok(())
         } else {
-            log::info!("No clients registered");
+            let error_msgs: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
+            anyhow::bail!(
+                "Failed to connect execution clients: {}",
+                error_msgs.join("; ")
+            )
         }
     }
 
-    /// Disconnects the engine by calling disconnect on all registered clients.
+    /// Disconnects all registered execution clients concurrently.
     ///
-    /// # Note
+    /// # Errors
     ///
-    /// This base implementation only logs disconnection status. Actual client lifecycle
-    /// management (calling `stop()`) must be done after deregistration, or is handled
-    /// by `LiveExecutionEngine` which overrides this method. Clients are stored with
-    /// shared ownership (`Rc`) and cannot be mutated after registration.
-    pub fn disconnect(&self) {
-        if !self.clients.is_empty() {
-            log::info!("Disconnecting {} client(s)...", self.clients.len());
+    /// Returns an error if any client fails to disconnect.
+    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
+        let futures: Vec<_> = self
+            .get_clients_mut()
+            .into_iter()
+            .map(|client| client.disconnect())
+            .collect();
+
+        let results = join_all(futures).await;
+        let errors: Vec<_> = results.into_iter().filter_map(Result::err).collect();
+
+        if errors.is_empty() {
+            Ok(())
         } else {
-            log::info!("No clients registered");
+            let error_msgs: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
+            anyhow::bail!(
+                "Failed to disconnect execution clients: {}",
+                error_msgs.join("; ")
+            )
         }
     }
 
@@ -383,10 +418,7 @@ impl ExecutionEngine {
     /// Timer functionality requires a live execution context with an active clock.
     pub fn start_snapshot_timer(&mut self) {
         if let Some(interval_secs) = self.config.snapshot_positions_interval_secs {
-            log::info!(
-                "Starting position snapshots timer at {} second intervals",
-                interval_secs
-            );
+            log::info!("Starting position snapshots timer at {interval_secs} second intervals");
         }
     }
 

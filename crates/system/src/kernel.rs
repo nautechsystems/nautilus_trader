@@ -23,10 +23,11 @@ use std::{
     rc::Rc,
 };
 
-use futures::future::join_all;
+#[cfg(feature = "live")]
+use nautilus_common::live::clock::LiveClock;
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
-    clock::{Clock, LiveClock, TestClock},
+    clock::{Clock, TestClock},
     component::Component,
     enums::Environment,
     logging::{
@@ -252,9 +253,17 @@ impl NautilusKernel {
                 let test_clock = TestClock::new();
                 Rc::new(RefCell::new(test_clock))
             }
+            #[cfg(feature = "live")]
             Environment::Live | Environment::Sandbox => {
                 let live_clock = LiveClock::default();
                 Rc::new(RefCell::new(live_clock))
+            }
+            #[cfg(not(feature = "live"))]
+            Environment::Live | Environment::Sandbox => {
+                panic!(
+                    "Live/Sandbox environment requires the 'live' feature to be enabled. \
+                     Build with `--features live` or add `features = [\"live\"]` to your dependency."
+                );
             }
         }
     }
@@ -397,11 +406,11 @@ impl NautilusKernel {
             return;
         }
 
-        log::info!("Connecting clients...");
-        if let Err(e) = self.connect_clients().await {
-            log::error!("Error connecting clients: {e:?}");
+        log::info!("Starting clients...");
+        if let Err(e) = self.start_clients() {
+            log::error!("Error starting clients: {e:?}");
         }
-        log::info!("Clients connected");
+        log::info!("Clients started");
 
         if let Err(e) = self.trader.start() {
             log::error!("Error starting trader: {e:?}");
@@ -420,9 +429,9 @@ impl NautilusKernel {
             log::error!("Error stopping trader: {e:?}");
         }
 
-        // Disconnect all adapter clients
-        if let Err(e) = self.disconnect_clients().await {
-            log::error!("Error disconnecting clients: {e:?}");
+        // Stop all adapter clients
+        if let Err(e) = self.stop_all_clients() {
+            log::error!("Error stopping clients: {e:?}");
         }
 
         self.stop_engines();
@@ -485,9 +494,11 @@ impl NautilusKernel {
         // TODO: Stop other engines when methods are available
     }
 
-    /// Connects all engine clients.
-    #[allow(clippy::await_holding_refcell_ref)]
-    async fn connect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
+    /// Starts all engine clients.
+    ///
+    /// Note: Async connection (connect/disconnect) is handled by LiveNode for live clients.
+    /// This method only handles synchronous start operations on execution clients.
+    fn start_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
         let mut errors = Vec::new();
 
         {
@@ -502,19 +513,6 @@ impl NautilusKernel {
             }
         }
 
-        {
-            let mut data_engine = self.data_engine.borrow_mut();
-            let mut data_adapters = data_engine.get_clients_mut();
-            let mut futures = Vec::with_capacity(data_adapters.len());
-
-            for adapter in &mut data_adapters {
-                futures.push(adapter.connect());
-            }
-
-            let results = join_all(futures).await;
-            errors.extend(results.into_iter().filter_map(Result::err));
-        }
-
         if errors.is_empty() {
             Ok(())
         } else {
@@ -522,9 +520,11 @@ impl NautilusKernel {
         }
     }
 
-    /// Disconnects all engine clients.
-    #[allow(clippy::await_holding_refcell_ref)]
-    async fn disconnect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
+    /// Stops all engine clients.
+    ///
+    /// Note: Async disconnection is handled by LiveNode for live clients.
+    /// This method only handles synchronous stop operations on execution clients.
+    fn stop_all_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
         let mut errors = Vec::new();
 
         {
@@ -539,19 +539,6 @@ impl NautilusKernel {
             }
         }
 
-        {
-            let mut data_engine = self.data_engine.borrow_mut();
-            let mut data_adapters = data_engine.get_clients_mut();
-            let mut futures = Vec::with_capacity(data_adapters.len());
-
-            for adapter in &mut data_adapters {
-                futures.push(adapter.disconnect());
-            }
-
-            let results = join_all(futures).await;
-            errors.extend(results.into_iter().filter_map(Result::err));
-        }
-
         if errors.is_empty() {
             Ok(())
         } else {
@@ -564,16 +551,35 @@ impl NautilusKernel {
         self.data_engine.borrow_mut().stop();
     }
 
+    /// Connects all engine clients.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to connect.
+    #[allow(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
+    pub async fn connect_clients(&mut self) -> anyhow::Result<()> {
+        log::info!("Connecting clients...");
+        self.data_engine.borrow_mut().connect().await?;
+        self.exec_engine.borrow_mut().connect().await?;
+        Ok(())
+    }
+
+    /// Disconnects all engine clients.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to disconnect.
+    #[allow(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
+    pub async fn disconnect_clients(&mut self) -> anyhow::Result<()> {
+        log::info!("Disconnecting clients...");
+        self.data_engine.borrow_mut().disconnect().await?;
+        self.exec_engine.borrow_mut().disconnect().await?;
+        Ok(())
+    }
+
     /// Initializes the portfolio (orders & positions).
     const fn initialize_portfolio(&self) {
         // TODO: Placeholder: portfolio initialization to be implemented in next pass
-    }
-
-    /// Awaits engine clients to connect and initialize.
-    ///
-    /// Blocks until connected or timeout.
-    const fn await_engines_connected(&self) {
-        // TODO: await engine connections with timeout
     }
 
     /// Awaits execution engine state reconciliation.
@@ -597,14 +603,17 @@ impl NautilusKernel {
         // TODO: await trader residual events after stop
     }
 
-    /// Checks if engine clients are connected.
-    const fn check_engines_connected(&self) {
-        // TODO: check engine connection status
+    /// Returns `true` if all engine clients are connected.
+    #[must_use]
+    pub fn check_engines_connected(&self) -> bool {
+        self.data_engine.borrow().check_connected() && self.exec_engine.borrow().check_connected()
     }
 
-    /// Checks if engine clients are disconnected.
-    const fn check_engines_disconnected(&self) {
-        // TODO: check engine disconnection status
+    /// Returns `true` if all engine clients are disconnected.
+    #[must_use]
+    pub fn check_engines_disconnected(&self) -> bool {
+        self.data_engine.borrow().check_disconnected()
+            && self.exec_engine.borrow().check_disconnected()
     }
 
     /// Checks if the portfolio has been initialized.

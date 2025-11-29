@@ -20,6 +20,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use async_trait::async_trait;
 use nautilus_common::messages::execution::{
     BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
     SubmitOrder, SubmitOrderList,
@@ -34,6 +35,7 @@ use nautilus_model::{
 
 pub mod base;
 
+#[async_trait(?Send)]
 pub trait ExecutionClient {
     fn is_connected(&self) -> bool;
     fn client_id(&self) -> ClientId;
@@ -68,6 +70,24 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if the client fails to stop.
     fn stop(&mut self) -> anyhow::Result<()>;
+
+    /// Connects the client to the execution venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if connection fails.
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Disconnects the client from the execution venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if disconnection fails.
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     /// Submits a single order command to the execution venue.
     ///
@@ -205,5 +225,23 @@ impl ExecutionClientAdapter {
             account_id,
             oms_type,
         }
+    }
+
+    /// Connects the execution client to the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if connection fails.
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
+        self.client.connect().await
+    }
+
+    /// Disconnects the execution client from the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if disconnection fails.
+    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.client.disconnect().await
     }
 }

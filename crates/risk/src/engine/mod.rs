@@ -20,8 +20,9 @@ pub mod config;
 #[cfg(test)]
 mod tests;
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::AHashMap;
 use config::RiskEngineConfig;
 use nautilus_common::{
     cache::Cache,
@@ -67,7 +68,7 @@ pub struct RiskEngine {
     portfolio: Portfolio,
     pub throttled_submit_order: Throttler<SubmitOrder, SubmitOrderFn>,
     pub throttled_modify_order: Throttler<ModifyOrder, ModifyOrderFn>,
-    max_notional_per_order: HashMap<InstrumentId, Decimal>,
+    max_notional_per_order: AHashMap<InstrumentId, Decimal>,
     trading_state: TradingState,
     config: RiskEngineConfig,
 }
@@ -98,7 +99,7 @@ impl RiskEngine {
             portfolio,
             throttled_submit_order,
             throttled_modify_order,
-            max_notional_per_order: HashMap::new(),
+            max_notional_per_order: AHashMap::new(),
             trading_state: TradingState::Active,
             config,
         }

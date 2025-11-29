@@ -91,10 +91,8 @@ pub struct DydxWebSocketClient {
     /// Whether authentication is required for this client.
     requires_auth: bool,
     /// Authentication tracker for WebSocket connections.
-    #[allow(dead_code)]
     auth_tracker: AuthTracker,
     /// Subscription state tracker for managing channel subscriptions.
-    #[allow(dead_code)]
     subscriptions: SubscriptionState,
     /// Shared connection state (lock-free atomic).
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -120,8 +118,8 @@ impl Clone for DydxWebSocketClient {
             url: self.url.clone(),
             credential: self.credential.clone(),
             requires_auth: self.requires_auth,
-            auth_tracker: AuthTracker::new(),
-            subscriptions: SubscriptionState::new(':'),
+            auth_tracker: self.auth_tracker.clone(),
+            subscriptions: self.subscriptions.clone(),
             connection_mode: self.connection_mode.clone(),
             signal: self.signal.clone(),
             instruments_cache: self.instruments_cache.clone(),
@@ -148,7 +146,7 @@ impl DydxWebSocketClient {
             credential: None,
             requires_auth: false,
             auth_tracker: AuthTracker::new(),
-            subscriptions: SubscriptionState::new(':'), // dYdX uses ":" as delimiter (e.g., "v4_markets:BTC-USD")
+            subscriptions: SubscriptionState::new(':'), // dYdX uses colon delimiter (channel:symbol)
             connection_mode: Arc::new(ArcSwap::from_pointee(AtomicU8::new(
                 ConnectionMode::Closed as u8,
             ))),
@@ -180,7 +178,7 @@ impl DydxWebSocketClient {
             credential: Some(Arc::new(credential)),
             requires_auth: true,
             auth_tracker: AuthTracker::new(),
-            subscriptions: SubscriptionState::new(':'), // dYdX uses ":" as delimiter
+            subscriptions: SubscriptionState::new(':'), // dYdX uses colon delimiter (channel:symbol)
             connection_mode: Arc::new(ArcSwap::from_pointee(AtomicU8::new(
                 ConnectionMode::Closed as u8,
             ))),

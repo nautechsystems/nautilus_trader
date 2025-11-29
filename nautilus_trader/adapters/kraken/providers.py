@@ -31,8 +31,10 @@ class KrakenInstrumentProvider(InstrumentProvider):
 
     Parameters
     ----------
-    http_clients : dict[KrakenProductType, nautilus_pyo3.KrakenHttpClient]
-        The Kraken HTTP clients keyed by product type.
+    http_client_spot : nautilus_pyo3.KrakenSpotHttpClient, optional
+        The Kraken Spot HTTP client.
+    http_client_futures : nautilus_pyo3.KrakenFuturesHttpClient, optional
+        The Kraken Futures HTTP client.
     product_types : list[KrakenProductType], optional
         The Kraken product types to load.
         If ``None`` then defaults to [KrakenProductType.SPOT].
@@ -43,12 +45,14 @@ class KrakenInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        http_clients: dict[KrakenProductType, nautilus_pyo3.KrakenHttpClient],
+        http_client_spot: nautilus_pyo3.KrakenSpotHttpClient | None = None,
+        http_client_futures: nautilus_pyo3.KrakenFuturesHttpClient | None = None,
         product_types: list[KrakenProductType] | None = None,
         config: InstrumentProviderConfig | None = None,
     ) -> None:
         super().__init__(config=config)
-        self._http_clients = http_clients
+        self._http_client_spot = http_client_spot
+        self._http_client_futures = http_client_futures
         self._product_types = product_types or [KrakenProductType.SPOT]
         self._log_warnings = config.log_warnings if config else True
 
@@ -84,15 +88,22 @@ class KrakenInstrumentProvider(InstrumentProvider):
         all_pyo3_instruments: list[nautilus_pyo3.Instrument] = []
 
         for product_type in self._product_types:
-            client = self._http_clients.get(product_type)
-            if client is None:
-                self._log.warning(f"No HTTP client configured for {product_type}")
-                continue
-
-            self._log.info(f"Loading {product_type} instruments...")
-            pyo3_instruments = await client.request_instruments()
-            all_pyo3_instruments.extend(pyo3_instruments)
-            self._log.info(f"Loaded {len(pyo3_instruments)} {product_type} instruments")
+            if product_type == KrakenProductType.SPOT:
+                if self._http_client_spot is None:
+                    self._log.warning("No HTTP client configured for Spot")
+                    continue
+                self._log.info("Loading Spot instruments...")
+                pyo3_instruments = await self._http_client_spot.request_instruments()
+                all_pyo3_instruments.extend(pyo3_instruments)
+                self._log.info(f"Loaded {len(pyo3_instruments)} Spot instruments")
+            elif product_type == KrakenProductType.FUTURES:
+                if self._http_client_futures is None:
+                    self._log.warning("No HTTP client configured for Futures")
+                    continue
+                self._log.info("Loading Futures instruments...")
+                pyo3_instruments = await self._http_client_futures.request_instruments()
+                all_pyo3_instruments.extend(pyo3_instruments)
+                self._log.info(f"Loaded {len(pyo3_instruments)} Futures instruments")
 
         self._instruments_pyo3 = all_pyo3_instruments
         instruments = instruments_from_pyo3(all_pyo3_instruments)

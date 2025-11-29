@@ -93,12 +93,12 @@ async fn gather_instruments_info(
         }
     });
 
-    let results: Vec<(TardisExchange, Vec<TardisInstrumentInfo>)> =
+    let results: HashMap<TardisExchange, Vec<TardisInstrumentInfo>> =
         join_all(futures).await.into_iter().flatten().collect();
 
     tracing::info!("Received all instruments");
 
-    results.into_iter().collect()
+    results
 }
 
 /// Run the Tardis Machine replay from a JSON configuration file.

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings for the Kraken HTTP client.
+//! Python bindings for the Kraken Futures HTTP client.
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
@@ -26,18 +26,14 @@ use nautilus_model::{
 };
 use pyo3::{prelude::*, types::PyList};
 
-use crate::{
-    common::enums::{KrakenEnvironment, KrakenProductType},
-    http::{client::KrakenHttpClient, error::KrakenHttpError},
-};
+use crate::{common::enums::KrakenEnvironment, http::KrakenFuturesHttpClient};
 
 #[pymethods]
-impl KrakenHttpClient {
+impl KrakenFuturesHttpClient {
     #[new]
-    #[pyo3(signature = (product_type=KrakenProductType::Spot, api_key=None, api_secret=None, base_url=None, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
-        product_type: KrakenProductType,
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
@@ -50,18 +46,19 @@ impl KrakenHttpClient {
     ) -> PyResult<Self> {
         let timeout = timeout_secs.or(Some(60));
 
-        // Determine environment from testnet flag
         let environment = if testnet {
             KrakenEnvironment::Testnet
         } else {
             KrakenEnvironment::Mainnet
         };
 
-        // Try to get credentials from parameters or environment variables
         let (api_key_env, api_secret_env) = if testnet {
-            ("KRAKEN_TESTNET_API_KEY", "KRAKEN_TESTNET_API_SECRET")
+            (
+                "KRAKEN_FUTURES_TESTNET_API_KEY",
+                "KRAKEN_FUTURES_TESTNET_API_SECRET",
+            )
         } else {
-            ("KRAKEN_API_KEY", "KRAKEN_API_SECRET")
+            ("KRAKEN_FUTURES_API_KEY", "KRAKEN_FUTURES_API_SECRET")
         };
 
         let key = api_key.or_else(|| std::env::var(api_key_env).ok());
@@ -71,7 +68,6 @@ impl KrakenHttpClient {
             Self::with_credentials(
                 k,
                 s,
-                product_type,
                 environment,
                 base_url,
                 timeout,
@@ -83,7 +79,6 @@ impl KrakenHttpClient {
             .map_err(to_pyvalue_err)
         } else {
             Self::new(
-                product_type,
                 environment,
                 base_url,
                 timeout,
@@ -101,13 +96,6 @@ impl KrakenHttpClient {
     #[must_use]
     pub fn py_base_url(&self) -> String {
         self.inner.base_url().to_string()
-    }
-
-    #[getter]
-    #[pyo3(name = "product_type")]
-    #[must_use]
-    pub fn py_product_type(&self) -> KrakenProductType {
-        self.product_type()
     }
 
     #[getter]
@@ -134,24 +122,6 @@ impl KrakenHttpClient {
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
-    }
-
-    #[pyo3(name = "get_server_time")]
-    fn py_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let server_time = client
-                .inner
-                .get_server_time()
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            let json_string = serde_json::to_string(&server_time)
-                .map_err(|e| to_pyruntime_err(format!("Failed to serialize response: {e}")))?;
-
-            Ok(json_string)
-        })
     }
 
     #[pyo3(name = "request_mark_price")]
@@ -191,17 +161,12 @@ impl KrakenHttpClient {
     }
 
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (pairs=None))]
-    fn py_request_instruments<'py>(
-        &self,
-        py: Python<'py>,
-        pairs: Option<Vec<String>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let instruments = client
-                .request_instruments(pairs)
+                .request_instruments()
                 .await
                 .map_err(to_pyruntime_err)?;
 
@@ -303,25 +268,5 @@ impl KrakenHttpClient {
                 Ok(pylist.unbind())
             })
         })
-    }
-}
-
-impl From<KrakenHttpError> for PyErr {
-    fn from(error: KrakenHttpError) -> Self {
-        match error {
-            // Runtime/operational errors
-            KrakenHttpError::NetworkError(msg) => to_pyruntime_err(format!("Network error: {msg}")),
-            KrakenHttpError::ApiError(errors) => {
-                to_pyruntime_err(format!("API error: {}", errors.join(", ")))
-            }
-            // Validation/configuration errors
-            KrakenHttpError::MissingCredentials => {
-                to_pyvalue_err("Missing credentials for authenticated request")
-            }
-            KrakenHttpError::AuthenticationError(msg) => {
-                to_pyvalue_err(format!("Authentication error: {msg}"))
-            }
-            KrakenHttpError::ParseError(msg) => to_pyvalue_err(format!("Parse error: {msg}")),
-        }
     }
 }

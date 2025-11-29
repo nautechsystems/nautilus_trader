@@ -59,12 +59,12 @@ impl PortfolioStatistic for LongRatio {
 
         // Use `entry` (the opening order side) rather than `side` because
         // closed positions have side == PositionSide::Flat
-        let longs: Vec<&Position> = positions
+        let long_count = positions
             .iter()
             .filter(|p| p.entry == OrderSide::Buy)
-            .collect();
+            .count();
 
-        let value = longs.len() as f64 / positions.len() as f64;
+        let value = long_count as f64 / positions.len() as f64;
 
         let scale = 10f64.powi(self.precision as i32);
         Some((value * scale).round() / scale)
@@ -84,8 +84,7 @@ impl PortfolioStatistic for LongRatio {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
+    use ahash::AHashMap;
     use nautilus_core::{UnixNanos, approx_eq};
     use nautilus_model::{
         enums::{InstrumentClass, PositionSide},
@@ -135,7 +134,7 @@ mod tests {
             trade_ids: Vec::new(),
             buy_qty: Quantity::default(),
             sell_qty: Quantity::default(),
-            commissions: HashMap::new(),
+            commissions: AHashMap::new(),
             adjustments: Vec::new(),
             instrument_class: InstrumentClass::Spot,
             is_currency_pair: true,

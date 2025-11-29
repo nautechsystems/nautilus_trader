@@ -164,8 +164,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let time_in_force = params
             .time_in_force
             .map(|v| {
-                serde_json::from_str::<BybitTimeInForce>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid time_in_force '{}': {}", v, e))
+                serde_json::from_str::<BybitTimeInForce>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid time_in_force '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -173,8 +173,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let trigger_by = params
             .trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -182,8 +182,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let tp_trigger_by = params
             .tp_trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid tp_trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid tp_trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -191,8 +191,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let sl_trigger_by = params
             .sl_trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid sl_trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid sl_trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -200,8 +200,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let sl_order_type = params
             .sl_order_type
             .map(|v| {
-                serde_json::from_str::<BybitOrderType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid sl_order_type '{}': {}", v, e))
+                serde_json::from_str::<BybitOrderType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid sl_order_type '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -209,8 +209,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let tp_order_type = params
             .tp_order_type
             .map(|v| {
-                serde_json::from_str::<BybitOrderType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid tp_order_type '{}': {}", v, e))
+                serde_json::from_str::<BybitOrderType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid tp_order_type '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -392,8 +392,8 @@ impl TryFrom<BybitWsAmendOrderParams> for messages::BybitWsAmendOrderParams {
         let tp_trigger_by = params
             .tp_trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid tp_trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid tp_trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -401,8 +401,8 @@ impl TryFrom<BybitWsAmendOrderParams> for messages::BybitWsAmendOrderParams {
         let sl_trigger_by = params
             .sl_trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid sl_trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid sl_trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;

@@ -60,6 +60,7 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 ustr = { workspace = true }
@@ -69,3 +70,4 @@ pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

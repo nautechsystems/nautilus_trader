@@ -1592,8 +1592,7 @@ mod tests {
             let result = parse_execution_msg(msg, &instrument);
             assert!(
                 result.is_none(),
-                "Expected None for exec_type {:?}",
-                exec_type
+                "Expected None for exec_type {exec_type:?}"
             );
         }
     }

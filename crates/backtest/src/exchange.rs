@@ -26,6 +26,7 @@ use std::{
     rc::Rc,
 };
 
+use ahash::AHashMap;
 use nautilus_common::{cache::Cache, clock::Clock, messages::execution::TradingCommand};
 use nautilus_core::{
     UnixNanos,
@@ -432,7 +433,7 @@ impl SimulatedExchange {
 
                         let margins = match account {
                             AccountAny::Margin(margin_account) => margin_account.margins.clone(),
-                            _ => HashMap::new(),
+                            _ => AHashMap::new(),
                         };
 
                         if let Some(exec_client) = &self.exec_client {

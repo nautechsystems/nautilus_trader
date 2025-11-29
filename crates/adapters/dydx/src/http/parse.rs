@@ -38,7 +38,8 @@ use anyhow::Context;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
-    identifiers::{InstrumentId, Symbol},
+    events::AccountState,
+    identifiers::{InstrumentId, Symbol, Venue},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::Currency,
 };
@@ -59,16 +60,10 @@ use crate::common::{
 pub fn validate_ticker_format(ticker: &str) -> anyhow::Result<()> {
     let parts: Vec<&str> = ticker.split('-').collect();
     if parts.len() != 2 {
-        anyhow::bail!(
-            "Invalid ticker format '{}', expected 'BASE-QUOTE' (e.g., 'BTC-USD')",
-            ticker
-        );
+        anyhow::bail!("Invalid ticker format '{ticker}', expected 'BASE-QUOTE' (e.g., 'BTC-USD')");
     }
     if parts[0].is_empty() || parts[1].is_empty() {
-        anyhow::bail!(
-            "Invalid ticker format '{}', base and quote cannot be empty",
-            ticker
-        );
+        anyhow::bail!("Invalid ticker format '{ticker}', base and quote cannot be empty");
     }
     Ok(())
 }
@@ -93,9 +88,7 @@ pub fn parse_ticker_currencies(ticker: &str) -> anyhow::Result<(&str, &str)> {
 pub fn validate_market_active(ticker: &str, status: &DydxMarketStatus) -> anyhow::Result<()> {
     if *status != DydxMarketStatus::Active {
         anyhow::bail!(
-            "Market '{}' is not active (status: {:?}). Only active markets can be parsed.",
-            ticker,
-            status
+            "Market '{ticker}' is not active (status: {status:?}). Only active markets can be parsed."
         );
     }
     Ok(())
@@ -417,8 +410,7 @@ mod tests {
         assert!(
             error_msg.contains("Invalid ticker format")
                 || error_msg.contains("Failed to parse ticker"),
-            "Expected ticker format error, was: {}",
-            error_msg
+            "Expected ticker format error, was: {error_msg}"
         );
     }
 
@@ -968,7 +960,7 @@ pub fn parse_account_state(
     oracle_prices: &std::collections::HashMap<InstrumentId, Decimal>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> anyhow::Result<nautilus_model::events::AccountState> {
+) -> anyhow::Result<AccountState> {
     use std::collections::HashMap;
 
     use nautilus_model::{
@@ -1102,10 +1094,7 @@ pub fn parse_account_state(
 
         // Create synthetic instrument ID for account-level margin
         // Format: ACCOUNT.DYDX (similar to OKX pattern)
-        let margin_instrument_id = InstrumentId::new(
-            Symbol::new("ACCOUNT"),
-            nautilus_model::identifiers::Venue::new("DYDX"),
-        );
+        let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("DYDX"));
 
         let margin_balance =
             MarginBalance::new(initial_money, maintenance_money, margin_instrument_id);
@@ -1250,7 +1239,7 @@ mod reconciliation_tests {
         let order = Order {
             id: "order456".to_string(),
             subaccount_id: "subacct1".to_string(),
-            client_id: "".to_string(), // Empty client ID
+            client_id: String::new(), // Empty client ID
             clob_pair_id: 1,
             side: OrderSide::Sell,
             size: dec!(2.0),

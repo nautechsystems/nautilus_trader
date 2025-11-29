@@ -108,7 +108,7 @@ impl<'q> Encode<'q, Postgres> for U128Pg {
 impl<'r> Decode<'r, Postgres> for I256Pg {
     fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
         let s = <String as Decode<Postgres>>::decode(value)?;
-        let i256 = I256::from_str(&s).map_err(|e| format!("Failed to parse I256: {}", e))?;
+        let i256 = I256::from_str(&s).map_err(|e| format!("Failed to parse I256: {e}"))?;
         Ok(Self(i256))
     }
 }
@@ -117,7 +117,7 @@ impl<'r> Decode<'r, Postgres> for I256Pg {
 impl<'r> Decode<'r, Postgres> for U256Pg {
     fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
         let s = <String as Decode<Postgres>>::decode(value)?;
-        let u256 = U256::from_str(&s).map_err(|e| format!("Failed to parse U256: {}", e))?;
+        let u256 = U256::from_str(&s).map_err(|e| format!("Failed to parse U256: {e}"))?;
         Ok(Self(u256))
     }
 }
@@ -126,7 +126,7 @@ impl<'r> Decode<'r, Postgres> for U256Pg {
 impl<'r> Decode<'r, Postgres> for U160Pg {
     fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
         let s = <String as Decode<Postgres>>::decode(value)?;
-        let u160 = U160::from_str(&s).map_err(|e| format!("Failed to parse U160: {}", e))?;
+        let u160 = U160::from_str(&s).map_err(|e| format!("Failed to parse U160: {e}"))?;
         Ok(Self(u160))
     }
 }
@@ -135,7 +135,7 @@ impl<'r> Decode<'r, Postgres> for U160Pg {
 impl<'r> Decode<'r, Postgres> for U128Pg {
     fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
         let s = <String as Decode<Postgres>>::decode(value)?;
-        let u128_val = u128::from_str(&s).map_err(|e| format!("Failed to parse U128: {}", e))?;
+        let u128_val = u128::from_str(&s).map_err(|e| format!("Failed to parse U128: {e}"))?;
         Ok(Self(u128_val))
     }
 }

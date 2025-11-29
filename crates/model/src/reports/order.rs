@@ -220,8 +220,7 @@ impl OrderStatusReport {
 
         self.avg_px = Some(Decimal::from_f64_retain(avg_px).ok_or_else(|| {
             anyhow::anyhow!(
-                "Failed to convert avg_px to Decimal: {} (possible overflow/underflow)",
-                avg_px
+                "Failed to convert avg_px to Decimal: {avg_px} (possible overflow/underflow)"
             )
         })?);
         Ok(self)

@@ -526,16 +526,16 @@ pub fn parse_trade_bin(
 
     let open = bin
         .open
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {instrument_id}"))?;
     let high = bin
         .high
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {instrument_id}"))?;
     let low = bin
         .low
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {instrument_id}"))?;
     let close = bin
         .close
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {instrument_id}"))?;
 
     let open = Price::new(open, price_precision);
     let high = Price::new(high, price_precision);

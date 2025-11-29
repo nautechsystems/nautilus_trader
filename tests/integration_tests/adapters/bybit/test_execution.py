@@ -31,10 +31,12 @@ from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
@@ -1798,5 +1800,465 @@ async def test_handle_fill_report_ignores_non_spot_orders(
         # Assert - Should NOT track or trigger repayment for LINEAR
         assert order.client_order_id not in client._order_filled_qty
         http_client.get_spot_borrow_amount.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+# ============================================================================
+# MARGIN ACTION TESTS
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_success(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.borrow_spot = AsyncMock()
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT", "amount": 1000},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        http_client.borrow_spot.assert_awaited_once()
+        call_args = http_client.borrow_spot.call_args
+        assert call_args[0][0] == "USDT"
+        assert float(call_args[0][1]) == 1000.0
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_publishes_result(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.borrow_spot = AsyncMock()
+
+    received_data = []
+
+    def handler(data):
+        received_data.append(data)
+
+    # Subscribe to the margin borrow result topic
+    data_type = DataType(nautilus_pyo3.BybitMarginBorrowResult)
+    msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT", "amount": 1000},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Result was published and received
+        assert len(received_data) == 1
+        result = received_data[0]
+        assert isinstance(result, nautilus_pyo3.BybitMarginBorrowResult)
+        assert result.coin == "USDT"
+        assert result.amount == "1000"
+        assert result.success is True
+        assert result.message == ""
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_publishes_failure_result(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.borrow_spot = AsyncMock(side_effect=Exception("Insufficient balance"))
+
+    received_data = []
+
+    def handler(data):
+        received_data.append(data)
+
+    data_type = DataType(nautilus_pyo3.BybitMarginBorrowResult)
+    msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT", "amount": 1000},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Failure result was published
+        assert len(received_data) == 1
+        result = received_data[0]
+        assert isinstance(result, nautilus_pyo3.BybitMarginBorrowResult)
+        assert result.success is False
+        assert "Insufficient balance" in result.message
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_repay_action_publishes_result(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    received_data = []
+
+    def handler(data):
+        received_data.append(data)
+
+    data_type = DataType(nautilus_pyo3.BybitMarginRepayResult)
+    msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.REPAY, "coin": "USDT", "amount": 500},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        assert len(received_data) == 1
+        result = received_data[0]
+        assert isinstance(result, nautilus_pyo3.BybitMarginRepayResult)
+        assert result.coin == "USDT"
+        assert result.amount == "500"
+        assert result.success is True
+        assert result.result_status == "SU"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_get_borrow_amount_publishes_result(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    http_client.get_spot_borrow_amount = AsyncMock(return_value=Decimal("1234.56"))
+
+    received_data = []
+
+    def handler(data):
+        received_data.append(data)
+
+    data_type = DataType(nautilus_pyo3.BybitMarginStatusResult)
+    msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.GET_BORROW_AMOUNT, "coin": "USDT"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        assert len(received_data) == 1
+        result = received_data[0]
+        assert isinstance(result, nautilus_pyo3.BybitMarginStatusResult)
+        assert result.coin == "USDT"
+        assert result.borrow_amount == "1234.56"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_failure(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.borrow_spot = AsyncMock(side_effect=Exception("Insufficient balance"))
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT", "amount": 1000},
+    )
+
+    try:
+        # Act - Should not raise
+        await client._query_account(command)
+
+        # Assert - Borrow was attempted
+        http_client.borrow_spot.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_missing_params(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    http_client.borrow_spot = AsyncMock()
+
+    # Missing 'amount' param
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Borrow should NOT be called due to missing param
+        http_client.borrow_spot.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_repay_action_success(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.REPAY, "coin": "USDT", "amount": 500},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        http_client.repay_spot_borrow.assert_awaited_once()
+        call_args = http_client.repay_spot_borrow.call_args
+        assert call_args[0][0] == "USDT"
+        assert float(call_args[0][1]) == 500.0
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_repay_action_repay_all(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    # No 'amount' param means repay all
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.REPAY, "coin": "USDT"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        http_client.repay_spot_borrow.assert_awaited_once()
+        call_args = http_client.repay_spot_borrow.call_args
+        assert call_args[0][0] == "USDT"
+        assert call_args[0][1] is None  # None means repay all
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_repay_action_blocked_during_blackout(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 04:30:00", tz="UTC").value)  # Blackout window
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.REPAY, "coin": "USDT", "amount": 500},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Repay should NOT be called during blackout window
+        http_client.repay_spot_borrow.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_get_borrow_amount_success(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    http_client.get_spot_borrow_amount = AsyncMock(return_value=Decimal("1234.56"))
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.GET_BORROW_AMOUNT, "coin": "USDT"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        http_client.get_spot_borrow_amount.assert_awaited_once_with("USDT")
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_unknown_action_falls_back_to_update_state(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    # Mock _update_account_state directly to avoid complex dict mocking
+    update_state_mock = AsyncMock()
+    monkeypatch.setattr(client, "_update_account_state", update_state_mock)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": "unknown_action"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Falls back to update account state
+        update_state_mock.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_no_action_updates_account_state(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    # Mock _update_account_state directly to avoid complex dict mocking
+    update_state_mock = AsyncMock()
+    monkeypatch.setattr(client, "_update_account_state", update_state_mock)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - No action means update account state
+        update_state_mock.assert_awaited_once()
     finally:
         await client._disconnect()

@@ -929,8 +929,7 @@ pub fn parse_position_status_report(
 
             if avg_px_dec.is_zero() {
                 anyhow::bail!(
-                    "Cannot convert SHORT position from quote to base: avg_px is zero for {}",
-                    instrument_id
+                    "Cannot convert SHORT position from quote to base: avg_px is zero for {instrument_id}"
                 );
             }
 
@@ -938,11 +937,7 @@ pub fn parse_position_status_report(
             (PositionSide::Short, quantity_dec)
         } else {
             anyhow::bail!(
-                "Unknown position currency '{}' for instrument {} (base={}, quote={})",
-                pos_ccy,
-                instrument_id,
-                base_ccy,
-                quote_ccy
+                "Unknown position currency '{pos_ccy}' for instrument {instrument_id} (base={base_ccy}, quote={quote_ccy})"
             );
         }
     } else {
@@ -1044,7 +1039,7 @@ pub fn parse_fill_report(
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
     let fee_dec = Decimal::from_str(detail.fee.as_deref().unwrap_or("0"))?;
     let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_dec, || {
-        format!("fill report for instrument_id={}", instrument_id)
+        format!("fill report for instrument_id={instrument_id}")
     });
     let commission = Money::from_decimal(-fee_dec, fee_currency)?;
     let liquidity_side: LiquiditySide = detail.exec_type.into();
@@ -2392,7 +2387,7 @@ mod tests {
             Some(ustr::Ustr::from("12345678901234567890"))
         );
         assert_eq!(parsed.cl_ord_id, Some(ustr::Ustr::from("client_order_123")));
-        assert_eq!(parsed.tag, Some("".to_string()));
+        assert_eq!(parsed.tag, Some(String::new()));
     }
 
     #[rstest]
@@ -3541,7 +3536,7 @@ mod tests {
             interest: "0".to_string(),
             trade_id: Ustr::from("333"),
             notional_usd: "0".to_string(),
-            avg_px: "".to_string(),
+            avg_px: String::new(),
             upl: "0".to_string(),
             upl_ratio: "0".to_string(),
             u_time: 1622559930237,
@@ -3777,7 +3772,7 @@ mod tests {
             quote_borrowed: "0".to_string(),
             quote_interest: "0".to_string(),
             spot_in_use_amt: "0".to_string(),
-            spot_in_use_ccy: "".to_string(),
+            spot_in_use_ccy: String::new(),
             usd_px: "4000".to_string(),
         };
 
@@ -3845,7 +3840,7 @@ mod tests {
             quote_borrowed: "0".to_string(),
             quote_interest: "0".to_string(),
             spot_in_use_amt: "0".to_string(),
-            spot_in_use_ccy: "".to_string(),
+            spot_in_use_ccy: String::new(),
             usd_px: "4092".to_string(),
         };
 
@@ -3889,7 +3884,7 @@ mod tests {
             interest: "0".to_string(),
             trade_id: Ustr::from(""),
             notional_usd: "0".to_string(),
-            avg_px: "".to_string(),
+            avg_px: String::new(),
             upl: "0".to_string(),
             upl_ratio: "0".to_string(),
             u_time: 1622559930237,
@@ -3908,12 +3903,12 @@ mod tests {
             opt_val: "0".to_string(),
             pending_close_ord_liab_val: "0".to_string(),
             pnl: "0".to_string(),
-            pos_ccy: "".to_string(), // Empty pos_ccy = FLAT
+            pos_ccy: String::new(), // Empty pos_ccy = FLAT
             quote_bal: "0".to_string(),
             quote_borrowed: "0".to_string(),
             quote_interest: "0".to_string(),
             spot_in_use_amt: "0".to_string(),
-            spot_in_use_ccy: "".to_string(),
+            spot_in_use_ccy: String::new(),
             usd_px: "0".to_string(),
         };
 
@@ -3949,24 +3944,24 @@ mod tests {
             ct_mult: "1".to_string(),
             ct_val_ccy: "USD".to_string(),
             opt_type: crate::common::enums::OKXOptionType::None,
-            stk: "".to_string(),
+            stk: String::new(),
             list_time: None,
             exp_time: None,
-            lever: "".to_string(),
+            lever: String::new(),
             tick_sz: "0.1".to_string(),
             lot_sz: "1".to_string(),
             min_sz: "1".to_string(),
             ct_type: OKXContractType::Linear,
             state: crate::common::enums::OKXInstrumentStatus::Preopen,
-            rule_type: "".to_string(),
-            max_lmt_sz: "".to_string(),
-            max_mkt_sz: "".to_string(),
-            max_lmt_amt: "".to_string(),
-            max_mkt_amt: "".to_string(),
-            max_twap_sz: "".to_string(),
-            max_iceberg_sz: "".to_string(),
-            max_trigger_sz: "".to_string(),
-            max_stop_sz: "".to_string(),
+            rule_type: String::new(),
+            max_lmt_sz: String::new(),
+            max_mkt_sz: String::new(),
+            max_lmt_amt: String::new(),
+            max_mkt_amt: String::new(),
+            max_twap_sz: String::new(),
+            max_iceberg_sz: String::new(),
+            max_trigger_sz: String::new(),
+            max_stop_sz: String::new(),
         };
 
         let result =
@@ -3989,24 +3984,24 @@ mod tests {
             ct_mult: "1".to_string(),
             ct_val_ccy: "USD".to_string(),
             opt_type: crate::common::enums::OKXOptionType::None,
-            stk: "".to_string(),
+            stk: String::new(),
             list_time: None,
             exp_time: Some(1743004800000),
-            lever: "".to_string(),
+            lever: String::new(),
             tick_sz: "0.1".to_string(),
             lot_sz: "1".to_string(),
             min_sz: "1".to_string(),
             ct_type: OKXContractType::Linear,
             state: crate::common::enums::OKXInstrumentStatus::Preopen,
-            rule_type: "".to_string(),
-            max_lmt_sz: "".to_string(),
-            max_mkt_sz: "".to_string(),
-            max_lmt_amt: "".to_string(),
-            max_mkt_amt: "".to_string(),
-            max_twap_sz: "".to_string(),
-            max_iceberg_sz: "".to_string(),
-            max_trigger_sz: "".to_string(),
-            max_stop_sz: "".to_string(),
+            rule_type: String::new(),
+            max_lmt_sz: String::new(),
+            max_mkt_sz: String::new(),
+            max_lmt_amt: String::new(),
+            max_mkt_amt: String::new(),
+            max_twap_sz: String::new(),
+            max_iceberg_sz: String::new(),
+            max_trigger_sz: String::new(),
+            max_stop_sz: String::new(),
         };
 
         let result =
@@ -4032,21 +4027,21 @@ mod tests {
             stk: "50000".to_string(),
             list_time: None,
             exp_time: Some(1743004800000),
-            lever: "".to_string(),
+            lever: String::new(),
             tick_sz: "0.0005".to_string(),
             lot_sz: "0.1".to_string(),
             min_sz: "0.1".to_string(),
             ct_type: OKXContractType::Linear,
             state: crate::common::enums::OKXInstrumentStatus::Preopen,
-            rule_type: "".to_string(),
-            max_lmt_sz: "".to_string(),
-            max_mkt_sz: "".to_string(),
-            max_lmt_amt: "".to_string(),
-            max_mkt_amt: "".to_string(),
-            max_twap_sz: "".to_string(),
-            max_iceberg_sz: "".to_string(),
-            max_trigger_sz: "".to_string(),
-            max_stop_sz: "".to_string(),
+            rule_type: String::new(),
+            max_lmt_sz: String::new(),
+            max_mkt_sz: String::new(),
+            max_lmt_amt: String::new(),
+            max_mkt_amt: String::new(),
+            max_twap_sz: String::new(),
+            max_iceberg_sz: String::new(),
+            max_trigger_sz: String::new(),
+            max_stop_sz: String::new(),
         };
 
         let result =
@@ -4381,46 +4376,46 @@ mod tests {
     fn test_parse_spot_margin_position_from_balance_empty_strings() {
         let balance = OKXBalanceDetail {
             ccy: Ustr::from("USDT"),
-            liab: "".to_string(),
-            spot_in_use_amt: "".to_string(),
-            cross_liab: "".to_string(),
+            liab: String::new(),
+            spot_in_use_amt: String::new(),
+            cross_liab: String::new(),
             eq: "5000.25".to_string(),
             u_time: 1704067200000,
             avail_bal: "5000.25".to_string(),
             avail_eq: "5000.25".to_string(),
-            borrow_froz: "".to_string(),
+            borrow_froz: String::new(),
             cash_bal: "5000.25".to_string(),
-            dis_eq: "".to_string(),
+            dis_eq: String::new(),
             eq_usd: "5000.25".to_string(),
-            smt_sync_eq: "".to_string(),
-            spot_copy_trading_eq: "".to_string(),
-            fixed_bal: "".to_string(),
-            frozen_bal: "".to_string(),
-            imr: "".to_string(),
-            interest: "".to_string(),
-            iso_eq: "".to_string(),
-            iso_liab: "".to_string(),
-            iso_upl: "".to_string(),
-            max_loan: "".to_string(),
-            mgn_ratio: "".to_string(),
-            mmr: "".to_string(),
-            notional_lever: "".to_string(),
-            ord_frozen: "".to_string(),
-            reward_bal: "".to_string(),
-            cl_spot_in_use_amt: "".to_string(),
-            max_spot_in_use_amt: "".to_string(),
-            spot_iso_bal: "".to_string(),
-            stgy_eq: "".to_string(),
-            twap: "".to_string(),
-            upl: "".to_string(),
-            upl_liab: "".to_string(),
+            smt_sync_eq: String::new(),
+            spot_copy_trading_eq: String::new(),
+            fixed_bal: String::new(),
+            frozen_bal: String::new(),
+            imr: String::new(),
+            interest: String::new(),
+            iso_eq: String::new(),
+            iso_liab: String::new(),
+            iso_upl: String::new(),
+            max_loan: String::new(),
+            mgn_ratio: String::new(),
+            mmr: String::new(),
+            notional_lever: String::new(),
+            ord_frozen: String::new(),
+            reward_bal: String::new(),
+            cl_spot_in_use_amt: String::new(),
+            max_spot_in_use_amt: String::new(),
+            spot_iso_bal: String::new(),
+            stgy_eq: String::new(),
+            twap: String::new(),
+            upl: String::new(),
+            upl_liab: String::new(),
             spot_bal: "5000.25".to_string(),
-            open_avg_px: "".to_string(),
-            acc_avg_px: "".to_string(),
-            spot_upl: "".to_string(),
-            spot_upl_ratio: "".to_string(),
-            total_pnl: "".to_string(),
-            total_pnl_ratio: "".to_string(),
+            open_avg_px: String::new(),
+            acc_avg_px: String::new(),
+            spot_upl: String::new(),
+            spot_upl_ratio: String::new(),
+            total_pnl: String::new(),
+            total_pnl_ratio: String::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -4460,8 +4455,7 @@ mod tests {
 
         assert_eq!(
             time_in_force, expected_tif,
-            "OKXOrderType::{:?} should map to TimeInForce::{:?}",
-            okx_ord_type, expected_tif
+            "OKXOrderType::{okx_ord_type:?} should map to TimeInForce::{expected_tif:?}"
         );
     }
 
@@ -4577,7 +4571,7 @@ mod tests {
             _ => OKXOrderType::from(order_type),
         };
 
-        assert_eq!(okx_ord_type, expected_okx_type, "{}", description);
+        assert_eq!(okx_ord_type, expected_okx_type, "{description}");
     }
 
     #[rstest]

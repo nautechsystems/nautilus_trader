@@ -394,8 +394,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
         // Convert to PriceRaw (i128)
         anyhow::ensure!(
             price_raw_u256 <= U256::from(i128::MAX as u128),
-            "Price overflow: {} exceeds i128::MAX",
-            price_raw_u256
+            "Price overflow: {price_raw_u256} exceeds i128::MAX"
         );
 
         let price_raw = price_raw_u256.to::<i128>();

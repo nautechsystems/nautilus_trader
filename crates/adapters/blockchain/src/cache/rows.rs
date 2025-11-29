@@ -168,7 +168,7 @@ pub fn transform_row_to_dex_pool_data(
                 })?;
             let sqrt_price_x96 = U160::from_str(&sqrt_price_x96_str).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid sqrt_price_x96 '{}': {}", sqrt_price_x96_str, e).into(),
+                    format!("Invalid sqrt_price_x96 '{sqrt_price_x96_str}': {e}").into(),
                 )
             })?;
 
@@ -183,7 +183,7 @@ pub fn transform_row_to_dex_pool_data(
                 .ok_or_else(|| sqlx::Error::Decode("Missing swap_amount0 for swap event".into()))?;
             let amount0 = I256::from_str(&swap_amount0_str).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid swap_amount0 '{}': {}", swap_amount0_str, e).into(),
+                    format!("Invalid swap_amount0 '{swap_amount0_str}': {e}").into(),
                 )
             })?;
 
@@ -192,7 +192,7 @@ pub fn transform_row_to_dex_pool_data(
                 .ok_or_else(|| sqlx::Error::Decode("Missing swap_amount1 for swap event".into()))?;
             let amount1 = I256::from_str(&swap_amount1_str).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid swap_amount1 '{}': {}", swap_amount1_str, e).into(),
+                    format!("Invalid swap_amount1 '{swap_amount1_str}': {e}").into(),
                 )
             })?;
 
@@ -229,7 +229,7 @@ pub fn transform_row_to_dex_pool_data(
                 "Burn" => PoolLiquidityUpdateType::Burn,
                 _ => {
                     return Err(sqlx::Error::Decode(
-                        format!("Unknown liquidity update type: {}", kind_str).into(),
+                        format!("Unknown liquidity update type: {kind_str}").into(),
                     ));
                 }
             };
@@ -250,22 +250,18 @@ pub fn transform_row_to_dex_pool_data(
             let position_liquidity_str = row.try_get::<String, _>("position_liquidity")?;
             let position_liquidity = position_liquidity_str.parse::<u128>().map_err(|e| {
                 sqlx::Error::Decode(
-                    format!(
-                        "Invalid position_liquidity '{}': {}",
-                        position_liquidity_str, e
-                    )
-                    .into(),
+                    format!("Invalid position_liquidity '{position_liquidity_str}': {e}").into(),
                 )
             })?;
 
             let amount0_str = row.try_get::<String, _>("amount0")?;
             let amount0 = U256::from_str_radix(&amount0_str, 10).map_err(|e| {
-                sqlx::Error::Decode(format!("Invalid amount0 '{}': {}", amount0_str, e).into())
+                sqlx::Error::Decode(format!("Invalid amount0 '{amount0_str}': {e}").into())
             })?;
 
             let amount1_str = row.try_get::<String, _>("amount1")?;
             let amount1 = U256::from_str_radix(&amount1_str, 10).map_err(|e| {
-                sqlx::Error::Decode(format!("Invalid amount1 '{}': {}", amount1_str, e).into())
+                sqlx::Error::Decode(format!("Invalid amount1 '{amount1_str}': {e}").into())
             })?;
 
             let tick_lower = row
@@ -312,12 +308,12 @@ pub fn transform_row_to_dex_pool_data(
             // UNION queries return NUMERIC type, not domain types, so we need to read as strings
             let amount0_str = row.try_get::<String, _>("amount0")?;
             let amount0 = amount0_str.parse::<u128>().map_err(|e| {
-                sqlx::Error::Decode(format!("Invalid amount0 '{}': {}", amount0_str, e).into())
+                sqlx::Error::Decode(format!("Invalid amount0 '{amount0_str}': {e}").into())
             })?;
 
             let amount1_str = row.try_get::<String, _>("amount1")?;
             let amount1 = amount1_str.parse::<u128>().map_err(|e| {
-                sqlx::Error::Decode(format!("Invalid amount1 '{}': {}", amount1_str, e).into())
+                sqlx::Error::Decode(format!("Invalid amount1 '{amount1_str}': {e}").into())
             })?;
 
             let tick_lower = row
@@ -368,29 +364,25 @@ pub fn transform_row_to_dex_pool_data(
             let flash_amount0_str = row.try_get::<String, _>("flash_amount0")?;
             let amount0 = U256::from_str_radix(&flash_amount0_str, 10).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid flash_amount0 '{}': {}", flash_amount0_str, e).into(),
+                    format!("Invalid flash_amount0 '{flash_amount0_str}': {e}").into(),
                 )
             })?;
 
             let flash_amount1_str = row.try_get::<String, _>("flash_amount1")?;
             let amount1 = U256::from_str_radix(&flash_amount1_str, 10).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid flash_amount1 '{}': {}", flash_amount1_str, e).into(),
+                    format!("Invalid flash_amount1 '{flash_amount1_str}': {e}").into(),
                 )
             })?;
 
             let flash_paid0_str = row.try_get::<String, _>("flash_paid0")?;
             let paid0 = U256::from_str_radix(&flash_paid0_str, 10).map_err(|e| {
-                sqlx::Error::Decode(
-                    format!("Invalid flash_paid0 '{}': {}", flash_paid0_str, e).into(),
-                )
+                sqlx::Error::Decode(format!("Invalid flash_paid0 '{flash_paid0_str}': {e}").into())
             })?;
 
             let flash_paid1_str = row.try_get::<String, _>("flash_paid1")?;
             let paid1 = U256::from_str_radix(&flash_paid1_str, 10).map_err(|e| {
-                sqlx::Error::Decode(
-                    format!("Invalid flash_paid1 '{}': {}", flash_paid1_str, e).into(),
-                )
+                sqlx::Error::Decode(format!("Invalid flash_paid1 '{flash_paid1_str}': {e}").into())
             })?;
 
             let pool_flash = PoolFlash::new(
@@ -414,7 +406,7 @@ pub fn transform_row_to_dex_pool_data(
             Ok(DexPoolData::Flash(pool_flash))
         }
         _ => Err(sqlx::Error::Decode(
-            format!("Unknown event type: {}", event_type).into(),
+            format!("Unknown event type: {event_type}").into(),
         )),
     }
 }

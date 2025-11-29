@@ -328,11 +328,7 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
     assert!(result.is_err());
     assert_eq!(
         result.err().unwrap().to_string(),
-        format!(
-            "Invalid tick bounds for {} and {}",
-            invalid_tick_lower, invalid_tick_upper
-        )
-        .as_str(),
+        format!("Invalid tick bounds for {invalid_tick_lower} and {invalid_tick_upper}").as_str(),
     );
 }
 
@@ -1831,9 +1827,7 @@ fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolPr
     let new_tick = uni_pool_profiler.state.current_tick;
     assert!(
         new_tick <= upper_tick,
-        "Price should have crossed to or below tick {}, was {}",
-        upper_tick,
-        new_tick
+        "Price should have crossed to or below tick {upper_tick}, was {new_tick}"
     );
 
     // When crossing tick -23040 downward (cross_tick_down):
@@ -1899,9 +1893,7 @@ fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProf
     let new_tick = uni_pool_profiler.state.current_tick;
     assert!(
         new_tick >= lower_tick,
-        "Price should have crossed above or at tick {}, was {}",
-        lower_tick,
-        new_tick
+        "Price should have crossed above or at tick {lower_tick}, was {new_tick}"
     );
 
     // When crossing tick -22980 upward (cross_tick_up):
@@ -2121,7 +2113,7 @@ fn get_execution_price_string(amount0: I256, amount1: I256) -> String {
     let execution_price = amount1_decimal.div(amount0_decimal).mul(Decimal::from(-1));
 
     // Format to 5 significant digits to mimic toPrecision(5)
-    format!("{:.5}", execution_price)
+    format!("{execution_price:.5}")
         .trim_end_matches('0')
         .trim_end_matches('.')
         .to_string()
@@ -2150,7 +2142,7 @@ fn format_price(sqrt_price_x96: U160) -> String {
     if rounded_decimal >= U256::from(10000u64) {
         format!("{}.0000", integer_part + U256::from(1u64))
     } else {
-        format!("{}.{:04}", integer_part, rounded_decimal)
+        format!("{integer_part}.{rounded_decimal:04}")
     }
 }
 
@@ -2264,10 +2256,7 @@ fn test_size_for_impact_bps_validation(medium_fee_pool_profiler: PoolProfiler) {
             let diff = actual_slippage.abs_diff(*target_bps);
             assert!(
                 diff <= 1,
-                "Slippage should be within 1 BPS tolerance. Target: {}, Actual: {}, Diff: {}",
-                target_bps,
-                actual_slippage,
-                diff
+                "Slippage should be within 1 BPS tolerance. Target: {target_bps}, Actual: {actual_slippage}, Diff: {diff}"
             );
         }
     }

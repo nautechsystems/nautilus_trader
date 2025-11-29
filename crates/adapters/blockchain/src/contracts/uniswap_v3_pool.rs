@@ -234,7 +234,7 @@ impl UniswapV3PoolContract {
         let tick_i24 = I24::try_from(tick).map_err(|_| UniswapV3PoolError::CallFailed {
             field: "tick".to_string(),
             pool: *pool_address,
-            reason: format!("Tick {} out of range for int24", tick),
+            reason: format!("Tick {tick} out of range for int24"),
         })?;
 
         let call_data = UniswapV3Pool::ticksCall { tick: tick_i24 }.abi_encode();
@@ -246,7 +246,7 @@ impl UniswapV3PoolContract {
         let tick_info =
             UniswapV3Pool::ticksCall::abi_decode_returns(&raw_response).map_err(|e| {
                 UniswapV3PoolError::DecodingError {
-                    field: format!("ticks({})", tick),
+                    field: format!("ticks({tick})"),
                     pool: *pool_address,
                     reason: e.to_string(),
                     raw_data: hex::encode(&raw_response),
@@ -303,7 +303,7 @@ impl UniswapV3PoolContract {
 
             let tick_info = UniswapV3Pool::ticksCall::abi_decode_returns(&result.returnData)
                 .map_err(|e| UniswapV3PoolError::DecodingError {
-                    field: format!("ticks({})", tick_value),
+                    field: format!("ticks({tick_value})"),
                     pool: *pool_address,
                     reason: e.to_string(),
                     raw_data: hex::encode(&result.returnData),

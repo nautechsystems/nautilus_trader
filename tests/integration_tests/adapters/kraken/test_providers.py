@@ -34,7 +34,7 @@ async def test_load_all_async_populates_provider(monkeypatch, instrument):
     mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
 
     provider = KrakenInstrumentProvider(
-        http_clients={KrakenProductType.SPOT: mock_http_client},
+        http_client_spot=mock_http_client,
         product_types=[KrakenProductType.SPOT],
     )
 
@@ -60,7 +60,7 @@ async def test_load_ids_async_loads_all_instruments(monkeypatch, instrument, ven
     mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
 
     provider = KrakenInstrumentProvider(
-        http_clients={KrakenProductType.SPOT: mock_http_client},
+        http_client_spot=mock_http_client,
         product_types=[KrakenProductType.SPOT],
     )
 
@@ -104,7 +104,7 @@ async def test_load_ids_async_propagates_exceptions(instrument):
     )
 
     provider = KrakenInstrumentProvider(
-        http_clients={KrakenProductType.SPOT: mock_http_client},
+        http_client_spot=mock_http_client,
         product_types=[KrakenProductType.SPOT],
     )
 
@@ -121,7 +121,7 @@ async def test_load_async_delegates_to_load_ids(monkeypatch, instrument):
     mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
 
     provider = KrakenInstrumentProvider(
-        http_clients={KrakenProductType.SPOT: mock_http_client},
+        http_client_spot=mock_http_client,
         product_types=[KrakenProductType.SPOT],
     )
 
@@ -143,7 +143,7 @@ async def test_product_types_returns_copy(instrument):
     # Arrange
     mock_http_client = MagicMock()
     provider = KrakenInstrumentProvider(
-        http_clients={KrakenProductType.SPOT: mock_http_client},
+        http_client_spot=mock_http_client,
         product_types=[KrakenProductType.SPOT],
     )
 

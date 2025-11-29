@@ -387,11 +387,11 @@ pub fn parse_order_status_report_from_basic(
     let orig_sz: Decimal = order
         .orig_sz
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse orig_sz: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse orig_sz: {e}"))?;
     let current_sz: Decimal = order
         .sz
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse sz: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse sz: {e}"))?;
 
     let quantity = Quantity::new(orig_sz.abs().to_f64().unwrap_or(0.0), size_precision);
     let filled_sz = orig_sz.abs() - current_sz.abs();
@@ -429,7 +429,7 @@ pub fn parse_order_status_report_from_basic(
     let limit_px: Decimal = order
         .limit_px
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse limit_px: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse limit_px: {e}"))?;
     report = report.with_price(Price::new(
         limit_px.to_f64().unwrap_or(0.0),
         price_precision,
@@ -439,7 +439,7 @@ pub fn parse_order_status_report_from_basic(
     if let Some(trigger_px) = &order.trigger_px {
         let trig_px: Decimal = trigger_px
             .parse()
-            .map_err(|e| anyhow::anyhow!("Failed to parse trigger_px: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to parse trigger_px: {e}"))?;
         report = report
             .with_trigger_price(Price::new(trig_px.to_f64().unwrap_or(0.0), price_precision))
             .with_trigger_type(TriggerType::Default);
@@ -485,11 +485,11 @@ pub fn parse_fill_report(
     let px: Decimal = fill
         .px
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse fill price: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse fill price: {e}"))?;
     let sz: Decimal = fill
         .sz
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse fill size: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse fill size: {e}"))?;
 
     let last_px = Price::new(px.to_f64().unwrap_or(0.0), price_precision);
     let last_qty = Quantity::new(sz.abs().to_f64().unwrap_or(0.0), size_precision);
@@ -498,7 +498,7 @@ pub fn parse_fill_report(
     let fee_amount: Decimal = fill
         .fee
         .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse fee: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse fee: {e}"))?;
 
     // Determine fee currency - Hyperliquid perp fees are in USDC
     let fee_currency = Currency::from("USDC");

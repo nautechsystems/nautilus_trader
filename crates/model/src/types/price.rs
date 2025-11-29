@@ -1003,7 +1003,7 @@ mod tests {
         assert_eq!(format!("{price:?}"), expected_debug);
         assert_eq!(format!("{price}"), expected_display);
         assert_eq!(
-            price.to_formatted_string().replace("_", ""),
+            price.to_formatted_string().replace('_', ""),
             expected_display
         );
     }

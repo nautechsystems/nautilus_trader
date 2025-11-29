@@ -363,7 +363,7 @@ impl BybitRawHttpClient {
                     if query.is_empty() {
                         url
                     } else {
-                        format!("{}?{}", url, query)
+                        format!("{url}?{query}")
                     }
                 } else {
                     url
@@ -1574,7 +1574,7 @@ impl BybitHttpClient {
         self.inner
             .borrow(coin, &amount_str)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to borrow {} {}: {}", amount, coin, e))
+            .map_err(|e| anyhow::anyhow!("Failed to borrow {amount} {coin}: {e}"))
     }
 
     /// Repays spot borrows for a specific coin.

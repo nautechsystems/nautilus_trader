@@ -14,42 +14,27 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Execution client definitions for live trading.
+//!
+//! This trait extends the base `ExecutionClient` trait with async methods
+//! for generating execution reports used in reconciliation.
 
-use std::{cell::Ref, fmt::Debug};
+use std::fmt::Debug;
 
 use async_trait::async_trait;
-use nautilus_common::{
-    clock::Clock,
-    messages::{
-        ExecutionEvent,
-        execution::{GenerateFillReports, GenerateOrderStatusReport, GeneratePositionReports},
-    },
+use nautilus_common::messages::execution::{
+    GenerateFillReports, GenerateOrderStatusReport, GeneratePositionReports,
 };
 use nautilus_execution::client::ExecutionClient;
 use nautilus_model::reports::{
     ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport,
 };
 
+/// Live execution client trait with async report generation methods.
+///
+/// Extends `ExecutionClient` with async methods for generating execution reports
+/// used by the `ExecutionManager` for reconciliation.
 #[async_trait(?Send)]
 pub trait LiveExecutionClient: ExecutionClient {
-    /// Establishes a connection for live execution.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if connection fails.
-    async fn connect(&mut self) -> anyhow::Result<()>;
-
-    /// Disconnects the live execution client.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if disconnection fails.
-    async fn disconnect(&mut self) -> anyhow::Result<()>;
-
-    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent>;
-
-    fn get_clock(&self) -> Ref<'_, dyn Clock>;
-
     /// Generates a single order status report.
     ///
     /// # Errors

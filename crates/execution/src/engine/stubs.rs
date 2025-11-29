@@ -15,6 +15,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
+use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -72,6 +73,7 @@ impl StubExecutionClient {
     }
 }
 
+#[async_trait(?Send)]
 impl ExecutionClient for StubExecutionClient {
     fn is_connected(&self) -> bool {
         self.is_connected

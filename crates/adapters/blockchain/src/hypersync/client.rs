@@ -22,7 +22,7 @@ use hypersync_client::{
     net_types::{BlockField, BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_model::{
     defi::{Block, DexType, SharedChain},
     identifiers::InstrumentId,
@@ -177,7 +177,7 @@ impl HyperSyncClient {
                                     None => continue,
                                 };
                                 if event_signature == swap_event_encoded_signature {
-                                    match dex_extended.parse_swap_event(log.clone()) {
+                                    match dex_extended.parse_swap_event_hypersync(log.clone()) {
                                         Ok(swap_event) => {
                                             if let Err(e) =
                                                 tx.send(BlockchainMessage::SwapEvent(swap_event))
@@ -193,7 +193,7 @@ impl HyperSyncClient {
                                         }
                                     }
                                 } else if event_signature == mint_event_encoded_signature {
-                                    match dex_extended.parse_mint_event(log.clone()) {
+                                    match dex_extended.parse_mint_event_hypersync(log.clone()) {
                                         Ok(swap_event) => {
                                             if let Err(e) =
                                                 tx.send(BlockchainMessage::MintEvent(swap_event))
@@ -209,7 +209,7 @@ impl HyperSyncClient {
                                         }
                                     }
                                 } else if event_signature == burn_event_encoded_signature {
-                                    match dex_extended.parse_burn_event(log.clone()) {
+                                    match dex_extended.parse_burn_event_hypersync(log.clone()) {
                                         Ok(swap_event) => {
                                             if let Err(e) =
                                                 tx.send(BlockchainMessage::BurnEvent(swap_event))

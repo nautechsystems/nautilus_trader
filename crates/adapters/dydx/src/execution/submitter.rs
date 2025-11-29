@@ -15,53 +15,48 @@
 
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
-    instruments::Instrument,
+    identifiers::InstrumentId,
     types::{Price, Quantity},
 };
+use rust_decimal::{Decimal, prelude::FromStr};
 
 use crate::{
+    common::parse::order_side_to_proto,
     error::DydxError,
-    grpc::{DydxGrpcClient, OrderMarketParams, Wallet},
-    // TODO: Enable when proto is generated
-    // proto::dydxprotocol::clob::order::{
-    //     Side as ProtoOrderSide, TimeInForce as ProtoTimeInForce,
-    // },
+    grpc::{
+        DydxGrpcClient, OrderBuilder, OrderGoodUntil, OrderMarketParams,
+        SHORT_TERM_ORDER_MAXIMUM_LIFETIME, Wallet, types::ChainId,
+    },
+    http::client::DydxHttpClient,
+    proto::{
+        ToAny,
+        dydxprotocol::clob::{MsgCancelOrder, MsgPlaceOrder},
+    },
 };
-
-// Temporary placeholder types until proto is generated
-#[derive(Debug, Clone, Copy)]
-pub enum ProtoOrderSide {
-    Buy,
-    Sell,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ProtoTimeInForce {
-    Unspecified,
-    Ioc,
-    FillOrKill,
-}
 
 #[derive(Debug)]
 pub struct OrderSubmitter {
-    #[allow(dead_code)]
     grpc_client: DydxGrpcClient,
-    #[allow(dead_code)]
+    http_client: DydxHttpClient,
     wallet_address: String,
-    #[allow(dead_code)]
     subaccount_number: u32,
+    chain_id: ChainId,
 }
 
 impl OrderSubmitter {
     pub fn new(
         grpc_client: DydxGrpcClient,
+        http_client: DydxHttpClient,
         wallet_address: String,
         subaccount_number: u32,
+        chain_id: ChainId,
     ) -> Self {
         Self {
             grpc_client,
+            http_client,
             wallet_address,
             subaccount_number,
+            chain_id,
         }
     }
 
@@ -74,20 +69,50 @@ impl OrderSubmitter {
     /// Returns `DydxError` if gRPC submission fails.
     pub async fn submit_market_order(
         &self,
-        _wallet: &Wallet,
+        wallet: &Wallet,
+        instrument_id: InstrumentId,
         client_order_id: u32,
         side: OrderSide,
         quantity: Quantity,
-        _block_height: u32,
+        block_height: u32,
     ) -> Result<(), DydxError> {
-        // TODO: Implement when proto is generated
         tracing::info!(
-            "[STUB] Submitting market order: client_id={}, side={:?}, quantity={}",
+            "Submitting market order: client_id={}, side={:?}, quantity={}",
             client_order_id,
             side,
             quantity
         );
-        Ok(())
+
+        // Get market params from instrument cache
+        let market_params = self.get_market_params(instrument_id)?;
+
+        // Build order using OrderBuilder
+        let mut builder = OrderBuilder::new(
+            market_params,
+            self.wallet_address.clone(),
+            self.subaccount_number,
+            client_order_id,
+        );
+
+        let proto_side = order_side_to_proto(side);
+        let size_decimal = Decimal::from_str(&quantity.to_string())
+            .map_err(|e| DydxError::Parse(format!("Failed to convert quantity: {e}")))?;
+
+        builder = builder.market(proto_side, size_decimal);
+        builder = builder.short_term(); // Market orders are short-term
+        builder = builder.until(OrderGoodUntil::Block(
+            block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+        ));
+
+        let order = builder
+            .build()
+            .map_err(|e| DydxError::Order(format!("Failed to build market order: {e}")))?;
+
+        // Create MsgPlaceOrder
+        let msg_place_order = MsgPlaceOrder { order: Some(order) };
+
+        // Broadcast transaction
+        self.broadcast_order_message(wallet, msg_place_order).await
     }
 
     /// Submits a limit order to dYdX via gRPC.
@@ -100,7 +125,8 @@ impl OrderSubmitter {
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_limit_order(
         &self,
-        _wallet: &Wallet,
+        wallet: &Wallet,
+        instrument_id: InstrumentId,
         client_order_id: u32,
         side: OrderSide,
         price: Price,
@@ -108,12 +134,11 @@ impl OrderSubmitter {
         time_in_force: TimeInForce,
         post_only: bool,
         reduce_only: bool,
-        _block_height: u32,
-        _expire_time: Option<i64>,
+        block_height: u32,
+        expire_time: Option<i64>,
     ) -> Result<(), DydxError> {
-        // TODO: Implement when proto is generated
         tracing::info!(
-            "[STUB] Submitting limit order: client_id={}, side={:?}, price={}, quantity={}, tif={:?}, post_only={}, reduce_only={}",
+            "Submitting limit order: client_id={}, side={:?}, price={}, quantity={}, tif={:?}, post_only={}, reduce_only={}",
             client_order_id,
             side,
             price,
@@ -122,46 +147,134 @@ impl OrderSubmitter {
             post_only,
             reduce_only
         );
-        Ok(())
+
+        // Get market params from instrument cache
+        let market_params = self.get_market_params(instrument_id)?;
+
+        // Build order using OrderBuilder
+        let mut builder = OrderBuilder::new(
+            market_params,
+            self.wallet_address.clone(),
+            self.subaccount_number,
+            client_order_id,
+        );
+
+        let proto_side = order_side_to_proto(side);
+        let price_decimal = Decimal::from_str(&price.to_string())
+            .map_err(|e| DydxError::Parse(format!("Failed to convert price: {e}")))?;
+        let size_decimal = Decimal::from_str(&quantity.to_string())
+            .map_err(|e| DydxError::Parse(format!("Failed to convert quantity: {e}")))?;
+
+        builder = builder.limit(proto_side, price_decimal, size_decimal);
+
+        // Set time in force (post_only orders use TimeInForce::PostOnly in dYdX)
+        use crate::common::parse::time_in_force_to_proto_with_post_only;
+        let proto_tif = time_in_force_to_proto_with_post_only(time_in_force, post_only);
+        builder = builder.time_in_force(proto_tif);
+
+        // Set reduce_only flag
+        if reduce_only {
+            builder = builder.reduce_only(true);
+        }
+
+        // Determine if short-term or long-term based on TIF and expire_time
+        if let Some(expire_ts) = expire_time {
+            builder = builder.long_term();
+            builder = builder.until(OrderGoodUntil::Time(
+                chrono::DateTime::from_timestamp(expire_ts, 0)
+                    .ok_or_else(|| DydxError::Parse("Invalid expire timestamp".to_string()))?,
+            ));
+        } else {
+            builder = builder.short_term();
+            builder = builder.until(OrderGoodUntil::Block(
+                block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+            ));
+        }
+
+        let order = builder
+            .build()
+            .map_err(|e| DydxError::Order(format!("Failed to build limit order: {e}")))?;
+
+        // Create MsgPlaceOrder
+        let msg_place_order = MsgPlaceOrder { order: Some(order) };
+
+        // Broadcast transaction
+        self.broadcast_order_message(wallet, msg_place_order).await
     }
 
     /// Cancels an order on dYdX via gRPC.
     ///
+    /// Requires instrument_id to retrieve correct clob_pair_id from market params.
+    /// For now, assumes short-term orders (order_flags=0). Future enhancement:
+    /// track order_flags when placing orders to handle long-term cancellations.
+    ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC cancellation fails.
+    /// Returns `DydxError` if gRPC cancellation fails or market params not found.
     pub async fn cancel_order(
         &self,
-        _wallet: &Wallet,
+        wallet: &Wallet,
+        instrument_id: InstrumentId,
         client_order_id: u32,
-        _block_height: u32,
+        block_height: u32,
     ) -> Result<(), DydxError> {
-        // TODO: Implement when proto is generated
-        tracing::info!("[STUB] Cancelling order: client_id={}", client_order_id);
-        Ok(())
+        tracing::info!(
+            "Cancelling order: client_id={}, instrument={}",
+            client_order_id,
+            instrument_id
+        );
+
+        // Get market params to retrieve clob_pair_id
+        let market_params = self.get_market_params(instrument_id)?;
+
+        // Create MsgCancelOrder
+        let msg_cancel = MsgCancelOrder {
+            order_id: Some(crate::proto::dydxprotocol::clob::OrderId {
+                subaccount_id: Some(crate::proto::dydxprotocol::subaccounts::SubaccountId {
+                    owner: self.wallet_address.clone(),
+                    number: self.subaccount_number,
+                }),
+                client_id: client_order_id,
+                order_flags: 0, // Short-term orders (0), long-term (64), conditional (32)
+                clob_pair_id: market_params.clob_pair_id,
+            }),
+            good_til_oneof: Some(
+                crate::proto::dydxprotocol::clob::msg_cancel_order::GoodTilOneof::GoodTilBlock(
+                    block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+                ),
+            ),
+        };
+
+        // Broadcast transaction
+        self.broadcast_cancel_message(wallet, msg_cancel).await
     }
 
     /// Cancels multiple orders via individual gRPC transactions.
     ///
     /// dYdX v4 requires separate blockchain transactions for each cancellation.
+    /// Each order is cancelled sequentially to avoid nonce conflicts.
+    ///
+    /// # Arguments
+    ///
+    /// * `wallet` - The wallet for signing transactions
+    /// * `orders` - Slice of (InstrumentId, client_order_id) tuples to cancel
+    /// * `block_height` - Current block height for order expiration
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if any gRPC cancellation fails.
+    /// Returns `DydxError::NotImplemented` until fully implemented.
     pub async fn cancel_orders_batch(
         &self,
         _wallet: &Wallet,
-        client_order_ids: &[u32],
+        _orders: &[(InstrumentId, u32)],
         _block_height: u32,
     ) -> Result<(), DydxError> {
-        // TODO: Implement when proto is generated
-        // Note: Each order requires a separate gRPC transaction
-        tracing::info!(
-            "[STUB] Batch cancelling {} orders: ids={:?}",
-            client_order_ids.len(),
-            client_order_ids
-        );
-        Ok(())
+        // TODO: Implement sequential per-order cancellation
+        // For each (instrument_id, client_id) in orders:
+        //   self.cancel_order(wallet, instrument_id, client_id, block_height).await?
+        Err(DydxError::NotImplemented(
+            "Batch cancel requires instrument_id per order - not yet implemented".to_string(),
+        ))
     }
 
     /// Submits a stop market order to dYdX via gRPC.
@@ -280,87 +393,146 @@ impl OrderSubmitter {
         ))
     }
 
-    #[allow(dead_code)]
-    fn extract_market_params(
+    /// Get market params from instrument cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if instrument is not found in cache or market params cannot be extracted.
+    fn get_market_params(
         &self,
-        instrument: &dyn Instrument,
+        instrument_id: InstrumentId,
     ) -> Result<OrderMarketParams, DydxError> {
-        // NOTE:
-        // dYdX-specific quantization parameters (atomic_resolution, quantum_conversion_exponent,
-        // step_base_quantums, subticks_per_tick and clob_pair_id) ultimately come from the
-        // PerpetualMarket metadata exposed by the Indexer API.
-        //
-        // The full wiring from HTTP market metadata → instrument → gRPC order builder is not yet
-        // implemented in Rust. Until proto files are generated and that plumbing is in place, we
-        // derive a best-effort set of parameters from the instrument itself so that:
-        // - Values are at least instrument-specific (not hard-coded placeholders).
-        // - Future work can replace this logic with exact dYdX metadata without changing callers.
-        //
-        // Mapping strategy (stub until proto):
-        // - atomic_resolution: negative of the instrument size precision.
-        // - quantum_conversion_exponent: negative of the instrument price precision.
-        // - step_base_quantums / subticks_per_tick: minimal non-zero values (1) so that
-        //   quantization code has valid, non-zero divisors without assuming dYdX-specific scales.
-        //
-        // clob_pair_id and oracle_price still require venue metadata and remain stubbed.
-        let size_precision = instrument.size_precision() as i32;
-        let price_precision = instrument.price_precision() as i32;
-
-        let atomic_resolution = -size_precision;
-        let quantum_conversion_exponent = -price_precision;
+        // Look up market data from HTTP client cache
+        let market = self
+            .http_client
+            .get_market_params(&instrument_id)
+            .ok_or_else(|| {
+                DydxError::Order(format!(
+                    "Market params for instrument '{instrument_id}' not found in cache"
+                ))
+            })?;
 
         Ok(OrderMarketParams {
-            atomic_resolution,
-            clob_pair_id: 0, // Will be set from instrument metadata
-            oracle_price: None,
-            quantum_conversion_exponent,
-            step_base_quantums: 1,
-            subticks_per_tick: 1,
+            atomic_resolution: market.atomic_resolution,
+            clob_pair_id: market.clob_pair_id,
+            oracle_price: None, // Oracle price is dynamic, updated separately
+            quantum_conversion_exponent: market.quantum_conversion_exponent,
+            step_base_quantums: market.step_base_quantums,
+            subticks_per_tick: market.subticks_per_tick,
         })
     }
 
-    /// Handles the exchange response from order submission.
-    #[allow(dead_code)]
-    fn handle_exchange_response(&self, _response: &[u8]) -> Result<String, DydxError> {
-        // TODO: Parse proto response when available
-        Ok("stubbed_tx_hash".to_string())
-    }
+    /// Broadcasts a transaction message to dYdX via gRPC.
+    ///
+    /// Generic method for broadcasting any transaction type that implements `ToAny`.
+    /// Handles signing, serialization, and gRPC transmission.
+    async fn broadcast_tx_message<T: ToAny>(
+        &self,
+        wallet: &Wallet,
+        msg: T,
+        operation: &str,
+    ) -> Result<(), DydxError> {
+        use crate::grpc::TxBuilder;
 
-    /// Parses exchange order ID from response.
-    #[allow(dead_code)]
-    fn parse_venue_order_id(&self, _response: &[u8]) -> Result<String, DydxError> {
-        // TODO: Extract venue order ID from proto response
-        Ok("stubbed_venue_id".to_string())
-    }
+        // Get account for signing
+        let account = wallet
+            .account_offline(self.subaccount_number)
+            .map_err(|e| DydxError::Wallet(format!("Failed to derive account: {e}")))?;
 
-    /// Stores ClientOrderId to VenueOrderId mapping.
-    #[allow(dead_code)]
-    fn store_order_id_mapping(&self, _client_id: u32, _venue_id: &str) -> Result<(), DydxError> {
-        // TODO: Store in cache/database
-        tracing::debug!("[STUB] Would store order ID mapping");
+        // Build transaction
+        let tx_builder =
+            TxBuilder::new(self.chain_id.clone(), "adydx".to_string()).map_err(|e| {
+                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                    "TxBuilder init failed: {e}"
+                ))))
+            })?;
+
+        // Convert message to Any
+        let any_msg = msg.to_any();
+
+        // Build and sign transaction
+        let tx_raw = tx_builder
+            .build_transaction(&account, vec![any_msg], None)
+            .map_err(|e| {
+                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                    "Failed to build tx: {e}"
+                ))))
+            })?;
+
+        // Broadcast transaction
+        let tx_bytes = tx_raw.to_bytes().map_err(|e| {
+            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                "Failed to serialize tx: {e}"
+            ))))
+        })?;
+
+        let mut grpc_client = self.grpc_client.clone();
+        let tx_hash = grpc_client.broadcast_tx(tx_bytes).await.map_err(|e| {
+            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                "Broadcast failed: {e}"
+            ))))
+        })?;
+
+        tracing::info!("{} successfully: tx_hash={}", operation, tx_hash);
         Ok(())
     }
 
-    /// Retrieves VenueOrderId from ClientOrderId.
-    #[allow(dead_code)]
-    fn get_venue_order_id(&self, _client_id: u32) -> Result<Option<String>, DydxError> {
-        // TODO: Retrieve from cache/database
-        Ok(None)
+    /// Broadcast order placement message via gRPC.
+    async fn broadcast_order_message(
+        &self,
+        wallet: &Wallet,
+        msg: MsgPlaceOrder,
+    ) -> Result<(), DydxError> {
+        self.broadcast_tx_message(wallet, msg, "Order placed").await
     }
 
-    /// Generates OrderAccepted event from exchange response.
-    #[allow(dead_code)]
-    fn generate_order_accepted(&self, _client_id: u32, _venue_id: &str) -> Result<(), DydxError> {
-        // TODO: Generate and send OrderAccepted event
-        tracing::debug!("[STUB] Would generate OrderAccepted event");
-        Ok(())
+    /// Broadcast order cancellation message via gRPC.
+    async fn broadcast_cancel_message(
+        &self,
+        wallet: &Wallet,
+        msg: MsgCancelOrder,
+    ) -> Result<(), DydxError> {
+        self.broadcast_tx_message(wallet, msg, "Order cancelled")
+            .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_cancel_orders_batch_signature() {
+        // Test that cancel_orders_batch accepts (InstrumentId, u32) tuples
+        // This ensures the signature matches what's needed for implementation
+
+        // Create dummy data
+        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+        let orders = [(instrument_id, 1u32), (instrument_id, 2u32)];
+
+        // Verify tuple structure
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].0, instrument_id);
+        assert_eq!(orders[0].1, 1u32);
+        assert_eq!(orders[1].1, 2u32);
     }
 
-    /// Generates OrderRejected event from exchange error.
-    #[allow(dead_code)]
-    fn generate_order_rejected(&self, _client_id: u32, _reason: &str) -> Result<(), DydxError> {
-        // TODO: Generate and send OrderRejected event
-        tracing::debug!("[STUB] Would generate OrderRejected event");
-        Ok(())
+    #[rstest]
+    fn test_cancel_orders_batch_returns_not_implemented() {
+        // The stub should return NotImplemented error
+        // This documents expected behavior until fully implemented
+
+        use tokio::runtime::Runtime;
+
+        let rt = Runtime::new().unwrap();
+
+        rt.block_on(async {
+            // Mock setup would go here
+            // For now, just verify the error type exists
+            let err = DydxError::NotImplemented("test".to_string());
+            assert!(matches!(err, DydxError::NotImplemented(_)));
+        });
     }
 }

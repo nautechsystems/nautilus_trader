@@ -15,8 +15,9 @@
 
 //! A performant, generic, multi-purpose order book.
 
-use std::{collections::HashSet, fmt::Display};
+use std::fmt::Display;
 
+use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
@@ -435,7 +436,7 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -463,7 +464,7 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -492,7 +493,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -518,7 +519,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -652,7 +653,7 @@ impl OrderBook {
                 self.sequence, sequence
             );
             debug_assert!(sequence >= self.sequence, "{}", msg);
-            log::warn!("{}", msg);
+            log::warn!("{msg}");
         }
 
         if ts_event < self.ts_last {
@@ -661,7 +662,7 @@ impl OrderBook {
                 self.ts_last, ts_event
             );
             debug_assert!(ts_event >= self.ts_last, "{}", msg);
-            log::warn!("{}", msg);
+            log::warn!("{msg}");
         }
 
         if self.update_count == u64::MAX {

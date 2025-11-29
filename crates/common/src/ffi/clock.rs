@@ -32,7 +32,8 @@ use pyo3::{ffi, prelude::*};
 
 use super::timer::TimeEventHandler;
 use crate::{
-    clock::{Clock, LiveClock, TestClock},
+    clock::{Clock, TestClock},
+    live::clock::LiveClock,
     timer::{TimeEvent, TimeEventCallback},
 };
 

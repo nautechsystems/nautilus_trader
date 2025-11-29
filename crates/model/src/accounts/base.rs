@@ -18,8 +18,7 @@
 //! Concrete account types (`CashAccount`, `MarginAccount`, etc.) build on the abstractions defined
 //! in this file.
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use nautilus_core::{UnixNanos, datetime::secs_to_nanos};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -44,16 +43,16 @@ pub struct BaseAccount {
     pub base_currency: Option<Currency>,
     pub calculate_account_state: bool,
     pub events: Vec<AccountState>,
-    pub commissions: HashMap<Currency, f64>,
-    pub balances: HashMap<Currency, AccountBalance>,
-    pub balances_starting: HashMap<Currency, Money>,
+    pub commissions: AHashMap<Currency, f64>,
+    pub balances: AHashMap<Currency, AccountBalance>,
+    pub balances_starting: AHashMap<Currency, Money>,
 }
 
 impl BaseAccount {
     /// Creates a new [`BaseAccount`] instance.
     pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
-        let mut balances_starting: HashMap<Currency, Money> = HashMap::new();
-        let mut balances: HashMap<Currency, AccountBalance> = HashMap::new();
+        let mut balances_starting: AHashMap<Currency, Money> = AHashMap::new();
+        let mut balances: AHashMap<Currency, AccountBalance> = AHashMap::new();
         event.balances.iter().for_each(|balance| {
             balances_starting.insert(balance.currency, balance.total);
             balances.insert(balance.currency, *balance);
@@ -64,7 +63,7 @@ impl BaseAccount {
             base_currency: event.base_currency,
             calculate_account_state,
             events: vec![event],
-            commissions: HashMap::new(),
+            commissions: AHashMap::new(),
             balances,
             balances_starting,
         }
@@ -98,7 +97,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_total(&self) -> HashMap<Currency, Money> {
+    pub fn base_balances_total(&self) -> AHashMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.total))
@@ -120,7 +119,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_free(&self) -> HashMap<Currency, Money> {
+    pub fn base_balances_free(&self) -> AHashMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.free))
@@ -142,7 +141,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_locked(&self) -> HashMap<Currency, Money> {
+    pub fn base_balances_locked(&self) -> AHashMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.locked))
@@ -272,7 +271,7 @@ impl BaseAccount {
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
-        let mut pnls: HashMap<Currency, Money> = HashMap::new();
+        let mut pnls: AHashMap<Currency, Money> = AHashMap::new();
         let base_currency = instrument.base_currency();
 
         let fill_qty_value = position.map_or(fill.last_qty.as_f64(), |pos| {

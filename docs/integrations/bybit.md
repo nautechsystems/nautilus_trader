@@ -209,6 +209,89 @@ config = BybitExecClientConfig(
 )
 ```
 
+### Manual margin operations
+
+Strategies can control margin borrowing and repayment directly via `query_account` with the
+`BybitMarginAction` enum:
+
+| Action                                | Description                          |
+|---------------------------------------|--------------------------------------|
+| `BybitMarginAction.BORROW`            | Borrow funds for margin trading.     |
+| `BybitMarginAction.REPAY`             | Repay borrowed funds.                |
+| `BybitMarginAction.GET_BORROW_AMOUNT` | Query current borrowed amount.       |
+
+#### Borrow
+
+```python
+self.query_account(
+    account_id=self.account_id,
+    params={"action": BybitMarginAction.BORROW, "coin": "USDT", "amount": 1000},
+)
+```
+
+#### Repay
+
+```python
+# Repay specific amount
+self.query_account(
+    account_id=self.account_id,
+    params={"action": BybitMarginAction.REPAY, "coin": "USDT", "amount": 500},
+)
+
+# Repay all (omit amount)
+self.query_account(
+    account_id=self.account_id,
+    params={"action": BybitMarginAction.REPAY, "coin": "USDT"},
+)
+```
+
+#### Query borrow amount
+
+```python
+self.query_account(
+    account_id=self.account_id,
+    params={"action": BybitMarginAction.GET_BORROW_AMOUNT, "coin": "USDT"},
+)
+```
+
+:::note
+The `account_id` can be obtained from `self.portfolio.account(BYBIT_VENUE).id` or stored
+during strategy initialization via the config.
+:::
+
+#### Receiving results
+
+Results are published as custom data on the message bus. Subscribe in your strategy to receive them:
+
+```python
+from nautilus_trader.adapters.bybit import BybitMarginAction
+from nautilus_trader.adapters.bybit import BybitMarginBorrowResult
+from nautilus_trader.adapters.bybit import BybitMarginRepayResult
+from nautilus_trader.adapters.bybit import BybitMarginStatusResult
+from nautilus_trader.model.data import DataType
+
+
+class MyStrategy(Strategy):
+    def on_start(self):
+        self.subscribe_data(DataType(BybitMarginBorrowResult))
+        self.subscribe_data(DataType(BybitMarginRepayResult))
+        self.subscribe_data(DataType(BybitMarginStatusResult))
+
+    def on_data(self, data):
+        if isinstance(data, BybitMarginBorrowResult):
+            if data.success:
+                self.log.info(f"Borrowed {data.amount} {data.coin}")
+            else:
+                self.log.error(f"Borrow failed: {data.message}")
+        elif isinstance(data, BybitMarginRepayResult):
+            if data.success:
+                self.log.info(f"Repaid {data.amount or 'all'} {data.coin}")
+            else:
+                self.log.error(f"Repay failed: {data.message}")
+        elif isinstance(data, BybitMarginStatusResult):
+            self.log.info(f"Borrow amount for {data.coin}: {data.borrow_amount}")
+```
+
 ### UTC blackout window
 
 Bybit blocks `no-convert-repay` operations daily during **04:00-05:30 UTC** for interest calculation processing. NautilusTrader automatically detects this window and skips repayment attempts, logging a warning instead.

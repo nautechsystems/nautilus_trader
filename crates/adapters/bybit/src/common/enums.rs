@@ -627,3 +627,39 @@ pub enum BybitEndpointType {
     Position,
     User,
 }
+
+/// Margin actions for spot margin trading operations.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        hash,
+        frozen,
+        module = "nautilus_trader.core.nautilus_pyo3.bybit"
+    )
+)]
+pub enum BybitMarginAction {
+    /// Borrow funds for margin trading.
+    Borrow,
+    /// Repay borrowed funds.
+    Repay,
+    /// Query current borrowed amount.
+    GetBorrowAmount,
+}

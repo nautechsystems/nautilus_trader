@@ -18,24 +18,27 @@
 use std::{str::FromStr, sync::Mutex};
 
 use anyhow::Context;
+use async_trait::async_trait;
 use nautilus_common::{
+    live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::{
         ExecutionEvent, ExecutionReport as NautilusExecutionReport,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
-            SubmitOrder, SubmitOrderList,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount,
+            QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
-    runner::get_exec_event_sender,
-    runtime::get_runtime,
 };
 use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_live::execution::client::LiveExecutionClient;
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderType},
     identifiers::{AccountId, ClientId, Venue},
     orders::{Order, any::OrderAny},
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
 use serde_json;
@@ -317,6 +320,7 @@ impl HyperliquidExecutionClient {
     }
 }
 
+#[async_trait(?Send)]
 impl ExecutionClient for HyperliquidExecutionClient {
     fn is_connected(&self) -> bool {
         self.connected
@@ -830,32 +834,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         Ok(())
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// LiveExecutionClient Implementation
-////////////////////////////////////////////////////////////////////////////////
-
-use async_trait::async_trait;
-use nautilus_common::messages::execution::{
-    GenerateFillReports, GenerateOrderStatusReport, GeneratePositionReports,
-};
-use nautilus_live::execution::client::LiveExecutionClient;
-use nautilus_model::reports::{
-    ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport,
-};
-
-#[async_trait(?Send)]
-impl LiveExecutionClient for HyperliquidExecutionClient {
-    fn get_message_channel(
-        &self,
-    ) -> tokio::sync::mpsc::UnboundedSender<nautilus_common::messages::ExecutionEvent> {
-        get_exec_event_sender()
-    }
-
-    fn get_clock(&self) -> std::cell::Ref<'_, dyn nautilus_common::clock::Clock> {
-        self.core.clock().borrow()
-    }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
@@ -878,9 +856,6 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
 
         // Initialize account state
         self.refresh_account_state().await?;
-
-        // Note: Order reconciliation is handled by the execution engine
-        // which will call generate_order_status_reports() after connection
 
         self.connected = true;
         self.core.set_connected(true);
@@ -913,7 +888,10 @@ impl LiveExecutionClient for HyperliquidExecutionClient {
         tracing::info!(client_id = %self.core.client_id, "Disconnected");
         Ok(())
     }
+}
 
+#[async_trait(?Send)]
+impl LiveExecutionClient for HyperliquidExecutionClient {
     async fn generate_order_status_report(
         &self,
         _cmd: &GenerateOrderStatusReport,

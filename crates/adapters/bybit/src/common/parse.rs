@@ -160,8 +160,7 @@ pub fn bar_spec_to_bybit_interval(
             360 => Ok(BybitKlineInterval::Hour6),
             720 => Ok(BybitKlineInterval::Hour12),
             _ => anyhow::bail!(
-                "Bybit only supports the following minute intervals: {:?}",
-                BYBIT_MINUTE_INTERVALS
+                "Bybit only supports the following minute intervals: {BYBIT_MINUTE_INTERVALS:?}"
             ),
         },
         BarAggregation::Hour => match step {
@@ -171,8 +170,7 @@ pub fn bar_spec_to_bybit_interval(
             6 => Ok(BybitKlineInterval::Hour6),
             12 => Ok(BybitKlineInterval::Hour12),
             _ => anyhow::bail!(
-                "Bybit only supports the following hour intervals: {:?}",
-                BYBIT_HOUR_INTERVALS
+                "Bybit only supports the following hour intervals: {BYBIT_HOUR_INTERVALS:?}"
             ),
         },
         BarAggregation::Day => {
@@ -194,7 +192,7 @@ pub fn bar_spec_to_bybit_interval(
             Ok(BybitKlineInterval::Month1)
         }
         _ => {
-            anyhow::bail!("Bybit does not support {:?} bars", aggregation);
+            anyhow::bail!("Bybit does not support {aggregation:?} bars");
         }
     }
 }

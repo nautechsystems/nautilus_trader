@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
     Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
@@ -46,7 +48,7 @@ impl ParquetDataCatalogV2 {
     #[must_use]
     pub fn new(
         base_path: String,
-        storage_options: Option<std::collections::HashMap<String, String>>,
+        storage_options: Option<HashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<u8>,
         max_row_group_size: Option<usize>,
@@ -72,6 +74,9 @@ impl ParquetDataCatalogV2 {
             }
             _ => parquet::basic::Compression::SNAPPY,
         });
+
+        // Convert HashMap to AHashMap for internal use
+        let storage_options = storage_options.map(|m| m.into_iter().collect());
 
         Self {
             inner: ParquetDataCatalog::from_uri(

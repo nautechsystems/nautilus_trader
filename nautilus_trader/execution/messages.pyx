@@ -1744,6 +1744,7 @@ cdef class QueryAccount(Command):
         self.client_id = client_id
         self.trader_id = trader_id
         self.account_id = account_id
+        self.params = params or {}
 
     def __repr__(self) -> str:
         return (
@@ -1766,6 +1767,7 @@ cdef class QueryAccount(Command):
             account_id=AccountId(values["account_id"]),
             command_id=UUID4.from_str_c(values["command_id"]),
             ts_init=values["ts_init"],
+            params=values.get("params"),
         )
 
     @staticmethod
@@ -1778,6 +1780,7 @@ cdef class QueryAccount(Command):
             "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
+            "params": obj.params if obj.params else None,
         }
 
     @staticmethod

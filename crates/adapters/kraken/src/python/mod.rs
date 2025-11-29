@@ -19,14 +19,15 @@ use pyo3::prelude::*;
 
 use crate::{
     common::enums::{KrakenEnvironment, KrakenProductType},
-    http::client::KrakenHttpClient,
+    http::{KrakenFuturesHttpClient, KrakenSpotHttpClient},
     websocket::{
         futures::client::KrakenFuturesWebSocketClient, spot_v2::client::KrakenSpotWebSocketClient,
     },
 };
 
 pub mod enums;
-pub mod http;
+pub mod http_futures;
+pub mod http_spot;
 pub mod urls;
 pub mod websocket_futures;
 pub mod websocket_spot;
@@ -50,7 +51,10 @@ fn py_kraken_product_type_from_symbol(symbol: &str) -> KrakenProductType {
 pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KrakenEnvironment>()?;
     m.add_class::<KrakenProductType>()?;
-    m.add_class::<KrakenHttpClient>()?;
+    // HTTP clients
+    m.add_class::<KrakenSpotHttpClient>()?;
+    m.add_class::<KrakenFuturesHttpClient>()?;
+    // WebSocket clients
     m.add_class::<KrakenSpotWebSocketClient>()?;
     m.add_class::<KrakenFuturesWebSocketClient>()?;
 

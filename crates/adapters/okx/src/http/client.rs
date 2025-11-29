@@ -375,7 +375,7 @@ impl OKXRawHttpClient {
         // OKX requires milliseconds in the timestamp (ISO 8601 with milliseconds)
         let now = Utc::now();
         let millis = now.timestamp_subsec_millis();
-        let timestamp = now.format("%Y-%m-%dT%H:%M:%S").to_string() + &format!(".{:03}Z", millis);
+        let timestamp = now.format("%Y-%m-%dT%H:%M:%S").to_string() + &format!(".{millis:03}Z");
         let signature = credential.sign_bytes(&timestamp, method.as_str(), path, body);
 
         let mut headers = HashMap::new();
@@ -435,7 +435,7 @@ impl OKXRawHttpClient {
                 let full_path = if query_string.is_empty() {
                     endpoint.clone()
                 } else {
-                    format!("{}?{}", endpoint, query_string)
+                    format!("{endpoint}?{query_string}")
                 };
 
                 let mut headers = if authenticate {

@@ -344,7 +344,7 @@ impl From<nautilus_model::enums::OrderType> for HyperliquidConditionalOrderType 
             nautilus_model::enums::OrderType::LimitIfTouched => Self::TakeProfitLimit,
             nautilus_model::enums::OrderType::TrailingStopMarket => Self::TrailingStopMarket,
             nautilus_model::enums::OrderType::TrailingStopLimit => Self::TrailingStopLimit,
-            _ => panic!("Unsupported OrderType for conditional orders: {:?}", value),
+            _ => panic!("Unsupported OrderType for conditional orders: {value:?}"),
         }
     }
 }

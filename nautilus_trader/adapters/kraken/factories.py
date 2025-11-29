@@ -28,8 +28,7 @@ from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
 from nautilus_trader.live.factories import LiveDataClientFactory
 
 
-def get_kraken_http_client(
-    product_type: KrakenProductType,
+def get_kraken_spot_http_client(
     api_key: str | None = None,
     api_secret: str | None = None,
     base_url: str | None = None,
@@ -39,9 +38,9 @@ def get_kraken_http_client(
     retry_delay_ms: int | None = None,
     retry_delay_max_ms: int | None = None,
     proxy_url: str | None = None,
-) -> nautilus_pyo3.KrakenHttpClient:
+) -> nautilus_pyo3.KrakenSpotHttpClient:
     """
-    Return a Kraken HTTP client for the given product type.
+    Return a Kraken Spot HTTP client.
 
     If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from the
     environment variables ``KRAKEN_API_KEY`` and ``KRAKEN_API_SECRET`` (or
@@ -49,14 +48,12 @@ def get_kraken_http_client(
 
     Parameters
     ----------
-    product_type : KrakenProductType
-        The Kraken product type (SPOT or FUTURES).
     api_key : str, optional
         The Kraken API key for the client.
     api_secret : str, optional
         The Kraken API secret for the client.
     base_url : str, optional
-        The base URL for the Kraken API.
+        The base URL for the Kraken Spot API.
     testnet : bool, default False
         If True, use testnet environment variables for credentials.
     timeout_secs : int, optional
@@ -72,11 +69,68 @@ def get_kraken_http_client(
 
     Returns
     -------
-    nautilus_pyo3.KrakenHttpClient
+    nautilus_pyo3.KrakenSpotHttpClient
 
     """
-    return nautilus_pyo3.KrakenHttpClient(
-        product_type=product_type,
+    return nautilus_pyo3.KrakenSpotHttpClient(
+        api_key=api_key,
+        api_secret=api_secret,
+        base_url=base_url,
+        testnet=testnet,
+        timeout_secs=timeout_secs,
+        max_retries=max_retries,
+        retry_delay_ms=retry_delay_ms,
+        retry_delay_max_ms=retry_delay_max_ms,
+        proxy_url=proxy_url,
+    )
+
+
+def get_kraken_futures_http_client(
+    api_key: str | None = None,
+    api_secret: str | None = None,
+    base_url: str | None = None,
+    testnet: bool = False,
+    timeout_secs: int | None = None,
+    max_retries: int | None = None,
+    retry_delay_ms: int | None = None,
+    retry_delay_max_ms: int | None = None,
+    proxy_url: str | None = None,
+) -> nautilus_pyo3.KrakenFuturesHttpClient:
+    """
+    Return a Kraken Futures HTTP client.
+
+    If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from the
+    environment variables ``KRAKEN_FUTURES_API_KEY`` and ``KRAKEN_FUTURES_API_SECRET``
+    (or ``KRAKEN_FUTURES_TESTNET_API_KEY`` and ``KRAKEN_FUTURES_TESTNET_API_SECRET``
+    if testnet is True).
+
+    Parameters
+    ----------
+    api_key : str, optional
+        The Kraken API key for the client.
+    api_secret : str, optional
+        The Kraken API secret for the client.
+    base_url : str, optional
+        The base URL for the Kraken Futures API.
+    testnet : bool, default False
+        If True, use testnet environment variables for credentials.
+    timeout_secs : int, optional
+        The timeout in seconds for HTTP requests.
+    max_retries : int, optional
+        The maximum number of retry attempts for failed requests.
+    retry_delay_ms : int, optional
+        The initial delay in milliseconds between retry attempts.
+    retry_delay_max_ms : int, optional
+        The maximum delay in milliseconds between retry attempts.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
+
+    Returns
+    -------
+    nautilus_pyo3.KrakenFuturesHttpClient
+
+    """
+    return nautilus_pyo3.KrakenFuturesHttpClient(
         api_key=api_key,
         api_secret=api_secret,
         base_url=base_url,
@@ -90,7 +144,8 @@ def get_kraken_http_client(
 
 
 def get_kraken_instrument_provider(
-    http_clients: dict[KrakenProductType, nautilus_pyo3.KrakenHttpClient],
+    http_client_spot: nautilus_pyo3.KrakenSpotHttpClient | None,
+    http_client_futures: nautilus_pyo3.KrakenFuturesHttpClient | None,
     product_types: list[KrakenProductType],
     config: InstrumentProviderConfig,
 ) -> KrakenInstrumentProvider:
@@ -99,8 +154,10 @@ def get_kraken_instrument_provider(
 
     Parameters
     ----------
-    http_clients : dict[KrakenProductType, nautilus_pyo3.KrakenHttpClient]
-        The Kraken HTTP clients keyed by product type.
+    http_client_spot : nautilus_pyo3.KrakenSpotHttpClient, optional
+        The Kraken Spot HTTP client.
+    http_client_futures : nautilus_pyo3.KrakenFuturesHttpClient, optional
+        The Kraken Futures HTTP client.
     product_types : list[KrakenProductType]
         The product types to load.
     config : InstrumentProviderConfig
@@ -112,7 +169,8 @@ def get_kraken_instrument_provider(
 
     """
     return KrakenInstrumentProvider(
-        http_clients=http_clients,
+        http_client_spot=http_client_spot,
+        http_client_futures=http_client_futures,
         product_types=product_types,
         config=config,
     )
@@ -159,21 +217,15 @@ class KrakenLiveDataClientFactory(LiveDataClientFactory):
         product_types = list(config.product_types or (KrakenProductType.SPOT,))
         is_testnet = environment == KrakenEnvironment.TESTNET
 
-        # Create HTTP clients for each product type
-        http_clients: dict[KrakenProductType, nautilus_pyo3.KrakenHttpClient] = {}
+        # Create HTTP clients for each requested product type
+        http_client_spot: nautilus_pyo3.KrakenSpotHttpClient | None = None
+        http_client_futures: nautilus_pyo3.KrakenFuturesHttpClient | None = None
 
-        for product_type in product_types:
-            # Honor config override, fall back to derived URL if not specified
-            base_url = config.base_url_http or nautilus_pyo3.get_kraken_http_base_url(
-                product_type,
-                environment,
-            )
-
-            client = get_kraken_http_client(
-                product_type=product_type,
+        if KrakenProductType.SPOT in product_types:
+            http_client_spot = get_kraken_spot_http_client(
                 api_key=config.api_key,
                 api_secret=config.api_secret,
-                base_url=base_url,
+                base_url=config.base_url_http_spot,
                 testnet=is_testnet,
                 timeout_secs=config.http_timeout_secs,
                 max_retries=config.max_retries,
@@ -181,17 +233,31 @@ class KrakenLiveDataClientFactory(LiveDataClientFactory):
                 retry_delay_max_ms=config.retry_delay_max_ms,
                 proxy_url=config.http_proxy_url,
             )
-            http_clients[product_type] = client
+
+        if KrakenProductType.FUTURES in product_types:
+            http_client_futures = get_kraken_futures_http_client(
+                api_key=config.api_key,
+                api_secret=config.api_secret,
+                base_url=config.base_url_http_futures,
+                testnet=is_testnet,
+                timeout_secs=config.http_timeout_secs,
+                max_retries=config.max_retries,
+                retry_delay_ms=config.retry_delay_initial_ms,
+                retry_delay_max_ms=config.retry_delay_max_ms,
+                proxy_url=config.http_proxy_url,
+            )
 
         provider = get_kraken_instrument_provider(
-            http_clients=http_clients,
+            http_client_spot=http_client_spot,
+            http_client_futures=http_client_futures,
             product_types=product_types,
             config=config.instrument_provider,
         )
 
         return KrakenDataClient(
             loop=loop,
-            http_clients=http_clients,
+            http_client_spot=http_client_spot,
+            http_client_futures=http_client_futures,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

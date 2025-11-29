@@ -188,6 +188,14 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
+      - id: check-tokio-usage
+        name: check tokio usage
+        description: Enforces tokio usage conventions
+        entry: .pre-commit-hooks/check_tokio_usage.sh
+        language: script
+        files: '\.rs$|Cargo\.toml$'
+        pass_filenames: false
+
       - id: check-pyo3-conventions
         name: check pyo3 conventions
         description: Enforces PyO3 naming conventions

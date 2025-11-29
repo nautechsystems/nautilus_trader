@@ -17,7 +17,7 @@ use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 
 use alloy::primitives::{Address, U256};
 use bytes::Bytes;
-use nautilus_model::defi::rpc::RpcNodeHttpResponse;
+use nautilus_model::defi::rpc::{RpcLog, RpcNodeHttpResponse};
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
 use reqwest::Method;
 use serde::de::DeserializeOwned;
@@ -104,6 +104,14 @@ impl BlockchainHttpRpcClient {
         match self.send_rpc_request(rpc_request).await {
             Ok(bytes) => match serde_json::from_slice::<RpcNodeHttpResponse<T>>(bytes.as_ref()) {
                 Ok(parsed) => {
+                    // Check for non-standard rate limit error (e.g., Infura)
+                    // These responses have code/message at top level without jsonrpc field
+                    if parsed.jsonrpc.is_none()
+                        && let (Some(code), Some(message)) = (parsed.code, parsed.message)
+                    {
+                        anyhow::bail!("RPC provider error {code}: {message}");
+                    }
+
                     if let Some(error) = parsed.error {
                         Err(anyhow::anyhow!(
                             "RPC error {}: {}",
@@ -132,15 +140,12 @@ impl BlockchainHttpRpcClient {
                     };
 
                     Err(anyhow::anyhow!(
-                        "Failed to parse eth call response: {}\nRaw response: {}",
-                        e,
-                        preview
+                        "Failed to parse eth call response: {e}\nRaw response: {preview}"
                     ))
                 }
             },
             Err(e) => Err(anyhow::anyhow!(
-                "Failed to execute eth call RPC request: {}",
-                e
+                "Failed to execute eth call RPC request: {e}"
             )),
         }
     }
@@ -193,8 +198,54 @@ impl BlockchainHttpRpcClient {
         });
         let hex_string: String = self.execute_rpc_call(request).await?;
 
-        U256::from_str(&hex_string).map_err(|e| {
-            anyhow::anyhow!("Failed to parse balance hex string '{}': {}", hex_string, e)
-        })
+        U256::from_str(&hex_string)
+            .map_err(|e| anyhow::anyhow!("Failed to parse balance hex string '{hex_string}': {e}"))
+    }
+
+    /// Retrieves logs matching the given filter criteria.
+    ///
+    /// This method calls the `eth_getLogs` RPC method to fetch event logs from the blockchain.
+    /// It's commonly used for querying historical events like token transfers, swaps, etc.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the response cannot be parsed.
+    pub async fn get_logs(
+        &self,
+        address: Option<&Address>,
+        topics: Option<Vec<Option<String>>>,
+        from_block: u64,
+        to_block: u64,
+    ) -> anyhow::Result<Vec<RpcLog>> {
+        let mut filter = serde_json::Map::new();
+
+        filter.insert(
+            "fromBlock".to_string(),
+            serde_json::json!(format!("0x{:x}", from_block)),
+        );
+        filter.insert(
+            "toBlock".to_string(),
+            serde_json::json!(format!("0x{:x}", to_block)),
+        );
+
+        if let Some(addr) = address {
+            filter.insert(
+                "address".to_string(),
+                serde_json::json!(format!("{:?}", addr)),
+            );
+        }
+
+        if let Some(topics) = topics {
+            filter.insert("topics".to_string(), serde_json::json!(topics));
+        }
+
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_getLogs",
+            "params": [filter]
+        });
+
+        self.execute_rpc_call(request).await
     }
 }

@@ -590,6 +590,7 @@ pub struct BarTypeParseError {
 impl FromStr for BarType {
     type Err = BarTypeParseError;
 
+    #[allow(clippy::needless_collect)] // Collect needed for .rev() and indexing
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split('@').collect();
         let standard = parts[0];

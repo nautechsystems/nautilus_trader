@@ -31,7 +31,6 @@ use nautilus_model::{
 use redis::{AsyncCommands, aio::ConnectionManager};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
-use tokio::try_join;
 use ustr::Ustr;
 
 // Collection keys
@@ -209,7 +208,7 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         trader_key: &str,
     ) -> anyhow::Result<CacheMap> {
-        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
+        let (currencies, instruments, synthetics, accounts, orders, positions) = tokio::try_join!(
             Self::load_currencies(con, trader_key, encoding),
             Self::load_instruments(con, trader_key, encoding),
             Self::load_synthetics(con, trader_key, encoding),

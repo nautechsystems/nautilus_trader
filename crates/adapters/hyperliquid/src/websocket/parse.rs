@@ -56,9 +56,7 @@ fn parse_price(
 
     let value = decimal.to_f64().ok_or_else(|| {
         anyhow::anyhow!(
-            "Failed to convert price '{}' to f64 for {} (out of range or too much precision)",
-            price_str,
-            field_name
+            "Failed to convert price '{price_str}' to f64 for {field_name} (out of range or too much precision)"
         )
     })?;
 
@@ -77,9 +75,7 @@ fn parse_quantity(
 
     let value = decimal.abs().to_f64().ok_or_else(|| {
         anyhow::anyhow!(
-            "Failed to convert quantity '{}' to f64 for {} (out of range or too much precision)",
-            quantity_str,
-            field_name
+            "Failed to convert quantity '{quantity_str}' to f64 for {field_name} (out of range or too much precision)"
         )
     })?;
 
@@ -439,11 +435,7 @@ fn parse_f64_price(
     field_name: &str,
 ) -> anyhow::Result<Price> {
     if !price.is_finite() {
-        anyhow::bail!(
-            "Invalid price value for {}: {} (must be finite)",
-            field_name,
-            price
-        );
+        anyhow::bail!("Invalid price value for {field_name}: {price} (must be finite)");
     }
     Ok(Price::new(price, instrument.price_precision()))
 }

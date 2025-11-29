@@ -82,11 +82,9 @@ pub(crate) fn pre_process_order(book_type: BookType, mut order: BookOrder, flags
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashSet,
-        sync::{LazyLock, Mutex},
-    };
+    use std::sync::{LazyLock, Mutex};
 
+    use ahash::AHashSet;
     use nautilus_core::MUTEX_POISONED;
     use rstest::rstest;
 
@@ -118,11 +116,9 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_no_collisions() {
-        use std::collections::HashSet;
-
         // Test that similar prices don't collide
         let base = 1000000000_i128;
-        let mut seen = HashSet::new();
+        let mut seen = AHashSet::new();
 
         for i in 0..1000 {
             let price = base + i;
@@ -148,9 +144,7 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_handles_negative_prices() {
-        use std::collections::HashSet;
-
-        let mut seen = HashSet::new();
+        let mut seen = AHashSet::new();
 
         // Test negative prices including edge case of -2
         let negative_prices = vec![
@@ -184,9 +178,7 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_handles_large_values() {
-        use std::collections::HashSet;
-
-        let mut seen = HashSet::new();
+        let mut seen = AHashSet::new();
 
         // Test values that exceed u64::MAX
         // Note: (u64::MAX + 1) and (1 << 64) are the same value (2^64)
@@ -211,9 +203,7 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_multiples_of_2_pow_64() {
-        use std::collections::HashSet;
-
-        let mut seen = HashSet::new();
+        let mut seen = AHashSet::new();
 
         // Test that multiples of 2^64 don't collide
         // These would all collapse to the same value with naive XOR folding
@@ -229,9 +219,7 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_realistic_orderbook_prices() {
-        use std::collections::HashSet;
-
-        let mut seen = HashSet::new();
+        let mut seen = AHashSet::new();
 
         // Test realistic order book scenarios with fixed precision (9 decimals)
         // BTCUSD at ~$50,000 with 9 decimal precision
@@ -270,9 +258,7 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_edge_case_patterns() {
-        use std::collections::HashSet;
-
-        let mut seen = HashSet::new();
+        let mut seen = AHashSet::new();
 
         // Test powers of 2 (common in binary representations)
         // Note: 1 << 127 produces i128::MIN (sign bit set), so this covers both positive and negative extremes
@@ -299,9 +285,7 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_sequential_negative_values() {
-        use std::collections::HashSet;
-
-        let mut seen = HashSet::new();
+        let mut seen = AHashSet::new();
 
         // Test sequential negative values (important for spread instruments)
         for i in -10000..=0 {
@@ -328,7 +312,7 @@ mod tests {
     fn test_price_to_order_id_extreme_values_no_collision(#[case] price: i128) {
         // Each test case runs independently and checks that its price
         // produces a unique order_id by storing in a static set
-        static SEEN: LazyLock<Mutex<HashSet<u64>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+        static SEEN: LazyLock<Mutex<AHashSet<u64>>> = LazyLock::new(|| Mutex::new(AHashSet::new()));
 
         let id = price_to_order_id(price);
         let mut seen = SEEN.lock().expect(MUTEX_POISONED);
@@ -360,10 +344,8 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_comprehensive_collision_check() {
-        use std::collections::HashSet;
-
         // Comprehensive test combining all edge cases
-        let mut seen = HashSet::new();
+        let mut seen = AHashSet::new();
         let mut collision_count = 0;
         const TOTAL_TESTS: usize = 500_000;
 

@@ -36,7 +36,7 @@ use ahash::AHashSet;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
@@ -574,7 +574,7 @@ impl OKXWebSocketClient {
                                         if symbol.as_str() == "#" {
                                             topics.push(channel.to_string());
                                         } else {
-                                            topics.push(format!("{}{}{}", channel, OKX_WS_TOPIC_DELIMITER, symbol));
+                                            topics.push(format!("{channel}{OKX_WS_TOPIC_DELIMITER}{symbol}"));
                                         }
                                     }
                                 }
@@ -2017,11 +2017,7 @@ impl OKXWebSocketClient {
         };
 
         log::debug!(
-            "Order type mapping: order_type={:?}, time_in_force={:?}, post_only={:?} -> okx_ord_type={:?}",
-            order_type,
-            time_in_force,
-            post_only,
-            okx_ord_type
+            "Order type mapping: order_type={order_type:?}, time_in_force={time_in_force:?}, post_only={post_only:?} -> okx_ord_type={okx_ord_type:?}"
         );
 
         builder.ord_type(okx_ord_type);

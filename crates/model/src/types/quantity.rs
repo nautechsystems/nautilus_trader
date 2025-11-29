@@ -223,10 +223,7 @@ impl Quantity {
         let raw = self.raw.saturating_sub(rhs.raw);
         if raw == 0 && self.raw < rhs.raw {
             log::warn!(
-                "Saturating Quantity subtraction: {} - {} < 0, clamped to 0 (precision={})",
-                self,
-                rhs,
-                precision
+                "Saturating Quantity subtraction: {self} - {rhs} < 0, clamped to 0 (precision={precision})"
             );
         }
 
@@ -397,10 +394,7 @@ impl Quantity {
         };
 
         let raw = QuantityRaw::try_from(scaled_amount).map_err(|_| {
-            anyhow::anyhow!(
-                "U256 scaled amount {} exceeds QuantityRaw range",
-                scaled_amount
-            )
+            anyhow::anyhow!("U256 scaled amount {scaled_amount} exceeds QuantityRaw range")
         })?;
 
         Ok(Self::from_raw(raw, precision))
@@ -428,8 +422,7 @@ impl From<i32> for Quantity {
     fn from(value: i32) -> Self {
         assert!(
             value >= 0,
-            "Cannot create Quantity from negative i32: {}. Use u32 or check value is non-negative.",
-            value
+            "Cannot create Quantity from negative i32: {value}. Use u32 or check value is non-negative."
         );
         Self::new(value as f64, 0)
     }
@@ -444,8 +437,7 @@ impl From<i64> for Quantity {
     fn from(value: i64) -> Self {
         assert!(
             value >= 0,
-            "Cannot create Quantity from negative i64: {}. Use u64 or check value is non-negative.",
-            value
+            "Cannot create Quantity from negative i64: {value}. Use u64 or check value is non-negative."
         );
         Self::new(value as f64, 0)
     }

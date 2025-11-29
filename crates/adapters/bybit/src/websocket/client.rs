@@ -29,7 +29,7 @@ use std::{
 use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
@@ -46,7 +46,6 @@ use nautilus_network::{
     },
 };
 use serde_json::Value;
-use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -82,7 +81,7 @@ const WEBSOCKET_AUTH_WINDOW_MS: i64 = 5_000;
 const BATCH_PROCESSING_LIMIT: usize = 20;
 
 /// Type alias for the funding rate cache.
-type FundingCache = Arc<RwLock<AHashMap<Ustr, (Option<String>, Option<String>)>>>;
+type FundingCache = Arc<tokio::sync::RwLock<AHashMap<Ustr, (Option<String>, Option<String>)>>>;
 
 /// Public/market data WebSocket client for Bybit.
 #[cfg_attr(feature = "python", pyo3::pyclass)]
@@ -192,7 +191,7 @@ impl BybitWebSocketClient {
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
-            funding_cache: Arc::new(RwLock::new(AHashMap::new())),
+            funding_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
             cancellation_token: CancellationToken::new(),
             mm_level: Arc::new(AtomicU8::new(0)),
         }
@@ -231,7 +230,7 @@ impl BybitWebSocketClient {
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
-            funding_cache: Arc::new(RwLock::new(AHashMap::new())),
+            funding_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
             cancellation_token: CancellationToken::new(),
             mm_level: Arc::new(AtomicU8::new(0)),
         }
@@ -270,7 +269,7 @@ impl BybitWebSocketClient {
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
-            funding_cache: Arc::new(RwLock::new(AHashMap::new())),
+            funding_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
             cancellation_token: CancellationToken::new(),
             mm_level: Arc::new(AtomicU8::new(0)),
         }
@@ -1256,8 +1255,7 @@ impl BybitWebSocketClient {
                     .map(|inst| inst.id())
                     .ok_or_else(|| {
                         BybitWsError::ClientError(format!(
-                            "Instrument {} not found in cache",
-                            cache_key
+                            "Instrument {cache_key} not found in cache"
                         ))
                     })?;
                 batch_order_data.push((

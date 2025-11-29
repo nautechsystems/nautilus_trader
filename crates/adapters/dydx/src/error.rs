@@ -36,7 +36,7 @@ pub enum DydxError {
 
     /// gRPC errors from Cosmos SDK node.
     #[error("gRPC error: {0}")]
-    Grpc(#[from] tonic::Status),
+    Grpc(#[from] Box<tonic::Status>),
 
     /// Transaction signing errors.
     #[error("Signing error: {0}")]
@@ -81,6 +81,14 @@ pub enum DydxError {
     /// Order construction and submission errors.
     #[error("Order error: {0}")]
     Order(String),
+
+    /// Parsing errors (e.g., string to number conversions).
+    #[error("Parse error: {0}")]
+    Parse(String),
+
+    /// Wallet and account derivation errors.
+    #[error("Wallet error: {0}")]
+    Wallet(String),
 
     /// Nautilus core errors.
     #[error("Nautilus error: {0}")]

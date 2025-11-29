@@ -20,15 +20,18 @@
 //! are provided), manages subscriptions to market data and account update channels,
 //! and parses incoming messages into structured Nautilus domain objects.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU8, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU8, Ordering},
+    },
+    time::Duration,
 };
 
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, env::get_env_var};
 use nautilus_model::{
     data::bar::BarType,
@@ -44,7 +47,6 @@ use nautilus_network::{
     },
 };
 use reqwest::header::USER_AGENT;
-use tokio::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -563,11 +565,11 @@ impl BitmexWebSocketClient {
     ///
     /// Returns an error if the connection times out.
     pub async fn wait_until_active(&self, timeout_secs: f64) -> Result<(), BitmexWsError> {
-        let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
+        let timeout = Duration::from_secs_f64(timeout_secs);
 
         tokio::time::timeout(timeout, async {
             while !self.is_active() {
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await

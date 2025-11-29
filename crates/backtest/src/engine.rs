@@ -244,8 +244,7 @@ impl BacktestEngine {
                 && exchange.borrow().base_currency.is_some()
             {
                 anyhow::bail!(
-                    "Cannot add a `CurrencyPair` instrument {} for a venue with a single-currency CASH account",
-                    instrument_id
+                    "Cannot add a `CurrencyPair` instrument {instrument_id} for a venue with a single-currency CASH account"
                 )
             }
             exchange

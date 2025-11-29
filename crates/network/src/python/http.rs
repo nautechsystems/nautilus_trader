@@ -540,7 +540,7 @@ pub fn http_download(
             let query_string = serde_urlencoded::to_string(pairs).map_err(to_pyvalue_err)?;
             // Check if URL already has a query string
             let separator = if url.contains('?') { '&' } else { '?' };
-            format!("{}{}{}", url, separator, query_string)
+            format!("{url}{separator}{query_string}")
         }
     } else {
         url

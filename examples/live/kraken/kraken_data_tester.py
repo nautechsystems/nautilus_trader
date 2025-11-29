@@ -56,7 +56,8 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'KRAKEN_API_KEY' env var
             api_secret=None,  # 'KRAKEN_API_SECRET' env var
             product_types=(KrakenProductType.SPOT, KrakenProductType.FUTURES),
-            base_url_http=None,  # Override with custom endpoint
+            base_url_http_spot=None,  # Override with custom endpoint
+            base_url_http_futures=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
             update_instruments_interval_mins=60,  # Update instruments every hour

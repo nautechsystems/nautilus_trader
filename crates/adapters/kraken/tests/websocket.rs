@@ -38,14 +38,13 @@ use nautilus_kraken::{
 use nautilus_model::{data::BarType, identifiers::InstrumentId, instruments::InstrumentAny};
 use rstest::rstest;
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Default)]
 struct TestServerState {
-    connection_count: Arc<Mutex<usize>>,
-    subscriptions: Arc<Mutex<Vec<Value>>>,
-    unsubscriptions: Arc<Mutex<Vec<Value>>>,
+    connection_count: Arc<tokio::sync::Mutex<usize>>,
+    subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     send_ping: Arc<AtomicBool>,
     received_pong: Arc<AtomicBool>,
     drop_next_connection: Arc<AtomicBool>,

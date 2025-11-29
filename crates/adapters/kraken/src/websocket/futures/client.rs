@@ -22,13 +22,12 @@ use std::sync::{
 
 use arc_swap::ArcSwap;
 use dashmap::DashSet;
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
 };
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 // Re-export for backward compatibility
@@ -49,8 +48,8 @@ pub struct KrakenFuturesWebSocketClient {
     heartbeat_secs: Option<u64>,
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
-    cmd_tx: Arc<tokio::sync::RwLock<mpsc::UnboundedSender<HandlerCommand>>>,
-    out_rx: Option<Arc<mpsc::UnboundedReceiver<FuturesWsMessage>>>,
+    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
+    out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<FuturesWsMessage>>>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: Arc<DashSet<String>>,
     cancellation_token: CancellationToken,
@@ -75,7 +74,7 @@ impl Clone for KrakenFuturesWebSocketClient {
 impl KrakenFuturesWebSocketClient {
     #[must_use]
     pub fn new(url: String, heartbeat_secs: Option<u64>) -> Self {
-        let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel::<HandlerCommand>();
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
 
@@ -154,10 +153,10 @@ impl KrakenFuturesWebSocketClient {
         self.connection_mode
             .store(ws_client.connection_mode_atomic());
 
-        let (out_tx, out_rx) = mpsc::unbounded_channel::<FuturesWsMessage>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
 
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<HandlerCommand>();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         *self.cmd_tx.write().await = cmd_tx.clone();
 
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(ws_client)) {
@@ -312,7 +311,9 @@ impl KrakenFuturesWebSocketClient {
     }
 
     /// Get the output receiver for processed messages.
-    pub fn take_output_rx(&mut self) -> Option<mpsc::UnboundedReceiver<FuturesWsMessage>> {
+    pub fn take_output_rx(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<FuturesWsMessage>> {
         self.out_rx.take().and_then(|arc| Arc::try_unwrap(arc).ok())
     }
 }

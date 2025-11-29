@@ -530,36 +530,36 @@ impl BlockchainDataClientCore {
 
                     let event_sig_bytes = extract_event_signature_bytes(&log)?;
             if event_sig_bytes == swap_sig_bytes.as_slice() {
-                let swap_event = dex_extended.parse_swap_event(log)?;
+                let swap_event = dex_extended.parse_swap_event_hypersync(log)?;
                 match self.process_pool_swap_event(&swap_event, &pool) {
                     Ok(swap) => swap_batch.push(swap),
                     Err(e) => tracing::error!("Failed to process swap event: {e}"),
                 }
             } else if event_sig_bytes == mint_sig_bytes.as_slice() {
-                let mint_event = dex_extended.parse_mint_event(log)?;
+                let mint_event = dex_extended.parse_mint_event_hypersync(log)?;
                 match self.process_pool_mint_event(&mint_event, &pool, &dex_extended) {
                     Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
                     Err(e) => tracing::error!("Failed to process mint event: {e}"),
                 }
             } else if event_sig_bytes == burn_sig_bytes.as_slice() {
-                let burn_event = dex_extended.parse_burn_event(log)?;
+                let burn_event = dex_extended.parse_burn_event_hypersync(log)?;
                 match self.process_pool_burn_event(&burn_event, &pool, &dex_extended) {
                     Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
                     Err(e) => tracing::error!("Failed to process burn event: {e}"),
                 }
             } else if event_sig_bytes == collect_sig_bytes.as_slice() {
-                let collect_event = dex_extended.parse_collect_event(log)?;
+                let collect_event = dex_extended.parse_collect_event_hypersync(log)?;
                 match self.process_pool_collect_event(&collect_event, &pool, &dex_extended) {
                     Ok(fee_collect) => collect_batch.push(fee_collect),
                     Err(e) => tracing::error!("Failed to process collect event: {e}"),
                 }
             } else if initialize_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
-                let initialize_event = dex_extended.parse_initialize_event(log)?;
+                let initialize_event = dex_extended.parse_initialize_event_hypersync(log)?;
                 self.cache
                     .update_pool_initialize_price_tick(&initialize_event)
                     .await?;
             } else if flash_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
-                if let Some(parse_fn) = dex_extended.parse_flash_event_fn {
+                if let Some(parse_fn) = dex_extended.parse_flash_event_hypersync_fn {
                     match parse_fn(dex_extended.dex.clone(), log) {
                         Ok(flash_event) => {
                             match self.process_pool_flash_event(&flash_event, &pool) {
@@ -946,7 +946,7 @@ impl BlockchainDataClientCore {
                     let blocks_progress = block_number - last_block_saved;
                     last_block_saved = block_number;
 
-                    let pool = dex.parse_pool_created_event(log)?;
+                    let pool = dex.parse_pool_created_event_hypersync(log)?;
                     if self.cache.get_pool(&pool.pool_address).is_some() {
                         // Pool is already initialized and cached.
                         continue;
@@ -1332,7 +1332,7 @@ impl BlockchainDataClientCore {
                 Ok(event) => {
                     profiler.process(&event)?;
                 }
-                Err(e) => log::error!("Error processing event: {}", e),
+                Err(e) => log::error!("Error processing event: {e}"),
             }
         }
 
@@ -1432,7 +1432,7 @@ impl BlockchainDataClientCore {
             let event_sig_bytes = extract_event_signature_bytes(&log)?;
 
             if event_sig_bytes == initialize_sig_bytes {
-                let initialize_event = dex_extended.parse_initialize_event(log)?;
+                let initialize_event = dex_extended.parse_initialize_event_hypersync(log)?;
                 profiler.initialize(initialize_event.sqrt_price_x96);
                 self.cache
                     .database
@@ -1441,7 +1441,7 @@ impl BlockchainDataClientCore {
                     .update_pool_initial_price_tick(self.chain.chain_id, &initialize_event)
                     .await?;
             } else if event_sig_bytes == mint_sig_bytes {
-                let mint_event = dex_extended.parse_mint_event(log)?;
+                let mint_event = dex_extended.parse_mint_event_hypersync(log)?;
                 match self.process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended) {
                     Ok(liquidity_update) => {
                         profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
@@ -1449,7 +1449,7 @@ impl BlockchainDataClientCore {
                     Err(e) => tracing::error!("Failed to process mint event: {e}"),
                 }
             } else if event_sig_bytes == burn_sig_bytes {
-                let burn_event = dex_extended.parse_burn_event(log)?;
+                let burn_event = dex_extended.parse_burn_event_hypersync(log)?;
                 match self.process_pool_burn_event(&burn_event, &profiler.pool, &dex_extended) {
                     Ok(liquidity_update) => {
                         profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;

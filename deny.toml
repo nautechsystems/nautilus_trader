@@ -96,10 +96,10 @@ registries = []
 # Banned/Duplicate Crates
 # =============================================================================
 [bans]
-# Warn on multiple versions of the same crate
-# TODO: Currently 35 duplicate warnings - schedule cleanup then change to "deny"
-# Common duplicates: base64, darling, hashbrown, getrandom, rand
-multiple-versions = "warn"
+# Deny multiple versions of the same crate to catch new duplicates we introduce.
+# Known transitive duplicates from upstream are allowlisted in `skip` below.
+# Review this list periodically when upgrading dependencies.
+multiple-versions = "deny"
 
 # Deny wildcard version requirements (*)
 # Prevents uncontrolled version drift and supply-chain attacks
@@ -116,8 +116,71 @@ allow = []
 # Explicitly denied crates
 deny = []
 
-# Skip certain crates during duplicate detection
-skip = []
+# Skip certain crates during duplicate detection.
+# These are transitive duplicates from upstream crates outside our control.
+# Last reviewed: 2025-11-29
+skip = [
+  # Crypto ecosystem - version-locked together, pulled by various blockchain crates
+  { crate = "block-buffer" },
+  { crate = "digest" },
+  { crate = "sha2" },
+
+  # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
+  { crate = "getrandom" },
+  { crate = "rand" },
+  { crate = "rand_chacha" },
+  { crate = "rand_core" },
+
+  # Proc-macro helpers - transitive via derive macros in various crates
+  { crate = "darling" },
+  { crate = "darling_core" },
+  { crate = "darling_macro" },
+  { crate = "derive_more" },
+  { crate = "derive_more-impl" },
+  { crate = "syn" },
+
+  # Compression crates - version fragmentation between polars and parquet
+  { crate = "brotli" },
+  { crate = "brotli-decompressor" },
+
+  # Common utility crates with version fragmentation across ecosystem
+  { crate = "base64" },
+  { crate = "hashbrown" },
+  { crate = "itertools" },
+  { crate = "foldhash" },
+  { crate = "rustc-hash" },
+  { crate = "ordered-float" },
+  { crate = "petgraph" },
+  { crate = "socket2" },
+
+  # Perfect hash function crates - transitive
+  { crate = "phf" },
+  { crate = "phf_shared" },
+
+  # Error handling - thiserror 1.x vs 2.x transition in progress
+  { crate = "thiserror" },
+  { crate = "thiserror-impl" },
+
+  # TLS roots - version fragmentation in TLS ecosystem
+  { crate = "webpki-roots" },
+
+  # Windows platform crates - notoriously fragmented across Windows SDK versions
+  { crate = "windows-core" },
+  { crate = "windows-link" },
+  { crate = "windows-result" },
+  { crate = "windows-strings" },
+  { crate = "windows-sys" },
+  { crate = "windows-targets" },
+  { crate = "windows_aarch64_gnullvm" },
+  { crate = "windows_aarch64_msvc" },
+  { crate = "windows_i686_gnu" },
+  { crate = "windows_i686_gnullvm" },
+  { crate = "windows_i686_msvc" },
+  { crate = "windows_x86_64_gnu" },
+  { crate = "windows_x86_64_gnullvm" },
+  { crate = "windows_x86_64_msvc" },
+]
+
 skip-tree = []
 
 # =============================================================================

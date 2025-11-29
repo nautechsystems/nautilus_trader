@@ -39,6 +39,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import BybitAccountType
+from nautilus_trader.core.nautilus_pyo3 import BybitMarginAction
 from nautilus_trader.core.nautilus_pyo3 import BybitPositionMode
 from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 from nautilus_trader.execution.messages import BatchCancelOrders
@@ -57,6 +58,7 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -721,8 +723,125 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return None
 
-    async def _query_account(self, _command: QueryAccount) -> None:
-        await self._update_account_state()
+    async def _query_account(self, command: QueryAccount) -> None:
+        params = command.params or {}
+        action = params.get("action")
+
+        if action is None:
+            await self._update_account_state()
+            return
+
+        if action == BybitMarginAction.BORROW:
+            await self._handle_borrow_action(command, params)
+        elif action == BybitMarginAction.REPAY:
+            await self._handle_repay_action(command, params)
+        elif action == BybitMarginAction.GET_BORROW_AMOUNT:
+            await self._handle_get_borrow_amount_action(command, params)
+        else:
+            self._log.warning(f"Unknown query_account action: {action}")
+            await self._update_account_state()
+
+    async def _handle_borrow_action(self, command: QueryAccount, params: dict[str, Any]) -> None:
+        coin = params.get("coin")
+        amount = params.get("amount")
+
+        if not coin or not amount:
+            self._log.error("Borrow action requires 'coin' and 'amount' params")
+            return
+
+        ts_now = self._clock.timestamp_ns()
+        success = False
+        message = ""
+
+        try:
+            pyo3_amount = nautilus_pyo3.Quantity.from_str(str(amount))
+            await self._http_client.borrow_spot(coin, pyo3_amount)
+            success = True
+            self._log.info(f"Successfully borrowed {amount} {coin}", LogColor.GREEN)
+        except Exception as e:
+            message = str(e)
+            self._log.error(f"Borrow failed: {e}")
+
+        response = nautilus_pyo3.BybitMarginBorrowResult(
+            coin=coin,
+            amount=str(amount),
+            success=success,
+            message=message,
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+        self._publish_margin_data(response)
+
+    async def _handle_repay_action(self, command: QueryAccount, params: dict[str, Any]) -> None:
+        coin = params.get("coin")
+        amount = params.get("amount")  # Optional - None means repay all
+
+        if not coin:
+            self._log.error("Repay action requires 'coin' param")
+            return
+
+        # Check Bybit blackout window (04:00-05:30 UTC)
+        if self._is_repay_blackout_window():
+            self._log.warning(
+                "Cannot repay during Bybit blackout window (04:00-05:30 UTC)",
+                LogColor.YELLOW,
+            )
+            return
+
+        ts_now = self._clock.timestamp_ns()
+        success = False
+        result_status = "FAIL"
+        message = ""
+
+        try:
+            pyo3_amount = nautilus_pyo3.Quantity.from_str(str(amount)) if amount else None
+            await self._http_client.repay_spot_borrow(coin, pyo3_amount)
+            success = True
+            result_status = "SU"
+            self._log.info(f"Successfully repaid {amount or 'all'} {coin}", LogColor.GREEN)
+        except Exception as e:
+            message = str(e)
+            self._log.error(f"Repay failed: {e}")
+
+        response = nautilus_pyo3.BybitMarginRepayResult(
+            coin=coin,
+            amount=str(amount) if amount else None,
+            success=success,
+            result_status=result_status,
+            message=message,
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+        self._publish_margin_data(response)
+
+    async def _handle_get_borrow_amount_action(
+        self, command: QueryAccount, params: dict[str, Any],
+    ) -> None:
+        coin = params.get("coin")
+
+        if not coin:
+            self._log.error("Get borrow amount action requires 'coin' param")
+            return
+
+        ts_now = self._clock.timestamp_ns()
+
+        try:
+            borrow_amount = await self._http_client.get_spot_borrow_amount(coin)
+
+            response = nautilus_pyo3.BybitMarginStatusResult(
+                coin=coin,
+                borrow_amount=str(borrow_amount),
+                ts_event=ts_now,
+                ts_init=ts_now,
+            )
+            self._log.info(f"Borrow amount for {coin}: {borrow_amount}")
+            self._publish_margin_data(response)
+        except Exception as e:
+            self._log.error(f"Get borrow amount failed: {e}")
+
+    def _publish_margin_data(self, data) -> None:
+        data_type = DataType(type(data))
+        self._msgbus.publish(topic=f"data.{data_type.topic}", msg=data)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
