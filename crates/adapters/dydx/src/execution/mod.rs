@@ -1363,11 +1363,11 @@ impl LiveExecutionClient for DydxExecutionClient {
             .await
             .context("failed to fetch order from dYdX API")?;
 
-        if response.orders.is_empty() {
+        if response.is_empty() {
             return Ok(None);
         }
 
-        let order = &response.orders[0];
+        let order = &response[0];
         let ts_init = UnixNanos::default();
 
         // Get instrument by clob_pair_id
@@ -1431,7 +1431,7 @@ impl LiveExecutionClient for DydxExecutionClient {
         let mut reports = Vec::new();
         let ts_init = UnixNanos::default();
 
-        for order in response.orders {
+        for order in response {
             // Get instrument by clob_pair_id using efficient lookup
             let instrument = match self.get_instrument_by_clob_pair_id(order.clob_pair_id) {
                 Some(inst) => inst,
@@ -1668,10 +1668,10 @@ impl LiveExecutionClient for DydxExecutionClient {
         let mut fills_filtered = 0;
 
         // Parse orders (with optional time filtering)
-        for order in orders_response.orders {
+        for order in orders_response {
             // Filter by time window if specified (use updated_at for orders)
             if let Some(cutoff) = cutoff_time
-                && order.updated_at < cutoff
+                && order.updated_at.is_some_and(|dt| dt < cutoff)
             {
                 orders_filtered += 1;
                 continue;

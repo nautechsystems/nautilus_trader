@@ -681,7 +681,7 @@ async fn test_get_fills() {
                         "createdAt": "2024-01-01T00:00:00.000Z",
                         "createdAtHeight": "12345",
                         "orderId": "order-123",
-                        "clientMetadata": 0
+                        "clientMetadata": "0"
                     }]
                 }))
             }),
@@ -714,15 +714,14 @@ async fn test_get_orders() {
         .route(
             "/v4/orders",
             get(|| async {
-                Json(json!({
-                    "orders": [{
+                Json(json!([
+                    {
                         "id": "order123",
                         "subaccountId": "dydx1test/0",
                         "clientId": "12345",
                         "clobPairId": "0",
                         "side": "BUY",
                         "size": "0.1",
-                        "remainingSize": "0.1",
                         "totalFilled": "0.0",
                         "price": "43000.0",
                         "type": "LIMIT",
@@ -734,12 +733,12 @@ async fn test_get_orders() {
                         "createdAtHeight": "12345",
                         "goodTilBlock": "12350",
                         "ticker": "BTC-USD",
-                        "orderFlags": 0,
+                        "orderFlags": "0",
                         "updatedAt": "2024-01-01T00:00:00.000Z",
                         "updatedAtHeight": "12345",
-                        "clientMetadata": 0
-                    }]
-                }))
+                        "clientMetadata": "0"
+                    }
+                ]))
             }),
         )
         .with_state(state);
@@ -758,8 +757,8 @@ async fn test_get_orders() {
         .get_orders("dydx1test", 0, Some("BTC-USD"), Some(10))
         .await
         .unwrap();
-    assert_eq!(result.orders.len(), 1);
-    assert_eq!(result.orders[0].id, "order123");
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].id, "order123");
 }
 
 #[rstest]
@@ -970,7 +969,7 @@ async fn test_orders_with_limit() {
             get(|Query(params): Query<HashMap<String, String>>| async move {
                 let limit = params.get("limit");
                 assert_eq!(limit, Some(&"5".to_string()));
-                Json(json!({"orders": []}))
+                Json(json!([]))
             }),
         )
         .with_state(state);
@@ -989,7 +988,7 @@ async fn test_orders_with_limit() {
         .get_orders("dydx1test", 0, None, Some(5))
         .await
         .unwrap();
-    assert_eq!(result.orders.len(), 0);
+    assert_eq!(result.len(), 0);
 }
 
 // ================================================================================
@@ -1197,7 +1196,7 @@ async fn test_fills_empty_list() {
 async fn test_orders_empty_list() {
     let state = TestServerState::default();
     let router = Router::new()
-        .route("/v4/orders", get(|| async { Json(json!({"orders": []})) }))
+        .route("/v4/orders", get(|| async { Json(json!([])) }))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1211,7 +1210,7 @@ async fn test_orders_empty_list() {
     let client = DydxRawHttpClient::new(Some(base_url), Some(5), None, false, None).unwrap();
 
     let result = client.get_orders("dydx1test", 0, None, None).await.unwrap();
-    assert_eq!(result.orders.len(), 0);
+    assert_eq!(result.len(), 0);
 }
 
 #[rstest]

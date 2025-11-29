@@ -65,6 +65,7 @@ cosmrs = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dydx-proto = { workspace = true }
+futures-util = { workspace = true }
 hex = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
@@ -104,6 +105,10 @@ name = "dydx-http-public"
 path = "bin/http_public.rs"
 
 [[bin]]
+name = "dydx-http-private"
+path = "bin/http_private.rs"
+
+[[bin]]
 name = "dydx-ws-data"
 path = "bin/ws_data.rs"
 
@@ -114,3 +119,7 @@ path = "bin/live_integration.rs"
 [[bin]]
 name = "dydx-grpc-exec"
 path = "bin/grpc_exec.rs"
+
+[[bin]]
+name = "dydx-ws-exec"
+path = "bin/ws_exec.rs"

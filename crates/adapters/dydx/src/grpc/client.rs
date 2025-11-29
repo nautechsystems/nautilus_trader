@@ -93,7 +93,7 @@ impl DydxGrpcClient {
 
         // Enable TLS for HTTPS URLs (required for public gRPC nodes)
         if grpc_url.starts_with("https://") {
-            let tls = tonic::transport::ClientTlsConfig::new();
+            let tls = tonic::transport::ClientTlsConfig::new().with_enabled_roots();
             endpoint = endpoint
                 .tls_config(tls)
                 .map_err(|e| DydxError::Config(format!("TLS config failed: {e}")))?;

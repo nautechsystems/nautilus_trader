@@ -24,8 +24,19 @@
 //! cargo run --bin dydx-http-public -p nautilus-dydx
 //!
 //! # Test against mainnet
+//! cargo run --bin dydx-http-public -p nautilus-dydx -- --mainnet
+//!
+//! # Test specific symbol
+//! cargo run --bin dydx-http-public -p nautilus-dydx -- --symbol ETH-USD
+//!
+//! # Show instrument summary (grouped by type and base asset)
+//! cargo run --bin dydx-http-public -p nautilus-dydx -- --summary
+//!
+//! # Custom URL via environment variable
 //! DYDX_HTTP_URL=https://indexer.dydx.trade cargo run --bin dydx-http-public -p nautilus-dydx
 //! ```
+
+use std::{collections::HashMap, env};
 
 use chrono::{Duration, Utc};
 use nautilus_dydx::{
@@ -41,9 +52,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let base_url =
-        std::env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string());
-    let is_testnet = base_url.contains("testnet");
+    let args: Vec<String> = env::args().collect();
+    let is_mainnet = args.iter().any(|a| a == "--mainnet");
+    let show_summary = args.iter().any(|a| a == "--summary");
+    let symbol = args
+        .iter()
+        .position(|a| a == "--symbol")
+        .and_then(|i| args.get(i + 1))
+        .map_or("BTC-USD", |s| s.as_str());
+
+    let base_url = if is_mainnet {
+        env::var("DYDX_HTTP_URL").unwrap_or_else(|_| "https://indexer.dydx.trade".to_string())
+    } else {
+        env::var("DYDX_HTTP_URL").unwrap_or_else(|_| DYDX_TESTNET_HTTP_URL.to_string())
+    };
+    let is_testnet = !is_mainnet;
 
     tracing::info!("Connecting to dYdX HTTP API: {}", base_url);
     tracing::info!(
@@ -63,6 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         instruments.len(),
         elapsed.as_secs_f64()
     );
+    if show_summary {
+        print_instrument_summary(&instruments);
+        return Ok(());
+    }
 
     if !instruments.is_empty() {
         tracing::info!("   Sample instruments:");
@@ -76,10 +103,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     client.cache_instruments(instruments.clone());
     tracing::info!("Cached {} instruments", instruments.len());
+    tracing::info!("Cached {} instruments", instruments.len());
 
-    let symbol = Ustr::from("BTC-USD");
+    let query_symbol = Ustr::from(symbol);
     let start = std::time::Instant::now();
-    let instrument = client.get_instrument(&symbol);
+    let instrument = client.get_instrument(&query_symbol);
     let elapsed = start.elapsed();
 
     match instrument {
@@ -94,11 +122,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::info!("   Size precision: {}", inst.size_precision());
         }
         None => {
-            tracing::warn!("FAILED: Instrument {} not found in cache", symbol);
+            tracing::warn!("FAILED: Instrument {} not found in cache", query_symbol);
         }
     }
 
-    let symbol = "BTC-USD";
     let limit = Some(100);
 
     let start = std::time::Instant::now();
@@ -229,4 +256,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+fn print_instrument_summary(instruments: &[nautilus_model::instruments::InstrumentAny]) {
+    let mut by_type: HashMap<String, usize> = HashMap::new();
+    let mut by_base: HashMap<String, usize> = HashMap::new();
+
+    for inst in instruments {
+        let type_name = inst.instrument_class().to_string();
+        *by_type.entry(type_name).or_insert(0) += 1;
+
+        let base = inst
+            .id()
+            .symbol
+            .as_str()
+            .split('-')
+            .next()
+            .unwrap_or("UNKNOWN")
+            .to_string();
+        *by_base.entry(base).or_insert(0) += 1;
+    }
+
+    tracing::info!("");
+    tracing::info!("=== Instruments by Type ===");
+    let mut types: Vec<_> = by_type.iter().collect();
+    types.sort_by_key(|(name, _)| *name);
+    for (type_name, count) in types {
+        tracing::info!("  {:20} : {:4} instruments", type_name, count);
+    }
+    tracing::info!("");
+
+    tracing::info!("=== Instruments by Base Asset (Top 20) ===");
+    let mut bases: Vec<_> = by_base.iter().collect();
+    bases.sort_by(|a, b| b.1.cmp(a.1));
+    for (base, count) in bases.iter().take(20) {
+        tracing::info!("  {:10} : {:4} instruments", base, count);
+    }
+    if bases.len() > 20 {
+        tracing::info!("  ... and {} more base assets", bases.len() - 20);
+    }
+    tracing::info!("");
+
+    tracing::info!("=== Sample Instruments ===");
+    for inst in instruments.iter().take(5) {
+        tracing::info!(
+            "  {} ({}) - price_prec={} size_prec={}",
+            inst.id(),
+            inst.instrument_class(),
+            inst.price_precision(),
+            inst.size_precision()
+        );
+    }
+    if instruments.len() > 5 {
+        tracing::info!("  ... and {} more", instruments.len() - 5);
+    }
+    tracing::info!("");
+
+    tracing::info!("Summary complete");
 }

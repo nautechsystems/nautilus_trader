@@ -731,17 +731,11 @@ pub fn parse_order_status_report(
             .context("failed to convert order size to f64")?,
         size_precision,
     );
-    let filled_qty = Quantity::from_raw(
-        quantity.raw.saturating_sub(
-            Quantity::new(
-                order
-                    .remaining_size
-                    .to_f64()
-                    .context("failed to convert remaining_size to f64")?,
-                size_precision,
-            )
-            .raw,
-        ),
+    let filled_qty = Quantity::new(
+        order
+            .total_filled
+            .to_f64()
+            .context("failed to convert total_filled to f64")?,
         size_precision,
     );
 
@@ -759,7 +753,9 @@ pub fn parse_order_status_report(
     let ts_accepted = order.good_til_block_time.map_or(ts_init, |dt| {
         UnixNanos::from(dt.timestamp_millis() as u64 * 1_000_000)
     });
-    let ts_last = UnixNanos::from(order.updated_at.timestamp_millis() as u64 * 1_000_000);
+    let ts_last = order.updated_at.map_or(ts_init, |dt| {
+        UnixNanos::from(dt.timestamp_millis() as u64 * 1_000_000)
+    });
 
     // Build the report
     let mut report = OrderStatusReport::new(
@@ -1196,7 +1192,7 @@ mod reconciliation_tests {
             clob_pair_id: 1,
             side: OrderSide::Buy,
             size: dec!(1.5),
-            remaining_size: dec!(0.5),
+            total_filled: dec!(1.0),
             price: dec!(50000.0),
             status: DydxOrderStatus::PartiallyFilled,
             order_type: "Limit".to_string(), // EnumString uses PascalCase
@@ -1206,14 +1202,17 @@ mod reconciliation_tests {
             order_flags: 0,
             good_til_block: None,
             good_til_block_time: Some(Utc::now()),
-            created_at_height: 1000,
+            created_at_height: Some(1000),
             client_metadata: 0,
             trigger_price: None,
             condition_type: None,
             conditional_order_trigger_subticks: None,
             execution: None,
-            updated_at: Utc::now(),
-            updated_at_height: 1001,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(1001),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
         };
 
         let result = parse_order_status_report(&order, &instrument, account_id, ts_init);
@@ -1243,7 +1242,7 @@ mod reconciliation_tests {
             clob_pair_id: 1,
             side: OrderSide::Sell,
             size: dec!(2.0),
-            remaining_size: dec!(2.0),
+            total_filled: dec!(0.0),
             price: dec!(51000.0),
             status: DydxOrderStatus::Untriggered,
             order_type: "StopLimit".to_string(), // EnumString uses PascalCase
@@ -1253,14 +1252,17 @@ mod reconciliation_tests {
             order_flags: 0,
             good_til_block: None,
             good_til_block_time: Some(Utc::now()),
-            created_at_height: 1000,
+            created_at_height: Some(1000),
             client_metadata: 0,
             trigger_price: Some(dec!(49000.0)),
             condition_type: Some(crate::common::enums::DydxConditionType::StopLoss),
             conditional_order_trigger_subticks: Some(490000),
             execution: None,
-            updated_at: Utc::now(),
-            updated_at_height: 1001,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(1001),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
         };
 
         let result = parse_order_status_report(&order, &instrument, account_id, ts_init);
@@ -1418,7 +1420,7 @@ mod reconciliation_tests {
             clob_pair_id: 1,
             side: OrderSide::Buy,
             size: dec!(0.5),
-            remaining_size: dec!(0.5),
+            total_filled: dec!(0.0),
             price: dec!(50000.0),
             status: DydxOrderStatus::Open,
             order_type: "Limit".to_string(),
@@ -1428,14 +1430,17 @@ mod reconciliation_tests {
             order_flags: 0,
             good_til_block: Some(1000),
             good_til_block_time: None,
-            created_at_height: 900,
+            created_at_height: Some(900),
             client_metadata: 0,
             trigger_price: None,
             condition_type: None,
             conditional_order_trigger_subticks: None,
             execution: None,
-            updated_at: Utc::now(),
-            updated_at_height: 900,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(900),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
         };
 
         let result = parse_order_status_report(&order, &instrument, account_id, ts_init);
@@ -1462,7 +1467,7 @@ mod reconciliation_tests {
             clob_pair_id: 1,
             side: OrderSide::Buy,
             size: dec!(2.0),
-            remaining_size: dec!(1.25), // 0.75 filled = 1.25 remaining
+            total_filled: dec!(0.75),
             price: dec!(50000.0),
             status: DydxOrderStatus::PartiallyFilled,
             order_type: "Limit".to_string(),
@@ -1472,14 +1477,17 @@ mod reconciliation_tests {
             order_flags: 0,
             good_til_block: Some(2000),
             good_til_block_time: None,
-            created_at_height: 1500,
+            created_at_height: Some(1500),
             client_metadata: 0,
             trigger_price: None,
             condition_type: None,
             conditional_order_trigger_subticks: None,
             execution: None,
-            updated_at: Utc::now(),
-            updated_at_height: 1600,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(1600),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
         };
 
         let result = parse_order_status_report(&order, &instrument, account_id, ts_init);

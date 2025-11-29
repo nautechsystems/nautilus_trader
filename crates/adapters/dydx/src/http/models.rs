@@ -30,6 +30,15 @@ use chrono::{DateTime, Utc};
 use nautilus_model::enums::OrderSide;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+
+/// Deserializes an empty string as None, otherwise as Some(String).
+fn deserialize_empty_string_as_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: Option<String> = Option::deserialize(deserializer)?;
+    Ok(s.filter(|s| !s.is_empty()))
+}
 use serde_with::{DisplayFromStr, serde_as};
 use ustr::Ustr;
 
@@ -270,6 +279,10 @@ pub struct Subaccount {
     /// Last updated height.
     #[serde_as(as = "DisplayFromStr")]
     pub updated_at_height: u64,
+    /// Latest processed block height (present in API response).
+    #[serde(default)]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub latest_processed_block_height: Option<u64>,
 }
 
 /// Perpetual position.
@@ -328,21 +341,20 @@ pub struct PerpetualPosition {
 pub struct AssetPosition {
     /// Asset symbol.
     pub symbol: Ustr,
-    /// Position side (always LONG for assets).
-    pub side: OrderSide,
+    /// Position side (API returns "LONG" but we store as string).
+    pub side: String,
     /// Asset size (balance).
     #[serde_as(as = "DisplayFromStr")]
     pub size: Decimal,
     /// Asset ID.
     pub asset_id: String,
+    /// Subaccount number (present in API response).
+    #[serde(default)]
+    pub subaccount_number: u32,
 }
 
-/// Response for orders endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrdersResponse {
-    /// List of orders.
-    pub orders: Vec<Order>,
-}
+/// Response for orders endpoint - API returns array directly, not wrapped.
+pub type OrdersResponse = Vec<Order>;
 
 /// Order information.
 #[serde_as]
@@ -363,9 +375,9 @@ pub struct Order {
     /// Order size.
     #[serde_as(as = "DisplayFromStr")]
     pub size: Decimal,
-    /// Remaining size to be filled.
+    /// Total filled size.
     #[serde_as(as = "DisplayFromStr")]
-    pub remaining_size: Decimal,
+    pub total_filled: Decimal,
     /// Limit price.
     #[serde_as(as = "DisplayFromStr")]
     pub price: Decimal,
@@ -381,6 +393,7 @@ pub struct Order {
     /// Post-only flag.
     pub post_only: bool,
     /// Order flags (bitfield).
+    #[serde_as(as = "DisplayFromStr")]
     pub order_flags: u32,
     /// Good-til-block (for short-term orders).
     #[serde_as(as = "Option<DisplayFromStr>")]
@@ -389,10 +402,12 @@ pub struct Order {
     /// Good-til-time (ISO8601).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub good_til_block_time: Option<DateTime<Utc>>,
-    /// Creation height.
-    #[serde_as(as = "DisplayFromStr")]
-    pub created_at_height: u64,
+    /// Creation height (not present for BEST_EFFORT_OPENED orders).
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at_height: Option<u64>,
     /// Client metadata.
+    #[serde_as(as = "DisplayFromStr")]
     pub client_metadata: u32,
     /// Trigger price (for conditional orders).
     #[serde_as(as = "Option<DisplayFromStr>")]
@@ -408,17 +423,30 @@ pub struct Order {
     /// Order execution type.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution: Option<DydxOrderExecution>,
-    /// Updated timestamp.
-    pub updated_at: DateTime<Utc>,
-    /// Updated height.
-    #[serde_as(as = "DisplayFromStr")]
-    pub updated_at_height: u64,
+    /// Updated timestamp (not present for BEST_EFFORT_OPENED orders).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime<Utc>>,
+    /// Updated height (not present for BEST_EFFORT_OPENED orders).
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at_height: Option<u64>,
+    /// Ticker symbol (e.g., "BTC-USD").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ticker: Option<String>,
+    /// Subaccount number.
+    #[serde(default)]
+    pub subaccount_number: u32,
+    /// Order router address (empty string treated as None).
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_router_address: Option<String>,
 }
 
-/// Response for fills endpoint.
+/// Response for fills endpoint - API returns wrapped in {"fills": [...]}.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FillsResponse {
-    /// List of fills.
+    /// Array of fills.
     pub fills: Vec<Fill>,
 }
 
@@ -457,6 +485,7 @@ pub struct Fill {
     /// Order ID.
     pub order_id: String,
     /// Client order ID.
+    #[serde_as(as = "DisplayFromStr")]
     pub client_metadata: u32,
 }
 
