@@ -5919,8 +5919,6 @@ class BybitHttpClient:
         recv_window_ms: int | None = None,
         proxy_url: str | None = None,
     ) -> None: ...
-    @staticmethod
-    def from_env() -> BybitHttpClient: ...
     @property
     def base_url(self) -> str: ...
     @property
@@ -5929,7 +5927,7 @@ class BybitHttpClient:
     def api_key_masked(self) -> str | None: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
     def cancel_all_requests(self) -> None: ...
-    def set_use_spot_position_reports(self, value: bool) -> None: ...
+    def set_use_spot_position_reports(self, use_spot_position_reports: bool) -> None: ...
     async def get_account_details(self) -> BybitAccountDetails: ...
     async def set_margin_mode(
         self,
@@ -5985,9 +5983,9 @@ class BybitHttpClient:
     ) -> list[Bar]: ...
     async def request_fee_rates(
         self,
-        account_type: BybitAccountType,
-        account_id: AccountId,
-        instrument_id: InstrumentId | None = None,
+        product_type: BybitProductType,
+        symbol: str | None = None,
+        base_coin: str | None = None,
     ) -> list[Any]: ...
     async def request_account_state(
         self,
@@ -6065,14 +6063,6 @@ class BybitHttpClient:
         quantity: Quantity | None = None,
         price: Price | None = None,
     ) -> OrderStatusReport: ...
-    async def batch_cancel_orders(
-        self,
-        account_id: AccountId,
-        product_type: BybitProductType,
-        instrument_ids: list[InstrumentId],
-        client_order_ids: list[ClientOrderId | None],
-        venue_order_ids: list[VenueOrderId | None],
-    ) -> list[OrderStatusReport]: ...
 
 class BybitWebSocketClient:
     @staticmethod
