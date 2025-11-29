@@ -489,7 +489,7 @@ async fn test_cancel_specific(
         is_mainnet,
     )
     .await?;
-    tracing::info!("✓ Placed order {} (tx: {})", client_id, tx_hash);
+    tracing::info!("Placed order {} (tx: {})", client_id, tx_hash);
 
     tokio::time::sleep(Duration::from_secs(3)).await;
 
@@ -499,7 +499,7 @@ async fn test_cancel_specific(
     match target {
         Some(order) => {
             tracing::info!(
-                "✓ Order found: client_id={}, status={:?}",
+                "Order found: client_id={}, status={:?}",
                 order.client_id,
                 order.status
             );
@@ -514,9 +514,9 @@ async fn test_cancel_specific(
                 is_mainnet,
             )
             .await?;
-            tracing::info!("✓ Canceled order {}", client_id);
+            tracing::info!("Canceled order {}", client_id);
         }
-        None => tracing::warn!("⚠ Order {} not yet indexed or already filled", client_id),
+        None => tracing::warn!("Order {} not yet indexed or already filled", client_id),
     }
 
     Ok(())
@@ -546,7 +546,7 @@ async fn test_cancel_by_market(
         .await?;
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    tracing::info!("✓ Placed 3 BTC orders");
+    tracing::info!("Placed 3 BTC orders");
 
     tokio::time::sleep(Duration::from_secs(3)).await;
 
@@ -556,7 +556,7 @@ async fn test_cancel_by_market(
         .filter(|o| o.ticker.as_deref() == Some("BTC-USD"))
         .collect();
 
-    tracing::info!("✓ Found {} open BTC orders", btc_orders.len());
+    tracing::info!("Found {} open BTC orders", btc_orders.len());
 
     for order in btc_orders {
         let client_id: u32 = order.client_id.parse()?;
@@ -572,7 +572,7 @@ async fn test_cancel_by_market(
         .await?;
     }
 
-    tracing::info!("✓ Canceled all BTC orders");
+    tracing::info!("Canceled all BTC orders");
     Ok(())
 }
 
@@ -597,7 +597,7 @@ async fn test_replace_order(
         is_mainnet,
     )
     .await?;
-    tracing::info!("✓ Placed original order {}", old_client_id);
+    tracing::info!("Placed original order {}", old_client_id);
 
     tokio::time::sleep(Duration::from_secs(3)).await;
 
@@ -614,7 +614,7 @@ async fn test_replace_order(
     )
     .await
     .ok();
-    tracing::info!("✓ Canceled old order {}", old_client_id);
+    tracing::info!("Canceled old order {}", old_client_id);
 
     place_edge_test_order(
         grpc,
@@ -626,7 +626,7 @@ async fn test_replace_order(
         is_mainnet,
     )
     .await?;
-    tracing::info!("✓ Placed new order {} at $11,000", new_client_id);
+    tracing::info!("Placed new order {} at $11,000", new_client_id);
 
     Ok(())
 }
@@ -652,7 +652,7 @@ async fn test_duplicate_cancel(
         is_mainnet,
     )
     .await?;
-    tracing::info!("✓ Placed order {}", client_id);
+    tracing::info!("Placed order {}", client_id);
 
     tokio::time::sleep(Duration::from_secs(3)).await;
 
@@ -660,7 +660,7 @@ async fn test_duplicate_cancel(
         grpc, account, http, address, client_id, "BTC-USD", is_mainnet,
     )
     .await?;
-    tracing::info!("✓ First cancel succeeded");
+    tracing::info!("First cancel succeeded");
 
     tokio::time::sleep(Duration::from_secs(1)).await;
     match cancel_order_by_client_id(
@@ -668,8 +668,8 @@ async fn test_duplicate_cancel(
     )
     .await
     {
-        Ok(_) => tracing::info!("⚠ Second cancel succeeded (order may have been re-indexed)"),
-        Err(e) => tracing::info!("✓ Second cancel failed as expected: {}", e),
+        Ok(_) => tracing::info!("Second cancel succeeded (order may have been re-indexed)"),
+        Err(e) => tracing::info!("Second cancel failed as expected: {}", e),
     }
 
     Ok(())
@@ -702,8 +702,8 @@ async fn test_rapid_sequence(
         )
         .await
         {
-            Ok(tx) => tracing::info!("✓ Order {} placed (tx: {})", i + 1, tx),
-            Err(e) => tracing::warn!("⚠ Order {} failed: {}", i + 1, e),
+            Ok(tx) => tracing::info!("Order {} placed (tx: {})", i + 1, tx),
+            Err(e) => tracing::warn!("Order {} failed: {}", i + 1, e),
         }
 
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -717,12 +717,12 @@ async fn test_rapid_sequence(
         )
         .await
         {
-            Ok(_) => tracing::info!("✓ Order {} canceled", i + 1),
-            Err(e) => tracing::warn!("⚠ Cancel {} failed: {}", i + 1, e),
+            Ok(_) => tracing::info!("Order {} canceled", i + 1),
+            Err(e) => tracing::warn!("Cancel {} failed: {}", i + 1, e),
         }
     }
 
-    tracing::info!("✓ Rapid sequence test complete");
+    tracing::info!("Rapid sequence test complete");
     Ok(())
 }
 
@@ -753,7 +753,7 @@ async fn test_batch_cancel(
         .await?;
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
-    tracing::info!("✓ Placed {} BTC orders", client_ids.len());
+    tracing::info!("Placed {} BTC orders", client_ids.len());
 
     tokio::time::sleep(Duration::from_secs(3)).await;
 
@@ -793,7 +793,7 @@ async fn test_batch_cancel(
     let tx_hash = grpc.broadcast_tx(tx_raw.to_bytes()?).await?;
 
     tracing::info!(
-        "✓ Batch canceled {} orders in single transaction: {}",
+        "Batch canceled {} orders in single transaction: {}",
         client_ids.len(),
         tx_hash
     );
@@ -806,7 +806,7 @@ async fn test_batch_cancel(
         .filter(|o| client_ids.contains(&o.client_id.parse::<u32>().unwrap_or(0)))
         .count();
     tracing::info!(
-        "✓ Batch cancel complete - {} orders remaining (expected 0)",
+        "Batch cancel complete - {} orders remaining (expected 0)",
         remaining
     );
 

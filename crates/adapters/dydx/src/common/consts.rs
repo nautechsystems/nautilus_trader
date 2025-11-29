@@ -65,7 +65,6 @@ pub const DYDX_WS_URL: &str = "wss://indexer.dydx.trade/v4/ws";
 ///
 /// Endpoints sourced from:
 /// - https://docs.dydx.xyz/interaction/endpoints#node
-/// - v4-client-rs mainnet.toml configuration
 ///
 /// # Notes
 ///
@@ -98,7 +97,6 @@ pub const DYDX_TESTNET_WS_URL: &str = "wss://indexer.v4testnet.dydx.exchange/v4/
 ///
 /// Endpoints sourced from:
 /// - https://docs.dydx.xyz/interaction/endpoints#node
-/// - v4-client-rs testnet.toml configuration
 ///
 /// # Notes
 ///

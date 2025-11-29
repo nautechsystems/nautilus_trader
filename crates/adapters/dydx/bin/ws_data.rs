@@ -145,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(e) = ws_client.subscribe_trades(instrument_id).await {
                 tracing::error!("Failed to subscribe to trades: {e}");
             } else {
-                tracing::info!("  ✓ Trades subscription successful");
+                tracing::info!("  Trades subscription successful");
             }
 
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -154,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(e) = ws_client.subscribe_orderbook(instrument_id).await {
                 tracing::error!("Failed to subscribe to orderbook: {e}");
             } else {
-                tracing::info!("  ✓ Orderbook subscription successful");
+                tracing::info!("  Orderbook subscription successful");
             }
 
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -174,7 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Err(e) = ws_client.subscribe_candles(instrument_id, "1MIN").await {
                 tracing::error!("Failed to subscribe to candles: {e}");
             } else {
-                tracing::info!("  ✓ Candles subscription successful");
+                tracing::info!("  Candles subscription successful");
             }
         }
         _ => {
