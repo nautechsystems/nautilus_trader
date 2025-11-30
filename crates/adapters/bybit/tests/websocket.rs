@@ -446,6 +446,33 @@ fn load_test_data(filename: &str) -> serde_json::Value {
     serde_json::from_str(&content).expect("Failed to parse test data")
 }
 
+fn make_linear_pair(raw_symbol: &str, base: &str, quote: &str) -> CurrencyPair {
+    CurrencyPair::new(
+        format!("{raw_symbol}-LINEAR.BYBIT").into(),
+        raw_symbol.into(),
+        Currency::from(base),
+        Currency::from(quote),
+        2,
+        5,
+        Price::from("0.01"),
+        Quantity::from("0.00001"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        0.into(),
+        0.into(),
+    )
+}
+
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/v5/public/linear", get(handle_websocket))
@@ -2155,32 +2182,7 @@ async fn test_batch_place_orders_with_cache_keys() {
     .await;
 
     // Cache instrument with proper key format (symbol-PRODUCT_TYPE)
-    let btc = Currency::from("BTC");
-    let usdt = Currency::from("USDT");
-    let btcusdt_linear = CurrencyPair::new(
-        "BTCUSDT-LINEAR.BYBIT".into(),
-        "BTCUSDT".into(),
-        btc,
-        usdt,
-        2,
-        5,
-        Price::from("0.01"),
-        Quantity::from("0.00001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    );
+    let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
     client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
 
     // Create batch place orders with raw symbol (will be converted to cache key internally)
@@ -2302,6 +2304,12 @@ async fn test_batch_cancel_orders() {
 
     let trader_id = TraderId::from("TESTER-001");
     let strategy_id = StrategyId::from("S-001");
+
+    // Cache instruments so cancel registration can resolve instrument IDs
+    let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
+    let ethusdt_linear = make_linear_pair("ETHUSDT", "ETH", "USDT");
+    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
+    client.cache_instrument(InstrumentAny::CurrencyPair(ethusdt_linear));
 
     let orders = vec![
         BybitWsCancelOrderParams {
