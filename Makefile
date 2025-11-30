@@ -25,6 +25,23 @@ VERBOSE ?= true
 # Can be overridden to use a separate directory: make build-debug TARGET_DIR=target-python
 TARGET_DIR ?= target
 
+# Prefer sccache for faster builds when available
+SCCACHE := $(shell command -v sccache 2>/dev/null)
+
+ifeq ($(SCCACHE),)
+CC ?= clang
+CXX ?= clang++
+else
+CC ?= sccache clang
+CXX ?= sccache clang++
+RUSTC_WRAPPER ?= sccache
+CARGO_INCREMENTAL ?= 0
+endif
+export CC
+export CXX
+export RUSTC_WRAPPER
+export CARGO_INCREMENTAL
+
 # FAIL_FAST controls whether `cargo nextest` should stop after the first test
 # failure. When set to `true` the `--no-fail-fast` flag is omitted so tests
 # abort on the first failure. When `false` (the default) the flag is included
