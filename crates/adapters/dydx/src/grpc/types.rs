@@ -15,6 +15,8 @@
 
 //! Type definitions for dYdX v4 gRPC operations.
 
+use std::str::FromStr;
+
 use cosmrs::tendermint::{Error, chain::Id};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display};
@@ -33,6 +35,18 @@ pub enum ChainId {
     #[strum(serialize = "dydx-mainnet-1")]
     #[serde(rename = "dydx-mainnet-1")]
     Mainnet1,
+}
+
+impl FromStr for ChainId {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "dydx-testnet-4" | "testnet" => Ok(Self::Testnet4),
+            "dydx-mainnet-1" | "mainnet" => Ok(Self::Mainnet1),
+            _ => anyhow::bail!("Invalid chain ID: {s}"),
+        }
+    }
 }
 
 impl TryFrom<ChainId> for Id {

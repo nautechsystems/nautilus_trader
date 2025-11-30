@@ -44,8 +44,8 @@ use ustr::Ustr;
 
 use crate::common::enums::{
     DydxCandleResolution, DydxConditionType, DydxFillType, DydxLiquidity, DydxMarketStatus,
-    DydxOrderExecution, DydxOrderStatus, DydxPositionStatus, DydxTickerType, DydxTimeInForce,
-    DydxTradeType,
+    DydxOrderExecution, DydxOrderStatus, DydxPositionSide, DydxPositionStatus, DydxTickerType,
+    DydxTimeInForce, DydxTradeType,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -341,8 +341,8 @@ pub struct PerpetualPosition {
 pub struct AssetPosition {
     /// Asset symbol.
     pub symbol: Ustr,
-    /// Position side (API returns "LONG" but we store as string).
-    pub side: String,
+    /// Position side (API returns LONG/SHORT).
+    pub side: DydxPositionSide,
     /// Asset size (balance).
     #[serde_as(as = "DisplayFromStr")]
     pub size: Decimal,

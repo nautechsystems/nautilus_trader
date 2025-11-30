@@ -330,6 +330,38 @@ pub enum DydxConditionType {
     TakeProfit,
 }
 
+/// dYdX asset position side (spot/margin balance).
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DydxPositionSide {
+    /// Long (positive balance).
+    Long,
+    /// Short (negative balance / borrowed).
+    Short,
+}
+
+impl From<DydxPositionSide> for PositionSide {
+    fn from(value: DydxPositionSide) -> Self {
+        match value {
+            DydxPositionSide::Long => Self::Long,
+            DydxPositionSide::Short => Self::Short,
+        }
+    }
+}
+
 /// dYdX position status.
 #[derive(
     Copy,

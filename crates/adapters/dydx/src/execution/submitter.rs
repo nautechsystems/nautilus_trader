@@ -434,10 +434,24 @@ impl OrderSubmitter {
     ) -> Result<(), DydxError> {
         use crate::grpc::TxBuilder;
 
-        // Get account for signing
-        let account = wallet
-            .account_offline(self.subaccount_number)
+        // Derive account for signing (uses derivation index 0 for main account)
+        let mut account = wallet
+            .account_offline(0)
             .map_err(|e| DydxError::Wallet(format!("Failed to derive account: {e}")))?;
+
+        // Fetch current account info from chain to get proper account_number and sequence
+        let mut grpc_client = self.grpc_client.clone();
+        let base_account = grpc_client
+            .get_account(&self.wallet_address)
+            .await
+            .map_err(|e| {
+                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                    "Failed to fetch account info: {e}"
+                ))))
+            })?;
+
+        // Update account with on-chain values
+        account.set_account_info(base_account.account_number, base_account.sequence);
 
         // Build transaction
         let tx_builder =

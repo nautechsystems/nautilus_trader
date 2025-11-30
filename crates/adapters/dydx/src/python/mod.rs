@@ -16,6 +16,7 @@
 //! Python bindings from `pyo3`.
 
 pub mod enums;
+pub mod execution;
 pub mod http;
 pub mod types;
 pub mod websocket;
@@ -36,5 +37,8 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::DydxOrderSide>()?;
     m.add_class::<crate::common::enums::DydxOrderType>()?;
     m.add_class::<crate::types::DydxOraclePrice>()?;
+    m.add_class::<execution::PyDydxWallet>()?;
+    m.add_class::<execution::PyDydxGrpcClient>()?;
+    m.add_class::<execution::PyDydxOrderSubmitter>()?;
     Ok(())
 }
