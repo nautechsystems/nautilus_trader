@@ -2300,6 +2300,9 @@ async fn test_batch_cancel_orders() {
     )
     .await;
 
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+
     let orders = vec![
         BybitWsCancelOrderParams {
             category: BybitProductType::Linear,
@@ -2315,7 +2318,9 @@ async fn test_batch_cancel_orders() {
         },
     ];
 
-    let result = client.batch_cancel_orders(orders).await;
+    let result = client
+        .batch_cancel_orders(trader_id, strategy_id, orders)
+        .await;
 
     assert!(result.is_ok(), "Batch cancel orders should succeed");
 

@@ -6169,12 +6169,9 @@ class BybitWebSocketClient:
     ) -> None: ...
     async def batch_cancel_orders(
         self,
-        product_type: BybitProductType,
         trader_id: TraderId,
         strategy_id: StrategyId,
-        instrument_ids: list[InstrumentId],
-        venue_order_ids: list[VenueOrderId | None],
-        client_order_ids: list[ClientOrderId | None],
+        orders: list[BybitWsCancelOrderParams],
     ) -> None: ...
     def build_place_order_params(
         self,
@@ -6196,11 +6193,18 @@ class BybitWebSocketClient:
         self,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId | None,
-        client_order_id: ClientOrderId | None,
-        quantity: Quantity | None,
-        price: Price | None,
+        venue_order_id: VenueOrderId | None = None,
+        client_order_id: ClientOrderId | None = None,
+        quantity: Quantity | None = None,
+        price: Price | None = None,
     ) -> BybitWsAmendOrderParams: ...
+    def build_cancel_order_params(
+        self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId | None = None,
+        client_order_id: ClientOrderId | None = None,
+    ) -> BybitWsCancelOrderParams: ...
 
 class BybitWsPlaceOrderParams:
     category: BybitProductType
@@ -6242,6 +6246,12 @@ class BybitWsAmendOrderParams:
     stop_loss: str | None
     tp_trigger_by: str | None
     sl_trigger_by: str | None
+
+class BybitWsCancelOrderParams:
+    category: BybitProductType
+    symbol: str
+    order_id: str | None
+    order_link_id: str | None
 
 def get_bybit_http_base_url(environment: BybitEnvironment) -> str: ...
 def get_bybit_ws_url_public(

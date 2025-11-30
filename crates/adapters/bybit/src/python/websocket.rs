@@ -28,7 +28,7 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::enums::{BybitEnvironment, BybitProductType},
-    python::params::{BybitWsAmendOrderParams, BybitWsPlaceOrderParams},
+    python::params::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
     websocket::{
         client::BybitWebSocketClient,
         messages::{BybitWebSocketError, NautilusWsMessage},
@@ -744,39 +744,27 @@ impl BybitWebSocketClient {
     }
 
     #[pyo3(name = "batch_cancel_orders")]
-    #[pyo3(signature = (
-        product_type,
-        trader_id,
-        strategy_id,
-        instrument_ids,
-        venue_order_ids,
-        client_order_ids,
-    ))]
-    #[allow(clippy::too_many_arguments)]
     fn py_batch_cancel_orders<'py>(
         &self,
         py: Python<'py>,
-        product_type: BybitProductType,
         trader_id: TraderId,
         strategy_id: StrategyId,
-        instrument_ids: Vec<InstrumentId>,
-        venue_order_ids: Vec<Option<VenueOrderId>>,
-        client_order_ids: Vec<Option<ClientOrderId>>,
+        orders: Vec<BybitWsCancelOrderParams>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let order_params: Vec<_> = orders
+                .into_iter()
+                .map(|p| p.try_into())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(to_pyruntime_err)?;
+
             client
-                .batch_cancel_orders_by_id(
-                    product_type,
-                    trader_id,
-                    strategy_id,
-                    instrument_ids,
-                    venue_order_ids,
-                    client_order_ids,
-                )
+                .batch_cancel_orders(trader_id, strategy_id, order_params)
                 .await
                 .map_err(to_pyruntime_err)?;
+
             Ok(())
         })
     }
@@ -801,6 +789,20 @@ impl BybitWebSocketClient {
                 quantity,
                 price,
             )
+            .map_err(to_pyruntime_err)?;
+        Ok(params.into())
+    }
+
+    #[pyo3(name = "build_cancel_order_params")]
+    fn py_build_cancel_order_params(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+    ) -> PyResult<crate::python::params::BybitWsCancelOrderParams> {
+        let params = self
+            .build_cancel_order_params(product_type, instrument_id, venue_order_id, client_order_id)
             .map_err(to_pyruntime_err)?;
         Ok(params.into())
     }

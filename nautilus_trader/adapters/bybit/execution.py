@@ -1150,60 +1150,58 @@ class BybitExecutionClient(LiveExecutionClient):
         if not command.cancels:
             return
 
-        # Extract data from cancel commands
-        instrument_ids = []
-        client_order_ids = []
-        venue_order_ids = []
-
-        for cancel in command.cancels:
-            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
-            instrument_ids.append(pyo3_instrument_id)
-
-            pyo3_client_order_id = (
-                nautilus_pyo3.ClientOrderId(cancel.client_order_id.value)
-                if cancel.client_order_id
-                else None
-            )
-            client_order_ids.append(pyo3_client_order_id)
-
-            pyo3_venue_order_id = (
-                nautilus_pyo3.VenueOrderId(cancel.venue_order_id.value)
-                if cancel.venue_order_id
-                else None
-            )
-            venue_order_ids.append(pyo3_venue_order_id)
-
         # Derive product type from first cancel (all must be same product type for batch operation)
         product_type = nautilus_pyo3.bybit_product_type_from_symbol(
             command.cancels[0].instrument_id.symbol.value,
         )
 
-        pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)
-        pyo3_strategy_id = nautilus_pyo3.StrategyId(command.strategy_id.value)
-
-        try:
-            # Batch cancel via WebSocket
-            await self._ws_trade_client.batch_cancel_orders(
-                product_type=product_type,
-                trader_id=pyo3_trader_id,
-                strategy_id=pyo3_strategy_id,
-                instrument_ids=instrument_ids,
-                venue_order_ids=venue_order_ids,
-                client_order_ids=client_order_ids,
+        # Build cancel order params
+        order_params = []
+        for cancel in command.cancels:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
+            pyo3_client_order_id = (
+                nautilus_pyo3.ClientOrderId(cancel.client_order_id.value)
+                if cancel.client_order_id
+                else None
             )
-        except Exception as e:
-            self._log.error(f"Failed to batch cancel orders: {e}")
-            for cancel in command.cancels:
-                order = self._cache.order(cancel.client_order_id)
-                if order and not order.is_closed:
-                    self.generate_order_cancel_rejected(
-                        strategy_id=order.strategy_id,
-                        instrument_id=order.instrument_id,
-                        client_order_id=order.client_order_id,
-                        venue_order_id=order.venue_order_id,
-                        reason=str(e),
-                        ts_event=self._clock.timestamp_ns(),
-                    )
+            pyo3_venue_order_id = (
+                nautilus_pyo3.VenueOrderId(cancel.venue_order_id.value)
+                if cancel.venue_order_id
+                else None
+            )
+
+            params = self._ws_trade_client.build_cancel_order_params(
+                product_type=product_type,
+                instrument_id=pyo3_instrument_id,
+                venue_order_id=pyo3_venue_order_id,
+                client_order_id=pyo3_client_order_id,
+            )
+            order_params.append(params)
+
+        if order_params:
+            pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)
+            pyo3_strategy_id = nautilus_pyo3.StrategyId(command.strategy_id.value)
+
+            try:
+                # Batch cancel via WebSocket
+                await self._ws_trade_client.batch_cancel_orders(
+                    pyo3_trader_id,
+                    pyo3_strategy_id,
+                    order_params,
+                )
+            except Exception as e:
+                self._log.error(f"Failed to batch cancel orders: {e}")
+                for cancel in command.cancels:
+                    order = self._cache.order(cancel.client_order_id)
+                    if order and not order.is_closed:
+                        self.generate_order_cancel_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            venue_order_id=order.venue_order_id,
+                            reason=str(e),
+                            ts_event=self._clock.timestamp_ns(),
+                        )
 
     # -- MESSAGE HANDLERS -------------------------------------------------------------------------
 

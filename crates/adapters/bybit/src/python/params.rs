@@ -453,3 +453,59 @@ impl From<messages::BybitWsAmendOrderParams> for BybitWsAmendOrderParams {
         }
     }
 }
+
+/// Parameters for canceling an order via WebSocket.
+#[pyclass]
+#[derive(Clone, Debug)]
+pub struct BybitWsCancelOrderParams {
+    #[pyo3(get, set)]
+    pub category: BybitProductType,
+    #[pyo3(get, set)]
+    pub symbol: String,
+    #[pyo3(get, set)]
+    pub order_id: Option<String>,
+    #[pyo3(get, set)]
+    pub order_link_id: Option<String>,
+}
+
+#[pymethods]
+impl BybitWsCancelOrderParams {
+    #[new]
+    fn py_new(
+        category: BybitProductType,
+        symbol: String,
+        order_id: Option<String>,
+        order_link_id: Option<String>,
+    ) -> Self {
+        Self {
+            category,
+            symbol,
+            order_id,
+            order_link_id,
+        }
+    }
+}
+
+impl TryFrom<BybitWsCancelOrderParams> for messages::BybitWsCancelOrderParams {
+    type Error = BybitWsError;
+
+    fn try_from(params: BybitWsCancelOrderParams) -> Result<Self, Self::Error> {
+        Ok(Self {
+            category: params.category,
+            symbol: Ustr::from(&params.symbol),
+            order_id: params.order_id,
+            order_link_id: params.order_link_id,
+        })
+    }
+}
+
+impl From<messages::BybitWsCancelOrderParams> for BybitWsCancelOrderParams {
+    fn from(params: messages::BybitWsCancelOrderParams) -> Self {
+        Self {
+            category: params.category,
+            symbol: params.symbol.to_string(),
+            order_id: params.order_id,
+            order_link_id: params.order_link_id,
+        }
+    }
+}
