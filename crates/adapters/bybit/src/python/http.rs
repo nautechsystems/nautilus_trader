@@ -267,6 +267,31 @@ impl BybitHttpClient {
         })
     }
 
+    #[pyo3(name = "request_tickers")]
+    fn py_request_tickers<'py>(
+        &self,
+        py: Python<'py>,
+        params: crate::python::params::BybitTickersParams,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let tickers = client
+                .request_tickers(&params.into())
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let py_tickers: PyResult<Vec<_>> = tickers
+                    .into_iter()
+                    .map(|ticker| Py::new(py, ticker))
+                    .collect();
+                let pylist = PyList::new(py, py_tickers?).unwrap().into_any().unbind();
+                Ok(pylist)
+            })
+        })
+    }
+
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         account_id,

@@ -75,6 +75,7 @@ pub struct BybitTickerSpot {
     pub low_price24h: String,
     pub turnover24h: String,
     pub volume24h: String,
+    #[serde(default)]
     pub usd_index_price: String,
 }
 
@@ -182,6 +183,11 @@ pub struct BybitTickerData {
     pub low_price24h: String,
     pub turnover24h: String,
     pub volume24h: String,
+    pub open_interest: Option<String>,
+    pub funding_rate: Option<String>,
+    pub next_funding_time: Option<String>,
+    pub mark_price: Option<String>,
+    pub index_price: Option<String>,
 }
 
 #[cfg(feature = "python")]
@@ -245,6 +251,36 @@ impl BybitTickerData {
     #[must_use]
     pub fn volume24h(&self) -> &str {
         &self.volume24h
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn open_interest(&self) -> Option<&str> {
+        self.open_interest.as_deref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn funding_rate(&self) -> Option<&str> {
+        self.funding_rate.as_deref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn next_funding_time(&self) -> Option<&str> {
+        self.next_funding_time.as_deref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn mark_price(&self) -> Option<&str> {
+        self.mark_price.as_deref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn index_price(&self) -> Option<&str> {
+        self.index_price.as_deref()
     }
 }
 
