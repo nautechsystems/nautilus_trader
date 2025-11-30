@@ -21,7 +21,7 @@ import pytest
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
@@ -61,7 +61,7 @@ def test_parse_instruments() -> None:
             if not token_id:
                 continue
             outcome = token_info["outcome"]
-            instrument = parse_instrument(market_info, token_id, outcome, 0)
+            instrument = parse_polymarket_instrument(market_info, token_id, outcome, 0)
             instruments.append(instrument)
 
     # Assert
@@ -135,7 +135,7 @@ def test_parse_quote_ticks() -> None:
     # Assert - Test that we can access the new schema fields
     assert len(ws_message.price_changes) == 3
 
-    for i, price_change in enumerate(ws_message.price_changes):
+    for _, price_change in enumerate(ws_message.price_changes):
         assert (
             price_change.asset_id
             == "52114319501245915516055106046884209969926127482827954674443846427813813222426"
@@ -478,7 +478,7 @@ def test_parse_empty_book_snapshot_returns_none():
             "currency": "USDC.e",
             "description": "Bitcoin Up or Down - September 3, 7PM ET",
             "expiration_ns": 1756944000000000000,
-            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",  # noqa: E501
+            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",
             "maker_fee": "0",
             "margin_init": "0",
             "margin_maint": "0",
@@ -533,7 +533,7 @@ def test_parse_empty_book_snapshot_in_backtest_engine():
             "currency": "USDC.e",
             "description": "Bitcoin Up or Down - September 3, 7PM ET",
             "expiration_ns": 1756944000000000000,
-            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",  # noqa: E501
+            "id": "0x22025ebf02ae8bf9aae999649b145ebe9b5db6e23a36acc7abe9ef5ca184ab57-46428986054832220603415781377952331535489217742718963672459046269597594860904.POLYMARKET",
             "maker_fee": "0",
             "margin_init": "0",
             "margin_maint": "0",

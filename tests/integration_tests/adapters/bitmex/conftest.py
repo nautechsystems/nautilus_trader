@@ -43,17 +43,17 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     return BITMEX_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_id(venue) -> AccountId:
     return AccountId(f"{venue.value}-1234567")
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument() -> CryptoPerpetual:
     """
     Create a test XBTUSD perpetual instrument.
@@ -78,7 +78,7 @@ def instrument() -> CryptoPerpetual:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state(account_id) -> AccountState:
     """
     Create a test account state with BitMEX-style margins.
@@ -118,7 +118,7 @@ def account_state(account_id) -> AccountState:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_http_client():
     """
     Create a mock BitMEX HTTP client.
@@ -128,10 +128,10 @@ def mock_http_client():
     mock.api_secret = "test_api_secret"
 
     # Mock account number retrieval
-    mock.http_get_margin = AsyncMock(return_value="1234567")
+    mock.get_margin = AsyncMock(return_value="1234567")
 
     # Mock server time retrieval
-    mock.http_get_server_time = AsyncMock(return_value=1234567890000)
+    mock.get_server_time = AsyncMock(return_value=1234567890000)
 
     # Mock account state request
     mock_account_state = MagicMock()
@@ -175,13 +175,13 @@ def mock_http_client():
     mock.request_position_status_reports = AsyncMock(return_value=[])
 
     # Mock instrument caching
-    mock.add_instrument = MagicMock()
+    mock.cache_instrument = MagicMock()
     mock.request_instruments = AsyncMock(return_value=[])
 
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_ws_client():
     """
     Create a mock BitMEX WebSocket client.
@@ -237,7 +237,27 @@ def mock_ws_client():
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
+def mock_submitter():
+    """
+    Create a mock BitMEX submit broadcaster.
+    """
+    mock = MagicMock(spec=nautilus_pyo3.SubmitBroadcaster)
+
+    # Mock lifecycle methods
+    mock.start = AsyncMock()
+    mock.stop = AsyncMock()
+
+    # Mock instrument caching
+    mock.cache_instrument = MagicMock()
+
+    # Mock submit operations
+    mock.broadcast_submit = AsyncMock()
+
+    return mock
+
+
+@pytest.fixture
 def mock_canceller():
     """
     Create a mock BitMEX cancel broadcaster.
@@ -249,7 +269,7 @@ def mock_canceller():
     mock.stop = AsyncMock()
 
     # Mock instrument caching
-    mock.add_instrument = MagicMock()
+    mock.cache_instrument = MagicMock()
 
     # Mock cancel operations
     mock.broadcast_cancel = AsyncMock()
@@ -259,7 +279,7 @@ def mock_canceller():
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_instrument_provider(instrument):
     """
     Create a mock BitMEX instrument provider.
@@ -276,11 +296,12 @@ def mock_instrument_provider(instrument):
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client(
     event_loop,
     mock_http_client,
     mock_ws_client,
+    mock_submitter,
     mock_canceller,
     msgbus,
     cache,
@@ -295,6 +316,12 @@ def exec_client(
     monkeypatch.setattr(
         "nautilus_trader.adapters.bitmex.execution.nautilus_pyo3.BitmexWebSocketClient",
         lambda *args, **kwargs: mock_ws_client,
+    )
+
+    # Patch the SubmitBroadcaster creation
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.bitmex.execution.nautilus_pyo3.SubmitBroadcaster",
+        lambda *args, **kwargs: mock_submitter,
     )
 
     # Patch the CancelBroadcaster creation
@@ -323,12 +350,13 @@ def exec_client(
     # Store the mocked clients for test access
     client._mock_http_client = mock_http_client
     client._mock_ws_client = mock_ws_client
+    client._mock_submitter = mock_submitter
     client._mock_canceller = mock_canceller
 
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument_provider():
     """
     Return None as we're using mock_instrument_provider in exec_client.
@@ -336,7 +364,7 @@ def instrument_provider():
     return None
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     """
     Return None as we're focusing on execution tests.

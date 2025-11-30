@@ -16,31 +16,43 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ## Workflows (`.github/workflows`)
 
-- **build.yml**: runs pre-commit, cargo-deny security checks, Rust tests, Python tests, builds wheels on multiple platforms, and uploads wheel artifacts.
-- **build-docs.yml**: dispatches a repository event to trigger the documentation build on `master` and `nightly` pushes.
-- **codeql-analysis.yml**: schedules and runs CodeQL security scans for Python and Rust code on pull requests to develop and periodically via cron.
-- **coverage.yml**: (optional) coverage report generation for the `nightly` branch.
-- **docker.yml**: builds and pushes Docker images (`nautilus_trader`, `jupyterlab`) for `master` and `nightly` branches using Buildx and QEMU.
-- **nightly-merge.yml**: automatically merges `develop` into `nightly` when the latest `develop` workflows succeed.
-- **performance.yml**: runs Rust/Python performance benchmarks on the `nightly` branch and reports to CodSpeed.
+- **build.yml**: main CI pipeline - pre-commit, cargo-deny, Rust tests, Python tests, wheel builds, and artifact uploads.
+- **build-v2.yml**: CI pipeline for the v2 Rust-native system.
+- **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
+- **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
+- **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs and via cron.
+- **copilot-setup-steps.yml**: environment setup for GitHub Copilot coding agent.
+- **coverage.yml**: coverage report generation for the `nightly` branch.
+- **docker.yml**: builds and pushes Docker images (`nautilus_trader`, `jupyterlab`) using Buildx and QEMU.
+- **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
+- **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
+- **trigger-reindexing.yml**: triggers documentation reindexing for search.
 
 ## Security
 
-- **CODEOWNERS**: Critical infrastructure files (workflows, dependencies, build configs, scripts) require Core team review before merge. This prevents unauthorized supply chain modifications and ensures all sensitive changes receive security review.
-- **Branch protection**: The develop branch requires PR reviews with CODEOWNERS enforcement and passing CI checks. External PRs must receive Core team approval before merge, while admin bypass is enabled for maintainer flexibility.
-- **cargo-deny**: Rust dependency auditing for security advisories (RUSTSEC/GHSA), license compliance (LGPL-3.0 compatibility), banned crates, and supply chain integrity. Runs in CI to block vulnerable or non-compliant dependencies. Configuration in `deny.toml`.
-- **Build attestations**: All published artifacts (wheels and source distributions) include cryptographic SLSA build provenance attestations. These prove artifacts were built by the official GitHub Actions workflow and link each artifact to a specific commit SHA, enabling users to verify authenticity via `gh attestation verify`. Attestations are generated for all releases, nightly builds, and develop builds published to PyPI, GitHub Releases, and the Nautech Systems package index.
-- **Code scanning**: CodeQL is enabled for continuous security analysis of Python and Rust code. Scans run on all PRs to develop and weekly via cron schedule.
-- **Immutable action pinning**: All third-party actions are pinned to specific commit SHAs to guarantee immutability and reproducibility.
-- **Hardened runners**: Most workflows employ `step-security/harden-runner` with `egress-policy: audit` to reduce attack surface and monitor outbound traffic.
-- **Secret management**: No secrets or credentials are stored in the repo. AWS, PyPI, and other credentials are provided via GitHub Secrets and injected at runtime.
+### Access controls
+
+- **CODEOWNERS**: Critical infrastructure files (workflows, dependencies, build configs, scripts) require Core team review before merge.
+- **Branch protection**: The develop branch requires PR reviews with CODEOWNERS enforcement and passing CI checks. External PRs must receive Core team approval before merge.
+- **Least-privilege tokens**: Workflows default `GITHUB_TOKEN` to `contents: read, actions: read` and selectively elevate scopes only for jobs that need them.
+- **Secret management**: No secrets or credentials are stored in the repo. Credentials are provided via GitHub Secrets and injected at runtime.
+
+### Dependency security
+
+- **cargo-deny**: Rust dependency auditing for security advisories (RUSTSEC/GHSA), license compliance, banned crates, and supply chain integrity. Configuration in `deny.toml`.
 - **Dependency pinning**: Key tools (pre-commit, Python versions, Rust toolchain, cargo-nextest) are locked to fixed versions or SHAs.
-- **Least-privilege tokens**: Workflows default the `GITHUB_TOKEN` to
-  `contents: read, actions: read` and selectively elevate scopes (e.g.
-  `contents: write`) only for the jobs that need to tag a release or upload
-  assets. This follows the principle of least privilege and limits blast
-  radius if a job is compromised.
-- **Caching**: Caches for sccache, pip/site-packages, pre-commit, and test data speed up workflows while preserving hermetic builds.
+- **Code scanning**: CodeQL is enabled for continuous security analysis of Python and Rust code on all PRs and weekly via cron.
+
+### Build integrity
+
+- **Build attestations**: All published artifacts include cryptographic SLSA build provenance attestations, linking each artifact to a specific commit SHA. Verify via `gh attestation verify`.
+- **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
+- **Docker image pinning**: Base images in Dockerfiles are pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
+- **Caching**: Caches for sccache, pip/site-packages, pre-commit, and test data speed up workflows while preserving hermetic (reproducible) builds.
+
+### Runtime hardening
+
+- **Hardened runners**: Most workflows employ `step-security/harden-runner` with `egress-policy: audit` to reduce attack surface and monitor outbound traffic.
 
 ### Allowed network endpoints
 

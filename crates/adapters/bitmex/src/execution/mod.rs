@@ -16,14 +16,15 @@
 //! Live execution client implementation for the BitMEX adapter.
 
 pub mod canceller;
+pub mod submitter;
 
-use std::{any::Any, cell::Ref, future::Future, sync::Mutex};
+use std::{any::Any, future::Future, sync::Mutex};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
-    clock::Clock,
+    live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::{
         ExecutionEvent,
         execution::{
@@ -33,12 +34,10 @@ use nautilus_common::{
         },
     },
     msgbus,
-    runner::get_exec_event_sender,
-    runtime::get_runtime,
 };
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_execution::client::{ExecutionClient, LiveExecutionClient, base::ExecutionClientCore};
-use nautilus_live::execution::LiveExecutionClientExt;
+use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_live::execution::client::LiveExecutionClient;
 use nautilus_model::{
     events::{AccountState, OrderEventAny, OrderRejected},
     identifiers::{AccountId, VenueOrderId},
@@ -50,6 +49,10 @@ use tokio::task::JoinHandle;
 
 use crate::{
     config::BitmexExecClientConfig,
+    execution::{
+        canceller::{CancelBroadcaster, CancelBroadcasterConfig},
+        submitter::{SubmitBroadcaster, SubmitBroadcasterConfig},
+    },
     http::client::BitmexHttpClient,
     websocket::{client::BitmexWebSocketClient, messages::NautilusWsMessage},
 };
@@ -60,6 +63,8 @@ pub struct BitmexExecutionClient {
     config: BitmexExecClientConfig,
     http_client: BitmexHttpClient,
     ws_client: BitmexWebSocketClient,
+    _submitter: SubmitBroadcaster,
+    _canceller: CancelBroadcaster,
     started: bool,
     connected: bool,
     instruments_initialized: bool,
@@ -90,6 +95,7 @@ impl BitmexExecutionClient {
             config.recv_window_ms,
             config.max_requests_per_second,
             config.max_requests_per_minute,
+            config.http_proxy_url.clone(),
         )
         .context("failed to construct BitMEX HTTP client")?;
 
@@ -103,11 +109,65 @@ impl BitmexExecutionClient {
         )
         .context("failed to construct BitMEX execution websocket client")?;
 
+        let pool_size = config.submitter_pool_size.unwrap_or(1);
+        let submitter_proxy_urls = match &config.submitter_proxy_urls {
+            Some(urls) => urls.iter().map(|url| Some(url.clone())).collect(),
+            None => vec![config.http_proxy_url.clone(); pool_size],
+        };
+
+        let submitter_config = SubmitBroadcasterConfig {
+            pool_size,
+            api_key: config.api_key.clone(),
+            api_secret: config.api_secret.clone(),
+            base_url: config.base_url_http.clone(),
+            testnet: config.use_testnet,
+            timeout_secs: config.http_timeout_secs,
+            max_retries: config.max_retries,
+            retry_delay_ms: config.retry_delay_initial_ms,
+            retry_delay_max_ms: config.retry_delay_max_ms,
+            recv_window_ms: config.recv_window_ms,
+            max_requests_per_second: config.max_requests_per_second,
+            max_requests_per_minute: config.max_requests_per_minute,
+            proxy_urls: submitter_proxy_urls,
+            ..Default::default()
+        };
+
+        let _submitter = SubmitBroadcaster::new(submitter_config)
+            .context("failed to create SubmitBroadcaster")?;
+
+        let canceller_pool_size = config.canceller_pool_size.unwrap_or(1);
+        let canceller_proxy_urls = match &config.canceller_proxy_urls {
+            Some(urls) => urls.iter().map(|url| Some(url.clone())).collect(),
+            None => vec![config.http_proxy_url.clone(); canceller_pool_size],
+        };
+
+        let canceller_config = CancelBroadcasterConfig {
+            pool_size: canceller_pool_size,
+            api_key: config.api_key.clone(),
+            api_secret: config.api_secret.clone(),
+            base_url: config.base_url_http.clone(),
+            testnet: config.use_testnet,
+            timeout_secs: config.http_timeout_secs,
+            max_retries: config.max_retries,
+            retry_delay_ms: config.retry_delay_initial_ms,
+            retry_delay_max_ms: config.retry_delay_max_ms,
+            recv_window_ms: config.recv_window_ms,
+            max_requests_per_second: config.max_requests_per_second,
+            max_requests_per_minute: config.max_requests_per_minute,
+            proxy_urls: canceller_proxy_urls,
+            ..Default::default()
+        };
+
+        let _canceller = CancelBroadcaster::new(canceller_config)
+            .context("failed to create CancelBroadcaster")?;
+
         Ok(Self {
             core,
             config,
             http_client,
             ws_client,
+            _submitter,
+            _canceller,
             started: false,
             connected: false,
             instruments_initialized: false,
@@ -156,10 +216,12 @@ impl BitmexExecutionClient {
         instruments.sort_by_key(|instrument| instrument.id());
 
         for instrument in &instruments {
-            self.http_client.add_instrument(instrument.clone());
+            self.http_client.cache_instrument(instrument.clone());
+            self._submitter.cache_instrument(instrument.clone());
+            self._canceller.cache_instrument(instrument.clone());
         }
 
-        self.ws_client.initialize_instruments_cache(instruments);
+        self.ws_client.cache_instruments(instruments);
 
         self.instruments_initialized = true;
         Ok(())
@@ -196,6 +258,7 @@ impl BitmexExecutionClient {
         }
 
         let stream = self.ws_client.stream();
+
         let handle = tokio::spawn(async move {
             pin_mut!(stream);
             while let Some(message) = stream.next().await {
@@ -208,6 +271,7 @@ impl BitmexExecutionClient {
     }
 }
 
+#[async_trait(?Send)]
 impl ExecutionClient for BitmexExecutionClient {
     fn is_connected(&self) -> bool {
         self.connected
@@ -251,7 +315,18 @@ impl ExecutionClient for BitmexExecutionClient {
 
         self.ensure_instruments_initialized()?;
         self.started = true;
-        tracing::info!("BitMEX execution client {} started", self.core.client_id);
+        tracing::info!(
+            client_id = %self.core.client_id,
+            account_id = %self.core.account_id,
+            use_testnet = self.config.use_testnet,
+            submitter_pool_size = ?self.config.submitter_pool_size,
+            canceller_pool_size = ?self.config.canceller_pool_size,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
+            submitter_proxy_urls = ?self.config.submitter_proxy_urls,
+            canceller_proxy_urls = ?self.config.canceller_proxy_urls,
+            "BitMEX execution client started"
+        );
         Ok(())
     }
 
@@ -285,7 +360,17 @@ impl ExecutionClient for BitmexExecutionClient {
             cmd.ts_init,
         );
 
+        let submit_tries = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get("submit_tries"))
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|&n| n > 0);
+
+        let use_broadcaster = submit_tries.is_some_and(|n| n > 1);
+
         let http_client = self.http_client.clone();
+        let submitter = self._submitter.clone_for_async();
         let trader_id = self.core.trader_id;
         let strategy_id = order.strategy_id();
         let instrument_id = order.instrument_id();
@@ -306,25 +391,48 @@ impl ExecutionClient for BitmexExecutionClient {
         let ts_event = cmd.ts_init;
 
         self.spawn_task("submit_order", async move {
-            match http_client
-                .submit_order(
-                    instrument_id,
-                    client_order_id,
-                    order_side,
-                    order_type,
-                    quantity,
-                    time_in_force,
-                    price,
-                    trigger_price,
-                    trigger_type,
-                    display_qty,
-                    post_only,
-                    reduce_only,
-                    order_list_id,
-                    contingency_type,
-                )
-                .await
-            {
+            let result = if use_broadcaster {
+                submitter
+                    .broadcast_submit(
+                        instrument_id,
+                        client_order_id,
+                        order_side,
+                        order_type,
+                        quantity,
+                        time_in_force,
+                        price,
+                        trigger_price,
+                        trigger_type,
+                        display_qty,
+                        post_only,
+                        reduce_only,
+                        order_list_id,
+                        contingency_type,
+                        submit_tries,
+                    )
+                    .await
+            } else {
+                http_client
+                    .submit_order(
+                        instrument_id,
+                        client_order_id,
+                        order_side,
+                        order_type,
+                        quantity,
+                        time_in_force,
+                        price,
+                        trigger_price,
+                        trigger_type,
+                        display_qty,
+                        post_only,
+                        reduce_only,
+                        order_list_id,
+                        contingency_type,
+                    )
+                    .await
+            };
+
+            match result {
                 Ok(report) => dispatch_order_status_report(report),
                 Err(e) => {
                     let event = OrderRejected::new(
@@ -388,17 +496,21 @@ impl ExecutionClient for BitmexExecutionClient {
     }
 
     fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
+        let canceller = self._canceller.clone_for_async();
         let instrument_id = cmd.instrument_id;
         let client_order_id = Some(cmd.client_order_id);
         let venue_order_id = Some(cmd.venue_order_id);
 
         self.spawn_task("cancel_order", async move {
-            match http_client
-                .cancel_order(instrument_id, client_order_id, venue_order_id)
+            match canceller
+                .broadcast_cancel(instrument_id, client_order_id, venue_order_id)
                 .await
             {
-                Ok(report) => dispatch_order_status_report(report),
+                Ok(Some(report)) => dispatch_order_status_report(report),
+                Ok(None) => {
+                    // Idempotent success - order already cancelled
+                    tracing::debug!("Order already cancelled: {:?}", client_order_id);
+                }
                 Err(e) => tracing::error!("BitMEX cancel order failed: {e:?}"),
             }
             Ok(())
@@ -408,13 +520,13 @@ impl ExecutionClient for BitmexExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
+        let canceller = self._canceller.clone_for_async();
         let instrument_id = cmd.instrument_id;
         let order_side = Some(cmd.order_side);
 
         self.spawn_task("cancel_all_orders", async move {
-            match http_client
-                .cancel_all_orders(instrument_id, order_side)
+            match canceller
+                .broadcast_cancel_all(instrument_id, order_side)
                 .await
             {
                 Ok(reports) => {
@@ -431,7 +543,7 @@ impl ExecutionClient for BitmexExecutionClient {
     }
 
     fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
+        let canceller = self._canceller.clone_for_async();
         let instrument_id = cmd.instrument_id;
         let venue_ids: Vec<VenueOrderId> = cmd
             .cancels
@@ -440,8 +552,8 @@ impl ExecutionClient for BitmexExecutionClient {
             .collect();
 
         self.spawn_task("batch_cancel_orders", async move {
-            match http_client
-                .cancel_orders(instrument_id, None, Some(venue_ids))
+            match canceller
+                .broadcast_batch_cancel(instrument_id, None, Some(venue_ids))
                 .await
             {
                 Ok(reports) => {
@@ -480,16 +592,16 @@ impl ExecutionClient for BitmexExecutionClient {
 
         Ok(())
     }
-}
 
-#[async_trait(?Send)]
-impl LiveExecutionClient for BitmexExecutionClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             return Ok(());
         }
 
         self.ensure_instruments_initialized_async().await?;
+
+        self._submitter.start().await?;
+        self._canceller.start().await?;
 
         self.ws_client.connect().await?;
         self.ws_client.wait_until_active(10.0).await?;
@@ -507,7 +619,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
 
         self.connected = true;
         self.core.set_connected(true);
-        tracing::info!("BitMEX execution client {} connected", self.core.client_id);
+        tracing::info!(client_id = %self.core.client_id, "Connected");
         Ok(())
     }
 
@@ -517,6 +629,9 @@ impl LiveExecutionClient for BitmexExecutionClient {
         }
 
         self.http_client.cancel_all_requests();
+        self._submitter.stop().await;
+        self._canceller.stop().await;
+
         if let Err(e) = self.ws_client.close().await {
             tracing::warn!("Error while closing BitMEX execution websocket: {e:?}");
         }
@@ -528,13 +643,13 @@ impl LiveExecutionClient for BitmexExecutionClient {
         self.abort_pending_tasks();
         self.connected = false;
         self.core.set_connected(false);
-        tracing::info!(
-            "BitMEX execution client {} disconnected",
-            self.core.client_id
-        );
+        tracing::info!(client_id = %self.core.client_id, "Disconnected");
         Ok(())
     }
+}
 
+#[async_trait(?Send)]
+impl LiveExecutionClient for BitmexExecutionClient {
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
@@ -627,11 +742,16 @@ fn dispatch_ws_message(message: NautilusWsMessage) {
         NautilusWsMessage::OrderUpdated(event) => {
             dispatch_order_event(OrderEventAny::Updated(event));
         }
-        NautilusWsMessage::Data(_) | NautilusWsMessage::FundingRateUpdates(_) => {
+        NautilusWsMessage::Data(_)
+        | NautilusWsMessage::Instruments(_)
+        | NautilusWsMessage::FundingRateUpdates(_) => {
             tracing::debug!("Ignoring BitMEX data message on execution stream");
         }
         NautilusWsMessage::Reconnected => {
             tracing::info!("BitMEX execution websocket reconnected");
+        }
+        NautilusWsMessage::Authenticated => {
+            tracing::debug!("BitMEX execution websocket authenticated");
         }
     }
 }
@@ -668,15 +788,5 @@ fn dispatch_order_event(event: OrderEventAny) {
     let sender = get_exec_event_sender();
     if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
         tracing::warn!("Failed to send order event: {e}");
-    }
-}
-
-impl LiveExecutionClientExt for BitmexExecutionClient {
-    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
-        get_exec_event_sender()
-    }
-
-    fn get_clock(&self) -> Ref<'_, dyn Clock> {
-        self.core.clock().borrow()
     }
 }

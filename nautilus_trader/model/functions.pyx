@@ -55,6 +55,8 @@ from nautilus_trader.core.rust.model cimport order_status_from_cstr
 from nautilus_trader.core.rust.model cimport order_status_to_cstr
 from nautilus_trader.core.rust.model cimport order_type_from_cstr
 from nautilus_trader.core.rust.model cimport order_type_to_cstr
+from nautilus_trader.core.rust.model cimport position_adjustment_type_from_cstr
+from nautilus_trader.core.rust.model cimport position_adjustment_type_to_cstr
 from nautilus_trader.core.rust.model cimport position_side_from_cstr
 from nautilus_trader.core.rust.model cimport position_side_to_cstr
 from nautilus_trader.core.rust.model cimport price_type_from_cstr
@@ -241,6 +243,14 @@ cpdef str position_side_to_str(PositionSide value):
     return cstr_to_pystr(position_side_to_cstr(value))
 
 
+cpdef PositionAdjustmentType position_adjustment_type_from_str(str value):
+    return position_adjustment_type_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str position_adjustment_type_to_str(PositionAdjustmentType value):
+    return cstr_to_pystr(position_adjustment_type_to_cstr(value))
+
+
 cpdef PriceType price_type_from_str(str value):
     return price_type_from_cstr(pystr_to_cstr(value))
 
@@ -386,6 +396,21 @@ cpdef trigger_type_to_pyo3(TriggerType value):
         return nautilus_pyo3.TriggerType.DOUBLE_BID_ASK
 
     raise ValueError(f"Unsupported `TriggerType`, was '{trigger_type_to_str(value)}'")
+
+
+cpdef trailing_offset_type_to_pyo3(TrailingOffsetType value):
+    if value == TrailingOffsetType.NO_TRAILING_OFFSET:
+        return nautilus_pyo3.TrailingOffsetType.NO_TRAILING_OFFSET
+    if value == TrailingOffsetType.PRICE:
+        return nautilus_pyo3.TrailingOffsetType.PRICE
+    if value == TrailingOffsetType.BASIS_POINTS:
+        return nautilus_pyo3.TrailingOffsetType.BASIS_POINTS
+    if value == TrailingOffsetType.TICKS:
+        return nautilus_pyo3.TrailingOffsetType.TICKS
+    if value == TrailingOffsetType.PRICE_TIER:
+        return nautilus_pyo3.TrailingOffsetType.PRICE_TIER
+
+    raise ValueError(f"Unsupported `TrailingOffsetType`, was '{trailing_offset_type_to_str(value)}'")
 
 
 cpdef contingency_type_to_pyo3(ContingencyType value):

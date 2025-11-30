@@ -167,7 +167,7 @@ async def main():
                 venue="BINANCE_FUTURES",
                 account_type="MARGIN",
                 starting_balances=["10_000 USDC", "0.005 BTC"],
-                default_leverage=Decimal("5"),
+                default_leverage=Decimal(5),
             ),
             "BINANCE_SPOT": SandboxExecutionClientConfig(
                 venue="BINANCE_SPOT",

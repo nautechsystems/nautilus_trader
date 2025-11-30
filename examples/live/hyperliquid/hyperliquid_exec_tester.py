@@ -107,8 +107,8 @@ strat_config = ExecTesterConfig(
     # subscribe_quotes=True,
     # subscribe_trades=True,
     # subscribe_book=False,
-    # enable_buys=True,
-    # enable_sells=True,
+    # enable_limit_buys=True,
+    # enable_limit_sells=True,
     order_qty=order_qty,
     # open_position_on_start_qty=order_qty,
     # tob_offset_ticks=0,  # Ticks away from top of book (0 = at market)

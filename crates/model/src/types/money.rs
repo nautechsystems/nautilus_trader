@@ -171,8 +171,7 @@ impl Money {
         check_predicate_true(
             raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
             &format!(
-                "`raw` value {raw} exceeded bounds [{}, {}] for Money",
-                MONEY_RAW_MIN, MONEY_RAW_MAX
+                "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
             ),
         )
         .expect(FAILED);
@@ -239,7 +238,7 @@ impl Money {
         // to the currency's actual precision for decimal conversion.
         let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(precision_diff));
 
-        #[allow(clippy::useless_conversion, reason = "Required for precision modes")]
+        #[allow(clippy::useless_conversion)]
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(precision))
     }
 

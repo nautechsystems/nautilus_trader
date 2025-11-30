@@ -73,8 +73,9 @@ def instrument_list(mock_load_markets_metadata):
     global INSTRUMENTS
 
     # Setup
-    # Get the running loop from pytest-asyncio (session-scoped)
-    loop = asyncio.get_running_loop()
+    # Create a new event loop for sync fixture
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     client = BetfairTestStubs.betfair_client(loop=loop)
     market_ids = BetfairDataProvider.market_ids()
@@ -92,11 +93,11 @@ def instrument_list(mock_load_markets_metadata):
     # Fill INSTRUMENTS global cache
     INSTRUMENTS.extend(instrument_provider.list_all())
     assert INSTRUMENTS  # TODO: Fix Betfair symbology
-    yield
+    return
     # pytest-asyncio manages loop lifecycle, no need to close
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_connect(mocker, data_client, instrument):
     # Arrange
     mocker.patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
@@ -112,7 +113,7 @@ async def test_connect(mocker, data_client, instrument):
     assert data_client.is_connected
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_subscriptions(data_client, instrument):
     # Arrange, Act
     data_client.subscribe_trade_ticks(
@@ -169,7 +170,7 @@ def test_stream_latency(mock_degrade, data_client):
     assert mock_degrade.call_count == 1
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_market_sub_image_market_def(data_client, mock_data_engine_process):
     # Arrange
     update = BetfairStreaming.mcm_SUB_IMAGE()

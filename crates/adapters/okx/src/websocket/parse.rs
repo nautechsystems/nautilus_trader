@@ -15,6 +15,8 @@
 
 //! Functions translating raw OKX WebSocket frames into Nautilus data types.
 
+use std::str::FromStr;
+
 use ahash::AHashMap;
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
@@ -51,24 +53,13 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            okx_channel_to_bar_spec, parse_client_order_id, parse_fee, parse_fee_currency,
-            parse_funding_rate_msg, parse_instrument_any, parse_message_vec,
-            parse_millisecond_timestamp, parse_price, parse_quantity,
+            determine_order_type, is_market_price, okx_channel_to_bar_spec, parse_client_order_id,
+            parse_fee, parse_fee_currency, parse_funding_rate_msg, parse_instrument_any,
+            parse_message_vec, parse_millisecond_timestamp, parse_price, parse_quantity,
         },
     },
     websocket::messages::{ExecutionReport, NautilusWsMessage, OKXFundingRateMsg},
 };
-
-/// Checks if a price string indicates market execution.
-///
-/// OKX uses special sentinel values for market price:
-/// - "" (empty string)
-/// - "0"
-/// - "-1" (market price)
-/// - "-2" (market price with protection)
-fn is_market_price(px: &str) -> bool {
-    px.is_empty() || px == "0" || px == "-1" || px == "-2"
-}
 
 /// Extracts fee rates from a cached instrument.
 ///
@@ -886,7 +877,6 @@ pub fn parse_order_status_report(
 
     // Determine order type based on presence of limit price for certain OKX order types
     let order_type = match okx_order_type {
-        // Trigger orders: check if they have a price
         OKXOrderType::Trigger => {
             if is_market_price(&msg.px) {
                 OrderType::StopMarket
@@ -894,17 +884,9 @@ pub fn parse_order_status_report(
                 OrderType::StopLimit
             }
         }
-        // FOK/IOC orders: check if they have a price
-        // Without a price, they're market orders with TIF
-        // With a price, they're limit orders with TIF
         OKXOrderType::Fok | OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
-            if is_market_price(&msg.px) {
-                OrderType::Market
-            } else {
-                OrderType::Limit
-            }
+            determine_order_type(okx_order_type, &msg.px)
         }
-        // All other order types use standard mapping
         _ => msg.ord_type.into(),
     };
     let order_status: OrderStatus = msg.state.into();
@@ -931,33 +913,39 @@ pub fn parse_order_status_report(
     let is_quote_qty_heuristic = msg.tgt_ccy.is_none()
         && (msg.inst_type == OKXInstrumentType::Spot || msg.inst_type == OKXInstrumentType::Margin)
         && msg.side == OKXSide::Buy
-        && msg.ord_type == OKXOrderType::Market;
+        && order_type == OrderType::Market;
 
     let (quantity, filled_qty) = if is_quote_qty_explicit || is_quote_qty_heuristic {
         // Quote-quantity order: sz is in quote currency, need to convert to base
-        let sz_quote = msg.sz.parse::<f64>().map_err(|e| {
+        let sz_quote_dec = Decimal::from_str(&msg.sz).map_err(|e| {
             anyhow::anyhow!("Failed to parse sz='{}' as quote quantity: {}", msg.sz, e)
         })?;
 
         // Determine the price to use for conversion
         // Priority: 1) limit price (px) for limit orders, 2) avg_px for market orders
-        let conversion_price = if !is_market_price(&msg.px) {
-            // Limit order: use the limit price (msg.px)
-            msg.px
-                .parse::<f64>()
-                .map_err(|e| anyhow::anyhow!("Failed to parse px='{}': {}", msg.px, e))?
-        } else if !msg.avg_px.is_empty() && msg.avg_px != "0" {
-            // Market order with fills: use average fill price
-            msg.avg_px
-                .parse::<f64>()
-                .map_err(|e| anyhow::anyhow!("Failed to parse avg_px='{}': {}", msg.avg_px, e))?
-        } else {
-            0.0
-        };
+        let conversion_price_dec =
+            if !is_market_price(&msg.px) {
+                // Limit order: use the limit price (msg.px)
+                Some(
+                    Decimal::from_str(&msg.px)
+                        .map_err(|e| anyhow::anyhow!("Failed to parse px='{}': {}", msg.px, e))?,
+                )
+            } else if !msg.avg_px.is_empty() && msg.avg_px != "0" {
+                // Market order with fills: use average fill price
+                Some(Decimal::from_str(&msg.avg_px).map_err(|e| {
+                    anyhow::anyhow!("Failed to parse avg_px='{}': {}", msg.avg_px, e)
+                })?)
+            } else {
+                None
+            };
 
         // Convert quote quantity to base: quantity_base = sz_quote / price
-        let quantity_base = if conversion_price > 0.0 {
-            Quantity::new(sz_quote / conversion_price, size_precision)
+        let quantity_base = if let Some(price) = conversion_price_dec {
+            if !price.is_zero() {
+                Quantity::from_decimal_dp(sz_quote_dec / price, size_precision)?
+            } else {
+                parse_quantity(&msg.sz, size_precision)?
+            }
         } else {
             // No price available, can't convert - use sz as-is temporarily
             // This will be corrected once the order gets filled and price is available
@@ -1056,7 +1044,7 @@ pub fn parse_order_status_report(
     if !msg.avg_px.is_empty()
         && let Ok(avg_px) = msg.avg_px.parse::<f64>()
     {
-        report = report.with_avg_px(avg_px);
+        report = report.with_avg_px(avg_px)?;
     }
 
     if matches!(
@@ -1153,7 +1141,7 @@ pub fn parse_fill_report(
         // If fillSz is missing but accFillSz is available, calculate incremental fill
         if !acc_fill_sz.is_empty() && acc_fill_sz != "0" {
             let current_filled = parse_quantity(acc_fill_sz, size_precision).map_err(|e| {
-                anyhow::anyhow!("Failed to parse acc_fill_sz='{}': {e}", acc_fill_sz,)
+                anyhow::anyhow!("Failed to parse acc_fill_sz='{acc_fill_sz}': {e}",)
             })?;
 
             // Calculate incremental fill as: current_total - previous_total
@@ -1161,9 +1149,7 @@ pub fn parse_fill_report(
                 let incremental = current_filled - prev_qty;
                 if incremental.is_zero() {
                     anyhow::bail!(
-                        "Incremental fill quantity is zero (acc_fill_sz='{}', previous_filled_qty={})",
-                        acc_fill_sz,
-                        prev_qty
+                        "Incremental fill quantity is zero (acc_fill_sz='{acc_fill_sz}', previous_filled_qty={prev_qty})"
                     );
                 }
                 incremental
@@ -1184,11 +1170,10 @@ pub fn parse_fill_report(
     };
 
     let fee_str = msg.fee.as_deref().unwrap_or("0");
-    let fee_value = fee_str
-        .parse::<f64>()
-        .map_err(|e| anyhow::anyhow!("Failed to parse fee '{}': {}", fee_str, e))?;
+    let fee_dec = Decimal::from_str(fee_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse fee '{fee_str}': {e}"))?;
 
-    let fee_currency = parse_fee_currency(msg.fee_ccy.as_str(), fee_value, || {
+    let fee_currency = parse_fee_currency(msg.fee_ccy.as_str(), fee_dec, || {
         format!("fill report for inst_id={}", msg.inst_id)
     });
 
@@ -1429,6 +1414,7 @@ mod tests {
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
@@ -1440,7 +1426,7 @@ mod tests {
             testing::load_test_json,
         },
         http::models::OKXAccount,
-        websocket::messages::{OKXWebSocketArg, OKXWebSocketEvent},
+        websocket::messages::{OKXWebSocketArg, OKXWsMessage},
     };
 
     fn create_stub_instrument() -> CryptoPerpetual {
@@ -1501,10 +1487,10 @@ mod tests {
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
             side: OKXSide::Buy,
-            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
+            state: OKXOrderStatus::PartiallyFilled,
             exec_type: OKXExecType::Taker,
             sz: "0.03".to_string(),
             td_mode: OKXTradeMode::Isolated,
@@ -1517,9 +1503,9 @@ mod tests {
     #[rstest]
     fn test_parse_books_snapshot() {
         let json_data = load_test_json("ws_books_snapshot.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let (okx_books, action): (Vec<OKXBookMsg>, OKXBookAction) = match msg {
-            OKXWebSocketEvent::BookData { data, action, .. } => (data, action),
+            OKXWsMessage::BookData { data, action, .. } => (data, action),
             _ => panic!("Expected a `BookData` variant"),
         };
 
@@ -1544,27 +1530,26 @@ mod tests {
         // Verify some individual deltas are parsed correctly
         assert!(!deltas.deltas.is_empty());
         // Snapshot should have both bid and ask deltas
-        let bid_deltas: Vec<_> = deltas
-            .deltas
-            .iter()
-            .filter(|d| d.order.side == OrderSide::Buy)
-            .collect();
-        let ask_deltas: Vec<_> = deltas
-            .deltas
-            .iter()
-            .filter(|d| d.order.side == OrderSide::Sell)
-            .collect();
-        assert!(!bid_deltas.is_empty());
-        assert!(!ask_deltas.is_empty());
+        assert!(
+            deltas.deltas.iter().any(|d| d.order.side == OrderSide::Buy),
+            "Should have bid deltas"
+        );
+        assert!(
+            deltas
+                .deltas
+                .iter()
+                .any(|d| d.order.side == OrderSide::Sell),
+            "Should have ask deltas"
+        );
     }
 
     #[rstest]
     fn test_parse_books_update() {
         let json_data = load_test_json("ws_books_update.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
         let (okx_books, action): (Vec<OKXBookMsg>, OKXBookAction) = match msg {
-            OKXWebSocketEvent::BookData { data, action, .. } => (data, action),
+            OKXWsMessage::BookData { data, action, .. } => (data, action),
             _ => panic!("Expected a `BookData` variant"),
         };
 
@@ -1588,26 +1573,25 @@ mod tests {
         // Verify some individual deltas are parsed correctly
         assert!(!deltas.deltas.is_empty());
         // Update should also have both bid and ask deltas
-        let bid_deltas: Vec<_> = deltas
-            .deltas
-            .iter()
-            .filter(|d| d.order.side == OrderSide::Buy)
-            .collect();
-        let ask_deltas: Vec<_> = deltas
-            .deltas
-            .iter()
-            .filter(|d| d.order.side == OrderSide::Sell)
-            .collect();
-        assert!(!bid_deltas.is_empty());
-        assert!(!ask_deltas.is_empty());
+        assert!(
+            deltas.deltas.iter().any(|d| d.order.side == OrderSide::Buy),
+            "Should have bid deltas"
+        );
+        assert!(
+            deltas
+                .deltas
+                .iter()
+                .any(|d| d.order.side == OrderSide::Sell),
+            "Should have ask deltas"
+        );
     }
 
     #[rstest]
     fn test_parse_tickers() {
         let json_data = load_test_json("ws_tickers.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let okx_tickers: Vec<OKXTickerMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -1627,9 +1611,9 @@ mod tests {
     #[rstest]
     fn test_parse_quotes() {
         let json_data = load_test_json("ws_bbo_tbt.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let okx_quotes: Vec<OKXBookMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
@@ -1649,9 +1633,9 @@ mod tests {
     #[rstest]
     fn test_parse_trades() {
         let json_data = load_test_json("ws_trades.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let okx_trades: Vec<OKXTradeMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -1671,9 +1655,9 @@ mod tests {
     #[rstest]
     fn test_parse_candle() {
         let json_data = load_test_json("ws_candle.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let okx_candles: Vec<OKXCandleMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -1698,10 +1682,10 @@ mod tests {
     #[rstest]
     fn test_parse_funding_rate() {
         let json_data = load_test_json("ws_funding_rate.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
 
         let okx_funding_rates: Vec<crate::websocket::messages::OKXFundingRateMsg> = match msg {
-            OKXWebSocketEvent::Data { data, .. } => serde_json::from_value(data).unwrap(),
+            OKXWsMessage::Data { data, .. } => serde_json::from_value(data).unwrap(),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -1711,7 +1695,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(funding_rate.instrument_id, instrument_id);
-        assert_eq!(funding_rate.rate, Decimal::new(1, 4));
+        assert_eq!(funding_rate.rate, dec!(0.0001));
         assert_eq!(
             funding_rate.next_funding_ns,
             Some(UnixNanos::from(1744590349506000000))
@@ -1723,9 +1707,9 @@ mod tests {
     #[rstest]
     fn test_parse_book_vec() {
         let json_data = load_test_json("ws_books_snapshot.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let (msgs, action): (Vec<OKXBookMsg>, OKXBookAction) = match event {
-            OKXWebSocketEvent::BookData { data, action, .. } => (data, action),
+            OKXWsMessage::BookData { data, action, .. } => (data, action),
             _ => panic!("Expected BookData"),
         };
 
@@ -1745,9 +1729,9 @@ mod tests {
     #[rstest]
     fn test_parse_ticker_vec() {
         let json_data = load_test_json("ws_tickers.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let data_val: serde_json::Value = match event {
-            OKXWebSocketEvent::Data { data, .. } => data,
+            OKXWsMessage::Data { data, .. } => data,
             _ => panic!("Expected Data"),
         };
 
@@ -1768,9 +1752,9 @@ mod tests {
     #[rstest]
     fn test_parse_trade_vec() {
         let json_data = load_test_json("ws_trades.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let data_val: serde_json::Value = match event {
-            OKXWebSocketEvent::Data { data, .. } => data,
+            OKXWsMessage::Data { data, .. } => data,
             _ => panic!("Expected Data"),
         };
 
@@ -1790,9 +1774,9 @@ mod tests {
     #[rstest]
     fn test_parse_candle_vec() {
         let json_data = load_test_json("ws_candle.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let data_val: serde_json::Value = match event {
-            OKXWebSocketEvent::Data { data, .. } => data,
+            OKXWsMessage::Data { data, .. } => data,
             _ => panic!("Expected Data"),
         };
 
@@ -1819,11 +1803,9 @@ mod tests {
     #[rstest]
     fn test_parse_book_message() {
         let json_data = load_test_json("ws_bbo_tbt.json");
-        let msg: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let msg: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let (okx_books, arg): (Vec<OKXBookMsg>, OKXWebSocketArg) = match msg {
-            OKXWebSocketEvent::Data { data, arg, .. } => {
-                (serde_json::from_value(data).unwrap(), arg)
-            }
+            OKXWsMessage::Data { data, arg, .. } => (serde_json::from_value(data).unwrap(), arg),
             _ => panic!("Expected a `Data` variant"),
         };
 
@@ -2108,9 +2090,9 @@ mod tests {
     #[rstest]
     fn test_parse_book10_msg() {
         let json_data = load_test_json("ws_books_snapshot.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let msgs: Vec<OKXBookMsg> = match event {
-            OKXWebSocketEvent::BookData { data, .. } => data,
+            OKXWsMessage::BookData { data, .. } => data,
             _ => panic!("Expected BookData"),
         };
 
@@ -2157,9 +2139,9 @@ mod tests {
     #[rstest]
     fn test_parse_book10_msg_vec() {
         let json_data = load_test_json("ws_books_snapshot.json");
-        let event: OKXWebSocketEvent = serde_json::from_str(&json_data).unwrap();
+        let event: OKXWsMessage = serde_json::from_str(&json_data).unwrap();
         let msgs: Vec<OKXBookMsg> = match event {
-            OKXWebSocketEvent::BookData { data, .. } => data,
+            OKXWsMessage::BookData { data, .. } => data,
             _ => panic!("Expected BookData"),
         };
 
@@ -2229,17 +2211,17 @@ mod tests {
             fill_sz: "0.01".to_string(),
             fill_time: 1746947317402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            inst_type: OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("1234567890"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
-            side: crate::common::enums::OKXSide::Buy,
-            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
-            exec_type: crate::common::enums::OKXExecType::Maker,
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::PartiallyFilled,
+            exec_type: OKXExecType::Maker,
             sz: "0.03".to_string(), // Total order size
             td_mode: OKXTradeMode::Isolated,
             tgt_ccy: None,
@@ -2277,17 +2259,17 @@ mod tests {
             fill_sz: "0.02".to_string(),
             fill_time: 1746947317403,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            inst_type: OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("1234567890"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
-            side: crate::common::enums::OKXSide::Buy,
-            state: crate::common::enums::OKXOrderStatus::Filled,
-            exec_type: crate::common::enums::OKXExecType::Maker,
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::Filled,
+            exec_type: OKXExecType::Maker,
             sz: "0.03".to_string(), // Same total order size
             td_mode: OKXTradeMode::Isolated,
             tgt_ccy: None,
@@ -2361,17 +2343,17 @@ mod tests {
             fill_sz: "0.01".to_string(),
             fill_time: 1746947317402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            inst_type: OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("rebate_order_123"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
-            side: crate::common::enums::OKXSide::Buy,
-            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
-            exec_type: crate::common::enums::OKXExecType::Maker,
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::PartiallyFilled,
+            exec_type: OKXExecType::Maker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
             tgt_ccy: None,
@@ -2409,17 +2391,17 @@ mod tests {
             fill_sz: "0.01".to_string(),
             fill_time: 1746947317403,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            inst_type: OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("rebate_order_123"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
-            side: crate::common::enums::OKXSide::Buy,
-            state: crate::common::enums::OKXOrderStatus::Filled,
-            exec_type: crate::common::enums::OKXExecType::Maker,
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::Filled,
+            exec_type: OKXExecType::Maker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
             tgt_ccy: None,
@@ -2491,17 +2473,17 @@ mod tests {
             fill_sz: "0.01".to_string(),
             fill_time: 1746947317402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            inst_type: OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("transition_order_456"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
-            side: crate::common::enums::OKXSide::Buy,
-            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
-            exec_type: crate::common::enums::OKXExecType::Maker,
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::PartiallyFilled,
+            exec_type: OKXExecType::Maker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
             tgt_ccy: None,
@@ -2541,17 +2523,17 @@ mod tests {
             fill_sz: "0.01".to_string(),
             fill_time: 1746947317403,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            inst_type: OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("transition_order_456"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
-            side: crate::common::enums::OKXSide::Buy,
-            state: crate::common::enums::OKXOrderStatus::Filled,
-            exec_type: crate::common::enums::OKXExecType::Taker,
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::Filled,
+            exec_type: OKXExecType::Taker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
             tgt_ccy: None,
@@ -2624,17 +2606,17 @@ mod tests {
             fill_sz: "0.01".to_string(),
             fill_time: 1746947317402,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            inst_type: OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("neg_inc_order_789"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
-            side: crate::common::enums::OKXSide::Buy,
-            state: crate::common::enums::OKXOrderStatus::PartiallyFilled,
-            exec_type: crate::common::enums::OKXExecType::Taker,
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::PartiallyFilled,
+            exec_type: OKXExecType::Taker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
             tgt_ccy: None,
@@ -2672,17 +2654,17 @@ mod tests {
             fill_sz: "0.01".to_string(),
             fill_time: 1746947317403,
             inst_id: Ustr::from("BTC-USDT-SWAP"),
-            inst_type: crate::common::enums::OKXInstrumentType::Swap,
+            inst_type: OKXInstrumentType::Swap,
             lever: "2.0".to_string(),
             ord_id: Ustr::from("neg_inc_order_789"),
             ord_type: OKXOrderType::Market,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
-            side: crate::common::enums::OKXSide::Buy,
-            state: crate::common::enums::OKXOrderStatus::Filled,
-            exec_type: crate::common::enums::OKXExecType::Maker,
+            side: OKXSide::Buy,
+            state: OKXOrderStatus::Filled,
+            exec_type: OKXExecType::Maker,
             sz: "0.02".to_string(),
             td_mode: OKXTradeMode::Isolated,
             tgt_ccy: None,
@@ -2769,7 +2751,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
 
-        let order_msg = create_stub_order_msg("", Some("".to_string()), "1234567890", "trade_1");
+        let order_msg = create_stub_order_msg("", Some(String::new()), "1234567890", "trade_1");
 
         let result = parse_fill_report(
             &order_msg,
@@ -3339,7 +3321,7 @@ mod tests {
             cancel_source_reason: None,
             category: OKXOrderCategory::PartialLiquidation,
             ccy: Ustr::from("USDT"),
-            cl_ord_id: "".to_string(),
+            cl_ord_id: String::new(),
             algo_cl_ord_id: None,
             fee: Some("-9.75".to_string()),
             fee_ccy: Ustr::from("USDT"),
@@ -3353,7 +3335,7 @@ mod tests {
             ord_type: OKXOrderType::Market,
             pnl: "-2500".to_string(),
             pos_side: OKXPositionSide::Long,
-            px: "".to_string(),
+            px: String::new(),
             reduce_only: "false".to_string(),
             side: OKXSide::Sell,
             state: OKXOrderStatus::Filled,
@@ -3454,8 +3436,8 @@ mod tests {
 
         // Verify fees were applied
         if let InstrumentAny::CurrencyPair(ref pair) = parsed_initial {
-            assert_eq!(pair.maker_fee, Decimal::new(8, 4));
-            assert_eq!(pair.taker_fee, Decimal::new(10, 4));
+            assert_eq!(pair.maker_fee, dec!(0.0008));
+            assert_eq!(pair.taker_fee, dec!(0.0010));
         } else {
             panic!("Expected CurrencyPair instrument");
         }
@@ -3533,5 +3515,199 @@ mod tests {
         } else {
             panic!("Expected Instrument message from WebSocket update");
         }
+    }
+
+    #[rstest]
+    #[case::fok_order(OKXOrderType::Fok, TimeInForce::Fok)]
+    #[case::ioc_order(OKXOrderType::Ioc, TimeInForce::Ioc)]
+    #[case::optimal_limit_ioc_order(OKXOrderType::OptimalLimitIoc, TimeInForce::Ioc)]
+    #[case::market_order(OKXOrderType::Market, TimeInForce::Gtc)]
+    #[case::limit_order(OKXOrderType::Limit, TimeInForce::Gtc)]
+    fn test_parse_time_in_force_from_ord_type(
+        #[case] okx_ord_type: OKXOrderType,
+        #[case] expected_tif: TimeInForce,
+    ) {
+        let time_in_force = match okx_ord_type {
+            OKXOrderType::Fok => TimeInForce::Fok,
+            OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
+            _ => TimeInForce::Gtc,
+        };
+
+        assert_eq!(
+            time_in_force, expected_tif,
+            "OKXOrderType::{okx_ord_type:?} should parse to TimeInForce::{expected_tif:?}"
+        );
+    }
+
+    #[rstest]
+    fn test_deserialize_fok_order_message() {
+        let json_data = load_test_json("ws_orders_fok.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].ord_type, OKXOrderType::Fok);
+        assert_eq!(data[0].cl_ord_id, "FOK-TEST-001");
+        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT"));
+    }
+
+    #[rstest]
+    fn test_deserialize_ioc_order_message() {
+        let json_data = load_test_json("ws_orders_ioc.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].ord_type, OKXOrderType::Ioc);
+        assert_eq!(data[0].cl_ord_id, "IOC-TEST-001");
+        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT"));
+    }
+
+    #[rstest]
+    fn test_deserialize_optimal_limit_ioc_order_message() {
+        let json_data = load_test_json("ws_orders_optimal_limit_ioc.json");
+        let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(ws_msg["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].ord_type, OKXOrderType::OptimalLimitIoc);
+        assert_eq!(data[0].cl_ord_id, "OPTIMAL-IOC-TEST-001");
+        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
+    }
+
+    #[rstest]
+    fn test_deserialize_regular_order_message() {
+        let json_data = load_test_json("ws_orders.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
+        assert_eq!(data[0].state, OKXOrderStatus::Filled);
+        assert_eq!(data[0].category, OKXOrderCategory::Normal);
+    }
+
+    #[rstest]
+    fn test_deserialize_algo_order_message() {
+        let json_data = load_test_json("ws_orders_algo.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXAlgoOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
+    }
+
+    #[rstest]
+    fn test_deserialize_liquidation_order_message() {
+        let json_data = load_test_json("ws_orders_liquidation.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].category, OKXOrderCategory::FullLiquidation);
+    }
+
+    #[rstest]
+    fn test_deserialize_adl_order_message() {
+        let json_data = load_test_json("ws_orders_adl.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].category, OKXOrderCategory::Adl);
+    }
+
+    #[rstest]
+    fn test_deserialize_trigger_order_message() {
+        let json_data = load_test_json("ws_orders_trigger.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXOrderMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].ord_type, OKXOrderType::Trigger);
+        assert_eq!(data[0].category, OKXOrderCategory::Normal);
+    }
+
+    #[rstest]
+    fn test_deserialize_book_snapshot_message() {
+        let json_data = load_test_json("ws_books_snapshot.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let action: Option<OKXBookAction> =
+            serde_json::from_value(payload["action"].clone()).unwrap();
+        let data: Vec<OKXBookMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(action, Some(OKXBookAction::Snapshot));
+        assert!(!data[0].asks.is_empty());
+        assert!(!data[0].bids.is_empty());
+    }
+
+    #[rstest]
+    fn test_deserialize_book_update_message() {
+        let json_data = load_test_json("ws_books_update.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let action: Option<OKXBookAction> =
+            serde_json::from_value(payload["action"].clone()).unwrap();
+        let data: Vec<OKXBookMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(action, Some(OKXBookAction::Update));
+        assert!(!data[0].asks.is_empty());
+        assert!(!data[0].bids.is_empty());
+    }
+
+    #[rstest]
+    fn test_deserialize_ticker_message() {
+        let json_data = load_test_json("ws_tickers.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXTickerMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT"));
+        assert_eq!(data[0].last_px, "9999.99");
+    }
+
+    #[rstest]
+    fn test_deserialize_candle_message() {
+        let json_data = load_test_json("ws_candle.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXCandleMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert!(!data[0].o.is_empty());
+        assert!(!data[0].h.is_empty());
+        assert!(!data[0].l.is_empty());
+        assert!(!data[0].c.is_empty());
+    }
+
+    #[rstest]
+    fn test_deserialize_funding_rate_message() {
+        let json_data = load_test_json("ws_funding_rate.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXFundingRateMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
+    }
+
+    #[rstest]
+    fn test_deserialize_bbo_tbt_message() {
+        let json_data = load_test_json("ws_bbo_tbt.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXBookMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert!(!data[0].asks.is_empty());
+        assert!(!data[0].bids.is_empty());
+    }
+
+    #[rstest]
+    fn test_deserialize_trade_message() {
+        let json_data = load_test_json("ws_trades.json");
+        let payload: serde_json::Value = serde_json::from_str(&json_data).unwrap();
+        let data: Vec<OKXTradeMsg> = serde_json::from_value(payload["data"].clone()).unwrap();
+
+        assert!(!data.is_empty());
+        assert_eq!(data[0].inst_id, Ustr::from("BTC-USD"));
     }
 }

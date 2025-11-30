@@ -142,22 +142,22 @@ impl Error {
         } else if let Some(status) = error.status() {
             let status_code = status.as_u16();
             match status_code {
-                401 | 403 => Self::auth(format!("HTTP {}: authentication failed", status_code)),
-                400 => Self::bad_request(format!("HTTP {}: bad request", status_code)),
+                401 | 403 => Self::auth(format!("HTTP {status_code}: authentication failed")),
+                400 => Self::bad_request(format!("HTTP {status_code}: bad request")),
                 429 => Self::rate_limit("unknown", 0, None),
-                500..=599 => Self::exchange(format!("HTTP {}: server error", status_code)),
-                _ => Self::http(status_code, format!("HTTP error: {}", error)),
+                500..=599 => Self::exchange(format!("HTTP {status_code}: server error")),
+                _ => Self::http(status_code, format!("HTTP error: {error}")),
             }
         } else if error.is_connect() || error.is_request() {
-            Self::transport(format!("Request error: {}", error))
+            Self::transport(format!("Request error: {error}"))
         } else {
-            Self::transport(format!("Unknown reqwest error: {}", error))
+            Self::transport(format!("Unknown reqwest error: {error}"))
         }
     }
 
     /// Map HTTP client errors to appropriate error types
     pub fn from_http_client(error: nautilus_network::http::HttpClientError) -> Self {
-        Self::transport(format!("HTTP client error: {}", error))
+        Self::transport(format!("HTTP client error: {error}"))
     }
 
     /// Check if error is retryable

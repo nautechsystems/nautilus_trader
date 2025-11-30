@@ -1,0 +1,35 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "algoId": "987654321",
+      "algoClOrdId": "client_algo_2",
+      "clOrdId": "cl_ord_123",
+      "ordId": "ord_456",
+      "instId": "ETH-USDT-SWAP",
+      "instType": "SWAP",
+      "ordType": "trigger",
+      "state": "effective",
+      "side": "sell",
+      "posSide": "short",
+      "sz": "10",
+      "triggerPx": "3000",
+      "triggerPxType": "mark",
+      "ordPx": "2990",
+      "actualSz": "10",
+      "actualPx": "2995",
+      "actualSide": "sell",
+      "triggerTime": "1622559940237",
+      "tdMode": "cross",
+      "cTime": "1622559930237",
+      "uTime": "1622559940237",
+      "pxVar": "",
+      "pxSpread": "",
+      "pxLimit": "",
+      "szLimit": "",
+      "amendPxOnTriggerType": "",
+      "tag": ""
+    }
+  ]
+}

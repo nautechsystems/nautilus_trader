@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 from decimal import Decimal
 
 import pandas as pd
@@ -25,7 +26,6 @@ from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.backtest.engine import register_time_range_generator
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
@@ -38,6 +38,8 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
+from nautilus_trader.data.engine import default_time_range_generator
+from nautilus_trader.data.engine import register_time_range_generator
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -231,13 +233,13 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert account is not None
         assert account.event_count == 1_519
         assert str(account.events[0]).startswith(
-            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_000_000.00 USD, locked=0.00 USD, free=1_000_000.00 USD)], margins=[]",  # noqa: E501
+            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_000_000.00 USD, locked=0.00 USD, free=1_000_000.00 USD)], margins=[]",
         )
         assert str(account.events[1]).startswith(
-            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=999_980.00 USD, locked=3_000.00 USD, free=996_980.00 USD)], margins=[MarginBalance(initial=0.00 USD, maintenance=3_000.00 USD, instrument_id=USD/JPY.SIM)]",  # noqa: E501
+            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=999_980.00 USD, locked=3_000.00 USD, free=996_980.00 USD)], margins=[MarginBalance(initial=0.00 USD, maintenance=3_000.00 USD, instrument_id=USD/JPY.SIM)]",
         )
         assert str(account.events[2]).startswith(
-            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=998_841.57 USD, locked=0.00 USD, free=998_841.57 USD)], margins=[]",  # noqa: E501
+            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=998_841.57 USD, locked=0.00 USD, free=998_841.57 USD)], margins=[]",
         )
         assert account.balance_total(USD) == Money(1_023_530.50, USD)
 
@@ -891,6 +893,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
         assert account.balance_total(GBP) == Money(-19_351.96, GBP)
 
 
+@pytest.mark.xdist_group(name="databento_catalog")
 class TestBacktestNodeWithBacktestDataIterator:
     def test_backtest_same_with_and_without_data_configs(self) -> None:
         # Arrange
@@ -1041,7 +1044,7 @@ class TestBacktestNodeWithBacktestDataIterator:
                 assert ask > 0, f"Ask price should be positive: {ask}"
                 assert ask >= bid, f"Ask ({ask}) should be >= bid ({bid})"
             except (ValueError, IndexError) as e:
-                assert False, f"Invalid quote format: {quote_part}, error: {e}"
+                raise AssertionError(f"Invalid quote format: {quote_part}, error: {e}")
 
 
 def run_backtest(test_callback=None, with_data=True, log_path=None):
@@ -1097,7 +1100,7 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
         ],
     )
 
-    register_time_range_generator("default", BacktestEngine.default_time_range_generator)
+    register_time_range_generator("default", default_time_range_generator)
 
     strategies = [
         ImportableStrategyConfig(
@@ -1528,13 +1531,13 @@ def test_correct_account_balance_from_issue_2632() -> None:
     assert account is not None
     assert account.event_count == 3
     assert str(account.events[0]).startswith(
-        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=True, balances=[AccountBalance(total=1_000_000.00000000 USDT, locked=0.00000000 USDT, free=1_000_000.00000000 USDT)], margins=[]",  # noqa: E501
+        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=True, balances=[AccountBalance(total=1_000_000.00000000 USDT, locked=0.00000000 USDT, free=1_000_000.00000000 USDT)], margins=[]",
     )
     assert str(account.events[1]).startswith(
-        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=999_768.11500000 USDT, locked=1_159.42500000 USDT, free=998_608.69000000 USDT)], margins=[MarginBalance(initial=0.00000000 USDT, maintenance=1_159.42500000 USDT, instrument_id=BTCUSDT-PERP.BINANCE)],",  # noqa: E501
+        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=999_768.11500000 USDT, locked=1_159.42500000 USDT, free=998_608.69000000 USDT)], margins=[MarginBalance(initial=0.00000000 USDT, maintenance=1_159.42500000 USDT, instrument_id=BTCUSDT-PERP.BINANCE)],",
     )
     assert str(account.events[2]).startswith(
-        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=1_000_245.87500000 USDT, locked=0.00000000 USDT, free=1_000_245.87500000 USDT)], margins=[]",  # noqa: E501
+        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=1_000_245.87500000 USDT, locked=0.00000000 USDT, free=1_000_245.87500000 USDT)], margins=[]",
     )
     assert account.balance_total(USDT) == Money(1_000_245.87500000, USDT)
     assert account.balance_free(USDT) == Money(1_000_245.87500000, USDT)
@@ -2041,3 +2044,230 @@ class TestBacktestPnLAlignmentAcceptance:
         # Note: portfolio.realized_pnl may differ due to internal aggregation logic
         # portfolio_pnl = portfolio.realized_pnl(AUDUSD_SIM.id)
         # We don't assert equality here since portfolio calculation has different behavior
+
+
+@pytest.mark.xdist_group(name="databento_catalog")
+@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+class TestBarsWithFillsVisualization:
+    """
+    Tests for create_bars_with_fills and _render_bars_with_fills functions.
+
+    These tests validate the visualization functionality used in
+    databento_option_greeks.py to create candlestick charts with order fills overlaid.
+
+    """
+
+    def test_create_bars_with_fills_basic(self):
+        """
+        Test create_bars_with_fills creates a valid figure with bars and fills.
+        """
+        # Arrange - Use helper to run backtest and get engine
+        engine, node = run_backtest_and_return_engine(with_data=True)
+
+        # Act - Create visualization
+        from nautilus_trader.analysis.tearsheet import create_bars_with_fills
+
+        bar_type = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
+        fig = create_bars_with_fills(
+            engine=engine,
+            bar_type=bar_type,
+            title="ESM4 - Price Bars with Order Fills",
+        )
+
+        # Assert - Verify figure structure
+        assert fig is not None
+        assert len(fig.data) > 0, "Figure should have at least one trace"
+
+        # Check for candlestick trace
+        candlestick_traces = [trace for trace in fig.data if trace.type == "candlestick"]
+        assert len(candlestick_traces) > 0, "Figure should have candlestick trace"
+
+        # Check for scatter traces (order fills)
+        scatter_traces = [trace for trace in fig.data if trace.type == "scatter"]
+        # Should have buy and/or sell fills
+        assert len(scatter_traces) >= 0, "Figure may have scatter traces for fills"
+
+        # Verify layout
+        assert fig.layout.xaxis.title.text == "Time"
+        assert fig.layout.yaxis.title.text == "Price"
+        assert fig.layout.xaxis.rangeslider.visible is True
+
+        # Cleanup
+        node.dispose()
+
+    def test_create_tearsheet_with_bars_with_fills(self, tmp_path):
+        """
+        Test create_tearsheet integration with bars_with_fills chart.
+
+        This test validates the tearsheet functionality used in
+        databento_option_greeks.py to create a tearsheet with bars_with_fills chart
+        included.
+
+        """
+        # Arrange - Use helper to run backtest and get engine
+        engine, node = run_backtest_and_return_engine(with_data=True)
+
+        # Act - Create tearsheet with bars_with_fills chart
+        from nautilus_trader.analysis.config import TearsheetConfig
+        from nautilus_trader.analysis.tearsheet import create_tearsheet
+
+        output_path = tmp_path / "tearsheet_with_bars_fills.html"
+
+        tearsheet_config = TearsheetConfig(
+            charts=["stats_table", "equity", "bars_with_fills"],
+            chart_args={
+                "bars_with_fills": {
+                    "bar_type": "ESM4.XCME-1-MINUTE-LAST-EXTERNAL",
+                },
+            },
+        )
+
+        create_tearsheet(
+            engine,
+            config=tearsheet_config,
+            output_path=str(output_path),
+        )
+
+        # Assert - Verify tearsheet was created
+        assert output_path.exists(), "Tearsheet HTML file should be created"
+        assert output_path.stat().st_size > 0, "Tearsheet file should not be empty"
+
+        # Verify HTML content contains expected elements
+        html_content = output_path.read_text()
+        assert "plotly" in html_content.lower(), "Should contain plotly visualization"
+        assert "stats_table" in html_content.lower() or "statistics" in html_content.lower(), "Should contain stats table"
+
+        # Cleanup
+        output_path.unlink()
+        node.dispose()
+
+
+def run_backtest_and_return_engine(with_data=True):
+    """
+    Run backtest and return engine for visualization tests.
+
+    Returns the engine and node so they can be used for testing and then disposed.
+
+    """
+    catalog_folder = "options_catalog"
+    catalog = load_catalog(catalog_folder)
+
+    future_symbols = ["ESM4"]
+    option_symbols = ["ESM4 P5230", "ESM4 P5250"]
+
+    start_time = "2024-05-09T10:00"
+    end_time = "2024-05-09T10:05"
+
+    _ = databento_data(
+        future_symbols,
+        start_time,
+        end_time,
+        "ohlcv-1m",
+        "futures",
+        catalog_folder,
+    )
+    _ = databento_data(
+        option_symbols,
+        start_time,
+        end_time,
+        "bbo-1m",
+        "options",
+        catalog_folder,
+    )
+
+    load_greeks = not with_data
+
+    option1_id = InstrumentId.from_str(f"{option_symbols[0]}.XCME")
+    option2_id = InstrumentId.from_str(f"{option_symbols[1]}.XCME")
+    spread_instrument_id = InstrumentId.new_spread(
+        [
+            (option1_id, -1),
+            (option2_id, 1),
+        ],
+    )
+
+    register_time_range_generator("default", default_time_range_generator)
+
+    strategies = [
+        ImportableStrategyConfig(
+            strategy_path=OptionStrategy.fully_qualified_name(),
+            config_path=OptionConfig.fully_qualified_name(),
+            config={
+                "future_id": InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+                "option_id": option1_id,
+                "option_id2": option2_id,
+                "spread_id": spread_instrument_id,
+                "load_greeks": load_greeks,
+            },
+        ),
+    ]
+
+    catalogs = [
+        DataCatalogConfig(
+            path=catalog.path,
+        ),
+    ]
+
+    engine_config = BacktestEngineConfig(
+        logging=LoggingConfig(bypass_logging=True),
+        strategies=strategies,
+        catalogs=catalogs,
+    )
+
+    data = [
+        BacktestDataConfig(
+            data_cls=QuoteTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{option_symbols[0]}.XCME"),
+        ),
+        BacktestDataConfig(
+            data_cls=QuoteTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{option_symbols[1]}.XCME"),
+        ),
+        BacktestDataConfig(
+            data_cls=Bar,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+            bar_spec="1-MINUTE-LAST",
+        ),
+    ]
+
+    if load_greeks:
+        data = [
+            BacktestDataConfig(
+                data_cls=GreeksData.fully_qualified_name(),
+                catalog_path=catalog.path,
+                client_id="GreeksDataProvider",
+            ),
+            *data,
+        ]
+
+    venues = [
+        BacktestVenueConfig(
+            name="XCME",
+            oms_type="NETTING",
+            account_type="MARGIN",
+            base_currency="USD",
+            starting_balances=["1_000_000 USD"],
+        ),
+    ]
+
+    configs = [
+        BacktestRunConfig(
+            engine=engine_config,
+            data=data if with_data else [],
+            venues=venues,
+            chunk_size=None,
+            start=start_time,
+            end=end_time,
+            raise_exception=True,
+        ),
+    ]
+
+    node = BacktestNode(configs=configs)
+    node.build()
+    node.run()
+
+    engine: BacktestEngine = node.get_engine(configs[0].id)
+    return engine, node

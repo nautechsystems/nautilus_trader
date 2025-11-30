@@ -15,8 +15,9 @@
 
 #![allow(clippy::too_many_arguments)] // Test functions with many fixtures
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
+use std::{cell::RefCell, rc::Rc, str::FromStr};
 
+use ahash::AHashMap;
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
@@ -51,8 +52,10 @@ use nautilus_model::{
         },
     },
     instruments::{
-        CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
-        stubs::{audusd_sim, crypto_perpetual_ethusdt, xbtusd_bitmex},
+        CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny, OptionSpread,
+        stubs::{
+            audusd_sim, crypto_perpetual_ethusdt, futures_spread_es, option_spread, xbtusd_bitmex,
+        },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     types::{AccountBalance, Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
@@ -60,6 +63,7 @@ use nautilus_model::{
 use nautilus_portfolio::Portfolio;
 use rstest::{fixture, rstest};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 // Helper that registers message collectors for ExecEngine.process events and
@@ -120,6 +124,7 @@ fn test_deny_order_on_price_precision_exceeded(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -145,7 +150,7 @@ fn test_deny_order_exceeding_max_notional(
     let process_handler = register_process_handler();
 
     // Prepare small max_notional setting (1 USD)
-    let mut max_notional_map = HashMap::new();
+    let mut max_notional_map = AHashMap::new();
     max_notional_map.insert(instrument_audusd.id(), Decimal::from_i64(1).unwrap());
 
     let mut cache = Cache::default();
@@ -162,7 +167,7 @@ fn test_deny_order_exceeding_max_notional(
         bypass: false,
         max_order_submit: RateLimit::new(10, 1000),
         max_order_modify: RateLimit::new(5, 1000),
-        max_notional_per_order: HashMap::new(),
+        max_notional_per_order: AHashMap::new(),
     };
 
     let mut risk_engine = get_risk_engine(
@@ -192,6 +197,7 @@ fn test_deny_order_exceeding_max_notional(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -237,8 +243,8 @@ fn max_order_modify() -> RateLimit {
 }
 
 #[fixture]
-fn max_notional_per_order() -> HashMap<InstrumentId, Decimal> {
-    HashMap::new()
+fn max_notional_per_order() -> AHashMap<InstrumentId, Decimal> {
+    AHashMap::new()
 }
 
 // Market buy order with corresponding fill
@@ -280,6 +286,7 @@ fn get_stub_submit_order(
         market_order_buy(instrument_eth_usdt),
         None,
         None,
+        None, // params
         UUID4::new(),
         UnixNanos::from(10),
     )
@@ -290,7 +297,7 @@ fn get_stub_submit_order(
 fn config_fixture(
     max_order_submit: RateLimit,
     max_order_modify: RateLimit,
-    max_notional_per_order: HashMap<InstrumentId, Decimal>,
+    max_notional_per_order: AHashMap<InstrumentId, Decimal>,
 ) -> RiskEngineConfig {
     RiskEngineConfig {
         debug: true,
@@ -354,6 +361,16 @@ fn instrument_audusd(audusd_sim: CurrencyPair) -> InstrumentAny {
 }
 
 #[fixture]
+fn instrument_futures_spread(futures_spread_es: FuturesSpread) -> InstrumentAny {
+    InstrumentAny::FuturesSpread(futures_spread_es)
+}
+
+#[fixture]
+fn instrument_option_spread(option_spread: OptionSpread) -> InstrumentAny {
+    InstrumentAny::OptionSpread(option_spread)
+}
+
+#[fixture]
 pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
     InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
         InstrumentId::from("BTCUSDT.BITMEX"),
@@ -374,10 +391,10 @@ pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
         Some(Money::from("1 USD")),
         Some(Price::from("10000000")),
         Some(Price::from("0.01")),
-        Some(Decimal::from_str("0.01").unwrap()),
-        Some(Decimal::from_str("0.0035").unwrap()),
-        Some(Decimal::from_str("-0.00025").unwrap()),
-        Some(Decimal::from_str("0.00075").unwrap()),
+        Some(dec!(0.01)),
+        Some(dec!(0.0035)),
+        Some(dec!(-0.00025)),
+        Some(dec!(0.00075)),
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -396,7 +413,7 @@ fn get_risk_engine(
         bypass,
         max_order_submit: RateLimit::new(10, 1000),
         max_order_modify: RateLimit::new(5, 1000),
-        max_notional_per_order: HashMap::new(),
+        max_notional_per_order: AHashMap::new(),
     });
     let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
     let portfolio = Portfolio::new(cache.clone(), clock.clone(), None);
@@ -553,7 +570,7 @@ fn test_max_order_modify_rate_when_no_risk_config_returns_5_per_second() {
 fn test_max_notionals_per_order_when_no_risk_config_returns_empty_hashmap() {
     let risk_engine = get_risk_engine(None, None, None, false);
 
-    assert_eq!(risk_engine.max_notional_per_order, HashMap::new());
+    assert_eq!(risk_engine.max_notional_per_order, AHashMap::new());
 }
 
 #[rstest]
@@ -563,7 +580,7 @@ fn test_set_max_notional_per_order_changes_setting(instrument_audusd: Instrument
     risk_engine
         .set_max_notional_per_order(instrument_audusd.id(), Decimal::from_i64(100000).unwrap());
 
-    let mut expected = HashMap::new();
+    let mut expected = AHashMap::new();
     expected.insert(instrument_audusd.id(), Decimal::from_i64(100000).unwrap());
     assert_eq!(risk_engine.max_notional_per_order, expected);
 }
@@ -596,6 +613,7 @@ fn test_given_random_command_then_logs_and_continues(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -661,6 +679,7 @@ fn test_submit_order_with_default_settings_then_sends_to_client(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -715,6 +734,7 @@ fn test_submit_order_when_risk_bypassed_sends_to_execution_engine(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -789,6 +809,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         order1.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -825,6 +846,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         order2.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -856,6 +878,7 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
         order3,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -929,6 +952,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
         order1.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -965,6 +989,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
         order2.clone(),
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1052,6 +1077,7 @@ fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_den
         order,
         None,
         Some(PositionId::new("CUSTOM-001")), // <-- Custom position ID
+        None,                                // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1246,6 +1272,7 @@ fn test_submit_order_when_instrument_not_in_cache_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1315,6 +1342,7 @@ fn test_submit_order_when_invalid_price_precision_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1388,6 +1416,7 @@ fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1405,6 +1434,130 @@ fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
     assert_eq!(
         saved_process_messages.first().unwrap().message().unwrap(),
         Ustr::from("price 0.0 invalid (<= 0)")
+    );
+}
+
+#[rstest]
+fn test_submit_order_when_negative_price_for_futures_spread_then_allows(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    client_order_id: ClientOrderId,
+    instrument_futures_spread: InstrumentAny,
+    venue_order_id: VenueOrderId,
+    execute_order_event_handler: ShareableMessageHandler,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_execute(),
+        execute_order_event_handler.clone(),
+    );
+
+    simple_cache
+        .add_instrument(instrument_futures_spread.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_futures_spread.id())
+        .side(OrderSide::Buy)
+        .price(Price::from_raw(-17, 0)) // Negative price is valid for spreads
+        .quantity(Quantity::from("1"))
+        .build();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+        instrument_futures_spread.id(),
+        client_order_id,
+        venue_order_id,
+        order,
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock.borrow().timestamp_ns(),
+    )
+    .unwrap();
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
+    assert_eq!(
+        saved_execute_messages.first().unwrap().instrument_id(),
+        instrument_futures_spread.id()
+    );
+}
+
+#[rstest]
+fn test_submit_order_when_negative_price_for_option_spread_then_allows(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    client_order_id: ClientOrderId,
+    instrument_option_spread: InstrumentAny,
+    venue_order_id: VenueOrderId,
+    execute_order_event_handler: ShareableMessageHandler,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    msgbus::register(
+        MessagingSwitchboard::exec_engine_execute(),
+        execute_order_event_handler.clone(),
+    );
+
+    simple_cache
+        .add_instrument(instrument_option_spread.clone())
+        .unwrap();
+
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_option_spread.id())
+        .side(OrderSide::Buy)
+        .price(Price::from_raw(-250, 2)) // Negative price -2.50 is valid for spreads
+        .quantity(Quantity::from("1"))
+        .build();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        client_id_binance,
+        strategy_id_ema_cross,
+        instrument_option_spread.id(),
+        client_order_id,
+        venue_order_id,
+        order,
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock.borrow().timestamp_ns(),
+    )
+    .unwrap();
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
+    assert_eq!(
+        saved_execute_messages.first().unwrap().instrument_id(),
+        instrument_option_spread.id()
     );
 }
 
@@ -1458,6 +1611,7 @@ fn test_submit_order_when_invalid_trigger_price_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1528,6 +1682,7 @@ fn test_submit_order_when_invalid_quantity_precision_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1596,6 +1751,7 @@ fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1664,6 +1820,7 @@ fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1735,6 +1892,7 @@ fn test_submit_order_when_market_order_and_no_market_then_logs_warning(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1814,6 +1972,7 @@ fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1899,6 +2058,7 @@ fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -1981,6 +2141,7 @@ fn test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2063,6 +2224,7 @@ fn test_submit_order_when_sell_market_order_and_over_max_notional_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2133,6 +2295,7 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2327,250 +2490,6 @@ fn test_submit_order_list_sells_when_over_free_balance_then_denies(
     );
 }
 
-// TODO: Implement test for multi-currency cash account over cumulative notional
-#[ignore = "TODO: Requires ExecutionClient implementation"]
-#[rstest]
-fn test_submit_order_list_sells_when_multi_currency_cash_account_over_cumulative_notional() {}
-
-#[ignore = "Message bus related changes re-investigate"]
-#[rstest]
-fn test_submit_order_when_reducing_and_buy_order_adds_then_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    client_order_id: ClientOrderId,
-    instrument_xbtusd_bitmex: InstrumentAny,
-    venue_order_id: VenueOrderId,
-    process_order_event_handler: ShareableMessageHandler,
-    execute_order_event_handler: ShareableMessageHandler,
-    bitmex_cash_account_state_multi: AccountState,
-    mut simple_cache: Cache,
-) {
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_process(),
-        process_order_event_handler,
-    );
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_execute(),
-        execute_order_event_handler.clone(),
-    );
-
-    simple_cache
-        .add_instrument(instrument_xbtusd_bitmex.clone())
-        .unwrap();
-
-    simple_cache
-        .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
-        )))
-        .unwrap();
-
-    let quote = QuoteTick::new(
-        instrument_xbtusd_bitmex.id(),
-        Price::from("0.075000"),
-        Price::from("0.075005"),
-        Quantity::from("50000"),
-        Quantity::from("50000"),
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
-
-    simple_cache.add_quote(quote).unwrap();
-
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-
-    risk_engine.set_max_notional_per_order(
-        instrument_xbtusd_bitmex.id(),
-        Decimal::from_str("10000").unwrap(),
-    );
-
-    let order1 = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let submit_order1 = SubmitOrder::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
-        client_order_id,
-        venue_order_id,
-        order1,
-        None,
-        None,
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-    risk_engine.set_trading_state(TradingState::Reducing);
-
-    let order2 = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let submit_order2 = SubmitOrder::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
-        client_order_id,
-        venue_order_id,
-        order2,
-        None,
-        None,
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
-
-    let saved_execute_messages =
-        get_execute_order_event_handler_messages(execute_order_event_handler);
-    assert_eq!(saved_execute_messages.len(), 1);
-
-    // TODO: currently, portfolio.is_net_long() is false, because portfolio.net_position() is not updated
-    // assert!(risk_engine.portfolio.is_net_long(&instrument_xbtusd_bitmex.id()));
-    // let saved_process_messages =
-    //     get_process_order_event_handler_messages(process_order_event_handler);
-    // assert_eq!(saved_process_messages.len(), 1);
-
-    // assert_eq!(
-    //     saved_process_messages.first().unwrap().event_type(),
-    //     OrderEventType::Denied
-    // );
-    // assert_eq!(
-    //     saved_process_messages.first().unwrap().message().unwrap(),
-    //     "BUY when TradingState.REDUCING and LONG"
-    // );
-}
-
-#[ignore = "Message bus related changes re-investigate"]
-#[rstest]
-fn test_submit_order_when_reducing_and_sell_order_adds_then_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    client_order_id: ClientOrderId,
-    instrument_xbtusd_bitmex: InstrumentAny,
-    venue_order_id: VenueOrderId,
-    process_order_event_handler: ShareableMessageHandler,
-    execute_order_event_handler: ShareableMessageHandler,
-    bitmex_cash_account_state_multi: AccountState,
-    mut simple_cache: Cache,
-) {
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_process(),
-        process_order_event_handler,
-    );
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_execute(),
-        execute_order_event_handler.clone(),
-    );
-
-    simple_cache
-        .add_instrument(instrument_xbtusd_bitmex.clone())
-        .unwrap();
-
-    simple_cache
-        .add_account(AccountAny::Cash(cash_account(
-            bitmex_cash_account_state_multi,
-        )))
-        .unwrap();
-
-    let quote = QuoteTick::new(
-        instrument_xbtusd_bitmex.id(),
-        Price::from("0.075000"),
-        Price::from("0.075005"),
-        Quantity::from("50000"),
-        Quantity::from("50000"),
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
-
-    simple_cache.add_quote(quote).unwrap();
-
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-
-    risk_engine.set_max_notional_per_order(
-        instrument_xbtusd_bitmex.id(),
-        Decimal::from_str("10000").unwrap(),
-    );
-
-    let order1 = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
-        .side(OrderSide::Sell)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let submit_order1 = SubmitOrder::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
-        client_order_id,
-        venue_order_id,
-        order1,
-        None,
-        None,
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-    risk_engine.set_trading_state(TradingState::Reducing);
-
-    let order2 = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_xbtusd_bitmex.id())
-        .side(OrderSide::Sell)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let submit_order2 = SubmitOrder::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        instrument_xbtusd_bitmex.id(),
-        client_order_id,
-        venue_order_id,
-        order2,
-        None,
-        None,
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
-    let saved_execute_messages =
-        get_execute_order_event_handler_messages(execute_order_event_handler);
-    assert_eq!(saved_execute_messages.len(), 1);
-
-    // TODO: currently, portfolio.is_net_short() is false, because portfolio.net_position() is not updated
-    // assert!(risk_engine.portfolio.is_net_short(&instrument_xbtusd_bitmex.id()));
-    // let saved_process_messages =
-    //     get_process_order_event_handler_messages(process_order_event_handler);
-    // assert_eq!(saved_process_messages.len(), 1);
-
-    // assert_eq!(
-    //     saved_process_messages.first().unwrap().event_type(),
-    //     OrderEventType::Denied
-    // );
-    // assert_eq!(
-    //     saved_process_messages.first().unwrap().message().unwrap(),
-    //     "SELL when TradingState.REDUCING and SHORT"
-    // );
-}
-
 #[rstest]
 fn test_submit_order_when_trading_halted_then_denies_order(
     strategy_id_ema_cross: StrategyId,
@@ -2609,6 +2528,7 @@ fn test_submit_order_when_trading_halted_then_denies_order(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2629,7 +2549,6 @@ fn test_submit_order_when_trading_halted_then_denies_order(
     );
 }
 
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_submit_order_beyond_rate_limit_then_denies_order(
     strategy_id_ema_cross: StrategyId,
@@ -2676,6 +2595,7 @@ fn test_submit_order_beyond_rate_limit_then_denies_order(
             order.clone(),
             None,
             None,
+            None, // params
             UUID4::new(),
             risk_engine.clock.borrow().timestamp_ns(),
         )
@@ -2784,7 +2704,14 @@ fn test_submit_order_list_when_trading_halted_then_denies_orders(
     }
 }
 
-#[ignore = "Under development"]
+// Test that order lists with BUY orders are denied when in REDUCING state and already LONG.
+//
+// This test verifies the risk engine correctly prevents adding to existing positions
+// when the trading state is set to REDUCING (position reduction mode only).
+//
+// TODO: Complete implementation - similar to single order reducing tests but for order lists.
+// The test logic needs to properly track portfolio position state through message bus updates.
+#[ignore = "Under development - requires portfolio state tracking integration"]
 #[rstest]
 fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     strategy_id_ema_cross: StrategyId,
@@ -2832,10 +2759,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
-    risk_engine.set_max_notional_per_order(
-        instrument_xbtusd_bitmex.id(),
-        Decimal::from_str("10000").unwrap(),
-    );
+    risk_engine.set_max_notional_per_order(instrument_xbtusd_bitmex.id(), dec!(10000));
 
     let long = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_xbtusd_bitmex.id())
@@ -2853,6 +2777,7 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
         long,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -2912,7 +2837,14 @@ fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
     assert_eq!(saved_execute_messages.len(), 1);
 }
 
-#[ignore = "Revisit after high-precision merged"]
+// Test that order lists with SELL orders are denied when in REDUCING state and already SHORT.
+//
+// This test verifies the risk engine correctly prevents adding to existing short positions
+// when the trading state is set to REDUCING (position reduction mode only).
+//
+// TODO: Re-enable after high-precision decimal work is merged and stable.
+// The test may have precision-related issues with position calculations.
+#[ignore = "Waiting on high-precision decimal merge"]
 #[rstest]
 fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
     strategy_id_ema_cross: StrategyId,
@@ -2960,10 +2892,7 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
-    risk_engine.set_max_notional_per_order(
-        instrument_xbtusd_bitmex.id(),
-        Decimal::from_str("10000").unwrap(),
-    );
+    risk_engine.set_max_notional_per_order(instrument_xbtusd_bitmex.id(), dec!(10000));
 
     let short = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_xbtusd_bitmex.id())
@@ -2981,6 +2910,7 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
         short,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3040,89 +2970,16 @@ fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
 }
 
 // SUBMIT BRACKET ORDER TESTS
-#[ignore = "Message bus related changes re-investigate"]
-#[rstest]
-fn test_submit_bracket_with_default_settings_sends_to_client(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    client_order_id: ClientOrderId,
-    instrument_audusd: InstrumentAny,
-    venue_order_id: VenueOrderId,
-    process_order_event_handler: ShareableMessageHandler,
-    cash_account_state_million_usd: AccountState,
-    mut simple_cache: Cache,
-) {
-    msgbus::register(
-        MessagingSwitchboard::exec_engine_process(),
-        process_order_event_handler,
-    );
 
-    simple_cache
-        .add_instrument(instrument_audusd.clone())
-        .unwrap();
-
-    simple_cache
-        .add_account(AccountAny::Cash(cash_account(
-            cash_account_state_million_usd,
-        )))
-        .unwrap();
-
-    let risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let entry = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .build();
-
-    let stop_loss = OrderTestBuilder::new(OrderType::StopMarket)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .trigger_price(Price::from_raw(1, 1))
-        .build();
-
-    let take_profit = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from_str("100").unwrap())
-        .price(Price::from_raw(1001, 4))
-        .build();
-
-    let bracket = OrderList::new(
-        OrderListId::new("1"),
-        instrument_audusd.id(),
-        StrategyId::new("S-001"),
-        vec![entry, stop_loss, take_profit],
-        risk_engine.clock.borrow().timestamp_ns(),
-    );
-
-    let _submit_bracket = SubmitOrderList::new(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        bracket.instrument_id,
-        client_order_id,
-        venue_order_id,
-        bracket,
-        None,
-        None,
-        UUID4::new(),
-        risk_engine.clock.borrow().timestamp_ns(),
-    )
-    .unwrap();
-
-    // risk_engine.execute(TradingCommand::SubmitOrderList(submit_bracket));
-
-    // Get messages and test
-    // TODO: complete fn execution_gateway
-    // let saved_process_messages =
-    //     get_process_order_event_handler_messages(process_order_event_handler);
-    // assert_eq!(saved_process_messages.len(), 0);
-}
-
-// TODO: Verify bracket orders with emulated orders are sent to emulator
-#[ignore = "TODO: Requires emulator implementation"]
+// Verify bracket orders with emulated orders are sent to emulator.
+//
+// This test requires the order emulator component to be implemented. The emulator
+// handles client-side order management for conditional orders (stop-loss, take-profit, etc.)
+// that need to be triggered locally before being sent to the venue.
+//
+// TODO: Re-enable once the emulator component is integrated with the risk engine.
+// Dependencies: Order emulation infrastructure in execution engine
+#[ignore = "Waiting on emulator implementation"]
 #[rstest]
 fn test_submit_bracket_with_emulated_orders_sends_to_emulator() {}
 
@@ -3210,8 +3067,14 @@ fn test_submit_bracket_order_when_instrument_not_in_cache_then_denies(
     }
 }
 
-// TODO: Verify emulated orders are sent to emulator
-#[ignore = "TODO: Requires emulator implementation"]
+// Verify that orders marked for emulation are correctly routed to the emulator.
+//
+// This test should verify that when an order is submitted with emulation flags,
+// the risk engine routes it to the order emulator rather than directly to execution.
+//
+// TODO: Re-enable once the emulator component is integrated with the risk engine.
+// Dependencies: Order emulation infrastructure in execution engine
+#[ignore = "Waiting on emulator implementation"]
 #[rstest]
 fn test_submit_order_for_emulation_sends_command_to_emulator() {}
 
@@ -3267,7 +3130,6 @@ fn test_modify_order_when_no_order_found_logs_error(
     assert_eq!(saved_process_messages.len(), 0);
 }
 
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_modify_order_beyond_rate_limit_then_rejects(
     strategy_id_ema_cross: StrategyId,
@@ -3341,7 +3203,6 @@ fn test_modify_order_beyond_rate_limit_then_rejects(
     );
 }
 
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_modify_order_with_default_settings_then_sends_to_client(
     strategy_id_ema_cross: StrategyId,
@@ -3397,6 +3258,7 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3429,8 +3291,15 @@ fn test_modify_order_with_default_settings_then_sends_to_client(
     );
 }
 
-// TODO: Verify modify order for emulated orders sends to emulator
-#[ignore = "TODO: Requires emulator implementation"]
+// Verify that modifications to emulated orders are routed to the emulator.
+//
+// This test should verify that when modifying an order that's being managed by
+// the emulator, the modification command is sent to the emulator rather than
+// directly to the venue.
+//
+// TODO: Re-enable once the emulator component is integrated with the risk engine.
+// Dependencies: Order emulation infrastructure in execution engine
+#[ignore = "Waiting on emulator implementation"]
 #[rstest]
 fn test_modify_order_for_emulated_order_then_sends_to_emulator() {}
 
@@ -3482,6 +3351,7 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies_with_be
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3493,7 +3363,6 @@ fn test_submit_order_when_market_order_and_over_free_balance_then_denies_with_be
     assert_eq!(saved_process_messages.len(), 0); // Currently, it executes because check_orders_risk returns true for margin_account
 }
 
-#[ignore = "Message bus related changes re-investigate"]
 #[rstest]
 fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto_cash_account(
     strategy_id_ema_cross: StrategyId,
@@ -3556,6 +3425,7 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3575,8 +3445,18 @@ fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto
     );
 }
 
-// TODO: Verify account balance updates correctly with partial and full fills
-#[ignore = "TODO: Requires account balance tracking implementation"]
+// Verify that account balances are correctly updated with partial and full order fills.
+//
+// This test should verify that when orders are partially or fully filled, the
+// account balance tracking reflects the correct values including:
+// - Reserved margin/capital being released
+// - Commission being deducted
+// - Realized P&L being applied to account balance
+//
+// TODO: Re-enable once real-time account balance tracking is implemented.
+// Dependencies: Account balance tracking in portfolio/risk engine integration
+// Related: Real-time position valuation and margin calculations
+#[ignore = "Waiting on account balance tracking implementation"]
 #[rstest]
 fn test_partial_fill_and_full_fill_account_balance_correct() {}
 
@@ -3647,6 +3527,7 @@ fn test_submit_order_with_gtd_expire_time_already_passed(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         clock.timestamp_ns(),
     )
@@ -3693,10 +3574,10 @@ fn test_submit_order_with_quote_quantity_validates_correctly(
         Some(Money::from("5 USDT")),       // min_notional
         None,
         None,
-        Some(Decimal::from_str("0.1").unwrap()), // margin_init
-        Some(Decimal::from_str("0.1").unwrap()), // margin_maint
-        Some(Decimal::from_str("-0.00005").unwrap()), // maker_fee
-        Some(Decimal::from_str("0.00015").unwrap()), // taker_fee
+        Some(dec!(0.1)),      // margin_init
+        Some(dec!(0.1)),      // margin_maint
+        Some(dec!(-0.00005)), // maker_fee
+        Some(dec!(0.00015)),  // taker_fee
         UnixNanos::default(),
         UnixNanos::default(),
     ));
@@ -3759,6 +3640,7 @@ fn test_submit_order_with_quote_quantity_validates_correctly(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )
@@ -3814,10 +3696,10 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
         Some(Money::from("5 USDT")),
         None,
         None,
-        Some(Decimal::from_str("0.1").unwrap()),
-        Some(Decimal::from_str("0.1").unwrap()),
-        Some(Decimal::from_str("-0.00005").unwrap()),
-        Some(Decimal::from_str("0.00015").unwrap()),
+        Some(dec!(0.1)),
+        Some(dec!(0.1)),
+        Some(dec!(-0.00005)),
+        Some(dec!(0.00015)),
         UnixNanos::default(),
         UnixNanos::default(),
     ));
@@ -3880,6 +3762,7 @@ fn test_submit_order_with_quote_quantity_exceeds_max_after_conversion(
         order,
         None,
         None,
+        None, // params
         UUID4::new(),
         risk_engine.clock.borrow().timestamp_ns(),
     )

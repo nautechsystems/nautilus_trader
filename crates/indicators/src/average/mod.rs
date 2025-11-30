@@ -57,7 +57,13 @@ use crate::{
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+    )
 )]
 pub enum MovingAverageType {
     Simple,

@@ -28,22 +28,6 @@ impl Money {
     /// # Panics
     ///
     /// Panics if the raw wei value exceeds 128-bit range.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use nautilus_model::types::{Money, Currency};
-    /// use nautilus_model::enums::CurrencyType;
-    /// use alloy_primitives::U256;
-    /// use rust_decimal_macros::dec;
-    ///
-    /// # #[cfg(feature = "defi")]
-    /// # {
-    /// let eth = Currency::new("ETH", 18, 0, "Ethereum", CurrencyType::Crypto);
-    /// let money = Money::from_wei(U256::from(1_000_000_000_000_000_000_u64), eth); // 1 ETH
-    /// assert_eq!(money.as_decimal(), dec!(1.0));
-    /// # }
-    /// ```
     pub fn from_wei<U>(raw_wei: U, currency: Currency) -> Self
     where
         U: Into<U256>,
@@ -69,23 +53,6 @@ impl Money {
     /// # Returns
     ///
     /// The raw wei value as a U256.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use nautilus_model::types::{Money, Currency};
-    /// use nautilus_model::enums::CurrencyType;
-    /// use alloy_primitives::U256;
-    ///
-    /// # #[cfg(feature = "defi")]
-    /// # {
-    /// let eth = Currency::new("ETH", 18, 0, "Ethereum", CurrencyType::Crypto);
-    /// // Construct via raw wei to ensure correct 18-dec precision.
-    /// let money = Money::from_wei(U256::from(1_000_000_000_000_000_000_u64), eth); // 1 ETH
-    /// let wei_value = money.to_wei();
-    /// assert_eq!(wei_value, U256::from(1_000_000_000_000_000_000_u64));
-    /// # }
-    /// ```
     pub fn to_wei(&self) -> U256 {
         U256::from(self.raw as u128)
     }
@@ -100,6 +67,7 @@ mod tests {
     use alloy_primitives::U256;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::enums::CurrencyType;
@@ -111,7 +79,7 @@ mod tests {
         let money = Money::from_wei(one_eth_wei, eth);
 
         // Use decimal comparison for high precision values
-        assert_eq!(money.as_decimal(), Decimal::from(1));
+        assert_eq!(money.as_decimal(), dec!(1));
         assert_eq!(money.currency.precision, 18);
     }
 
@@ -122,7 +90,7 @@ mod tests {
         let money = Money::from_wei(small_wei, eth);
 
         // Use decimal comparison for high precision values
-        assert_eq!(money.as_decimal(), Decimal::new(1, 6)); // 0.000001
+        assert_eq!(money.as_decimal(), dec!(0.000001)); // 0.000001
     }
 
     #[rstest]
@@ -202,11 +170,11 @@ mod tests {
         let money2 = Money::from_wei(U256::from(500_000_000_000_000_000_u64), eth); // 0.5 ETH
 
         let sum = money1 + money2;
-        assert_eq!(sum.as_decimal(), Decimal::new(15, 1)); // 1.5
+        assert_eq!(sum.as_decimal(), dec!(1.5)); // 1.5
         assert_eq!(sum.to_wei(), U256::from(1_500_000_000_000_000_000_u64));
 
         let diff = money1 - money2;
-        assert_eq!(diff.as_decimal(), Decimal::new(5, 1)); // 0.5
+        assert_eq!(diff.as_decimal(), dec!(0.5)); // 0.5
         assert_eq!(diff.to_wei(), U256::from(500_000_000_000_000_000_u64));
     }
 

@@ -42,7 +42,7 @@ The OKX adapter includes multiple components, which can be used separately or to
 - `OKXLiveExecClientFactory`: Factory for OKX execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as shown below),
+Most users will define a configuration for a live trading node (as shown below),
 and won’t need to work directly with these lower-level components.
 :::
 
@@ -558,6 +558,8 @@ The OKX data client provides the following configuration options:
 | `retry_delay_max_ms`                 | `10,000`                        | Upper bound for exponential backoff delay between retries. |
 | `update_instruments_interval_mins`   | `60`                            | Interval, in minutes, between background instrument refreshes. |
 | `vip_level`                          | `None`                          | Enables higher-depth order book channels when set to the matching OKX VIP tier. |
+| `http_proxy_url`                     | `None`                          | Optional HTTP proxy URL. |
+| `ws_proxy_url`                       | `None`                          | Optional WebSocket proxy URL. |
 
 The OKX execution client provides the following configuration options:
 
@@ -582,6 +584,8 @@ The OKX execution client provides the following configuration options:
 | `max_retries`              | `3`         | Maximum retry attempts for recoverable REST errors. |
 | `retry_delay_initial_ms`   | `1,000`     | Initial delay (milliseconds) applied before retrying a failed request. |
 | `retry_delay_max_ms`       | `10,000`    | Upper bound for the exponential backoff delay between retries. |
+| `http_proxy_url`           | `None`      | Optional HTTP proxy URL. |
+| `ws_proxy_url`             | `None`      | Optional WebSocket proxy URL. |
 
 Below is an example configuration for a live trading node using OKX data and execution clients:
 

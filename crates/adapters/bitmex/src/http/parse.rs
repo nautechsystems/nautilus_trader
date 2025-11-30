@@ -19,11 +19,8 @@ use std::str::FromStr;
 
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     data::{Bar, BarType, TradeTick},
-    enums::{
-        ContingencyType, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
-    },
+    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, OrderListId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -198,8 +195,8 @@ pub fn parse_spot_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
-    let base_currency = get_currency(definition.underlying.to_uppercase());
-    let quote_currency = get_currency(definition.quote_currency.to_uppercase());
+    let base_currency = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
 
     let price_increment = Price::from(definition.tick_size.to_string());
 
@@ -289,9 +286,9 @@ pub fn parse_perpetual_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
-    let base_currency = get_currency(definition.underlying.to_uppercase());
-    let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
+    let base_currency = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
+    let settlement_currency = get_currency(&definition.settl_currency.as_ref().map_or_else(
         || definition.quote_currency.to_uppercase(),
         |s| s.to_uppercase(),
     ));
@@ -384,9 +381,9 @@ pub fn parse_futures_instrument(
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = parse_instrument_id(definition.symbol);
     let raw_symbol = Symbol::new(definition.symbol);
-    let underlying = get_currency(definition.underlying.to_uppercase());
-    let quote_currency = get_currency(definition.quote_currency.to_uppercase());
-    let settlement_currency = get_currency(definition.settl_currency.as_ref().map_or_else(
+    let underlying = get_currency(&definition.underlying.to_uppercase());
+    let quote_currency = get_currency(&definition.quote_currency.to_uppercase());
+    let settlement_currency = get_currency(&definition.settl_currency.as_ref().map_or_else(
         || definition.quote_currency.to_uppercase(),
         |s| s.to_uppercase(),
     ));
@@ -529,16 +526,16 @@ pub fn parse_trade_bin(
 
     let open = bin
         .open
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {instrument_id}"))?;
     let high = bin
         .high
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {instrument_id}"))?;
     let low = bin
         .low
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {instrument_id}"))?;
     let close = bin
         .close
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {instrument_id}"))?;
 
     let open = Price::new(open, price_precision);
     let high = Price::new(high, price_precision);
@@ -726,7 +723,7 @@ pub fn parse_order_status_report(
     }
 
     if let Some(avg_px) = order.avg_px {
-        report = report.with_avg_px(avg_px);
+        report = report.with_avg_px(avg_px)?;
     }
 
     if let Some(trigger_price) = order.stop_px {
@@ -861,10 +858,8 @@ pub fn parse_fill_report(
     // Map BitMEX currency to standard currency code
     let settlement_currency_str = exec.settl_currency.unwrap_or(Ustr::from("XBT")).as_str();
     let mapped_currency = map_bitmex_currency(settlement_currency_str);
-    let commission = Money::new(
-        exec.commission.unwrap_or(0.0),
-        Currency::from(mapped_currency.as_str()),
-    );
+    let currency = get_currency(&mapped_currency);
+    let commission = Money::new(exec.commission.unwrap_or(0.0), currency);
     let liquidity_side = parse_liquidity_side(&exec.last_liquidity_ind);
     let client_order_id = exec.cl_ord_id.map(ClientOrderId::new);
     let venue_position_id = None; // Not applicable on BitMEX
@@ -923,14 +918,12 @@ pub fn parse_position_report(
     ))
 }
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
-fn get_currency(code: String) -> Currency {
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .get(&code)
-        .copied()
-        .unwrap_or(Currency::new(&code, 8, 0, &code, CurrencyType::Crypto))
+/// Returns a currency from the internal map or creates a new crypto currency.
+///
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed BitMEX assets.
+pub fn get_currency(code: &str) -> Currency {
+    Currency::get_or_create_crypto(code)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1128,10 +1121,12 @@ mod tests {
         let bar = parse_trade_bin(bins[0].clone(), &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
-        let expected_open = Price::from_decimal(Decimal::from_str("98900.0").unwrap(), precision)
-            .expect("open price");
-        let expected_close = Price::from_decimal(Decimal::from_str("98950.0").unwrap(), precision)
-            .expect("close price");
+        let expected_open =
+            Price::from_decimal_dp(Decimal::from_str("98900.0").unwrap(), precision)
+                .expect("open price");
+        let expected_close =
+            Price::from_decimal_dp(Decimal::from_str("98950.0").unwrap(), precision)
+                .expect("close price");
 
         assert_eq!(bar.bar_type, bar_type);
         assert_eq!(bar.open, expected_open);
@@ -1170,12 +1165,14 @@ mod tests {
         let bar = parse_trade_bin(bin, &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
-        let expected_high = Price::from_decimal(Decimal::from_str("50010.0").unwrap(), precision)
-            .expect("high price");
-        let expected_low = Price::from_decimal(Decimal::from_str("49990.0").unwrap(), precision)
+        let expected_high =
+            Price::from_decimal_dp(Decimal::from_str("50010.0").unwrap(), precision)
+                .expect("high price");
+        let expected_low = Price::from_decimal_dp(Decimal::from_str("49990.0").unwrap(), precision)
             .expect("low price");
-        let expected_open = Price::from_decimal(Decimal::from_str("50000.0").unwrap(), precision)
-            .expect("open price");
+        let expected_open =
+            Price::from_decimal_dp(Decimal::from_str("50000.0").unwrap(), precision)
+                .expect("open price");
 
         assert_eq!(bar.high, expected_high);
         assert_eq!(bar.low, expected_low);

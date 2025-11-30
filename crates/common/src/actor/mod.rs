@@ -34,7 +34,7 @@ pub mod registry;
 mod tests;
 
 // Re-exports
-pub use data_actor::{DataActor, DataActorCore};
+pub use data_actor::{DataActor, DataActorConfig, DataActorCore};
 
 pub use crate::component::Component;
 

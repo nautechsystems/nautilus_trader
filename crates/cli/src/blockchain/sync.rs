@@ -34,7 +34,7 @@ pub async fn run_sync_dex(
     multicall_calls_per_rpc_request: Option<u32>,
 ) -> anyhow::Result<()> {
     let chain = Chain::from_chain_name(&chain)
-        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
+        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {chain}"))?;
 
     let dex_type = find_dex_type_case_insensitive(&dex, chain).ok_or_else(|| {
         let supported_dexes = get_supported_dexes_for_chain(chain.name);
@@ -85,12 +85,12 @@ pub async fn run_sync_dex(
     data_client
         .register_dex_exchange(dex_type)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {e}"))?;
     // We want to have full pool sync, so from 0 to last.
     data_client
         .sync_exchange_pools(&dex_type, 0, None, reset)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to sync pools: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to sync pools: {e}"))?;
 
     Ok(())
 }
@@ -102,7 +102,7 @@ pub async fn run_sync_blocks(
     database: DatabaseConfig,
 ) -> anyhow::Result<()> {
     let chain = Chain::from_chain_name(&chain)
-        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
+        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {chain}"))?;
     let chain = Arc::new(chain.to_owned());
     let from_block = from_block.unwrap_or(0);
 
@@ -116,7 +116,7 @@ pub async fn run_sync_blocks(
     let config = BlockchainDataClientConfig::new(
         chain.clone(),
         vec![],
-        "".to_string(), // we dont need to http rpc url for block syncing
+        String::new(), // we dont need to http rpc url for block syncing
         None,
         None,
         None,
@@ -133,7 +133,7 @@ pub async fn run_sync_blocks(
     data_client
         .sync_blocks_checked(from_block, to_block)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to sync blocks: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to sync blocks: {e}"))?;
 
     Ok(())
 }

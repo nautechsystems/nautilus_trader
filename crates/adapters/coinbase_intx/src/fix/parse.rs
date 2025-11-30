@@ -141,7 +141,7 @@ pub fn convert_to_order_status_report(
         && let Ok(avg_val) = avg_px.parse::<f64>()
         && avg_val > 0.0
     {
-        report = report.with_avg_px(avg_val);
+        report = report.with_avg_px(avg_val)?;
     }
 
     // Execution instructions

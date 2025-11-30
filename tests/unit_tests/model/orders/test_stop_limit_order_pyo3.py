@@ -49,11 +49,11 @@ def test_initialize_stop_limit_order():
     assert not stop_limit_order.is_closed
     assert (
         str(stop_limit_order)
-        == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.10010-STOP[MID_POINT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"  # noqa
+        == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.10010-STOP[MID_POINT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"
     )
     assert (
         repr(stop_limit_order)
-        == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.10010-STOP[MID_POINT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"  # noqa
+        == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.10010-STOP[MID_POINT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-20210410-022422-001-001-1, venue_order_id=None, position_id=None, tags=ENTRY)"
     )
 
 

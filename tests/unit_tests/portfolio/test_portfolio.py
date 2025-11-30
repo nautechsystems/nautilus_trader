@@ -257,12 +257,13 @@ class TestPortfolio:
         self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
 
         # Act, Assert: push account to negative balance (wouldn't normally be allowed by risk engine)
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            account_id=account_id,
+        )
+
         with pytest.raises(AccountBalanceNegative):
-            fill = TestEventStubs.order_filled(
-                order,
-                instrument=AUDUSD_SIM,
-                account_id=account_id,
-            )
             self.exec_engine.process(fill)
 
     def test_limit_order_consumes_entire_balance_of_multi_currency_cash_account(self):
@@ -296,7 +297,7 @@ class TestPortfolio:
         order = self.order_factory.limit(  # will use up entire quote balance
             instrument_id=BTCUSDT_BINANCE.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_str(f"{Decimal('100_000'):.{BTCUSDT_BINANCE.size_precision}f}"),
+            quantity=Quantity.from_str(f"{Decimal(100_000):.{BTCUSDT_BINANCE.size_precision}f}"),
             price=Price.from_str("1"),
         )
 
@@ -372,7 +373,7 @@ class TestPortfolio:
         order = self.order_factory.market(
             instrument_id=BTCUSDT_BINANCE.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_str(f"{Decimal('100_000'):.{BTCUSDT_BINANCE.size_precision}f}"),
+            quantity=Quantity.from_str(f"{Decimal(100_000):.{BTCUSDT_BINANCE.size_precision}f}"),
         )
 
         self.cache.add_order(order, position_id=None)
@@ -447,7 +448,7 @@ class TestPortfolio:
         order = self.order_factory.limit(  # will use up entire quote balance
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_str(f"{Decimal('3_300_000'):.{AUDUSD_SIM.size_precision}f}"),
+            quantity=Quantity.from_str(f"{Decimal(3_300_000):.{AUDUSD_SIM.size_precision}f}"),
             price=Price.from_str("1"),
         )
 
@@ -481,7 +482,7 @@ class TestPortfolio:
         assert usdt_balance.locked == Money(99_000.00000000, USD)
         assert usdt_balance.free == Money(934.00000000, USD)
 
-        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal("3_300_000")
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(3_300_000)
 
     def test_market_order_consumes_nearly_entire_balance_of_single_currency_margin_account(self):
         # Arrange
@@ -514,7 +515,7 @@ class TestPortfolio:
         order = self.order_factory.market(  # will use up entire quote balance
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_str(f"{Decimal('3_300_000'):.{AUDUSD_SIM.size_precision}f}"),
+            quantity=Quantity.from_str(f"{Decimal(3_300_000):.{AUDUSD_SIM.size_precision}f}"),
         )
 
         self.cache.add_order(order, position_id=None)
@@ -547,7 +548,7 @@ class TestPortfolio:
         assert usdt_balance.locked == Money(99_000.00000000, USD)
         assert usdt_balance.free == Money(934.00000000, USD)
 
-        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal("3_300_000")
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(3_300_000)
 
     def test_exceed_free_balance_multi_currency_raises_account_balance_negative_exception(self):
         # Arrange

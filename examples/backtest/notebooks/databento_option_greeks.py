@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -25,6 +25,9 @@ import numpy as np
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
+from nautilus_trader.analysis.config import TearsheetConfig
+from nautilus_trader.analysis.tearsheet import create_bars_with_fills
+from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import MarginModelConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
@@ -49,6 +52,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.greeks_data import GreeksData
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick_scheme import TieredTickScheme
@@ -325,7 +329,7 @@ strategies = [
 streaming = StreamingConfig(
     catalog_path=catalog.path,
     fs_protocol="file",
-    include_types=[GreeksData, Bar],
+    include_types=[GreeksData, Bar, FuturesContract],
 )
 
 logging = LoggingConfig(
@@ -449,10 +453,16 @@ if not load_greeks:
         results[0].instance_id,
         GreeksData,
     )
+
     catalog.convert_stream_to_data(
         results[0].instance_id,
         Bar,
         identifiers=("2-MINUTE",),
+    )
+
+    catalog.convert_stream_to_data(
+        results[0].instance_id,
+        FuturesContract,
     )
 
 # %% [markdown]
@@ -467,6 +477,33 @@ engine.trader.generate_positions_report()
 
 # %%
 engine.trader.generate_account_report(Venue("XCME"))
+
+# %%
+# Create visualization with bars and order fills (standalone)
+bar_type = BarType.from_str(f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL")
+fig = create_bars_with_fills(
+    engine=engine,
+    bar_type=bar_type,
+    title=f"{future_symbols[0]} - Price Bars with Order Fills",
+)
+fig
+
+# %%
+# Test tearsheet integration with bars_with_fills chart using node and instance_id
+tearsheet_config = TearsheetConfig(
+    charts=["stats_table", "equity", "bars_with_fills"],
+    chart_args={
+        "bars_with_fills": {
+            "bar_type": f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL",
+        },
+    },
+)
+
+create_tearsheet(
+    engine,
+    config=tearsheet_config,
+    output_path="tearsheet_with_bars_fills.html",
+)
 
 # %%
 node.dispose()

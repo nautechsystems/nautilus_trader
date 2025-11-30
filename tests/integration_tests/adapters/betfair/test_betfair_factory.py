@@ -46,9 +46,9 @@ class TestBetfairFactory:
         )
         self.cache = TestComponentStubs.cache()
 
-        yield
+        return
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     def test_create(self):
         data_config = BetfairDataClientConfig(
             account_currency="GBP",

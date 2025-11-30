@@ -21,7 +21,7 @@ mirroring the capabilities shown in crates/adapters/blockchain/bin/node_test.rs
 
 """
 
-# ruff: noqa (under development)
+# ruff: noqa: F401
 
 import os
 
@@ -29,14 +29,14 @@ from dotenv import load_dotenv
 
 from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
 from nautilus_trader.adapters.blockchain import BlockchainDataClientFactory
-from nautilus_trader.common import ImportableActorConfig  # type: ignore[attr-defined]
 from nautilus_trader.common import Environment
+from nautilus_trader.common import ImportableActorConfig  # type: ignore[attr-defined]
 from nautilus_trader.infrastructure import PostgresConnectOptions
 from nautilus_trader.live import LiveNode  # type: ignore[attr-defined]
 from nautilus_trader.model import Chain  # type: ignore[attr-defined]
+from nautilus_trader.model import DexType  # type: ignore[attr-defined]
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import TraderId
-from nautilus_trader.model import DexType  # type: ignore[attr-defined]
 
 
 def main() -> None:

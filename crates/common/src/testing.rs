@@ -15,8 +15,9 @@
 
 //! Common test related helper functions.
 
+#[cfg(feature = "live")]
+use std::future::Future;
 use std::{
-    future::Future,
     thread,
     time::{Duration, Instant},
 };
@@ -94,6 +95,7 @@ where
 /// # Panics
 ///
 /// Panics if the timeout duration is exceeded without the condition being met.
+#[cfg(feature = "live")]
 pub async fn wait_until_async<F, Fut>(mut condition: F, timeout: Duration)
 where
     F: FnMut() -> Fut,

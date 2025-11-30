@@ -739,3 +739,113 @@ class TestBacktestDataIterator:
 
         # After consuming all data, streams that return empty are removed
         assert iterator.is_done()
+
+
+class TestBacktestDataIteratorPresorted:
+    """
+    Tests for the presorted parameter optimization in BacktestDataIterator.
+    """
+
+    def test_add_data_presorted_true_skips_sort_but_maintains_order(self):
+        # Arrange
+        iterator = BacktestDataIterator()
+        data = [
+            MyData(value="first", ts_init=1_000_000_000),
+            MyData(value="second", ts_init=2_000_000_000),
+            MyData(value="third", ts_init=3_000_000_000),
+        ]
+
+        # Act - add pre-sorted data
+        iterator.add_data("test_stream", data, presorted=True)
+
+        # Assert - data should be in correct order
+        assert iterator.next().value == "first"
+        assert iterator.next().value == "second"
+        assert iterator.next().value == "third"
+        assert iterator.next() is None
+
+    def test_add_data_presorted_true_copies_list_prevents_mutation(self):
+        # Arrange
+        iterator = BacktestDataIterator()
+        data = [
+            MyData(value="original1", ts_init=1_000_000_000),
+            MyData(value="original2", ts_init=2_000_000_000),
+        ]
+
+        # Act - add data then mutate original list
+        iterator.add_data("test_stream", data, presorted=True)
+        original_length = len(data)
+        data.clear()
+        data.append(MyData(value="mutated", ts_init=999_000_000))
+
+        # Assert - iterator should still have original data
+        retrieved = iterator.data("test_stream")
+        assert len(retrieved) == original_length
+        assert retrieved[0].value == "original1"
+        assert retrieved[1].value == "original2"
+        # If aliasing occurred, retrieved would be empty or contain "mutated"
+
+    def test_add_data_presorted_false_sorts_data(self):
+        # Arrange
+        iterator = BacktestDataIterator()
+        data = [
+            MyData(value="third", ts_init=3_000_000_000),
+            MyData(value="first", ts_init=1_000_000_000),
+            MyData(value="second", ts_init=2_000_000_000),
+        ]
+
+        # Act - add unsorted data with presorted=False (default)
+        iterator.add_data("test_stream", data, presorted=False)
+
+        # Assert - data should be sorted by ts_init
+        assert iterator.next().value == "first"
+        assert iterator.next().value == "second"
+        assert iterator.next().value == "third"
+        assert iterator.next() is None
+
+    def test_add_data_presorted_false_also_copies_list(self):
+        # Arrange
+        iterator = BacktestDataIterator()
+        data = [
+            MyData(value="unsorted2", ts_init=2_000_000_000),
+            MyData(value="unsorted1", ts_init=1_000_000_000),
+        ]
+
+        # Act - add data then mutate
+        iterator.add_data("test_stream", data, presorted=False)
+        data.clear()
+
+        # Assert - iterator should have sorted copy
+        retrieved = iterator.data("test_stream")
+        assert len(retrieved) == 2
+        assert retrieved[0].value == "unsorted1"  # Sorted order
+        assert retrieved[1].value == "unsorted2"
+
+    def test_init_data_then_add_data_presorted(self):
+        # Arrange
+        iterator = BacktestDataIterator()
+
+        def data_generator():
+            yield [
+                MyData(value="gen1", ts_init=1_000_000_000),
+                MyData(value="gen2", ts_init=2_000_000_000),
+            ]
+
+        # Act - initialize with generator, then update with presorted data
+        iterator.init_data("test_stream", data_generator())
+
+        # Consume first chunk
+        assert iterator.next().value == "gen1"
+        assert iterator.next().value == "gen2"
+
+        # Replace with new presorted data
+        new_data = [
+            MyData(value="new1", ts_init=3_000_000_000),
+            MyData(value="new2", ts_init=4_000_000_000),
+        ]
+        iterator.add_data("test_stream", new_data, presorted=True)
+
+        # Assert - should use new data
+        assert iterator.next().value == "new1"
+        assert iterator.next().value == "new2"
+        assert iterator.next() is None

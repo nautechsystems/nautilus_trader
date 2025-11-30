@@ -15,6 +15,7 @@
 
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use arrow::record_batch::RecordBatch;
 use object_store::{ObjectStore, path::Path as ObjectPath};
 use parquet::{
@@ -34,7 +35,7 @@ use parquet::{
 pub async fn write_batch_to_parquet(
     batch: RecordBatch,
     path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
 ) -> anyhow::Result<()> {
@@ -56,7 +57,7 @@ pub async fn write_batch_to_parquet(
 pub async fn write_batches_to_parquet(
     batches: &[RecordBatch],
     path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
 ) -> anyhow::Result<()> {
@@ -117,7 +118,7 @@ pub async fn write_batches_to_object_store(
 pub async fn combine_parquet_files(
     file_paths: Vec<&str>,
     new_file_path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
 ) -> anyhow::Result<()> {
@@ -217,7 +218,7 @@ pub async fn combine_parquet_files_from_object_store(
 /// Panics if the Parquet metadata's min/max unwrap operations fail unexpectedly.
 pub async fn min_max_from_parquet_metadata(
     file_path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
     column_name: &str,
 ) -> anyhow::Result<(u64, u64)> {
     let (object_store, base_path, _) = create_object_store_from_path(file_path, storage_options)?;
@@ -321,7 +322,7 @@ pub async fn min_max_from_parquet_metadata_object_store(
 /// Returns a tuple of (`ObjectStore`, `base_path`, `normalized_uri`)
 pub fn create_object_store_from_path(
     path: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let uri = normalize_path_to_uri(path);
 
@@ -439,7 +440,7 @@ fn create_local_store(
 /// Helper function to create S3 object store with options
 fn create_s3_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, path) = parse_url_and_path(uri)?;
     let bucket = extract_host(&url, "Invalid S3 URI: missing bucket")?;
@@ -484,7 +485,7 @@ fn create_s3_store(
 /// Helper function to create GCS object store with options
 fn create_gcs_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, path) = parse_url_and_path(uri)?;
     let bucket = extract_host(&url, "Invalid GCS URI: missing bucket")?;
@@ -532,7 +533,7 @@ fn create_gcs_store(
 /// Helper function to create Azure object store with options
 fn create_azure_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, _) = parse_url_and_path(uri)?;
     let container = extract_host(&url, "Invalid Azure URI: missing container")?;
@@ -590,7 +591,7 @@ fn create_azure_store(
 /// Helper function to create Azure object store from abfs:// URI with options.
 fn create_abfs_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, path) = parse_url_and_path(uri)?;
     let host = extract_host(&url, "Invalid ABFS URI: missing host")?;
@@ -660,7 +661,7 @@ fn create_abfs_store(
 /// Helper function to create HTTP object store with options.
 fn create_http_store(
     uri: &str,
-    storage_options: Option<std::collections::HashMap<String, String>>,
+    storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<(Arc<dyn ObjectStore>, String, String)> {
     let (url, path) = parse_url_and_path(uri)?;
     let base_url = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
@@ -692,7 +693,7 @@ fn parse_url_and_path(uri: &str) -> anyhow::Result<(url::Url, String)> {
 fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
     url.host_str()
         .map(ToString::to_string)
-        .ok_or_else(|| anyhow::anyhow!("{}", error_msg))
+        .ok_or_else(|| anyhow::anyhow!("{error_msg}"))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -701,8 +702,7 @@ fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
+    use ahash::AHashMap;
     use rstest::rstest;
 
     use super::*;
@@ -729,7 +729,7 @@ mod tests {
 
     #[rstest]
     fn test_create_object_store_from_path_s3() {
-        let mut options = HashMap::new();
+        let mut options = AHashMap::new();
         options.insert(
             "endpoint_url".to_string(),
             "https://test.endpoint.com".to_string(),
@@ -747,7 +747,7 @@ mod tests {
 
     #[rstest]
     fn test_create_object_store_from_path_azure() {
-        let mut options = HashMap::new();
+        let mut options = AHashMap::new();
         options.insert("account_name".to_string(), "testaccount".to_string());
         // Use a valid base64 encoded key for testing
         options.insert("account_key".to_string(), "dGVzdGtleQ==".to_string()); // "testkey" in base64
@@ -765,7 +765,7 @@ mod tests {
     #[rstest]
     fn test_create_object_store_from_path_gcs() {
         // Test GCS without service account (will use default credentials or fail gracefully)
-        let mut options = HashMap::new();
+        let mut options = AHashMap::new();
         options.insert("project_id".to_string(), "test-project".to_string());
 
         let result = create_object_store_from_path("gs://test-bucket/path", Some(options));

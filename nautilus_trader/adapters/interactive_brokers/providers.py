@@ -18,7 +18,6 @@ import copy
 import pandas as pd
 from ibapi.contract import ContractDetails
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import ComboLeg
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -34,9 +33,6 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
-
-
-# fmt: on
 
 
 class InteractiveBrokersInstrumentProvider(InstrumentProvider):
@@ -249,9 +245,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        """
-        Load instruments for the given IDs (base class interface).
-        """
         await self.load_ids_with_return_async(
             instrument_ids,
             filters,
@@ -287,9 +280,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         instrument_id: InstrumentId,
         filters: dict | None = None,
     ) -> None:
-        """
-        Load the instrument for the given instrument ID (base class interface).
-        """
         # Call the auxiliary function that maintains your working logic
         await self.load_with_return_async(instrument_id, filters, force_instrument_update=False)
 
@@ -352,12 +342,11 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         # We try to quickly build the contract details if they are already present in an instrument
         if (
             instrument := self._client._cache.instrument(instrument_id)
-        ) and not force_instrument_update:
-            if instrument.info and instrument.info.get("contract"):
-                converted_contract_details = dict_to_contract_details(instrument.info)
-                processed_ids = self._process_contract_details([converted_contract_details], venue)
+        ) and not force_instrument_update and instrument.info and instrument.info.get("contract"):
+            converted_contract_details = dict_to_contract_details(instrument.info)
+            processed_ids = self._process_contract_details([converted_contract_details], venue)
 
-                return bool(processed_ids)  # Return True if any instruments were processed
+            return bool(processed_ids)  # Return True if any instruments were processed
 
         # VENUE_MEMBERS associates a MIC venue to several possible IB exchanges
         possible_exchanges = VENUE_MEMBERS.get(venue, [venue])

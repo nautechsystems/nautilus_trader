@@ -18,7 +18,7 @@ order management methods.
 
 ## Basic example
 
-Just like strategies, actors support configuration through a very similar pattern.
+Actors support configuration through a pattern similar to strategies.
 
 ```python
 from nautilus_trader.config import ActorConfig
@@ -41,10 +41,10 @@ class MyActor(Actor):
         self.count_of_processed_bars: int = 0
 
     def on_start(self) -> None:
-        # Subscribe to all incoming bars
-        self.subscribe_bars(self.config.bar_type)   # You can access configuration directly via `self.config`
+        # Subscribe to bars matching the configured bar type
+        self.subscribe_bars(self.config.bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
         self.count_of_processed_bars += 1
 ```
 
@@ -77,7 +77,9 @@ Here's how different data operations map to their handlers:
 | `subscribe_data()`              | Real‑time        | `on_data()`              | Live data updates. |
 | `subscribe_instrument()`        | Real‑time        | `on_instrument()`        | Live instrument definition updates. |
 | `subscribe_instruments()`       | Real‑time        | `on_instrument()`        | Live instrument definition updates (for venue). |
-| `subscribe_order_book_deltas()` | Real‑time        | `on_order_book_deltas()` | Live order book updates. |
+| `subscribe_order_book_deltas()` | Real‑time        | `on_order_book_deltas()` | Live order book deltas. |
+| `subscribe_order_book_depth()`  | Real‑time        | `on_order_book_depth()`  | Live order book depth snapshots. |
+| `subscribe_order_book_at_interval()` | Real‑time   | `on_order_book()`        | Order book snapshots at intervals. |
 | `subscribe_quote_ticks()`       | Real‑time        | `on_quote_tick()`        | Live quote updates. |
 | `subscribe_trade_ticks()`       | Real‑time        | `on_trade_tick()`        | Live trade updates. |
 | `subscribe_mark_prices()`       | Real‑time        | `on_mark_price()`        | Live mark price updates. |
@@ -88,6 +90,8 @@ Here's how different data operations map to their handlers:
 | `subscribe_instrument_close()`  | Real‑time        | `on_instrument_close()`  | Live instrument close updates. |
 | `subscribe_order_fills()`       | Real‑time        | `on_order_filled()`      | Live order fill events for an instrument. |
 | `request_data()`                | Historical       | `on_historical_data()`   | Historical data processing. |
+| `request_order_book_snapshot()` | Historical       | `on_historical_data()`   | Order book snapshot request. |
+| `request_order_book_depth()`    | Historical       | `on_historical_data()`   | Historical order book depth. |
 | `request_instrument()`          | Historical       | `on_instrument()`        | Instrument definition updates. |
 | `request_instruments()`         | Historical       | `on_instrument()`        | Instrument definition updates. |
 | `request_quote_ticks()`         | Historical       | `on_historical_data()`   | Historical quotes processing. |

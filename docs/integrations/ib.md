@@ -15,7 +15,7 @@ The standalone TWS and IB Gateway applications require manually inputting userna
 To install NautilusTrader with Interactive Brokers (and Docker) support:
 
 ```bash
-pip install --upgrade "nautilus_trader[ib,docker]"
+uv pip install "nautilus_trader[ib,docker]"
 ```
 
 To build from source with all extras (including IB and Docker):
@@ -1833,4 +1833,4 @@ if not instruments:
 - **IB API Documentation**: [TWS API Guide](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/)
 - **NautilusTrader Examples**: [GitHub Examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers)
 - **IB Contract Search**: [Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/)
-- **Market Data Subscriptions**: [IB Market Data](https://www.interactivebrokers.com/en/trading/market-data.php)
+- **Market Data Subscriptions**: [IB Market Data](https://www.interactivebrokers.com/en/pricing/market-data-pricing.php)

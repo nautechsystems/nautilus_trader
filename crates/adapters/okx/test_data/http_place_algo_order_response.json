@@ -1,0 +1,12 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "algoId": "12345",
+      "algoClOrdId": "test_algo_1",
+      "sCode": "0",
+      "sMsg": ""
+    }
+  ]
+}

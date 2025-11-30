@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use serde::{Deserialize, Serialize};
@@ -117,7 +119,7 @@ impl ExecutionMassStatus {
     }
 }
 
-impl std::fmt::Display for ExecutionMassStatus {
+impl Display for ExecutionMassStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

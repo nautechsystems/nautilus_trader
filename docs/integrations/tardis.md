@@ -216,6 +216,7 @@ Next, ensure you have a configuration JSON file available.
 | `tardis_ws_url`     | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_MACHINE_WS_URL` env var.                                          |
 | `normalize_symbols` | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | If `null` then will default to `true`.                                                                |
 | `output_path`       | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_PATH` env var, otherwise the current working directory. |
+| `ws_proxy_url`      | string (optional) | Optional WebSocket proxy URL.                                                       | If `null` then no proxy is used.                                                                      |
 | `options`           | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                                                 |
 
 An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_config.json):

@@ -32,8 +32,12 @@ pub mod datetime;
 pub mod enums;
 pub mod parsing;
 pub mod serialization;
+/// String manipulation utilities for Python.
+pub mod string;
 pub mod uuid;
 pub mod version;
+
+use std::fmt::Display;
 
 use pyo3::{
     Py,
@@ -109,7 +113,7 @@ pub fn get_pytype_name<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PySt
 /// # Errors
 ///
 /// Returns a Python error with the error string.
-pub fn to_pyvalue_err(e: impl std::fmt::Display) -> PyErr {
+pub fn to_pyvalue_err(e: impl Display) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
@@ -118,7 +122,7 @@ pub fn to_pyvalue_err(e: impl std::fmt::Display) -> PyErr {
 /// # Errors
 ///
 /// Returns a Python error with the error string.
-pub fn to_pytype_err(e: impl std::fmt::Display) -> PyErr {
+pub fn to_pytype_err(e: impl Display) -> PyErr {
     PyTypeError::new_err(e.to_string())
 }
 
@@ -127,7 +131,7 @@ pub fn to_pytype_err(e: impl std::fmt::Display) -> PyErr {
 /// # Errors
 ///
 /// Returns a Python error with the error string.
-pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
+pub fn to_pyruntime_err(e: impl Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 
@@ -143,7 +147,10 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
 /// bool
 #[gen_stub_pyfunction(module = "nautilus_trader.core")]
 #[pyfunction(name = "is_pycapsule")]
-#[allow(clippy::needless_pass_by_value)]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Python FFI requires owned types"
+)]
 #[allow(unsafe_code)]
 fn py_is_pycapsule(obj: Py<PyAny>) -> bool {
     unsafe {
@@ -169,6 +176,7 @@ pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<UUID4>()?;
     m.add_function(wrap_pyfunction!(py_is_pycapsule, m)?)?;
     m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
+    m.add_function(wrap_pyfunction!(string::py_mask_api_key, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_millis, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_millis_to_nanos, m)?)?;

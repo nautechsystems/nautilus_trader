@@ -58,7 +58,9 @@ const RUNTIME_SHUTDOWN_TIMEOUT_SECS: u64 = 10;
 
 #[pyfunction]
 fn _shutdown_nautilus_runtime() -> PyResult<()> {
-    nautilus_common::runtime::shutdown_runtime(Duration::from_secs(RUNTIME_SHUTDOWN_TIMEOUT_SECS));
+    nautilus_common::live::runtime::shutdown_runtime(Duration::from_secs(
+        RUNTIME_SHUTDOWN_TIMEOUT_SECS,
+    ));
     Ok(())
 }
 
@@ -72,7 +74,7 @@ fn _shutdown_nautilus_runtime() -> PyResult<()> {
 fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let sys = PyModule::import(py, "sys")?;
     let modules = sys.getattr("modules")?;
-    let sys_modules: &Bound<'_, PyAny> = modules.downcast()?;
+    let sys_modules: &Bound<'_, PyAny> = modules.cast()?;
 
     #[cfg(feature = "cython-compat")]
     let module_name = "nautilus_trader.core.nautilus_pyo3";
@@ -206,8 +208,22 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
+    let n = "dydx";
+    let submodule = pyo3::wrap_pymodule!(nautilus_dydx::python::dydx);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
     let n = "hyperliquid";
     let submodule = pyo3::wrap_pymodule!(nautilus_hyperliquid::python::hyperliquid);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
+    let n = "kraken";
+    let submodule = pyo3::wrap_pymodule!(nautilus_kraken::python::kraken);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     #[cfg(feature = "cython-compat")]

@@ -41,14 +41,14 @@ jobs:
       # https://github.com/actions-rust-lang/setup-rust-toolchain
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
-        uses: actions-rust-lang/setup-rust-toolchain@ac90e63697ac2784f4ecfe2964e1a285c304003a # v1.14.1
+        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
         with:
           toolchain: ${{ env.TOOLCHAIN }}
           override: true
 
       - name: Initialize CodeQL
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/init@16df4fbc19aea13d921737861d6c622bf3cefe23 # codeql-bundle-v2.23.0
+        uses: github/codeql-action/init@f443b600d91635bebf5b0d9ebc620189c0d6fba5 # v4.30.8
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -59,8 +59,8 @@ jobs:
       # https://github.com/github/codeql-action
       - name: Autobuild
         if: matrix.language == 'rust'
-        uses: github/codeql-action/autobuild@16df4fbc19aea13d921737861d6c622bf3cefe23 # codeql-bundle-v2.23.0
+        uses: github/codeql-action/autobuild@f443b600d91635bebf5b0d9ebc620189c0d6fba5 # v4.30.8
 
       - name: Perform CodeQL Analysis
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/analyze@16df4fbc19aea13d921737861d6c622bf3cefe23 # codeql-bundle-v2.23.0
+        uses: github/codeql-action/analyze@f443b600d91635bebf5b0d9ebc620189c0d6fba5 # v4.30.8

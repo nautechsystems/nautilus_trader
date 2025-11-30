@@ -124,7 +124,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     loop_debug: bool = False
     logging: LoggingConfig | None = None
 
-    timeout_connection: PositiveFloat = 60.0
+    timeout_connection: PositiveFloat = 120.0
     timeout_reconciliation: PositiveFloat = 30.0
     timeout_portfolio: PositiveFloat = 10.0
     timeout_disconnection: PositiveFloat = 10.0

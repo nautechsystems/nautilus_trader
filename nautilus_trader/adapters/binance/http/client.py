@@ -32,6 +32,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.core.nautilus_pyo3 import ed25519_signature
 from nautilus_trader.core.nautilus_pyo3 import hmac_signature
+from nautilus_trader.core.nautilus_pyo3 import mask_api_key
 from nautilus_trader.core.nautilus_pyo3 import rsa_signature
 
 
@@ -59,6 +60,8 @@ class BinanceHttpClient:
         The keyed rate limiter quotas for the client.
     ratelimiter_quota : Quota, optional
         The default rate limiter quota for the client.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     """
 
@@ -73,6 +76,7 @@ class BinanceHttpClient:
         ed25519_private_key: str | None = None,
         ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
         ratelimiter_default_quota: Quota | None = None,
+        proxy_url: str | None = None,
     ) -> None:
         self._clock: LiveClock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -97,6 +101,7 @@ class BinanceHttpClient:
         self._client = HttpClient(
             keyed_quotas=ratelimiter_quotas or [],
             default_quota=ratelimiter_default_quota,
+            proxy_url=proxy_url,
         )
 
     @property
@@ -122,6 +127,21 @@ class BinanceHttpClient:
 
         """
         return self._key
+
+    @property
+    def api_key_masked(self) -> str:
+        """
+        Return the masked Binance API key being used by the client.
+
+        Shows first 4 and last 4 characters with ellipsis in between.
+        For keys shorter than 8 characters, shows asterisks only.
+
+        Returns
+        -------
+        str
+
+        """
+        return mask_api_key(self._key)
 
     @property
     def headers(self):

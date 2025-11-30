@@ -75,27 +75,21 @@ impl TimeEvent {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
 
-        let ts_event = py_tuple
-            .get_item(2)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
-        let ts_init: u64 = py_tuple
-            .get_item(3)?
-            .downcast::<PyInt>()?
-            .extract::<u64>()?;
+        let ts_event = py_tuple.get_item(2)?.cast::<PyInt>()?.extract::<u64>()?;
+        let ts_init: u64 = py_tuple.get_item(3)?.cast::<PyInt>()?.extract::<u64>()?;
 
         self.name = Ustr::from(
             py_tuple
                 .get_item(0)?
-                .downcast::<PyString>()?
+                .cast::<PyString>()?
                 .extract::<&str>()?,
         );
         self.event_id = UUID4::from_str(
             py_tuple
                 .get_item(1)?
-                .downcast::<PyString>()?
+                .cast::<PyString>()?
                 .extract::<&str>()?,
         )
         .map_err(to_pyvalue_err)?;
@@ -170,19 +164,19 @@ impl TimeEvent {
 
 #[cfg(test)]
 mod tests {
-    use std::{num::NonZeroU64, sync::Arc};
+    use std::{num::NonZeroU64, sync::Arc, time::Duration};
 
     use nautilus_core::{
         UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND, python::IntoPyObjectNautilusExt,
         time::get_atomic_clock_realtime,
     };
     use pyo3::prelude::*;
-    use tokio::time::Duration;
 
     use crate::{
+        live::timer::LiveTimer,
         runner::{TimeEventSender, set_time_event_sender},
         testing::wait_until,
-        timer::{LiveTimer, TimeEvent, TimeEventCallback},
+        timer::{TimeEvent, TimeEventCallback},
     };
 
     #[pyfunction]

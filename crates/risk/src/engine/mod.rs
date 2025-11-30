@@ -20,8 +20,9 @@ pub mod config;
 #[cfg(test)]
 mod tests;
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::AHashMap;
 use config::RiskEngineConfig;
 use nautilus_common::{
     cache::Cache,
@@ -32,9 +33,15 @@ use nautilus_common::{
     throttler::Throttler,
 };
 use nautilus_core::UUID4;
+use nautilus_execution::trailing::{
+    trailing_stop_calculate_with_bid_ask, trailing_stop_calculate_with_last,
+};
 use nautilus_model::{
     accounts::{Account, AccountAny},
-    enums::{InstrumentClass, OrderSide, OrderStatus, TimeInForce, TradingState},
+    enums::{
+        InstrumentClass, OrderSide, OrderStatus, TimeInForce, TradingState, TrailingOffsetType,
+        TriggerType,
+    },
     events::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -61,7 +68,7 @@ pub struct RiskEngine {
     portfolio: Portfolio,
     pub throttled_submit_order: Throttler<SubmitOrder, SubmitOrderFn>,
     pub throttled_modify_order: Throttler<ModifyOrder, ModifyOrderFn>,
-    max_notional_per_order: HashMap<InstrumentId, Decimal>,
+    max_notional_per_order: AHashMap<InstrumentId, Decimal>,
     trading_state: TradingState,
     config: RiskEngineConfig,
 }
@@ -92,7 +99,7 @@ impl RiskEngine {
             portfolio,
             throttled_submit_order,
             throttled_modify_order,
-            max_notional_per_order: HashMap::new(),
+            max_notional_per_order: AHashMap::new(),
             trading_state: TradingState::Active,
             config,
         }
@@ -667,11 +674,105 @@ impl RiskEngine {
                     if let Some(trigger_price) = order.trigger_price() {
                         Some(trigger_price)
                     } else {
-                        log::warn!(
-                            "Cannot check {} order risk: no trigger price was set", // TODO: Use last_trade += offset
-                            order.order_type()
-                        );
-                        continue;
+                        // Validate trailing offset type is supported
+                        let offset_type = order.trailing_offset_type().unwrap();
+                        if !matches!(
+                            offset_type,
+                            TrailingOffsetType::Price
+                                | TrailingOffsetType::BasisPoints
+                                | TrailingOffsetType::Ticks
+                        ) {
+                            self.deny_order(
+                                order.clone(),
+                                &format!("UNSUPPORTED_TRAILING_OFFSET_TYPE: {offset_type:?}"),
+                            );
+                            return false;
+                        }
+
+                        let trigger_type = order.trigger_type().unwrap();
+                        let cache = self.cache.borrow();
+
+                        if trigger_type == TriggerType::BidAsk {
+                            if let Some(quote) = cache.quote(&instrument.id()) {
+                                match trailing_stop_calculate_with_bid_ask(
+                                    instrument.price_increment(),
+                                    order.trailing_offset_type().unwrap(),
+                                    order.order_side_specified(),
+                                    order.trailing_offset().unwrap(),
+                                    quote.bid_price,
+                                    quote.ask_price,
+                                ) {
+                                    Ok(calculated_trigger) => Some(calculated_trigger),
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Cannot check {} order risk: failed to calculate trigger price from trailing offset: {e}",
+                                            order.order_type()
+                                        );
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                log::warn!(
+                                    "Cannot check {} order risk: no trigger price set and no bid/ask quotes available for {}",
+                                    order.order_type(),
+                                    instrument.id()
+                                );
+                                continue;
+                            }
+                        } else if let Some(last_trade) = cache.trade(&instrument.id()) {
+                            match trailing_stop_calculate_with_last(
+                                instrument.price_increment(),
+                                order.trailing_offset_type().unwrap(),
+                                order.order_side_specified(),
+                                order.trailing_offset().unwrap(),
+                                last_trade.price,
+                            ) {
+                                Ok(calculated_trigger) => Some(calculated_trigger),
+                                Err(e) => {
+                                    log::warn!(
+                                        "Cannot check {} order risk: failed to calculate trigger price from trailing offset: {}",
+                                        order.order_type(),
+                                        e
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else if trigger_type == TriggerType::LastOrBidAsk {
+                            // Fallback to bid/ask when no trade data available
+                            if let Some(quote) = cache.quote(&instrument.id()) {
+                                match trailing_stop_calculate_with_bid_ask(
+                                    instrument.price_increment(),
+                                    order.trailing_offset_type().unwrap(),
+                                    order.order_side_specified(),
+                                    order.trailing_offset().unwrap(),
+                                    quote.bid_price,
+                                    quote.ask_price,
+                                ) {
+                                    Ok(calculated_trigger) => Some(calculated_trigger),
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Cannot check {} order risk: failed to calculate trigger price from trailing offset: {e}",
+                                            order.order_type()
+                                        );
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                log::warn!(
+                                    "Cannot check {} order risk: no trigger price set and no market data available for {}",
+                                    order.order_type(),
+                                    instrument.id()
+                                );
+                                continue;
+                            }
+                        } else {
+                            log::warn!(
+                                "Cannot check {} order risk: no trigger price set and no market data available for {}",
+                                order.order_type(),
+                                instrument.id()
+                            );
+                            continue;
+                        }
                     }
                 }
                 _ => order.price(),
@@ -903,8 +1004,9 @@ impl RiskEngine {
                     }
 
                     match cum_notional_sell {
-                        Some(mut cum_notional_sell) => {
-                            cum_notional_sell.raw += cash_value.raw;
+                        Some(mut value) => {
+                            value.raw += cash_value.raw;
+                            cum_notional_sell = Some(value);
                         }
                         None => cum_notional_sell = Some(cash_value),
                     }
@@ -938,7 +1040,13 @@ impl RiskEngine {
             ));
         }
 
-        if instrument.instrument_class() != InstrumentClass::Option && price_val.raw <= 0 {
+        if !matches!(
+            instrument.instrument_class(),
+            InstrumentClass::Option
+                | InstrumentClass::FuturesSpread
+                | InstrumentClass::OptionSpread
+        ) && price_val.raw <= 0
+        {
             return Some(format!("price {price_val} invalid (<= 0)"));
         }
 
@@ -1016,14 +1124,17 @@ impl RiskEngine {
             return;
         }
 
-        let mut cache = self.cache.borrow_mut();
-        if !cache.order_exists(&order.client_order_id()) {
-            cache
-                .add_order(order.clone(), None, None, false)
-                .map_err(|e| {
-                    log::error!("Cannot add order to cache: {e}");
-                })
-                .unwrap();
+        // Scope the cache borrow to avoid RefCell conflict when sending to ExecEngine
+        {
+            let mut cache = self.cache.borrow_mut();
+            if !cache.order_exists(&order.client_order_id()) {
+                cache
+                    .add_order(order.clone(), None, None, false)
+                    .map_err(|e| {
+                        log::error!("Cannot add order to cache: {e}");
+                    })
+                    .unwrap();
+            }
         }
 
         let denied = OrderEventAny::Denied(OrderDenied::new(

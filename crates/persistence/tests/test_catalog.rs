@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -140,8 +140,6 @@ fn test_bar_query() {
 
 #[rstest]
 fn test_datafusion_parquet_round_trip() {
-    use std::collections::HashMap;
-
     use datafusion::parquet::{
         arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties,
     };
@@ -1544,6 +1542,7 @@ fn test_prepare_consolidation_queries_basic_moved() {
 }
 
 #[rstest]
+#[allow(clippy::needless_collect)] // Collect needed for .len() and .iter().find()
 fn test_prepare_consolidation_queries_with_splits_moved() {
     let tmp = tempfile::tempdir().unwrap();
     let base_dir = tmp.path().join("catalog");
@@ -2487,7 +2486,7 @@ fn test_catalog_query_multiple_instruments_table_naming() {
     assert_eq!(data.len(), 9);
 
     // Verify we have data from all three instruments
-    let mut instrument_counts = std::collections::HashMap::new();
+    let mut instrument_counts = HashMap::new();
     for item in &data {
         if let Data::Quote(quote) = item {
             *instrument_counts

@@ -98,6 +98,45 @@ signed_qty = -50   # Now SHORT position
 signed_qty = 0     # Position FLAT (closed)
 ```
 
+## Position adjustments
+
+Position adjustments track quantity or PnL changes that occur outside of normal order fills,
+ensuring the position quantity accurately reflects the true net asset position. The system
+generates `PositionAdjusted` events for these scenarios.
+
+### Base currency commissions
+
+When trading spot currency pairs (e.g., BTC/USDT) or FX spot, commissions paid in the base
+currency directly affect the net quantity received or delivered:
+
+- **Opening fills**: Commission is deducted from the traded quantity. A buy of 1.0 BTC with
+  -0.001 BTC commission results in a net long position of 0.999 BTC.
+- **Closing fills**: Commission is applied to `signed_qty` because it affects actual inventory.
+  Selling a 0.999 BTC LONG position with -0.000999 BTC commission leaves you SHORT 0.000999 BTC,
+  not FLAT, because you gave up 0.999999 BTC total.
+- **Flips**: Commission affects the final position size on both sides of the flip.
+
+:::note
+Base currency commissions only apply to spot currency pairs and FX spot instruments where the
+commission currency matches `instrument.base_currency`. For other instruments, commissions are
+tracked separately and do not affect position quantity.
+:::
+
+### Funding payments
+
+Funding adjustments track periodic payments for perpetual futures without affecting position
+quantity. These are logged with `quantity_change = None` and can include PnL impacts.
+
+### Adjustment tracking
+
+All adjustments are preserved in the position event history:
+
+- `position.adjustments` returns the list of all `PositionAdjusted` events.
+- Each adjustment includes type (`COMMISSION` or `FUNDING`), quantity change, and timestamps.
+- The adjustment history is cleared when positions close and reopen. When events are purged,
+  commission adjustments tied to the removed fills are regenerated while non-commission adjustments
+  (for example funding) are preserved.
+
 ## OMS types and position management
 
 NautilusTrader supports two primary OMS types that fundamentally affect how positions are tracked

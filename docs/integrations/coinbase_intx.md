@@ -48,7 +48,7 @@ for market data and execution.
 - `CoinbaseIntxLiveExecClientFactory`: Factory for Coinbase International execution clients.
 
 :::note
-Most users will simply define a configuration for a live trading node (described below),
+Most users will define a configuration for a live trading node (described below),
 and won't necessarily need to work with the above components directly.
 :::
 

@@ -26,7 +26,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesMarginT
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesDualSidePosition
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesLeverage
-from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesMarginTypeResponse  # fmt: skip
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesMarginTypeResponse
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesSymbolConfig
 from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI

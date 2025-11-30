@@ -30,6 +30,7 @@ from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -41,35 +42,39 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 # Configuration - Change instrument_type to switch between trading modes
 instrument_type = OKXInstrumentType.SWAP  # SPOT, MARGIN, SWAP, FUTURES, OPTION
-use_spot_margin = False
 token = "ETH"
 
 # Symbol mapping based on instrument type
 if instrument_type == OKXInstrumentType.SPOT:
     symbol = f"{token}-USDT"
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
-    order_qty = Decimal("10.00")
-    enable_sells = False
+    order_qty = Decimal("10.00")  # In quote currency for buying
+    # order_qty = Decimal("0.01")  # In base currency for selling
+    enable_limit_sells = False
+    use_spot_margin = False
     use_quote_quantity = True
 elif instrument_type == OKXInstrumentType.MARGIN:
-    use_spot_margin = True
     symbol = f"{token}-USDT"
     contract_types = None  # MARGIN doesn't use contract types
-    order_qty = Decimal("10.00")
-    enable_sells = False
+    order_qty = Decimal("10.00")  # In quote currency for buying
+    # order_qty = Decimal("0.01")  # In base currency for selling
+    enable_limit_sells = False
+    use_spot_margin = True
     use_quote_quantity = True
 elif instrument_type == OKXInstrumentType.SWAP:
     symbol = f"{token}-USDT-SWAP"
     contract_types = (OKXContractType.LINEAR,)
     order_qty = Decimal("0.01")
-    enable_sells = True
+    enable_limit_sells = True
+    use_spot_margin = False
     use_quote_quantity = False
 elif instrument_type == OKXInstrumentType.FUTURES:
     # Format: ETH-USD-YYMMDD (e.g., ETH-USD-241227, ETH-USD-250131)
     symbol = f"{token}-USD-251226"  # ETH-USD futures expiring 2025-12-26
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
     order_qty = Decimal(1)
-    enable_sells = True
+    enable_limit_sells = True
+    use_spot_margin = False
     use_quote_quantity = False
 elif instrument_type == OKXInstrumentType.OPTION:
     symbol = (
@@ -77,7 +82,8 @@ elif instrument_type == OKXInstrumentType.OPTION:
     )
     contract_types = None  # Options don't use contract types in the same way
     order_qty = Decimal(1)
-    enable_sells = True
+    enable_limit_sells = True
+    use_spot_margin = False
     use_quote_quantity = False
 else:
     raise ValueError(f"Unsupported instrument type: {instrument_type}")
@@ -113,7 +119,7 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(
         log_level="INFO",
-        log_level_file="DEBUG",
+        # log_level_file="DEBUG",
         use_pyo3=True,
     ),
     exec_engine=LiveExecEngineConfig(
@@ -122,7 +128,8 @@ config_node = TradingNodeConfig(
         reconciliation_instrument_ids=reconciliation_instrument_ids,
         # reconciliation_lookback_mins=60,
         open_check_interval_secs=5.0,
-        open_check_open_only=True,
+        open_check_open_only=False,
+        position_check_interval_secs=60,
         # own_books_audit_interval_secs=2.0,
         # manage_own_order_books=True,
         # snapshot_orders=True,
@@ -210,10 +217,10 @@ config_tester = ExecTesterConfig(
     # subscribe_quotes=False,
     # subscribe_trades=False,
     # subscribe_book=True,
-    enable_buys=True,
-    enable_sells=enable_sells,
+    enable_limit_buys=True,
+    enable_limit_sells=enable_limit_sells,
     open_position_on_start_qty=order_qty,
-    # open_position_time_in_force=TimeInForce.FOK,
+    open_position_time_in_force=TimeInForce.IOC,
     tob_offset_ticks=100,
     # stop_offset_ticks=1,
     order_qty=order_qty,

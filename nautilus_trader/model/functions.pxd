@@ -31,6 +31,7 @@ from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionAdjustmentType
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport RecordFlag
@@ -105,6 +106,9 @@ cpdef str record_flag_to_str(RecordFlag value)
 cpdef PositionSide position_side_from_str(str value)
 cpdef str position_side_to_str(PositionSide value)
 
+cpdef PositionAdjustmentType position_adjustment_type_from_str(str value)
+cpdef str position_adjustment_type_to_str(PositionAdjustmentType value)
+
 cpdef PriceType price_type_from_str(str value)
 cpdef str price_type_to_str(PriceType value)
 
@@ -125,6 +129,7 @@ cpdef order_type_to_pyo3(OrderType value)
 cpdef order_status_to_pyo3(OrderStatus value)
 cpdef time_in_force_to_pyo3(TimeInForce value)
 cpdef trigger_type_to_pyo3(TriggerType value)
+cpdef trailing_offset_type_to_pyo3(TrailingOffsetType value)
 cpdef contingency_type_to_pyo3(ContingencyType value)
 
 cpdef OrderSide order_side_from_pyo3(value)

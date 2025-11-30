@@ -37,7 +37,7 @@ def _config(socket_server, handler):
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_connect_and_disconnect(socket_server):
     # Arrange
     store = []
@@ -51,7 +51,7 @@ async def test_connect_and_disconnect(socket_server):
     await eventually(lambda: not client.is_active())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_send_recv(socket_server):
     # Arrange
     store = []
@@ -96,7 +96,7 @@ async def test_client_send_recv(socket_server):
 #     await eventually(lambda: not client.is_alive())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconnect_after_close(closing_socket_server):
     # Arrange
     store = []

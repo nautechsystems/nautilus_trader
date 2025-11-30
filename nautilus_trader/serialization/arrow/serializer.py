@@ -15,7 +15,8 @@
 
 from collections.abc import Callable
 from io import BytesIO
-from typing import Any, Union
+from typing import Any
+from typing import Union
 
 import pyarrow as pa
 
@@ -152,7 +153,7 @@ class ArrowSerializer:
             case nautilus_pyo3.Bar:
                 batch_bytes = nautilus_pyo3.bars_to_arrow_record_batch_bytes(data)
             case _:
-                if data_cls == OrderBookDelta or data_cls == OrderBookDeltas:
+                if data_cls in (OrderBookDelta, OrderBookDeltas):
                     pyo3_deltas = OrderBookDelta.to_pyo3_list(data)
                     batch_bytes = nautilus_pyo3.book_deltas_to_arrow_record_batch_bytes(
                         pyo3_deltas,

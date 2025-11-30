@@ -62,7 +62,7 @@ jobs:
           target/release/nautilus --version || (echo "Smoke test failed" && exit 1)
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: nautilus-x86_64-unknown-linux-gnu.tar.gz
           path: dist/nautilus-x86_64-unknown-linux-gnu.tar.gz
@@ -114,7 +114,7 @@ jobs:
           target/release/nautilus --version || (echo "Smoke test failed" && exit 1)
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: nautilus-aarch64-unknown-linux-gnu.tar.gz
           path: dist/nautilus-aarch64-unknown-linux-gnu.tar.gz
@@ -165,7 +165,7 @@ jobs:
           target/release/nautilus --version || (echo "Smoke test failed" && exit 1)
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: nautilus-aarch64-apple-darwin.tar.gz
           path: dist/nautilus-aarch64-apple-darwin.tar.gz
@@ -214,7 +214,7 @@ jobs:
           Remove-Item -Recurse -Force stage-cli
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: nautilus-x86_64-pc-windows-msvc.zip
           path: dist/nautilus-x86_64-pc-windows-msvc.zip
@@ -253,7 +253,7 @@ jobs:
           persist-credentials: false
 
       - name: Download built CLI artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist/cli
 

@@ -16,7 +16,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.enums import DEFAULT_PRODUCT_TYPES
@@ -98,9 +99,7 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
 
         loaded, skipped = self._ingest_instruments(instruments, filters)
 
-        if loaded:
-            self._log.info(f"Loaded {loaded} instruments for venue {HYPERLIQUID_VENUE.value}")
-        else:
+        if not loaded:
             self._log.warning("No Hyperliquid instruments matched the requested filters")
 
         if skipped:
@@ -129,7 +128,8 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         self._instruments.clear()
         self._currencies.clear()
         self._loaded_instruments.clear()
-        self._instruments_pyo3.clear()
+        # NOTE: Do NOT clear _instruments_pyo3 - it's needed by WebSocket client
+        # and was freshly populated by _load_instruments() just before this call
 
     def _ingest_instruments(
         self,
@@ -208,10 +208,6 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         PyCondition.not_none(instrument_id, "instrument_id")
         await self.load_ids_async([instrument_id], filters)
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _accept_instrument(
         self,
         instrument: Instrument,
@@ -250,7 +246,4 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
 
         symbol_value = getattr(getattr(instrument, "symbol", None), "value", None)
         symbols = _normalize(filters.get("symbols"))
-        if symbols and (not symbol_value or symbol_value.upper() not in symbols):
-            return False
-
-        return True
+        return not (symbols and (not symbol_value or symbol_value.upper() not in symbols))

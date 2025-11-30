@@ -132,9 +132,9 @@ class TestBinanceFuturesExecutionClient:
             clock=self.clock,
         )
 
-        yield
+        return
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [
@@ -190,7 +190,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["recvWindow"] == "5000"
         assert request[1]["payload"]["positionSide"] == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [
@@ -247,7 +247,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_order_with_price_match(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -284,7 +284,7 @@ class TestBinanceFuturesExecutionClient:
         assert payload.get("price") is None
         assert payload["timeInForce"] == "GTC"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_order_with_price_match_post_only_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -321,7 +321,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "post-only" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_order_with_price_match_display_qty_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -358,7 +358,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "iceberg" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_market_order_with_quote_quantity_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -394,7 +394,7 @@ class TestBinanceFuturesExecutionClient:
         assert denied_kwargs["client_order_id"] == order.client_order_id
         assert denied_kwargs["reason"] == "UNSUPPORTED_QUOTE_QUANTITY"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_market_order_with_price_match_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -429,7 +429,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "not supported" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_order_with_invalid_price_match_value_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -465,7 +465,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "not one of" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_limit_order_with_non_string_price_match_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -501,7 +501,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "string value" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [
@@ -567,7 +567,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [
@@ -639,7 +639,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [
@@ -708,7 +708,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [
@@ -773,7 +773,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [
@@ -841,7 +841,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [
@@ -917,7 +917,7 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["signature"] is not None
         assert request[1]["payload"]["positionSide"] == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_stop_limit_order_with_invalid_trigger_type_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -954,7 +954,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "INVALID_TRIGGER_TYPE" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_stop_market_order_with_invalid_trigger_type_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -990,7 +990,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "INVALID_TRIGGER_TYPE" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_trailing_stop_with_invalid_trigger_type_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -1028,7 +1028,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "INVALID_TRIGGER_TYPE" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_trailing_stop_with_invalid_offset_type_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -1065,7 +1065,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "INVALID_TRAILING_OFFSET_TYPE" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_trailing_stop_with_offset_too_small_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -1102,7 +1102,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "INVALID_TRAILING_OFFSET" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_trailing_stop_with_offset_too_large_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -1139,7 +1139,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "INVALID_TRAILING_OFFSET" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_trailing_stop_with_trigger_price_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -1176,7 +1176,7 @@ class TestBinanceFuturesExecutionClient:
         reason = mock_generate_denied.call_args.kwargs["reason"]
         assert "INVALID_TRIGGER_PRICE" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_trailing_stop_without_activation_price_omits_param(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -1220,7 +1220,7 @@ class TestBinanceFuturesExecutionClient:
         # This allows Binance to use server-side current market price
         assert "activationPrice" not in payload
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_oco_order_list_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -1264,7 +1264,7 @@ class TestBinanceFuturesExecutionClient:
         for call in mock_generate_denied.call_args_list:
             assert "UNSUPPORTED_OCO_CONDITIONAL_ORDERS" in call.kwargs["reason"]
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_unsupported_order_type_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -1300,7 +1300,7 @@ class TestBinanceFuturesExecutionClient:
         assert "UNSUPPORTED_ORDER_TYPE" in reason
         assert "MARKET_TO_LIMIT" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_submit_unsupported_time_in_force_denied(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -1338,7 +1338,7 @@ class TestBinanceFuturesExecutionClient:
         assert "UNSUPPORTED_TIME_IN_FORCE" in reason
         assert "DAY" in reason
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_leverage_initialization_from_symbol_config(self, mocker):
         """
         Test that leverage is initialized from symbolConfig endpoint.
@@ -1417,4 +1417,4 @@ class TestBinanceFuturesExecutionClient:
         assert mock_account.set_leverage.call_count == 1
         call_args = mock_account.set_leverage.call_args
         assert call_args[0][0] == ETHUSDT_PERP_BINANCE.id
-        assert call_args[0][1] == Decimal("20")
+        assert call_args[0][1] == Decimal(20)

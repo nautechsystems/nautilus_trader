@@ -43,7 +43,7 @@ class TestKeltnerPosition:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        for _i in range(10):
+        for _ in range(10):
             self.kp.update_raw(1.00000, 1.00000, 1.00000)
 
         # Act, Assert
@@ -79,7 +79,7 @@ class TestKeltnerPosition:
 
     def test_value_with_zero_width_input_returns_zero(self):
         # Arrange
-        for _i in range(10):
+        for _ in range(10):
             self.kp.update_raw(1.00000, 1.00000, 1.00000)
 
         # Act, Assert
@@ -99,7 +99,7 @@ class TestKeltnerPosition:
         high = 1.00010
         low = 1.00000
 
-        for _i in range(10):
+        for _ in range(10):
             high += 0.00010
             low += 0.00010
             close = high
@@ -113,7 +113,7 @@ class TestKeltnerPosition:
         high = 1.00010
         low = 1.00000
 
-        for _i in range(10):
+        for _ in range(10):
             high -= 0.00010
             low -= 0.00010
             close = low

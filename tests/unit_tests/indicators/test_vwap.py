@@ -130,7 +130,7 @@ class TestVolumeWeightedAveragePrice:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(100):
+        for _ in range(100):
             self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
 
         # Act

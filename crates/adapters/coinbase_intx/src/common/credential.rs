@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(unused_assignments)] // Fields are used in sign_ws and accessed externally, false positive from nightly
+
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
@@ -79,6 +81,15 @@ impl Credential {
         let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
         let tag = hmac::sign(&key, message.as_bytes());
         BASE64_STANDARD.encode(tag.as_ref())
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    ///
+    /// Shows first 4 and last 4 characters with ellipsis in between.
+    /// For keys shorter than 8 characters, shows asterisks only.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        nautilus_core::string::mask_api_key(self.api_key.as_str())
     }
 
     /// Signs a WebSocket authentication message.

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,8 @@ from collections import defaultdict
 from collections.abc import Callable
 from decimal import Decimal
 from inspect import iscoroutinefunction
-from typing import Any, ClassVar
+from typing import Any
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -30,7 +31,6 @@ from ibapi.common import MarketDataTypeEnum
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import IBKRBookLevel
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscription
@@ -54,9 +54,6 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-
-
-# fmt: on
 
 
 class InteractiveBrokersClientMarketDataMixin(BaseMixin):

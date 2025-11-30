@@ -64,6 +64,8 @@ cdef class FuzzyCandle:
         self.lower_wick_size = lower_wick_size
 
     def __eq__(self, FuzzyCandle other) -> bool:
+        if other is None:
+            return False
         return self.direction == other.direction \
             and self.size == other.size \
             and self.body_size == other.body_size \

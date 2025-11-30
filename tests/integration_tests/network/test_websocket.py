@@ -32,7 +32,7 @@ def _server_url(server: TestServer) -> str:
     return f"ws://{server.host}:{server.port}/ws"
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_connect_and_disconnect(websocket_server):
     # Arrange
     store = []
@@ -45,7 +45,7 @@ async def test_connect_and_disconnect(websocket_server):
     await eventually(lambda: not client.is_active())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_send_recv(websocket_server):
     # Arrange
     store = []
@@ -65,7 +65,7 @@ async def test_client_send_recv(websocket_server):
     await eventually(lambda: not client.is_active())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_client_send_recv_json(websocket_server):
     # Arrange
     store = []
@@ -86,7 +86,7 @@ async def test_client_send_recv_json(websocket_server):
     await eventually(lambda: not client.is_active())
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconnect_after_close(websocket_server):
     # Arrange
     store = []
@@ -102,7 +102,7 @@ async def test_reconnect_after_close(websocket_server):
     await client.disconnect()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_exponential_backoff(websocket_server):
     # Arrange
     store = []
@@ -119,7 +119,7 @@ async def test_exponential_backoff(websocket_server):
     await client.disconnect()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_websocket_headers(websocket_server):
     # Arrange
     store = []

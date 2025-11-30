@@ -285,7 +285,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
                     2 => data.bids_2_price,
                     3 => data.bids_3_price,
                     4 => data.bids_4_price,
-                    _ => panic!("Invalid level for snapshot5 -> depth10 parsing"),
+                    _ => unreachable!("i is constrained to 0..=4 by loop"),
                 },
                 match i {
                     0 => data.bids_0_amount,
@@ -293,7 +293,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
                     2 => data.bids_2_amount,
                     3 => data.bids_3_amount,
                     4 => data.bids_4_amount,
-                    _ => panic!("Invalid level for snapshot5 -> depth10 parsing"),
+                    _ => unreachable!("i is constrained to 0..=4 by loop"),
                 },
                 current_price_precision,
                 current_size_precision,
@@ -358,10 +358,6 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened, read, or parsed as CSV.
-///
-/// # Panics
-///
-/// Panics if a record level cannot be parsed to depth-10.
 pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -451,7 +447,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
                     7 => data.bids_7_price,
                     8 => data.bids_8_price,
                     9 => data.bids_9_price,
-                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
+                    _ => unreachable!("i is constrained to 0..10 by loop"),
                 },
                 match i {
                     0 => data.bids_0_amount,
@@ -464,7 +460,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
                     7 => data.bids_7_amount,
                     8 => data.bids_8_amount,
                     9 => data.bids_9_amount,
-                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
+                    _ => unreachable!("i is constrained to 0..10 by loop"),
                 },
                 current_price_precision,
                 current_size_precision,
@@ -486,7 +482,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
                     7 => data.asks_7_price,
                     8 => data.asks_8_price,
                     9 => data.asks_9_price,
-                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
+                    _ => unreachable!("i is constrained to 0..10 by loop"),
                 },
                 match i {
                     0 => data.asks_0_amount,
@@ -499,7 +495,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
                     7 => data.asks_7_amount,
                     8 => data.asks_8_amount,
                     9 => data.asks_9_amount,
-                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
+                    _ => unreachable!("i is constrained to 0..10 by loop"),
                 },
                 current_price_precision,
                 current_size_precision,

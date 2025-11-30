@@ -95,22 +95,20 @@ cdef class TickScheme:
         raise NotImplementedError()  # pragma: no cover
 
 
-# Epsilon tolerance for tick boundary detection
-# This absolute tolerance works well for typical FX/crypto price ranges
-cdef double INCLUSIVE_EPS = 1e-10
-
-
 cpdef double round_down(double value, double base):
     """
     Returns a value rounded down to a specific number of decimal places.
 
     If value is already on the boundary, returns the same value (price-inclusive).
     """
+    if base <= 0:
+        raise ValueError(f"base must be positive, was {base}")
+
     cdef double base_multiple = value / base
     cdef double rounded_multiple = cround(base_multiple)
 
     # Check if we're already on a tick boundary (within floating point precision)
-    if abs(base_multiple - rounded_multiple) < INCLUSIVE_EPS:
+    if is_close(base_multiple, rounded_multiple):
         return value
     else:
         # Round down to previous boundary using floor
@@ -123,11 +121,14 @@ cpdef double round_up(double value, double base):
 
     If value is already on the boundary, returns the same value (price-inclusive).
     """
+    if base <= 0:
+        raise ValueError(f"base must be positive, was {base}")
+
     cdef double base_multiple = value / base
     cdef double rounded_multiple = cround(base_multiple)
 
     # Check if we're already on a tick boundary (within floating point precision)
-    if abs(base_multiple - rounded_multiple) < INCLUSIVE_EPS:
+    if is_close(base_multiple, rounded_multiple):
         return value
     else:
         # Round up to next boundary using ceil

@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc, vec::IntoIter};
+use std::{sync::Arc, vec::IntoIter};
 
+use ahash::{AHashMap, AHashSet};
 use compare::Compare;
 use datafusion::{
     error::Result, logical_expr::expr::Sort, physical_plan::SendableRecordBatchStream, prelude::*,
@@ -63,7 +64,7 @@ pub struct DataBackendSession {
     pub runtime: Arc<tokio::runtime::Runtime>,
     session_ctx: SessionContext,
     batch_streams: Vec<EagerStream<IntoIter<Data>>>,
-    registered_tables: std::collections::HashSet<String>,
+    registered_tables: AHashSet<String>,
 }
 
 impl DataBackendSession {
@@ -83,7 +84,7 @@ impl DataBackendSession {
             batch_streams: Vec::default(),
             chunk_size,
             runtime: Arc::new(runtime),
-            registered_tables: std::collections::HashSet::new(),
+            registered_tables: AHashSet::new(),
         }
     }
 
@@ -96,7 +97,7 @@ impl DataBackendSession {
     pub fn register_object_store_from_uri(
         &mut self,
         uri: &str,
-        storage_options: Option<std::collections::HashMap<String, String>>,
+        storage_options: Option<AHashMap<String, String>>,
     ) -> anyhow::Result<()> {
         // Create object store from URI using the Rust implementation
         let (object_store, _, _) =
@@ -125,10 +126,15 @@ impl DataBackendSession {
 
     pub fn write_data<T: EncodeToRecordBatch>(
         data: &[T],
-        metadata: &HashMap<String, String>,
+        metadata: &AHashMap<String, String>,
         stream: &mut dyn WriteStream,
     ) -> Result<(), DataStreamingError> {
-        let record_batch = T::encode_batch(metadata, data)?;
+        // Convert AHashMap to HashMap for Arrow compatibility
+        let metadata: std::collections::HashMap<String, String> = metadata
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let record_batch = T::encode_batch(&metadata, data)?;
         stream.write(&record_batch)?;
         Ok(())
     }

@@ -15,6 +15,7 @@
 
 //! Data transfer objects for deserializing Bybit HTTP API payloads.
 
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -31,12 +32,15 @@ use crate::common::{
         LinearLotSizeFilter, LinearPriceFilter, OptionLotSizeFilter, SpotLotSizeFilter,
         SpotPriceFilter,
     },
+    parse::{
+        deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero, deserialize_string_to_u8,
+    },
 };
 
-/// Response payload returned by `GET /v5/market/server-time`.
+/// Response payload returned by `GET /v5/market/time`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/server-time>
+/// - <https://bybit-exchange.github.io/docs/v5/market/time>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitServerTime {
@@ -49,7 +53,7 @@ pub struct BybitServerTime {
 /// Type alias for the server time response envelope.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/server-time>
+/// - <https://bybit-exchange.github.io/docs/v5/market/time>
 pub type BybitServerTimeResponse = BybitResponse<BybitServerTime>;
 
 /// Ticker payload for spot instruments.
@@ -342,7 +346,7 @@ pub type BybitTradesResponse = BybitResponse<BybitTradeResult>;
 /// Instrument definition for spot symbols.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitInstrumentSpot {
@@ -359,7 +363,7 @@ pub struct BybitInstrumentSpot {
 /// Instrument definition for linear contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitInstrumentLinear {
@@ -383,7 +387,7 @@ pub struct BybitInstrumentLinear {
 /// Instrument definition for inverse contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitInstrumentInverse {
@@ -407,7 +411,7 @@ pub struct BybitInstrumentInverse {
 /// Instrument definition for option contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitInstrumentOption {
@@ -427,22 +431,22 @@ pub struct BybitInstrumentOption {
 /// Response alias for instrument info requests that return spot instruments.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 pub type BybitInstrumentSpotResponse = BybitCursorListResponse<BybitInstrumentSpot>;
 /// Response alias for instrument info requests that return linear contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 pub type BybitInstrumentLinearResponse = BybitCursorListResponse<BybitInstrumentLinear>;
 /// Response alias for instrument info requests that return inverse contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 pub type BybitInstrumentInverseResponse = BybitCursorListResponse<BybitInstrumentInverse>;
 /// Response alias for instrument info requests that return option contracts.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instruments-info>
+/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
 pub type BybitInstrumentOptionResponse = BybitCursorListResponse<BybitInstrumentOption>;
 
 /// Fee rate structure returned by `GET /v5/account/fee-rate`.
@@ -517,17 +521,19 @@ pub struct BybitCoinBalance {
     pub total_position_mm: Option<String>,
     #[serde(default, rename = "totalPositionIM")]
     pub total_position_im: Option<String>,
-    pub wallet_balance: String,
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub wallet_balance: Decimal,
     pub unrealised_pnl: String,
     pub cum_realised_pnl: String,
-    pub locked: String,
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub locked: Decimal,
     pub collateral_switch: bool,
     pub margin_collateral: bool,
     pub coin: Ustr,
     #[serde(default)]
     pub spot_hedging_qty: Option<String>,
-    #[serde(default)]
-    pub spot_borrow: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_or_zero")]
+    pub spot_borrow: Decimal,
 }
 
 /// Wallet balance snapshot containing per-coin balances.
@@ -564,7 +570,6 @@ pub type BybitWalletBalanceResponse = BybitListResponse<BybitWalletBalance>;
 /// Order representation as returned by order-related endpoints.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/realtime>
 /// - <https://bybit-exchange.github.io/docs/v5/order/order-list>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -615,8 +620,8 @@ pub struct BybitOrder {
 /// Response alias for open order queries.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/realtime>
-pub type BybitOpenOrdersResponse = BybitListResponse<BybitOrder>;
+/// - <https://bybit-exchange.github.io/docs/v5/order/order-list>
+pub type BybitOpenOrdersResponse = BybitCursorListResponse<BybitOrder>;
 /// Response alias for order history queries with pagination.
 ///
 /// # References
@@ -660,7 +665,7 @@ pub type BybitCancelOrderResponse = BybitResponse<BybitCancelOrderResult>;
 /// Execution/Fill payload returned by `GET /v5/execution/list`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/execution-list>
+/// - <https://bybit-exchange.github.io/docs/v5/order/execution>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitExecution {
@@ -697,13 +702,13 @@ pub struct BybitExecution {
 /// Response alias for trade history requests.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/execution-list>
-pub type BybitTradeHistoryResponse = BybitListResponse<BybitExecution>;
+/// - <https://bybit-exchange.github.io/docs/v5/order/execution>
+pub type BybitTradeHistoryResponse = BybitCursorListResponse<BybitExecution>;
 
 /// Represents a position returned by the Bybit API.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/position/position-info>
+/// - <https://bybit-exchange.github.io/docs/v5/position>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitPosition {
@@ -746,8 +751,289 @@ pub struct BybitPosition {
 /// Response alias for position list requests.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/position/position-info>
+/// - <https://bybit-exchange.github.io/docs/v5/position>
 pub type BybitPositionListResponse = BybitCursorListResponse<BybitPosition>;
+
+/// Reason detail for set margin mode failures.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/account/set-margin-mode>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitSetMarginModeReason {
+    pub reason_code: String,
+    pub reason_msg: String,
+}
+
+/// Result payload for set margin mode operation.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/account/set-margin-mode>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitSetMarginModeResult {
+    #[serde(default)]
+    pub reasons: Vec<BybitSetMarginModeReason>,
+}
+
+/// Response alias for set margin mode requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/account/set-margin-mode>
+pub type BybitSetMarginModeResponse = BybitResponse<BybitSetMarginModeResult>;
+
+/// Empty result for set leverage operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BybitSetLeverageResult {}
+
+/// Response alias for set leverage requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/position/leverage>
+pub type BybitSetLeverageResponse = BybitResponse<BybitSetLeverageResult>;
+
+/// Empty result for switch mode operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BybitSwitchModeResult {}
+
+/// Response alias for switch mode requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/position/position-mode>
+pub type BybitSwitchModeResponse = BybitResponse<BybitSwitchModeResult>;
+
+/// Empty result for set trading stop operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BybitSetTradingStopResult {}
+
+/// Response alias for set trading stop requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/position/trading-stop>
+pub type BybitSetTradingStopResponse = BybitResponse<BybitSetTradingStopResult>;
+
+/// Result from manual borrow operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitBorrowResult {
+    pub coin: String,
+    pub amount: String,
+}
+
+/// Response alias for manual borrow requests.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/account/borrow>
+pub type BybitBorrowResponse = BybitResponse<BybitBorrowResult>;
+
+/// Result from no-convert repay operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitNoConvertRepayResult {
+    pub result_status: String,
+}
+
+/// Response alias for no-convert repay requests.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/account/no-convert-repay>
+pub type BybitNoConvertRepayResponse = BybitResponse<BybitNoConvertRepayResult>;
+
+/// API key permissions.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
+#[serde(rename_all = "PascalCase")]
+pub struct BybitApiKeyPermissions {
+    #[serde(default)]
+    pub contract_trade: Vec<String>,
+    #[serde(default)]
+    pub spot: Vec<String>,
+    #[serde(default)]
+    pub wallet: Vec<String>,
+    #[serde(default)]
+    pub options: Vec<String>,
+    #[serde(default)]
+    pub derivatives: Vec<String>,
+    #[serde(default)]
+    pub exchange: Vec<String>,
+    #[serde(default)]
+    pub copy_trading: Vec<String>,
+    #[serde(default)]
+    pub block_trade: Vec<String>,
+    #[serde(default)]
+    pub nft: Vec<String>,
+    #[serde(default)]
+    pub affiliate: Vec<String>,
+}
+
+/// Account details from API key info.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitAccountDetails {
+    pub id: String,
+    pub note: String,
+    pub api_key: String,
+    pub read_only: u8,
+    pub secret: String,
+    #[serde(rename = "type")]
+    pub key_type: u8,
+    pub permissions: BybitApiKeyPermissions,
+    pub ips: Vec<String>,
+    #[serde(default)]
+    pub user_id: Option<u64>,
+    #[serde(default)]
+    pub inviter_id: Option<u64>,
+    pub vip_level: String,
+    #[serde(deserialize_with = "deserialize_string_to_u8", default)]
+    pub mkt_maker_level: u8,
+    #[serde(default)]
+    pub affiliate_id: Option<u64>,
+    pub rsa_public_key: String,
+    pub is_master: bool,
+    pub parent_uid: String,
+    pub uta: u8,
+    pub kyc_level: String,
+    pub kyc_region: String,
+    #[serde(default)]
+    pub deadline_day: i64,
+    #[serde(default)]
+    pub expired_at: Option<String>,
+    pub created_at: String,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BybitAccountDetails {
+    #[getter]
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn note(&self) -> &str {
+        &self.note
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn api_key(&self) -> &str {
+        &self.api_key
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn read_only(&self) -> u8 {
+        self.read_only
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn key_type(&self) -> u8 {
+        self.key_type
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn user_id(&self) -> Option<u64> {
+        self.user_id
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn inviter_id(&self) -> Option<u64> {
+        self.inviter_id
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn vip_level(&self) -> &str {
+        &self.vip_level
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn mkt_maker_level(&self) -> u8 {
+        self.mkt_maker_level
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn affiliate_id(&self) -> Option<u64> {
+        self.affiliate_id
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn rsa_public_key(&self) -> &str {
+        &self.rsa_public_key
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn is_master(&self) -> bool {
+        self.is_master
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn parent_uid(&self) -> &str {
+        &self.parent_uid
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn uta(&self) -> u8 {
+        self.uta
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn kyc_level(&self) -> &str {
+        &self.kyc_level
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn kyc_region(&self) -> &str {
+        &self.kyc_region
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn deadline_day(&self) -> i64 {
+        self.deadline_day
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn expired_at(&self) -> Option<&str> {
+        self.expired_at.as_deref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn created_at(&self) -> &str {
+        &self.created_at
+    }
+}
+
+/// Response alias for API key info requests.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/user/apikey-info>
+pub type BybitAccountDetailsResponse = BybitResponse<BybitAccountDetails>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
@@ -758,6 +1044,8 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::identifiers::AccountId;
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::common::testing::load_test_json;
@@ -871,12 +1159,12 @@ mod tests {
         // Check USDT coin (without optional IM/MM fields)
         let usdt = &wallet.coin[1];
         assert_eq!(usdt.coin.as_str(), "USDT");
-        assert_eq!(usdt.wallet_balance, "1000.50");
+        assert_eq!(usdt.wallet_balance, dec!(1000.50));
         assert_eq!(usdt.total_order_im, None);
         assert_eq!(usdt.total_position_mm, None);
         assert_eq!(usdt.total_position_im, None);
-        assert_eq!(btc.spot_borrow, Some("0".to_string()));
-        assert_eq!(usdt.spot_borrow, Some("0".to_string()));
+        assert_eq!(btc.spot_borrow, Decimal::ZERO);
+        assert_eq!(usdt.spot_borrow, Decimal::ZERO);
     }
 
     #[rstest]
@@ -889,8 +1177,8 @@ mod tests {
         let usdt = &wallet.coin[0];
 
         assert_eq!(usdt.coin.as_str(), "USDT");
-        assert_eq!(usdt.wallet_balance, "1200.00");
-        assert_eq!(usdt.spot_borrow, Some("200.00".to_string()));
+        assert_eq!(usdt.wallet_balance, dec!(1200.00));
+        assert_eq!(usdt.spot_borrow, dec!(200.00));
         assert_eq!(usdt.borrow_amount, "200.00");
 
         // Verify calculation: actual_balance = walletBalance - spotBorrow = 1200 - 200 = 1000
@@ -903,5 +1191,76 @@ mod tests {
 
         let balance = &account_id.balances[0];
         assert_eq!(balance.total.as_f64(), 1000.0);
+    }
+
+    #[rstest]
+    fn test_parse_wallet_balance_spot_short() {
+        let json = include_str!("../../test_data/http_get_wallet_balance_spot_short.json");
+        let response: BybitWalletBalanceResponse = serde_json::from_str(json)
+            .expect("Failed to parse wallet balance with SHORT SPOT position");
+
+        let wallet = &response.result.list[0];
+        let eth = &wallet.coin[0];
+
+        assert_eq!(eth.coin.as_str(), "ETH");
+        assert_eq!(eth.wallet_balance, dec!(0));
+        assert_eq!(eth.spot_borrow, dec!(0.06142));
+        assert_eq!(eth.borrow_amount, "0.06142");
+
+        let account_state = crate::common::parse::parse_account_state(
+            wallet,
+            AccountId::new("BYBIT-001"),
+            UnixNanos::default(),
+        )
+        .expect("Failed to parse account state");
+
+        let eth_balance = account_state
+            .balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == "ETH")
+            .expect("ETH balance not found");
+
+        // Negative balance represents SHORT position (borrowed ETH)
+        assert_eq!(eth_balance.total.as_f64(), -0.06142);
+    }
+
+    #[rstest]
+    fn deserialize_borrow_response() {
+        let json = r#"{
+            "retCode": 0,
+            "retMsg": "success",
+            "result": {
+                "coin": "BTC",
+                "amount": "0.01"
+            },
+            "retExtInfo": {},
+            "time": 1756197991955
+        }"#;
+
+        let response: BybitBorrowResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.ret_code, 0);
+        assert_eq!(response.ret_msg, "success");
+        assert_eq!(response.result.coin, "BTC");
+        assert_eq!(response.result.amount, "0.01");
+    }
+
+    #[rstest]
+    fn deserialize_no_convert_repay_response() {
+        let json = r#"{
+            "retCode": 0,
+            "retMsg": "OK",
+            "result": {
+                "resultStatus": "SU"
+            },
+            "retExtInfo": {},
+            "time": 1234567890
+        }"#;
+
+        let response: BybitNoConvertRepayResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.ret_code, 0);
+        assert_eq!(response.ret_msg, "OK");
+        assert_eq!(response.result.result_status, "SU");
     }
 }

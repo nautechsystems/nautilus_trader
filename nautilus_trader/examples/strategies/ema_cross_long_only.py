@@ -233,9 +233,11 @@ class EMACrossLongOnly(Strategy):
             if self.portfolio.is_flat(self.config.instrument_id):
                 self.buy()
         # SELL LOGIC
-        elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_net_long(self.config.instrument_id):
-                self.close_all_positions(self.config.instrument_id)
+        elif (
+            self.fast_ema.value < self.slow_ema.value
+            and self.portfolio.is_net_long(self.config.instrument_id)
+        ):
+            self.close_all_positions(self.config.instrument_id)
 
     def buy(self) -> None:
         """

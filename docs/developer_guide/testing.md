@@ -27,7 +27,7 @@ From the repository root:
 make pytest
 # or
 uv run --active --no-sync pytest --new-first --failed-first
-# or simply
+# or
 pytest
 ```
 
@@ -45,6 +45,24 @@ uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc 
 make cargo-test
 # or
 cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+```
+
+#### Testing with optional features
+
+Use `EXTRA_FEATURES` to include optional features like `capnp` or `hypersync`:
+
+```bash
+# Test with capnp feature
+make cargo-test EXTRA_FEATURES="capnp"
+
+# Test with multiple features
+make cargo-test EXTRA_FEATURES="capnp hypersync"
+
+# Legacy shorthand for hypersync
+make cargo-test HYPERSYNC=true
+
+# Test specific crate with features
+make cargo-test-crate-nautilus-serialization FEATURES="capnp"
 ```
 
 ### IDE integration

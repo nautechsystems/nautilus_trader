@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
@@ -28,7 +28,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
 pub struct ReturnsAverageWin {}
 
 impl Display for ReturnsAverageWin {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Average Win (Return)")
     }
 }
@@ -45,14 +45,14 @@ impl PortfolioStatistic for ReturnsAverageWin {
             return Some(f64::NAN);
         }
 
-        let negative_returns: Vec<f64> = returns.values().copied().filter(|&x| x > 0.0).collect();
+        let positive_returns: Vec<f64> = returns.values().copied().filter(|&x| x > 0.0).collect();
 
-        if negative_returns.is_empty() {
+        if positive_returns.is_empty() {
             return Some(f64::NAN);
         }
 
-        let sum: f64 = negative_returns.iter().sum();
-        let count = negative_returns.len() as f64;
+        let sum: f64 = positive_returns.iter().sum();
+        let count = positive_returns.len() as f64;
 
         Some(sum / count)
     }

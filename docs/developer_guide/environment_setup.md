@@ -53,20 +53,20 @@ make pre-commit
 
 Make sure the Rust compiler reports **zero errors** – broken builds slow everyone down.
 
-3. **Optional**: For frequent Rust development, configure the `PYO3_PYTHON` variable in `.cargo/config.toml` with the path to the Python interpreter. This helps reduce recompilation times for IDE/rust-analyzer based `cargo check`:
+3. **Required for Rust tests**: When using Python installed via `uv`, set the `PYTHONHOME` environment variable for Rust tests to work correctly:
 
 ```bash
-PYTHON_PATH=$(which python)
-echo -e "\n[env]\nPYO3_PYTHON = \"$PYTHON_PATH\"" >> .cargo/config.toml
+# Get the Python home path
+PYTHON_HOME=$(python -c "import sys; print(sys.base_prefix)")
+
+# Add to your shell configuration (e.g., ~/.zshrc or ~/.bashrc)
+export PYTHONHOME="$PYTHON_HOME"
 ```
 
-Since `.cargo/config.toml` is tracked, configure git to skip any local modifications:
-
-```bash
-git update-index --skip-worktree .cargo/config.toml
-```
-
-To restore tracking: `git update-index --no-skip-worktree .cargo/config.toml`
+:::note
+The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`-installed Python.
+Without it, tests that depend on PyO3 may fail to locate the Python runtime.
+:::
 
 ## Builds
 

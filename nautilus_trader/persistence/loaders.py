@@ -66,7 +66,8 @@ class CSVTickDataLoader:
             parse_dates=parse_dates,
             **kwargs,
         )
-        df.index = pd.to_datetime(df.index, format=datetime_format)
+        if parse_dates:
+            df.index = pd.to_datetime(df.index, format=datetime_format)
         return df
 
 
@@ -107,7 +108,8 @@ class CSVBarDataLoader:
             parse_dates=parse_dates,
             **kwargs,
         )
-        df.index = pd.to_datetime(df.index, format="mixed")
+        if parse_dates:
+            df.index = pd.to_datetime(df.index, format="mixed")
         return df
 
 

@@ -19,7 +19,10 @@ from typing import Any
 from nautilus_trader.adapters.okx.config import OKXDataClientConfig
 from nautilus_trader.adapters.okx.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.providers import OKXInstrumentProvider
+from nautilus_trader.adapters.okx.types import OKX_INSTRUMENT_TYPES
+from nautilus_trader.adapters.okx.types import OkxInstrument
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.transformers import transform_instrument_from_pyo3
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
@@ -44,6 +47,8 @@ from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
@@ -128,6 +133,8 @@ class OKXDataClient(LiveMarketDataClient):
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.vip_level=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -239,7 +246,7 @@ class OKXDataClient(LiveMarketDataClient):
         # price and size precisions when parsing responses
         instruments_pyo3 = self.instrument_provider.instruments_pyo3()
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
+            self._http_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -253,10 +260,15 @@ class OKXDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
-        pass  # Automatically subscribes for instruments websocket channel
+        # The WebSocket client subscribes per instrument type, so this is handled automatically
+        # when the client connects based on the configured instrument types
+        pass
 
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
-        pass  # Automatically subscribes for instruments websocket channel
+        # OKX instruments channel doesn't support subscribing to individual instruments via instId
+        # Instead, subscribe to the instrument type if not already subscribed
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_instrument(pyo3_instrument_id)
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
@@ -393,6 +405,19 @@ class OKXDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
 
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
+        # OKX instruments channel is subscribed at the type level, not per instrument
+        # Unsubscribing would affect all instruments of that type, which is not desirable
+        pass
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        # OKX instruments channel doesn't support unsubscribing from individual instruments
+        # The subscription is at the type level (SPOT, SWAP, etc.)
+        self._log.debug(
+            f"Cannot unsubscribe from individual instrument {command.instrument_id}, "
+            "instruments channel is type-level only",
+        )
+
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
@@ -406,9 +431,13 @@ class OKXDataClient(LiveMarketDataClient):
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
-        instrument: Instrument | None = self._instrument_provider.find(request.instrument_id)
-        if instrument is None:
-            self._log.error(f"Cannot find instrument for {request.instrument_id}")
+        try:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+            pyo3_instrument = await self._http_client.request_instrument(pyo3_instrument_id)
+            self._handle_instrument_update(pyo3_instrument)  # type: ignore[arg-type]
+            instrument = transform_instrument_from_pyo3(pyo3_instrument)
+        except Exception as e:
+            self._log.error(f"Failed to request instrument {request.instrument_id}: {e}")
             return
 
         self._handle_instrument(
@@ -418,6 +447,24 @@ class OKXDataClient(LiveMarketDataClient):
             request.end,
             request.params,
         )
+
+    async def _fetch_instruments_for_type(
+        self,
+        inst_type: nautilus_pyo3.OKXInstrumentType,
+        family: str | None = None,
+    ) -> list[Instrument]:
+        try:
+            pyo3_instruments = await self._http_client.request_instruments(inst_type, family)
+            instruments = []
+            for pyo3_instrument in pyo3_instruments:
+                self._handle_instrument_update(pyo3_instrument)  # type: ignore[arg-type]
+                instrument = transform_instrument_from_pyo3(pyo3_instrument)
+                instruments.append(instrument)
+            return instruments
+        except Exception as e:
+            family_str = f" family {family}" if family else ""
+            self._log.error(f"Failed to fetch instruments for {inst_type}{family_str}: {e}")
+            return []
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         if request.start is not None:
@@ -430,11 +477,37 @@ class OKXDataClient(LiveMarketDataClient):
                 f"Requesting instruments for {request.venue} with specified `end` which has no effect",
             )
 
-        instruments = self._instrument_provider.get_all()
+        all_instruments: list[Instrument] = []
+
+        instrument_types = (
+            self._instrument_provider.instrument_types
+            if self._instrument_provider.instrument_types
+            else [nautilus_pyo3.OKXInstrumentType.SPOT]
+        )
+        instrument_families = list(self._instrument_provider.instrument_families or [])
+
+        for inst_type in instrument_types:
+            supports_family = inst_type in (
+                nautilus_pyo3.OKXInstrumentType.FUTURES,
+                nautilus_pyo3.OKXInstrumentType.SWAP,
+                nautilus_pyo3.OKXInstrumentType.OPTION,
+            )
+
+            if instrument_families and supports_family:
+                for family in instrument_families:
+                    instruments = await self._fetch_instruments_for_type(inst_type, family)
+                    all_instruments.extend(instruments)
+            elif inst_type == nautilus_pyo3.OKXInstrumentType.OPTION:
+                self._log.warning(
+                    "Skipping OPTION type: instrument_families required but not configured",
+                )
+            else:
+                instruments = await self._fetch_instruments_for_type(inst_type)
+                all_instruments.extend(instruments)
 
         self._handle_instruments(
             request.venue,
-            instruments,
+            all_instruments,
             request.id,
             request.start,
             request.end,
@@ -442,14 +515,14 @@ class OKXDataClient(LiveMarketDataClient):
         )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        self._log.error(
+        self._log.warning(
             "Cannot request historical quotes: not published by OKX. Subscribe to "
-            "quotes or L1_MBP order book.",
+            "quotes or L1_MBP order book",
         )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         if request.start is None or request.end is None:
-            self._log.error(
+            self._log.warning(
                 f"Cannot request historical trades for {request.instrument_id}: "
                 "both start and end times are required",
             )
@@ -504,6 +577,7 @@ class OKXDataClient(LiveMarketDataClient):
     def _handle_msg(self, msg: Any) -> None:
         if isinstance(msg, nautilus_pyo3.OKXWebSocketError):
             self._log.error(repr(msg))
+            return
 
         try:
             if nautilus_pyo3.is_pycapsule(msg):
@@ -512,9 +586,24 @@ class OKXDataClient(LiveMarketDataClient):
                 # to `Data` is still owned and managed by Rust.
                 data = capsule_to_data(msg)
                 self._handle_data(data)
+            elif isinstance(msg, OKX_INSTRUMENT_TYPES):
+                self._handle_instrument_update(msg)
             elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
                 self._handle_data(FundingRateUpdate.from_pyo3(msg))
             else:
                 self._log.error(f"Cannot handle message {msg}, not implemented")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
+
+    def _handle_instrument_update(self, pyo3_instrument: OkxInstrument) -> None:
+        self._http_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        if self._ws_client is not None:
+            self._ws_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        if self._ws_business_client is not None:
+            self._ws_business_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+        instrument = transform_instrument_from_pyo3(pyo3_instrument)
+
+        self._handle_data(instrument)

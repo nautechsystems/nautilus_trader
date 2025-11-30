@@ -18,6 +18,7 @@
 pub mod canceller;
 pub mod enums;
 pub mod http;
+pub mod submitter;
 pub mod urls;
 pub mod websocket;
 
@@ -37,6 +38,7 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::client::BitmexHttpClient>()?;
     m.add_class::<crate::websocket::BitmexWebSocketClient>()?;
     m.add_class::<crate::execution::canceller::CancelBroadcaster>()?;
+    m.add_class::<crate::execution::submitter::SubmitBroadcaster>()?;
     m.add_function(wrap_pyfunction!(urls::get_bitmex_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_bitmex_ws_url, m)?)?;
 

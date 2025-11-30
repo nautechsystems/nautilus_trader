@@ -56,6 +56,10 @@
 
 pub mod common;
 pub mod files;
+pub mod testers;
+
+// Re-export for convenience
+pub use testers::{DataTester, DataTesterConfig, ExecTester, ExecTesterConfig};
 
 #[cfg(feature = "python")]
 pub mod python;

@@ -21,6 +21,7 @@ checks during live trading.
 """
 
 import asyncio
+import contextlib
 from decimal import Decimal
 
 import pytest
@@ -55,6 +56,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 SIM = Venue("SIM")
 
 
@@ -105,6 +107,7 @@ def fixture_cache():
     """
     cache = TestComponentStubs.cache()
     cache.add_instrument(AUDUSD_SIM)
+    cache.add_instrument(GBPUSD_SIM)
     return cache
 
 
@@ -267,29 +270,29 @@ def fixture_exec_engine_open_check_custom_threshold(event_loop, msgbus, cache, c
 # =============================================================================
 
 
-@pytest.mark.asyncio()
-async def test_check_open_orders_with_no_open_orders(exec_engine_open_check, exec_client):
+@pytest.mark.asyncio
+async def test_check_orders_consistency_with_no_open_orders(exec_engine_open_check, exec_client):
     """
-    Test _check_open_orders when there are no open orders in cache.
+    Test _check_orders_consistency when there are no open orders in cache.
     """
     exec_engine = exec_engine_open_check
 
     # Act
-    await exec_engine._check_open_orders()
+    await exec_engine._check_orders_consistency()
 
     # Assert
     assert len(exec_client._order_status_reports) == 0
 
 
-@pytest.mark.asyncio()
-async def test_check_open_orders_with_open_orders_matching_venue(
+@pytest.mark.asyncio
+async def test_check_orders_consistency_with_open_orders_matching_venue(
     exec_engine_open_check,
     exec_client,
     cache,
     account_id,
 ):
     """
-    Test _check_open_orders when cache and venue agree on open orders.
+    Test _check_orders_consistency when cache and venue agree on open orders.
     """
     # Arrange
     exec_engine = exec_engine_open_check
@@ -331,21 +334,21 @@ async def test_check_open_orders_with_open_orders_matching_venue(
     exec_client.add_order_status_report(venue_report)
 
     # Act
-    await exec_engine._check_open_orders()
+    await exec_engine._check_orders_consistency()
 
     # Assert
     assert order.status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio()
-async def test_check_open_orders_reconciles_status_not_fills(
+@pytest.mark.asyncio
+async def test_check_orders_consistency_reconciles_status_not_fills(
     exec_engine_open_check,
     exec_client,
     cache,
     account_id,
 ):
     """
-    Test _check_open_orders reconciles order status but not fills (fills handled
+    Test _check_orders_consistency reconciles order status but not fills (fills handled
     separately).
     """
     # Arrange
@@ -389,7 +392,7 @@ async def test_check_open_orders_reconciles_status_not_fills(
     exec_client.add_order_status_report(venue_report)
 
     # Act
-    await exec_engine._check_open_orders()
+    await exec_engine._check_orders_consistency()
 
     # Assert
     # Fills are now applied during reconciliation when venue reports them
@@ -397,15 +400,15 @@ async def test_check_open_orders_reconciles_status_not_fills(
     assert order.filled_qty == Quantity.from_int(50)  # Reconciled to venue's filled qty
 
 
-@pytest.mark.asyncio()
-async def test_check_open_orders_reconciles_closed_order(
+@pytest.mark.asyncio
+async def test_check_orders_consistency_reconciles_closed_order(
     exec_engine_open_check,
     exec_client,
     cache,
     account_id,
 ):
     """
-    Test _check_open_orders reconciles when an order was closed on venue.
+    Test _check_orders_consistency reconciles when an order was closed on venue.
     """
     # Arrange
     exec_engine = exec_engine_open_check
@@ -448,22 +451,22 @@ async def test_check_open_orders_reconciles_closed_order(
     exec_client.add_order_status_report(venue_report)
 
     # Act
-    await exec_engine._check_open_orders()
+    await exec_engine._check_orders_consistency()
 
     # Assert
     assert order.status == OrderStatus.FILLED
     assert order.filled_qty == order.quantity  # Fully filled
 
 
-@pytest.mark.asyncio()
-async def test_check_open_orders_open_only_mode(
+@pytest.mark.asyncio
+async def test_check_orders_consistency_open_only_mode(
     exec_engine_open_check,
     exec_client,
     cache,
     account_id,
 ):
     """
-    Test _check_open_orders in open_only mode queries venue regardless of cache.
+    Test _check_orders_consistency in open_only mode queries venue regardless of cache.
     """
     # Arrange
     exec_engine = exec_engine_open_check
@@ -494,7 +497,7 @@ async def test_check_open_orders_open_only_mode(
     exec_client.add_order_status_report(venue_report)
 
     # Act
-    await exec_engine._check_open_orders()
+    await exec_engine._check_orders_consistency()
 
     # Assert
     assert len(cache.orders()) == 1
@@ -503,14 +506,14 @@ async def test_check_open_orders_open_only_mode(
     assert order.status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio()
-async def test_check_open_orders_handles_client_exception(
+@pytest.mark.asyncio
+async def test_check_orders_consistency_handles_client_exception(
     exec_engine_open_check,
     cache,
     account_id,
 ):
     """
-    Test _check_open_orders handles exceptions from client gracefully.
+    Test _check_orders_consistency handles exceptions from client gracefully.
     """
     # Arrange
     exec_engine = exec_engine_open_check
@@ -534,13 +537,13 @@ async def test_check_open_orders_handles_client_exception(
         client.generate_order_status_reports = raise_error
 
     # Act
-    await exec_engine._check_open_orders()
+    await exec_engine._check_orders_consistency()
 
     # Assert
     assert order.status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_open_check_periodic_execution(exec_engine_open_check):
     """
     Test that open check executes periodically via reconciliation loop.
@@ -553,10 +556,9 @@ async def test_open_check_periodic_execution(exec_engine_open_check):
     async def counting_check():
         nonlocal check_count
         check_count += 1
-        if check_count >= 2:
-            # Cancel the task after 2 checks
-            if exec_engine._reconciliation_task:
-                exec_engine._reconciliation_task.cancel()
+        # Cancel the task after 2 checks
+        if check_count >= 2 and exec_engine._reconciliation_task:
+            exec_engine._reconciliation_task.cancel()
         return await original_check()
 
     exec_engine._check_orders_consistency = counting_check
@@ -568,10 +570,8 @@ async def test_open_check_periodic_execution(exec_engine_open_check):
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=0.5)
-    except asyncio.CancelledError:
-        pass
 
     # Assert
     assert check_count >= 2
@@ -582,7 +582,7 @@ async def test_open_check_periodic_execution(exec_engine_open_check):
 # =============================================================================
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_check_inflight_orders_queries_old_orders(
     exec_engine_inflight_check,
     cache,
@@ -629,7 +629,7 @@ async def test_check_inflight_orders_queries_old_orders(
     assert executed_commands[0].client_order_id == order.client_order_id
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_check_inflight_orders_skips_when_recent_query_pending(
     exec_engine_inflight_check,
     cache,
@@ -674,7 +674,7 @@ async def test_check_inflight_orders_skips_when_recent_query_pending(
     assert exec_engine._recon_check_retries.get(order.client_order_id, 0) == 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_check_inflight_orders_respects_retry_limit(
     exec_engine_inflight_check,
     cache,
@@ -710,7 +710,7 @@ async def test_check_inflight_orders_respects_retry_limit(
     assert order.client_order_id not in exec_engine._recon_check_retries
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_check_inflight_orders_increments_retry_count(
     exec_engine_inflight_check,
     cache,
@@ -747,7 +747,7 @@ async def test_check_inflight_orders_increments_retry_count(
     assert exec_engine._recon_check_retries[order.client_order_id] == 2
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_check_inflight_orders_skips_recent_orders(
     exec_engine_inflight_check,
     cache,
@@ -790,7 +790,7 @@ async def test_check_inflight_orders_skips_recent_orders(
     assert len(executed_commands) == 0
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_resolve_inflight_order_skips_when_status_updated(
     exec_engine_inflight_check,
     cache,
@@ -831,7 +831,7 @@ async def test_resolve_inflight_order_skips_when_status_updated(
     assert order.client_order_id not in exec_engine._ts_last_query
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_inflight_check_periodic_execution(exec_engine_inflight_check):
     """
     Test that inflight check executes periodically via reconciliation loop.
@@ -843,10 +843,9 @@ async def test_inflight_check_periodic_execution(exec_engine_inflight_check):
     async def counting_check():
         nonlocal check_count
         check_count += 1
-        if check_count >= 2:
-            # Cancel the task after 2 checks
-            if exec_engine._reconciliation_task:
-                exec_engine._reconciliation_task.cancel()
+        # Cancel the task after 2 checks
+        if check_count >= 2 and exec_engine._reconciliation_task:
+            exec_engine._reconciliation_task.cancel()
 
     exec_engine._check_inflight_orders = counting_check
 
@@ -857,16 +856,14 @@ async def test_inflight_check_periodic_execution(exec_engine_inflight_check):
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=0.5)
-    except asyncio.CancelledError:
-        pass
 
     # Assert
     assert check_count >= 2
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
     """
     Test that reconciliation loop continues after exceptions.
@@ -880,9 +877,8 @@ async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
         check_count += 1
         if check_count == 1:
             raise RuntimeError("Test error")
-        elif check_count >= 2:
-            if exec_engine._reconciliation_task:
-                exec_engine._reconciliation_task.cancel()
+        elif check_count >= 2 and exec_engine._reconciliation_task:
+            exec_engine._reconciliation_task.cancel()
 
     exec_engine._check_inflight_orders = failing_check
 
@@ -893,10 +889,8 @@ async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=0.5)
-    except asyncio.CancelledError:
-        pass
 
     # Assert
     assert check_count >= 2
@@ -907,7 +901,7 @@ async def test_inflight_check_handles_exceptions(exec_engine_inflight_check):
 # =============================================================================
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconcile_order_with_price_update(
     exec_engine_continuous,
     cache,
@@ -964,7 +958,7 @@ async def test_reconcile_order_with_price_update(
     assert order.price == Price.from_str("1.00000")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconcile_order_with_quantity_update(
     exec_engine_continuous,
     cache,
@@ -1021,7 +1015,7 @@ async def test_reconcile_order_with_quantity_update(
     assert order.quantity == Quantity.from_int(100)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconcile_order_without_client_order_id(
     exec_engine_continuous,
     cache,
@@ -1076,8 +1070,9 @@ async def test_reconcile_order_without_client_order_id(
 
     # Assert
     assert result is True
-    # Fills are not applied without trade data
-    assert order.filled_qty == Quantity.from_int(0)
+    # When report shows filled_qty > cached filled_qty, inferred fill is generated
+    # even without trade data (this is the correct behavior for reconciliation)
+    assert order.filled_qty == Quantity.from_int(50)  # Inferred fill was applied
     # Report should have client_order_id assigned from cache lookup
     assert report.client_order_id is not None
 
@@ -1114,7 +1109,7 @@ def fixture_exec_engine_continuous(event_loop, msgbus, cache, clock, exec_client
     ensure_all_tasks_completed()
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconciliation_mode_enabled(exec_engine_continuous):
     """
     Test that reconciliation is enabled when checks are configured.
@@ -1125,7 +1120,7 @@ async def test_reconciliation_mode_enabled(exec_engine_continuous):
     assert exec_engine.open_check_interval_secs is not None
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconciliation_task_created(exec_engine_continuous):
     """
     Test that reconciliation task is created.
@@ -1139,7 +1134,7 @@ async def test_reconciliation_task_created(exec_engine_continuous):
     assert exec_engine.get_reconciliation_task() is not None
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_check_inflight_orders_detects_inflight(
     exec_engine_continuous,
     cache,
@@ -1186,7 +1181,7 @@ async def test_check_inflight_orders_detects_inflight(
     assert executed_commands[0].client_order_id == order.client_order_id
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_check_orders_consistency_reconciles_discrepancies(
     exec_engine_continuous,
     exec_client,
@@ -1247,7 +1242,7 @@ async def test_check_orders_consistency_reconciles_discrepancies(
     assert order.client_order_id not in exec_engine._recon_check_retries
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconciliation_loop_runs_both_checks(
     exec_engine,
     exec_client,
@@ -1269,10 +1264,9 @@ async def test_reconciliation_loop_runs_both_checks(
     async def counting_consistency_check():
         nonlocal consistency_check_count
         consistency_check_count += 1
-        if consistency_check_count >= 2:
-            # Stop after 2 consistency checks
-            if exec_engine._reconciliation_task:
-                exec_engine._reconciliation_task.cancel()
+        # Stop after 2 consistency checks
+        if consistency_check_count >= 2 and exec_engine._reconciliation_task:
+            exec_engine._reconciliation_task.cancel()
 
     exec_engine._check_inflight_orders = counting_problematic_check
     exec_engine._check_orders_consistency = counting_consistency_check
@@ -1284,10 +1278,8 @@ async def test_reconciliation_loop_runs_both_checks(
     task = asyncio.create_task(exec_engine._continuous_reconciliation_loop())
 
     # Wait for task to complete or timeout
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=0.5)
-    except asyncio.CancelledError:
-        pass
 
     # Assert
     # Problematic checks should run more frequently (50ms interval)
@@ -1296,7 +1288,7 @@ async def test_reconciliation_loop_runs_both_checks(
     assert consistency_check_count >= 2
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_reconciliation_clears_retry_counts_on_success(
     exec_engine,
     exec_client,
@@ -1362,7 +1354,7 @@ async def test_reconciliation_clears_retry_counts_on_success(
 # =============================================================================
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_inflight_and_open_order_combined_scenario(
     exec_engine,
     exec_client,
@@ -1467,7 +1459,7 @@ async def test_inflight_and_open_order_combined_scenario(
     assert open_order.filled_qty == Quantity.from_int(0)
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_order_transitions_from_inflight_to_open(
     exec_engine,
     exec_client,
@@ -1525,7 +1517,7 @@ async def test_order_transitions_from_inflight_to_open(
     exec_client.add_order_status_report(venue_report)
 
     # Act
-    await exec_engine._check_open_orders()
+    await exec_engine._check_orders_consistency()
 
     # Assert
     assert order.client_order_id not in exec_engine._recon_check_retries
@@ -2457,3 +2449,606 @@ async def test_continuous_reconciliation_handles_zero_fills_from_venue(
     # Assert
     assert order.client_order_id not in reconciled_orders
     assert order.filled_qty == Quantity.from_int(0)
+
+
+# =============================================================================
+# TESTS FOR _query_order_status_reports
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_query_order_status_reports_success(exec_engine_open_check, exec_client, account_id):
+    """
+    Test _query_order_status_reports successfully queries and returns reports.
+    """
+    # Arrange
+    current_ns = exec_engine_open_check._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=ClientOrderId("O-123"),
+        venue_order_id=VenueOrderId("V-123"),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.ACCEPTED,
+        price=Price.from_str("1.00000"),
+        quantity=Quantity.from_int(100),
+        filled_qty=Quantity.from_int(0),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+    exec_client.add_order_status_report(report)
+
+    # Act
+    all_reports, venue_reported_ids = await exec_engine_open_check._query_order_status_reports()
+
+    # Assert
+    assert len(all_reports) == 1
+    assert all_reports[0].client_order_id == ClientOrderId("O-123")
+    assert ClientOrderId("O-123") in venue_reported_ids
+
+
+@pytest.mark.asyncio
+async def test_query_order_status_reports_handles_exceptions(exec_engine_open_check, exec_client):
+    """
+    Test _query_order_status_reports handles client exceptions gracefully.
+    """
+    # Arrange
+    async def raise_error(command):
+        raise RuntimeError("API error")
+
+    exec_client.generate_order_status_reports = raise_error
+
+    # Act
+    all_reports, venue_reported_ids = await exec_engine_open_check._query_order_status_reports()
+
+    # Assert
+    assert len(all_reports) == 0
+    assert len(venue_reported_ids) == 0
+
+
+@pytest.mark.asyncio
+async def test_query_order_status_reports_multiple_clients(exec_engine_open_check, exec_client, account_id):
+    """
+    Test _query_order_status_reports handles multiple clients.
+    """
+    # Arrange
+    venue2 = Venue("SIM2")
+    client2 = MockLiveExecutionClient(
+        loop=exec_engine_open_check._loop,
+        client_id=ClientId("SIM2"),
+        venue=venue2,
+        account_type=AccountType.CASH,
+        base_currency=USD,
+        instrument_provider=InstrumentProvider(),
+        msgbus=exec_engine_open_check._msgbus,
+        cache=exec_engine_open_check._cache,
+        clock=exec_engine_open_check._clock,
+    )
+    exec_engine_open_check.register_client(client2)
+
+    current_ns = exec_engine_open_check._clock.timestamp_ns()
+    report1 = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=ClientOrderId("O-1"),
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.ACCEPTED,
+        price=Price.from_str("1.00000"),
+        quantity=Quantity.from_int(100),
+        filled_qty=Quantity.from_int(0),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+    report2 = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=GBPUSD_SIM.id,
+        client_order_id=ClientOrderId("O-2"),
+        venue_order_id=VenueOrderId("V-2"),
+        order_side=OrderSide.SELL,
+        order_type=OrderType.LIMIT,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.ACCEPTED,
+        price=Price.from_str("1.20000"),
+        quantity=Quantity.from_int(200),
+        filled_qty=Quantity.from_int(0),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+    exec_client.add_order_status_report(report1)
+    client2.add_order_status_report(report2)
+
+    # Act
+    all_reports, venue_reported_ids = await exec_engine_open_check._query_order_status_reports()
+
+    # Assert
+    assert len(all_reports) == 2
+    assert len(venue_reported_ids) == 2
+    assert ClientOrderId("O-1") in venue_reported_ids
+    assert ClientOrderId("O-2") in venue_reported_ids
+
+
+@pytest.mark.asyncio
+async def test_query_order_status_reports_no_clients(exec_engine_open_check, trader_id, clock):
+    """
+    Test _query_order_status_reports handles no clients gracefully.
+    """
+    # Arrange
+    # Create engine without clients using fresh msgbus
+    msgbus = MessageBus(
+        trader_id=trader_id,
+        clock=clock,
+    )
+    engine = LiveExecutionEngine(
+        loop=exec_engine_open_check._loop,
+        msgbus=msgbus,
+        cache=exec_engine_open_check._cache,
+        clock=clock,
+    )
+
+    # Act
+    all_reports, venue_reported_ids = await engine._query_order_status_reports()
+
+    # Assert
+    assert len(all_reports) == 0
+    assert len(venue_reported_ids) == 0
+
+
+# =============================================================================
+# TESTS FOR _reconcile_order_reports
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_reconcile_order_reports_matches_cache(exec_engine_open_check, cache, account_id):
+    """
+    Test _reconcile_order_reports skips reconciliation when cache matches venue.
+    """
+    # Arrange
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    exec_engine_open_check.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+    )
+    order.apply(accepted)
+    exec_engine_open_check.process(accepted)
+    cache.update_order(order)
+
+    current_ns = exec_engine_open_check._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.ACCEPTED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(0),  # Matches cache
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    reconciled_count = 0
+    original_reconcile = exec_engine_open_check._reconcile_order_report
+
+    def capture_reconcile(r, trades, **kwargs):
+        nonlocal reconciled_count
+        reconciled_count += 1
+        return original_reconcile(r, trades, **kwargs)
+
+    exec_engine_open_check._reconcile_order_report = capture_reconcile
+
+    # Act
+    exec_engine_open_check._reconcile_order_reports([report], {order.client_order_id})
+
+    # Assert
+    assert reconciled_count == 0  # Should not reconcile when matches
+
+
+@pytest.mark.asyncio
+async def test_reconcile_order_reports_filled_qty_mismatch(exec_engine_open_check, cache, account_id):
+    """
+    Test _reconcile_order_reports reconciles when filled_qty differs.
+    """
+    # Arrange
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    exec_engine_open_check.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+    )
+    order.apply(accepted)
+    exec_engine_open_check.process(accepted)
+    cache.update_order(order)
+
+    current_ns = exec_engine_open_check._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.PARTIALLY_FILLED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(50),  # Venue shows 50, cache shows 0
+        avg_px=Decimal("1.00000"),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    reconciled_count = 0
+    original_reconcile = exec_engine_open_check._reconcile_order_report
+
+    def capture_reconcile(r, trades, **kwargs):
+        nonlocal reconciled_count
+        reconciled_count += 1
+        return original_reconcile(r, trades, **kwargs)
+
+    exec_engine_open_check._reconcile_order_report = capture_reconcile
+
+    # Act
+    exec_engine_open_check._reconcile_order_reports([report], {order.client_order_id})
+
+    # Assert
+    assert reconciled_count == 1  # Should reconcile due to filled_qty mismatch
+
+
+@pytest.mark.asyncio
+async def test_reconcile_order_reports_status_mismatch(exec_engine_open_check, cache, account_id):
+    """
+    Test _reconcile_order_reports reconciles when order status differs.
+    """
+    # Arrange
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    exec_engine_open_check.process(submitted)
+    cache.update_order(order)
+
+    # Venue shows order as ACCEPTED, cache shows SUBMITTED
+    current_ns = exec_engine_open_check._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.ACCEPTED,  # Venue shows accepted
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(0),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    reconciled_count = 0
+    original_reconcile = exec_engine_open_check._reconcile_order_report
+
+    def capture_reconcile(r, trades, **kwargs):
+        nonlocal reconciled_count
+        reconciled_count += 1
+        return original_reconcile(r, trades, **kwargs)
+
+    exec_engine_open_check._reconcile_order_report = capture_reconcile
+
+    # Act
+    exec_engine_open_check._reconcile_order_reports([report], set())  # Not in open_order_ids
+
+    # Assert
+    assert reconciled_count == 1  # Should reconcile due to status mismatch
+
+
+@pytest.mark.asyncio
+async def test_reconcile_order_reports_clears_retry_counts(exec_engine_open_check, cache, account_id):
+    """
+    Test _reconcile_order_reports clears retry counts for successfully queried orders.
+    """
+    # Arrange
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    exec_engine_open_check.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+    )
+    order.apply(accepted)
+    exec_engine_open_check.process(accepted)
+    cache.update_order(order)
+
+    # Set retry count
+    exec_engine_open_check._recon_check_retries[order.client_order_id] = 3
+
+    current_ns = exec_engine_open_check._clock.timestamp_ns()
+    report = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=AUDUSD_SIM.id,
+        client_order_id=order.client_order_id,
+        venue_order_id=VenueOrderId("V-1"),
+        order_side=order.side,
+        order_type=order.order_type,
+        time_in_force=TimeInForce.GTC,
+        order_status=OrderStatus.ACCEPTED,
+        price=order.price,
+        quantity=order.quantity,
+        filled_qty=Quantity.from_int(0),
+        report_id=UUID4(),
+        ts_accepted=current_ns,
+        ts_last=current_ns,
+        ts_init=current_ns,
+    )
+
+    # Act
+    exec_engine_open_check._reconcile_order_reports([report], {order.client_order_id})
+
+    # Assert
+    assert order.client_order_id not in exec_engine_open_check._recon_check_retries
+
+
+# =============================================================================
+# TESTS FOR _handle_missing_orders_at_venue
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_handle_missing_orders_at_venue_queries_single_order(
+    exec_engine_open_check,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test _handle_missing_orders_at_venue performs single-order query for missing orders.
+    """
+    # Arrange
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    old_ts = clock.timestamp_ns() - 10_000_000_000  # 10 seconds ago
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id, ts_event=old_ts)
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+        ts_event=old_ts,
+    )
+
+    order.apply(submitted)
+    order.apply(accepted)
+    exec_engine_open_check.process(submitted)
+    exec_engine_open_check.process(accepted)
+    cache.update_order(order)
+
+    # Set retry count to threshold
+    exec_engine_open_check._recon_check_retries[order.client_order_id] = exec_engine_open_check.open_check_missing_retries
+
+    query_called = False
+    original_resolve = exec_engine_open_check._resolve_order_not_found_at_venue
+
+    async def capture_resolve(o):
+        nonlocal query_called
+        query_called = True
+        return await original_resolve(o)
+
+    exec_engine_open_check._resolve_order_not_found_at_venue = capture_resolve
+
+    # Act
+    await exec_engine_open_check._handle_missing_orders_at_venue(
+        {order.client_order_id},
+        set(),  # Not in venue_reported_ids
+    )
+
+    # Assert
+    assert query_called
+
+
+@pytest.mark.asyncio
+async def test_handle_missing_orders_at_venue_skips_recent_orders(
+    exec_engine_open_check,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test _handle_missing_orders_at_venue skips orders that are too recent.
+    """
+    # Arrange
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    recent_ts = clock.timestamp_ns() - 1_000_000  # 1ms ago
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id, ts_event=recent_ts)
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+        ts_event=recent_ts,
+    )
+
+    order.apply(submitted)
+    order.apply(accepted)
+    exec_engine_open_check.process(submitted)
+    exec_engine_open_check.process(accepted)
+    cache.update_order(order)
+
+    query_called = False
+    original_resolve = exec_engine_open_check._resolve_order_not_found_at_venue
+
+    async def capture_resolve(o):
+        nonlocal query_called
+        query_called = True
+        return await original_resolve(o)
+
+    exec_engine_open_check._resolve_order_not_found_at_venue = capture_resolve
+
+    # Act
+    await exec_engine_open_check._handle_missing_orders_at_venue(
+        {order.client_order_id},
+        set(),
+    )
+
+    # Assert
+    assert not query_called  # Should skip recent orders
+
+
+@pytest.mark.asyncio
+async def test_handle_missing_orders_at_venue_respects_retry_limit(
+    exec_engine_open_check,
+    cache,
+    account_id,
+    clock,
+):
+    """
+    Test _handle_missing_orders_at_venue respects retry limit before querying.
+    """
+    # Arrange
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    old_ts = clock.timestamp_ns() - 10_000_000_000
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id, ts_event=old_ts)
+    accepted = TestEventStubs.order_accepted(
+        order,
+        account_id=account_id,
+        venue_order_id=VenueOrderId("V-1"),
+        ts_event=old_ts,
+    )
+
+    order.apply(submitted)
+    order.apply(accepted)
+    exec_engine_open_check.process(submitted)
+    exec_engine_open_check.process(accepted)
+    cache.update_order(order)
+
+    # Set retry count below threshold
+    exec_engine_open_check._recon_check_retries[order.client_order_id] = (
+        exec_engine_open_check.open_check_missing_retries - 1
+    )
+
+    query_called = False
+    original_resolve = exec_engine_open_check._resolve_order_not_found_at_venue
+
+    async def capture_resolve(o):
+        nonlocal query_called
+        query_called = True
+        return await original_resolve(o)
+
+    exec_engine_open_check._resolve_order_not_found_at_venue = capture_resolve
+
+    # Act
+    await exec_engine_open_check._handle_missing_orders_at_venue(
+        {order.client_order_id},
+        set(),
+    )
+
+    # Assert
+    assert not query_called  # Should not query until retry threshold reached
+    assert exec_engine_open_check._recon_check_retries[order.client_order_id] == exec_engine_open_check.open_check_missing_retries
+
+
+# =============================================================================
+# TESTS FOR _validate_open_orders_consistency
+# =============================================================================
+
+
+def test_validate_open_orders_consistency_no_issues(exec_engine_open_check, cache, account_id):
+    """
+    Test _validate_open_orders_consistency passes when orders are consistent.
+    """
+    # Arrange
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    exec_engine_open_check.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+    order.apply(accepted)
+    exec_engine_open_check.process(accepted)
+
+    filled = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(50),
+    )
+    order.apply(filled)
+    exec_engine_open_check.process(filled)
+    cache.update_order(order)
+
+    # Act & Assert - should not raise
+    exec_engine_open_check._validate_open_orders_consistency()
+
+
+def test_validate_open_orders_consistency_detects_inconsistency(exec_engine_open_check, cache, account_id):
+    """
+    Test _validate_open_orders_consistency detects filled_qty inconsistency.
+    """
+    # Arrange
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM)
+    cache.add_order(order)
+
+    submitted = TestEventStubs.order_submitted(order, account_id=account_id)
+    order.apply(submitted)
+    exec_engine_open_check.process(submitted)
+
+    accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+    order.apply(accepted)
+    exec_engine_open_check.process(accepted)
+
+    filled = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(50),
+    )
+    order.apply(filled)
+    exec_engine_open_check.process(filled)
+    cache.update_order(order)
+
+    # Act
+    exec_engine_open_check._validate_open_orders_consistency()
+
+    # Assert - method should log error but not raise

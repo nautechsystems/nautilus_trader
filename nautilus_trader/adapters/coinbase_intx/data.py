@@ -112,7 +112,8 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        masked_key = self._http_client.api_key_masked
+        self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # WebSocket API
         self._ws_client = nautilus_pyo3.CoinbaseIntxWebSocketClient(
@@ -141,7 +142,8 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to {self._ws_client.url}", LogColor.BLUE)
-        self._log.info(f"WebSocket API key {self._ws_client.api_key}", LogColor.BLUE)
+        masked_key = self._ws_client.api_key_masked
+        self._log.info(f"WebSocket API key {masked_key}", LogColor.BLUE)
         self._log.info("Coinbase Intx API key authenticated", LogColor.GREEN)
 
         await self._ws_client.subscribe_instruments()

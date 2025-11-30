@@ -281,7 +281,8 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config, enc_hook=msgspec_encoding_hook)
         obj = msgspec.json.decode(json, type=BacktestRunConfig, dec_hook=msgspec_decoding_hook)
-        assert len(msgspec.json.encode(json)) > 0 and obj
+        assert len(msgspec.json.encode(json)) > 0
+        assert obj
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
@@ -471,7 +472,7 @@ class TestParseFiltersExpr:
         """
         Malicious code must be refused.
         """
-        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+        with pytest.raises(ValueError, match=r"is not allowed|not permitted"):
             parse_filters_expr(expr)
 
     @pytest.mark.parametrize(
@@ -498,7 +499,7 @@ class TestParseFiltersExpr:
         """
         Non-field function calls must be refused.
         """
-        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+        with pytest.raises(ValueError, match=r"is not allowed|not permitted"):
             parse_filters_expr(expr)
 
     @pytest.mark.parametrize(
@@ -515,7 +516,7 @@ class TestParseFiltersExpr:
         """
         Attribute access on field objects is forbidden.
         """
-        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+        with pytest.raises(ValueError, match=r"is not allowed|not permitted"):
             parse_filters_expr(expr)
 
     @pytest.mark.parametrize(
@@ -532,11 +533,11 @@ class TestParseFiltersExpr:
         """
         Import attempts must be refused.
         """
-        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+        with pytest.raises(ValueError, match=r"is not allowed|not permitted"):
             parse_filters_expr(expr)
 
     @pytest.mark.parametrize(
-        "expr, is_valid",
+        ("expr", "is_valid"),
         [
             ('  field("Currency") == "CHF"  ', True),
             ('  print("hello")  ', False),

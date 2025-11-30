@@ -19,7 +19,6 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -34,7 +33,11 @@ def class_to_filename(cls: type) -> str:
     """
     Convert the given class to a filename.
     """
-    filename_mappings = {"OrderBookDeltas": "OrderBookDelta"}
+    filename_mappings = {
+        "OrderBookDelta": "OrderBookDeltas",
+        "OrderBookDeltas": "OrderBookDeltas",
+        "OrderBookDepth10": "OrderBookDepths",
+    }
     name = f"{convert_to_snake_case(filename_mappings.get(cls.__name__, cls.__name__))}"
 
     if not is_nautilus_class(cls):
@@ -51,16 +54,15 @@ def filename_to_class(filename: str) -> type | None:
         "quote_tick": QuoteTick,
         "trade_tick": TradeTick,
         "bar": Bar,
-        "order_book_delta": OrderBookDelta,
-        "order_book_deltas": OrderBookDeltas,
-        "order_book_depth10": OrderBookDepth10,
+        "order_book_deltas": OrderBookDelta,
+        "order_book_depths": OrderBookDepth10,
         "mark_price_update": MarkPriceUpdate,
     }
 
     if filename in builtin_filename_to_class:
         return builtin_filename_to_class[filename]
 
-    for data_cls in _ARROW_ENCODERS.keys():
+    for data_cls in _ARROW_ENCODERS:
         if class_to_filename(data_cls) == filename:
             return data_cls
 

@@ -47,7 +47,7 @@ class TestAdaptiveMovingAverage:
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
         # Arrange, Act
-        for _i in range(10):
+        for _ in range(10):
             self.ama.update_raw(1.0)
 
         # Assert
@@ -110,7 +110,7 @@ class TestAdaptiveMovingAverage:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(1000):
+        for _ in range(1000):
             self.ama.update_raw(1.0)
 
         # Act

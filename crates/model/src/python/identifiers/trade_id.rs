@@ -37,9 +37,9 @@ impl TradeId {
     }
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
-        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
-        let value_str = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let value_str = binding.cast::<PyString>()?.extract::<&str>()?;
 
         // TODO: Extract this to single function
         let c_string = CString::new(value_str).expect("`CString` conversion failed");

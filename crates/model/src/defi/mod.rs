@@ -37,6 +37,10 @@ pub mod tick_map;
 pub mod token;
 pub mod types;
 pub mod validation;
+pub mod wallet;
+
+#[cfg(test)]
+pub mod stubs;
 
 // Re-exports
 pub use amm::{Pool, SharedPool};

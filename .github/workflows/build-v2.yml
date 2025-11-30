@@ -37,10 +37,13 @@ jobs:
         with:
           python-version: "3.13"
           free-disk-space: "true"
+          build-type: "pre-commit"
 
       - name: Run pre-commit
         run: pre-commit run --all-files
 
+  # Dependency license, advisory, and ban checks
+  # https://embarkstudios.github.io/cargo-deny/
   cargo-deny:
     runs-on: ubuntu-22.04
     steps:
@@ -56,20 +59,62 @@ jobs:
           persist-credentials: false
 
       # https://github.com/EmbarkStudios/cargo-deny-action
-      # NOTE: License checking is disabled due to implied-vol crate not declaring
-      # its license in Cargo.toml (has MIT LICENSE file but shows as "unlicensed").
-      # License compliance is verified manually until this is resolved upstream.
-      # See deny.toml for documented exception and tracking.
-      - name: Run cargo-deny (advisories, sources, bans)
+      - name: Run cargo-deny (advisories, licenses, sources, bans)
         uses: EmbarkStudios/cargo-deny-action@f9cc7aa250dec5698b425dc01fbf0d745fcd1b78 # v2.0.13
         with:
+          command: check advisories licenses sources bans
           arguments: --all-features
-          command: check advisories sources bans
+
+  # Supply chain security auditing
+  # https://mozilla.github.io/cargo-vet/configuring-ci.html
+  cargo-vet:
+    runs-on: ubuntu-22.04
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Get cargo-vet version
+        run: echo "CARGO_VET_VERSION=$(bash scripts/cargo-tool-version.sh cargo-vet)" >> "$GITHUB_ENV"
+
+      - name: Get Rust toolchain version
+        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          override: true
+
+      # https://github.com/actions/cache
+      - name: Cache cargo-vet binary
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ${{ runner.tool_cache }}/cargo-vet
+          key: cargo-vet-bin-${{ env.CARGO_VET_VERSION }}
+
+      - name: Add cargo-vet to PATH
+        run: echo "${{ runner.tool_cache }}/cargo-vet/bin" >> "$GITHUB_PATH"
+
+      - name: Install cargo-vet
+        run: cargo install --root ${{ runner.tool_cache }}/cargo-vet --version ${{ env.CARGO_VET_VERSION }} cargo-vet
+
+      - name: Run cargo-vet
+        run: cargo vet --locked
 
   build:
     needs:
-      - pre-commit
       - cargo-deny
+      - cargo-vet
+      - pre-commit
     strategy:
       fail-fast: false
       matrix:
@@ -77,6 +122,7 @@ jobs:
         python-version:
           - "3.12"
           - "3.13"
+          - "3.14"
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -142,7 +188,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test-hypersync
+        run: make cargo-test HYPERSYNC=true
 
       # Update version for dev/nightly branches
       - name: Update version in pyproject.toml
@@ -197,7 +243,7 @@ jobs:
           persist-credentials: false
 
       - name: Download built wheels
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           path: dist
           pattern: "*.whl"

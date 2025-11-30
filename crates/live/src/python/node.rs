@@ -21,8 +21,8 @@ use nautilus_common::{
     actor::data_actor::{DataActorConfig, ImportableActorConfig},
     component::{Component, register_component_actor_by_ref},
     enums::Environment,
+    live::runtime::get_runtime,
     python::actor::PyDataActor,
-    runtime::get_runtime,
 };
 use nautilus_core::{UUID4, python::to_pyruntime_err};
 use nautilus_model::identifiers::{ActorId, TraderId};
@@ -310,7 +310,10 @@ impl LiveNode {
             log::debug!("Created Python actor instance: {python_actor:?}");
 
             // Get a mutable reference to the internal PyDataActor for registration
-            let mut py_data_actor_ref = python_actor.extract::<PyRefMut<PyDataActor>>()?;
+            let mut py_data_actor_ref = python_actor
+                .extract::<PyRefMut<PyDataActor>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
 
             log::debug!(
                 "Internal PyDataActor mem_addr: {}, registered: {}",
@@ -386,7 +389,7 @@ impl LiveNode {
             |py| -> anyhow::Result<nautilus_model::identifiers::ActorId> {
                 let py_actor = python_actor.bind(py);
                 let py_data_actor_ref = py_actor
-                    .downcast::<PyDataActor>()
+                    .cast::<PyDataActor>()
                     .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
                 let py_data_actor = py_data_actor_ref.borrow();
 

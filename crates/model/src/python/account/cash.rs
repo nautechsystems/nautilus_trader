@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
@@ -120,8 +118,8 @@ impl CashAccount {
     }
 
     #[pyo3(name = "balances_total")]
-    fn py_balances_total(&self) -> HashMap<Currency, Money> {
-        self.balances_total()
+    fn py_balances_total(&self) -> std::collections::HashMap<Currency, Money> {
+        self.balances_total().into_iter().collect()
     }
 
     #[pyo3(name = "balance_free")]
@@ -131,8 +129,8 @@ impl CashAccount {
     }
 
     #[pyo3(name = "balances_free")]
-    fn py_balances_free(&self) -> HashMap<Currency, Money> {
-        self.balances_free()
+    fn py_balances_free(&self) -> std::collections::HashMap<Currency, Money> {
+        self.balances_free().into_iter().collect()
     }
 
     #[pyo3(name = "balance_locked")]
@@ -141,8 +139,8 @@ impl CashAccount {
         self.balance_locked(currency)
     }
     #[pyo3(name = "balances_locked")]
-    fn py_balances_locked(&self) -> HashMap<Currency, Money> {
-        self.balances_locked()
+    fn py_balances_locked(&self) -> std::collections::HashMap<Currency, Money> {
+        self.balances_locked().into_iter().collect()
     }
 
     #[pyo3(name = "apply")]

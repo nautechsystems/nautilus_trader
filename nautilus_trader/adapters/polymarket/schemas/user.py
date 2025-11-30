@@ -171,12 +171,30 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
     def to_dict(self) -> dict[str, Any]:
         return msgspec.json.decode(msgspec.json.encode(self))
 
-    def get_maker_order(self, maker_address: str) -> PolymarketMakerOrder:
+    def get_filled_user_order_ids(self, maker_address: str, api_key: str) -> list[str]:
+        if self.trader_side == PolymarketLiquiditySide.TAKER:
+            user_order_ids = [self.taker_order_id]
+        else:
+            user_order_ids = [
+                order.order_id
+                for order in self.maker_orders
+                if order.maker_address == maker_address or order.owner == api_key
+            ]
+        return user_order_ids
+
+    def get_maker_order(self, filled_user_order_id: str) -> PolymarketMakerOrder:
         for order in self.maker_orders:
-            if order.maker_address == maker_address:
+            if order.order_id == filled_user_order_id:
                 return order
 
-        raise ValueError("Invalid trade with no maker order owned my `maker_address`")
+        raise ValueError(f"Invalid maker order ID {filled_user_order_id}")
+
+    def get_asset_id(self, filled_user_order_id: str) -> str:
+        if self.trader_side == PolymarketLiquiditySide.TAKER:
+            return self.asset_id
+        else:
+            order = self.get_maker_order(filled_user_order_id)
+            return order.asset_id
 
     def liquidity_side(self) -> LiquiditySide:
         if self.trader_side == PolymarketLiquiditySide.MAKER:
@@ -191,32 +209,32 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         else:  # MAKER
             return OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
 
-    def venue_order_id(self, maker_address: str) -> VenueOrderId:
+    def venue_order_id(self, filled_user_order_id: str) -> VenueOrderId:
         if self.trader_side == PolymarketLiquiditySide.TAKER:
             return VenueOrderId(self.taker_order_id)
         else:
-            order = self.get_maker_order(maker_address)
+            order = self.get_maker_order(filled_user_order_id)
             return VenueOrderId(order.order_id)
 
-    def last_px(self, maker_address: str) -> Decimal:
+    def last_px(self, filled_user_order_id: str) -> Decimal:
         if self.liquidity_side() == LiquiditySide.TAKER:
             return Decimal(self.price)
         else:
-            order = self.get_maker_order(maker_address)
+            order = self.get_maker_order(filled_user_order_id)
             return Decimal(order.price)
 
-    def last_qty(self, maker_address: str) -> Decimal:
+    def last_qty(self, filled_user_order_id: str) -> Decimal:
         if self.liquidity_side() == LiquiditySide.TAKER:
             return Decimal(self.size)
         else:
-            order = self.get_maker_order(maker_address)
+            order = self.get_maker_order(filled_user_order_id)
             return Decimal(order.matched_amount)
 
-    def get_fee_rate_bps(self, maker_address: str) -> Decimal:
+    def get_fee_rate_bps(self, filled_user_order_id: str) -> Decimal:
         if self.liquidity_side() == LiquiditySide.TAKER:
             return Decimal(self.fee_rate_bps)
         else:
-            order = self.get_maker_order(maker_address)
+            order = self.get_maker_order(filled_user_order_id)
             return Decimal(order.fee_rate_bps)
 
     def parse_to_fill_report(
@@ -224,19 +242,19 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         account_id: AccountId,
         instrument: BinaryOption,
         client_order_id: ClientOrderId | None,
-        maker_address: str,
         ts_init: int,
+        filled_user_order_id: str,
     ) -> FillReport:
-        last_qty = instrument.make_qty(self.last_qty(maker_address))
-        last_px = instrument.make_price(self.last_px(maker_address))
-        fee_rate_bps = self.get_fee_rate_bps(maker_address)
+        last_qty = instrument.make_qty(self.last_qty(filled_user_order_id))
+        last_px = instrument.make_price(self.last_px(filled_user_order_id))
+        fee_rate_bps = self.get_fee_rate_bps(filled_user_order_id)
         commission = float(last_qty * last_px) * basis_points_as_percentage(fee_rate_bps)
 
         return FillReport(
             account_id=account_id,
             instrument_id=instrument.id,
             client_order_id=client_order_id,
-            venue_order_id=self.venue_order_id(maker_address),
+            venue_order_id=self.venue_order_id(filled_user_order_id),
             trade_id=TradeId(self.id),
             order_side=self.order_side(),
             last_qty=last_qty,

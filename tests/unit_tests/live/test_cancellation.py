@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import contextlib
 from weakref import WeakSet
 
 import pytest
@@ -60,7 +61,7 @@ async def test_cancel_pending_tasks_successfully():
         await asyncio.sleep(10)
 
     created_tasks = []
-    for i in range(3):
+    for _ in range(3):
         task = asyncio.create_task(long_running_task())
         tasks.add(task)
         created_tasks.append(task)
@@ -81,10 +82,8 @@ async def test_cancel_with_timeout_exceeded():
 
     async def stubborn_task():
         while True:
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.sleep(0.1)
-            except asyncio.CancelledError:
-                pass
 
     task = asyncio.create_task(stubborn_task())
     tasks.add(task)
@@ -94,10 +93,8 @@ async def test_cancel_with_timeout_exceeded():
 
     # Assert - should timeout waiting for cancellation
     task.cancel()
-    try:
+    with contextlib.suppress(TimeoutError, asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=0.1)
-    except (TimeoutError, asyncio.CancelledError):
-        pass
 
 
 @pytest.mark.asyncio
@@ -187,7 +184,8 @@ async def test_cancel_with_exception_in_task():
     await cancel_tasks_with_timeout(tasks, logger, timeout_secs=1.0)
 
     # Assert
-    assert task1.done() and not task1.cancelled()
+    assert task1.done()
+    assert not task1.cancelled()
     assert task2.cancelled()
 
 

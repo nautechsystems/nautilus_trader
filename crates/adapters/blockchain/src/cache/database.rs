@@ -30,6 +30,7 @@ use nautilus_model::{
     },
     identifiers::InstrumentId,
 };
+use rust_decimal::Decimal;
 use sqlx::{PgPool, Row, postgres::PgConnectOptions};
 
 use crate::{
@@ -581,6 +582,7 @@ impl BlockchainCacheDatabase {
 
         // Prepare vectors for each column
         let len = swaps.len();
+        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
         let mut pool_addresses: Vec<String> = Vec::with_capacity(len);
         let mut blocks: Vec<i64> = Vec::with_capacity(len);
         let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
@@ -588,15 +590,16 @@ impl BlockchainCacheDatabase {
         let mut log_indices: Vec<i32> = Vec::with_capacity(len);
         let mut senders: Vec<String> = Vec::with_capacity(len);
         let mut recipients: Vec<String> = Vec::with_capacity(len);
-        let mut sides: Vec<Option<String>> = Vec::with_capacity(len);
-        let mut sizes: Vec<Option<String>> = Vec::with_capacity(len);
-        let mut prices: Vec<Option<String>> = Vec::with_capacity(len);
         let mut sqrt_price_x96s: Vec<String> = Vec::with_capacity(len);
         let mut liquidities: Vec<String> = Vec::with_capacity(len);
         let mut ticks: Vec<i32> = Vec::with_capacity(len);
         let mut amount0s: Vec<String> = Vec::with_capacity(len);
         let mut amount1s: Vec<String> = Vec::with_capacity(len);
-        let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
+        let mut order_sides: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut base_quantities: Vec<Option<Decimal>> = Vec::with_capacity(len);
+        let mut quote_quantities: Vec<Option<Decimal>> = Vec::with_capacity(len);
+        let mut spot_prices: Vec<Option<Decimal>> = Vec::with_capacity(len);
+        let mut execution_prices: Vec<Option<Decimal>> = Vec::with_capacity(len);
 
         // Fill vectors from swaps
         for swap in swaps {
@@ -608,14 +611,26 @@ impl BlockchainCacheDatabase {
             log_indices.push(swap.log_index as i32);
             senders.push(swap.sender.to_string());
             recipients.push(swap.recipient.to_string());
-            sides.push(swap.side.map(|side| side.to_string()));
-            sizes.push(swap.size.map(|size| size.to_string()));
-            prices.push(swap.price.map(|price| price.to_string()));
             sqrt_price_x96s.push(swap.sqrt_price_x96.to_string());
             liquidities.push(swap.liquidity.to_string());
             ticks.push(swap.tick);
             amount0s.push(swap.amount0.to_string());
             amount1s.push(swap.amount1.to_string());
+
+            // Extract trade_info fields if available
+            if let Some(ref trade_info) = swap.trade_info {
+                order_sides.push(Some(trade_info.order_side.to_string()));
+                base_quantities.push(Some(trade_info.quantity_base.as_decimal()));
+                quote_quantities.push(Some(trade_info.quantity_quote.as_decimal()));
+                spot_prices.push(Some(trade_info.spot_price.as_decimal()));
+                execution_prices.push(Some(trade_info.execution_price.as_decimal()));
+            } else {
+                order_sides.push(None);
+                base_quantities.push(None);
+                quote_quantities.push(None);
+                spot_prices.push(None);
+                execution_prices.push(None);
+            }
         }
 
         // Execute batch insert with UNNEST
@@ -623,17 +638,20 @@ impl BlockchainCacheDatabase {
             r"
             INSERT INTO pool_swap_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, recipient, side, size, price, sqrt_price_x96, liquidity, tick, amount0, amount1
+                log_index, sender, recipient, sqrt_price_x96, liquidity, tick, amount0, amount1,
+                order_side, base_quantity, quote_quantity, spot_price, execution_price
             )
             SELECT
                 chain_id, pool_address, block, transaction_hash, transaction_index, log_index, sender, recipient,
-                side, size, price, sqrt_price_x96::U160, liquidity::U128, tick, amount0::I256, amount1::I256
+                sqrt_price_x96::U160, liquidity::U128, tick, amount0::I256, amount1::I256,
+                order_side, base_quantity, quote_quantity, spot_price, execution_price
             FROM UNNEST(
-                $1::INT[], $2::TEXT[], $3::INT[], $4::TEXT[], $5::INT[], $6::INT[],
-                $7::TEXT[], $8::TEXT[], $9::TEXT[], $10::TEXT[], $11::TEXT[],
-                $12::TEXT[], $13::TEXT[], $14::INT[], $15::TEXT[], $16::TEXT[]
+                $1::INT[], $2::TEXT[], $3::BIGINT[], $4::TEXT[], $5::INT[], $6::INT[],
+                $7::TEXT[], $8::TEXT[], $9::TEXT[], $10::TEXT[], $11::INT[], $12::TEXT[], $13::TEXT[],
+                $14::TEXT[], $15, $16, $17, $18
             ) AS t(chain_id, pool_address, block, transaction_hash, transaction_index,
-                   log_index, sender, recipient, side, size, price, sqrt_price_x96, liquidity, tick, amount0, amount1)
+                   log_index, sender, recipient, sqrt_price_x96, liquidity, tick, amount0, amount1,
+                   order_side, base_quantity, quote_quantity, spot_price, execution_price)
             ON CONFLICT (chain_id, transaction_hash, log_index) DO NOTHING
            ",
         )
@@ -645,14 +663,16 @@ impl BlockchainCacheDatabase {
         .bind(&log_indices[..])
         .bind(&senders[..])
         .bind(&recipients[..])
-        .bind(&sides[..])
-        .bind(&sizes[..])
-        .bind(&prices[..])
         .bind(&sqrt_price_x96s[..])
         .bind(&liquidities[..])
         .bind(&ticks[..])
         .bind(&amount0s[..])
         .bind(&amount1s[..])
+        .bind(&order_sides[..])
+        .bind(&base_quantities[..])
+        .bind(&quote_quantities[..])
+        .bind(&spot_prices[..])
+        .bind(&execution_prices[..])
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -815,12 +835,27 @@ impl BlockchainCacheDatabase {
     ///
     /// Returns an error if the database operation fails.
     pub async fn add_swap(&self, chain_id: u32, swap: &PoolSwap) -> anyhow::Result<()> {
+        // Extract trade_info fields if available
+        let (order_side, base_quantity, quote_quantity, spot_price, execution_price) =
+            if let Some(ref trade_info) = swap.trade_info {
+                (
+                    Some(trade_info.order_side.to_string()),
+                    Some(trade_info.quantity_base.as_decimal()),
+                    Some(trade_info.quantity_quote.as_decimal()),
+                    Some(trade_info.spot_price.as_decimal()),
+                    Some(trade_info.execution_price.as_decimal()),
+                )
+            } else {
+                (None, None, None, None, None)
+            };
+
         sqlx::query(
             r"
             INSERT INTO pool_swap_event (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, recipient, side, size, price, sqrt_price_x96, amount0, amount1
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                log_index, sender, recipient, sqrt_price_x96, liquidity, tick, amount0, amount1,
+                order_side, base_quantity, quote_quantity, spot_price, execution_price
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::U160, $10::U128, $11, $12::I256, $13::I256, $14, $15, $16, $17, $18)
             ON CONFLICT (chain_id, transaction_hash, log_index)
             DO NOTHING
         ",
@@ -833,12 +868,16 @@ impl BlockchainCacheDatabase {
         .bind(swap.log_index as i32)
         .bind(swap.sender.to_string())
         .bind(swap.recipient.to_string())
-        .bind(swap.side.map(|side| side.to_string()))
-        .bind(swap.size.map(|size| size.to_string()))
-        .bind(swap.price.map(|price| price.to_string()))
         .bind(swap.sqrt_price_x96.to_string())
+        .bind(swap.liquidity.to_string())
+        .bind(swap.tick)
         .bind(swap.amount0.to_string())
         .bind(swap.amount1.to_string())
+        .bind(order_side)
+        .bind(base_quantity)
+        .bind(quote_quantity)
+        .bind(spot_price)
+        .bind(execution_price)
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -1047,6 +1086,11 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to update dex last synced block: {e}"))
     }
 
+    /// Updates the last synced block number for a pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database update fails.
     pub async fn update_pool_last_synced_block(
         &self,
         chain_id: u32,
@@ -1101,6 +1145,11 @@ impl BlockchainCacheDatabase {
         Ok(result.and_then(|(block_number,)| block_number.map(|b| b as u64)))
     }
 
+    /// Retrieves the last synced block number for a pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
     pub async fn get_pool_last_synced_block(
         &self,
         chain_id: u32,
@@ -1140,17 +1189,14 @@ impl BlockchainCacheDatabase {
         pool_address: &Address,
     ) -> anyhow::Result<Option<u64>> {
         let query = format!(
-            "SELECT MAX(block) FROM {} WHERE chain_id = $1 AND pool_address = $2",
-            table_name
+            "SELECT MAX(block) FROM {table_name} WHERE chain_id = $1 AND pool_address = $2"
         );
         let result = sqlx::query_as::<_, (Option<i64>,)>(query.as_str())
             .bind(chain_id as i32)
             .bind(pool_address.to_string())
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to get table last block for {}: {e}", table_name)
-            })?;
+            .map_err(|e| anyhow::anyhow!("Failed to get table last block for {table_name}: {e}"))?;
 
         Ok(result.and_then(|(block_number,)| block_number.map(|b| b as u64)))
     }
@@ -1314,6 +1360,11 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_flash_event table: {e}"))
     }
 
+    /// Adds a pool snapshot to the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database insert fails.
     pub async fn add_pool_snapshot(
         &self,
         chain_id: u32,
@@ -1346,7 +1397,7 @@ impl BlockchainCacheDatabase {
         .bind(snapshot.block_position.number as i64)
         .bind(snapshot.block_position.transaction_index as i32)
         .bind(snapshot.block_position.log_index as i32)
-        .bind(snapshot.block_position.transaction_hash.to_string())
+        .bind(snapshot.block_position.transaction_hash.clone())
         .bind(snapshot.state.current_tick)
         .bind(snapshot.state.price_sqrt_ratio_x96.to_string())
         .bind(snapshot.state.liquidity.to_string())
@@ -1554,6 +1605,11 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_tick table: {e}"))
     }
 
+    /// Updates the initial price and tick for a pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database update fails.
     pub async fn update_pool_initial_price_tick(
         &self,
         chain_id: u32,
@@ -1615,7 +1671,7 @@ impl BlockchainCacheDatabase {
         .bind(pool_address.to_string())
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load latest valid pool snapshot: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load latest valid pool snapshot: {e}"))?;
 
         if let Some(row) = result {
             // Parse snapshot state
@@ -1678,10 +1734,10 @@ impl BlockchainCacheDatabase {
 
             let dex_name: String = row.get("dex_name");
             let chain = nautilus_model::defi::Chain::from_chain_id(chain_id)
-                .ok_or_else(|| anyhow::anyhow!("Unknown chain_id: {}", chain_id))?;
+                .ok_or_else(|| anyhow::anyhow!("Unknown chain_id: {chain_id}"))?;
 
             let dex_type = nautilus_model::defi::DexType::from_dex_name(&dex_name)
-                .ok_or_else(|| anyhow::anyhow!("Unknown dex_name: {}", dex_name))?;
+                .ok_or_else(|| anyhow::anyhow!("Unknown dex_name: {dex_name}"))?;
 
             let dex_extended = crate::exchanges::get_dex_extended(chain.name, &dex_type)
                 .ok_or_else(|| {
@@ -1736,7 +1792,7 @@ impl BlockchainCacheDatabase {
         .execute(&self.pool)
         .await
         .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to mark pool snapshot as valid: {}", e))
+        .map_err(|e| anyhow::anyhow!("Failed to mark pool snapshot as valid: {e}"))
     }
 
     /// Loads all positions for a specific snapshot.
@@ -1775,7 +1831,7 @@ impl BlockchainCacheDatabase {
         .bind(snapshot_log_index as i32)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load pool positions: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load pool positions: {e}"))?;
 
         rows.iter()
             .map(|row| {
@@ -1845,7 +1901,7 @@ impl BlockchainCacheDatabase {
         .bind(snapshot_log_index as i32)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load pool ticks: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load pool ticks: {e}"))?;
 
         rows.iter()
             .map(|row| {
@@ -1896,9 +1952,6 @@ impl BlockchainCacheDatabase {
                 sender,
                 recipient,
                 NULL::TEXT as owner,
-                side,
-                size,
-                price,
                 sqrt_price_x96::TEXT,
                 liquidity::TEXT as swap_liquidity,
                 tick as swap_tick,
@@ -1928,9 +1981,6 @@ impl BlockchainCacheDatabase {
                 sender,
                 NULL::TEXT as recipient,
                 owner,
-                NULL::TEXT as side,
-                NULL::TEXT as size,
-                NULL::text as price,
                 NULL::text as sqrt_price_x96,
                 NULL::TEXT as swap_liquidity,
                 NULL::INT as swap_tick,
@@ -1960,9 +2010,6 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as sender,
                 NULL::TEXT as recipient,
                 owner,
-                NULL::TEXT as side,
-                NULL::TEXT as size,
-                NULL::TEXT as price,
                 NULL::TEXT as sqrt_price_x96,
                 NULL::TEXT as swap_liquidity,
                 NULL::INT AS swap_tick,
@@ -1992,9 +2039,6 @@ impl BlockchainCacheDatabase {
                 sender,
                 recipient,
                 NULL::TEXT as owner,
-                NULL::TEXT as side,
-                NULL::TEXT as size,
-                NULL::TEXT as price,
                 NULL::TEXT as sqrt_price_x96,
                 NULL::TEXT as swap_liquidity,
                 NULL::INT AS swap_tick,
@@ -2027,9 +2071,6 @@ impl BlockchainCacheDatabase {
                 sender,
                 recipient,
                 NULL::TEXT as owner,
-                side,
-                size,
-                price,
                 sqrt_price_x96::TEXT,
                 liquidity::TEXT as swap_liquidity,
                 tick as swap_tick,
@@ -2060,9 +2101,6 @@ impl BlockchainCacheDatabase {
                 sender,
                 NULL::TEXT as recipient,
                 owner,
-                NULL::TEXT as side,
-                NULL::TEXT as size,
-                NULL::text as price,
                 NULL::text as sqrt_price_x96,
                 NULL::TEXT as swap_liquidity,
                 NULL::INT as swap_tick,
@@ -2093,9 +2131,6 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as sender,
                 NULL::TEXT as recipient,
                 owner,
-                NULL::TEXT as side,
-                NULL::TEXT as size,
-                NULL::TEXT as price,
                 NULL::TEXT as sqrt_price_x96,
                 NULL::TEXT as swap_liquidity,
                 NULL::INT AS swap_tick,
@@ -2126,9 +2161,6 @@ impl BlockchainCacheDatabase {
                 sender,
                 recipient,
                 NULL::TEXT as owner,
-                NULL::TEXT as side,
-                NULL::TEXT as size,
-                NULL::TEXT as price,
                 NULL::TEXT as sqrt_price_x96,
                 NULL::TEXT as swap_liquidity,
                 NULL::INT AS swap_tick,
@@ -2169,9 +2201,9 @@ impl BlockchainCacheDatabase {
         let stream = query.map(move |row_result| match row_result {
             Ok(row) => {
                 transform_row_to_dex_pool_data(&row, chain.clone(), dex.clone(), instrument_id)
-                    .map_err(|e| anyhow::anyhow!("Steam pool event transform error: {}", e))
+                    .map_err(|e| anyhow::anyhow!("Steam pool event transform error: {e}"))
             }
-            Err(e) => Err(anyhow::anyhow!("Stream pool events database error: {}", e)),
+            Err(e) => Err(anyhow::anyhow!("Stream pool events database error: {e}")),
         });
 
         Box::pin(stream)

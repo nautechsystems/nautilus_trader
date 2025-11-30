@@ -1,6 +1,15 @@
 [package]
 name = "nautilus-serialization"
 readme = "README.md"
+build = "build.rs"
+include = [
+  "src/**/*",
+  "schemas/**/*",
+  "generated/**/*",
+  "build.rs",
+  "Cargo.toml",
+  "README.md",
+]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,6 +31,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [features]
 default = []
+capnp = ["dep:capnp"]
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
@@ -40,14 +50,34 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
 arrow = { workspace = true }
+indexmap = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+ustr = { workspace = true }
+uuid = { workspace = true }
 
+capnp = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
+
+[build-dependencies]
+capnpc = { workspace = true }
+walkdir = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+criterion = { workspace = true }
 pretty_assertions = { workspace = true }
 rstest = { workspace = true }
+
+[[bench]]
+name = "capnp_serialization"
+path = "benches/capnp_serialization.rs"
+harness = false
+required-features = ["capnp"]
+
+[[bench]]
+name = "serialization_comparison"
+path = "benches/serialization_comparison.rs"
+harness = false

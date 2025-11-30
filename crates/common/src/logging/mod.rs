@@ -216,7 +216,7 @@ pub fn parse_component_levels(
                 let ustr_key = Ustr::from(&key);
                 let s = value.as_str().ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Component log level for '{key}' must be a string, got: {value}"
+                        "Component log level for '{key}' must be a string, was: {value}"
                     )
                 })?;
                 let lvl = parse_level_filter_str(s)?;

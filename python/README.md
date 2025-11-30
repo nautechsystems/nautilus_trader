@@ -48,7 +48,7 @@ All commands should be run from within this `python/` directory.
 ### Prerequisites
 
 - Rust toolchain (via `rustup`).
-- Python 3.11-3.13
+- Python 3.12-3.14
 - A virtual environment activated at the project root (e.g., `.venv`).
 - `patchelf` (Linux only) - required for setting rpath on the compiled extension. Install with `uv pip install patchelf`.
 
@@ -87,7 +87,7 @@ UUID4()
 
 ### From source
 
-To build and install from source, you need Rust and Python 3.11+ installed. You can use either uv or Poetry:
+To build and install from source, you need Rust and Python 3.12+ installed. You can use either uv or Poetry:
 
 **Using uv:**
 
@@ -110,8 +110,8 @@ pip install --index-url https://packages.nautechsystems.io/v2/simple/ --pre naut
 
 | Platform         | Python  | Develop | Nightly |
 | :--------------- | :------ | :------ | :------ |
-| `Linux (x86_64)` | 3.12-13 | ✓       | ✓       |
-| `macOS (ARM64)`  | 3.12-13 | ✓       | ✓       |
+| `Linux (x86_64)` | 3.12-14 | ✓       | ✓       |
+| `macOS (ARM64)`  | 3.12-14 | ✓       | ✓       |
 
 The `--pre` flag is required because wheels are tagged as development releases (e.g., `0.2.0.dev20250601`).
 
@@ -119,7 +119,7 @@ The `--pre` flag is required because wheels are tagged as development releases (
 
 Type stubs (`.pyi` files) provide full type information for the compiled Rust extension, enabling IDE autocompletion and static type checking with tools like `mypy`.
 
-Stubs are automatically generated using [`pyo3-stub-gen`](https://github.com/PyO3/pyo3-stub-gen). To regenerate them after modifying Rust bindings:
+Stubs are automatically generated using [`pyo3-stub-gen`](https://github.com/Jij-Inc/pyo3-stub-gen). To regenerate them after modifying Rust bindings:
 
 ```bash
 python generate_stubs.py

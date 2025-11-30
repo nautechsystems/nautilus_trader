@@ -309,7 +309,7 @@ impl Grouping {
     }
 }
 
-/// Parameters for creating a limit order
+/// Parameters for creating a limit order.
 #[derive(Debug, Clone, Builder)]
 pub struct LimitOrderParams {
     pub asset: u32,
@@ -321,7 +321,7 @@ pub struct LimitOrderParams {
     pub cloid: Option<String>,
 }
 
-/// Parameters for creating a trigger order
+/// Parameters for creating a trigger order.
 #[derive(Debug, Clone, Builder)]
 pub struct TriggerOrderParams {
     pub asset: u32,
@@ -346,6 +346,8 @@ impl OrderBuilder {
     pub fn new() -> Self {
         Self::default()
     }
+
+    #[must_use]
     pub fn grouping(mut self, g: Grouping) -> Self {
         self.grouping = g;
         self
@@ -353,6 +355,7 @@ impl OrderBuilder {
 
     /// Create a limit order with individual parameters (legacy method)
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn push_limit(
         self,
         asset: u32,
@@ -376,6 +379,7 @@ impl OrderBuilder {
     }
 
     /// Create a limit order using parameters struct
+    #[must_use]
     pub fn push_limit_order(mut self, params: LimitOrderParams) -> Self {
         self.orders.push(OrderRequest {
             a: params.asset,
@@ -391,6 +395,7 @@ impl OrderBuilder {
 
     /// Create a trigger order with individual parameters (legacy method)
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn push_trigger(
         self,
         asset: u32,
@@ -418,6 +423,7 @@ impl OrderBuilder {
     }
 
     /// Create a trigger order using parameters struct
+    #[must_use]
     pub fn push_trigger_order(mut self, params: TriggerOrderParams) -> Self {
         self.orders.push(OrderRequest {
             a: params.asset,
@@ -797,7 +803,7 @@ mod tests {
 
     // --- Builder Pattern Tests -----------------------------------------------------------------
 
-    #[test]
+    #[rstest]
     fn test_order_request_builder() {
         // Test OrderRequestBuilder derived from #[derive(Builder)]
         let order = OrderRequestBuilder::default()
@@ -821,7 +827,7 @@ mod tests {
         assert_eq!(order.c, Some("test-order-1".to_string()));
     }
 
-    #[test]
+    #[rstest]
     fn test_limit_order_params_builder() {
         // Test LimitOrderParamsBuilder
         let params = LimitOrderParamsBuilder::default()
@@ -843,7 +849,7 @@ mod tests {
         assert_eq!(params.cloid, Some("test-limit-1".to_string()));
     }
 
-    #[test]
+    #[rstest]
     fn test_trigger_order_params_builder() {
         // Test TriggerOrderParamsBuilder
         let params = TriggerOrderParamsBuilder::default()
@@ -866,7 +872,7 @@ mod tests {
         assert_eq!(params.trigger_px, "39500.0");
     }
 
-    #[test]
+    #[rstest]
     fn test_order_builder_single_limit_convenience() {
         // Test OrderBuilder::single_limit_order convenience method
         let params = LimitOrderParamsBuilder::default()
@@ -893,7 +899,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_order_builder_single_trigger_convenience() {
         // Test OrderBuilder::single_trigger_order convenience method
         let params = TriggerOrderParamsBuilder::default()
@@ -922,7 +928,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_order_builder_batch_orders() {
         // Test existing batch order functionality still works
         let params1 = LimitOrderParams {
@@ -962,7 +968,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_action_request_constructors() {
         // Test ActionRequest::order() constructor
         let order1 = mk_limit_gtc(0);

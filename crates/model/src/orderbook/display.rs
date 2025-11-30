@@ -33,6 +33,7 @@ struct BookLevelDisplay {
 
 /// Return a [`String`] representation of the order book in a human-readable table format.
 #[must_use]
+#[allow(clippy::needless_collect)] // Collect needed for .rev() and .chain()
 pub(crate) fn pprint_book(
     order_book: &OrderBook,
     num_levels: usize,
@@ -132,6 +133,7 @@ pub(crate) fn pprint_book(
 
 /// Return a [`String`] representation of the own order book in a human-readable table format.
 #[must_use]
+#[allow(clippy::needless_collect)] // Collect needed for .rev() and .chain()
 pub(crate) fn pprint_own_book(
     own_order_book: &OwnOrderBook,
     num_levels: usize,

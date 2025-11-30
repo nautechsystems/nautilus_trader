@@ -15,8 +15,6 @@
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
-    enums::CurrencyType,
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -26,15 +24,12 @@ use rust_decimal::Decimal;
 use super::{models::TardisInstrumentInfo, parse::parse_settlement_currency};
 use crate::parse::parse_option_kind;
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
+/// Returns a currency from the internal map or creates a new crypto currency.
+///
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed exchange assets.
 pub(crate) fn get_currency(code: &str) -> Currency {
-    // SAFETY: Mutex should not be poisoned in normal operation
-    CURRENCY_MAP
-        .lock()
-        .expect("Failed to acquire CURRENCY_MAP lock")
-        .get(code)
-        .copied()
-        .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+    Currency::get_or_create_crypto(code)
 }
 
 #[allow(clippy::too_many_arguments)]

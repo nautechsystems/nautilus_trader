@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
@@ -55,7 +55,7 @@ impl ReturnsVolatility {
 }
 
 impl Display for ReturnsVolatility {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Returns Volatility ({} days)", self.period)
     }
 }

@@ -15,6 +15,7 @@
 
 use std::{
     cmp,
+    fmt::Display,
     fs::{File, OpenOptions},
     io::{BufReader, BufWriter, Read, copy},
     path::Path,
@@ -34,7 +35,7 @@ enum DownloadError {
     NonRetryable(String),
 }
 
-impl std::fmt::Display for DownloadError {
+impl Display for DownloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Retryable(msg) => write!(f, "Retryable error: {msg}"),
@@ -566,6 +567,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
+
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http_with_config(
                 &filepath_clone,
@@ -618,6 +620,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
+
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http_with_config(
                 &filepath_clone,
@@ -666,6 +669,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
+
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http_with_config(
                 &filepath_clone,
@@ -684,6 +688,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::panic_in_result_fn)]
     fn test_calculate_sha256() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let test_file_path = temp_dir.path().join("test_file.txt");
@@ -699,6 +704,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::panic_in_result_fn)]
     fn test_verify_sha256_checksum() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let test_file_path = temp_dir.path().join("test_file.txt");

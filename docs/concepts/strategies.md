@@ -489,7 +489,7 @@ self.cancel_order(order)
 The following shows how to cancel a batch of orders:
 
 ```python
-from nautilus_trader.model import Order
+from nautilus_trader.model.orders import Order
 
 
 my_order_list: list[Order] = [order1, order2, order3]

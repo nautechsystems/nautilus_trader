@@ -15,8 +15,9 @@
 
 //! Provides account management functionality.
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::AHashMap;
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -308,7 +309,7 @@ impl AccountsManager {
             ));
         }
 
-        let mut total_locked: HashMap<Currency, Money> = HashMap::new();
+        let mut total_locked: AHashMap<Currency, Money> = AHashMap::new();
         let mut base_xrate: Option<f64> = None;
 
         let mut currency = instrument.settlement_currency();

@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use alloy_primitives::U256;
 
 use crate::defi::tick_map::bit_math::{least_significant_bit, most_significant_bit};
@@ -30,7 +29,7 @@ fn tick_position(tick: i32) -> (i16, u8) {
 #[derive(Debug, Clone, Default)]
 pub struct TickBitmap {
     /// Mapping of word positions to bitmap words (256 bits each)
-    words: HashMap<i16, U256>,
+    words: AHashMap<i16, U256>,
     /// Minimum spacing between valid ticks for the pool
     tick_spacing: i32,
 }
@@ -39,7 +38,7 @@ impl TickBitmap {
     /// Create a new empty bitmap
     pub fn new(tick_spacing: u32) -> Self {
         Self {
-            words: HashMap::new(),
+            words: AHashMap::new(),
             tick_spacing: tick_spacing as i32,
         }
     }

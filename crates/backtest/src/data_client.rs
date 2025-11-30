@@ -61,7 +61,7 @@ impl BacktestDataClient {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for BacktestDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
@@ -84,14 +84,6 @@ impl DataClient for BacktestDataClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    async fn connect(&mut self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    async fn disconnect(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 

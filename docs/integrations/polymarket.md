@@ -16,7 +16,7 @@ while NautilusTrader abstracts the complexity of signing and preparing orders fo
 To install NautilusTrader with Polymarket support:
 
 ```bash
-pip install --upgrade "nautilus_trader[polymarket]"
+uv pip install "nautilus_trader[polymarket]"
 ```
 
 To build from source with all extras (including Polymarket):
@@ -57,7 +57,7 @@ separately depending on the use case.
 - `PolymarketLiveExecClientFactory`: Factory for Polymarket execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as below),
+Most users will define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
 
@@ -113,7 +113,7 @@ Polymarket CLOB Exchange to interact with your funds.
 
 Before running the script, ensure the following prerequisites are met:
 
-- Install the web3 Python package: `pip install --upgrade web3==7.12.1`.
+- Install the web3 Python package: `uv pip install "web3==7.12.1"`.
 - Have a **Polygon**-compatible wallet funded with some MATIC (used for gas fees).
 - Set the following environment variables in your shell:
   - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon**-compatible wallet.
@@ -393,6 +393,25 @@ a separate `PolymarketWebSocketClient` is created for each new instrument (asset
 Polymarket does not support unsubscribing from channel streams once subscribed.
 :::
 
+### Subscription limits
+
+Polymarket enforces a **maximum of 500 instruments per WebSocket connection** (undocumented limitation).
+
+When you attempt to subscribe to 501 or more instruments on a single WebSocket connection:
+
+- You will **not** receive the initial order book snapshot for each instrument.
+- You will only receive subsequent order book updates.
+
+To handle this limitation, NautilusTrader automatically manages WebSocket connections:
+
+- When the subscription count exceeds 500 instruments, the adapter **automatically creates additional WebSocket connections**.
+- Each connection maintains up to 500 instrument subscriptions.
+- This protection ensures you receive complete order book data (including initial snapshots) for all subscribed instruments.
+
+:::tip
+If you need to subscribe to a large number of instruments (e.g., 5000+), the adapter will automatically distribute these subscriptions across multiple WebSocket connections, with each connection handling up to 500 instruments.
+:::
+
 ## Limitations and considerations
 
 The following limitations and considerations are currently known:
@@ -438,6 +457,7 @@ The following limitations and considerations are currently known:
 | `max_retries`                    | `None`       | Maximum retry attempts for submit/cancel requests. |
 | `retry_delay_initial_ms`         | `None`       | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`             | `None`       | Maximum delay (milliseconds) between retries. |
+| `ack_timeout_secs`               | `5.0`        | Timeout (seconds) to wait for order/trade acknowledgment from cache. |
 | `generate_order_history_from_trades` | `False` | Generate synthetic order history from trade reports when `True` (experimental). |
 | `log_raw_ws_messages`            | `False`      | Log raw WebSocket payloads at INFO level when `True`. |
 
@@ -445,3 +465,253 @@ The following limitations and considerations are currently known:
 For additional features or to contribute to the Polymarket adapter, please see our
 [contributing guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md).
 :::
+
+## Historical data loading
+
+The `PolymarketDataLoader` provides methods for fetching and parsing historical market data
+for research and backtesting purposes. The loader integrates with multiple Polymarket APIs to provide the required data.
+
+:::note
+All data fetching methods are **asynchronous** and must be called with `await`. The loader can optionally accept an `http_client` parameter for dependency injection (useful for testing).
+:::
+
+### Data sources
+
+The loader fetches data from three primary sources:
+
+1. **Polymarket Gamma API** - Market metadata, instrument details, and active market listings.
+2. **Polymarket CLOB API** - Price/trade history timeseries.
+3. **DomeAPI** - Order book history snapshots (available from October 14th, 2025).
+
+### Finding markets
+
+Use the provided utility scripts to discover active markets:
+
+```bash
+# List all active markets
+python nautilus_trader/adapters/polymarket/scripts/active_markets.py
+
+# List BTC and ETH UpDown markets specifically
+python nautilus_trader/adapters/polymarket/scripts/list_updown_markets.py
+```
+
+### Basic usage
+
+:::note
+All data loader methods are **asynchronous** and must be called with `await`.
+:::
+
+```python
+import asyncio
+from datetime import UTC, datetime, timedelta
+
+from nautilus_trader.adapters.polymarket import PolymarketDataLoader
+from nautilus_trader.adapters.polymarket import parse_polymarket_instrument
+from nautilus_trader.core.datetime import millis_to_nanos
+
+async def load_market_data():
+    # Discovery methods are static - no instance needed
+    market = await PolymarketDataLoader.find_market_by_slug("fed-rate-hike-in-2025")
+    condition_id = market["conditionId"]
+
+    market_details = await PolymarketDataLoader.fetch_market_details(condition_id)
+    token = market_details["tokens"][0]
+    token_id = token["token_id"]
+
+    instrument = parse_polymarket_instrument(
+        market_info=market_details,
+        token_id=token_id,
+        outcome=token["outcome"],
+    )
+
+    return instrument, token_id
+
+# Run the async function and create a loader bound to the instrument
+instrument, token_id = asyncio.run(load_market_data())
+loader = PolymarketDataLoader(instrument=instrument, token_id=token_id)
+```
+
+:::note
+You can also skip the manual wiring and call `await PolymarketDataLoader.from_market_slug(...)`, which fetches the metadata and returns a loader that already has `instrument` and `token_id` set.
+:::
+
+### Fetching order book history
+
+The `load_orderbook_snapshots()` convenience method fetches and parses order book data in one step:
+
+```python
+import pandas as pd
+
+# Define time range
+end = pd.Timestamp.now(tz="UTC")
+start = end - pd.Timedelta(hours=24)
+
+# Fetch and parse order book snapshots (automatic pagination handling)
+deltas = await loader.load_orderbook_snapshots(
+    start=start,
+    end=end,
+)
+```
+
+Alternatively, you can fetch and parse separately using the lower-level methods:
+
+```python
+# Convert timestamps to milliseconds for the API
+start_time_ms = int(start.timestamp() * 1000)
+end_time_ms = int(end.timestamp() * 1000)
+token_id = loader.token_id
+
+orderbook_snapshots = await loader.fetch_orderbook_history(
+    token_id=token_id,
+    start_time_ms=start_time_ms,
+    end_time_ms=end_time_ms,
+)
+
+# Parse to NautilusTrader OrderBookDeltas
+deltas = loader.parse_orderbook_snapshots(orderbook_snapshots)
+```
+
+:::note
+DomeAPI order book history is only available from **October 14th, 2025** onwards.
+For earlier data, rely on the price history endpoint.
+:::
+
+### Fetching price history
+
+The `load_trades()` convenience method fetches and parses trade data in one step:
+
+```python
+import pandas as pd
+
+# Define time range
+end = pd.Timestamp.now(tz="UTC")
+start = end - pd.Timedelta(hours=24)
+
+# Fetch and parse trade ticks (1-minute fidelity)
+trades = await loader.load_trades(
+    start=start,
+    end=end,
+    fidelity=1,  # 1 = 1 minute resolution
+)
+```
+
+Alternatively, you can fetch and parse separately using the lower-level methods:
+
+```python
+# Convert timestamps to milliseconds for the API
+start_time_ms = int(start.timestamp() * 1000)
+end_time_ms = int(end.timestamp() * 1000)
+token_id = loader.token_id
+
+# Fetch raw price history
+price_history = await loader.fetch_price_history(
+    token_id=token_id,
+    start_time_ms=start_time_ms,
+    end_time_ms=end_time_ms,
+    fidelity=1,  # 1 = 1 minute resolution
+)
+
+# Parse to NautilusTrader TradeTicks
+trades = loader.parse_price_history(price_history)
+```
+
+:::warning
+The `parse_price_history()` method creates synthetic `TradeTick` objects from price points,
+as the price history endpoint doesn't include actual trade sizes. Trade sizes are set to `1.0`
+and the aggressor side is inferred from price movements.
+:::
+
+### Complete backtest example
+
+A complete working example is available at `examples/backtest/polymarket_simple_quoter.py`:
+
+```python
+import asyncio
+from decimal import Decimal
+
+import pandas as pd
+
+from nautilus_trader.adapters.polymarket import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket import PolymarketDataLoader
+from nautilus_trader.backtest.config import BacktestEngineConfig
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Money
+
+async def run_backtest():
+    # Initialize loader and fetch market data
+    loader = await PolymarketDataLoader.from_market_slug("fed-rate-hike-in-2025")
+    instrument = loader.instrument
+
+    # Fetch historical data
+    start = pd.Timestamp("2025-10-30", tz="UTC")
+    end = pd.Timestamp("2025-10-31", tz="UTC")
+
+    deltas = await loader.load_orderbook_snapshots(
+        start=start,
+        end=end,
+    )
+
+    trades = await loader.load_trades(
+        start=start,
+        end=end,
+    )
+
+    # Configure and run backtest
+    config = BacktestEngineConfig(trader_id=TraderId("BACKTESTER-001"))
+    engine = BacktestEngine(config=config)
+
+    engine.add_venue(
+        venue=POLYMARKET_VENUE,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
+        base_currency=USDC_POS,
+        starting_balances=[Money(10_000, USDC_POS)],
+        book_type=BookType.L2_MBP,
+    )
+
+    engine.add_instrument(instrument)
+    engine.add_data(deltas)
+    engine.add_data(trades)
+
+    strategy_config = OrderBookImbalanceConfig(
+        instrument_id=instrument.id,
+        max_trade_size=Decimal("20"),
+    )
+
+    strategy = OrderBookImbalance(config=strategy_config)
+    engine.add_strategy(strategy=strategy)
+    engine.run()
+
+    # Display results
+    print(engine.trader.generate_account_report(POLYMARKET_VENUE))
+
+# Run the backtest
+asyncio.run(run_backtest())
+```
+
+**Run the complete example**:
+
+```bash
+python examples/backtest/polymarket_simple_quoter.py
+```
+
+### Helper functions
+
+The adapter provides utility functions for working with Polymarket identifiers:
+
+```python
+from nautilus_trader.adapters.polymarket import get_polymarket_instrument_id
+
+# Create NautilusTrader InstrumentId from Polymarket identifiers
+instrument_id = get_polymarket_instrument_id(
+    condition_id="0x4319532e181605cb15b1bd677759a3bc7f7394b2fdf145195b700eeaedfd5221",
+    token_id="60487116984468020978247225474488676749601001829886755968952521846780452448915"
+)
+```

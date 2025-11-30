@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
+
 from betfair_parser.endpoints import ENDPOINTS
 from betfair_parser.spec.accounts.operations import GetAccountDetails
 from betfair_parser.spec.accounts.operations import GetAccountFunds
@@ -69,6 +71,18 @@ from nautilus_trader.core.rust.common import LogColor
 class BetfairHttpClient:
     """
     Provides a HTTP client for Betfair.
+
+    Parameters
+    ----------
+    username : str
+        The Betfair account username.
+    password : str
+        The Betfair account password.
+    app_key : str
+        The Betfair application key.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
+
     """
 
     def __init__(
@@ -76,6 +90,7 @@ class BetfairHttpClient:
         username: str,
         password: str,
         app_key: str,
+        proxy_url: str | None = None,
     ) -> None:
         # Config
         self.username = username
@@ -83,9 +98,10 @@ class BetfairHttpClient:
         self.app_key = app_key
 
         # Client
-        self._client = HttpClient()
+        self._client = HttpClient(proxy_url=proxy_url)
         self._headers: dict[str, str] = {}
         self._log = Logger(name=type(self).__name__)
+        self._connect_lock: asyncio.Lock | None = None
         self.reset_headers()
 
     async def _request(self, method: HttpMethod, request: Request) -> HttpResponse:
@@ -134,17 +150,21 @@ class BetfairHttpClient:
         }
 
     async def connect(self) -> None:
-        if self.session_token is not None:
-            self._log.warning("Session token exists (already connected), skipping")
-            return
+        if self._connect_lock is None:
+            self._connect_lock = asyncio.Lock()
 
-        self._log.info("Connecting (Betfair login)")
-        request = Login.with_params(username=self.username, password=self.password.get_value())
-        resp: LoginResponse = await self._post(request)
-        if resp.status != LoginStatus.SUCCESS:
-            raise RuntimeError(f"Login not successful: {resp.status.value}")
-        self._log.info("Login success", color=LogColor.GREEN)
-        self.update_headers(login_resp=resp)
+        async with self._connect_lock:
+            if self.session_token is not None:
+                self._log.debug("Session token exists (already connected), skipping")
+                return
+
+            self._log.info("Connecting (Betfair login)")
+            request = Login.with_params(username=self.username, password=self.password.get_value())
+            resp: LoginResponse = await self._post(request)
+            if resp.status != LoginStatus.SUCCESS:
+                raise RuntimeError(f"Login not successful: {resp.status.value}")
+            self._log.info("Login success", color=LogColor.GREEN)
+            self.update_headers(login_resp=resp)
 
     async def reconnect(self) -> None:
         self._log.info("Reconnecting...")

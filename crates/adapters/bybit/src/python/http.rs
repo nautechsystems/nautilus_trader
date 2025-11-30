@@ -15,8 +15,10 @@
 
 //! Python bindings for the Bybit HTTP client.
 
+use chrono::{DateTime, Utc};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
+    data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
@@ -25,51 +27,42 @@ use nautilus_model::{
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
-    common::enums::BybitProductType,
+    common::enums::{BybitMarginMode, BybitPositionMode, BybitProductType},
     http::{client::BybitHttpClient, error::BybitHttpError},
 };
 
 #[pymethods]
 impl BybitHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, proxy_url=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
+        demo: bool,
+        testnet: bool,
         timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
-        let timeout = timeout_secs.or(Some(60));
-
-        // Try to get credentials from parameters or environment variables
-        let key = api_key.or_else(|| std::env::var("BYBIT_API_KEY").ok());
-        let secret = api_secret.or_else(|| std::env::var("BYBIT_API_SECRET").ok());
-
-        if let (Some(k), Some(s)) = (key, secret) {
-            Self::with_credentials(
-                k,
-                s,
-                base_url,
-                timeout,
-                max_retries,
-                retry_delay_ms,
-                retry_delay_max_ms,
-            )
-            .map_err(to_pyvalue_err)
-        } else {
-            Self::new(
-                base_url,
-                timeout,
-                max_retries,
-                retry_delay_ms,
-                retry_delay_max_ms,
-            )
-            .map_err(to_pyvalue_err)
-        }
+        Self::new_with_env(
+            api_key,
+            api_secret,
+            base_url,
+            demo,
+            testnet,
+            timeout_secs.or(Some(60)),
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+            recv_window_ms,
+            proxy_url,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[getter]
@@ -86,16 +79,162 @@ impl BybitHttpClient {
         self.credential().map(|c| c.api_key()).map(|u| u.as_str())
     }
 
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    #[must_use]
+    pub fn py_api_key_masked(&self) -> Option<String> {
+        self.credential().map(|c| c.api_key_masked())
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
-        self.add_instrument(inst_any);
+        self.cache_instrument(inst_any);
         Ok(())
     }
 
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
+    }
+
+    #[pyo3(name = "set_use_spot_position_reports")]
+    fn py_set_use_spot_position_reports(&self, value: bool) {
+        self.set_use_spot_position_reports(value);
+    }
+
+    #[pyo3(name = "set_margin_mode")]
+    fn py_set_margin_mode<'py>(
+        &self,
+        py: Python<'py>,
+        margin_mode: BybitMarginMode,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .set_margin_mode(margin_mode)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
+    }
+
+    #[pyo3(name = "get_account_details")]
+    fn py_get_account_details<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client.get_account_details().await.map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let account_details = Py::new(py, response.result)?;
+                Ok(account_details.into_any())
+            })
+        })
+    }
+
+    #[pyo3(name = "set_leverage")]
+    #[pyo3(signature = (product_type, symbol, buy_leverage, sell_leverage))]
+    fn py_set_leverage<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+        symbol: String,
+        buy_leverage: String,
+        sell_leverage: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .set_leverage(product_type, &symbol, &buy_leverage, &sell_leverage)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
+    }
+
+    #[pyo3(name = "switch_mode")]
+    #[pyo3(signature = (product_type, mode, symbol=None, coin=None))]
+    fn py_switch_mode<'py>(
+        &self,
+        py: Python<'py>,
+        product_type: BybitProductType,
+        mode: BybitPositionMode,
+        symbol: Option<String>,
+        coin: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .switch_mode(product_type, mode, symbol, coin)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
+    }
+
+    #[pyo3(name = "get_spot_borrow_amount")]
+    fn py_get_spot_borrow_amount<'py>(
+        &self,
+        py: Python<'py>,
+        coin: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let borrow_amount = client
+                .get_spot_borrow_amount(&coin)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Ok(borrow_amount)
+        })
+    }
+
+    #[pyo3(name = "borrow_spot")]
+    #[pyo3(signature = (coin, amount))]
+    fn py_borrow_spot<'py>(
+        &self,
+        py: Python<'py>,
+        coin: String,
+        amount: Quantity,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .borrow_spot(&coin, amount)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
+    }
+
+    #[pyo3(name = "repay_spot_borrow")]
+    #[pyo3(signature = (coin, amount=None))]
+    fn py_repay_spot_borrow<'py>(
+        &self,
+        py: Python<'py>,
+        coin: String,
+        amount: Option<Quantity>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .repay_spot_borrow(&coin, amount)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
     }
 
     #[pyo3(name = "request_instruments")]
@@ -130,6 +269,7 @@ impl BybitHttpClient {
 
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
+        account_id,
         product_type,
         instrument_id,
         client_order_id,
@@ -138,12 +278,14 @@ impl BybitHttpClient {
         quantity,
         time_in_force,
         price = None,
-        reduce_only = false
+        reduce_only = false,
+        is_leverage = false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
@@ -153,12 +295,14 @@ impl BybitHttpClient {
         time_in_force: TimeInForce,
         price: Option<Price>,
         reduce_only: bool,
+        is_leverage: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
                 .submit_order(
+                    account_id,
                     product_type,
                     instrument_id,
                     client_order_id,
@@ -168,6 +312,7 @@ impl BybitHttpClient {
                     time_in_force,
                     price,
                     reduce_only,
+                    is_leverage,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
@@ -178,6 +323,7 @@ impl BybitHttpClient {
 
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
+        account_id,
         product_type,
         instrument_id,
         client_order_id=None,
@@ -189,6 +335,7 @@ impl BybitHttpClient {
     fn py_modify_order<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
@@ -201,6 +348,7 @@ impl BybitHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
                 .modify_order(
+                    account_id,
                     product_type,
                     instrument_id,
                     client_order_id,
@@ -216,10 +364,11 @@ impl BybitHttpClient {
     }
 
     #[pyo3(name = "cancel_order")]
-    #[pyo3(signature = (product_type, instrument_id, client_order_id=None, venue_order_id=None))]
+    #[pyo3(signature = (account_id, product_type, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
@@ -229,7 +378,13 @@ impl BybitHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let report = client
-                .cancel_order(product_type, instrument_id, client_order_id, venue_order_id)
+                .cancel_order(
+                    account_id,
+                    product_type,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                )
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -241,6 +396,7 @@ impl BybitHttpClient {
     fn py_cancel_all_orders<'py>(
         &self,
         py: Python<'py>,
+        account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: InstrumentId,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -248,7 +404,7 @@ impl BybitHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .cancel_all_orders(product_type, instrument_id)
+                .cancel_all_orders(account_id, product_type, instrument_id)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -323,21 +479,30 @@ impl BybitHttpClient {
     }
 
     #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (product_type, bar_type, start=None, end=None, limit=None))]
+    #[pyo3(signature = (product_type, bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
+    #[allow(clippy::too_many_arguments)]
     fn py_request_bars<'py>(
         &self,
         py: Python<'py>,
         product_type: BybitProductType,
-        bar_type: nautilus_model::data::BarType,
-        start: Option<i64>,
-        end: Option<i64>,
+        bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
+        timestamp_on_close: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
-                .request_bars(product_type, bar_type, start, end, limit)
+                .request_bars(
+                    product_type,
+                    bar_type,
+                    start,
+                    end,
+                    limit,
+                    timestamp_on_close,
+                )
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -398,7 +563,8 @@ impl BybitHttpClient {
     }
 
     #[pyo3(name = "request_order_status_reports")]
-    #[pyo3(signature = (account_id, product_type, instrument_id=None, open_only=false, limit=None))]
+    #[pyo3(signature = (account_id, product_type, instrument_id=None, open_only=false, start=None, end=None, limit=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_request_order_status_reports<'py>(
         &self,
         py: Python<'py>,
@@ -406,6 +572,8 @@ impl BybitHttpClient {
         product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
         open_only: bool,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -417,6 +585,8 @@ impl BybitHttpClient {
                     product_type,
                     instrument_id,
                     open_only,
+                    start,
+                    end,
                     limit,
                 )
                 .await

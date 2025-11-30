@@ -130,7 +130,7 @@ impl BlockchainDataClientCore {
             config,
             rpc_client,
             tokens: erc20_contract,
-            univ3_pool: UniswapV3PoolContract::new(http_rpc_client.clone()),
+            univ3_pool: UniswapV3PoolContract::new(http_rpc_client),
             cache,
             hypersync_client,
             subscription_manager: DefiDataSubscriptionManager::new(),
@@ -383,7 +383,7 @@ impl BlockchainDataClientCore {
         to_block: Option<u64>,
         reset: bool,
     ) -> anyhow::Result<()> {
-        let pool: SharedPool = self.get_pool(&pool_address)?.clone();
+        let pool: SharedPool = self.get_pool(pool_address)?.clone();
         let pool_display = pool.to_full_spec_string();
         let from_block = from_block.unwrap_or(pool.creation_block);
 
@@ -392,7 +392,7 @@ impl BlockchainDataClientCore {
         } else {
             let last_synced_block = self
                 .cache
-                .get_pool_last_synced_block(dex, &pool_address)
+                .get_pool_last_synced_block(dex, pool_address)
                 .await?;
             let effective_from_block = last_synced_block
                 .map_or(from_block, |last_synced| max(from_block, last_synced + 1));
@@ -418,7 +418,7 @@ impl BlockchainDataClientCore {
         // Query table max blocks to detect last blocks to use batch insert before that, then COPY command.
         let last_block_across_pool_events_table = self
             .cache
-            .get_pool_event_tables_last_block(&pool_address)
+            .get_pool_event_tables_last_block(pool_address)
             .await?;
 
         let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
@@ -496,7 +496,7 @@ impl BlockchainDataClientCore {
             .request_contract_events_stream(
                 effective_from_block,
                 Some(to_block),
-                &pool_address,
+                pool_address,
                 event_signatures,
             )
             .await;
@@ -514,7 +514,7 @@ impl BlockchainDataClientCore {
 
         // Track when we've moved beyond stale data and can use COPY
         let mut beyond_stale_data = last_block_across_pool_events_table
-            .map_or(true, |tables_max| effective_from_block > tables_max);
+            .is_none_or(|tables_max| effective_from_block > tables_max);
 
         let cancellation_token = self.cancellation_token.clone();
         let sync_result = tokio::select! {
@@ -530,36 +530,36 @@ impl BlockchainDataClientCore {
 
                     let event_sig_bytes = extract_event_signature_bytes(&log)?;
             if event_sig_bytes == swap_sig_bytes.as_slice() {
-                let swap_event = dex_extended.parse_swap_event(log)?;
-                match self.process_pool_swap_event(&swap_event, &pool, &dex_extended) {
+                let swap_event = dex_extended.parse_swap_event_hypersync(log)?;
+                match self.process_pool_swap_event(&swap_event, &pool) {
                     Ok(swap) => swap_batch.push(swap),
                     Err(e) => tracing::error!("Failed to process swap event: {e}"),
                 }
             } else if event_sig_bytes == mint_sig_bytes.as_slice() {
-                let mint_event = dex_extended.parse_mint_event(log)?;
+                let mint_event = dex_extended.parse_mint_event_hypersync(log)?;
                 match self.process_pool_mint_event(&mint_event, &pool, &dex_extended) {
                     Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
                     Err(e) => tracing::error!("Failed to process mint event: {e}"),
                 }
             } else if event_sig_bytes == burn_sig_bytes.as_slice() {
-                let burn_event = dex_extended.parse_burn_event(log)?;
+                let burn_event = dex_extended.parse_burn_event_hypersync(log)?;
                 match self.process_pool_burn_event(&burn_event, &pool, &dex_extended) {
                     Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
                     Err(e) => tracing::error!("Failed to process burn event: {e}"),
                 }
             } else if event_sig_bytes == collect_sig_bytes.as_slice() {
-                let collect_event = dex_extended.parse_collect_event(log)?;
+                let collect_event = dex_extended.parse_collect_event_hypersync(log)?;
                 match self.process_pool_collect_event(&collect_event, &pool, &dex_extended) {
                     Ok(fee_collect) => collect_batch.push(fee_collect),
                     Err(e) => tracing::error!("Failed to process collect event: {e}"),
                 }
             } else if initialize_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
-                let initialize_event = dex_extended.parse_initialize_event(log)?;
+                let initialize_event = dex_extended.parse_initialize_event_hypersync(log)?;
                 self.cache
                     .update_pool_initialize_price_tick(&initialize_event)
                     .await?;
             } else if flash_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
-                if let Some(parse_fn) = dex_extended.parse_flash_event_fn {
+                if let Some(parse_fn) = dex_extended.parse_flash_event_hypersync_fn {
                     match parse_fn(dex_extended.dex.clone(), log) {
                         Ok(flash_event) => {
                             match self.process_pool_flash_event(&flash_event, &pool) {
@@ -582,7 +582,7 @@ impl BlockchainDataClientCore {
             // Check if we've moved beyond stale data (transition point for strategy change)
             if !beyond_stale_data
                 && last_block_across_pool_events_table
-                    .map_or(false, |table_max| block_number > table_max)
+                    .is_some_and(|table_max| block_number > table_max)
             {
                 tracing::info!(
                     "Crossed beyond stale data at block {} - flushing current batches with ON CONFLICT, then switching to COPY",
@@ -624,7 +624,7 @@ impl BlockchainDataClientCore {
             if metrics.should_log_progress(block_number, to_block) {
                 metrics.log_progress(block_number);
                 self.cache
-                    .update_pool_last_synced_block(dex, &pool_address, block_number)
+                    .update_pool_last_synced_block(dex, pool_address, block_number)
                     .await?;
             }
         }
@@ -642,7 +642,7 @@ impl BlockchainDataClientCore {
 
         metrics.log_final_stats();
         self.cache
-            .update_pool_last_synced_block(dex, &pool_address, to_block)
+            .update_pool_last_synced_block(dex, pool_address, to_block)
             .await?;
 
         tracing::info!(
@@ -658,6 +658,7 @@ impl BlockchainDataClientCore {
         sync_result
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn flush_event_batches(
         &mut self,
         event_batch_size: usize,
@@ -668,39 +669,38 @@ impl BlockchainDataClientCore {
         use_copy_command: bool,
         force_flush_all: bool,
     ) -> anyhow::Result<()> {
-        if force_flush_all || swap_batch.len() >= event_batch_size {
-            if !swap_batch.is_empty() {
-                self.cache
-                    .add_pool_swaps_batch(swap_batch, use_copy_command)
-                    .await?;
-                swap_batch.clear();
-            }
+        if (force_flush_all || swap_batch.len() >= event_batch_size) && !swap_batch.is_empty() {
+            self.cache
+                .add_pool_swaps_batch(swap_batch, use_copy_command)
+                .await?;
+            swap_batch.clear();
         }
-        if force_flush_all || liquidity_batch.len() >= event_batch_size {
-            if !liquidity_batch.is_empty() {
-                self.cache
-                    .add_pool_liquidity_updates_batch(liquidity_batch, use_copy_command)
-                    .await?;
-                liquidity_batch.clear();
-            }
+        if (force_flush_all || liquidity_batch.len() >= event_batch_size)
+            && !liquidity_batch.is_empty()
+        {
+            self.cache
+                .add_pool_liquidity_updates_batch(liquidity_batch, use_copy_command)
+                .await?;
+            liquidity_batch.clear();
         }
-        if force_flush_all || collect_batch.len() >= event_batch_size {
-            if !collect_batch.is_empty() {
-                self.cache
-                    .add_pool_fee_collects_batch(collect_batch, use_copy_command)
-                    .await?;
-                collect_batch.clear();
-            }
+        if (force_flush_all || collect_batch.len() >= event_batch_size) && !collect_batch.is_empty()
+        {
+            self.cache
+                .add_pool_fee_collects_batch(collect_batch, use_copy_command)
+                .await?;
+            collect_batch.clear();
         }
-        if force_flush_all || flash_batch.len() >= event_batch_size {
-            if !flash_batch.is_empty() {
-                self.cache.add_pool_flash_batch(flash_batch).await?;
-                flash_batch.clear();
-            }
+        if (force_flush_all || flash_batch.len() >= event_batch_size) && !flash_batch.is_empty() {
+            self.cache.add_pool_flash_batch(flash_batch).await?;
+            flash_batch.clear();
         }
         Ok(())
     }
 
+    /// Processes a swap event and converts it to a pool swap.
+    ///
+    /// # Errors
+    ///
     /// Returns an error if swap event processing fails.
     ///
     /// # Panics
@@ -710,26 +710,18 @@ impl BlockchainDataClientCore {
         &self,
         swap_event: &SwapEvent,
         pool: &SharedPool,
-        dex_extended: &DexExtended,
     ) -> anyhow::Result<PoolSwap> {
         let timestamp = self
             .cache
             .get_block_timestamp(swap_event.block_number)
             .copied();
-        let (side, size, price) =
-            dex_extended.convert_to_trade_data(&pool.token0, &pool.token1, swap_event)?;
-        let swap = swap_event.to_pool_swap(
+        let mut swap = swap_event.to_pool_swap(
             self.chain.clone(),
             pool.instrument_id,
             pool.address,
-            Some(side),
-            Some(size),
-            Some(price),
             timestamp,
         );
-
-        // TODO add caching and persisting of swaps, resolve block timestamps sync
-        // self.cache.add_pool_swap(&swap).await?;
+        swap.calculate_trade_info(&pool.token0, &pool.token1, None)?;
 
         Ok(swap)
     }
@@ -954,7 +946,7 @@ impl BlockchainDataClientCore {
                     let blocks_progress = block_number - last_block_saved;
                     last_block_saved = block_number;
 
-                    let pool = dex.parse_pool_created_event(log)?;
+                    let pool = dex.parse_pool_created_event_hypersync(log)?;
                     if self.cache.get_pool(&pool.pool_address).is_some() {
                         // Pool is already initialized and cached.
                         continue;
@@ -1002,7 +994,7 @@ impl BlockchainDataClientCore {
                         // 2. Flush ALL tokens to DB (satisfy foreign key constraints)
                         if !token_db_buffer.is_empty() {
                             self.cache
-                                .add_tokens_batch(token_db_buffer.drain(..).collect())
+                                .add_tokens_batch(std::mem::take(&mut token_db_buffer))
                                 .await?;
                         }
 
@@ -1032,7 +1024,7 @@ impl BlockchainDataClientCore {
                 // 2. Flush all tokens to DB
                 if !token_db_buffer.is_empty() {
                     self.cache
-                        .add_tokens_batch(token_db_buffer.drain(..).collect())
+                        .add_tokens_batch(std::mem::take(&mut token_db_buffer))
                         .await?;
                 }
 
@@ -1233,6 +1225,10 @@ impl BlockchainDataClientCore {
     /// # Errors
     ///
     /// Returns an error if database is not initialized or event processing fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the database reference is unavailable.
     pub async fn bootstrap_latest_pool_profiler(
         &mut self,
         pool: &SharedPool,
@@ -1314,8 +1310,9 @@ impl BlockchainDataClientCore {
 
         let from_block = from_position
             .as_ref()
-            .map(|block_position| block_position.number)
-            .unwrap_or(profiler.pool.creation_block);
+            .map_or(profiler.pool.creation_block, |block_position| {
+                block_position.number
+            });
         let to_block = self.hypersync_client.current_block().await;
         let total_blocks = to_block.saturating_sub(from_block) + 1;
 
@@ -1335,7 +1332,7 @@ impl BlockchainDataClientCore {
                 Ok(event) => {
                     profiler.process(&event)?;
                 }
-                Err(e) => log::error!("Error processing event: {}", e),
+                Err(e) => log::error!("Error processing event: {e}"),
             }
         }
 
@@ -1399,9 +1396,9 @@ impl BlockchainDataClientCore {
                 .unwrap_or(initialize_event_signature),
         )?;
 
-        let from_block = from_position
-            .map(|block_position| block_position.number)
-            .unwrap_or(profiler.pool.creation_block);
+        let from_block = from_position.map_or(profiler.pool.creation_block, |block_position| {
+            block_position.number
+        });
         let to_block = self.hypersync_client.current_block().await;
         let total_blocks = to_block.saturating_sub(from_block) + 1;
 
@@ -1435,7 +1432,7 @@ impl BlockchainDataClientCore {
             let event_sig_bytes = extract_event_signature_bytes(&log)?;
 
             if event_sig_bytes == initialize_sig_bytes {
-                let initialize_event = dex_extended.parse_initialize_event(log)?;
+                let initialize_event = dex_extended.parse_initialize_event_hypersync(log)?;
                 profiler.initialize(initialize_event.sqrt_price_x96);
                 self.cache
                     .database
@@ -1444,7 +1441,7 @@ impl BlockchainDataClientCore {
                     .update_pool_initial_price_tick(self.chain.chain_id, &initialize_event)
                     .await?;
             } else if event_sig_bytes == mint_sig_bytes {
-                let mint_event = dex_extended.parse_mint_event(log)?;
+                let mint_event = dex_extended.parse_mint_event_hypersync(log)?;
                 match self.process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended) {
                     Ok(liquidity_update) => {
                         profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
@@ -1452,7 +1449,7 @@ impl BlockchainDataClientCore {
                     Err(e) => tracing::error!("Failed to process mint event: {e}"),
                 }
             } else if event_sig_bytes == burn_sig_bytes {
-                let burn_event = dex_extended.parse_burn_event(log)?;
+                let burn_event = dex_extended.parse_burn_event_hypersync(log)?;
                 match self.process_pool_burn_event(&burn_event, &profiler.pool, &dex_extended) {
                     Ok(liquidity_update) => {
                         profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
@@ -1492,6 +1489,10 @@ impl BlockchainDataClientCore {
     /// # Errors
     ///
     /// Returns an error if database operations fail when marking the snapshot as valid.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the profiler does not have a last_processed_event when already_validated is true.
     pub async fn check_snapshot_validity(
         &self,
         profiler: &PoolProfiler,
@@ -1511,7 +1512,7 @@ impl BlockchainDataClientCore {
             match self.get_on_chain_snapshot(profiler).await {
                 Ok(on_chain_snapshot) => {
                     tracing::info!("Comparing profiler state with on-chain state...");
-                    let valid = compare_pool_profiler(&profiler, &on_chain_snapshot);
+                    let valid = compare_pool_profiler(profiler, &on_chain_snapshot);
                     if !valid {
                         tracing::error!(
                             "Pool profiler state does NOT match on-chain smart contract state"
@@ -1527,19 +1528,17 @@ impl BlockchainDataClientCore {
         };
 
         // Mark snapshot as valid in database if validation passed
-        if is_valid {
-            if let Some(cache_database) = &self.cache.database {
-                cache_database
-                    .mark_pool_snapshot_valid(
-                        profiler.pool.chain.chain_id,
-                        &profiler.pool.address,
-                        block_position.number,
-                        block_position.transaction_index,
-                        block_position.log_index,
-                    )
-                    .await?;
-                tracing::info!("Marked pool profiler snapshot as valid");
-            }
+        if is_valid && let Some(cache_database) = &self.cache.database {
+            cache_database
+                .mark_pool_snapshot_valid(
+                    profiler.pool.chain.chain_id,
+                    &profiler.pool.address,
+                    block_position.number,
+                    block_position.transaction_index,
+                    block_position.log_index,
+                )
+                .await?;
+            tracing::info!("Marked pool profiler snapshot as valid");
         }
 
         Ok(is_valid)

@@ -36,7 +36,7 @@ The following adapter classes are available:
 - `DatabentoDataClient`: Provides a `LiveMarketDataClient` implementation for running a trading node in real time.
 
 :::info
-As with the other integration adapters, most users will simply define a configuration for a live trading node (covered below),
+As with the other integration adapters, most users will define a configuration for a live trading node (covered below),
 and won't need to necessarily work with these lower level components directly.
 :::
 
@@ -722,13 +722,73 @@ The Databento data client provides the following configuration options:
 | `timeout_initial_load`    | `15.0`  | Seconds to wait for instrument definitions to load per dataset before proceeding. |
 | `mbo_subscriptions_delay` | `3.0`   | Seconds to buffer before enabling MBO/L3 streams so initial snapshots can replay in order. |
 | `bars_timestamp_on_close` | `True`  | Timestamp bars on the close (`ts_event`/`ts_init`). Set `False` to timestamp on the open. |
+| `reconnect_timeout_mins`  | `10`    | Minutes to attempt reconnection before giving up. Set to `None` to retry indefinitely (use with caution). See [Connection stability](#connection-stability) below. |
 | `venue_dataset_map`       | `None`  | Optional mapping of Nautilus venues to Databento dataset codes. |
 | `parent_symbols`          | `None`  | Optional mapping `{dataset: {parent symbols}}` to preload definition trees (e.g., `{"GLBX.MDP3": {"ES.FUT", "ES.OPT"}}`). |
 | `instrument_ids`          | `None`  | Sequence of Nautilus `InstrumentId` values to preload definitions for at startup. |
+| `http_proxy_url`          | `None`  | Optional HTTP proxy URL. |
+| `ws_proxy_url`            | `None`  | Optional WebSocket proxy URL. |
 
 :::tip
 We recommend using environment variables to manage your credentials.
 :::
+
+### Connection stability
+
+The Databento live client implements automatic reconnection to handle connection interruptions. The system remains resilient through:
+
+- **Network interruptions**: Temporary connectivity issues.
+- **Gateway restarts**: Databento performs scheduled maintenance every Sunday (see [Maintenance Schedule](https://databento.com/docs/api-reference-live/basics#maintenance-schedule)).
+- **Market closures**: Sessions ending during off-hours.
+
+#### Reconnection strategy
+
+The client uses different backoff strategies based on the timeout configuration:
+
+**With timeout** (default 10 minutes):
+
+- Exponential backoff capped at **60 seconds** for quick recovery.
+- Pattern: 1s, 2s, 4s, 8s, 16s, 32s, 60s, 60s... (±1s jitter).
+- Optimized to reconnect quickly within the timeout window.
+
+**Without timeout** (`reconnect_timeout_mins=None`):
+
+- Exponential backoff capped at **10 minutes** for patient, infrastructure-friendly recovery.
+- Pattern: 1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 512s, 600s, 600s... (±1s jitter).
+- Ideal for unattended systems surviving overnight closures and scheduled maintenance.
+
+All reconnections include:
+
+- **Jitter**: Random delay (up to 1 second) to prevent synchronized reconnection storms.
+- **Automatic resubscription**: Restores all active subscriptions after reconnecting.
+- **Cycle reset**: Each successful session (>60s) resets the timeout clock.
+
+#### Timeout configuration
+
+The `reconnect_timeout_mins` parameter controls how long the client attempts reconnection:
+
+**Default (10 minutes)**: Suitable for most use cases.
+
+- Handles transient network issues.
+- Survives scheduled gateway restarts.
+- Prevents wasting resources overnight when markets are closed.
+- Requires manual intervention for longer outages.
+
+:::warning
+Setting `reconnect_timeout_mins=None` causes indefinite retry attempts. Use this only for unattended systems that must survive overnight market closures without manual intervention. This can mask persistent configuration or authentication issues.
+:::
+
+#### Scheduled maintenance
+
+Databento restarts their live gateways every Sunday at the following times (all clients are disconnected):
+
+| Dataset            | Maintenance Time (UTC) |
+|--------------------|------------------------|
+| CME Globex         | 09:30                  |
+| All ICE venues     | 09:45                  |
+| All other datasets | 10:30                  |
+
+The default 10-minute timeout handles typical maintenance restarts. For unattended systems running through the maintenance window, consider using `reconnect_timeout_mins=None` or a longer timeout. See the [Databento Maintenance Schedule](https://databento.com/docs/api-reference-live/basics/maintenance-schedule) for details.
 
 :::info
 For additional features or to contribute to the Databento adapter, please see our

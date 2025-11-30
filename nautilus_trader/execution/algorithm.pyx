@@ -1098,7 +1098,7 @@ cdef class ExecAlgorithm(Actor):
                 msg=order.init_event_c(),
             )
 
-            self.cache.add_order(order, position_id)
+            self.cache.add_order(order, position_id, client_id)
 
             command = SubmitOrder(
                 trader_id=self.trader_id,

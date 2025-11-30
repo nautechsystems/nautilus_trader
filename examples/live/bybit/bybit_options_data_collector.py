@@ -252,7 +252,7 @@ class BybitOptionsDataCollector(Strategy):
 
         # Log summary of options data files
         options_count = len(
-            [k for k in self.quote_ticks_files.keys() if k != str(self.config.spot_instrument_id)],
+            [k for k in self.quote_ticks_files if k != str(self.config.spot_instrument_id)],
         )
         self.log.info(f"Will create data files for {options_count} options instruments")
 

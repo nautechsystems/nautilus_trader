@@ -514,10 +514,7 @@ class TestDataStubs:
             book_type=book_type,
         )
 
-        bids_counter: int = 0
-        asks_counter: int = 0
-
-        for price, size in bids or []:
+        for bids_counter, (price, size) in enumerate(bids or []):
             order = BookOrder(
                 side=OrderSide.BUY,
                 price=Price(price, instrument.price_precision),
@@ -525,8 +522,7 @@ class TestDataStubs:
                 order_id=bids_counter,
             )
             book.add(order, 0)
-            bids_counter += 1
-        for price, size in asks or []:
+        for asks_counter, (price, size) in enumerate(asks or []):
             order = BookOrder(
                 side=OrderSide.SELL,
                 price=Price(price, instrument.price_precision),
@@ -534,7 +530,6 @@ class TestDataStubs:
                 order_id=asks_counter,
             )
             book.add(order, 0)
-            asks_counter += 1
 
         return book
 

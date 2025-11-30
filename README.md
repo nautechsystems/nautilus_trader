@@ -10,16 +10,16 @@
 
 | Branch    | Version                                                                                                                                                                                                                     | Status                                                                                                                                                                                            |
 | :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `master`  | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
+| `master`  | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)  |
 | `nightly` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
 | Platform           | Rust   | Python    |
 | :----------------- | :----- | :-------- |
-| `Linux (x86_64)`   | 1.90.0 | 3.11-3.13 |
-| `Linux (ARM64)`    | 1.90.0 | 3.11-3.13 |
-| `macOS (ARM64)`    | 1.90.0 | 3.11-3.13 |
-| `Windows (x86_64)` | 1.90.0 | 3.11-3.13 |
+| `Linux (x86_64)`   | 1.91.1 | 3.12-3.14 |
+| `Linux (ARM64)`    | 1.91.1 | 3.12-3.14 |
+| `macOS (ARM64)`    | 1.91.1 | 3.12-3.14 |
+| `Windows (x86_64)` | 1.91.1 | 3.12-3.14 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -129,6 +129,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 | [dYdX](https://dydx.exchange/)                                               | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/dydx.md)          |
 | [Hyperliquid](https://hyperliquid.xyz)                                       | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/hyperliquid.md)   |
 | [Interactive Brokers](https://www.interactivebrokers.com)                    | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/ib.md)            |
+| [Kraken](https://kraken.com)                                                 | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](docs/integrations/kraken.md)        |
 | [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/okx.md)           |
 | [Polymarket](https://polymarket.com)                                         | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/polymarket.md)    |
 | [Tardis](https://tardis.dev)                                                 | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/tardis.md)        |
@@ -142,7 +143,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 - `beta`: Completed to a minimally working state and in a beta testing phase.
 - `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
 
-See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.html) documentation for further details.
+See the [Integrations](https://nautilustrader.io/docs/latest/integrations/) documentation for further details.
 
 ## Versioning and releases
 
@@ -214,6 +215,14 @@ To install the latest binary wheel (or sdist package) from PyPI using Python's p
 pip install -U nautilus_trader
 ```
 
+Install optional dependencies as 'extras' for specific integrations (e.g., `betfair`, `docker`, `dydx`, `ib`, `polymarket`, `visualization`):
+
+```bash
+pip install -U "nautilus_trader[docker,ib]"
+```
+
+See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#extras) for the full list of available extras.
+
 ### From the Nautech Systems package index
 
 The Nautech Systems package index (`packages.nautechsystems.io`) complies with [PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels for `nautilus_trader`.
@@ -268,10 +277,10 @@ To install the latest available pre-release (including development wheels):
 pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 ```
 
-To install a specific development wheel (e.g., `1.221.0a20250912` for September 12, 2025):
+To install a specific development wheel (e.g., `1.221.0a20251026` for October 26, 2025):
 
 ```bash
-pip install nautilus_trader==1.221.0a20250912 --index-url=https://packages.nautechsystems.io/simple
+pip install nautilus_trader==1.221.0a20251026 --index-url=https://packages.nautechsystems.io/simple
 ```
 
 #### Available versions
@@ -402,12 +411,18 @@ It's possible to install from source using pip if you first install the build de
 
     # Set the Python executable path for PyO3
     export PYO3_PYTHON=$(pwd)/.venv/bin/python
+
+    # Required for Rust tests when using uv-installed Python
+    export PYTHONHOME=$(python -c "import sys; print(sys.base_prefix)")
     ```
 
 > [!NOTE]
 >
 > Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match your system.
 > Use `uv python list` to find the exact path for your Python installation.
+>
+> The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`-installed Python.
+> Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
@@ -451,7 +466,7 @@ Indicators and strategies can be developed in both Python and Cython. For perfor
 latency-sensitive applications, we recommend using Cython. Below are some examples:
 
 - [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python.
-- [indicator](/nautilus_trader/indicators/) examples written in Cython.
+- [indicator](/nautilus_trader/indicators/) implementations written in Cython.
 - [strategy](/nautilus_trader/examples/strategies/) examples written in Python.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 
@@ -499,7 +514,7 @@ http://127.0.0.1:8888/lab
 ## Development
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
-See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/index.html) for helpful information.
+See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/) for helpful information.
 
 > [!TIP]
 >

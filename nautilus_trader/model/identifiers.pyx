@@ -60,15 +60,23 @@ cdef class Identifier:
         raise NotImplementedError("method `__setstate__` must be implemented in the subclass")  # pragma: no cover
 
     def __lt__(self, Identifier other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.to_str() < other.to_str()
 
     def __le__(self, Identifier other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.to_str() <= other.to_str()
 
     def __gt__(self, Identifier other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.to_str() > other.to_str()
 
     def __ge__(self, Identifier other) -> bool:
+        if other is None:
+            return NotImplemented
         return self.to_str() >= other.to_str()
 
     def __str__(self) -> str:
@@ -128,7 +136,7 @@ cdef class Symbol(Identifier):
 
     def __eq__(self, Symbol other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -215,7 +223,7 @@ cdef class Venue(Identifier):
 
     def __eq__(self, Venue other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -327,7 +335,7 @@ cdef class InstrumentId(Identifier):
 
     def __eq__(self, InstrumentId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem.symbol._0, other._mem.symbol._0) == 0 and strcmp(self._mem.venue._0, other._mem.venue._0) == 0
 
     def __hash__(self) -> int:
@@ -597,7 +605,7 @@ cdef class ComponentId(Identifier):
 
     def __eq__(self, ComponentId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -647,7 +655,7 @@ cdef class ClientId(Identifier):
 
     def __eq__(self, ClientId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -706,7 +714,7 @@ cdef class TraderId(Identifier):
 
     def __eq__(self, TraderId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -782,7 +790,7 @@ cdef class StrategyId(Identifier):
 
     def __eq__(self, StrategyId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -856,7 +864,7 @@ cdef class ExecAlgorithmId(Identifier):
 
     def __eq__(self, ExecAlgorithmId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -914,7 +922,7 @@ cdef class AccountId(Identifier):
 
     def __eq__(self, AccountId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -986,7 +994,7 @@ cdef class ClientOrderId(Identifier):
 
     def __eq__(self, ClientOrderId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -1032,7 +1040,7 @@ cdef class VenueOrderId(Identifier):
 
     def __eq__(self, VenueOrderId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -1078,7 +1086,7 @@ cdef class OrderListId(Identifier):
 
     def __eq__(self, OrderListId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -1124,7 +1132,7 @@ cdef class PositionId(Identifier):
 
     def __eq__(self, PositionId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(self._mem._0, other._mem._0) == 0
 
     def __hash__(self) -> int:
@@ -1188,7 +1196,7 @@ cdef class TradeId(Identifier):
 
     def __eq__(self, TradeId other) -> bool:
         if other is None:
-            raise TypeError("other was None in __eq__")
+            return False
         return strcmp(trade_id_to_cstr(&self._mem), trade_id_to_cstr(&other._mem)) == 0
 
     def __hash__(self) -> int:

@@ -217,7 +217,7 @@ impl BlockchainCache {
         if let Some(database) = &self.database {
             let dex = self
                 .get_dex(dex_id)
-                .ok_or_else(|| anyhow::anyhow!("DEX {:?} has not been registered", dex_id))?;
+                .ok_or_else(|| anyhow::anyhow!("DEX {dex_id:?} has not been registered"))?;
             let pool_rows = database
                 .load_pools(self.chain.clone(), &dex_id.to_string())
                 .await?;
@@ -270,10 +270,10 @@ impl BlockchainCache {
                 );
 
                 // Initialize pool with initial values if available
-                if let Some(initial_sqrt_price_x96_str) = &pool_row.initial_sqrt_price_x96 {
-                    if let Ok(initial_sqrt_price_x96) = initial_sqrt_price_x96_str.parse() {
-                        pool.initialize(initial_sqrt_price_x96);
-                    }
+                if let Some(initial_sqrt_price_x96_str) = &pool_row.initial_sqrt_price_x96
+                    && let Ok(initial_sqrt_price_x96) = initial_sqrt_price_x96_str.parse()
+                {
+                    pool.initialize(initial_sqrt_price_x96);
                 }
 
                 // Add pool to cache and loaded pools list
@@ -286,7 +286,7 @@ impl BlockchainCache {
 
     /// Loads block timestamps from the database starting `from_block` number
     /// into the in-memory cache.
-    #[allow(dead_code, reason = "TODO: Under development")]
+    #[allow(dead_code)]
     async fn load_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let block_timestamps = database
@@ -664,6 +664,11 @@ impl BlockchainCache {
         Ok(())
     }
 
+    /// Updates the initial price and tick for a pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database update fails.
     pub async fn update_pool_initialize_price_tick(
         &mut self,
         initialize_event: &InitializeEvent,
@@ -738,6 +743,11 @@ impl BlockchainCache {
         }
     }
 
+    /// Updates the last synced block number for a pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database update fails.
     pub async fn update_pool_last_synced_block(
         &self,
         dex: &DexType,
@@ -768,6 +778,11 @@ impl BlockchainCache {
         }
     }
 
+    /// Retrieves the last synced block number for a pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
     pub async fn get_pool_last_synced_block(
         &self,
         dex: &DexType,
@@ -808,7 +823,7 @@ impl BlockchainCache {
 
             let max_block = [swaps_last_block, liquidity_last_block, collect_last_block]
                 .into_iter()
-                .filter_map(|x| x)
+                .flatten()
                 .max();
             Ok(max_block)
         } else {

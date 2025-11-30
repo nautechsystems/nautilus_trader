@@ -16,13 +16,12 @@
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub struct WeightedLimiter {
     capacity: f64,       // tokens per minute (e.g., 1200)
     refill_per_sec: f64, // capacity / 60
-    state: Mutex<State>,
+    state: tokio::sync::Mutex<State>,
 }
 
 #[derive(Debug)]
@@ -37,7 +36,7 @@ impl WeightedLimiter {
         Self {
             capacity: cap,
             refill_per_sec: cap / 60.0,
-            state: Mutex::new(State {
+            state: tokio::sync::Mutex::new(State {
                 tokens: cap,
                 last_refill: Instant::now(),
             }),
@@ -192,12 +191,11 @@ pub fn exchange_weight(action: &crate::http::query::ExchangeAction) -> u32 {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
-    use serde_json::json;
 
     use super::*;
     use crate::http::query::{
-        CancelParams, ExchangeAction, ExchangeActionParams, ExchangeActionType, InfoRequest,
-        InfoRequestParams, L2BookParams, OrderParams, UpdateLeverageParams, UserFillsParams,
+        CancelParams, ExchangeAction, ExchangeActionParams, ExchangeActionType, OrderParams,
+        UpdateLeverageParams,
     };
 
     #[rstest]
@@ -213,7 +211,7 @@ mod tests {
         use rust_decimal::Decimal;
 
         use super::super::models::{
-            Cloid, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
+            Cloid, HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecOrderKind,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
         };
 
@@ -237,7 +235,7 @@ mod tests {
             action_type: ExchangeActionType::Order,
             params: ExchangeActionParams::Order(OrderParams {
                 orders,
-                grouping: "na".to_string(),
+                grouping: HyperliquidExecGrouping::Na,
             }),
         };
         assert_eq!(exchange_weight(&action), expected_weight);
@@ -274,54 +272,6 @@ mod tests {
         assert_eq!(exchange_weight(&update_leverage), 1);
     }
 
-    #[rstest]
-    #[case("l2Book", 2)]
-    #[case("allMids", 2)]
-    #[case("clearinghouseState", 2)]
-    #[case("orderStatus", 2)]
-    #[case("spotClearinghouseState", 2)]
-    #[case("exchangeStatus", 2)]
-    #[case("userRole", 60)]
-    #[case("userFills", 20)]
-    #[case("unknownEndpoint", 20)]
-    fn test_info_base_weights(#[case] request_type: &str, #[case] expected_weight: u32) {
-        let request = InfoRequest {
-            request_type: request_type.to_string(),
-            params: InfoRequestParams::L2Book(L2BookParams {
-                coin: "BTC".to_string(),
-            }),
-        };
-        assert_eq!(info_base_weight(&request), expected_weight);
-    }
-
-    #[rstest]
-    fn test_info_extra_weight_no_charging() {
-        let l2_book = InfoRequest {
-            request_type: "l2Book".to_string(),
-            params: InfoRequestParams::L2Book(L2BookParams {
-                coin: "BTC".to_string(),
-            }),
-        };
-        let large_json = json!(vec![1; 1000]);
-        assert_eq!(info_extra_weight(&l2_book, &large_json), 0);
-    }
-
-    #[rstest]
-    fn test_info_extra_weight_complex_json() {
-        let user_fills = InfoRequest {
-            request_type: "userFills".to_string(),
-            params: InfoRequestParams::UserFills(UserFillsParams {
-                user: "0x123".to_string(),
-            }),
-        };
-        let complex_json = json!({
-            "fills": vec![1; 40],
-            "orders": vec![1; 20],
-            "other": "data"
-        });
-        assert_eq!(info_extra_weight(&user_fills, &complex_json), 2); // largest array is 40, 40/20 = 2
-    }
-
     #[tokio::test]
     async fn test_limiter_roughly_caps_to_capacity() {
         let limiter = WeightedLimiter::per_minute(1200);
@@ -339,7 +289,7 @@ mod tests {
         // Should take at least some time to refill (allow some jitter/timing variance)
         assert!(
             elapsed.as_millis() >= 500,
-            "Expected significant delay, got {}ms",
+            "Expected significant delay, was {}ms",
             elapsed.as_millis()
         );
     }

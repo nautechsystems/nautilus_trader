@@ -19,8 +19,6 @@ import uuid
 from collections import deque
 from decimal import Decimal
 from heapq import heappush
-from typing import Any
-from typing import Callable
 from typing import Generator
 
 import cython
@@ -28,11 +26,12 @@ import pandas as pd
 
 from nautilus_trader.accounting.error import AccountError
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.common import Environment
 from nautilus_trader.common.component import is_logging_pyo3
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.data.engine import TimeRangeGenerator
+from nautilus_trader.data.engine import get_time_range_generator
 from nautilus_trader.model import BOOK_DATA_TYPES
 from nautilus_trader.model import NAUTILUS_PYO3_DATA_TYPES
 from nautilus_trader.system.kernel import NautilusKernel
@@ -166,7 +165,7 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instruments.base cimport EXPIRING_INSTRUMENT_TYPES
+from nautilus_trader.model.instruments.base cimport EXPIRING_INSTRUMENT_CLASSES
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
@@ -230,6 +229,7 @@ cdef class BacktestEngine:
         self._iteration: uint64_t = 0
         self._last_ns : uint64_t = 0
         self._end_ns : uint64_t = 0
+        self._sorted: bint = True
 
         # Timing
         self._run_started: pd.Timestamp | None = None
@@ -502,6 +502,7 @@ cdef class BacktestEngine:
         trade_execution: bool = False,
         allow_cash_borrowing: bool = False,
         frozen_account: bool = False,
+        price_protection_points=None,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -570,6 +571,9 @@ cdef class BacktestEngine:
             If cash accounts should allow borrowing (negative balances).
         frozen_account : bool, default False
             If the account for this exchange is frozen (balances will not change).
+        price_protection_points : int, optional
+            Defines an exchange-calculated price boundary (in points) to prevent
+            marketable orders from executing at excessively aggressive prices.
 
         Raises
         ------
@@ -603,6 +607,8 @@ cdef class BacktestEngine:
                 default_leverage = Decimal(1)
 
         # Create exchange
+        normalized_price_protection = price_protection_points
+
         exchange = SimulatedExchange(
             venue=venue,
             oms_type=oms_type,
@@ -632,6 +638,7 @@ cdef class BacktestEngine:
             bar_execution=bar_execution,
             bar_adaptive_high_low_ordering=bar_adaptive_high_low_ordering,
             trade_execution=trade_execution,
+            price_protection_points=normalized_price_protection,
         )
 
         self._venues[venue] = exchange
@@ -767,6 +774,30 @@ cdef class BacktestEngine:
         Caution if adding data without `sort` being True, as this could lead to running backtests
         on a stream which does not have monotonically increasing timestamps.
 
+        Notes
+        -----
+        For optimal performance when loading large datasets, consider using `sort=False` for all
+        calls to `add_data()`, then calling `sort_data()` once after all data has been added:
+
+        .. code-block:: python
+
+            # Add multiple data streams without sorting
+            engine.add_data(instrument1_bars, sort=False)
+            engine.add_data(instrument2_bars, sort=False)
+            engine.add_data(instrument3_bars, sort=False)
+
+            # Sort once at the end
+            engine.sort_data()
+
+        This approach avoids repeatedly sorting the entire data stream on each call,
+        significantly reducing load time for large datasets.
+
+        **Contract invariants:**
+
+        - When `sort=True`: Data is immediately available for backtesting via `run()`.
+        - When `sort=False`: You **must** call `sort_data()` or add data with `sort=True` before `run()`.
+        - The provided `data` list is always copied internally to prevent external mutations from affecting the engine state.
+
         """
         Condition.not_empty(data, "data")
         Condition.list_type(data, Data, "data")
@@ -822,8 +853,10 @@ cdef class BacktestEngine:
 
         if sort:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
-
-        self._data_iterator.add_data("backtest_data", self._data)
+            self._data_iterator.add_data("backtest_data", self._data, append_data=True, presorted=True)
+            self._sorted = True
+        else:
+            self._sorted = False
 
         for data_point in data:
             data_type = type(data_point)
@@ -882,7 +915,7 @@ cdef class BacktestEngine:
             self._handle_unsubscribe(<UnsubscribeData>command)
 
     cdef void _handle_subscribe(self, SubscribeData command):
-        cdef RequestData request = command.to_request(None, None, self._handle_data_response)
+        cdef RequestData request = command.to_request(unix_nanos_to_dt(self._last_ns), unix_nanos_to_dt(self._end_ns), self._handle_data_response)
         cdef str subscription_name = request.params["subscription_name"]
 
         if subscription_name in self._data_requests or subscription_name in self._backtest_subscription_names:
@@ -890,34 +923,46 @@ cdef class BacktestEngine:
 
         self._log.debug(f"Subscribing to {subscription_name}, {command.params.get('durations_seconds')=}")
 
-        self._data_requests[subscription_name] = request
-        request.params["end_ns"] = self._end_ns
-        time_range_generator = TIME_RANGE_GENERATORS.get(
-            request.params.get("time_range_generator", ""),
-            BacktestEngine.default_time_range_generator
-        )(self._last_ns, request.params)
+        time_range_generator = get_time_range_generator(
+            request.params.get("time_range_generator", "")
+        )(request)
         cdef bint append_data = request.params.get("append_data", True)
-        self._data_iterator.init_data(subscription_name, self._subscription_generator(subscription_name, time_range_generator), append_data)
+        request.params.pop("time_range_generator", None) # so sub_requests don't use long data range requests as well
 
-    def _subscription_generator(self, str subscription_name, time_range_generator):
+        self._data_requests[subscription_name] = request
+        self._data_iterator.init_data(
+            subscription_name,
+            self._subscription_generator(
+                subscription_name,
+                time_range_generator,
+            ),
+            append_data
+        )
+
+    def _subscription_generator(
+        self,
+        str subscription_name,
+        time_range_generator: TimeRangeGenerator,
+    ):
         """
-        Generator that yields data for subscription using a time generator.
+        Generator that yields a range of backtest data for a subscription using a time range generator.
         """
         def get_next_time_range(data_received):
-            # Helper to get next time range with proper error handling
+            # Helper to get next time range with proper error handling, data_received is a signal sent to the time_range_generator
+            # to indicate if data has been received in the previous call to _update_subscription_data
             try:
-                return time_range_generator.send(data_received) if data_received else next(time_range_generator)
+                return time_range_generator.send(data_received) if data_received is not None else next(time_range_generator)
             except StopIteration:
                 return None, None
 
         # Get initial time range
-        start_time, end_time = get_next_time_range(False)
+        request_start_ns, request_end_ns = get_next_time_range(None)
 
         try:
-            while start_time is not None and start_time <= self._end_ns:
+            while request_start_ns is not None and request_start_ns <= self._end_ns:
                 # Clear and update response data
                 self._response_data = []
-                self._update_subscription_data(subscription_name, start_time, end_time)
+                self._update_subscription_data(subscription_name, request_start_ns, request_end_ns)
 
                 # Determine signal based on whether we got data
                 data_received = len(self._response_data) > 0
@@ -927,7 +972,7 @@ cdef class BacktestEngine:
                     yield self._response_data
 
                 # Get next time range
-                start_time, end_time = get_next_time_range(data_received)
+                request_start_ns, request_end_ns = get_next_time_range(data_received)
         finally:
             # Ensure generator is properly closed
             try:
@@ -935,14 +980,15 @@ cdef class BacktestEngine:
             except (StopIteration, GeneratorExit):
                 pass
 
-    cpdef void _update_subscription_data(self, str subscription_name, uint64_t start_time, uint64_t end_time):
+    cpdef void _update_subscription_data(self, str subscription_name, uint64_t request_start_ns, uint64_t request_end_ns):
         cdef RequestData request = self._data_requests[subscription_name]
         cdef RequestData new_request = request.with_dates(
-            unix_nanos_to_dt(start_time),
-            unix_nanos_to_dt(end_time),
-            self._last_ns
+            unix_nanos_to_dt(request_start_ns),
+            unix_nanos_to_dt(request_end_ns),
+            self._last_ns,
+            self._handle_data_response
         )
-        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
+        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(request_start_ns)} to {unix_nanos_to_dt(request_end_ns)}")
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     cpdef void _handle_data_response(self, DataResponse response):
@@ -950,7 +996,7 @@ cdef class BacktestEngine:
         cdef str subscription_name = response.params["subscription_name"]
 
         if not data:
-            self._log.debug(f"Removing backtest data for {subscription_name}")
+            self._log.debug(f"Empty data for {subscription_name}")
         else:
             self._log.debug(f"Received subscribe {subscription_name} data from {unix_nanos_to_dt(data[0].ts_init)} to {unix_nanos_to_dt(data[-1].ts_init)}")
 
@@ -969,56 +1015,6 @@ cdef class BacktestEngine:
         self._log.debug(f"Unsubscribing {subscription_name}")
         self._data_iterator.remove_data(subscription_name, complete_remove=True)
         self._data_requests.pop(subscription_name, None)
-
-    @classmethod
-    def default_time_range_generator(cls, uint64_t initial_time, dict params):
-        """
-        Generator that yields (start_time, end_time) tuples for data subscription.
-
-        This generator handles the duration logic and can receive feedback via .send().
-        """
-        cdef uint64_t offset
-        cdef uint64_t start_time
-        cdef uint64_t end_time
-        cdef uint64_t last_subscription_ts = initial_time
-
-        cdef uint64_t end_ns = params.get("end_ns", 0)
-        cdef bint point_data = params.get("point_data", False)
-        durations_seconds = params.get("durations_seconds", [None])
-        durations_ns = [duration_seconds * 1e9 if duration_seconds else None for duration_seconds in durations_seconds]
-        cdef int iteration_index = 0
-
-        while True:
-            # Possibility to use durations of various lengths to take into account weekends or market breaks
-            for duration_ns in durations_ns:
-                # First iteration for [a, a + duration], then ]a + duration, a + 2 * duration]
-                # When point_data we do a query for [start_time, start_time] only
-                offset = 1 if iteration_index > 0 and not point_data else 0
-                start_time = last_subscription_ts + offset
-
-                if start_time > end_ns:
-                    return
-
-                if duration_ns:
-                    end_time = min(start_time + duration_ns - offset, end_ns)
-                else:
-                    end_time = end_ns
-
-                last_subscription_ts = end_time
-
-                if point_data:
-                    end_time = start_time
-
-                # Yield the time range and wait for feedback
-                data_received = yield (start_time, end_time)
-                iteration_index += 1
-
-                # If we received a success signal, break from the duration loop
-                if data_received:
-                    break
-            else:
-                # If we completed the for loop without breaking (no success), exit the while loop
-                return
 
     def dump_pickled_data(self) -> bytes:
         """
@@ -1049,6 +1045,8 @@ cdef class BacktestEngine:
         """
         Condition.not_none(data, "data")
         self._data = pickle.loads(data)
+        self._data_iterator.add_data("backtest_data", self._data, append_data=True, presorted=True)
+        self._sorted = True
 
         self._log.info(
             f"Loaded {len(self._data):_} data "
@@ -1191,7 +1189,10 @@ cdef class BacktestEngine:
         # Reset timing
         self._iteration = 0
         self._data_iterator = BacktestDataIterator()
-        self._data_iterator.add_data("backtest_data", self._data)
+
+        if self._sorted:
+            self._data_iterator.add_data("backtest_data", self._data, append_data=True, presorted=True)
+
         self._run_started = None
         self._run_finished = None
         self._backtest_start = None
@@ -1204,7 +1205,9 @@ cdef class BacktestEngine:
         Sort the engines internal data stream.
 
         """
-        self._data.sort()
+        self._data = sorted(self._data, key=lambda x: x.ts_init)
+        self._data_iterator.add_data("backtest_data", self._data, append_data=True, presorted=True)
+        self._sorted = True
 
     def clear_data(self) -> None:
         """
@@ -1218,6 +1221,7 @@ cdef class BacktestEngine:
         self._data.clear()
         self._data_len = 0
         self._data_iterator = BacktestDataIterator()
+        self._sorted = True
 
     def clear_actors(self) -> None:
         """
@@ -1294,6 +1298,16 @@ cdef class BacktestEngine:
             If no data has been added to the engine.
         ValueError
             If the `start` is >= the `end` datetime.
+        RuntimeError
+            If data has been added with `sort=False` but `sort_data()` has not been called.
+
+        Notes
+        -----
+        **Contract invariants:**
+
+        - All data added via `add_data()` must be sorted and synced to the internal iterator before calling `run()`.
+        - If any data was added with `sort=False`, you must call `sort_data()` or add data with `sort=True` before this method.
+        - The engine validates this requirement and will raise `RuntimeError` if unsorted data is detected.
 
         """
         self._run(start, end, run_config_id, streaming)
@@ -1381,7 +1395,7 @@ cdef class BacktestEngine:
             iterations=self._iteration,
             total_events=self._kernel.exec_engine.event_count,
             total_orders=self._kernel.cache.orders_total_count(),
-            total_positions=self._kernel.cache.positions_total_count(),
+            total_positions=len(self._kernel.cache.positions()) + len(self._kernel.cache.position_snapshots()),
             stats_pnls=stats_pnls,
             stats_returns=self._kernel.portfolio.analyzer.get_performance_stats_returns(),
         )
@@ -1393,6 +1407,13 @@ cdef class BacktestEngine:
         run_config_id: str | None = None,
         bint streaming = False,
     ):
+        # Validate data has been sorted and synced to iterator
+        if self._data and not self._sorted:
+            raise RuntimeError(
+                "Data has been added but not sorted, "
+                "call `engine.sort_data()` or use `engine.add_data(..., sort=True)` before running"
+            )
+
         # Validate data
         cdef:
             SimulatedExchange exchange
@@ -1962,7 +1983,13 @@ cdef class BacktestDataIterator:
         self._single_data_index = 0
         self._is_single_data = False
 
-    def add_data(self, data_name, list data, bint append_data=True):
+    def add_data(
+        self,
+        str data_name,
+        list data,
+        bint append_data = True,
+        bint presorted = False,
+    ) -> None:
         """
         Add (or replace) a named, pre-sorted data list for static data loading.
 
@@ -1979,6 +2006,9 @@ cdef class BacktestDataIterator:
             Controls stream priority for timestamp ties:
             ``True`` – lower priority (appended).
             ``False`` – higher priority (prepended).
+        presorted : bool, default ``False``
+            If the data is guaranteed to be pre-sorted by `ts_init`.
+            When ``True``, skips internal sorting for better performance.
 
         Raises
         ------
@@ -1991,13 +2021,14 @@ cdef class BacktestDataIterator:
         if not data:
             return
 
-        def data_generator():
-            yield data
-            # Generator ends after yielding once
+        self._add_data(data_name, data, append_data, presorted)
 
-        self.init_data(data_name, data_generator(), append_data)
-
-    def init_data(self, str data_name, data_generator, bint append_data=True):
+    def init_data(
+        self,
+        str data_name,
+        data_generator,
+        bint append_data = True,
+    ) -> None:
         """
         Add (or replace) a named data generator for streaming large datasets.
 
@@ -2042,7 +2073,13 @@ cdef class BacktestDataIterator:
             # Generator is already exhausted, nothing to add
             pass
 
-    cdef void _add_data(self, str data_name, list data_list, bint append_data=True):
+    cdef void _add_data(
+        self,
+        str data_name,
+        list data_list,
+        bint append_data = True,
+        bint presorted = False,
+    ):
         if len(data_list) == 0:
             return
 
@@ -2062,7 +2099,12 @@ cdef class BacktestDataIterator:
         if self._is_single_data:
             self._deactivate_single_data()
 
-        self._data[data_priority] = sorted(data_list, key=lambda data: data.ts_init)
+        # Copy and optionally sort to avoid aliasing caller's list
+        if presorted:
+            self._data[data_priority] = list(data_list)
+        else:
+            self._data[data_priority] = sorted(data_list, key=lambda data: data.ts_init)
+
         self._data_name[data_priority] = data_name
         self._data_priority[data_name] = data_priority
         self._data_len[data_priority] = len(data_list)
@@ -2381,6 +2423,9 @@ cdef class SimulatedExchange:
         If True, the processing order adapts with the heuristic:
         - If High is closer to Open than Low then the processing order is Open, High, Low, Close.
         - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
+    price_protection_points : int, optional
+        Defines an exchange-calculated price boundary (in points) to prevent
+        marketable orders from executing at excessively aggressive prices.
     trade_execution : bool, default False
         If trades should be processed by the matching engine(s) (and move the market).
 
@@ -2431,6 +2476,7 @@ cdef class SimulatedExchange:
         bint bar_execution = True,
         bint bar_adaptive_high_low_ordering = False,
         bint trade_execution = False,
+        price_protection_points=None,
     ) -> None:
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
@@ -2472,6 +2518,7 @@ cdef class SimulatedExchange:
         self.bar_execution = bar_execution
         self.bar_adaptive_high_low_ordering = bar_adaptive_high_low_ordering
         self.trade_execution = trade_execution
+        self.price_protection_points = price_protection_points if price_protection_points is not None else 0
 
         # Execution models
         self.fill_model = fill_model
@@ -2627,6 +2674,7 @@ cdef class SimulatedExchange:
             bar_execution=self.bar_execution,
             bar_adaptive_high_low_ordering=self.bar_adaptive_high_low_ordering,
             trade_execution=self.trade_execution,
+            price_protection_points=self.price_protection_points,
         )
 
         self._matching_engines[instrument.id] = matching_engine
@@ -3454,6 +3502,7 @@ cdef class OrderMatchingEngine:
         bint bar_execution = True,
         bint bar_adaptive_high_low_ordering = False,
         bint trade_execution = False,
+        price_protection_points=None,
         # auction_match_algo = default_auction_match
     ) -> None:
         self._clock = clock
@@ -3469,7 +3518,7 @@ cdef class OrderMatchingEngine:
         self.account_type = account_type
         self.market_status = MarketStatus.OPEN
 
-        self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_TYPES
+        self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_CLASSES
         self._instrument_close = None
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
@@ -3480,6 +3529,7 @@ cdef class OrderMatchingEngine:
         self._bar_execution = bar_execution
         self._bar_adaptive_high_low_ordering = bar_adaptive_high_low_ordering
         self._trade_execution = trade_execution
+        self._price_protection_points = price_protection_points if price_protection_points is not None else 0
 
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
@@ -3883,9 +3933,6 @@ cdef class OrderMatchingEngine:
         cdef BarType bar_type = bar.bar_type
         if bar_type.aggregation_source == AggregationSource.INTERNAL:
             return  # Do not process internally aggregated bars
-
-        if bar_type.spec.aggregation == BarAggregation.MONTH:
-            return  # Do not process monthly bars (there is no available `timedelta`)
 
         # Validate precisions
         if bar._mem.open.precision != self.instrument.price_precision:
@@ -6407,10 +6454,3 @@ cdef class OrderMatchingEngine:
             ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
-
-
-TimeRangeGenerator = Callable[[int, dict[str, Any]], Generator[int, bool, None]]
-cdef dict[str, TimeRangeGenerator] TIME_RANGE_GENERATORS = {}
-
-cpdef void register_time_range_generator(str name, function: TimeRangeGenerator):
-    TIME_RANGE_GENERATORS[name] = function

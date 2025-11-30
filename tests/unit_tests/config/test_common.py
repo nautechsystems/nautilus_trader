@@ -141,6 +141,7 @@ def test_json_primitives() -> None:
         "filters": None,
         "filter_callable": None,
         "log_warnings": True,
+        "use_gamma_markets": False,
     }
 
 
@@ -213,8 +214,8 @@ def test_encoding_unsupported_type() -> None:
     with pytest.raises(TypeError) as exinfo:
         msgspec_encoding_hook(unsupported_obj)
 
-        # Verifying the exception message
-        assert str(exinfo) == "Encoding objects of type <class 'list'> is unsupported"
+    # Verifying the exception message
+    assert str(exinfo.value) == "Encoding objects of type <class 'list'> is unsupported"
 
 
 def test_decoding_unsupported_type() -> None:
@@ -226,8 +227,8 @@ def test_decoding_unsupported_type() -> None:
     with pytest.raises(TypeError) as exinfo:
         msgspec_decoding_hook(unsupported_type, unsupported_obj)
 
-        # Verifying the exception message
-        assert str(exinfo) == "Decoding objects of type <class 'list'> is unsupported"
+    # Verifying the exception message
+    assert str(exinfo.value) == "Decoding objects of type <class 'list'> is unsupported"
 
 
 def test_encoding_uuid4() -> None:

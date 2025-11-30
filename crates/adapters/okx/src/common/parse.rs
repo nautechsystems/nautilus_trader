@@ -23,7 +23,6 @@ use nautilus_core::{
     nanos::UnixNanos,
 };
 use nautilus_model::{
-    currencies::CURRENCY_MAP,
     data::{
         Bar, BarSpecification, BarType, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
         TradeTick,
@@ -49,7 +48,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use ustr::Ustr;
 
@@ -64,25 +63,47 @@ use crate::{
         models::OKXInstrument,
     },
     http::models::{
-        OKXAccount, OKXCandlestick, OKXIndexTicker, OKXMarkPrice, OKXOrderHistory, OKXPosition,
-        OKXTrade, OKXTransactionDetail,
+        OKXAccount, OKXBalanceDetail, OKXCandlestick, OKXIndexTicker, OKXMarkPrice,
+        OKXOrderHistory, OKXPosition, OKXTrade, OKXTransactionDetail,
     },
     websocket::{enums::OKXWsChannel, messages::OKXFundingRateMsg},
 };
+
+/// Determines if a price string represents a market order.
+///
+/// OKX uses special values to indicate market execution:
+/// - Empty string
+/// - "0"
+/// - "-1" (optimal market price)
+/// - "-2" (optimal market price, alternate)
+pub fn is_market_price(px: &str) -> bool {
+    px.is_empty() || px == "0" || px == "-1" || px == "-2"
+}
+
+/// Determines the [`OrderType`] from OKX order type and price.
+///
+/// For FOK, IOC, and OptimalLimitIoc orders, the presence of a price
+/// determines whether it's a market or limit order execution.
+pub fn determine_order_type(okx_ord_type: OKXOrderType, px: &str) -> OrderType {
+    match okx_ord_type {
+        OKXOrderType::Fok | OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
+            if is_market_price(px) {
+                OrderType::Market
+            } else {
+                OrderType::Limit
+            }
+        }
+        _ => okx_ord_type.into(),
+    }
+}
 
 /// Deserializes an empty string into [`None`].
 ///
 /// OKX frequently represents *null* string fields as an empty string (`""`).
 /// When such a payload is mapped onto `Option<String>` the default behaviour
 /// would yield `Some("")`, which is semantically different from the intended
-/// absence of a value.  Applying this helper via
-///
-/// ```rust
-/// #[serde(deserialize_with = "crate::common::parse::deserialize_empty_string_as_none")]
-/// pub cl_ord_id: Option<String>,
-/// ```
-///
-/// ensures that empty strings are normalised to `None` during deserialization.
+/// absence of a value. This helper ensures that empty strings are normalised
+/// to `None` during deserialization.
 ///
 /// # Errors
 ///
@@ -115,7 +136,7 @@ where
 /// Returns an error if the string cannot be parsed into an `OKXTargetCurrency`.
 pub fn deserialize_target_currency_as_none<'de, D>(
     deserializer: D,
-) -> Result<Option<crate::common::enums::OKXTargetCurrency>, D::Error>
+) -> Result<Option<OKXTargetCurrency>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -197,10 +218,11 @@ where
     Ok(OKXVipLevel::from(level_num))
 }
 
-/// Returns the currency either from the internal currency map or creates a default crypto.
+/// Returns a currency from the internal map or creates a new crypto currency.
 ///
 /// If the code is empty, logs a warning with context and returns USDT as fallback.
-/// For unknown but valid codes, creates a new Currency (preserves newly listed OKX assets).
+/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
+/// which automatically registers newly listed OKX assets.
 fn get_currency_with_context(code: &str, context: Option<&str>) -> Currency {
     let trimmed = code.trim();
     let ctx = context.unwrap_or("unknown");
@@ -212,17 +234,7 @@ fn get_currency_with_context(code: &str, context: Option<&str>) -> Currency {
         return Currency::USDT();
     }
 
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .get(trimmed)
-        .copied()
-        .unwrap_or_else(|| {
-            // For unknown codes, create a new currency (8 decimals, crypto type)
-            // This preserves newly listed OKX assets that aren't in CURRENCY_MAP yet
-            use nautilus_model::enums::CurrencyType;
-            Currency::new(trimmed, 8, 0, trimmed, CurrencyType::Crypto)
-        })
+    Currency::get_or_create_crypto(trimmed)
 }
 
 /// Returns the [`OKXInstrumentType`] that corresponds to the supplied
@@ -271,6 +283,24 @@ pub fn okx_instrument_type_from_symbol(symbol: &str) -> OKXInstrumentType {
     }
 }
 
+/// Extracts base and quote currencies from an OKX symbol.
+///
+/// All OKX instrument symbols start with {BASE}-{QUOTE}, regardless of type.
+///
+/// # Errors
+///
+/// Returns an error if the symbol doesn't contain at least two parts separated by '-'.
+pub fn parse_base_quote_from_symbol(symbol: &str) -> anyhow::Result<(&str, &str)> {
+    let mut parts = symbol.split('-');
+    let base = parts.next().ok_or_else(|| {
+        anyhow::anyhow!("Invalid symbol format: missing base currency in '{symbol}'")
+    })?;
+    let quote = parts.next().ok_or_else(|| {
+        anyhow::anyhow!("Invalid symbol format: missing quote currency in '{symbol}'")
+    })?;
+    Ok((base, quote))
+}
+
 /// Parses a Nautilus instrument ID from the given OKX `symbol` value.
 #[must_use]
 pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
@@ -312,10 +342,11 @@ pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
 ///
 /// # Errors
 ///
-/// Returns an error if the string fails to parse into `f64` or if the number
+/// Returns an error if the string fails to parse into `Decimal` or if the number
 /// of decimal places exceeds `precision`.
 pub fn parse_price(value: &str, precision: u8) -> anyhow::Result<Price> {
-    Price::new_checked(value.parse::<f64>()?, precision)
+    let decimal = Decimal::from_str(value)?;
+    Price::from_decimal_dp(decimal, precision)
 }
 
 /// Converts a textual quantity to a [`Quantity`].
@@ -325,7 +356,8 @@ pub fn parse_price(value: &str, precision: u8) -> anyhow::Result<Price> {
 /// Returns an error for the same reasons as [`parse_price`] – parsing failure or invalid
 /// precision.
 pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
-    Quantity::new_checked(value.parse::<f64>()?, precision)
+    let decimal = Decimal::from_str(value)?;
+    Quantity::from_decimal_dp(decimal, precision)
 }
 
 /// Converts a textual fee amount into a [`Money`] value.
@@ -335,12 +367,12 @@ pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
 ///
 /// # Errors
 ///
-/// Returns an error if the fee cannot be parsed into `f64` or fails internal
-/// validation in [`Money::new_checked`].
+/// Returns an error if the fee cannot be parsed into `Decimal` or fails internal
+/// validation in [`Money::from_decimal`].
 pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Money> {
     // OKX report positive fees with negative signs (i.e., fee charged)
-    let fee_f64 = value.unwrap_or("0").parse::<f64>()?;
-    Money::new_checked(-fee_f64, currency)
+    let decimal = Decimal::from_str(value.unwrap_or("0"))?;
+    Money::from_decimal(-decimal, currency)
 }
 
 /// Parses OKX fee currency code, handling empty strings.
@@ -349,12 +381,12 @@ pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Mone
 /// When the fee currency is empty, defaults to USDT and logs a warning for non-zero fees.
 pub fn parse_fee_currency(
     fee_ccy: &str,
-    fee_amount: f64,
+    fee_amount: Decimal,
     context: impl FnOnce() -> String,
 ) -> Currency {
     let trimmed = fee_ccy.trim();
     if trimmed.is_empty() {
-        if fee_amount != 0.0 {
+        if !fee_amount.is_zero() {
             let ctx = context();
             tracing::warn!(
                 "Empty fee_ccy in {ctx} with non-zero fee={fee_amount}, using USDT as fallback"
@@ -523,6 +555,10 @@ pub fn parse_candlestick(
 }
 
 /// Parses an OKX order history record into a Nautilus [`OrderStatusReport`].
+///
+/// # Errors
+///
+/// Returns an error if the average price cannot be converted to a valid `Decimal`.
 #[allow(clippy::too_many_lines)]
 pub fn parse_order_status_report(
     order: &OKXOrderHistory,
@@ -531,7 +567,10 @@ pub fn parse_order_status_report(
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> OrderStatusReport {
+) -> anyhow::Result<OrderStatusReport> {
+    let okx_ord_type: OKXOrderType = order.ord_type;
+    let order_type = determine_order_type(okx_ord_type, &order.px);
+
     // Parse quantities based on target currency
     // OKX always returns acc_fill_sz in base currency, but sz depends on tgt_ccy
 
@@ -547,20 +586,20 @@ pub fn parse_order_status_report(
         && (order.inst_type == OKXInstrumentType::Spot
             || order.inst_type == OKXInstrumentType::Margin)
         && order.side == OKXSide::Buy
-        && order.ord_type == OKXOrderType::Market;
+        && order_type == OrderType::Market;
 
     let (quantity, filled_qty) = if is_quote_qty_explicit || is_quote_qty_heuristic {
         // Quote-quantity order: sz is in quote currency, need to convert to base
-        let sz_quote = order.sz.parse::<f64>().unwrap_or(0.0);
+        let sz_quote_dec = Decimal::from_str(&order.sz).ok();
 
         // Determine the price to use for conversion
         // Priority: 1) limit price (px) for limit orders, 2) avg_px for market orders
-        let conversion_price = if !order.px.is_empty() && order.px != "0" {
+        let conversion_price_dec = if !order.px.is_empty() && order.px != "0" {
             // Limit order: use the limit price (order.px)
-            order.px.parse::<f64>().unwrap_or(0.0)
+            Decimal::from_str(&order.px).ok()
         } else if !order.avg_px.is_empty() && order.avg_px != "0" {
             // Market order with fills: use average fill price
-            order.avg_px.parse::<f64>().unwrap_or(0.0)
+            Decimal::from_str(&order.avg_px).ok()
         } else {
             log::warn!(
                 "No price available for conversion: ord_id={}, px='{}', avg_px='{}'",
@@ -568,51 +607,77 @@ pub fn parse_order_status_report(
                 order.px,
                 order.avg_px
             );
-            0.0
+            None
         };
 
         // Convert quote quantity to base: quantity_base = sz_quote / price
-        let quantity_base = if conversion_price > 0.0 {
-            Quantity::new(sz_quote / conversion_price, size_precision)
+        let quantity_base = if let (Some(sz), Some(price)) = (sz_quote_dec, conversion_price_dec) {
+            if !price.is_zero() {
+                let quantity_dec = sz / price;
+                Quantity::from_decimal_dp(quantity_dec, size_precision).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to convert quote-to-base quantity for ord_id={}, sz={sz}, price={price}, quantity_dec={quantity_dec}: {e}",
+                        order.ord_id.as_str()
+                    )
+                })?
+            } else {
+                log::warn!(
+                    "Cannot convert quote quantity with zero price: ord_id={}, sz={}, using sz as-is",
+                    order.ord_id.as_str(),
+                    order.sz
+                );
+                Quantity::from_str(&order.sz).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to parse fallback quantity for ord_id={}, sz='{}': {e}",
+                        order.ord_id.as_str(),
+                        order.sz
+                    )
+                })?
+            }
         } else {
-            // No price available, can't convert - use sz as-is temporarily
             log::warn!(
-                "Cannot convert, using sz as-is: ord_id={}, sz={}",
+                "Cannot convert quote quantity without price: ord_id={}, sz={}, px='{}', avg_px='{}', using sz as-is",
                 order.ord_id.as_str(),
-                order.sz
+                order.sz,
+                order.px,
+                order.avg_px
             );
-            order
-                .sz
-                .parse::<f64>()
-                .ok()
-                .map(|v| Quantity::new(v, size_precision))
-                .unwrap_or_default()
+            Quantity::from_str(&order.sz).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to parse fallback quantity for ord_id={}, sz='{}': {e}",
+                    order.ord_id.as_str(),
+                    order.sz
+                )
+            })?
         };
 
-        let filled_qty = order
-            .acc_fill_sz
-            .parse::<f64>()
-            .ok()
-            .map(|v| Quantity::new(v, size_precision))
-            .unwrap_or_default();
+        let filled_qty_dec = parse_quantity(&order.acc_fill_sz, size_precision).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse filled quantity for ord_id={}, acc_fill_sz='{}': {e}",
+                order.ord_id.as_str(),
+                order.acc_fill_sz
+            )
+        })?;
 
-        (quantity_base, filled_qty)
+        (quantity_base, filled_qty_dec)
     } else {
         // Base-quantity order: both sz and acc_fill_sz are in base currency
-        let quantity = order
-            .sz
-            .parse::<f64>()
-            .ok()
-            .map(|v| Quantity::new(v, size_precision))
-            .unwrap_or_default();
-        let filled_qty = order
-            .acc_fill_sz
-            .parse::<f64>()
-            .ok()
-            .map(|v| Quantity::new(v, size_precision))
-            .unwrap_or_default();
+        let quantity_dec = parse_quantity(&order.sz, size_precision).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse base quantity for ord_id={}, sz='{}': {e}",
+                order.ord_id.as_str(),
+                order.sz
+            )
+        })?;
+        let filled_qty_dec = parse_quantity(&order.acc_fill_sz, size_precision).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse filled quantity for ord_id={}, acc_fill_sz='{}': {e}",
+                order.ord_id.as_str(),
+                order.acc_fill_sz
+            )
+        })?;
 
-        (quantity, filled_qty)
+        (quantity_dec, filled_qty_dec)
     };
 
     // For quote-quantity orders marked as FILLED, adjust quantity to match filled_qty
@@ -629,12 +694,12 @@ pub fn parse_order_status_report(
     let order_side: OrderSide = order.side.into();
     let okx_status: OKXOrderStatus = order.state;
     let order_status: OrderStatus = okx_status.into();
-    let okx_ord_type: OKXOrderType = order.ord_type;
-    let order_type: OrderType = okx_ord_type.into();
-    // Note: OKX uses ordType for type and liquidity instructions; time-in-force not explicitly represented here
-    let time_in_force = TimeInForce::Gtc;
+    let time_in_force = match okx_ord_type {
+        OKXOrderType::Fok => TimeInForce::Fok,
+        OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
+        _ => TimeInForce::Gtc,
+    };
 
-    // Build report
     let mut client_order_id = if order.cl_ord_id.is_empty() {
         None
     } else {
@@ -695,18 +760,22 @@ pub fn parse_order_status_report(
 
     // Optional fields
     if !order.px.is_empty()
-        && let Ok(p) = order.px.parse::<f64>()
+        && let Ok(decimal) = Decimal::from_str(&order.px)
+        && let Ok(price) = Price::from_decimal_dp(decimal, price_precision)
     {
-        report = report.with_price(Price::new(p, price_precision));
+        report = report.with_price(price);
     }
+
     if !order.avg_px.is_empty()
-        && let Ok(avg) = order.avg_px.parse::<f64>()
+        && let Ok(decimal) = Decimal::from_str(&order.avg_px)
     {
-        report = report.with_avg_px(avg);
+        report = report.with_avg_px(decimal.to_f64().unwrap_or(0.0))?;
     }
+
     if order.ord_type == OKXOrderType::PostOnly {
         report = report.with_post_only(true);
     }
+
     if order.reduce_only == "true" {
         report = report.with_reduce_only(true);
     }
@@ -715,7 +784,84 @@ pub fn parse_order_status_report(
         report = report.with_linked_order_ids(linked_ids);
     }
 
-    report
+    Ok(report)
+}
+
+/// Parses spot margin position from OKX balance detail.
+///
+/// Spot margin positions appear in `/api/v5/account/balance` as balance sheet items
+/// rather than in `/api/v5/account/positions`. This function converts balance details
+/// with non-zero liability (`liab`) or spot in use amount (`spotInUseAmt`) into position reports.
+///
+/// # Position Determination
+///
+/// - `liab` > 0 and `spotInUseAmt` < 0 → Short position (borrowed and sold)
+/// - `liab` > 0 and `spotInUseAmt` > 0 → Long position (borrowed to buy)
+/// - `liab` == 0 → No margin position (regular spot balance)
+///
+/// # Errors
+///
+/// Returns an error if numeric fields cannot be parsed.
+pub fn parse_spot_margin_position_from_balance(
+    balance: &OKXBalanceDetail,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<PositionStatusReport>> {
+    // OKX returns empty strings for zero values, normalize to "0" before parsing
+    let liab_str = if balance.liab.trim().is_empty() {
+        "0"
+    } else {
+        balance.liab.trim()
+    };
+    let spot_in_use_str = if balance.spot_in_use_amt.trim().is_empty() {
+        "0"
+    } else {
+        balance.spot_in_use_amt.trim()
+    };
+
+    let liab_dec = Decimal::from_str(liab_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse liab '{liab_str}': {e}"))?;
+    let spot_in_use_dec = Decimal::from_str(spot_in_use_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse spotInUseAmt '{spot_in_use_str}': {e}"))?;
+
+    // Skip if no margin position (no liability and no spot in use)
+    if liab_dec.is_zero() && spot_in_use_dec.is_zero() {
+        return Ok(None);
+    }
+
+    // Check if spotInUseAmt is zero first
+    if spot_in_use_dec.is_zero() {
+        // No position if spotInUseAmt is zero (regardless of liability)
+        return Ok(None);
+    }
+
+    // Position side based on spotInUseAmt sign
+    let (position_side, quantity_dec) = if spot_in_use_dec.is_sign_negative() {
+        // Negative spotInUseAmt = sold (short position)
+        (PositionSide::Short, spot_in_use_dec.abs())
+    } else {
+        // Positive spotInUseAmt = bought (long position)
+        (PositionSide::Long, spot_in_use_dec)
+    };
+
+    let quantity = Quantity::from_decimal_dp(quantity_dec, size_precision)
+        .map_err(|e| anyhow::anyhow!("Failed to create quantity from {quantity_dec}: {e}"))?;
+
+    let ts_last = parse_millisecond_timestamp(balance.u_time);
+
+    Ok(Some(PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        position_side.as_specified(),
+        quantity,
+        ts_last,
+        ts_init,
+        None, // report_id
+        None, // venue_position_id is None for net mode margin positions
+        None, // avg_px_open not available from balance
+    )))
 }
 
 /// Parses an OKX position into a Nautilus [`PositionStatusReport`].
@@ -736,10 +882,6 @@ pub fn parse_order_status_report(
 /// # Errors
 ///
 /// Returns an error if any numeric fields cannot be parsed into their target types.
-///
-/// # Panics
-///
-/// Panics if position quantity is invalid and cannot be parsed.
 #[allow(clippy::too_many_lines)]
 pub fn parse_position_status_report(
     position: OKXPosition,
@@ -748,50 +890,88 @@ pub fn parse_position_status_report(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
-    let pos_value = position.pos.parse::<f64>().unwrap_or_else(|e| {
-        panic!(
-            "Failed to parse position quantity '{}' for instrument {}: {:?}",
-            position.pos, instrument_id, e
+    let pos_dec = Decimal::from_str(&position.pos).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse position quantity '{}' for instrument {}: {e:?}",
+            position.pos,
+            instrument_id
         )
-    });
+    })?;
 
-    // Determine position side based on OKX position mode:
-    // - Net mode: posSide="net", uses signed quantities (positive=long, negative=short)
-    // - Long/Short mode: posSide="long"/"short", quantities are always positive, side from field
-    let position_side = match position.pos_side {
-        OKXPositionSide::Net => {
-            // Net mode: derive side from signed quantity
-            if pos_value > 0.0 {
-                PositionSide::Long
-            } else if pos_value < 0.0 {
-                PositionSide::Short
+    // For SPOT/MARGIN: determine position side and quantity based on pos_ccy
+    // - If pos_ccy = base currency: LONG position, pos is in base currency
+    // - If pos_ccy = quote currency: SHORT position, pos is in quote currency (needs conversion)
+    // - If pos_ccy is empty: FLAT position (no position)
+    let (position_side, quantity_dec) = if position.inst_type == OKXInstrumentType::Spot
+        || position.inst_type == OKXInstrumentType::Margin
+    {
+        // Extract base and quote currencies from instrument symbol
+        let (base_ccy, quote_ccy) = parse_base_quote_from_symbol(instrument_id.symbol.as_str())?;
+
+        let pos_ccy = position.pos_ccy.as_str();
+
+        if pos_ccy.is_empty() || pos_dec.is_zero() {
+            // Flat position: no position or zero quantity
+            (PositionSide::Flat, Decimal::ZERO)
+        } else if pos_ccy == base_ccy {
+            // Long position: pos_ccy is base currency, pos is already in base
+            (PositionSide::Long, pos_dec.abs())
+        } else if pos_ccy == quote_ccy {
+            // Short position: pos_ccy is quote currency, need to convert to base
+            // Use Decimal arithmetic to avoid floating-point precision errors
+            let avg_px_str = if !position.avg_px.is_empty() {
+                &position.avg_px
             } else {
-                PositionSide::Flat
+                // If no avg_px, use mark_px as fallback
+                &position.mark_px
+            };
+            let avg_px_dec = Decimal::from_str(avg_px_str)?;
+
+            if avg_px_dec.is_zero() {
+                anyhow::bail!(
+                    "Cannot convert SHORT position from quote to base: avg_px is zero for {instrument_id}"
+                );
             }
+
+            let quantity_dec = pos_dec.abs() / avg_px_dec;
+            (PositionSide::Short, quantity_dec)
+        } else {
+            anyhow::bail!(
+                "Unknown position currency '{pos_ccy}' for instrument {instrument_id} (base={base_ccy}, quote={quote_ccy})"
+            );
         }
-        OKXPositionSide::Long => {
-            // Long/Short mode: trust the pos_side field
-            PositionSide::Long
-        }
-        OKXPositionSide::Short => {
-            // Long/Short mode: trust the pos_side field
-            PositionSide::Short
-        }
-        OKXPositionSide::None => {
-            // Fallback: use signed quantity (same as Net mode logic)
-            if pos_value > 0.0 {
+    } else {
+        // For SWAP/FUTURES/OPTION: use existing logic
+        // Determine position side based on OKX position mode:
+        // - Net mode: posSide="net", uses signed quantities (positive=long, negative=short)
+        // - Long/Short mode: posSide="long"/"short", quantities are always positive, side from field
+        let side = match position.pos_side {
+            OKXPositionSide::Net | OKXPositionSide::None => {
+                // Net mode: derive side from signed quantity
+                if pos_dec.is_sign_positive() && !pos_dec.is_zero() {
+                    PositionSide::Long
+                } else if pos_dec.is_sign_negative() {
+                    PositionSide::Short
+                } else {
+                    PositionSide::Flat
+                }
+            }
+            OKXPositionSide::Long => {
+                // Long/Short mode: trust the pos_side field
                 PositionSide::Long
-            } else if pos_value < 0.0 {
-                PositionSide::Short
-            } else {
-                PositionSide::Flat
             }
-        }
-    }
-    .as_specified();
+            OKXPositionSide::Short => {
+                // Long/Short mode: trust the pos_side field
+                PositionSide::Short
+            }
+        };
+        (side, pos_dec.abs())
+    };
+
+    let position_side = position_side.as_specified();
 
     // Convert to absolute quantity (positions are always positive in Nautilus)
-    let quantity = Quantity::new(pos_value.abs(), size_precision);
+    let quantity = Quantity::from_decimal_dp(quantity_dec, size_precision)?;
 
     // Generate venue position ID only for Long/Short mode (hedging)
     // In Net mode, venue_position_id must be None to signal NETTING OMS behavior
@@ -857,11 +1037,11 @@ pub fn parse_fill_report(
     let order_side: OrderSide = detail.side.into();
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
-    let fee_f64 = detail.fee.as_deref().unwrap_or("0").parse::<f64>()?;
-    let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_f64, || {
-        format!("fill report for instrument_id={}", instrument_id)
+    let fee_dec = Decimal::from_str(detail.fee.as_deref().unwrap_or("0"))?;
+    let fee_currency = parse_fee_currency(&detail.fee_ccy, fee_dec, || {
+        format!("fill report for instrument_id={instrument_id}")
     });
-    let commission = Money::new(-fee_f64, fee_currency);
+    let commission = Money::from_decimal(-fee_dec, fee_currency)?;
     let liquidity_side: LiquiditySide = detail.exec_type.into();
     let ts_event = parse_millisecond_timestamp(detail.ts);
 
@@ -1377,6 +1557,21 @@ pub fn parse_spot_instrument(
     )
 }
 
+/// Validates that the underlying field is not empty for derivative instruments.
+///
+/// # Errors
+///
+/// Returns an error if the underlying field is empty, which typically indicates
+/// a pre-open or misconfigured instrument.
+fn validate_underlying(inst_id: Ustr, uly: Ustr) -> anyhow::Result<()> {
+    if uly.is_empty() {
+        anyhow::bail!(
+            "Empty underlying for {inst_id}: instrument may be pre-open or misconfigured"
+        );
+    }
+    Ok(())
+}
+
 /// Parses an OKX swap instrument definition into a Nautilus crypto perpetual.
 ///
 /// # Errors
@@ -1390,8 +1585,8 @@ pub fn parse_swap_instrument(
     taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(definition.inst_id);
-    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
+    validate_underlying(definition.inst_id, definition.uly)?;
+
     let context = format!("SWAP instrument {}", definition.inst_id);
     let (base_currency, quote_currency) = definition.uly.split_once('-').ok_or_else(|| {
         anyhow::anyhow!(
@@ -1400,6 +1595,9 @@ pub fn parse_swap_instrument(
             definition.inst_id
         )
     })?;
+
+    let instrument_id = parse_instrument_id(definition.inst_id);
+    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
     let base_currency = get_currency_with_context(base_currency, Some(&context));
     let quote_currency = get_currency_with_context(quote_currency, Some(&context));
     let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
@@ -1479,10 +1677,9 @@ pub fn parse_futures_instrument(
     taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(definition.inst_id);
-    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
+    validate_underlying(definition.inst_id, definition.uly)?;
+
     let context = format!("FUTURES instrument {}", definition.inst_id);
-    let underlying = get_currency_with_context(&definition.uly, Some(&context));
     let (_, quote_currency) = definition.uly.split_once('-').ok_or_else(|| {
         anyhow::anyhow!(
             "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
@@ -1490,6 +1687,10 @@ pub fn parse_futures_instrument(
             definition.inst_id
         )
     })?;
+
+    let instrument_id = parse_instrument_id(definition.inst_id);
+    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
+    let underlying = get_currency_with_context(&definition.uly, Some(&context));
     let quote_currency = get_currency_with_context(quote_currency, Some(&context));
     let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
     let is_inverse = match definition.ct_type {
@@ -1572,12 +1773,9 @@ pub fn parse_option_instrument(
     taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = parse_instrument_id(definition.inst_id);
-    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
-    let option_kind: OptionKind = definition.opt_type.into();
-    let strike_price = Price::from(&definition.stk);
-    let context = format!("OPTION instrument {}", definition.inst_id);
+    validate_underlying(definition.inst_id, definition.uly)?;
 
+    let context = format!("OPTION instrument {}", definition.inst_id);
     let (underlying_str, quote_ccy_str) = definition.uly.split_once('-').ok_or_else(|| {
         anyhow::anyhow!(
             "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
@@ -1586,7 +1784,11 @@ pub fn parse_option_instrument(
         )
     })?;
 
+    let instrument_id = parse_instrument_id(definition.inst_id);
+    let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
     let underlying = get_currency_with_context(underlying_str, Some(&context));
+    let option_kind: OptionKind = definition.opt_type.into();
+    let strike_price = Price::from(&definition.stk);
     let quote_currency = get_currency_with_context(quote_ccy_str, Some(&context));
     let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
 
@@ -1662,8 +1864,8 @@ fn parse_balance_field(
     currency: Currency,
     ccy_str: &str,
 ) -> Option<Money> {
-    match value_str.parse::<f64>() {
-        Ok(v) => Some(Money::new(v, currency)),
+    match Decimal::from_str(value_str) {
+        Ok(decimal) => Money::from_decimal(decimal, currency).ok(),
         Err(e) => {
             tracing::warn!(
                 "Skipping balance detail for {ccy_str} with invalid {field_name} '{value_str}': {e}"
@@ -1724,17 +1926,25 @@ pub fn parse_account_state(
     // OKX provides account-level margin requirements (not per instrument)
     if !okx_account.imr.is_empty() && !okx_account.mmr.is_empty() {
         match (
-            okx_account.imr.parse::<f64>(),
-            okx_account.mmr.parse::<f64>(),
+            Decimal::from_str(&okx_account.imr),
+            Decimal::from_str(&okx_account.mmr),
         ) {
-            (Ok(imr_value), Ok(mmr_value)) => {
-                if imr_value > 0.0 || mmr_value > 0.0 {
+            (Ok(imr_dec), Ok(mmr_dec)) => {
+                if !imr_dec.is_zero() || !mmr_dec.is_zero() {
                     let margin_currency = Currency::USD();
                     let margin_instrument_id =
                         InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("OKX"));
 
-                    let initial_margin = Money::new(imr_value, margin_currency);
-                    let maintenance_margin = Money::new(mmr_value, margin_currency);
+                    let initial_margin = Money::from_decimal(imr_dec, margin_currency)
+                        .unwrap_or_else(|e| {
+                            tracing::error!("Failed to create initial margin: {e}");
+                            Money::zero(margin_currency)
+                        });
+                    let maintenance_margin = Money::from_decimal(mmr_dec, margin_currency)
+                        .unwrap_or_else(|e| {
+                            tracing::error!("Failed to create maintenance margin: {e}");
+                            Money::zero(margin_currency)
+                        });
 
                     let margin_balance = MarginBalance::new(
                         initial_margin,
@@ -1788,6 +1998,7 @@ pub fn parse_account_state(
 mod tests {
     use nautilus_model::{identifiers::PositionId, instruments::Instrument};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -1805,38 +2016,38 @@ mod tests {
 
     #[rstest]
     fn test_parse_fee_currency_with_zero_fee_empty_string() {
-        let result = parse_fee_currency("", 0.0, || "test context".to_string());
+        let result = parse_fee_currency("", Decimal::ZERO, || "test context".to_string());
         assert_eq!(result, Currency::USDT());
     }
 
     #[rstest]
     fn test_parse_fee_currency_with_zero_fee_valid_currency() {
-        let result = parse_fee_currency("BTC", 0.0, || "test context".to_string());
+        let result = parse_fee_currency("BTC", Decimal::ZERO, || "test context".to_string());
         assert_eq!(result, Currency::BTC());
     }
 
     #[rstest]
     fn test_parse_fee_currency_with_valid_currency() {
-        let result = parse_fee_currency("BTC", 0.001, || "test context".to_string());
+        let result = parse_fee_currency("BTC", dec!(0.001), || "test context".to_string());
         assert_eq!(result, Currency::BTC());
     }
 
     #[rstest]
     fn test_parse_fee_currency_with_empty_string_nonzero_fee() {
-        let result = parse_fee_currency("", 0.5, || "test context".to_string());
+        let result = parse_fee_currency("", dec!(0.5), || "test context".to_string());
         assert_eq!(result, Currency::USDT());
     }
 
     #[rstest]
     fn test_parse_fee_currency_with_whitespace() {
-        let result = parse_fee_currency("  ETH  ", 0.002, || "test context".to_string());
+        let result = parse_fee_currency("  ETH  ", dec!(0.002), || "test context".to_string());
         assert_eq!(result, Currency::ETH());
     }
 
     #[rstest]
     fn test_parse_fee_currency_with_unknown_code() {
         // Unknown currency code should create a new Currency (8 decimals, crypto)
-        let result = parse_fee_currency("NEWTOKEN", 0.5, || "test context".to_string());
+        let result = parse_fee_currency("NEWTOKEN", dec!(0.5), || "test context".to_string());
         assert_eq!(result.code.as_str(), "NEWTOKEN");
         assert_eq!(result.precision, 8);
     }
@@ -2176,7 +2387,7 @@ mod tests {
             Some(ustr::Ustr::from("12345678901234567890"))
         );
         assert_eq!(parsed.cl_ord_id, Some(ustr::Ustr::from("client_order_123")));
-        assert_eq!(parsed.tag, Some("".to_string()));
+        assert_eq!(parsed.tag, Some(String::new()));
     }
 
     #[rstest]
@@ -2351,8 +2562,8 @@ mod tests {
         let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
         let okx_inst = response.data.first().unwrap();
 
-        let maker_fee = Some(Decimal::new(8, 4)); // 0.0008
-        let taker_fee = Some(Decimal::new(10, 4)); // 0.0010
+        let maker_fee = Some(dec!(0.0008));
+        let taker_fee = Some(dec!(0.0010));
 
         let instrument = parse_spot_instrument(
             okx_inst,
@@ -2366,8 +2577,8 @@ mod tests {
 
         // Should apply the provided fees to the instrument
         if let InstrumentAny::CurrencyPair(pair) = instrument {
-            assert_eq!(pair.maker_fee, Decimal::new(8, 4));
-            assert_eq!(pair.taker_fee, Decimal::new(10, 4));
+            assert_eq!(pair.maker_fee, dec!(0.0008));
+            assert_eq!(pair.taker_fee, dec!(0.0010));
         } else {
             panic!("Expected CurrencyPair instrument");
         }
@@ -2438,8 +2649,6 @@ mod tests {
 
     #[rstest]
     fn test_fee_field_selection_for_contract_types() {
-        use rust_decimal::Decimal;
-
         // Mock OKXFeeRate with different values for crypto vs USDT-margined
         let maker_crypto = "0.0002"; // Crypto-margined maker fee
         let taker_crypto = "0.0005"; // Crypto-margined taker fee
@@ -2460,8 +2669,8 @@ mod tests {
         let maker_fee = Decimal::from_str(maker_str).unwrap();
         let taker_fee = Decimal::from_str(taker_str).unwrap();
 
-        assert_eq!(maker_fee, Decimal::new(8, 4));
-        assert_eq!(taker_fee, Decimal::new(10, 4));
+        assert_eq!(maker_fee, dec!(0.0008));
+        assert_eq!(taker_fee, dec!(0.0010));
 
         // Test Inverse (crypto-margined) - should use maker/taker
         let is_usdt_margined = false;
@@ -2477,8 +2686,8 @@ mod tests {
         let maker_fee = Decimal::from_str(maker_str).unwrap();
         let taker_fee = Decimal::from_str(taker_str).unwrap();
 
-        assert_eq!(maker_fee, Decimal::new(2, 4));
-        assert_eq!(taker_fee, Decimal::new(5, 4));
+        assert_eq!(maker_fee, dec!(0.0002));
+        assert_eq!(taker_fee, dec!(0.0005));
     }
 
     #[rstest]
@@ -2778,7 +2987,8 @@ mod tests {
             2,
             8,
             UnixNanos::default(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(order_report.account_id, account_id);
         assert_eq!(order_report.instrument_id, instrument_id);
@@ -3326,7 +3536,7 @@ mod tests {
             interest: "0".to_string(),
             trade_id: Ustr::from("333"),
             notional_usd: "0".to_string(),
-            avg_px: "".to_string(),
+            avg_px: String::new(),
             upl: "0".to_string(),
             upl_ratio: "0".to_string(),
             u_time: 1622559930237,
@@ -3515,5 +3725,898 @@ mod tests {
             report.venue_position_id,
             Some(PositionId::new("22222-SHORT"))
         );
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_margin_long() {
+        // Test MARGIN long position: pos_ccy = base currency (ETH)
+        let position = OKXPosition {
+            inst_id: Ustr::from("ETH-USDT"),
+            inst_type: OKXInstrumentType::Margin,
+            mgn_mode: OKXMarginMode::Cross,
+            pos_id: Some(Ustr::from("margin-long-1")),
+            pos_side: OKXPositionSide::Net,
+            pos: "1.5".to_string(), // Total position (may include pending)
+            base_bal: "1.5".to_string(),
+            ccy: "ETH".to_string(),
+            fee: "0".to_string(),
+            lever: "3".to_string(),
+            last: "4000".to_string(),
+            mark_px: "4000".to_string(),
+            liq_px: "3500".to_string(),
+            mmr: "0.1".to_string(),
+            interest: "0".to_string(),
+            trade_id: Ustr::from("trade1"),
+            notional_usd: "6000".to_string(),
+            avg_px: "3800".to_string(), // Bought at 3800
+            upl: "300".to_string(),
+            upl_ratio: "0.05".to_string(),
+            u_time: 1622559930237,
+            margin: "2000".to_string(),
+            mgn_ratio: "0.33".to_string(),
+            adl: "0".to_string(),
+            c_time: "1622559930237".to_string(),
+            realized_pnl: "0".to_string(),
+            upl_last_px: "300".to_string(),
+            upl_ratio_last_px: "0.05".to_string(),
+            avail_pos: "1.5".to_string(),
+            be_px: "3800".to_string(),
+            funding_fee: "0".to_string(),
+            idx_px: "4000".to_string(),
+            liq_penalty: "0".to_string(),
+            opt_val: "0".to_string(),
+            pending_close_ord_liab_val: "0".to_string(),
+            pnl: "300".to_string(),
+            pos_ccy: "ETH".to_string(), // pos_ccy = base = LONG
+            quote_bal: "0".to_string(),
+            quote_borrowed: "0".to_string(),
+            quote_interest: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            spot_in_use_ccy: String::new(),
+            usd_px: "4000".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("ETH-USDT.OKX");
+        let report = parse_position_status_report(
+            position,
+            account_id,
+            instrument_id,
+            4,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.quantity, Quantity::from("1.5")); // 1.5 ETH in base
+        assert_eq!(report.venue_position_id, None); // Net mode
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_margin_short() {
+        // Test MARGIN short position: pos_ccy = quote currency (USDT)
+        // pos is in quote currency and needs conversion to base
+        let position = OKXPosition {
+            inst_id: Ustr::from("ETH-USDT"),
+            inst_type: OKXInstrumentType::Margin,
+            mgn_mode: OKXMarginMode::Cross,
+            pos_id: Some(Ustr::from("margin-short-1")),
+            pos_side: OKXPositionSide::Net,
+            pos: "244.56".to_string(), // Position in quote currency (USDT)
+            base_bal: "0".to_string(),
+            ccy: "USDT".to_string(),
+            fee: "0".to_string(),
+            lever: "3".to_string(),
+            last: "4092".to_string(),
+            mark_px: "4092".to_string(),
+            liq_px: "4500".to_string(),
+            mmr: "0.1".to_string(),
+            interest: "0".to_string(),
+            trade_id: Ustr::from("trade2"),
+            notional_usd: "244.56".to_string(),
+            avg_px: "4092".to_string(), // Shorted at 4092
+            upl: "-10".to_string(),
+            upl_ratio: "-0.04".to_string(),
+            u_time: 1622559930237,
+            margin: "100".to_string(),
+            mgn_ratio: "0.4".to_string(),
+            adl: "0".to_string(),
+            c_time: "1622559930237".to_string(),
+            realized_pnl: "0".to_string(),
+            upl_last_px: "-10".to_string(),
+            upl_ratio_last_px: "-0.04".to_string(),
+            avail_pos: "244.56".to_string(),
+            be_px: "4092".to_string(),
+            funding_fee: "0".to_string(),
+            idx_px: "4092".to_string(),
+            liq_penalty: "0".to_string(),
+            opt_val: "0".to_string(),
+            pending_close_ord_liab_val: "0".to_string(),
+            pnl: "-10".to_string(),
+            pos_ccy: "USDT".to_string(), // pos_ccy = quote indicates SHORT, pos in USDT
+            quote_bal: "244.56".to_string(),
+            quote_borrowed: "0".to_string(),
+            quote_interest: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            spot_in_use_ccy: String::new(),
+            usd_px: "4092".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("ETH-USDT.OKX");
+        let report = parse_position_status_report(
+            position,
+            account_id,
+            instrument_id,
+            4,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        // Position is 244.56 USDT / 4092 USDT/ETH = 0.0597... ETH
+        assert_eq!(report.quantity.to_string(), "0.0598");
+        assert_eq!(report.venue_position_id, None); // Net mode
+    }
+
+    #[rstest]
+    fn test_parse_position_status_report_margin_flat() {
+        // Test MARGIN flat position: pos_ccy is empty string
+        let position = OKXPosition {
+            inst_id: Ustr::from("ETH-USDT"),
+            inst_type: OKXInstrumentType::Margin,
+            mgn_mode: OKXMarginMode::Cross,
+            pos_id: Some(Ustr::from("margin-flat-1")),
+            pos_side: OKXPositionSide::Net,
+            pos: "0".to_string(),
+            base_bal: "0".to_string(),
+            ccy: "ETH".to_string(),
+            fee: "0".to_string(),
+            lever: "0".to_string(),
+            last: "4000".to_string(),
+            mark_px: "4000".to_string(),
+            liq_px: "0".to_string(),
+            mmr: "0".to_string(),
+            interest: "0".to_string(),
+            trade_id: Ustr::from(""),
+            notional_usd: "0".to_string(),
+            avg_px: String::new(),
+            upl: "0".to_string(),
+            upl_ratio: "0".to_string(),
+            u_time: 1622559930237,
+            margin: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            adl: "0".to_string(),
+            c_time: "1622559930237".to_string(),
+            realized_pnl: "0".to_string(),
+            upl_last_px: "0".to_string(),
+            upl_ratio_last_px: "0".to_string(),
+            avail_pos: "0".to_string(),
+            be_px: "0".to_string(),
+            funding_fee: "0".to_string(),
+            idx_px: "0".to_string(),
+            liq_penalty: "0".to_string(),
+            opt_val: "0".to_string(),
+            pending_close_ord_liab_val: "0".to_string(),
+            pnl: "0".to_string(),
+            pos_ccy: String::new(), // Empty pos_ccy = FLAT
+            quote_bal: "0".to_string(),
+            quote_borrowed: "0".to_string(),
+            quote_interest: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            spot_in_use_ccy: String::new(),
+            usd_px: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let instrument_id = InstrumentId::from("ETH-USDT.OKX");
+        let report = parse_position_status_report(
+            position,
+            account_id,
+            instrument_id,
+            4,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.position_side, PositionSide::Flat.as_specified());
+        assert_eq!(report.quantity, Quantity::from("0"));
+        assert_eq!(report.venue_position_id, None); // Net mode
+    }
+
+    #[rstest]
+    fn test_parse_swap_instrument_empty_underlying_returns_error() {
+        let instrument = OKXInstrument {
+            inst_type: OKXInstrumentType::Swap,
+            inst_id: Ustr::from("ETH-USD_UM-SWAP"),
+            uly: Ustr::from(""), // Empty underlying
+            inst_family: Ustr::from(""),
+            base_ccy: Ustr::from(""),
+            quote_ccy: Ustr::from(""),
+            settle_ccy: Ustr::from("USD"),
+            ct_val: "1".to_string(),
+            ct_mult: "1".to_string(),
+            ct_val_ccy: "USD".to_string(),
+            opt_type: crate::common::enums::OKXOptionType::None,
+            stk: String::new(),
+            list_time: None,
+            exp_time: None,
+            lever: String::new(),
+            tick_sz: "0.1".to_string(),
+            lot_sz: "1".to_string(),
+            min_sz: "1".to_string(),
+            ct_type: OKXContractType::Linear,
+            state: crate::common::enums::OKXInstrumentStatus::Preopen,
+            rule_type: String::new(),
+            max_lmt_sz: String::new(),
+            max_mkt_sz: String::new(),
+            max_lmt_amt: String::new(),
+            max_mkt_amt: String::new(),
+            max_twap_sz: String::new(),
+            max_iceberg_sz: String::new(),
+            max_trigger_sz: String::new(),
+            max_stop_sz: String::new(),
+        };
+
+        let result =
+            parse_swap_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Empty underlying"));
+    }
+
+    #[rstest]
+    fn test_parse_futures_instrument_empty_underlying_returns_error() {
+        let instrument = OKXInstrument {
+            inst_type: OKXInstrumentType::Futures,
+            inst_id: Ustr::from("ETH-USD_UM-250328"),
+            uly: Ustr::from(""), // Empty underlying
+            inst_family: Ustr::from(""),
+            base_ccy: Ustr::from(""),
+            quote_ccy: Ustr::from(""),
+            settle_ccy: Ustr::from("USD"),
+            ct_val: "1".to_string(),
+            ct_mult: "1".to_string(),
+            ct_val_ccy: "USD".to_string(),
+            opt_type: crate::common::enums::OKXOptionType::None,
+            stk: String::new(),
+            list_time: None,
+            exp_time: Some(1743004800000),
+            lever: String::new(),
+            tick_sz: "0.1".to_string(),
+            lot_sz: "1".to_string(),
+            min_sz: "1".to_string(),
+            ct_type: OKXContractType::Linear,
+            state: crate::common::enums::OKXInstrumentStatus::Preopen,
+            rule_type: String::new(),
+            max_lmt_sz: String::new(),
+            max_mkt_sz: String::new(),
+            max_lmt_amt: String::new(),
+            max_mkt_amt: String::new(),
+            max_twap_sz: String::new(),
+            max_iceberg_sz: String::new(),
+            max_trigger_sz: String::new(),
+            max_stop_sz: String::new(),
+        };
+
+        let result =
+            parse_futures_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Empty underlying"));
+    }
+
+    #[rstest]
+    fn test_parse_option_instrument_empty_underlying_returns_error() {
+        let instrument = OKXInstrument {
+            inst_type: OKXInstrumentType::Option,
+            inst_id: Ustr::from("BTC-USD-250328-50000-C"),
+            uly: Ustr::from(""), // Empty underlying
+            inst_family: Ustr::from(""),
+            base_ccy: Ustr::from(""),
+            quote_ccy: Ustr::from(""),
+            settle_ccy: Ustr::from("USD"),
+            ct_val: "0.01".to_string(),
+            ct_mult: "1".to_string(),
+            ct_val_ccy: "BTC".to_string(),
+            opt_type: crate::common::enums::OKXOptionType::Call,
+            stk: "50000".to_string(),
+            list_time: None,
+            exp_time: Some(1743004800000),
+            lever: String::new(),
+            tick_sz: "0.0005".to_string(),
+            lot_sz: "0.1".to_string(),
+            min_sz: "0.1".to_string(),
+            ct_type: OKXContractType::Linear,
+            state: crate::common::enums::OKXInstrumentStatus::Preopen,
+            rule_type: String::new(),
+            max_lmt_sz: String::new(),
+            max_mkt_sz: String::new(),
+            max_lmt_amt: String::new(),
+            max_mkt_amt: String::new(),
+            max_twap_sz: String::new(),
+            max_iceberg_sz: String::new(),
+            max_trigger_sz: String::new(),
+            max_stop_sz: String::new(),
+        };
+
+        let result =
+            parse_option_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Empty underlying"));
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_short_usdt() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("ENA"),
+            liab: "130047.3610487126".to_string(),
+            spot_in_use_amt: "-129950".to_string(),
+            cross_liab: "130047.3610487126".to_string(),
+            eq: "-130047.3610487126".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "0".to_string(),
+            avail_eq: "0".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "0".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "0".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "0".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 2;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_some());
+        let report = result.unwrap();
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id.to_string(), "ENA-USDT.OKX".to_string());
+        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.quantity.to_string(), "129950.00");
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_long() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("BTC"),
+            liab: "1.5".to_string(),
+            spot_in_use_amt: "1.2".to_string(),
+            cross_liab: "1.5".to_string(),
+            eq: "1.2".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "0".to_string(),
+            avail_eq: "0".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "0".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "0".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "0".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 8;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_some());
+        let report = result.unwrap();
+        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.quantity.to_string(), "1.20000000");
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_usdc_quote() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("ETH"),
+            liab: "10.5".to_string(),
+            spot_in_use_amt: "-10.0".to_string(),
+            cross_liab: "10.5".to_string(),
+            eq: "-10.0".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "0".to_string(),
+            avail_eq: "0".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "0".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "0".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "0".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 6;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_some());
+        let report = result.unwrap();
+        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.quantity.to_string(), "10.000000");
+        assert!(report.instrument_id.to_string().contains("ETH-"));
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_no_position() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("USDT"),
+            liab: "0".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            cross_liab: "0".to_string(),
+            eq: "1000.5".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "1000.5".to_string(),
+            avail_eq: "1000.5".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "1000.5".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "1000.5".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "1000.5".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 2;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_liability_no_spot_in_use() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("BTC"),
+            liab: "0.5".to_string(),
+            spot_in_use_amt: "0".to_string(),
+            cross_liab: "0.5".to_string(),
+            eq: "0".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "0".to_string(),
+            avail_eq: "0".to_string(),
+            borrow_froz: "0".to_string(),
+            cash_bal: "0".to_string(),
+            dis_eq: "0".to_string(),
+            eq_usd: "0".to_string(),
+            smt_sync_eq: "0".to_string(),
+            spot_copy_trading_eq: "0".to_string(),
+            fixed_bal: "0".to_string(),
+            frozen_bal: "0".to_string(),
+            imr: "0".to_string(),
+            interest: "0".to_string(),
+            iso_eq: "0".to_string(),
+            iso_liab: "0".to_string(),
+            iso_upl: "0".to_string(),
+            max_loan: "0".to_string(),
+            mgn_ratio: "0".to_string(),
+            mmr: "0".to_string(),
+            notional_lever: "0".to_string(),
+            ord_frozen: "0".to_string(),
+            reward_bal: "0".to_string(),
+            cl_spot_in_use_amt: "0".to_string(),
+            max_spot_in_use_amt: "0".to_string(),
+            spot_iso_bal: "0".to_string(),
+            stgy_eq: "0".to_string(),
+            twap: "0".to_string(),
+            upl: "0".to_string(),
+            upl_liab: "0".to_string(),
+            spot_bal: "0".to_string(),
+            open_avg_px: "0".to_string(),
+            acc_avg_px: "0".to_string(),
+            spot_upl: "0".to_string(),
+            spot_upl_ratio: "0".to_string(),
+            total_pnl: "0".to_string(),
+            total_pnl_ratio: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 8;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_parse_spot_margin_position_from_balance_empty_strings() {
+        let balance = OKXBalanceDetail {
+            ccy: Ustr::from("USDT"),
+            liab: String::new(),
+            spot_in_use_amt: String::new(),
+            cross_liab: String::new(),
+            eq: "5000.25".to_string(),
+            u_time: 1704067200000,
+            avail_bal: "5000.25".to_string(),
+            avail_eq: "5000.25".to_string(),
+            borrow_froz: String::new(),
+            cash_bal: "5000.25".to_string(),
+            dis_eq: String::new(),
+            eq_usd: "5000.25".to_string(),
+            smt_sync_eq: String::new(),
+            spot_copy_trading_eq: String::new(),
+            fixed_bal: String::new(),
+            frozen_bal: String::new(),
+            imr: String::new(),
+            interest: String::new(),
+            iso_eq: String::new(),
+            iso_liab: String::new(),
+            iso_upl: String::new(),
+            max_loan: String::new(),
+            mgn_ratio: String::new(),
+            mmr: String::new(),
+            notional_lever: String::new(),
+            ord_frozen: String::new(),
+            reward_bal: String::new(),
+            cl_spot_in_use_amt: String::new(),
+            max_spot_in_use_amt: String::new(),
+            spot_iso_bal: String::new(),
+            stgy_eq: String::new(),
+            twap: String::new(),
+            upl: String::new(),
+            upl_liab: String::new(),
+            spot_bal: "5000.25".to_string(),
+            open_avg_px: String::new(),
+            acc_avg_px: String::new(),
+            spot_upl: String::new(),
+            spot_upl_ratio: String::new(),
+            total_pnl: String::new(),
+            total_pnl_ratio: String::new(),
+        };
+
+        let account_id = AccountId::new("OKX-001");
+        let size_precision = 2;
+        let ts_init = UnixNanos::default();
+
+        let result = parse_spot_margin_position_from_balance(
+            &balance,
+            account_id,
+            InstrumentId::from_str(&format!("{}-USDT.OKX", balance.ccy.as_str())).unwrap(),
+            size_precision,
+            ts_init,
+        )
+        .unwrap();
+
+        // Empty strings should be treated as zero, returning None (no margin position)
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    #[case::fok_maps_to_fok_tif(OKXOrderType::Fok, TimeInForce::Fok)]
+    #[case::ioc_maps_to_ioc_tif(OKXOrderType::Ioc, TimeInForce::Ioc)]
+    #[case::optimal_limit_ioc_maps_to_ioc_tif(OKXOrderType::OptimalLimitIoc, TimeInForce::Ioc)]
+    #[case::market_maps_to_gtc(OKXOrderType::Market, TimeInForce::Gtc)]
+    #[case::limit_maps_to_gtc(OKXOrderType::Limit, TimeInForce::Gtc)]
+    #[case::post_only_maps_to_gtc(OKXOrderType::PostOnly, TimeInForce::Gtc)]
+    #[case::trigger_maps_to_gtc(OKXOrderType::Trigger, TimeInForce::Gtc)]
+    fn test_okx_order_type_to_time_in_force(
+        #[case] okx_ord_type: OKXOrderType,
+        #[case] expected_tif: TimeInForce,
+    ) {
+        let time_in_force = match okx_ord_type {
+            OKXOrderType::Fok => TimeInForce::Fok,
+            OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
+            _ => TimeInForce::Gtc,
+        };
+
+        assert_eq!(
+            time_in_force, expected_tif,
+            "OKXOrderType::{okx_ord_type:?} should map to TimeInForce::{expected_tif:?}"
+        );
+    }
+
+    #[rstest]
+    fn test_fok_order_type_serialization() {
+        let ord_type = OKXOrderType::Fok;
+        let json = serde_json::to_string(&ord_type).expect("serialize");
+        assert_eq!(json, "\"fok\"", "FOK should serialize to 'fok'");
+    }
+
+    #[rstest]
+    fn test_ioc_order_type_serialization() {
+        let ord_type = OKXOrderType::Ioc;
+        let json = serde_json::to_string(&ord_type).expect("serialize");
+        assert_eq!(json, "\"ioc\"", "IOC should serialize to 'ioc'");
+    }
+
+    #[rstest]
+    fn test_optimal_limit_ioc_serialization() {
+        let ord_type = OKXOrderType::OptimalLimitIoc;
+        let json = serde_json::to_string(&ord_type).expect("serialize");
+        assert_eq!(
+            json, "\"optimal_limit_ioc\"",
+            "OptimalLimitIoc should serialize to 'optimal_limit_ioc'"
+        );
+    }
+
+    #[rstest]
+    fn test_fok_order_type_deserialization() {
+        let json = "\"fok\"";
+        let ord_type: OKXOrderType = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(ord_type, OKXOrderType::Fok);
+    }
+
+    #[rstest]
+    fn test_ioc_order_type_deserialization() {
+        let json = "\"ioc\"";
+        let ord_type: OKXOrderType = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(ord_type, OKXOrderType::Ioc);
+    }
+
+    #[rstest]
+    fn test_optimal_limit_ioc_deserialization() {
+        let json = "\"optimal_limit_ioc\"";
+        let ord_type: OKXOrderType = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(ord_type, OKXOrderType::OptimalLimitIoc);
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Fok, OKXOrderType::Fok)]
+    #[case(TimeInForce::Ioc, OKXOrderType::Ioc)]
+    fn test_time_in_force_round_trip(
+        #[case] original_tif: TimeInForce,
+        #[case] expected_okx_type: OKXOrderType,
+    ) {
+        let okx_ord_type = match original_tif {
+            TimeInForce::Fok => OKXOrderType::Fok,
+            TimeInForce::Ioc => OKXOrderType::Ioc,
+            TimeInForce::Gtc => OKXOrderType::Limit,
+            _ => OKXOrderType::Limit,
+        };
+        assert_eq!(okx_ord_type, expected_okx_type);
+
+        let parsed_tif = match okx_ord_type {
+            OKXOrderType::Fok => TimeInForce::Fok,
+            OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
+            _ => TimeInForce::Gtc,
+        };
+        assert_eq!(parsed_tif, original_tif);
+    }
+
+    #[rstest]
+    #[case::limit_fok(
+        OrderType::Limit,
+        TimeInForce::Fok,
+        OKXOrderType::Fok,
+        "Limit + FOK should map to Fok"
+    )]
+    #[case::limit_ioc(
+        OrderType::Limit,
+        TimeInForce::Ioc,
+        OKXOrderType::Ioc,
+        "Limit + IOC should map to Ioc"
+    )]
+    #[case::market_ioc(
+        OrderType::Market,
+        TimeInForce::Ioc,
+        OKXOrderType::OptimalLimitIoc,
+        "Market + IOC should map to OptimalLimitIoc"
+    )]
+    #[case::limit_gtc(
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OKXOrderType::Limit,
+        "Limit + GTC should map to Limit"
+    )]
+    #[case::market_gtc(
+        OrderType::Market,
+        TimeInForce::Gtc,
+        OKXOrderType::Market,
+        "Market + GTC should map to Market"
+    )]
+    fn test_order_type_time_in_force_combinations(
+        #[case] order_type: OrderType,
+        #[case] tif: TimeInForce,
+        #[case] expected_okx_type: OKXOrderType,
+        #[case] description: &str,
+    ) {
+        let okx_ord_type = match (order_type, tif) {
+            (OrderType::Market, TimeInForce::Ioc) => OKXOrderType::OptimalLimitIoc,
+            (OrderType::Limit, TimeInForce::Fok) => OKXOrderType::Fok,
+            (OrderType::Limit, TimeInForce::Ioc) => OKXOrderType::Ioc,
+            _ => OKXOrderType::from(order_type),
+        };
+
+        assert_eq!(okx_ord_type, expected_okx_type, "{description}");
+    }
+
+    #[rstest]
+    fn test_market_fok_not_supported() {
+        let order_type = OrderType::Market;
+        let tif = TimeInForce::Fok;
+
+        let is_market_fok = matches!((order_type, tif), (OrderType::Market, TimeInForce::Fok));
+        assert!(
+            is_market_fok,
+            "Market + FOK combination should be identified for rejection"
+        );
+    }
+
+    #[rstest]
+    #[case::empty_string("", true)]
+    #[case::zero("0", true)]
+    #[case::minus_one("-1", true)]
+    #[case::minus_two("-2", true)]
+    #[case::normal_price("100.5", false)]
+    #[case::another_price("0.001", false)]
+    fn test_is_market_price(#[case] price: &str, #[case] expected: bool) {
+        assert_eq!(is_market_price(price), expected);
+    }
+
+    #[rstest]
+    #[case::fok_market(OKXOrderType::Fok, "", OrderType::Market)]
+    #[case::fok_limit(OKXOrderType::Fok, "100.5", OrderType::Limit)]
+    #[case::ioc_market(OKXOrderType::Ioc, "", OrderType::Market)]
+    #[case::ioc_limit(OKXOrderType::Ioc, "100.5", OrderType::Limit)]
+    #[case::optimal_limit_ioc_market(OKXOrderType::OptimalLimitIoc, "", OrderType::Market)]
+    #[case::optimal_limit_ioc_market_zero(OKXOrderType::OptimalLimitIoc, "0", OrderType::Market)]
+    #[case::optimal_limit_ioc_market_minus_one(
+        OKXOrderType::OptimalLimitIoc,
+        "-1",
+        OrderType::Market
+    )]
+    #[case::optimal_limit_ioc_limit(OKXOrderType::OptimalLimitIoc, "100.5", OrderType::Limit)]
+    #[case::market_passthrough(OKXOrderType::Market, "", OrderType::Market)]
+    #[case::limit_passthrough(OKXOrderType::Limit, "100.5", OrderType::Limit)]
+    fn test_determine_order_type(
+        #[case] okx_ord_type: OKXOrderType,
+        #[case] price: &str,
+        #[case] expected: OrderType,
+    ) {
+        assert_eq!(determine_order_type(okx_ord_type, price), expected);
     }
 }

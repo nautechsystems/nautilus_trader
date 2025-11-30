@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
@@ -34,6 +35,7 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.reconciliation import is_within_single_unit_tolerance
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
@@ -190,7 +192,7 @@ class TestLiveExecutionEngine:
             if hasattr(engine, "stop") and not engine.is_stopped:
                 engine.stop()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_start_when_loop_not_running_logs(self):
         # Arrange, Act
         self.exec_engine.start()
@@ -199,7 +201,7 @@ class TestLiveExecutionEngine:
         assert True  # No exceptions raised
         self.exec_engine.stop()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
@@ -265,7 +267,7 @@ class TestLiveExecutionEngine:
         await eventually(lambda: self.exec_engine.cmd_qsize() == 2)
         assert self.exec_engine.command_count == 0
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
@@ -333,7 +335,7 @@ class TestLiveExecutionEngine:
         await eventually(lambda: self.exec_engine.cmd_qsize() == 1)
         assert self.exec_engine.command_count == 0
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_start(self):
         # Arrange, Act
         self.exec_engine.start()
@@ -344,7 +346,7 @@ class TestLiveExecutionEngine:
         # Tear Down
         self.exec_engine.stop()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_kill_when_running_and_no_messages_on_queues(self):
         # Arrange, Act
         self.exec_engine.kill()
@@ -352,7 +354,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert self.exec_engine.is_stopped
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_kill_when_not_running_with_messages_on_queue(self):
         # Arrange, Act
         self.exec_engine.stop()
@@ -362,7 +364,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert self.exec_engine.is_stopped
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_execute_command_places_command_on_queue(self):
         # Arrange
         self.exec_engine.start()
@@ -808,7 +810,7 @@ class TestLiveExecutionEngine:
             engine.stop()
             await eventually(lambda: engine.evt_qsize() == 0)
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_reconciliation_with_none_mass_status_returns_false(self):
         """
         Test that reconciliation returns False when mass_status is None.
@@ -830,7 +832,7 @@ class TestLiveExecutionEngine:
         # Cleanup
         self.exec_engine.stop()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_filled_qty_mismatch_with_zero_report(self):
         """
         Test that filled_qty mismatch is detected when report.filled_qty is less than
@@ -877,7 +879,7 @@ class TestLiveExecutionEngine:
         # Assert - should correctly detect and fail on backwards fill quantity
         assert result is False
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_inflight_timeout_resolves_order(self):
         """
         Test that inflight orders are resolved after exceeding max retries.
@@ -919,7 +921,7 @@ class TestLiveExecutionEngine:
         # Cleanup
         self.exec_engine.stop()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_shutdown_flag_suppresses_reconciliation(self):
         """
         Test that _is_shutting_down flag prevents reconciliation from issuing HTTP
@@ -937,3 +939,519 @@ class TestLiveExecutionEngine:
 
         # Assert - client methods should NOT have been called due to early exit
         mock_generate_order_status.assert_not_called()
+
+    def test_is_within_single_unit_tolerance_integer_precision(self):
+        """
+        Test tolerance check for integer precision requires exact match.
+        """
+        # Act & Assert
+        assert is_within_single_unit_tolerance(Decimal(10), Decimal(10), 0)
+        assert not is_within_single_unit_tolerance(Decimal(10), Decimal(11), 0)
+        assert not is_within_single_unit_tolerance(Decimal(100), Decimal(101), 0)
+
+    def test_is_within_single_unit_tolerance_fractional_precision(self):
+        """
+        Test tolerance check for fractional precision accepts 1-unit difference.
+        """
+        # Act & Assert
+        assert is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000524"),
+            6,
+        )
+        assert is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000526"),
+            6,
+        )
+        assert not is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000523"),
+            6,
+        )
+
+        assert is_within_single_unit_tolerance(Decimal("1.00"), Decimal("1.01"), 2)
+        assert not is_within_single_unit_tolerance(Decimal("1.00"), Decimal("1.02"), 2)
+
+        assert is_within_single_unit_tolerance(
+            Decimal("0.12345678"),
+            Decimal("0.12345679"),
+            8,
+        )
+        assert not is_within_single_unit_tolerance(
+            Decimal("0.12345678"),
+            Decimal("0.12345680"),
+            8,
+        )
+
+    def test_is_within_single_unit_tolerance_handles_mixed_precision(self):
+        """
+        Test tolerance check works with different precisions by using max precision.
+        """
+        # Arrange
+        precision = max(6, 2)
+
+        # Act & Assert
+        assert is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000524"),
+            precision,
+        )
+        assert not is_within_single_unit_tolerance(
+            Decimal("0.000525"),
+            Decimal("0.000523"),
+            precision,
+        )
+
+    def test_check_position_discrepancy_both_flat(self):
+        """
+        Test no discrepancy when both cached and venue are flat.
+        """
+        # Arrange
+        engine = self.exec_engine
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[],
+            venue_report=None,
+            instrument_id=AUDUSD_SIM.id,
+        )
+
+        # Assert
+        assert not has_discrepancy
+
+    def test_check_position_discrepancy_exact_match(self):
+        """
+        Test no discrepancy when cached and venue quantities match exactly.
+        """
+        # Arrange
+        engine = self.exec_engine
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("1000"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal(1000)
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=AUDUSD_SIM.id,
+        )
+
+        # Assert
+        assert not has_discrepancy
+
+    def test_check_position_discrepancy_within_tolerance_fractional(self):
+        """
+        Test no discrepancy when difference is within 1 unit of precision (fractional).
+        """
+        # Arrange
+        engine = self.exec_engine
+        eth_usdt = TestInstrumentProvider.ethusdt_binance()
+        self.cache.add_instrument(eth_usdt)
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=eth_usdt.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("0.000525"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("0.000524")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=eth_usdt.id,
+        )
+
+        # Assert
+        assert not has_discrepancy
+
+    def test_check_position_discrepancy_within_tolerance_cached_zero(self):
+        """
+        Test no discrepancy when cached is near-zero within tolerance and venue is flat.
+        """
+        # Arrange
+        engine = self.exec_engine
+        eth_usdt = TestInstrumentProvider.ethusdt_binance()
+        self.cache.add_instrument(eth_usdt)
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("0.000001")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=None,
+            instrument_id=eth_usdt.id,
+        )
+
+        # Assert
+        assert not has_discrepancy
+
+    def test_check_position_discrepancy_exceeds_tolerance(self):
+        """
+        Test discrepancy detected when difference exceeds 1 unit of precision.
+        """
+        # Arrange
+        engine = self.exec_engine
+        eth_usdt = TestInstrumentProvider.ethusdt_binance()
+        self.cache.add_instrument(eth_usdt)
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=eth_usdt.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("0.00052"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal("0.00050")
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=eth_usdt.id,
+        )
+
+        # Assert
+        assert has_discrepancy
+
+    def test_check_position_discrepancy_integer_precision_requires_exact_match(self):
+        """
+        Test discrepancy detected for integer precision (futures) with 1-contract
+        difference.
+        """
+        # Arrange
+        engine = self.exec_engine
+        es_future = TestInstrumentProvider.es_future(expiry_year=2024, expiry_month=12)
+        self.cache.add_instrument(es_future)
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("CME-001"),
+            instrument_id=es_future.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(11),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal(10)
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=es_future.id,
+        )
+
+        # Assert
+        assert has_discrepancy
+
+    def test_check_position_discrepancy_cached_nonzero_venue_none(self):
+        """
+        Test discrepancy when cached has position but venue has no report.
+        """
+        # Arrange
+        engine = self.exec_engine
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal(1000)
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=None,
+            instrument_id=AUDUSD_SIM.id,
+        )
+
+        # Assert
+        assert has_discrepancy
+
+    def test_check_position_discrepancy_instrument_not_in_cache(self):
+        """
+        Test discrepancy detected when instrument is not in cache (no tolerance
+        applied).
+        """
+        # Arrange
+        engine = self.exec_engine
+
+        venue_report = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_str("0.000001"),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        position = Mock()
+        position.signed_decimal_qty.return_value = Decimal(0)
+
+        # Act
+        has_discrepancy = engine._check_position_discrepancy(
+            cached_positions=[position],
+            venue_report=venue_report,
+            instrument_id=AUDUSD_SIM.id,
+        )
+
+        # Assert
+        assert has_discrepancy
+
+    def test_find_order_by_venue_order_id_with_none_venue_order_id_does_not_crash(self):
+        # Arrange
+        # Create an order that hasn't been accepted yet (venue_order_id is None)
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        # Add order to cache (venue_order_id stays None since order not accepted)
+        self.cache.add_order(order, position_id=None)
+
+        # Create a venue order ID to search for
+        venue_order_id = VenueOrderId("VENUE-123")
+
+        # Act - verifies None comparisons work correctly during reconciliation
+        result = self.exec_engine._find_order_by_venue_order_id(
+            venue_order_id=venue_order_id,
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+        )
+
+        # Assert
+        assert result is None  # Order not found (correct behavior)
+        assert order.venue_order_id is None  # Order still has no venue_order_id
+
+    @pytest.mark.asyncio
+    async def test_overfill_rejects_fill_when_not_allowed(self):
+        """
+        Test that overfill rejects fill (without mutating state) when allow_overfills is
+        False.
+        """
+        # Verify config is correct
+        assert self.exec_engine.allow_overfills is False
+
+        # Arrange
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        self.cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # Capture initial state (copy qty since it's returned by reference)
+        initial_filled_qty = Quantity.from_raw(order.filled_qty.raw, order.filled_qty.precision)
+        initial_status = order.status
+
+        # Create overfill event (110k > 100k order qty)
+        overfill_event = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(110_000),
+        )
+
+        # Act - should reject fill without mutating order state
+        self.exec_engine.process(overfill_event)
+
+        # Assert - order state unchanged (fill was rejected)
+        assert order.filled_qty == initial_filled_qty
+        assert order.status == initial_status
+
+    @pytest.mark.asyncio
+    async def test_overfill_logs_warning_when_allowed(self):
+        """
+        Test that overfill logs a warning but doesn't raise when allow_overfills is
+        True.
+        """
+        # Arrange - create fresh msgbus and engine with allow_overfills=True
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        new_engine = LiveExecutionEngine(
+            loop=self.loop,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=LiveExecEngineConfig(debug=True, allow_overfills=True),
+        )
+        self._engines_to_cleanup.append(new_engine)
+        new_engine.start()
+
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        self.cache.add_order(order)
+        # Process events through engine to maintain proper state
+        new_engine.process(TestEventStubs.order_submitted(order))
+        new_engine.process(TestEventStubs.order_accepted(order))
+
+        # Create overfill event (110k > 100k order qty)
+        overfill_event = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(110_000),
+        )
+
+        # Act - should not raise when allow_overfills=True
+        new_engine.process(overfill_event)
+
+        # Allow async processing
+        await asyncio.sleep(0.1)
+
+        # Assert - order should have tracked the overfill
+        assert order.overfill_qty == Quantity.from_int(10_000)
+        assert order.filled_qty == Quantity.from_int(110_000)
+        assert order.status == OrderStatus.FILLED
+
+    def test_reconcile_fill_report_rejects_overfill_when_not_allowed(self):
+        """
+        Test that _reconcile_fill_report rejects overfills when allow_overfills=False
+        (default).
+        """
+        # Arrange - create a partially filled order
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("2450.5"),
+        )
+
+        self.cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # First partial fill
+        fill1 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            trade_id=TradeId("FILL-1"),
+            last_qty=Quantity.from_str("1202.5"),
+        )
+        order.apply(fill1)
+        self.cache.update_order(order)
+
+        # Create fill report that would cause overfill (1202.5 + 1285.5 = 2488 > 2450.5)
+        overfill_report = FillReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            trade_id=TradeId("FILL-2"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_str("1285.5"),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.TAKER,
+            report_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act - reconcile should reject the overfill
+        result = self.exec_engine._reconcile_fill_report(order, overfill_report, AUDUSD_SIM)
+
+        # Assert - fill rejected, order unchanged
+        assert result is False
+        assert order.filled_qty == Quantity.from_str("1202.5")
+        assert order.overfill_qty == Quantity.from_str("0.0")
+
+    def test_reconcile_fill_report_allows_overfill_when_configured(self):
+        """
+        Test that _reconcile_fill_report allows overfills when allow_overfills=True.
+        """
+        # Arrange - create engine with allow_overfills=True
+        test_msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        new_engine = LiveExecutionEngine(
+            loop=self.loop,
+            msgbus=test_msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=LiveExecEngineConfig(debug=True, allow_overfills=True),
+        )
+        self._engines_to_cleanup.append(new_engine)
+
+        # Create a partially filled order
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("2450.5"),
+        )
+
+        self.cache.add_order(order)
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        # First partial fill
+        fill1 = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            trade_id=TradeId("FILL-1"),
+            last_qty=Quantity.from_str("1202.5"),
+        )
+        order.apply(fill1)
+        self.cache.update_order(order)
+
+        # Create fill report that would cause overfill (1202.5 + 1285.5 = 2488 > 2450.5)
+        overfill_report = FillReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            trade_id=TradeId("FILL-2"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_str("1285.5"),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.TAKER,
+            report_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act - reconcile should allow the overfill
+        result = new_engine._reconcile_fill_report(order, overfill_report, AUDUSD_SIM)
+
+        # Assert - fill accepted, overfill tracked
+        assert result is True
+        assert order.filled_qty == Quantity.from_str("2488.0")
+        assert order.overfill_qty == Quantity.from_str("37.5")
+        assert order.leaves_qty == Quantity.from_str("0.0")
+        assert order.status == OrderStatus.FILLED

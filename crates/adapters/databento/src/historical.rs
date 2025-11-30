@@ -37,7 +37,6 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::Currency,
 };
-use tokio::sync::Mutex;
 
 use crate::{
     common::get_date_time_range,
@@ -60,7 +59,7 @@ use crate::{
 pub struct DatabentoHistoricalClient {
     pub key: String,
     clock: &'static AtomicTime,
-    inner: Arc<Mutex<databento::HistoricalClient>>,
+    inner: Arc<tokio::sync::Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
     use_exchange_as_venue: bool,
@@ -113,7 +112,7 @@ impl DatabentoHistoricalClient {
 
         Ok(Self {
             clock,
-            inner: Arc::new(Mutex::new(client)),
+            inner: Arc::new(tokio::sync::Mutex::new(client)),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(RwLock::new(AHashMap::new())),
             key,

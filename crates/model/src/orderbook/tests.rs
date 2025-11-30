@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashSet;
-
+use ahash::AHashSet;
 use nautilus_core::UnixNanos;
 use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
@@ -444,10 +443,9 @@ fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth10) {
     for (i, level) in bid_levels.iter().enumerate() {
         assert_eq!(
             level.price.value, expected_bid_prices[i],
-            "Bid level {} price mismatch",
-            i
+            "Bid level {i} price mismatch"
         );
-        assert!(level.size() > 0.0, "Bid level {} has zero size", i);
+        assert!(level.size() > 0.0, "Bid level {i} has zero size");
     }
 
     // Verify ask prices in ascending order (100, 101, 102, ..., 109)
@@ -466,10 +464,9 @@ fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth10) {
     for (i, level) in ask_levels.iter().enumerate() {
         assert_eq!(
             level.price.value, expected_ask_prices[i],
-            "Ask level {} price mismatch",
-            i
+            "Ask level {i} price mismatch"
         );
-        assert!(level.size() > 0.0, "Ask level {} has zero size", i);
+        assert!(level.size() > 0.0, "Ask level {i} has zero size");
     }
 
     // Verify sizes increase with each level (100, 200, 300, ..., 1000)
@@ -480,16 +477,14 @@ fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth10) {
         assert_eq!(
             level.size(),
             expected_sizes[i],
-            "Bid level {} size mismatch",
-            i
+            "Bid level {i} size mismatch"
         );
     }
     for (i, level) in ask_levels.iter().enumerate() {
         assert_eq!(
             level.size(),
             expected_sizes[i],
-            "Ask level {} size mismatch",
-            i
+            "Ask level {i} size mismatch"
         );
     }
 }
@@ -536,10 +531,8 @@ fn test_book_apply_depth_empty_snapshot() {
     assert!(!book.has_bid(), "Empty snapshot should not have bid");
     assert!(!book.has_ask(), "Empty snapshot should not have ask");
 
-    let bid_levels: Vec<_> = book.bids(None).collect();
-    let ask_levels: Vec<_> = book.asks(None).collect();
-    assert_eq!(bid_levels.len(), 0, "Should have 0 bid levels");
-    assert_eq!(ask_levels.len(), 0, "Should have 0 ask levels");
+    assert_eq!(book.bids(None).count(), 0, "Should have 0 bid levels");
+    assert_eq!(book.asks(None).count(), 0, "Should have 0 ask levels");
 
     // Verify metadata was still updated
     assert_eq!(book.sequence, 12345);
@@ -629,14 +622,14 @@ fn test_book_apply_depth_partial_snapshot() {
     assert_eq!(ask_levels.len(), 3, "Should have exactly 3 ask levels");
 
     // Verify no zero-price levels
-    for level in bid_levels.iter() {
+    for level in &bid_levels {
         assert!(
             level.price.value > Price::from("0.0"),
             "No zero-price bid levels"
         );
         assert!(level.size() > 0.0, "No zero-size bid levels");
     }
-    for level in ask_levels.iter() {
+    for level in &ask_levels {
         assert!(
             level.price.value > Price::from("0.0"),
             "No zero-price ask levels"
@@ -1445,7 +1438,7 @@ fn test_book_filtered_with_status_filter() {
     own_book.add(own_ask_submitted);
 
     // Create a status filter for only ACCEPTED orders
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Accepted);
 
     // Get filtered maps with status filter
@@ -1678,7 +1671,7 @@ fn test_book_filtered_with_accepted_buffer() {
     own_book.add(own_ask_older);
 
     // Status filter for ACCEPTED orders only
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Accepted);
 
     // Test with a 200 ns buffer - only orders accepted before 800 ns should be filtered
@@ -1827,7 +1820,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
     assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(50)));
 
     // Now test with a status filter for SUBMITTED only
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Submitted);
 
     let bids_filtered_submitted = book.bids_filtered_as_map(
@@ -1843,7 +1836,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
     assert_eq!(bids_filtered_submitted.get(&dec!(100.00)), Some(&dec!(70)));
 
     // Now test with a status filter for both SUBMITTED and ACCEPTED
-    let mut status_filter_both = HashSet::new();
+    let mut status_filter_both = AHashSet::new();
     status_filter_both.insert(OrderStatus::Submitted);
     status_filter_both.insert(OrderStatus::Accepted);
 
@@ -2128,7 +2121,7 @@ fn test_book_group_with_status_filter() {
     own_book.add(own_submitted);
 
     // Create a status filter for ACCEPTED orders only
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Accepted);
 
     // Group with status filter
@@ -3755,7 +3748,7 @@ fn test_status_filtering_bids_as_map() {
     assert_eq!(all_orders.get(&dec!(99.50)).unwrap().len(), 1); // One order at 99.50
 
     // Filter for just SUBMITTED status
-    let mut filter_submitted = HashSet::new();
+    let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
     let submitted_orders = book.bids_as_map(Some(filter_submitted), None, None);
     assert_eq!(submitted_orders.len(), 1); // One price level
@@ -3767,7 +3760,7 @@ fn test_status_filtering_bids_as_map() {
     assert!(submitted_orders.get(&dec!(99.50)).is_none()); // No SUBMITTED orders at 99.50
 
     // Filter for ACCEPTED and CANCELED statuses
-    let mut filter_accepted_canceled = HashSet::new();
+    let mut filter_accepted_canceled = AHashSet::new();
     filter_accepted_canceled.insert(OrderStatus::Accepted);
     filter_accepted_canceled.insert(OrderStatus::Canceled);
     let accepted_canceled_orders = book.bids_as_map(Some(filter_accepted_canceled), None, None);
@@ -3779,7 +3772,7 @@ fn test_status_filtering_bids_as_map() {
     assert_eq!(accepted_canceled_orders.get(&dec!(99.50)).unwrap().len(), 1); // One CANCELED at 99.50
 
     // Filter for non-existent status
-    let mut filter_filled = HashSet::new();
+    let mut filter_filled = AHashSet::new();
     filter_filled.insert(OrderStatus::Filled);
     let filled_orders = book.bids_as_map(Some(filter_filled), None, None);
     assert_eq!(filled_orders.len(), 0); // No orders match
@@ -3832,7 +3825,7 @@ fn test_status_filtering_asks_as_map() {
     assert_eq!(all_orders.get(&dec!(101.00)).unwrap().len(), 2); // Two orders at 101.00
 
     // Filter for just SUBMITTED status
-    let mut filter_submitted = HashSet::new();
+    let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
     let submitted_orders = book.asks_as_map(Some(filter_submitted), None, None);
     assert_eq!(submitted_orders.len(), 1); // One price level
@@ -3908,7 +3901,7 @@ fn test_status_filtering_bid_quantity() {
     assert_eq!(all_quantities.get(&dec!(99.50)), Some(&dec!(20))); // 20
 
     // Filter for just SUBMITTED status
-    let mut filter_submitted = HashSet::new();
+    let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
     let submitted_quantities = book.bid_quantity(Some(filter_submitted), None, None, None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
@@ -3916,7 +3909,7 @@ fn test_status_filtering_bid_quantity() {
     assert!(submitted_quantities.get(&dec!(99.50)).is_none()); // No SUBMITTED orders at 99.50
 
     // Filter for ACCEPTED and CANCELED statuses
-    let mut filter_accepted_canceled = HashSet::new();
+    let mut filter_accepted_canceled = AHashSet::new();
     filter_accepted_canceled.insert(OrderStatus::Accepted);
     filter_accepted_canceled.insert(OrderStatus::Canceled);
     let accepted_canceled_quantities =
@@ -3997,7 +3990,7 @@ fn test_status_filtering_ask_quantity() {
     assert_eq!(all_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20
 
     // Filter for just SUBMITTED status
-    let mut filter_submitted = HashSet::new();
+    let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
     let submitted_quantities = book.ask_quantity(Some(filter_submitted), None, None, None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
@@ -4005,7 +3998,7 @@ fn test_status_filtering_ask_quantity() {
     assert!(submitted_quantities.get(&dec!(102.00)).is_none()); // No SUBMITTED orders at 102.00
 
     // Filter for multiple statuses
-    let mut filter_multiple = HashSet::new();
+    let mut filter_multiple = AHashSet::new();
     filter_multiple.insert(OrderStatus::Submitted);
     filter_multiple.insert(OrderStatus::Canceled);
     let multiple_quantities = book.ask_quantity(Some(filter_multiple), None, None, None, None);
@@ -4014,7 +4007,7 @@ fn test_status_filtering_ask_quantity() {
     assert_eq!(multiple_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20 (Canceled only)
 
     // Check empty price levels are filtered out
-    let mut filter_filled = HashSet::new();
+    let mut filter_filled = AHashSet::new();
     filter_filled.insert(OrderStatus::Filled);
     let filled_quantities = book.ask_quantity(Some(filter_filled), None, None, None, None);
     assert_eq!(filled_quantities.len(), 0); // No orders match
@@ -4661,7 +4654,7 @@ fn test_own_book_group_with_status_and_buffer() {
     own_book.add(own_older);
 
     // Create a status filter for ACCEPTED orders
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Accepted);
 
     // Group with a buffer of 300 ns - only orders accepted before 700 ns should be included
@@ -4732,7 +4725,7 @@ fn test_own_book_audit_open_orders_no_removals() {
     own_book.add(ask_order);
 
     // Create a set of open order IDs that includes both orders
-    let mut open_order_ids = HashSet::new();
+    let mut open_order_ids = AHashSet::new();
     open_order_ids.insert(ClientOrderId::from("BID-1"));
     open_order_ids.insert(ClientOrderId::from("ASK-1"));
 
@@ -4822,7 +4815,7 @@ fn test_own_book_audit_open_orders_with_removals() {
     assert_eq!(own_book.ask_client_order_ids().len(), 2);
 
     // Create a set of open order IDs that only includes one bid and one ask
-    let mut open_order_ids = HashSet::new();
+    let mut open_order_ids = AHashSet::new();
     open_order_ids.insert(ClientOrderId::from("BID-1"));
     open_order_ids.insert(ClientOrderId::from("ASK-1"));
 
@@ -4952,10 +4945,128 @@ fn orderbook_test_strategy() -> impl Strategy<Value = (BookType, Vec<OrderBookOp
     )
 }
 
+/// Ensures order book operations form a semantically valid sequence.
+///
+/// Tracks live order IDs and filters operations to maintain consistency:
+/// - Add: Skips if order ID already exists (except L1_MBP which allows reuse)
+/// - Update/Delete: Only applies to existing orders
+/// - Clear: Resets tracked state
+/// - L1_MBP: Normalizes all order IDs to side constants (1 for Buy, 2 for Sell)
+///
+/// Duplicate Adds are skipped (except L1) because we cannot disambiguate which
+/// occurrence subsequent Update/Delete operations should target.
+fn sanitize_operations(
+    operations: Vec<OrderBookOperation>,
+    book_type: BookType,
+) -> Vec<OrderBookOperation> {
+    use ahash::{AHashMap, AHashSet};
+
+    let mut live_order_ids: AHashMap<OrderSide, AHashSet<u64>> = AHashMap::new();
+    live_order_ids.insert(OrderSide::Buy, AHashSet::new());
+    live_order_ids.insert(OrderSide::Sell, AHashSet::new());
+
+    let mut sanitized = Vec::new();
+
+    for operation in operations {
+        match operation {
+            OrderBookOperation::Add(order, flags, seq) => {
+                // Skip invalid prices/sizes
+                if order.price.raw <= 0
+                    || order.price.raw == crate::types::price::PRICE_UNDEF
+                    || order.price.raw == crate::types::price::PRICE_ERROR
+                    || !order.size.is_positive()
+                {
+                    continue;
+                }
+
+                let side_set = live_order_ids.get_mut(&order.side).unwrap();
+
+                // For L1_MBP, allow reusing the same order_id (side constant behavior)
+                if book_type == BookType::L1_MBP {
+                    // L1 uses order_id = side as u64, legitimate reuse
+                    let mut l1_order = order;
+                    l1_order.order_id = l1_order.side as u64;
+                    side_set.insert(l1_order.order_id);
+                    sanitized.push(OrderBookOperation::Add(l1_order, flags, seq));
+                } else {
+                    // For L2/L3, skip duplicate order IDs
+                    // We cannot disambiguate which order subsequent operations should target
+                    if side_set.contains(&order.order_id) {
+                        continue; // Skip duplicate Add
+                    }
+
+                    side_set.insert(order.order_id);
+                    sanitized.push(OrderBookOperation::Add(order, flags, seq));
+                }
+            }
+            OrderBookOperation::Update(mut order, flags, seq) => {
+                // Skip invalid prices
+                if order.price.raw <= 0
+                    || order.price.raw == crate::types::price::PRICE_UNDEF
+                    || order.price.raw == crate::types::price::PRICE_ERROR
+                {
+                    continue;
+                }
+
+                // For L1_MBP, normalize order_id to side constant
+                if book_type == BookType::L1_MBP {
+                    order.order_id = order.side as u64;
+                }
+
+                let side_set = live_order_ids.get_mut(&order.side).unwrap();
+
+                // Only update if order exists in book
+                if side_set.contains(&order.order_id) {
+                    // If size is zero, this is effectively a delete
+                    if order.size.raw == 0 {
+                        side_set.remove(&order.order_id);
+                    }
+                    sanitized.push(OrderBookOperation::Update(order, flags, seq));
+                }
+                // If order doesn't exist, skip the update
+            }
+            OrderBookOperation::Delete(mut order, flags, seq) => {
+                // For L1_MBP, normalize order_id to side constant
+                if book_type == BookType::L1_MBP {
+                    order.order_id = order.side as u64;
+                }
+
+                let side_set = live_order_ids.get_mut(&order.side).unwrap();
+
+                // Only delete if order exists in book
+                if side_set.contains(&order.order_id) {
+                    side_set.remove(&order.order_id);
+                    sanitized.push(OrderBookOperation::Delete(order, flags, seq));
+                }
+                // If order doesn't exist, skip the delete
+            }
+            OrderBookOperation::Clear(seq) => {
+                // Clear all orders
+                live_order_ids.get_mut(&OrderSide::Buy).unwrap().clear();
+                live_order_ids.get_mut(&OrderSide::Sell).unwrap().clear();
+                sanitized.push(OrderBookOperation::Clear(seq));
+            }
+            OrderBookOperation::ClearBids(seq) => {
+                live_order_ids.get_mut(&OrderSide::Buy).unwrap().clear();
+                sanitized.push(OrderBookOperation::ClearBids(seq));
+            }
+            OrderBookOperation::ClearAsks(seq) => {
+                live_order_ids.get_mut(&OrderSide::Sell).unwrap().clear();
+                sanitized.push(OrderBookOperation::ClearAsks(seq));
+            }
+        }
+    }
+
+    sanitized
+}
+
 fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBookOperation>) {
     let instrument_id = InstrumentId::from("TEST.VENUE");
     let mut book = OrderBook::new(instrument_id, book_type);
     let mut last_sequence = 0u64;
+
+    // Sanitize operations to ensure semantic validity
+    let operations = sanitize_operations(operations, book_type);
 
     for operation in operations {
         // Ensure monotonic sequence numbers
@@ -4972,26 +5083,6 @@ fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBook
         };
 
         let ts_event = UnixNanos::from(sequence);
-
-        // Skip operations that would cause assertion failures
-        let should_skip = match &operation {
-            OrderBookOperation::Add(order, _, _)
-            | OrderBookOperation::Update(order, _, _)
-            | OrderBookOperation::Delete(order, _, _) => {
-                // Skip invalid prices or orders that might cause cache conflicts
-                order.price.raw == crate::types::price::PRICE_UNDEF
-                    || order.price.raw == crate::types::price::PRICE_ERROR
-                    || order.price.raw <= 0 // Skip zero or negative prices
-                    || order.order_id == 0 // Skip zero order IDs to avoid conflicts
-                    // Allow zero-size orders for Update operations (represent deletions)
-                    || (matches!(operation, OrderBookOperation::Add(_, _, _)) && order.size.raw == 0)
-            }
-            _ => false,
-        };
-
-        if should_skip {
-            continue;
-        }
 
         match operation {
             OrderBookOperation::Add(order, flags, _) => {
@@ -5109,10 +5200,11 @@ fn test_orderbook_with_operations(book_type: BookType, operations: Vec<OrderBook
     }
 }
 
+// Property test verifying order book consistency across random operation sequences.
+//
+// Tests comprehensive invariants including cache consistency, price ordering, positive sizes,
+// and monotonic sequences. Uses sanitize_operations() to ensure valid operation semantics.
 #[rstest]
-// Cache consistency bugs partially fixed, but property test still reveals edge cases
-// Keeping disabled until all edge cases are resolved
-#[ignore = "Cache consistency fixes in progress - multiple edge cases remain"]
 fn prop_test_orderbook_operations() {
     proptest!(|(config in orderbook_test_strategy())| {
         let (book_type, operations) = config;
@@ -5125,6 +5217,9 @@ fn test_orderbook_basic_invariants(book_type: BookType, operations: Vec<OrderBoo
     let instrument_id = InstrumentId::from("TEST.VENUE");
     let mut book = OrderBook::new(instrument_id, book_type);
     let mut last_sequence = 0u64;
+
+    // Sanitize operations to ensure semantic validity
+    let operations = sanitize_operations(operations, book_type);
 
     for operation in operations {
         // Ensure monotonic sequence numbers
@@ -5142,24 +5237,6 @@ fn test_orderbook_basic_invariants(book_type: BookType, operations: Vec<OrderBoo
 
         let ts_event = UnixNanos::from(sequence);
 
-        // Skip operations that would cause assertion failures
-        let should_skip = match &operation {
-            OrderBookOperation::Add(order, _, _)
-            | OrderBookOperation::Update(order, _, _)
-            | OrderBookOperation::Delete(order, _, _) => {
-                order.price.raw == crate::types::price::PRICE_UNDEF
-                    || order.price.raw == crate::types::price::PRICE_ERROR
-                    || order.size.raw == 0
-                    || order.order_id == 0
-            }
-            _ => false,
-        };
-
-        if should_skip {
-            continue;
-        }
-
-        // Temporarily disable cache assertions for this test by not checking them
         match operation {
             OrderBookOperation::Add(order, flags, _) => {
                 book.add(order, flags, sequence, ts_event);
@@ -5256,13 +5333,167 @@ fn test_orderbook_basic_invariants(book_type: BookType, operations: Vec<OrderBoo
     }
 }
 
+// Property test verifying fundamental order book invariants.
+//
+// Tests basic properties: price ordering, positive sizes, monotonic sequences.
 #[rstest]
-#[ignore = "Also hits cache consistency bug - debug assertions are in ladder code"]
 fn prop_test_orderbook_basic_invariants() {
     proptest!(|(config in orderbook_test_strategy())| {
         let (book_type, operations) = config;
         test_orderbook_basic_invariants(book_type, operations);
     });
+}
+
+// Test that sanitize_operations correctly skips duplicate Adds
+#[rstest]
+fn test_sanitize_operations_skips_duplicate_adds() {
+    // Create a sequence where the same order ID is added twice, then deleted twice
+    let operations = vec![
+        OrderBookOperation::Add(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00"),
+                Quantity::from(10),
+                42,
+            ),
+            0,
+            1,
+        ),
+        OrderBookOperation::Add(
+            BookOrder::new(OrderSide::Buy, Price::from("99.00"), Quantity::from(20), 42),
+            0,
+            2,
+        ),
+        OrderBookOperation::Delete(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00"),
+                Quantity::from(10),
+                42,
+            ),
+            0,
+            3,
+        ),
+        OrderBookOperation::Delete(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00"),
+                Quantity::from(10),
+                42,
+            ),
+            0,
+            4,
+        ),
+    ];
+
+    let sanitized = sanitize_operations(operations, BookType::L3_MBO);
+
+    // After sanitization:
+    // - First Add(id=42) is kept
+    // - Second Add(id=42) is SKIPPED (duplicate)
+    // - First Delete(id=42) removes the order
+    // - Second Delete(id=42) is skipped (order doesn't exist)
+    assert_eq!(sanitized.len(), 2, "Should have 1 Add + 1 Delete");
+
+    // Verify only the first add remains
+    if let OrderBookOperation::Add(order, _, _) = &sanitized[0] {
+        assert_eq!(order.order_id, 42);
+        assert_eq!(order.price, Price::from("100.00"));
+    }
+
+    // Apply to order book and verify final state
+    let instrument_id = InstrumentId::from("TEST.VENUE");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    for operation in sanitized {
+        match operation {
+            OrderBookOperation::Add(order, flags, seq) => {
+                book.add(order, flags, seq, UnixNanos::from(seq));
+            }
+            OrderBookOperation::Delete(order, flags, seq) => {
+                book.delete(order, flags, seq, UnixNanos::from(seq));
+            }
+            _ => {}
+        }
+    }
+
+    // After the delete, book should be empty
+    assert_eq!(book.bids(None).count(), 0, "Book should be empty");
+}
+
+// Test that L1_MBP normalizes order IDs for all operations
+#[rstest]
+fn test_sanitize_operations_l1_id_normalization() {
+    // Create L1 operations with random order IDs
+    let operations = vec![
+        OrderBookOperation::Add(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.00"),
+                Quantity::from(10),
+                999,
+            ),
+            0,
+            1,
+        ),
+        OrderBookOperation::Update(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.50"),
+                Quantity::from(15),
+                888,
+            ),
+            0,
+            2,
+        ),
+        OrderBookOperation::Delete(
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("100.50"),
+                Quantity::from(15),
+                777,
+            ),
+            0,
+            3,
+        ),
+    ];
+
+    let sanitized = sanitize_operations(operations, BookType::L1_MBP);
+
+    // All operations should be normalized to order_id = 1 (Buy as u64)
+    assert_eq!(sanitized.len(), 3, "All L1 operations should be kept");
+
+    if let OrderBookOperation::Add(order, _, _) = &sanitized[0] {
+        assert_eq!(order.order_id, 1, "L1 Buy Add should use order_id 1");
+    }
+    if let OrderBookOperation::Update(order, _, _) = &sanitized[1] {
+        assert_eq!(order.order_id, 1, "L1 Buy Update should use order_id 1");
+    }
+    if let OrderBookOperation::Delete(order, _, _) = &sanitized[2] {
+        assert_eq!(order.order_id, 1, "L1 Buy Delete should use order_id 1");
+    }
+
+    // Apply to order book and verify
+    let instrument_id = InstrumentId::from("TEST.VENUE");
+    let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
+
+    for operation in sanitized {
+        match operation {
+            OrderBookOperation::Add(order, flags, seq) => {
+                book.add(order, flags, seq, UnixNanos::from(seq));
+            }
+            OrderBookOperation::Update(order, flags, seq) => {
+                book.update(order, flags, seq, UnixNanos::from(seq));
+            }
+            OrderBookOperation::Delete(order, flags, seq) => {
+                book.delete(order, flags, seq, UnixNanos::from(seq));
+            }
+            _ => {}
+        }
+    }
+
+    // After add, update, delete sequence, book should be empty
+    assert_eq!(book.bids(None).count(), 0, "L1 book should be empty");
 }
 
 // Additional property test focusing on L1 quote/trade tick updates

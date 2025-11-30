@@ -20,19 +20,20 @@
 use std::{
     cell::RefCell,
     collections::HashMap,
+    fmt::Debug,
     rc::Rc,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use nautilus_common::{
     actor::{Actor, DataActor},
-    clock::LiveClock,
     component::Component,
     enums::Environment,
+    live::clock::LiveClock,
 };
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;
@@ -42,6 +43,7 @@ use nautilus_system::{
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
     kernel::NautilusKernel,
 };
+use nautilus_trading::strategy::Strategy;
 
 use crate::{config::LiveNodeConfig, runner::AsyncRunner};
 
@@ -185,6 +187,9 @@ impl LiveNode {
         }
 
         self.kernel.start_async().await;
+        self.kernel.connect_clients().await?;
+        self.await_engines_connected().await?;
+
         self.is_running = true;
         self.handle.set_running(true);
 
@@ -202,10 +207,47 @@ impl LiveNode {
         }
 
         self.kernel.stop_async().await;
+        self.kernel.disconnect_clients().await?;
+        self.await_engines_disconnected().await?;
+
         self.is_running = false;
         self.handle.set_running(false);
 
         Ok(())
+    }
+
+    /// Awaits engine clients to connect with timeout.
+    async fn await_engines_connected(&self) -> anyhow::Result<()> {
+        let start = Instant::now();
+        let timeout = self.config.timeout_connection;
+        let interval = Duration::from_millis(100);
+
+        while start.elapsed() < timeout {
+            if self.kernel.check_engines_connected() {
+                log::info!("All engine clients connected");
+                return Ok(());
+            }
+            tokio::time::sleep(interval).await;
+        }
+
+        anyhow::bail!("Timeout waiting for engine clients to connect after {timeout:?}")
+    }
+
+    /// Awaits engine clients to disconnect with timeout.
+    async fn await_engines_disconnected(&self) -> anyhow::Result<()> {
+        let start = Instant::now();
+        let timeout = self.config.timeout_disconnection;
+        let interval = Duration::from_millis(100);
+
+        while start.elapsed() < timeout {
+            if self.kernel.check_engines_disconnected() {
+                log::info!("All engine clients disconnected");
+                return Ok(());
+            }
+            tokio::time::sleep(interval).await;
+        }
+
+        anyhow::bail!("Timeout waiting for engine clients to disconnect after {timeout:?}")
     }
 
     /// Run the live node with automatic shutdown handling.
@@ -349,11 +391,34 @@ impl LiveNode {
     {
         if self.is_running {
             anyhow::bail!(
-                "Cannot add actor while node is running. Add actors before calling start()."
+                "Cannot add actor while node is running, add actors before calling start()"
             );
         }
 
         self.kernel.trader.add_actor_from_factory(factory)
+    }
+
+    /// Adds a strategy to the trader.
+    ///
+    /// Strategies are registered in both the component registry (for lifecycle management)
+    /// and the actor registry (for data callbacks via msgbus).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The node is currently running.
+    /// - A strategy with the same ID is already registered.
+    pub fn add_strategy<T>(&mut self, strategy: T) -> anyhow::Result<()>
+    where
+        T: Strategy + Component + Debug + 'static,
+    {
+        if self.is_running {
+            anyhow::bail!(
+                "Cannot add strategy while node is running, add strategies before calling start()"
+            );
+        }
+
+        self.kernel.trader.add_strategy(strategy)
     }
 }
 
@@ -470,7 +535,7 @@ impl LiveNodeBuilder {
         self
     }
 
-    /// Adds a data client with factory and configuration.
+    /// Adds a data client factory with configuration.
     ///
     /// # Errors
     ///
@@ -492,7 +557,7 @@ impl LiveNodeBuilder {
         Ok(self)
     }
 
-    /// Adds an execution client with factory and configuration.
+    /// Adds an execution client factory with configuration.
     ///
     /// # Errors
     ///
@@ -518,16 +583,17 @@ impl LiveNodeBuilder {
     ///
     /// This will:
     /// 1. Build the underlying kernel.
-    /// 2. Register all client factories.
-    /// 3. Create and register all clients.
+    /// 2. Create clients using factories.
+    /// 3. Register clients with engines.
     ///
     /// # Errors
     ///
     /// Returns an error if node construction fails.
     pub fn build(mut self) -> anyhow::Result<LiveNode> {
         log::info!(
-            "Building LiveNode with {} data clients",
-            self.data_client_factories.len()
+            "Building LiveNode with {} data clients and {} execution clients",
+            self.data_client_factories.len(),
+            self.exec_client_factories.len()
         );
 
         let runner = AsyncRunner::new();
@@ -541,11 +607,9 @@ impl LiveNodeBuilder {
 
                 let client =
                     factory.create(&name, config.as_ref(), kernel.cache(), kernel.clock())?;
-
-                log::info!("Registering data client '{name}' with data engine");
-
                 let client_id = client.client_id();
                 let venue = client.venue();
+
                 let adapter = DataClientAdapter::new(
                     client_id, venue, true, // handles_order_book_deltas
                     true, // handles_order_book_snapshots
@@ -557,7 +621,7 @@ impl LiveNodeBuilder {
                     .borrow_mut()
                     .register_client(adapter, venue);
 
-                log::info!("Successfully registered data client '{name}' ({client_id})");
+                log::info!("Registered data client '{name}' ({client_id})");
             } else {
                 log::warn!("No config found for data client factory '{name}'");
             }
@@ -570,11 +634,11 @@ impl LiveNodeBuilder {
 
                 let client =
                     factory.create(&name, config.as_ref(), kernel.cache(), kernel.clock())?;
+                let client_id = client.client_id();
 
-                log::info!("Registering execution client '{name}' with execution engine");
+                kernel.exec_engine.borrow_mut().register_client(client)?;
 
-                // TODO: Implement when ExecutionEngine has a register_client method
-                // kernel.exec_engine().register_client(client);
+                log::info!("Registered execution client '{name}' ({client_id})");
             } else {
                 log::warn!("No config found for execution client factory '{name}'");
             }

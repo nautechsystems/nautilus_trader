@@ -22,3 +22,6 @@
 pub mod client;
 pub mod helpers;
 pub mod transform;
+
+/// Type alias for HyperSync log entries.
+pub type HypersyncLog = hypersync_client::simple_types::Log;

@@ -9,6 +9,12 @@
 
 set -euo pipefail
 
+# Exit cleanly if ripgrep is not installed
+if ! command -v rg &> /dev/null; then
+  echo "WARNING: ripgrep not found, skipping logging macro usage checks"
+  exit 0
+fi
+
 # Color output
 RED='\033[0;31m'
 NC='\033[0m' # No Color
@@ -21,16 +27,7 @@ VIOLATIONS=0
 FILE_PATTERN='^\s*(pub(\([^)]*\))?\s+)?use\s+(log|tracing)::[^;]*\b(trace|debug|info|warn|error)\b'
 
 # Find files containing potential violations
-if command -v rg &> /dev/null; then
-  # Use ripgrep to find files (fast)
-  candidate_files=$(rg -l "$FILE_PATTERN" crates --type rust 2> /dev/null || true)
-else
-  # Fallback to grep + find (null-terminated for safe filename handling)
-  # Note: -r flag omitted for BSD/macOS compatibility (GNU extension)
-  candidate_files=$(find crates -name '*.rs' -type f -print0 2> /dev/null |
-    xargs -0 grep -lZ '\btrace\b\|\bdebug\b\|\binfo\b\|\bwarn\b\|\berror\b' 2> /dev/null |
-    xargs -0 grep -l '^\s*\(pub\)\?.*use\s\+\(log\|tracing\)::' 2> /dev/null || true)
-fi
+candidate_files=$(rg -l "$FILE_PATTERN" crates --type rust 2> /dev/null || true)
 
 # Process each candidate file to check for actual violations
 while IFS= read -r file; do

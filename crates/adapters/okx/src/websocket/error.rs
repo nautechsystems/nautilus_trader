@@ -46,3 +46,9 @@ impl From<tungstenite::Error> for OKXWsError {
         Self::TungsteniteError(error.to_string())
     }
 }
+
+impl From<String> for OKXWsError {
+    fn from(msg: String) -> Self {
+        Self::AuthenticationError(msg)
+    }
+}

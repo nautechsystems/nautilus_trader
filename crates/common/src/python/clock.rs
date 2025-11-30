@@ -20,7 +20,8 @@ use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use pyo3::prelude::*;
 
 use crate::{
-    clock::{Clock, LiveClock, TestClock},
+    clock::{Clock, TestClock},
+    live::clock::LiveClock,
     timer::TimeEventCallback,
 };
 

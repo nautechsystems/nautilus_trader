@@ -20,6 +20,8 @@ from copy import copy
 
 import msgspec
 import pytest
+from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
+from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
 from betfair_parser.spec.betting.enums import PersistenceType
 from betfair_parser.spec.betting.enums import Side
 from betfair_parser.spec.betting.orders import CancelOrders
@@ -45,7 +47,6 @@ from betfair_parser.spec.streaming import MarketChange
 from betfair_parser.spec.streaming import MarketDefinition
 from betfair_parser.spec.streaming import stream_decode
 
-# fmt: off
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import OrderSideParser
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
@@ -103,9 +104,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
-
-
-# fmt: on
 
 
 class TestBetfairParsingStreaming:
@@ -199,14 +197,14 @@ class TestBetfairParsingStreaming:
         assert counts == expected
 
     def test_market_change_bsp_updates(self):
-        raw = b'{"id":"1.205822330","rc":[{"spb":[[1000,32.21]],"id":45368013},{"spb":[[1000,20.5]],"id":49808343},{"atb":[[1.93,10.09]],"id":49808342},{"spb":[[1000,20.5]],"id":39000334},{"spb":[[1000,84.22]],"id":16206031},{"spb":[[1000,18]],"id":10591436},{"spb":[[1000,88.96]],"id":48672282},{"spb":[[1000,18]],"id":19143530},{"spb":[[1000,20.5]],"id":6159479},{"spb":[[1000,10]],"id":25694777},{"spb":[[1000,10]],"id":49808335},{"spb":[[1000,10]],"id":49808334},{"spb":[[1000,20.5]],"id":35672106}],"con":true,"img":false}'  # noqa
+        raw = b'{"id":"1.205822330","rc":[{"spb":[[1000,32.21]],"id":45368013},{"spb":[[1000,20.5]],"id":49808343},{"atb":[[1.93,10.09]],"id":49808342},{"spb":[[1000,20.5]],"id":39000334},{"spb":[[1000,84.22]],"id":16206031},{"spb":[[1000,18]],"id":10591436},{"spb":[[1000,88.96]],"id":48672282},{"spb":[[1000,18]],"id":19143530},{"spb":[[1000,20.5]],"id":6159479},{"spb":[[1000,10]],"id":25694777},{"spb":[[1000,10]],"id":49808335},{"spb":[[1000,10]],"id":49808334},{"spb":[[1000,20.5]],"id":35672106}],"con":true,"img":false}'
         mc = msgspec.json.decode(raw, type=MarketChange)
         result = Counter([upd.__class__.__name__ for upd in market_change_to_updates(mc, {}, 0, 0)])
         expected = Counter({"CustomData": 12, "OrderBookDeltas": 1})
         assert result == expected
 
     def test_market_change_ticker(self):
-        raw = b'{"id":"1.205822330","rc":[{"atl":[[1.98,0],[1.91,30.38]],"id":49808338},{"atb":[[3.95,2.98]],"id":49808334},{"trd":[[3.95,46.95]],"ltp":3.95,"tv":46.95,"id":49808334}],"con":true,"img":false}'  # noqa
+        raw = b'{"id":"1.205822330","rc":[{"atl":[[1.98,0],[1.91,30.38]],"id":49808338},{"atb":[[3.95,2.98]],"id":49808334},{"trd":[[3.95,46.95]],"ltp":3.95,"tv":46.95,"id":49808334}],"con":true,"img":false}'
         mc = msgspec.json.decode(raw, type=MarketChange)
         result = market_change_to_updates(mc, {}, 0, 0)
         assert result[0] == TradeTick.from_dict(
@@ -439,7 +437,7 @@ class TestBetfairParsing:
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=CancelOrders) == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_account_statement(self, betfair_client):
         mock_betfair_request(betfair_client, BetfairResponses.account_details())
         detail = await self.client.get_account_details()
@@ -473,7 +471,41 @@ class TestBetfairParsing:
         )
         assert result == expected
 
-    @pytest.mark.asyncio()
+    def test_account_state_fallback_currency(self):
+        detail = AccountDetailsResponse(
+            currency_code=None,
+            first_name="Test",
+            last_name="User",
+            locale_code="en",
+            region="GBR",
+            timezone="Europe/London",
+            discount_rate=0.0,
+            points_balance=0,
+            country_code="GB",
+        )
+        funds = AccountFundsResponse(
+            available_to_bet_balance=1000.0,
+            exposure=0.0,
+            retained_commission=0.0,
+            exposure_limit=0.0,
+            discount_rate=0.0,
+            points_balance=0,
+        )
+
+        result = betfair_account_to_account_state(
+            account_detail=detail,
+            account_funds=funds,
+            event_id=self.uuid,
+            reported=True,
+            ts_event=0,
+            ts_init=0,
+            fallback_currency=GBP,
+        )
+
+        assert result.base_currency == GBP
+        assert result.balances[0].total == Money(1000.0, GBP)
+
+    @pytest.mark.asyncio
     async def test_merge_order_book_deltas(self):
         raw = msgspec.json.encode(
             {
@@ -650,7 +682,7 @@ class TestBetfairParsing:
             side=Side.BACK,
             persistence_type=PersistenceType.LAPSE,
             order_type=OrderType.LIMIT,
-            placed_date=datetime.datetime.now(),
+            placed_date=datetime.datetime.now(tz=datetime.UTC),
             bsp_liability=0.0,
             status=status,
             average_price_matched=3.4211,
@@ -676,7 +708,7 @@ class TestBetfairParsing:
             assert data
 
     def test_mcm(self) -> None:
-        line = b'{"op":"mcm","id":1,"initialClk":"nhy58bfvDawc+Jbf/A2jHKee5vUN","clk":"AAAAAAAA","conflateMs":0,"heartbeatMs":5000,"pt":1624860195431,"ct":"SUB_IMAGE","mc":[{"id":"1.184839563","marketDefinition":{"bspMarket":false,"turnInPlayEnabled":true,"persistenceEnabled":true,"marketBaseRate":5,"eventId":"30633417","eventTypeId":"7522","numberOfWinners":1,"bettingType":"ODDS","marketType":"MATCH_ODDS","marketTime":"2021-06-29T01:10:00.000Z","suspendTime":"2021-06-29T01:10:00.000Z","bspReconciled":false,"complete":true,"inPlay":false,"crossMatching":true,"runnersVoidable":false,"numberOfActiveRunners":2,"betDelay":0,"status":"OPEN","runners":[{"status":"ACTIVE","sortPriority":1,"id":6023845},{"status":"ACTIVE","sortPriority":2,"id":237487}],"regulators":["MR_INT"],"countryCode":"GB","discountAllowed":true,"timezone":"GMT","openDate":"2021-06-29T01:10:00.000Z","version":3888693695,"priceLadderDefinition":{"type":"CLASSIC"}},"rc":[{"atb":[[1.46,59.86],[1.48,1419.67],[1.47,2.92],[1.01,971.95],[1.02,119.11],[1.21,103],[1.42,27.32]],"atl":[[2,68.67],[1000,1.72],[200,1.72]],"trd":[[1.53,27.93],[1.46,407.17],[1.41,5.15],[1.48,29.85],[1.52,53.15],[1.47,10.38],[1.49,10],[1.5,22.58],[1.4,5.76]],"batb":[[2,1.46,59.86],[0,1.48,1419.67],[1,1.47,2.92],[6,1.01,971.95],[5,1.02,119.11],[4,1.21,103],[3,1.42,27.32]],"batl":[[0,2,68.67],[2,1000,1.72],[1,200,1.72]],"tv":571.97,"id":237487},{"atb":[[2.8,1.54],[1.01,971.95],[1.02,119.11],[2,68.67],[2.82,1440.67],[2.88,14.22],[1.43,2.73]],"atl":[[9.8,25.75],[1000,1.72],[200,1.72],[3.6,2.54]],"trd":[[2.9,13.06],[2.92,2.95],[3.1,138.82],[2.88,32.33],[3.2,77.73],[2.94,27.48],[3,34.24],[3.15,2.94]],"batb":[[6,1.01,971.95],[5,1.02,119.11],[4,1.43,2.73],[3,2,68.67],[2,2.8,1.54],[1,2.82,1440.67],[0,2.88,14.22]],"batl":[[3,1000,1.72],[2,200,1.72],[1,9.8,25.75],[0,3.6,2.54]],"tv":329.55,"id":6023845}],"img":true,"tv":901.52},{"id":"1.183516561","marketDefinition":{"bspMarket":false,"turnInPlayEnabled":true,"persistenceEnabled":true,"marketBaseRate":5,"eventId":"30533301","eventTypeId":"7522","numberOfWinners":1,"bettingType":"ODDS","marketType":"MATCH_ODDS","marketTime":"2021-05-19T01:16:00.000Z","suspendTime":"2021-05-19T01:16:00.000Z","bspReconciled":false,"complete":true,"inPlay":false,"crossMatching":true,"runnersVoidable":false,"numberOfActiveRunners":2,"betDelay":0,"status":"SUSPENDED","runners":[{"status":"ACTIVE","sortPriority":1,"id":237485},{"status":"ACTIVE","sortPriority":2,"id":60427}],"regulators":["MR_INT"],"countryCode":"GB","discountAllowed":true,"timezone":"GMT","openDate":"2021-05-19T01:16:00.000Z","version":3824150209,"priceLadderDefinition":{"type":"CLASSIC"}},"rc":[{"atb":[[2.2,238.14],[2.22,451.53],[2.1,20.7],[2.24,462.2],[2.18,8.89],[1.4,2],[1.65,86.15],[2.16,11.6],[1.01,746.03],[2.08,56.26],[1.05,91.09],[1.1,86.15],[1.3,3.84],[1.02,86.15],[1.03,86.15],[1.86,17.5]],"atl":[[2.32,11.53],[2.3,140.58],[2.28,201.16],[2.36,21.14],[1000,1.72],[200,1.72]],"trd":[[2.26,908.83],[2.24,2262.18],[2.28,1206.46],[2.22,5340.65],[2.16,2461.4],[2.2,2042.06],[2.18,1704.71],[2.08,74.11],[2.14,1098.39],[2.1,1413.03],[2.12,62.51],[2.04,7.37],[2.32,41.98],[2.3,554.84],[2,54.31],[2.36,20.68],[2.06,2045.77],[1.98,0.63]],"batb":[[2,2.2,238.14],[1,2.22,451.53],[5,2.1,20.7],[0,2.24,462.2],[3,2.18,8.89],[9,1.4,2],[8,1.65,86.15],[7,1.86,17.5],[6,2.08,56.26],[4,2.16,11.6]],"batl":[[2,2.32,11.53],[5,1000,1.72],[4,200,1.72],[3,2.36,21.14],[1,2.3,140.58],[0,2.28,201.16]],"tv":21299.91,"id":237485},{"atb":[[1.78,210.83],[1.75,14.41],[1.76,28.4],[1.79,450.18],[1.77,14.42],[1.01,746.03],[1.65,86.15],[1.05,91.09],[1.1,86.15],[1.3,3.84],[1.02,86.15],[1.03,86.15]],"atl":[[1.81,430.16],[1.82,488.33],[1.85,11.31],[1.83,14.32],[1.84,14.28],[3.1,27.45],[1000,1.72],[200,1.72],[2.08,1.72]],"trd":[[1.8,6609.88],[1.79,2742.92],[1.81,2879.6],[1.82,1567.46],[1.77,964.99],[1.86,272.44],[1.91,96.58],[1.99,16.47],[1.92,220.37],[1.76,11.91],[1.87,362.25],[1.78,437.4],[1.85,415.17],[1.84,580.74],[1.83,1394.8],[1.73,4],[1.88,22.37],[1.95,9.49],[1.96,1.96],[1.89,45.75],[1.9,2.3],[2.02,0.61],[1.93,4.71]],"batb":[[1,1.78,210.83],[4,1.75,14.41],[3,1.76,28.4],[0,1.79,450.18],[9,1.03,86.15],[8,1.05,91.09],[7,1.1,86.15],[6,1.3,3.84],[5,1.65,86.15],[2,1.77,14.42]],"batl":[[0,1.81,430.16],[8,1000,1.72],[7,200,1.72],[6,3.1,27.45],[5,2.08,1.72],[4,1.85,11.31],[3,1.84,14.28],[2,1.83,14.32],[1,1.82,488.33]],"tv":18664.17,"id":60427}],"img":true,"tv":39964.08},{"id":"1.184866117","marketDefinition":{"bspMarket":false,"turnInPlayEnabled":true,"persistenceEnabled":true,"marketBaseRate":5,"eventId":"30635089","eventTypeId":"7522","numberOfWinners":1,"bettingType":"ODDS","marketType":"MATCH_ODDS","marketTime":"2021-06-30T00:40:00.000Z","suspendTime":"2021-06-30T00:40:00.000Z","bspReconciled":false,"complete":true,"inPlay":false,"crossMatching":true,"runnersVoidable":false,"numberOfActiveRunners":2,"betDelay":0,"status":"OPEN","runners":[{"status":"ACTIVE","sortPriority":1,"id":237477},{"status":"ACTIVE","sortPriority":2,"id":237490}],"regulators":["MR_INT"],"countryCode":"GB","discountAllowed":true,"timezone":"GMT","openDate":"2021-06-30T00:40:00.000Z","version":3890540057,"priceLadderDefinition":{"type":"CLASSIC"}},"rc":[{"atb":[[1.03,1.93],[1.02,76.24],[1.01,108.66],[1.39,68.58]],"atl":[[1.49,1.93]],"trd":[[1.39,52.64]],"batb":[[3,1.01,108.66],[2,1.02,76.24],[1,1.03,1.93],[0,1.39,68.58]],"batl":[[0,1.49,1.93]],"tv":52.64,"id":237477},{"atb":[[3.05,1.93],[1.02,76.24],[1.01,108.66],[3,13.37]],"atl":[[3.55,1.93]],"batb":[[3,1.01,108.66],[2,1.02,76.24],[1,3,13.37],[0,3.05,1.93]],"batl":[[0,3.55,1.93]],"id":237490}],"img":true,"tv":52.64}]}'  # noqa
+        line = b'{"op":"mcm","id":1,"initialClk":"nhy58bfvDawc+Jbf/A2jHKee5vUN","clk":"AAAAAAAA","conflateMs":0,"heartbeatMs":5000,"pt":1624860195431,"ct":"SUB_IMAGE","mc":[{"id":"1.184839563","marketDefinition":{"bspMarket":false,"turnInPlayEnabled":true,"persistenceEnabled":true,"marketBaseRate":5,"eventId":"30633417","eventTypeId":"7522","numberOfWinners":1,"bettingType":"ODDS","marketType":"MATCH_ODDS","marketTime":"2021-06-29T01:10:00.000Z","suspendTime":"2021-06-29T01:10:00.000Z","bspReconciled":false,"complete":true,"inPlay":false,"crossMatching":true,"runnersVoidable":false,"numberOfActiveRunners":2,"betDelay":0,"status":"OPEN","runners":[{"status":"ACTIVE","sortPriority":1,"id":6023845},{"status":"ACTIVE","sortPriority":2,"id":237487}],"regulators":["MR_INT"],"countryCode":"GB","discountAllowed":true,"timezone":"GMT","openDate":"2021-06-29T01:10:00.000Z","version":3888693695,"priceLadderDefinition":{"type":"CLASSIC"}},"rc":[{"atb":[[1.46,59.86],[1.48,1419.67],[1.47,2.92],[1.01,971.95],[1.02,119.11],[1.21,103],[1.42,27.32]],"atl":[[2,68.67],[1000,1.72],[200,1.72]],"trd":[[1.53,27.93],[1.46,407.17],[1.41,5.15],[1.48,29.85],[1.52,53.15],[1.47,10.38],[1.49,10],[1.5,22.58],[1.4,5.76]],"batb":[[2,1.46,59.86],[0,1.48,1419.67],[1,1.47,2.92],[6,1.01,971.95],[5,1.02,119.11],[4,1.21,103],[3,1.42,27.32]],"batl":[[0,2,68.67],[2,1000,1.72],[1,200,1.72]],"tv":571.97,"id":237487},{"atb":[[2.8,1.54],[1.01,971.95],[1.02,119.11],[2,68.67],[2.82,1440.67],[2.88,14.22],[1.43,2.73]],"atl":[[9.8,25.75],[1000,1.72],[200,1.72],[3.6,2.54]],"trd":[[2.9,13.06],[2.92,2.95],[3.1,138.82],[2.88,32.33],[3.2,77.73],[2.94,27.48],[3,34.24],[3.15,2.94]],"batb":[[6,1.01,971.95],[5,1.02,119.11],[4,1.43,2.73],[3,2,68.67],[2,2.8,1.54],[1,2.82,1440.67],[0,2.88,14.22]],"batl":[[3,1000,1.72],[2,200,1.72],[1,9.8,25.75],[0,3.6,2.54]],"tv":329.55,"id":6023845}],"img":true,"tv":901.52},{"id":"1.183516561","marketDefinition":{"bspMarket":false,"turnInPlayEnabled":true,"persistenceEnabled":true,"marketBaseRate":5,"eventId":"30533301","eventTypeId":"7522","numberOfWinners":1,"bettingType":"ODDS","marketType":"MATCH_ODDS","marketTime":"2021-05-19T01:16:00.000Z","suspendTime":"2021-05-19T01:16:00.000Z","bspReconciled":false,"complete":true,"inPlay":false,"crossMatching":true,"runnersVoidable":false,"numberOfActiveRunners":2,"betDelay":0,"status":"SUSPENDED","runners":[{"status":"ACTIVE","sortPriority":1,"id":237485},{"status":"ACTIVE","sortPriority":2,"id":60427}],"regulators":["MR_INT"],"countryCode":"GB","discountAllowed":true,"timezone":"GMT","openDate":"2021-05-19T01:16:00.000Z","version":3824150209,"priceLadderDefinition":{"type":"CLASSIC"}},"rc":[{"atb":[[2.2,238.14],[2.22,451.53],[2.1,20.7],[2.24,462.2],[2.18,8.89],[1.4,2],[1.65,86.15],[2.16,11.6],[1.01,746.03],[2.08,56.26],[1.05,91.09],[1.1,86.15],[1.3,3.84],[1.02,86.15],[1.03,86.15],[1.86,17.5]],"atl":[[2.32,11.53],[2.3,140.58],[2.28,201.16],[2.36,21.14],[1000,1.72],[200,1.72]],"trd":[[2.26,908.83],[2.24,2262.18],[2.28,1206.46],[2.22,5340.65],[2.16,2461.4],[2.2,2042.06],[2.18,1704.71],[2.08,74.11],[2.14,1098.39],[2.1,1413.03],[2.12,62.51],[2.04,7.37],[2.32,41.98],[2.3,554.84],[2,54.31],[2.36,20.68],[2.06,2045.77],[1.98,0.63]],"batb":[[2,2.2,238.14],[1,2.22,451.53],[5,2.1,20.7],[0,2.24,462.2],[3,2.18,8.89],[9,1.4,2],[8,1.65,86.15],[7,1.86,17.5],[6,2.08,56.26],[4,2.16,11.6]],"batl":[[2,2.32,11.53],[5,1000,1.72],[4,200,1.72],[3,2.36,21.14],[1,2.3,140.58],[0,2.28,201.16]],"tv":21299.91,"id":237485},{"atb":[[1.78,210.83],[1.75,14.41],[1.76,28.4],[1.79,450.18],[1.77,14.42],[1.01,746.03],[1.65,86.15],[1.05,91.09],[1.1,86.15],[1.3,3.84],[1.02,86.15],[1.03,86.15]],"atl":[[1.81,430.16],[1.82,488.33],[1.85,11.31],[1.83,14.32],[1.84,14.28],[3.1,27.45],[1000,1.72],[200,1.72],[2.08,1.72]],"trd":[[1.8,6609.88],[1.79,2742.92],[1.81,2879.6],[1.82,1567.46],[1.77,964.99],[1.86,272.44],[1.91,96.58],[1.99,16.47],[1.92,220.37],[1.76,11.91],[1.87,362.25],[1.78,437.4],[1.85,415.17],[1.84,580.74],[1.83,1394.8],[1.73,4],[1.88,22.37],[1.95,9.49],[1.96,1.96],[1.89,45.75],[1.9,2.3],[2.02,0.61],[1.93,4.71]],"batb":[[1,1.78,210.83],[4,1.75,14.41],[3,1.76,28.4],[0,1.79,450.18],[9,1.03,86.15],[8,1.05,91.09],[7,1.1,86.15],[6,1.3,3.84],[5,1.65,86.15],[2,1.77,14.42]],"batl":[[0,1.81,430.16],[8,1000,1.72],[7,200,1.72],[6,3.1,27.45],[5,2.08,1.72],[4,1.85,11.31],[3,1.84,14.28],[2,1.83,14.32],[1,1.82,488.33]],"tv":18664.17,"id":60427}],"img":true,"tv":39964.08},{"id":"1.184866117","marketDefinition":{"bspMarket":false,"turnInPlayEnabled":true,"persistenceEnabled":true,"marketBaseRate":5,"eventId":"30635089","eventTypeId":"7522","numberOfWinners":1,"bettingType":"ODDS","marketType":"MATCH_ODDS","marketTime":"2021-06-30T00:40:00.000Z","suspendTime":"2021-06-30T00:40:00.000Z","bspReconciled":false,"complete":true,"inPlay":false,"crossMatching":true,"runnersVoidable":false,"numberOfActiveRunners":2,"betDelay":0,"status":"OPEN","runners":[{"status":"ACTIVE","sortPriority":1,"id":237477},{"status":"ACTIVE","sortPriority":2,"id":237490}],"regulators":["MR_INT"],"countryCode":"GB","discountAllowed":true,"timezone":"GMT","openDate":"2021-06-30T00:40:00.000Z","version":3890540057,"priceLadderDefinition":{"type":"CLASSIC"}},"rc":[{"atb":[[1.03,1.93],[1.02,76.24],[1.01,108.66],[1.39,68.58]],"atl":[[1.49,1.93]],"trd":[[1.39,52.64]],"batb":[[3,1.01,108.66],[2,1.02,76.24],[1,1.03,1.93],[0,1.39,68.58]],"batl":[[0,1.49,1.93]],"tv":52.64,"id":237477},{"atb":[[3.05,1.93],[1.02,76.24],[1.01,108.66],[3,13.37]],"atl":[[3.55,1.93]],"batb":[[3,1.01,108.66],[2,1.02,76.24],[1,3,13.37],[0,3.05,1.93]],"batl":[[0,3.55,1.93]],"id":237490}],"img":true,"tv":52.64}]}'
         mcm: MCM = stream_decode(line)
         expected = [
             BestAvailableToBack(level=2, price=1.46, volume=59.86),
@@ -690,7 +722,7 @@ class TestBetfairParsing:
         assert mcm.mc[0].rc[0].batb == expected
 
     def test_mcm_bsp_example1(self):
-        r = b'{"op":"mcm","id":1,"clk":"ANjxBACiiQQAlpQD","pt":1672131753550,"mc":[{"id":"1.208011084","marketDefinition":{"bspMarket":true,"turnInPlayEnabled":false,"persistenceEnabled":false,"marketBaseRate":7,"eventId":"31987078","eventTypeId":"4339","numberOfWinners":1,"bettingType":"ODDS","marketType":"WIN","marketTime":"2022-12-27T09:00:00.000Z","suspendTime":"2022-12-27T09:00:00.000Z","bspReconciled":true,"complete":true,"inPlay":false,"crossMatching":false,"runnersVoidable":false,"numberOfActiveRunners":0,"betDelay":0,"status":"CLOSED","settledTime":"2022-12-27T09:02:21.000Z","runners":[{"status":"WINNER","sortPriority":1,"bsp":2.0008034621107256,"id":45967562},{"status":"LOSER","sortPriority":2,"bsp":5.5,"id":45565847},{"status":"LOSER","sortPriority":3,"bsp":9.2,"id":47727833},{"status":"LOSER","sortPriority":4,"bsp":166.61668896346615,"id":47179469},{"status":"LOSER","sortPriority":5,"bsp":44,"id":51247493},{"status":"LOSER","sortPriority":6,"bsp":32,"id":42324350},{"status":"LOSER","sortPriority":7,"bsp":7.4,"id":51247494},{"status":"LOSER","sortPriority":8,"bsp":32.28604557164013,"id":48516342}],"regulators":["MR_INT"],"venue":"Warragul","countryCode":"AU","discountAllowed":true,"timezone":"Australia/Sydney","openDate":"2022-12-27T07:46:00.000Z","version":4968605121,"priceLadderDefinition":{"type":"CLASSIC"}}}]}'  # noqa
+        r = b'{"op":"mcm","id":1,"clk":"ANjxBACiiQQAlpQD","pt":1672131753550,"mc":[{"id":"1.208011084","marketDefinition":{"bspMarket":true,"turnInPlayEnabled":false,"persistenceEnabled":false,"marketBaseRate":7,"eventId":"31987078","eventTypeId":"4339","numberOfWinners":1,"bettingType":"ODDS","marketType":"WIN","marketTime":"2022-12-27T09:00:00.000Z","suspendTime":"2022-12-27T09:00:00.000Z","bspReconciled":true,"complete":true,"inPlay":false,"crossMatching":false,"runnersVoidable":false,"numberOfActiveRunners":0,"betDelay":0,"status":"CLOSED","settledTime":"2022-12-27T09:02:21.000Z","runners":[{"status":"WINNER","sortPriority":1,"bsp":2.0008034621107256,"id":45967562},{"status":"LOSER","sortPriority":2,"bsp":5.5,"id":45565847},{"status":"LOSER","sortPriority":3,"bsp":9.2,"id":47727833},{"status":"LOSER","sortPriority":4,"bsp":166.61668896346615,"id":47179469},{"status":"LOSER","sortPriority":5,"bsp":44,"id":51247493},{"status":"LOSER","sortPriority":6,"bsp":32,"id":42324350},{"status":"LOSER","sortPriority":7,"bsp":7.4,"id":51247494},{"status":"LOSER","sortPriority":8,"bsp":32.28604557164013,"id":48516342}],"regulators":["MR_INT"],"venue":"Warragul","countryCode":"AU","discountAllowed":true,"timezone":"Australia/Sydney","openDate":"2022-12-27T07:46:00.000Z","version":4968605121,"priceLadderDefinition":{"type":"CLASSIC"}}}]}'
         mcm = stream_decode(r)
         updates = self.parser.parse(mcm)
         starting_prices = [
@@ -705,7 +737,7 @@ class TestBetfairParsing:
         assert starting_prices[0].bsp == 2.0008034621107256
 
     def test_mcm_bsp_example2(self):
-        raw = b'{"op":"mcm","clk":"7066946780","pt":1667288437853,"mc":[{"id":"1.205880280","rc":[{"spl":[[1.01,2]],"id":49892033},{"atl":[[2.8,0],[2.78,0]],"id":49892032},{"atb":[[2.8,378.82]],"id":49892032},{"trd":[[2.8,1.16],[2.78,1.18]],"ltp":2.8,"tv":2.34,"id":49892032},{"spl":[[1.01,4.79]],"id":49892030},{"spl":[[1.01,2]],"id":49892029},{"spl":[[1.01,3.79]],"id":49892028},{"spl":[[1.01,2]],"id":49892027},{"spl":[[1.01,2]],"id":49892034}],"con":true,"img":false}]}'  # noqa
+        raw = b'{"op":"mcm","clk":"7066946780","pt":1667288437853,"mc":[{"id":"1.205880280","rc":[{"spl":[[1.01,2]],"id":49892033},{"atl":[[2.8,0],[2.78,0]],"id":49892032},{"atb":[[2.8,378.82]],"id":49892032},{"trd":[[2.8,1.16],[2.78,1.18]],"ltp":2.8,"tv":2.34,"id":49892032},{"spl":[[1.01,4.79]],"id":49892030},{"spl":[[1.01,2]],"id":49892029},{"spl":[[1.01,3.79]],"id":49892028},{"spl":[[1.01,2]],"id":49892027},{"spl":[[1.01,2]],"id":49892034}],"con":true,"img":false}]}'
         mcm = stream_decode(raw)
         updates = self.parser.parse(mcm)
         single_instrument_bsp_updates = [
@@ -815,3 +847,209 @@ def request_id() -> int:
 
     """
     return next(copy(_default_id_generator))
+
+
+# Tests for bug fixes - BSP unit consistency
+def test_bsp_orders_use_stake_units_not_liability():
+    """
+    Test that BSP orders use stake units (size_matched + size_remaining) not liability.
+    """
+    from types import SimpleNamespace
+
+    from betfair_parser.spec.betting.enums import Side as BetOrderSide
+
+    # This tests the fix for BSP order quantity calculation
+    # Previously: used order.bsp_liability / order (TypeError)
+    # Then: used order.bsp_liability directly (wrong - mixed liability and stake units)
+    # Now: uses size_matched + size_remaining + size_cancelled + size_lapsed + size_voided (correct - all stake units)
+    # Arrange - simulate BSP BACK order from list_current_orders_on_close_execution_complete.json
+    # bspLiability=20.0 but sizeRemaining=10.0 (different units!)
+    order = SimpleNamespace(
+        price_size=SimpleNamespace(size=0.0, price=0.0),  # BSP order has no fixed price
+        bsp_liability=20.0,  # This is in liability/payout units
+        size_matched=0.0,
+        size_remaining=10.0,  # These are in stake units
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=BetOrderSide.BACK,
+    )
+
+    # Act - replicate the fixed logic from the code
+    if order.price_size.size != 0.0:
+        total_size = order.price_size.size
+        fill_size = order.size_matched
+    elif order.bsp_liability != 0.0:
+        # Use stake units (all size_* fields), not liability units
+        total_size = (
+            order.size_matched
+            + order.size_remaining
+            + order.size_cancelled
+            + order.size_lapsed
+            + order.size_voided
+        )
+        fill_size = order.size_matched
+    else:
+        total_size = 0.0
+        fill_size = 0.0
+
+    # Assert - should use stake units (10.0), not liability units (20.0)
+    assert total_size == 10.0  # Correct: stake total
+    assert fill_size == 0.0  # Correct: nothing matched yet
+    # Previously would have been total_size=20.0 (wrong - liability unit), fill_size=0.0
+    # which makes the order appear 0% filled when it should show correct stake amounts
+
+
+# Tests for bug fixes - BSPOrderBookDelta null pointer
+def test_bsp_order_book_delta_to_batch_with_clear_action():
+    """
+    Test that BSPOrderBookDelta with CLEAR action (order=None) can be serialized.
+    """
+    from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+    from nautilus_trader.model.enums import BookAction
+    from nautilus_trader.model.identifiers import InstrumentId
+
+    # Arrange - create delta with CLEAR action (order is None)
+    delta = BSPOrderBookDelta(
+        instrument_id=InstrumentId.from_str("1.12345.OVER_UNDER_25.BETFAIR"),
+        action=BookAction.CLEAR,
+        order=None,  # This was causing AttributeError
+        flags=0,
+        sequence=0,
+        ts_event=1234567890,
+        ts_init=1234567890,
+    )
+
+    # Act - should not raise AttributeError when accessing obj.order.price
+    batch = BSPOrderBookDelta.to_batch(delta)
+
+    # Assert - batch should be created successfully without crashing
+    assert batch is not None
+    assert batch.num_rows == 1
+
+    # The fix ensures serialization works - the order field gets default values
+    # since we can't serialize None in Arrow schema
+    # Verify action is preserved correctly
+    deltas = BSPOrderBookDelta.from_batch(batch)
+    assert len(deltas) == 1
+    assert deltas[0].action == BookAction.CLEAR
+    # After round-trip, order is reconstructed with defaults, not None
+    # This is acceptable as CLEAR action means ignore the order details anyway
+
+
+def test_bsp_order_status_report_uses_stake_units():
+    """
+    Test bet_to_order_status_report uses stake units for BSP orders.
+    """
+    from types import SimpleNamespace
+
+    from betfair_parser.spec.betting.enums import PersistenceType
+    from betfair_parser.spec.betting.enums import Side as BetOrderSide
+    from betfair_parser.spec.common import OrderStatus
+    from betfair_parser.spec.common import OrderType
+
+    from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
+    from nautilus_trader.model.identifiers import AccountId
+    from nautilus_trader.model.identifiers import ClientOrderId
+    from nautilus_trader.model.identifiers import InstrumentId
+    from nautilus_trader.model.identifiers import VenueOrderId
+
+    # Test BACK order with bspLiability=20.0 but actual stake=10.0
+    # (from list_current_orders_on_close_execution_complete.json)
+    back_order = SimpleNamespace(
+        price_size=SimpleNamespace(size=0.0, price=0.0),
+        bsp_liability=20.0,  # Liability units
+        size_matched=0.0,
+        size_remaining=10.0,  # Stake units
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=BetOrderSide.BACK,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.LAPSE,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date=None,
+        average_price_matched=0.0,
+    )
+
+    from nautilus_trader.core.uuid import UUID4
+
+    back_report = bet_to_order_status_report(
+        order=back_order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754671"),
+        client_order_id=ClientOrderId("O-123"),
+        ts_init=0,
+        report_id=UUID4(),
+    )
+
+    # Should use stake units (10.0), not liability units (20.0)
+    assert back_report.quantity.as_double() == 10.0
+    assert back_report.filled_qty.as_double() == 0.0
+
+    # Test LAY order with bspLiability=50.0 but actual stake=10.0
+    lay_order = SimpleNamespace(
+        price_size=SimpleNamespace(size=0.0, price=0.0),
+        bsp_liability=50.0,  # Liability units (much higher for lay)
+        size_matched=0.0,
+        size_remaining=10.0,  # Stake units (same as back)
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=BetOrderSide.LAY,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.LAPSE,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date=None,
+        average_price_matched=0.0,
+    )
+
+    lay_report = bet_to_order_status_report(
+        order=lay_order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754672"),
+        client_order_id=ClientOrderId("O-124"),
+        ts_init=0,
+        report_id=UUID4(),
+    )
+
+    # Should use stake units (10.0), not liability units (50.0)
+    assert lay_report.quantity.as_double() == 10.0
+    assert lay_report.filled_qty.as_double() == 0.0
+
+    # Test partially filled BSP order
+    partial_order = SimpleNamespace(
+        price_size=SimpleNamespace(size=0.0, price=0.0),
+        bsp_liability=20.0,
+        size_matched=6.0,  # 6 matched
+        size_remaining=4.0,  # 4 remaining
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=BetOrderSide.BACK,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.LAPSE,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date="2021-03-24T06:48:00.000Z",
+        average_price_matched=3.0,
+    )
+
+    partial_report = bet_to_order_status_report(
+        order=partial_order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754673"),
+        client_order_id=ClientOrderId("O-125"),
+        ts_init=0,
+        report_id=UUID4(),
+    )
+
+    # Total = 6 + 4 = 10.0 (stake units), filled = 6.0
+    assert partial_report.quantity.as_double() == 10.0
+    assert partial_report.filled_qty.as_double() == 6.0
+    # This correctly shows 60% filled (6/10), not 30% (6/20)

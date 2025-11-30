@@ -18,8 +18,7 @@
 //! This module contains the consolidation and reset operations for the `ParquetDataCatalog`.
 //! These operations are separated into their own module for better organization and maintainability.
 
-use std::collections::HashSet;
-
+use ahash::{AHashMap, AHashSet};
 use futures::StreamExt;
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
@@ -704,7 +703,7 @@ impl ParquetDataCatalog {
                 )?;
             }
             _ => {
-                anyhow::bail!("Unknown data type for consolidation: {}", type_name);
+                anyhow::bail!("Unknown data type for consolidation: {type_name}");
             }
         }
 
@@ -778,7 +777,7 @@ impl ParquetDataCatalog {
         existing_files.sort();
 
         // Track files to remove and maintain existing_files list
-        let mut files_to_remove = HashSet::new();
+        let mut files_to_remove = AHashSet::new();
         let original_files_count = existing_files.len();
 
         // Phase 2: Execute queries, write, and delete
@@ -1335,9 +1334,9 @@ impl ParquetDataCatalog {
         let data_dir = make_object_store_path(&self.base_path, &["data"]);
 
         let leaf_dirs = self.execute_async(async {
-            let mut all_paths = std::collections::HashSet::new();
-            let mut directories = std::collections::HashSet::new();
-            let mut files_in_dirs = std::collections::HashMap::new();
+            let mut all_paths = AHashSet::new();
+            let mut directories = AHashSet::new();
+            let mut files_in_dirs = AHashMap::new();
 
             // List all objects under the data directory
             let prefix = ObjectPath::from(format!("{data_dir}/"));
@@ -1598,7 +1597,7 @@ impl ParquetDataCatalog {
         }
 
         // Execute all operations
-        let mut files_to_remove = HashSet::<String>::new();
+        let mut files_to_remove = AHashSet::<String>::new();
 
         for operation in operations_to_execute {
             // Reset the session before each operation to ensure fresh data is loaded

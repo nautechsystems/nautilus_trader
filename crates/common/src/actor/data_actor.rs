@@ -2230,7 +2230,7 @@ impl DataActorCore {
         msgbus::send_any(endpoint, command.as_any());
     }
 
-    #[allow(dead_code, reason = "TODO: Under development")]
+    #[allow(dead_code)]
     fn send_data_req(&self, request: RequestCommand) {
         if self.config.log_commands {
             log::info!("{REQ}{SEND} {request:?}");

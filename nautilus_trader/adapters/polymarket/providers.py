@@ -20,15 +20,44 @@ import msgspec
 from py_clob_client.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket.common.gamma_markets import list_markets
+from nautilus_trader.adapters.polymarket.common.gamma_markets import normalize_gamma_market_to_clob_format
+from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
+from nautilus_trader.adapters.polymarket.http.errors import PolymarketAPIError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BinaryOption
+
+
+def _check_clob_response(response: dict[str, Any] | str) -> dict[str, Any]:
+    """
+    Check CLOB API response and raise exception if error string returned.
+
+    Parameters
+    ----------
+    response : dict[str, Any] | str
+        The response from the CLOB API.
+
+    Returns
+    -------
+    dict[str, Any]
+        The validated response dictionary.
+
+    Raises
+    ------
+    PolymarketAPIError
+        If response is an error string.
+
+    """
+    if isinstance(response, str):
+        raise PolymarketAPIError(response)
+    return response
 
 
 class PolymarketInstrumentProvider(InstrumentProvider):
@@ -43,6 +72,8 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         The clock instance.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
+    http_client : HttpClient, optional
+        The HTTP client for Gamma API requests.
 
     """
 
@@ -51,10 +82,12 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         client: ClobClient,
         clock: LiveClock,
         config: InstrumentProviderConfig | None = None,
+        http_client: HttpClient | None = None,
     ) -> None:
         super().__init__(config=config)
         self._clock = clock
         self._client = client
+        self._http_client = http_client or HttpClient(timeout_secs=30)
 
         self._log_warnings = config.log_warnings if config else True
         self._decoder = msgspec.json.Decoder()
@@ -62,6 +95,67 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         await self._load_markets([], filters)
+
+    async def _load_ids_using_gamma_markets(
+        self,
+        instrument_ids: list[InstrumentId],
+        filters: dict | None = None,
+    ) -> None:
+        """
+        Load instruments using Gamma API markets.
+        """
+        # Extract unique condition IDs (markets can have multiple tokens/instruments)
+        condition_ids = list({get_polymarket_condition_id(inst_id) for inst_id in instrument_ids})
+
+        # Build set of requested token_ids for filtering
+        requested_token_ids = {get_polymarket_token_id(inst_id) for inst_id in instrument_ids}
+
+        # Create a copy to avoid mutating the caller's filters
+        filters = filters.copy() if filters is not None else {}
+
+        if len(condition_ids) <= 100:  # We can filter directly by condition_id, but there is an API limit of max 100 condition_ids in the query string
+            self._log.info(f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using direct condition_id filtering")
+            filters["condition_ids"] = condition_ids
+        else:
+            self._log.info(f"Loading {len(instrument_ids)} instruments from {len(condition_ids)} markets, using bulk load of all markets")
+
+        markets = await list_markets(http_client=self._http_client, filters=filters)
+        self._log.info(f"Loaded {len(markets)} markets using Gamma API")
+        for market in markets:
+            condition_id = market.get("conditionId")
+            if not condition_id:
+                continue
+
+            if condition_ids and condition_id not in condition_ids:
+                continue
+
+            normalized_market = normalize_gamma_market_to_clob_format(market)
+
+            for token_info in normalized_market.get("tokens", []):
+                token_id = token_info["token_id"]
+
+                # Only load if this specific token was requested
+                if requested_token_ids and token_id not in requested_token_ids:
+                    continue
+
+                outcome = token_info["outcome"]
+                self._load_instrument(normalized_market, token_id, outcome)
+
+    async def _load_ids_using_clob_api(
+        self,
+        instrument_ids: list[InstrumentId],
+        filters: dict | None = None,
+    ) -> None:
+        """
+        Load instruments using CLOB API.
+        """
+        if len(instrument_ids) > 200:
+            self._log.warning(
+                f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative",
+            )
+            await self._load_markets(instrument_ids, filters)
+        else:
+            await self._load_markets_seq(instrument_ids, filters)
 
     async def load_ids_async(
         self,
@@ -81,13 +175,10 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 "POLYMARKET",
             )
 
-        if len(instrument_ids) > 200:
-            self._log.warning(
-                f"Loading {len(instrument_ids)} instruments, using bulk load of all markets as a faster alternative",
-            )
-            await self._load_markets(instrument_ids, filters)
+        if self._config.use_gamma_markets:
+            await self._load_ids_using_gamma_markets(instrument_ids, filters)
         else:
-            await self._load_markets_seq(instrument_ids, filters)
+            await self._load_ids_using_clob_api(instrument_ids, filters)
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
@@ -95,8 +186,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         token_id = get_polymarket_token_id(instrument_id)
 
         response = await asyncio.to_thread(self._client.get_market, condition_id)
-        if isinstance(response, str):
-            raise RuntimeError(f"API error: {response}")  # TBD
+        response = _check_clob_response(response)
 
         for token_info in response["tokens"]:
             if token_id != token_info["token_id"]:
@@ -121,12 +211,13 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 self._client.get_market,
                 condition_id=get_polymarket_condition_id(instrument_id),
             )
-            if isinstance(response, str):
-                raise RuntimeError(f"API error: {response}")  # TBD
+            response = _check_clob_response(response)
 
             try:
                 active = response["active"]
-                if filter_is_active and not active:
+                closed = response["closed"]
+
+                if filter_is_active and (not active or closed):
                     continue
 
                 condition_id = response["condition_id"]
@@ -145,13 +236,13 @@ class PolymarketInstrumentProvider(InstrumentProvider):
             except ValueError as e:
                 self._log.error(f"Unable to parse market: {e}, {response}")
 
-    async def _load_markets(  # noqa: C901 (too complex)
+    async def _load_markets(
         self,
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        if filters is None:
-            filters = {}
+        # Create a copy to avoid mutating the caller's filters
+        filters = filters.copy() if filters is not None else {}
 
         if instrument_ids:
             instruments_str = "instruments: " + ", ".join([str(x) for x in instrument_ids])
@@ -172,13 +263,14 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                 self._client.get_markets,
                 next_cursor=next_cursor,
             )
-            if isinstance(response, str):
-                raise RuntimeError(f"API error: {response}")  # TBD
+            response = _check_clob_response(response)
 
             for market_info in response["data"]:
                 try:
                     active = market_info["active"]
-                    if filter_is_active and not active:
+                    closed = market_info["closed"]
+
+                    if filter_is_active and (not active or closed):
                         continue
 
                     condition_id = market_info["condition_id"]
@@ -193,6 +285,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                         if not token_id:
                             self._log.warning(f"Market {condition_id} had an empty token")
                             continue
+
                         outcome = token_info["outcome"]
                         self._load_instrument(market_info, token_id, outcome)
                 except ValueError as e:
@@ -207,7 +300,7 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         token_id: str,
         outcome: str,
     ) -> BinaryOption:
-        instrument = parse_instrument(
+        instrument = parse_polymarket_instrument(
             market_info=market_info,
             token_id=token_id,
             outcome=outcome,
@@ -215,5 +308,6 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         )
         if market_info["end_date_iso"] is None:
             self._log.warning(f"{instrument.id} expiration is missing, assuming it is still active")
+
         self.add(instrument)
         return instrument

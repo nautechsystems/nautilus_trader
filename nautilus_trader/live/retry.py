@@ -17,12 +17,8 @@ import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 from random import randint
-from typing import Generic, TypeVar
 
 from nautilus_trader.common.component import Logger
-
-
-T = TypeVar("T")
 
 
 def get_exponential_backoff(
@@ -66,7 +62,7 @@ def get_exponential_backoff(
     return delay
 
 
-class RetryManager(Generic[T]):
+class RetryManager[T]:
     """
     Provides retry state management for an HTTP request.
 
@@ -243,7 +239,7 @@ class RetryManager(Generic[T]):
         return self.details_str
 
 
-class RetryManagerPool(Generic[T]):
+class RetryManagerPool[T]:
     """
     Provides a pool of `RetryManager`s.
 

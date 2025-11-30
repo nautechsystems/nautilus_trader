@@ -61,7 +61,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_types=[product_type],
+            product_types=(product_type,),
             testnet=False,  # If client uses the testnet
         ),
     },
@@ -72,11 +72,8 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             base_url_ws_private=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_types=[product_type],
+            product_types=(product_type,),
             testnet=False,  # If client uses the testnet
-            max_retries=3,
-            retry_delay_initial_ms=1_000,
-            retry_delay_max_ms=10_000,
         ),
     },
     timeout_connection=30.0,

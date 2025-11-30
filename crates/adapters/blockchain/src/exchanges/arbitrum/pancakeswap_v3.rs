@@ -36,6 +36,8 @@ pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
     ));
-    dex.set_pool_created_event_parsing(uniswap_v3::pool_created::parse_pool_created_event);
+    dex.set_pool_created_event_hypersync_parsing(
+        uniswap_v3::pool_created::parse_pool_created_event_hypersync,
+    );
     dex
 });

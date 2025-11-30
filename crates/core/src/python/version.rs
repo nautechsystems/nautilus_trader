@@ -15,7 +15,10 @@
 
 //! Functions for introspecting the running Python interpreter & installed packages.
 
-#![allow(clippy::manual_let_else)]
+#![allow(
+    clippy::manual_let_else,
+    reason = "Prefer explicit control flow for error handling"
+)]
 use pyo3::{prelude::*, types::PyTuple};
 
 /// Retrieves the Python interpreter version as a string.
@@ -37,7 +40,7 @@ pub fn get_python_version() -> String {
         };
 
         let version_tuple: &Bound<'_, PyTuple> = version_info
-            .downcast::<PyTuple>()
+            .cast::<PyTuple>()
             .expect("Failed to extract version_info");
 
         let major = version_tuple

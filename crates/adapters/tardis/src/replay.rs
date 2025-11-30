@@ -93,12 +93,12 @@ async fn gather_instruments_info(
         }
     });
 
-    let results: Vec<(TardisExchange, Vec<TardisInstrumentInfo>)> =
+    let results: HashMap<TardisExchange, Vec<TardisInstrumentInfo>> =
         join_all(futures).await.into_iter().flatten().collect();
 
     tracing::info!("Received all instruments");
 
-    results.into_iter().collect()
+    results
 }
 
 /// Run the Tardis Machine replay from a JSON configuration file.
@@ -120,7 +120,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     let config_data = fs::read_to_string(config_filepath)
         .with_context(|| format!("Failed to read config file: {config_filepath:?}"))?;
     let config: TardisReplayConfig = serde_json::from_str(&config_data)
-        .context("Failed to parse config JSON into TardisReplayConfig")?;
+        .context("failed to parse config JSON into TardisReplayConfig")?;
 
     let path = config
         .output_path

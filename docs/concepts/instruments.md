@@ -176,7 +176,7 @@ To understand trading on margin, let’s start with some key terms:
 - Each contract represents 125,000 EUR (EUR is base currency, USD is quote currency).
 - If the current market price is 1.1000, the notional value equals 125,000 EUR × 1.1000 (price of EUR/USD) = 137,500 USD.
 
-**Leverage** (`leverage`): The ratio that determines how much market exposure you can control relative to your account deposit. For example, with 10× leverage, you can control 10,000 USD worth of positions with just 1,000 USD in your account.
+**Leverage** (`leverage`): The ratio that determines how much market exposure you can control relative to your account deposit. For example, with 10× leverage, you can control 10,000 USD worth of positions with 1,000 USD in your account.
 
 **Initial Margin** (`margin_init`): The margin rate required to open a position. It represents the minimum amount of funds that must be available in your account to open new positions. This is only a pre-check — no funds are actually locked.
 
@@ -386,11 +386,11 @@ The `instrument_id` for the synthetic instrument in the above example will be st
 It's also possible to update a synthetic instrument formulas at any time. The following example
 shows how to achieve this with an actor/strategy.
 
-```
+```python
 # Recover the synthetic instrument from the cache (assuming `synthetic_id` was assigned)
 synthetic = self.cache.synthetic(self._synthetic_id)
 
-# Update the formula, here is a simple example of just taking the average
+# Update the formula to take the average
 new_formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"
 synthetic.change_formula(new_formula)
 

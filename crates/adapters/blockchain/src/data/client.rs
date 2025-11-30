@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::{
+    live::runtime::get_runtime,
     messages::{
         DataEvent,
         defi::{
@@ -24,7 +25,6 @@ use nautilus_common::{
             UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
         },
     },
-    runtime::get_runtime,
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
@@ -108,7 +108,7 @@ impl BlockchainDataClient {
 
         let cancellation_token = self.cancellation_token.clone();
 
-        let data_tx = nautilus_common::runner::get_data_event_sender();
+        let data_tx = nautilus_common::live::runner::get_data_event_sender();
 
         let mut hypersync_rx = self.hypersync_rx.take().unwrap();
         let hypersync_tx = self.hypersync_tx.take();
@@ -203,12 +203,7 @@ impl BlockchainDataClient {
                                 BlockchainMessage::SwapEvent(swap_event) => {
                                     match core_client.get_pool(&swap_event.pool_address) {
                                         Ok(pool) => {
-                                            let dex_extended = get_dex_extended(core_client.chain.name, &pool.dex.name).expect("Failed to get dex extended");
-                                            match core_client.process_pool_swap_event(
-                                                &swap_event,
-                                                pool,
-                                                dex_extended,
-                                            ){
+                                            match core_client.process_pool_swap_event(&swap_event, pool){
                                                 Ok(swap) => Some(DataEvent::DeFi(DefiData::PoolSwap(swap))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool swap event: {e}");
@@ -337,10 +332,10 @@ impl BlockchainDataClient {
                                 tracing::warn!("RPC burn events are not yet supported");
                             }
                             Ok(BlockchainMessage::CollectEvent(_)) => {
-                                tracing::warn!("RPC collect events are not yet supported")
+                                tracing::warn!("RPC collect events are not yet supported");
                             }
                             Ok(BlockchainMessage::FlashEvent(_)) => {
-                                tracing::warn!("RPC flash events are not yet supported")
+                                tracing::warn!("RPC flash events are not yet supported");
                             }
                             Err(e) => {
                                 tracing::error!("Error processing RPC message: {e}");
@@ -809,7 +804,7 @@ impl BlockchainDataClient {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for BlockchainDataClient {
     fn client_id(&self) -> ClientId {
         ClientId::from(format!("BLOCKCHAIN-{}", self.chain.name).as_str())
@@ -823,8 +818,12 @@ impl DataClient for BlockchainDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         tracing::info!(
-            "Starting blockchain data client for '{chain_name}'",
-            chain_name = self.chain.name
+            chain_name = %self.chain.name,
+            dex_ids = ?self.config.dex_ids,
+            use_hypersync_for_live_data = self.config.use_hypersync_for_live_data,
+            http_proxy_url = ?self.config.http_proxy_url,
+            ws_proxy_url = ?self.config.ws_proxy_url,
+            "Starting blockchain data client"
         );
         Ok(())
     }

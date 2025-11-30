@@ -1,11 +1,32 @@
 # Live Trading
 
-Live trading in NautilusTrader enables traders to deploy their backtested strategies in a real-time
+NautilusTrader enables traders to deploy their backtested strategies in a real-time
 trading environment with no code changes. This seamless transition from backtesting to live trading
-is a core feature of the platform, ensuring consistency and reliability. However, there are
-key differences to be aware of between backtesting and live trading.
+is a core feature of the platform, ensuring consistency and reliability.
+
+**Live trading involves real financial risk and requires a careful, risk-managed approach.
+Before deploying to production, ensure you thoroughly understand all aspects of system configuration,
+node operations, execution reconciliation, and the differences between backtesting and live trading.**
 
 This guide provides an overview of the key aspects of live trading.
+
+:::warning **One TradingNode per process**
+Running multiple `TradingNode` instances concurrently in the same process is not supported due to global singleton state.
+Add multiple strategies to a single node, or run additional nodes in separate processes for parallel execution.
+
+See [Processes and threads](architecture.md#processes-and-threads) for details.
+:::
+
+:::danger **Jupyter notebooks not recommended for live trading**
+Running live trading nodes in Jupyter notebooks is **not recommended** due to event loop conflicts and operational risks:
+
+- Jupyter runs its own asyncio event loop, which conflicts with `TradingNode`'s event loop management.
+- Workarounds like `nest_asyncio` are not production-grade solutions.
+- Notebooks are unstable for production: cells can be re-executed out of order, kernels can crash, and state can be lost.
+- Lacks proper logging, monitoring, and graceful shutdown capabilities required for production trading systems.
+
+Use Jupyter notebooks for backtesting, analysis, and experimentation. For live trading, run your trading nodes as standalone Python scripts or services with proper process management.
+:::
 
 :::info Platform differences
 Windows signal handling differs from Unix-like systems. If you are running on Windows, please read
@@ -150,14 +171,14 @@ For full details see the `LiveExecEngineConfig` [API Reference](../api_reference
 
 **Purpose**: Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
 
-| Setting                         | Default | Description                                                                                        |
-|---------------------------------|---------|----------------------------------------------------------------------------------------------------|
-| `reconciliation`                | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state.  |
-| `reconciliation_lookback_mins`  | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.   |
-| `reconciliation_instrument_ids` | None    | An include list of specific instrument IDs to consider for reconciliation.                         |
-| `filtered_client_order_ids`     | None    | A list of client order IDs to filter from reconciliation (useful when the venue holds duplicates). |
+| Setting                           | Default | Description                                                                                        |
+|-----------------------------------|---------|----------------------------------------------------------------------------------------------------|
+| `reconciliation`                  | True    | Activates reconciliation at startup, aligning the system's internal state with the venue's state.  |
+| `reconciliation_lookback_mins`    | None    | Specifies how far back (in minutes) the system requests past events to reconcile uncached state.   |
+| `reconciliation_instrument_ids`   | None    | An include list of specific instrument IDs to consider for reconciliation.                         |
+| `filtered_client_order_ids`       | None    | A list of client order IDs to filter from reconciliation (useful when the venue holds duplicates). |
 
-See [Execution reconciliation](../concepts/execution#execution-reconciliation) for additional background.
+See [Execution reconciliation](#execution-reconciliation) for additional background.
 
 #### Order filtering
 
@@ -250,7 +271,8 @@ The following additional options provide further control over execution behavior
 
 | Setting                            | Default | Description                                                                                                |
 |------------------------------------|---------|------------------------------------------------------------------------------------------------------------|
-| `generate_missing_orders`          | True    | If `LIMIT` order events will be generated during reconciliation to align position discrepancies. These orders use the strategy ID `INTERNAL-DIFF` and calculate precise prices to achieve target average positions.  |
+| `allow_overfills`                  | False   | If enabled, allows order fills that exceed the order quantity (logs warning instead of raising). Useful when position reconciliation races with exchange fill events. |
+| `generate_missing_orders`          | True    | If `LIMIT` order events will be generated during reconciliation to align position discrepancies. These orders use strategy ID `EXTERNAL` with tag `RECONCILIATION`, ensuring proper position netting. |
 | `snapshot_orders`                  | False   | If order snapshots should be taken on order events.                                                        |
 | `snapshot_positions`               | False   | If position snapshots should be taken on position events.                                                  |
 | `snapshot_positions_interval_secs` | None    | The interval (seconds) between position snapshots when enabled.                                            |
@@ -392,7 +414,7 @@ reconciliation using the `external_order_claims` configuration parameter.
 This is useful in situations where, at system start, there is no cached state or it is desirable for
 a strategy to resume its operations and continue managing existing open orders for a specific instrument.
 
-Orders generated with strategy ID `INTERNAL-DIFF` during position reconciliation are internal to the engine and cannot be claimed via `external_order_claims`.
+Orders generated with strategy ID `EXTERNAL` and tag `RECONCILIATION` during position reconciliation are internal to the engine and cannot be claimed via `external_order_claims`.
 They exist solely to align position discrepancies and should not be managed by user strategies.
 
 For a full list of live trading options see the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liveexecengineconfig).
@@ -419,15 +441,24 @@ The system state is then reconciled with the reports, which represent external "
 - **Position Reconciliation**:
   - Ensure the net position per instrument matches the position reports returned from the venue using instrument precision handling.
   - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies.
-  - When `generate_missing_orders` is enabled (default: True), orders are generated with strategy ID `INTERNAL-DIFF` to align position discrepancies discovered during reconciliation.
+  - When `generate_missing_orders` is enabled (default: True), orders are generated with strategy ID `EXTERNAL` and tag `RECONCILIATION` to align position discrepancies discovered during reconciliation.
   - A hierarchical price determination strategy ensures reconciliation can proceed even with limited data:
-    1. **Calculated reconciliation price** (preferred): Uses the reconciliation price function to achieve target average positions
-    2. **Market mid-price**: Falls back to current bid-ask midpoint if reconciliation price cannot be calculated
-    3. **Current position average**: Uses existing position average price if no market data is available
-    4. **MARKET order** (last resort): When no price information exists (no positions, no market data), a MARKET order is generated
-  - LIMIT orders are used when a price can be determined (cases 1-3), ensuring accurate PnL calculations
-  - MARKET orders are only used as a last resort when starting fresh with no available pricing data
+    1. **Calculated reconciliation price** (preferred): Uses the reconciliation price function to achieve target average positions.
+    2. **Market mid-price**: Falls back to current bid-ask midpoint if reconciliation price cannot be calculated.
+    3. **Current position average**: Uses existing position average price if no market data is available.
+    4. **MARKET order** (last resort): When no price information exists (no positions, no market data), a MARKET order is generated.
+  - LIMIT orders are used when a price can be determined (cases 1-3), ensuring accurate PnL calculations.
+  - MARKET orders are only used as a last resort when starting fresh with no available pricing data.
   - Zero quantity differences after precision rounding are handled gracefully.
+- **Partial Window Adjustment**:
+  - When `reconciliation_lookback_mins` is set, the reconciliation window may not capture the complete position history (missing opening fills).
+  - The system automatically adjusts fills to ensure accurate position reconstruction using lifecycle analysis:
+    - Detects zero-crossings (when position qty crosses through FLAT) to identify separate position lifecycles.
+    - Adds synthetic opening fills when the earliest lifecycle is incomplete.
+    - Filters out closed lifecycles when current lifecycle matches venue position.
+    - Replaces mismatched current lifecycle with synthetic fill reflecting venue position.
+  - Synthetic fills use calculated reconciliation prices to achieve target average positions.
+  - See [Partial window adjustment scenarios](#partial-window-adjustment-scenarios) for details.
 - **Exception Handling**:
   - Individual adapter failures do not abort the entire reconciliation process.
   - Missing order status reports are handled gracefully when fill reports arrive first.
@@ -450,11 +481,11 @@ The scenarios below are split between startup reconciliation (mass status) and r
 | **Different fill data**                | Venue reports different fill price/commission than cached.                                        | Preserves cached fill data; logs discrepancies from reports.                     |
 | **Filtered orders**                    | Orders marked for filtering via configuration.                                                    | Skips reconciliation based on `filtered_client_order_ids` or instrument filters. |
 | **Duplicate client order IDs**         | Multiple orders with same client order ID in venue reports.                                       | Reconciliation fails to prevent state corruption.                                |
-| **Position quantity mismatch (long)**  | Internal long position differs from external (e.g., internal: 100, external: 150).                | Generates BUY LIMIT order with calculated price when `generate_missing_orders=True`.          |
-| **Position quantity mismatch (short)** | Internal short position differs from external (e.g., internal: -100, external: -150).             | Generates SELL LIMIT order with calculated price when `generate_missing_orders=True`.         |
-| **Position reduction**                 | External position smaller than internal (e.g., internal: 150 long, external: 100 long).           | Generates opposite side LIMIT order with calculated price to reduce position.                                |
-| **Position side flip**                 | Internal position opposite of external (e.g., internal: 100 long, external: 50 short).            | Generates LIMIT order with calculated price to close internal and open external position.                    |
-| **INTERNAL-DIFF orders**               | Position reconciliation orders with strategy ID "INTERNAL-DIFF".                                  | Never filtered, regardless of `filter_unclaimed_external_orders`.                |
+| **Position quantity mismatch (long)**  | Internal long position differs from external (e.g., internal: 100, external: 150).                | Generates BUY LIMIT order with calculated price when `generate_missing_orders=True`.  |
+| **Position quantity mismatch (short)** | Internal short position differs from external (e.g., internal: -100, external: -150).             | Generates SELL LIMIT order with calculated price when `generate_missing_orders=True`. |
+| **Position reduction**                 | External position smaller than internal (e.g., internal: 150 long, external: 100 long).           | Generates opposite side LIMIT order with calculated price to reduce position.             |
+| **Position side flip**                 | Internal position opposite of external (e.g., internal: 100 long, external: 50 short).            | Generates LIMIT order with calculated price to close internal and open external position. |
+| **Internal reconciliation orders**     | Position reconciliation orders with strategy ID "EXTERNAL" and tag "RECONCILIATION".                    | Never filtered, regardless of `filter_unclaimed_external_orders` (filtered by tag check). |
 
 #### Runtime/continuous checks
 
@@ -475,3 +506,39 @@ The scenarios below are split between startup reconciliation (mass status) and r
 :::tip
 For persistent reconciliation issues, consider dropping cached state or flattening accounts before system restart.
 :::
+
+### Reconciliation invariants
+
+The reconciliation system maintains the following invariants to ensure position accuracy:
+
+1. **Position quantity accuracy**: The system ensures the final position quantity matches the venue exactly (within instrument precision).
+2. **Average entry price accuracy**: The system ensures the position's average entry price matches the venue's reported average price (within configured tolerance, default 0.01%).
+3. **PnL calculation integrity**: All generated fills (including synthetic fills) use calculated prices that preserve correct unrealized PnL based on venue position data.
+
+These invariants are maintained even when:
+
+- The reconciliation window doesn't capture complete fill history.
+- Fills are missing from venue reports.
+- Position lifecycles span beyond the lookback window.
+- Multiple position flips (zero-crossings) have occurred.
+
+### Partial window adjustment scenarios
+
+When the reconciliation window doesn't capture complete position history (limited `reconciliation_lookback_mins`),
+the system analyzes position lifecycles from fills - and applies adjustments to ensure accurate position reconstruction while maintaining the reconciliation invariants.
+
+| Scenario                                   | Description                                                                                                           | System behavior |
+|--------------------------------------------|-----------------------------------------------------------------------------------------------------------------------|-----------------|
+| **Complete lifecycle**                     | All fills from position opening to current state are captured within the window.                                      | No adjustment - fills returned unchanged. |
+| **Incomplete single lifecycle**            | Window misses opening fills, but no zero-crossings detected (position accumulated in one direction).                  | Adds synthetic opening fill at the beginning with calculated price to achieve target average position. |
+| **Multiple lifecycles - current matches**  | Zero-crossings detected, current lifecycle (after last zero-crossing) matches venue position.                         | Filters out old lifecycles - returns only fills from current lifecycle (after last zero-crossing). |
+| **Multiple lifecycles - current mismatch** | Zero-crossings detected, current lifecycle doesn't match venue position (window missed some current lifecycle fills). | Replaces entire current lifecycle with single synthetic fill reflecting venue position. |
+| **Flat position**                          | Venue reports FLAT position regardless of fill history.                                                               | No adjustment - fills returned unchanged. |
+| **No fills**                               | Reconciliation window contains no fill reports.                                                                       | No adjustment - empty result. |
+
+**Key concepts:**
+
+- **Zero-crossing**: When position quantity crosses through zero (FLAT), marking the boundary between separate position lifecycles.
+- **Lifecycle**: A sequence of fills between zero-crossings representing a continuous position open-close cycle.
+- **Synthetic fill**: A calculated fill report created by the system to represent missing trading activity, using reconciliation price calculations to achieve correct average positions.
+- **Tolerance**: Position matching uses configurable price tolerance (default: 0.0001 = 0.01% relative difference) to account for minor calculation differences.

@@ -75,6 +75,22 @@ impl OrderAny {
             }
         }
     }
+
+    /// Returns a reference to the [`crate::events::OrderInitialized`] event.
+    ///
+    /// This is always the first event in the order's event list (invariant).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the first event is not `OrderInitialized` (violates invariant).
+    #[must_use]
+    pub fn init_event(&self) -> &crate::events::OrderInitialized {
+        // SAFETY: Unwrap safe as Order specification guarantees at least one event (OrderInitialized)
+        match self.events().first().unwrap() {
+            OrderEventAny::Initialized(init) => init,
+            _ => panic!("First event must be OrderInitialized"),
+        }
+    }
 }
 
 impl PartialEq for OrderAny {
@@ -119,10 +135,7 @@ impl TryFrom<OrderAny> for PassiveOrderAny {
             OrderAny::TrailingStopLimit(_) => Ok(Self::Stop(StopOrderAny::try_from(order)?)),
             OrderAny::TrailingStopMarket(_) => Ok(Self::Stop(StopOrderAny::try_from(order)?)),
             OrderAny::MarketToLimit(_) => Ok(Self::Limit(LimitOrderAny::try_from(order)?)),
-            OrderAny::Market(_) => Err(
-                "Cannot convert Market order to PassiveOrderAny: Market orders are not passive"
-                    .to_string(),
-            ),
+            OrderAny::Market(_) => Ok(Self::Limit(LimitOrderAny::try_from(order)?)),
         }
     }
 }
@@ -177,6 +190,7 @@ impl TryFrom<OrderAny> for LimitOrderAny {
             OrderAny::MarketToLimit(order) => Ok(Self::MarketToLimit(order)),
             OrderAny::StopLimit(order) => Ok(Self::StopLimit(order)),
             OrderAny::TrailingStopLimit(order) => Ok(Self::TrailingStopLimit(order)),
+            OrderAny::Market(order) => Ok(Self::MarketOrderWithProtection(order)),
             _ => Err(format!(
                 "Cannot convert {:?} order to LimitOrderAny: order type does not have a limit price",
                 order.order_type()
@@ -192,6 +206,7 @@ impl From<LimitOrderAny> for OrderAny {
             LimitOrderAny::MarketToLimit(order) => Self::MarketToLimit(order),
             LimitOrderAny::StopLimit(order) => Self::StopLimit(order),
             LimitOrderAny::TrailingStopLimit(order) => Self::TrailingStopLimit(order),
+            LimitOrderAny::MarketOrderWithProtection(order) => Self::Market(order),
         }
     }
 }
@@ -230,6 +245,7 @@ pub enum LimitOrderAny {
     MarketToLimit(MarketToLimitOrder),
     StopLimit(StopLimitOrder),
     TrailingStopLimit(TrailingStopLimitOrder),
+    MarketOrderWithProtection(MarketOrder),
 }
 
 impl LimitOrderAny {
@@ -245,6 +261,9 @@ impl LimitOrderAny {
             Self::MarketToLimit(order) => order.price.expect("MarketToLimit order price not set"),
             Self::StopLimit(order) => order.price,
             Self::TrailingStopLimit(order) => order.price,
+            Self::MarketOrderWithProtection(order) => {
+                order.protection_price.expect("No price for order")
+            }
         }
     }
 }
@@ -256,6 +275,9 @@ impl PartialEq for LimitOrderAny {
             Self::MarketToLimit(order) => order.client_order_id == rhs.client_order_id(),
             Self::StopLimit(order) => order.client_order_id == rhs.client_order_id(),
             Self::TrailingStopLimit(order) => order.client_order_id == rhs.client_order_id(),
+            Self::MarketOrderWithProtection(order) => {
+                order.client_order_id == rhs.client_order_id()
+            }
         }
     }
 }
@@ -306,6 +328,7 @@ impl PartialEq for StopOrderAny {
 mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -507,7 +530,7 @@ mod tests {
         assert_eq!(order_any.order_type(), OrderType::TrailingStopMarket);
         assert_eq!(order_any.quantity(), Quantity::from(10));
         assert_eq!(order_any.trigger_price(), Some(Price::new(100.0, 2)));
-        assert_eq!(order_any.trailing_offset(), Some(Decimal::new(5, 1)));
+        assert_eq!(order_any.trailing_offset(), Some(dec!(0.5)));
         assert_eq!(
             order_any.trailing_offset_type(),
             Some(TrailingOffsetType::NoTrailingOffset)
@@ -541,7 +564,7 @@ mod tests {
         assert_eq!(order_any.quantity(), Quantity::from(10));
         assert_eq!(order_any.price(), Some(Price::new(99.0, 2)));
         assert_eq!(order_any.trigger_price(), Some(Price::new(100.0, 2)));
-        assert_eq!(order_any.trailing_offset(), Some(Decimal::new(5, 1)));
+        assert_eq!(order_any.trailing_offset(), Some(dec!(0.5)));
     }
 
     #[rstest]

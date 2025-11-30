@@ -21,17 +21,15 @@ instruments.
 
 import pytest
 
-# fmt: off
-# ruff: noqa: I001
-from nautilus_trader.adapters.interactive_brokers.common import IBContract, IBContractDetails
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
-    parse_option_spread,
-    parse_spread_instrument_id,
-)
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_option_spread
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_spread_instrument_id
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import OptionSpread
-from nautilus_trader.model.objects import Currency, Price, Quantity
-# fmt: on
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 class TestSpreadInstrumentParsing:
@@ -125,7 +123,7 @@ class TestSpreadInstrumentParsing:
 
         # Create mock contract details for legs
         leg_contract_details = []
-        for leg_id, ratio in [(leg1_id, 1), (leg2_id, -2), (leg3_id, 1)]:
+        for _leg_id, ratio in [(leg1_id, 1), (leg2_id, -2), (leg3_id, 1)]:
             contract = IBContract(secType="OPT", symbol="SPY", currency="USD", multiplier="100")
             details = IBContractDetails(contract=contract, minTick=0.01, underSymbol="SPY")
             leg_contract_details.append((details, ratio))
@@ -154,7 +152,7 @@ class TestSpreadInstrumentParsing:
 
         # Create mock contract details for legs
         leg_contract_details = []
-        for leg_id, ratio in [(leg1_id, 1), (leg2_id, -1), (leg3_id, 1), (leg4_id, -1)]:
+        for _leg_id, ratio in [(leg1_id, 1), (leg2_id, -1), (leg3_id, 1), (leg4_id, -1)]:
             contract = IBContract(secType="OPT", symbol="SPY", currency="USD", multiplier="100")
             details = IBContractDetails(contract=contract, minTick=0.01, underSymbol="SPY")
             leg_contract_details.append((details, ratio))
@@ -278,9 +276,7 @@ def test_spread_instrument_parsing_integration():
     """
     Test that spread instrument parsing integration works.
     """
-    from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
-        parse_spread_instrument_id,
-    )
+    from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_spread_instrument_id
 
     # Test basic functionality
     leg1_id = InstrumentId.from_str("SPY C400.SMART")

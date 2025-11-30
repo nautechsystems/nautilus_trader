@@ -15,6 +15,7 @@
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from unittest.mock import Mock
 
 import pytest
@@ -451,10 +452,9 @@ async def test_queued_exception_logged_with_traceback(logger: Mock) -> None:
     # Assert
     await eventually(lambda: logger.exception.called)
 
-    try:
+    # Expected - worker was processing when shutdown was called
+    with suppress(ValueError):
         await actor_executor.shutdown()
-    except ValueError:
-        pass  # Expected - worker was processing when shutdown was called
 
     assert logger.exception.call_count == 1
     call_args = logger.exception.call_args[0]

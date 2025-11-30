@@ -19,7 +19,6 @@ from operator import attrgetter
 
 import pandas as pd
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -62,9 +61,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-
-
-# fmt: on
 
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):
@@ -200,28 +196,28 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         contract = self.instrument_provider.contract.get(command.instrument_id)
-
         if not contract:
             self._log.error(
                 f"Cannot subscribe to quotes for {command.instrument_id}: instrument not found",
             )
             return
 
-        batch_quotes = command.params.get("batch_quotes", False)
-
+        # Use batch_quotes by default to avoid "Max number of tick-by-tick requests has been reached" error
+        batch_quotes = command.params.get("batch_quotes", True)
         if contract.secType == "BAG" or batch_quotes:
-            # For OptionSpread (BAG) instruments, use reqMktData instead of reqTickByTickData
-            # because reqTickByTickData doesn't support BAG contracts
+            # For OptionSpread (BAG) instruments, always use reqMktData instead of reqTickByTickData
+            # as not supported for BAG contracts
             await self._client.subscribe_market_data(
                 instrument_id=command.instrument_id,
                 contract=contract,
                 generic_tick_list="",  # Empty for basic bid/ask data
             )
         else:
-            await self._client.subscribe_market_data(
+            await self._client.subscribe_ticks(
                 instrument_id=command.instrument_id,
                 contract=contract,
-                generic_tick_list="",  # Empty for basic bid/ask data
+                tick_type="BidAsk",
+                ignore_size=self._ignore_quote_tick_size_updates,
             )
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:

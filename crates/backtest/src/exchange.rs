@@ -26,6 +26,7 @@ use std::{
     rc::Rc,
 };
 
+use ahash::AHashMap;
 use nautilus_common::{cache::Cache, clock::Clock, messages::execution::TradingCommand};
 use nautilus_core::{
     UnixNanos,
@@ -135,6 +136,7 @@ pub struct SimulatedExchange {
     use_message_queue: bool,
     allow_cash_borrowing: bool,
     frozen_account: bool,
+    price_protection_points: u32,
 }
 
 impl Debug for SimulatedExchange {
@@ -180,6 +182,7 @@ impl SimulatedExchange {
         use_message_queue: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
+        price_protection_points: Option<u32>,
     ) -> anyhow::Result<Self> {
         if starting_balances.is_empty() {
             anyhow::bail!("Starting balances must be provided")
@@ -219,6 +222,7 @@ impl SimulatedExchange {
             use_message_queue: use_message_queue.unwrap_or(true),
             allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
             frozen_account: frozen_account.unwrap_or(false),
+            price_protection_points: price_protection_points.unwrap_or(0),
         })
     }
 
@@ -273,6 +277,12 @@ impl SimulatedExchange {
 
         self.instruments.insert(instrument.id(), instrument.clone());
 
+        let price_protection = if self.price_protection_points == 0 {
+            None
+        } else {
+            Some(self.price_protection_points)
+        };
+
         let matching_engine_config = OrderMatchingEngineConfig::new(
             self.bar_execution,
             self.reject_stop_orders,
@@ -281,7 +291,8 @@ impl SimulatedExchange {
             self.use_position_ids,
             self.use_random_ids,
             self.use_reduce_only,
-        );
+        )
+        .with_price_protection_points(price_protection);
         let instrument_id = instrument.id();
         let matching_engine = OrderMatchingEngine::new(
             instrument,
@@ -422,7 +433,7 @@ impl SimulatedExchange {
 
                         let margins = match account {
                             AccountAny::Margin(margin_account) => margin_account.margins.clone(),
-                            _ => HashMap::new(),
+                            _ => AHashMap::new(),
                         };
 
                         if let Some(exec_client) = &self.exec_client {
@@ -875,6 +886,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap(),
         ));
@@ -913,6 +925,7 @@ mod tests {
                 order,
                 None,
                 None,
+                None, // params
                 UUID4::default(),
                 ts_init,
             )

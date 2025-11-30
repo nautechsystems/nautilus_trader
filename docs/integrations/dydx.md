@@ -11,7 +11,7 @@ central components.
 To install NautilusTrader with dYdX support:
 
 ```bash
-pip install --upgrade "nautilus_trader[dydx]"
+uv pip install "nautilus_trader[dydx]"
 ```
 
 To build from source with all extras (including dYdX):
@@ -40,7 +40,7 @@ on the use case.
 - `DYDXLiveExecClientFactory`: Factory for dYdX execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as below),
+Most users will define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
 
@@ -245,6 +245,7 @@ The product types for each client must be specified in the configurations.
 | `max_retries`                    | `None`  | Maximum retry attempts for REST/WebSocket recovery. |
 | `retry_delay_initial_ms`         | `None`  | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`             | `None`  | Maximum delay (milliseconds) between retries. |
+| `proxy_url`                      | `None`  | Optional proxy URL for HTTP requests. |
 
 ### Execution client configuration options
 
@@ -259,6 +260,7 @@ The product types for each client must be specified in the configurations.
 | `max_retries`            | `None`  | Maximum retry attempts for order submission/cancel/modify calls. |
 | `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries. |
+| `proxy_url`              | `None`  | Optional proxy URL for HTTP requests. |
 
 ### Execution clients
 
@@ -333,7 +335,7 @@ The data client is using the wallet address to determine the trading fees. The t
 ### Testnets
 
 It's also possible to configure one or both clients to connect to the dYdX testnet.
-Simply set the `is_testnet` option to `True` (this is `False` by default):
+Set the `is_testnet` option to `True` (this is `False` by default):
 
 ```python
 config = TradingNodeConfig(

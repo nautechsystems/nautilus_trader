@@ -70,7 +70,7 @@ class TestFixedRiskSizer:
             stop_loss=Price.from_str("1.00000"),
             equity=equity,
             risk=Decimal("0.001"),  # 0.1%
-            exchange_rate=Decimal("0"),
+            exchange_rate=Decimal(0),
         )
 
         # Assert
@@ -86,7 +86,7 @@ class TestFixedRiskSizer:
             stop_loss=Price.from_str("1.00100"),
             equity=equity,
             risk=Decimal("0.001"),  # 0.1%
-            exchange_rate=Decimal("0"),
+            exchange_rate=Decimal(0),
         )
 
         # Assert

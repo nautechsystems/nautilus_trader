@@ -19,7 +19,11 @@
 //! parts of the NautilusTrader system, including data requests, execution commands,
 //! and system control messages.
 
-use nautilus_model::{data::Data, events::OrderEventAny};
+use nautilus_model::{
+    data::Data,
+    events::{AccountState, OrderEventAny},
+    instruments::InstrumentAny,
+};
 use strum::Display;
 
 pub mod data;
@@ -39,6 +43,7 @@ pub use execution::ExecutionReport;
 pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
+    Instrument(InstrumentAny), // TODO: Eventually this can be `Data` once Cython is gone
     #[cfg(feature = "defi")]
     DeFi(nautilus_model::defi::data::DefiData),
 }
@@ -49,4 +54,5 @@ pub enum DataEvent {
 pub enum ExecutionEvent {
     Order(OrderEventAny),
     Report(ExecutionReport),
+    Account(AccountState),
 }

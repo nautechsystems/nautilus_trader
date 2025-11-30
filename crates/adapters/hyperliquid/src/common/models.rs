@@ -23,13 +23,16 @@ use nautilus_model::{
     events::AccountState,
     identifiers::{AccountId, InstrumentId},
     reports::PositionStatusReport,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Money, Price, Quantity},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
 use crate::{
-    http::models::{HyperliquidL2Book, HyperliquidLevel},
+    http::{
+        models::{HyperliquidL2Book, HyperliquidLevel},
+        parse::get_currency,
+    },
     websocket::messages::{WsBookData, WsLevelData},
 };
 
@@ -261,7 +264,7 @@ impl HyperliquidDataConverter {
     fn get_config(&self, symbol: &Ustr) -> HyperliquidInstrumentInfo {
         self.configs.get(symbol).cloned().unwrap_or_else(|| {
             // Create default config with a placeholder instrument_id based on symbol
-            let instrument_id = InstrumentId::from(format!("{}.HYPER", symbol).as_str());
+            let instrument_id = InstrumentId::from(format!("{symbol}.HYPER").as_str());
             HyperliquidInstrumentInfo::default_crypto(instrument_id)
         })
     }
@@ -570,10 +573,10 @@ impl From<anyhow::Error> for ConversionError {
 impl Display for ConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidPrice { value } => write!(f, "Invalid price: {}", value),
-            Self::InvalidSize { value } => write!(f, "Invalid size: {}", value),
+            Self::InvalidPrice { value } => write!(f, "Invalid price: {value}"),
+            Self::InvalidSize { value } => write!(f, "Invalid size: {value}"),
             Self::OrderBookDeltasError(msg) => {
-                write!(f, "OrderBookDeltas error: {}", msg)
+                write!(f, "OrderBookDeltas error: {msg}")
             }
         }
     }
@@ -702,12 +705,6 @@ impl HyperliquidAccountState {
     /// This creates a standard Nautilus AccountState from the Hyperliquid-specific account state,
     /// converting balances and handling the margin account type since Hyperliquid supports leverage.
     ///
-    /// # Arguments
-    ///
-    /// * `account_id` - The account identifier for this state
-    /// * `ts_event` - When this state was observed/received
-    /// * `ts_init` - When this state object was created
-    ///
     /// # Returns
     ///
     /// A Nautilus AccountState event that can be processed by the platform
@@ -723,7 +720,7 @@ impl HyperliquidAccountState {
             .values()
             .map(|balance| {
                 // Create currency - Hyperliquid primarily uses USD/USDC
-                let currency = Currency::from(balance.asset.as_str());
+                let currency = get_currency(&balance.asset);
 
                 // Convert Decimal to f64 and create Money with proper currency
                 let total = Money::new(balance.total.to_f64().unwrap_or(0.0), currency);
@@ -866,6 +863,7 @@ pub fn parse_position_status_report(
 #[allow(dead_code)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -873,7 +871,7 @@ mod tests {
     where
         T: serde::de::DeserializeOwned,
     {
-        let path = format!("test_data/{}", filename);
+        let path = format!("test_data/{filename}");
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
     }
@@ -1165,8 +1163,8 @@ mod tests {
         assert_eq!(info.instrument_id, instrument_id);
         assert_eq!(info.price_decimals, 3);
         assert_eq!(info.size_decimals, 4);
-        assert_eq!(info.tick_size, Some(Decimal::new(1, 3))); // 0.001
-        assert_eq!(info.step_size, Some(Decimal::new(1, 4))); // 0.0001
+        assert_eq!(info.tick_size, Some(dec!(0.001))); // 0.001
+        assert_eq!(info.step_size, Some(dec!(0.0001))); // 0.0001
     }
 
     #[tokio::test]
@@ -1253,7 +1251,7 @@ mod tests {
         assert_eq!(default_model.delete_latency_nanos.as_u64(), 5_000_000);
 
         // Test that Display trait works
-        let display_str = format!("{}", default_model);
+        let display_str = format!("{default_model}");
         assert_eq!(display_str, "LatencyModel()");
     }
 

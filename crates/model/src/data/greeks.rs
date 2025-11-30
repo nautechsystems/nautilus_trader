@@ -16,14 +16,21 @@
 //! Option *Greeks* data structures (delta, gamma, theta, vega, rho) used throughout the platform.
 
 use std::{
-    fmt,
+    fmt::Display,
     ops::{Add, Mul},
 };
 
-use implied_vol::{DefaultSpecialFn, SpecialFn, implied_black_volatility};
+use implied_vol::{DefaultSpecialFn, ImpliedBlackVolatility, SpecialFn};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, math::quadratic_interpolation};
 
 use crate::{data::HasTsInit, identifiers::InstrumentId};
+
+const FRAC_SQRT_2_PI: f64 = f64::from_bits(0x3fd9884533d43651);
+
+#[inline(always)]
+fn norm_pdf(x: f64) -> f64 {
+    FRAC_SQRT_2_PI * (-0.5 * x * x).exp()
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
@@ -58,7 +65,7 @@ pub fn black_scholes_greeks(
     let d2 = d1 - scaled_vol;
     let cdf_phi_d1 = DefaultSpecialFn::norm_cdf(phi * d1);
     let cdf_phi_d2 = DefaultSpecialFn::norm_cdf(phi * d2);
-    let dist_d1 = DefaultSpecialFn::norm_pdf(d1);
+    let dist_d1 = norm_pdf(d1);
     let df = ((b - r) * t).exp();
     let s_t = s * df;
     let k_t = k * (-r * t).exp();
@@ -85,7 +92,15 @@ pub fn imply_vol(s: f64, r: f64, b: f64, is_call: bool, k: f64, t: f64, price: f
     let forward = s * b.exp();
     let forward_price = price * (r * t).exp();
 
-    implied_black_volatility(forward_price, forward, k, t, is_call)
+    ImpliedBlackVolatility::builder()
+        .option_price(forward_price)
+        .forward(forward)
+        .strike(k)
+        .expiry(t)
+        .is_call(is_call)
+        .build_unchecked()
+        .calculate::<DefaultSpecialFn>()
+        .unwrap_or(0.0)
 }
 
 #[repr(C)]
@@ -263,8 +278,8 @@ impl Default for GreeksData {
     }
 }
 
-impl fmt::Display for GreeksData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for GreeksData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "GreeksData(instrument_id={}, expiry={}, itm_prob={:.2}%, vol={:.2}%, pnl={:.2}, price={:.2}, delta={:.2}, gamma={:.2}, vega={:.2}, theta={:.2}, quantity={}, ts_init={})",
@@ -373,8 +388,8 @@ impl Default for PortfolioGreeks {
     }
 }
 
-impl fmt::Display for PortfolioGreeks {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for PortfolioGreeks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "PortfolioGreeks(pnl={:.2}, price={:.2}, delta={:.2}, gamma={:.2}, vega={:.2}, theta={:.2}, ts_event={}, ts_init={})",
@@ -464,8 +479,8 @@ impl YieldCurveData {
     }
 }
 
-impl fmt::Display for YieldCurveData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for YieldCurveData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "InterestRateCurve(curve_name={}, ts_event={}, ts_init={})",

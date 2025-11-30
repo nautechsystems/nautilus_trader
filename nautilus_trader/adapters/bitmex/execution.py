@@ -19,6 +19,8 @@ from typing import Any
 from nautilus_trader.adapters.bitmex.config import BitmexExecClientConfig
 from nautilus_trader.adapters.bitmex.constants import BITMEX_VENUE
 from nautilus_trader.adapters.bitmex.providers import BitmexInstrumentProvider
+from nautilus_trader.adapters.bitmex.types import BITMEX_INSTRUMENT_TYPES
+from nautilus_trader.adapters.bitmex.types import BitmexInstrument
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -87,6 +89,14 @@ class BitmexExecutionClient(LiveExecutionClient):
     name : str, optional
         The custom client ID.
 
+    Notes
+    -----
+    When instrument definitions are updated (either from periodic reloads,
+    WebSocket messages, or manual requests), they should be added to the
+    HTTP client and broadcasters by calling `_add_instrument()`. This ensures
+    all components have access to the latest instrument definitions for
+    correct parsing and order routing.
+
     """
 
     def __init__(
@@ -124,7 +134,12 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.recv_window_ms=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_second=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
+        self._log.info(f"{config.submitter_pool_size=}", LogColor.BLUE)
         self._log.info(f"{config.canceller_pool_size=}", LogColor.BLUE)
+        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.submitter_proxy_urls=}", LogColor.BLUE)
+        self._log.info(f"{config.canceller_proxy_urls=}", LogColor.BLUE)
 
         # Set initial account ID (will be updated with actual account number on connect)
         self._account_id_prefix = name or BITMEX_VENUE.value
@@ -136,13 +151,29 @@ class BitmexExecutionClient(LiveExecutionClient):
 
         # HTTP API
         self._http_client = client
-        self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
+        masked_key = self._http_client.api_key_masked
+        self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
-        # Determine HTTP base URL for canceller
+        # Determine HTTP base URL for broadcasters
         http_url = config.base_url_http or nautilus_pyo3.get_bitmex_http_base_url(config.testnet)
 
+        self._submitter = nautilus_pyo3.SubmitBroadcaster(
+            pool_size=config.submitter_pool_size or 1,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            base_url=http_url,
+            testnet=config.testnet,
+            timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
+            recv_window_ms=config.recv_window_ms,
+            max_requests_per_second=config.max_requests_per_second,
+            max_requests_per_minute=config.max_requests_per_minute,
+        )
+
         self._canceller = nautilus_pyo3.CancelBroadcaster(
-            pool_size=config.canceller_pool_size,
+            pool_size=config.canceller_pool_size or 1,
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=http_url,
@@ -184,10 +215,15 @@ class BitmexExecutionClient(LiveExecutionClient):
         instruments_pyo3 = self._instrument_provider.instruments_pyo3()  # type: ignore
 
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
-            self._canceller.add_instrument(inst)  # type: ignore[attr-defined]
+            self._cache_instrument(inst)
 
-        self._log.debug("Cached instruments", LogColor.MAGENTA)
+        self._log.debug(f"Cached {len(instruments_pyo3)} instruments", LogColor.MAGENTA)
+
+    def _cache_instrument(self, instrument: Any) -> None:
+        self._http_client.cache_instrument(instrument)
+        self._submitter.cache_instrument(instrument)
+        self._canceller.cache_instrument(instrument)
+        self._ws_client.cache_instrument(instrument)
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
@@ -199,7 +235,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._log.info("BitMEX API key authenticated", LogColor.GREEN)
 
         # Check BitMEX-Nautilus clock sync
-        server_time: int = await self._http_client.http_get_server_time()
+        server_time: int = await self._http_client.get_server_time()
         self._log.info(f"BitMEX server time {server_time} UNIX (ms)")
 
         nautilus_time: int = self._clock.timestamp_ms()
@@ -218,6 +254,9 @@ class BitmexExecutionClient(LiveExecutionClient):
         await self._ws_client.wait_until_active(timeout_secs=10.0)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
 
+        await self._submitter.start()
+        self._log.info("Started submit broadcaster", LogColor.BLUE)
+
         await self._canceller.start()
         self._log.info("Started cancel broadcaster", LogColor.BLUE)
 
@@ -233,7 +272,7 @@ class BitmexExecutionClient(LiveExecutionClient):
 
     async def _update_account_state(self) -> None:
         # First get the margin data to extract the actual account number
-        account_number = await self._http_client.http_get_margin("XBt")
+        account_number = await self._http_client.get_margin("XBt")
 
         # Update account ID with actual account number from BitMEX
         if account_number:
@@ -259,6 +298,9 @@ class BitmexExecutionClient(LiveExecutionClient):
             )
 
     async def _disconnect(self) -> None:
+        await self._submitter.stop()
+        self._log.info("Stopped submit broadcaster", LogColor.BLUE)
+
         await self._canceller.stop()
         self._log.info("Stopped cancel broadcaster", LogColor.BLUE)
 
@@ -299,9 +341,6 @@ class BitmexExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
-        """
-        Generate a list of `OrderStatusReport`s with optional query filters.
-        """
         try:
             pyo3_reports = await self._http_client.request_order_status_reports(
                 instrument_id=command.instrument_id,
@@ -314,14 +353,11 @@ class BitmexExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 reports.append(OrderStatusReport.from_pyo3(pyo3_report))
 
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
-
-            if command.log_receipt_level == LogLevel.INFO:
-                self._log.info(receipt_log)
-            else:
-                self._log.debug(receipt_log)
+            self._log_report_receipt(
+                len(reports),
+                "OrderStatusReport",
+                command.log_receipt_level,
+            )
 
             return reports
         except Exception as e:
@@ -332,9 +368,6 @@ class BitmexExecutionClient(LiveExecutionClient):
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        """
-        Generate an `OrderStatusReport` for the specified order.
-        """
         # TODO: Implement fetching specific order from BitMEX
         self._log.warning("Order status report generation not yet implemented")
         return None
@@ -343,9 +376,6 @@ class BitmexExecutionClient(LiveExecutionClient):
         self,
         command: GenerateFillReports,
     ) -> list[FillReport]:
-        """
-        Generate a list of `FillReport`s with optional query filters.
-        """
         try:
             pyo3_reports = await self._http_client.request_fill_reports(
                 instrument_id=command.instrument_id,
@@ -357,9 +387,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 reports.append(FillReport.from_pyo3(pyo3_report))
 
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            self._log.info(f"Received {len(reports)} FillReport{plural}")
+            self._log_report_receipt(len(reports), "FillReport", LogLevel.INFO)
 
             return reports
         except Exception as e:
@@ -370,9 +398,6 @@ class BitmexExecutionClient(LiveExecutionClient):
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        """
-        Generate a list of `PositionStatusReport`s with optional query filters.
-        """
         try:
             pyo3_reports = await self._http_client.request_position_status_reports()
 
@@ -381,9 +406,11 @@ class BitmexExecutionClient(LiveExecutionClient):
             for pyo3_report in pyo3_reports:
                 reports.append(PositionStatusReport.from_pyo3(pyo3_report))
 
-            len_reports = len(reports)
-            plural = "" if len_reports == 1 else "s"
-            self._log.info(f"Received {len(reports)} PositionStatusReport{plural}")
+            self._log_report_receipt(
+                len(reports),
+                "PositionStatusReport",
+                command.log_receipt_level,
+            )
 
             return reports
         except Exception as e:
@@ -451,23 +478,44 @@ class BitmexExecutionClient(LiveExecutionClient):
         if order.contingency_type in (ContingencyType.OCO, ContingencyType.OTO):
             pyo3_contingency_type = contingency_type_to_pyo3(order.contingency_type)
 
+        submit_tries = self._parse_submit_tries(command.params)
+
         try:
-            await self._http_client.submit_order(
-                instrument_id=pyo3_instrument_id,
-                client_order_id=pyo3_client_order_id,
-                order_side=pyo3_order_side,
-                order_type=pyo3_order_type,
-                quantity=pyo3_quantity,
-                time_in_force=pyo3_time_in_force,
-                price=pyo3_price,
-                trigger_price=pyo3_trigger_price,
-                trigger_type=pyo3_trigger_type,
-                display_qty=pyo3_display_qty,
-                post_only=order.is_post_only,
-                reduce_only=order.is_reduce_only,
-                order_list_id=pyo3_order_list_id,
-                contingency_type=pyo3_contingency_type,
-            )
+            if submit_tries is not None:
+                await self._submitter.broadcast_submit(
+                    instrument_id=pyo3_instrument_id,
+                    client_order_id=pyo3_client_order_id,
+                    order_side=pyo3_order_side,
+                    order_type=pyo3_order_type,
+                    quantity=pyo3_quantity,
+                    time_in_force=pyo3_time_in_force,
+                    price=pyo3_price,
+                    trigger_price=pyo3_trigger_price,
+                    trigger_type=pyo3_trigger_type,
+                    display_qty=pyo3_display_qty,
+                    post_only=order.is_post_only,
+                    reduce_only=order.is_reduce_only,
+                    order_list_id=pyo3_order_list_id,
+                    contingency_type=pyo3_contingency_type,
+                    submit_tries=submit_tries,
+                )
+            else:
+                await self._http_client.submit_order(
+                    instrument_id=pyo3_instrument_id,
+                    client_order_id=pyo3_client_order_id,
+                    order_side=pyo3_order_side,
+                    order_type=pyo3_order_type,
+                    quantity=pyo3_quantity,
+                    time_in_force=pyo3_time_in_force,
+                    price=pyo3_price,
+                    trigger_price=pyo3_trigger_price,
+                    trigger_type=pyo3_trigger_type,
+                    display_qty=pyo3_display_qty,
+                    post_only=order.is_post_only,
+                    reduce_only=order.is_reduce_only,
+                    order_list_id=pyo3_order_list_id,
+                    contingency_type=pyo3_contingency_type,
+                )
         except Exception as e:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
@@ -476,6 +524,25 @@ class BitmexExecutionClient(LiveExecutionClient):
                 reason=str(e),
                 ts_event=self._clock.timestamp_ns(),
             )
+
+    def _parse_submit_tries(self, params: dict | None) -> int | None:
+        if not params:
+            return None
+
+        submit_tries_str = params.get("submit_tries")
+        if not submit_tries_str:
+            return None
+
+        try:
+            tries = int(submit_tries_str)
+            if tries > 1:
+                return tries
+            if tries <= 0:
+                self._log.warning(f"Invalid submit_tries={tries}, must be positive")
+            return None
+        except (ValueError, TypeError) as e:
+            self._log.error(f"Invalid submit_tries value: {submit_tries_str}: {e}")
+            return None
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         for order in command.order_list.orders:
@@ -703,7 +770,9 @@ class BitmexExecutionClient(LiveExecutionClient):
     def _handle_msg(self, msg: Any) -> None:
         try:
             if nautilus_pyo3.is_pycapsule(msg):
-                pass  # PyCapsules are market data we ignore for the execution client
+                pass  # PyCapsules are handled by data clients
+            elif isinstance(msg, BITMEX_INSTRUMENT_TYPES):
+                self._handle_instrument_update(msg)
             elif isinstance(msg, nautilus_pyo3.AccountState):
                 self._handle_account_state(msg)
             elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
@@ -718,6 +787,12 @@ class BitmexExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Received unhandled message type: {type(msg)}")
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
+
+    def _handle_instrument_update(self, pyo3_instrument: BitmexInstrument) -> None:
+        self._http_client.cache_instrument(pyo3_instrument)
+
+        if self._ws_client is not None:
+            self._ws_client.cache_instrument(pyo3_instrument)
 
     def _handle_fill_reports_list(self, reports: list) -> None:
         for fill_report in reports:

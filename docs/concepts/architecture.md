@@ -197,7 +197,7 @@ High-performance in-memory storage system that:
 
 - Stores instruments, accounts, orders, positions, and more.
 - Provides performant fetching capabilities for trading components.
-- Maintains consist state across the system.
+- Maintains consistent state across the system.
 - Supports both read and write operations with optimized access patterns.
 
 #### `DataEngine`
@@ -271,15 +271,29 @@ Understanding how data and execution flow through the system is crucial for effe
 
 #### Component state management
 
-All components follow a finite state machine pattern with well-defined states:
+All components follow a finite state machine pattern. The `ComponentState` enum defines both stable states and transitional states:
 
-- **PRE_INITIALIZED**: Component is created but not yet wired up to the system.
-- **READY**: Component is configured and wired up, but not yet running.
-- **RUNNING**: Component is actively processing messages and performing operations.
-- **STOPPED**: Component has been gracefully stopped and is no longer processing.
-- **DEGRADED**: Component is running but with reduced functionality due to errors.
-- **FAULTED**: Component has encountered a critical error and cannot continue.
-- **DISPOSED**: Component has been cleaned up and resources have been released.
+**Stable states:**
+
+- **PRE_INITIALIZED**: Component is instantiated but not yet ready to fulfill its specification.
+- **READY**: Component is configured and able to be started.
+- **RUNNING**: Component is operating normally and can fulfill its specification.
+- **STOPPED**: Component has successfully stopped.
+- **DEGRADED**: Component has degraded and may not meet its full specification.
+- **FAULTED**: Component has shut down due to a detected fault.
+- **DISPOSED**: Component has shut down and released all of its resources.
+
+**Transitional states:**
+
+- **STARTING**: Component is executing its actions on `start`.
+- **STOPPING**: Component is executing its actions on `stop`.
+- **RESUMING**: Component is being started again after its initial start.
+- **RESETTING**: Component is executing its actions on `reset`.
+- **DISPOSING**: Component is executing its actions on `dispose`.
+- **DEGRADING**: Component is executing its actions on `degrade`.
+- **FAULTING**: Component is executing its actions on `fault`.
+
+Transitional states are brief intermediate states that occur during state transitions. Components should not remain in transitional states for extended periods.
 
 ### Messaging
 
@@ -406,7 +420,15 @@ library, or from third party library dependencies.
 
 ### Processes and threads
 
-:::tip
-For optimal performance and to prevent potential issues related to Python's memory
-model and equality, it is highly recommended to run each trader instance in a separate process.
+:::warning **One node per process**
+Running multiple `TradingNode` or `BacktestNode` instances **concurrently** in the same process is not supported due to global singleton state:
+
+- **Backtest force-stop flag** - The `_FORCE_STOP` global flag is shared across all engines in the process.
+- **Logger mode and timestamps** - The logging subsystem uses global state; backtests flip between static and real-time modes.
+- **Runtime singletons** - Global Tokio runtime, callback registries, and other `OnceLock` instances are process-wide.
+
+**Sequential execution** of multiple nodes (one after another with proper disposal between runs) is fully supported and used in the test suite.
+
+For production deployments, add multiple strategies to a **single TradingNode** within a process.
+For parallel execution or workload isolation, run each node in its own separate process.
 :::

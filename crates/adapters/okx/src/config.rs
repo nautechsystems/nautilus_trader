@@ -15,6 +15,8 @@
 
 //! Configuration structures for the OKX adapter.
 
+use nautilus_model::identifiers::{AccountId, TraderId};
+
 use crate::common::{
     enums::{OKXContractType, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
     urls::{
@@ -45,6 +47,13 @@ pub struct OKXDataClientConfig {
     pub base_url_ws_public: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
     /// When true the client will use OKX demo endpoints.
     pub is_demo: bool,
     /// Optional HTTP timeout in seconds.
@@ -73,6 +82,8 @@ impl Default for OKXDataClientConfig {
             base_url_http: None,
             base_url_ws_public: None,
             base_url_ws_business: None,
+            http_proxy_url: None,
+            ws_proxy_url: None,
             is_demo: false,
             http_timeout_secs: Some(60),
             max_retries: Some(3),
@@ -129,6 +140,10 @@ impl OKXDataClientConfig {
 /// Configuration for the OKX execution client.
 #[derive(Clone, Debug)]
 pub struct OKXExecClientConfig {
+    /// The trader ID for the client.
+    pub trader_id: TraderId,
+    /// The account ID for the client.
+    pub account_id: AccountId,
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<String>,
     /// Optional API secret for authenticated endpoints.
@@ -148,6 +163,13 @@ pub struct OKXExecClientConfig {
     pub base_url_ws_private: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
+    /// Optional HTTP proxy URL.
+    pub http_proxy_url: Option<String>,
+    /// Optional WebSocket proxy URL.
+    ///
+    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
+    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
+    pub ws_proxy_url: Option<String>,
     /// When true the client will use OKX demo endpoints.
     pub is_demo: bool,
     /// Optional HTTP timeout in seconds.
@@ -171,6 +193,8 @@ pub struct OKXExecClientConfig {
 impl Default for OKXExecClientConfig {
     fn default() -> Self {
         Self {
+            trader_id: TraderId::from("TRADER-001"),
+            account_id: AccountId::from("OKX-001"),
             api_key: None,
             api_secret: None,
             api_passphrase: None,
@@ -180,6 +204,8 @@ impl Default for OKXExecClientConfig {
             base_url_http: None,
             base_url_ws_private: None,
             base_url_ws_business: None,
+            http_proxy_url: None,
+            ws_proxy_url: None,
             is_demo: false,
             http_timeout_secs: Some(60),
             use_fills_channel: false,

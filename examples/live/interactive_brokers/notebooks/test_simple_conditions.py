@@ -21,7 +21,6 @@
 import datetime
 import os
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
@@ -35,8 +34,6 @@ from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBr
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.uuid import UUID4
-
-# fmt: on
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import RoutingConfig
 from nautilus_trader.live.node import TradingNode
@@ -362,7 +359,7 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         log_level_file="INFO",
         log_file_name=datetime.datetime.strftime(
-            datetime.datetime.now(datetime.UTC),
+            datetime.datetime.now(tz=datetime.UTC),
             "%Y-%m-%d_%H-%M",
         )
         + "_simple_conditions_test.log",

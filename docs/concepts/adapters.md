@@ -26,7 +26,6 @@ The use cases for the instruments available from an `InstrumentProvider` are eit
 Here is an example of discovering the current instruments for the Binance Futures testnet:
 
 ```python
-import asyncio
 import os
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -39,14 +38,12 @@ clock = LiveClock()
 account_type = BinanceAccountType.USDT_FUTURES
 
 client = get_cached_binance_http_client(
-    loop=asyncio.get_event_loop(),
     clock=clock,
     account_type=account_type,
-    key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
-    secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
+    api_key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
+    api_secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
     is_testnet=True,
 )
-await client.connect()
 
 provider = BinanceFuturesInstrumentProvider(
     client=client,
@@ -93,7 +90,7 @@ In this particular case, the `Actor` implements a separate method `request_instr
 A simplified version of `request_instrument` for an actor/strategy is:
 
 ```python
-# nautilus_trader/common/actor.pyx
+# actor.pyx::request_instrument
 
 cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None):
     """
@@ -128,12 +125,12 @@ A simplified version of the request handler implemented in a `LiveMarketDataClie
 and send it back to actors/strategies is for example:
 
 ```python
-# nautilus_trader/live/data_client.py
+# data_client.py::request_instrument
 
 def request_instrument(self, request: RequestInstrument) -> None:
     self.create_task(self._request_instrument(request))
 
-# nautilus_trader/adapters/binance/data.py
+# binance/data.py::_request_instrument
 
 async def _request_instrument(self, request: RequestInstrument) -> None:
     instrument: Instrument | None = self._instrument_provider.find(request.instrument_id)
@@ -149,7 +146,7 @@ The `DataEngine` which is an important component in Nautilus links a request wit
 For example a simplified version of handling an instrument request is:
 
 ```python
-# nautilus_trader/data/engine.pyx
+# engine.pyx::_handle_request
 
 self._msgbus.register(endpoint="DataEngine.request", handler=self.request)
 

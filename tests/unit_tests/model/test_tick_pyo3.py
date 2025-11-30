@@ -15,8 +15,6 @@
 
 import pickle
 
-import pytest
-
 from nautilus_trader.core.nautilus_pyo3 import AggressorSide
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import Price
@@ -153,32 +151,6 @@ class TestQuoteTick:
         # Assert
         assert result == tick
 
-    @pytest.mark.skip(reason="Potentially don't expose through Python API")
-    def test_from_raw_returns_expected_tick(self):
-        # Arrange, Act
-        tick = QuoteTick.from_raw(
-            AUDUSD_SIM_ID,
-            1000000000,
-            1000010000,
-            5,
-            5,
-            1000000000,
-            2000000000,
-            0,
-            0,
-            1,
-            2,
-        )
-
-        # Assert
-        assert tick.instrument_id == AUDUSD_SIM_ID
-        assert tick.bid_price == Price.from_str("1.00000")
-        assert tick.ask_price == Price.from_str("1.00001")
-        assert tick.bid_size == Quantity.from_int(1)
-        assert tick.ask_size == Quantity.from_int(2)
-        assert tick.ts_event == 1
-        assert tick.ts_init == 2
-
     def test_pickling_round_trip_results_in_expected_tick(self):
         # Arrange
         tick = QuoteTick(
@@ -287,29 +259,3 @@ class TestTradeTick:
         # Assert
         assert unpickled == tick
         assert repr(unpickled) == "TradeTick(AUD/USD.SIM,1.00000,50000,BUYER,123456789,1)"
-
-    @pytest.mark.skip(reason="Potentially don't expose through Python API")
-    def test_from_raw_returns_expected_tick(self):
-        # Arrange, Act
-        trade_id = TradeId("123458")
-
-        tick = TradeTick.from_raw(
-            AUDUSD_SIM_ID,
-            1000010000,
-            5,
-            10000000000000,
-            0,
-            AggressorSide.BUYER,
-            trade_id,
-            1,
-            2,
-        )
-
-        # Assert
-        assert tick.instrument_id == AUDUSD_SIM_ID
-        assert tick.trade_id == trade_id
-        assert tick.price == Price.from_str("1.00001")
-        assert tick.size == Quantity.from_int(10_000)
-        assert tick.aggressor_side == AggressorSide.BUYER
-        assert tick.ts_event == 1
-        assert tick.ts_init == 2

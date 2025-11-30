@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{self, Display};
+use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
@@ -28,7 +28,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
 pub struct AvgLoser {}
 
 impl Display for AvgLoser {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Avg Loser")
     }
 }
@@ -42,17 +42,17 @@ impl PortfolioStatistic for AvgLoser {
 
     fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         if realized_pnls.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
         let losers: Vec<f64> = realized_pnls
             .iter()
-            .filter(|&&pnl| pnl <= 0.0)
+            .filter(|&&pnl| pnl < 0.0)
             .copied()
             .collect();
 
         if losers.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
         let sum: f64 = losers.iter().sum();
@@ -84,7 +84,7 @@ mod tests {
         let avg_loser = AvgLoser {};
         let result = avg_loser.calculate_from_realized_pnls(&[]);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -93,7 +93,7 @@ mod tests {
         let pnls = vec![10.0, 20.0, 30.0];
         let result = avg_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -115,18 +115,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_zero_included() {
+    fn test_zero_excluded() {
         let avg_loser = AvgLoser {};
         let pnls = vec![10.0, 0.0, -20.0, -30.0];
         let result = avg_loser.calculate_from_realized_pnls(&pnls);
         assert!(result.is_some());
-        // Average of [0.0, -20.0, -30.0]
-        assert!(approx_eq!(
-            f64,
-            result.unwrap(),
-            -16.666666666666668,
-            epsilon = 1e-9
-        ));
+        // Zero excluded, average of [-20.0, -30.0]
+        assert!(approx_eq!(f64, result.unwrap(), -25.0, epsilon = 1e-9));
     }
 
     #[rstest]

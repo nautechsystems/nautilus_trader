@@ -172,6 +172,7 @@ impl OrderManager {
             order.clone(),
             order.exec_algorithm_id(),
             position_id,
+            None, // params
             UUID4::new(),
             self.clock.borrow().timestamp_ns(),
         )?;
