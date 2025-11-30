@@ -36,11 +36,11 @@ CC ?= sccache clang
 CXX ?= sccache clang++
 RUSTC_WRAPPER ?= sccache
 CARGO_INCREMENTAL ?= 0
+export RUSTC_WRAPPER
+export CARGO_INCREMENTAL
 endif
 export CC
 export CXX
-export RUSTC_WRAPPER
-export CARGO_INCREMENTAL
 
 # FAIL_FAST controls whether `cargo nextest` should stop after the first test
 # failure. When set to `true` the `--no-fail-fast` flag is omitted so tests
