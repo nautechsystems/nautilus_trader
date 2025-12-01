@@ -18,11 +18,9 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    str::FromStr,
     sync::Arc,
 };
 
-use alloy_primitives::Address;
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{basic::CompareOp, prelude::*};
 
@@ -147,7 +145,7 @@ impl PoolSwap {
         chain: Chain,
         dex: Dex,
         instrument_id: InstrumentId,
-        pool_address: String,
+        pool_identifier: String,
         block: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -170,7 +168,7 @@ impl PoolSwap {
             Arc::new(chain),
             Arc::new(dex),
             instrument_id,
-            Address::from_str(&pool_address).map_err(to_pyvalue_err)?,
+            pool_identifier,
             block,
             transaction_hash,
             transaction_index,
@@ -229,9 +227,9 @@ impl PoolSwap {
     }
 
     #[getter]
-    #[pyo3(name = "pool_address")]
-    fn py_pool_address(&self) -> String {
-        self.pool_address.to_string()
+    #[pyo3(name = "pool_identifier")]
+    fn py_pool_identifier(&self) -> String {
+        self.pool_identifier.clone()
     }
 
     #[getter]
@@ -284,7 +282,7 @@ impl PoolLiquidityUpdate {
     fn py_new(
         chain: Chain,
         dex: Dex,
-        pool_address: String,
+        pool_identifier: String,
         instrument_id: InstrumentId,
         kind: PoolLiquidityUpdateType,
         block: u64,
@@ -312,7 +310,7 @@ impl PoolLiquidityUpdate {
             Arc::new(chain),
             Arc::new(dex),
             instrument_id,
-            Address::from_str(&pool_address).map_err(to_pyvalue_err)?,
+            pool_identifier,
             kind,
             block,
             transaction_hash,
@@ -372,9 +370,9 @@ impl PoolLiquidityUpdate {
     }
 
     #[getter]
-    #[pyo3(name = "pool_address")]
-    fn py_pool_address(&self) -> String {
-        self.pool_address.to_string()
+    #[pyo3(name = "pool_identifier")]
+    fn py_pool_identifier(&self) -> String {
+        self.pool_identifier.clone()
     }
 
     #[getter]
@@ -469,7 +467,7 @@ impl PoolFeeCollect {
     fn py_new(
         chain: Chain,
         dex: Dex,
-        pool_address: String,
+        pool_identifier: String,
         instrument_id: InstrumentId,
         block: u64,
         transaction_hash: String,
@@ -489,7 +487,7 @@ impl PoolFeeCollect {
             Arc::new(chain),
             Arc::new(dex),
             instrument_id,
-            Address::from_str(&pool_address).map_err(to_pyvalue_err)?,
+            pool_identifier,
             block,
             transaction_hash,
             transaction_index,
@@ -546,9 +544,9 @@ impl PoolFeeCollect {
     }
 
     #[getter]
-    #[pyo3(name = "pool_address")]
-    fn py_pool_address(&self) -> String {
-        self.pool_address.to_string()
+    #[pyo3(name = "pool_identifier")]
+    fn py_pool_identifier(&self) -> String {
+        self.pool_identifier.clone()
     }
 
     #[getter]
@@ -625,7 +623,7 @@ impl PoolFlash {
     fn py_new(
         chain: Chain,
         dex: Dex,
-        pool_address: String,
+        pool_identifier: String,
         instrument_id: InstrumentId,
         block: u64,
         transaction_hash: String,
@@ -649,7 +647,7 @@ impl PoolFlash {
             Arc::new(chain),
             Arc::new(dex),
             instrument_id,
-            Address::from_str(&pool_address).map_err(to_pyvalue_err)?,
+            pool_identifier,
             block,
             transaction_hash,
             transaction_index,
@@ -707,9 +705,9 @@ impl PoolFlash {
     }
 
     #[getter]
-    #[pyo3(name = "pool_address")]
-    fn py_pool_address(&self) -> String {
-        self.pool_address.to_string()
+    #[pyo3(name = "pool_identifier")]
+    fn py_pool_identifier(&self) -> String {
+        self.pool_identifier.clone()
     }
 
     #[getter]

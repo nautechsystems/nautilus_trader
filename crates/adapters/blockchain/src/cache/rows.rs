@@ -141,14 +141,11 @@ pub fn transform_row_to_dex_pool_data(
     instrument_id: InstrumentId,
 ) -> Result<DexPoolData, sqlx::Error> {
     let event_type = row.try_get::<String, _>("event_type")?;
-    let pool_address_str = row.try_get::<String, _>("pool_address")?;
+    let pool_identifier = row.try_get::<String, _>("pool_identifier")?;
     let block = row.try_get::<i64, _>("block")? as u64;
     let transaction_hash = row.try_get::<String, _>("transaction_hash")?;
     let transaction_index = row.try_get::<i32, _>("transaction_index")? as u32;
     let log_index = row.try_get::<i32, _>("log_index")? as u32;
-
-    let pool_address = validate_address(&pool_address_str)
-        .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
 
     match event_type.as_str() {
         "swap" => {
@@ -203,7 +200,7 @@ pub fn transform_row_to_dex_pool_data(
                 chain,
                 dex,
                 instrument_id,
-                pool_address,
+                pool_identifier,
                 block,
                 transaction_hash,
                 transaction_index,
@@ -283,7 +280,7 @@ pub fn transform_row_to_dex_pool_data(
                 chain,
                 dex,
                 instrument_id,
-                pool_address,
+                pool_identifier,
                 kind,
                 block,
                 transaction_hash,
@@ -335,7 +332,7 @@ pub fn transform_row_to_dex_pool_data(
                 chain,
                 dex,
                 instrument_id,
-                pool_address,
+                pool_identifier,
                 block,
                 transaction_hash,
                 transaction_index,
@@ -392,7 +389,7 @@ pub fn transform_row_to_dex_pool_data(
                 chain,
                 dex,
                 instrument_id,
-                pool_address,
+                pool_identifier,
                 block,
                 transaction_hash,
                 transaction_index,

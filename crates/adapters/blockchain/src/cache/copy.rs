@@ -318,7 +318,7 @@ impl<'a> PostgresCopyHandler<'a> {
                     update.transaction_hash,
                     update.log_index,
                     update.block,
-                    update.pool_address,
+                    update.pool_identifier,
                     update.kind
                 );
             }
@@ -729,7 +729,7 @@ impl<'a> PostgresCopyHandler<'a> {
                     collect.transaction_hash,
                     collect.log_index,
                     collect.block,
-                    collect.pool_address,
+                    collect.pool_identifier,
                     collect.owner
                 );
             }

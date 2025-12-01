@@ -90,14 +90,14 @@ impl CollectEvent {
         chain: SharedChain,
         dex: SharedDex,
         instrument_id: InstrumentId,
-        pool_address: Address,
+        pool_identifier: String,
         timestamp: Option<UnixNanos>,
     ) -> PoolFeeCollect {
         PoolFeeCollect::new(
             chain,
             dex,
             instrument_id,
-            pool_address,
+            pool_identifier,
             self.block_number,
             self.transaction_hash.clone(),
             self.transaction_index,

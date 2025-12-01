@@ -2630,7 +2630,7 @@ mod tests {
             chain,
             dex,
             pool.instrument_id,
-            pool.address,
+            pool.pool_identifier.clone(),
             12345,
             "0xabc123".to_string(),
             0,

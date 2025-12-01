@@ -262,17 +262,17 @@ impl SwapQuote {
         &self,
         chain: SharedChain,
         dex: SharedDex,
-        pool_address: &Address,
+        pool_identifier: String,
         block: BlockPosition,
         sender: Address,
         recipient: Address,
     ) -> PoolSwap {
-        let instrument_id = Pool::create_instrument_id(chain.name, &dex, &pool_address.to_string());
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, &pool_identifier);
         PoolSwap::new(
             chain,
             dex,
             instrument_id,
-            *pool_address,
+            pool_identifier,
             block.number,
             block.transaction_hash,
             block.transaction_index,

@@ -718,7 +718,7 @@ impl BlockchainDataClientCore {
         let mut swap = swap_event.to_pool_swap(
             self.chain.clone(),
             pool.instrument_id,
-            pool.address,
+            pool.pool_identifier.clone(),
             timestamp,
         );
         swap.calculate_trade_info(&pool.token0, &pool.token1, None)?;
@@ -746,7 +746,7 @@ impl BlockchainDataClientCore {
             self.chain.clone(),
             dex_extended.dex.clone(),
             pool.instrument_id,
-            pool.address,
+            pool.pool_identifier.clone(),
             timestamp,
         );
 
@@ -776,7 +776,7 @@ impl BlockchainDataClientCore {
             self.chain.clone(),
             dex_extended.dex.clone(),
             pool.instrument_id,
-            pool.address,
+            pool.pool_identifier.clone(),
             timestamp,
         );
 
@@ -805,7 +805,7 @@ impl BlockchainDataClientCore {
             self.chain.clone(),
             dex_extended.dex.clone(),
             pool.instrument_id,
-            pool.address,
+            pool.pool_identifier.clone(),
             timestamp,
         );
 
@@ -830,7 +830,7 @@ impl BlockchainDataClientCore {
         let flash = flash_event.to_pool_flash(
             self.chain.clone(),
             pool.instrument_id,
-            pool.address,
+            pool.pool_identifier.clone(),
             timestamp,
         );
 

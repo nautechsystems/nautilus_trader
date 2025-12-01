@@ -91,14 +91,14 @@ impl BurnEvent {
         chain: SharedChain,
         dex: SharedDex,
         instrument_id: InstrumentId,
-        pool_address: Address,
+        pool_identifier: String,
         timestamp: Option<UnixNanos>,
     ) -> PoolLiquidityUpdate {
         PoolLiquidityUpdate::new(
             chain,
             dex,
             instrument_id,
-            pool_address,
+            pool_identifier,
             PoolLiquidityUpdateType::Burn,
             self.block_number,
             self.transaction_hash.clone(),

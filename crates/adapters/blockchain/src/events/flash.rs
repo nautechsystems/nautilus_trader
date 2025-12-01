@@ -92,14 +92,14 @@ impl FlashEvent {
         &self,
         chain: SharedChain,
         instrument_id: InstrumentId,
-        pool_address: Address,
+        pool_identifier: String,
         timestamp: Option<UnixNanos>,
     ) -> PoolFlash {
         PoolFlash::new(
             chain,
             self.dex.clone(),
             instrument_id,
-            pool_address,
+            pool_identifier,
             self.block_number,
             self.transaction_hash.clone(),
             self.transaction_index,
