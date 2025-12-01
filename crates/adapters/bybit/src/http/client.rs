@@ -2767,78 +2767,20 @@ impl BybitHttpClient {
             BybitTickersLinearResponse, BybitTickersOptionResponse, BybitTickersSpotResponse,
         };
 
-        let mut tickers = Vec::new();
-
         match params.category {
             BybitProductType::Spot => {
                 let response: BybitTickersSpotResponse = self.inner.get_tickers(params).await?;
-                for ticker in response.result.list {
-                    tickers.push(BybitTickerData {
-                        symbol: ticker.symbol,
-                        bid1_price: ticker.bid1_price,
-                        bid1_size: ticker.bid1_size,
-                        ask1_price: ticker.ask1_price,
-                        ask1_size: ticker.ask1_size,
-                        last_price: ticker.last_price,
-                        high_price24h: ticker.high_price24h,
-                        low_price24h: ticker.low_price24h,
-                        turnover24h: ticker.turnover24h,
-                        volume24h: ticker.volume24h,
-                        open_interest: None,
-                        funding_rate: None,
-                        next_funding_time: None,
-                        mark_price: None,
-                        index_price: None,
-                    });
-                }
+                Ok(response.result.list.into_iter().map(Into::into).collect())
             }
             BybitProductType::Linear | BybitProductType::Inverse => {
                 let response: BybitTickersLinearResponse = self.inner.get_tickers(params).await?;
-                for ticker in response.result.list {
-                    tickers.push(BybitTickerData {
-                        symbol: ticker.symbol,
-                        bid1_price: ticker.bid1_price,
-                        bid1_size: ticker.bid1_size,
-                        ask1_price: ticker.ask1_price,
-                        ask1_size: ticker.ask1_size,
-                        last_price: ticker.last_price,
-                        high_price24h: ticker.high_price24h,
-                        low_price24h: ticker.low_price24h,
-                        turnover24h: ticker.turnover24h,
-                        volume24h: ticker.volume24h,
-                        open_interest: Some(ticker.open_interest),
-                        funding_rate: Some(ticker.funding_rate),
-                        next_funding_time: Some(ticker.next_funding_time),
-                        mark_price: Some(ticker.mark_price),
-                        index_price: Some(ticker.index_price),
-                    });
-                }
+                Ok(response.result.list.into_iter().map(Into::into).collect())
             }
             BybitProductType::Option => {
                 let response: BybitTickersOptionResponse = self.inner.get_tickers(params).await?;
-                for ticker in response.result.list {
-                    tickers.push(BybitTickerData {
-                        symbol: ticker.symbol,
-                        bid1_price: ticker.bid1_price,
-                        bid1_size: ticker.bid1_size,
-                        ask1_price: ticker.ask1_price,
-                        ask1_size: ticker.ask1_size,
-                        last_price: ticker.last_price,
-                        high_price24h: ticker.high_price24h,
-                        low_price24h: ticker.low_price24h,
-                        turnover24h: ticker.turnover24h,
-                        volume24h: ticker.volume24h,
-                        open_interest: Some(ticker.open_interest),
-                        funding_rate: None,
-                        next_funding_time: None,
-                        mark_price: Some(ticker.mark_price),
-                        index_price: Some(ticker.index_price),
-                    });
-                }
+                Ok(response.result.list.into_iter().map(Into::into).collect())
             }
         }
-
-        Ok(tickers)
     }
 
     /// Request recent trade tick history for a given symbol.

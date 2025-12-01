@@ -183,10 +183,15 @@ pub struct BybitTickerData {
     pub low_price24h: String,
     pub turnover24h: String,
     pub volume24h: String,
+    #[serde(default)]
     pub open_interest: Option<String>,
+    #[serde(default)]
     pub funding_rate: Option<String>,
+    #[serde(default)]
     pub next_funding_time: Option<String>,
+    #[serde(default)]
     pub mark_price: Option<String>,
+    #[serde(default)]
     pub index_price: Option<String>,
 }
 
@@ -281,6 +286,72 @@ impl BybitTickerData {
     #[must_use]
     pub fn index_price(&self) -> Option<&str> {
         self.index_price.as_deref()
+    }
+}
+
+impl From<BybitTickerSpot> for BybitTickerData {
+    fn from(ticker: BybitTickerSpot) -> Self {
+        Self {
+            symbol: ticker.symbol,
+            bid1_price: ticker.bid1_price,
+            bid1_size: ticker.bid1_size,
+            ask1_price: ticker.ask1_price,
+            ask1_size: ticker.ask1_size,
+            last_price: ticker.last_price,
+            high_price24h: ticker.high_price24h,
+            low_price24h: ticker.low_price24h,
+            turnover24h: ticker.turnover24h,
+            volume24h: ticker.volume24h,
+            open_interest: None,
+            funding_rate: None,
+            next_funding_time: None,
+            mark_price: None,
+            index_price: None,
+        }
+    }
+}
+
+impl From<BybitTickerLinear> for BybitTickerData {
+    fn from(ticker: BybitTickerLinear) -> Self {
+        Self {
+            symbol: ticker.symbol,
+            bid1_price: ticker.bid1_price,
+            bid1_size: ticker.bid1_size,
+            ask1_price: ticker.ask1_price,
+            ask1_size: ticker.ask1_size,
+            last_price: ticker.last_price,
+            high_price24h: ticker.high_price24h,
+            low_price24h: ticker.low_price24h,
+            turnover24h: ticker.turnover24h,
+            volume24h: ticker.volume24h,
+            open_interest: Some(ticker.open_interest),
+            funding_rate: Some(ticker.funding_rate),
+            next_funding_time: Some(ticker.next_funding_time),
+            mark_price: Some(ticker.mark_price),
+            index_price: Some(ticker.index_price),
+        }
+    }
+}
+
+impl From<BybitTickerOption> for BybitTickerData {
+    fn from(ticker: BybitTickerOption) -> Self {
+        Self {
+            symbol: ticker.symbol,
+            bid1_price: ticker.bid1_price,
+            bid1_size: ticker.bid1_size,
+            ask1_price: ticker.ask1_price,
+            ask1_size: ticker.ask1_size,
+            last_price: ticker.last_price,
+            high_price24h: ticker.high_price24h,
+            low_price24h: ticker.low_price24h,
+            turnover24h: ticker.turnover24h,
+            volume24h: ticker.volume24h,
+            open_interest: Some(ticker.open_interest),
+            funding_rate: None,
+            next_funding_time: None,
+            mark_price: Some(ticker.mark_price),
+            index_price: Some(ticker.index_price),
+        }
     }
 }
 
