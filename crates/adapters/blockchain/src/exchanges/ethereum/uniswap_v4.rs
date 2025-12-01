@@ -23,18 +23,33 @@ use nautilus_model::defi::{
 use crate::exchanges::extended::DexExtended;
 
 /// Uniswap V4 DEX on Ethereum.
+///
+/// V4 uses a singleton PoolManager architecture instead of per-pool factory contracts.
+/// The PoolManager address is used as the "factory" for event filtering purposes.
+/// Pools are identified by PoolKey hash (pool_id) and created via Initialize events.
 pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
-    let dex = Dex::new(
+    // V4 uses PoolManager singleton instead of factory - use PoolManager address for event filtering
+    // PoolManager deployed at block 21688329 on Ethereum mainnet
+    let mut dex = Dex::new(
         chains::ETHEREUM.clone(),
         DexType::UniswapV4,
-        "", // Factory address not provided,
-        0,
+        "0x000000000004444c5dc75cB358380D2e3dE08A90", // PoolManager address (acts as factory)
+        21688329,                                     // PoolManager deployment block
         AmmType::CLAMEnhanced,
-        "",
-        "",
-        "",
-        "",
-        "",
+        // V4 uses Initialize instead of PoolCreated - pools are created via initialize()
+        "Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)",
+        // V4 Swap event includes fee parameter
+        "Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)",
+        // V4 uses ModifyLiquidity instead of separate Mint/Burn - positive delta = add, negative = remove
+        "ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)",
+        // V4 ModifyLiquidity handles both add and remove liquidity
+        "ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)",
+        // V4 has Donate event instead of Collect for fee donations
+        "Donate(bytes32,address,uint256,uint256)",
+    );
+    // V4 Initialize event serves as pool creation
+    dex.set_initialize_event(
+        "Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)",
     );
     DexExtended::new(dex)
 });

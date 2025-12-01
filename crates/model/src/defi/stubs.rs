@@ -98,3 +98,44 @@ pub fn rain_pool(
 
     Arc::new(pool)
 }
+
+#[fixture]
+pub fn uniswap_v4() -> SharedDex {
+    let arbitrum = arbitrum();
+    let dex = Dex::new(
+        (*arbitrum).clone(),
+        DexType::UniswapV4,
+        "0x360e68faccca8ca495c1b759fd9eee466db9fb32", // Arbitrum PoolManager
+        0,
+        AmmType::CLAMEnhanced, // V4 uses hooks
+        "Initialize",
+        "Swap",
+        "ModifyLiquidity",
+        "ModifyLiquidity",
+        "ModifyLiquidity",
+    );
+    Arc::new(dex)
+}
+
+#[fixture]
+pub fn ethereum() -> SharedChain {
+    Arc::new(Chain::from_chain_id(1).unwrap().clone())
+}
+
+#[fixture]
+pub fn uniswap_v4_ethereum() -> SharedDex {
+    let ethereum = ethereum();
+    let dex = Dex::new(
+        (*ethereum).clone(),
+        DexType::UniswapV4,
+        "0x000000000004444c5dc75cB358380D2e3dE08A90", // Ethereum PoolManager
+        0,
+        AmmType::CLAMEnhanced,
+        "Initialize",
+        "Swap",
+        "ModifyLiquidity",
+        "ModifyLiquidity",
+        "ModifyLiquidity",
+    );
+    Arc::new(dex)
+}

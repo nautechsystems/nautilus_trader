@@ -100,3 +100,8 @@ required-features = ["hypersync"]
 name = "node_wallet"
 path = "bin/node_wallet.rs"
 required-features = ["hypersync"]
+
+[[bin]]
+name = "uniswap_v4_swap"
+path = "bin/uniswap_v4_swap.rs"
+required-features = ["hypersync"]

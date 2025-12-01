@@ -139,6 +139,9 @@ pub struct BlockchainExecutionClientConfig {
     pub chain: Chain,
     /// The wallet address of the execution client.
     pub wallet_address: String,
+    /// Private key for signing transactions (hex string without 0x prefix).
+    /// Required for swap execution.
+    pub private_key: Option<String>,
     /// Token universe: set of ERC-20 token addresses to monitor for balance tracking.
     pub tokens: Option<Vec<String>>,
     /// The HTTP URL for the blockchain RPC endpoint.
@@ -148,11 +151,13 @@ pub struct BlockchainExecutionClientConfig {
 }
 
 impl BlockchainExecutionClientConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
         client_id: AccountId,
         chain: Chain,
         wallet_address: String,
+        private_key: Option<String>,
         tokens: Option<Vec<String>>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
@@ -162,6 +167,7 @@ impl BlockchainExecutionClientConfig {
             client_id,
             chain,
             wallet_address,
+            private_key,
             tokens,
             http_rpc_url,
             rpc_requests_per_second,

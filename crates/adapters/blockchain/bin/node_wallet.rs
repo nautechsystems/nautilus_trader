@@ -58,6 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         account,
         arbitrum,
         String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
+        None, // private_key
         Some(vec![
             "0x912CE59144191C1204E64559FE8253a0e49E6548".to_string(),
             "0x40BD670A58238e6E230c430BBb5cE6ec0d40df48".to_string(),
@@ -70,6 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         account,
         ethereum,
         String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"),
+        None, // private_key
         Some(vec![
             "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".to_string(),
             "0xd5F7838F5C461fefF7FE49ea5ebaF7728bB0ADfa".to_string(),
