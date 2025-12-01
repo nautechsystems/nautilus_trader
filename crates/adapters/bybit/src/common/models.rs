@@ -15,6 +15,7 @@
 
 //! Shared data transfer objects used across Bybit HTTP and WebSocket payloads.
 
+use crate::common::enums::BybitProductType;
 use serde::{Deserialize, Serialize};
 
 /// Generic wrapper that contains a list payload returned by Bybit.
@@ -33,6 +34,9 @@ pub struct BybitCursorList<T> {
     pub list: Vec<T>,
     /// Pagination cursor for the next page, when provided.
     pub next_page_cursor: Option<String>,
+    /// Optional product category when the API includes it.
+    #[serde(default)]
+    pub category: Option<BybitProductType>,
 }
 
 /// Common leverage filter that describes leverage bounds and step.

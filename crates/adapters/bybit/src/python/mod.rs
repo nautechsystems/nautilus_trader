@@ -91,12 +91,25 @@ fn py_bybit_product_type_from_symbol(
 pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(BYBIT_NAUTILUS_BROKER_ID), BYBIT_NAUTILUS_BROKER_ID)?;
     m.add_class::<crate::common::enums::BybitAccountType>()?;
+    m.add_class::<crate::common::enums::BybitCancelType>()?;
+    m.add_class::<crate::common::enums::BybitEnvironment>()?;
     m.add_class::<crate::common::enums::BybitMarginAction>()?;
     m.add_class::<crate::common::enums::BybitMarginMode>()?;
+    m.add_class::<crate::common::enums::BybitOrderSide>()?;
+    m.add_class::<crate::common::enums::BybitOrderStatus>()?;
+    m.add_class::<crate::common::enums::BybitOrderType>()?;
     m.add_class::<crate::common::enums::BybitPositionMode>()?;
     m.add_class::<crate::common::enums::BybitProductType>()?;
-    m.add_class::<crate::common::enums::BybitEnvironment>()?;
+    m.add_class::<crate::common::enums::BybitStopOrderType>()?;
+    m.add_class::<crate::common::enums::BybitTimeInForce>()?;
+    m.add_class::<crate::common::enums::BybitTpSlMode>()?;
+    m.add_class::<crate::common::enums::BybitTriggerDirection>()?;
+    m.add_class::<crate::common::enums::BybitTriggerType>()?;
     m.add_class::<crate::http::client::BybitHttpClient>()?;
+    m.add_class::<crate::http::client::BybitRawHttpClient>()?;
+    m.add_class::<crate::http::models::BybitServerTime>()?;
+    m.add_class::<crate::http::models::BybitOrder>()?;
+    m.add_class::<crate::http::models::BybitOrderCursorList>()?;
     m.add_class::<crate::http::models::BybitTickerData>()?;
     m.add_class::<crate::common::types::BybitMarginBorrowResult>()?;
     m.add_class::<crate::common::types::BybitMarginRepayResult>()?;

@@ -375,6 +375,10 @@ impl Display for BybitKlineInterval {
 
 /// Order status values returned by Bybit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitOrderStatus {
     #[serde(rename = "Created")]
     Created,
@@ -400,6 +404,10 @@ pub enum BybitOrderStatus {
 
 /// Order side enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitOrderSide {
     #[serde(rename = "")]
     Unknown,
@@ -443,6 +451,10 @@ impl From<BybitTriggerType> for TriggerType {
 /// Order cancel reason values as returned by Bybit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitCancelType {
     CancelByUser,
     CancelByReduceOnly,
@@ -490,6 +502,10 @@ pub enum BybitCreateType {
 
 /// Venue order type enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitOrderType {
     #[serde(rename = "Market")]
     Market,
@@ -501,6 +517,10 @@ pub enum BybitOrderType {
 
 /// Stop order type classification.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitStopOrderType {
     #[serde(rename = "")]
     None,
@@ -530,6 +550,10 @@ pub enum BybitStopOrderType {
 
 /// Trigger type configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitTriggerType {
     #[serde(rename = "")]
     None,
@@ -544,6 +568,10 @@ pub enum BybitTriggerType {
 /// Trigger direction integers used by the API.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
 #[repr(i32)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitTriggerDirection {
     None = 0,
     RisesTo = 1,
@@ -553,6 +581,10 @@ pub enum BybitTriggerDirection {
 /// Take-profit/stop-loss mode for derivatives orders.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitTpSlMode {
     Full,
     Partial,
@@ -562,6 +594,10 @@ pub enum BybitTpSlMode {
 
 /// Time-in-force enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitTimeInForce {
     #[serde(rename = "GTC")]
     Gtc,

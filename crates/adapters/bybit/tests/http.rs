@@ -914,7 +914,18 @@ async fn test_authenticated_endpoint_requires_credentials() {
 
     // Should fail when trying to call authenticated endpoint without credentials
     let result = client
-        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(
+            BybitProductType::Linear,
+            Some("BTCUSDT".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await;
     assert!(result.is_err());
 }
@@ -942,7 +953,18 @@ async fn test_rate_limiting_returns_error() {
     let mut last_error = None;
     for _ in 0..10 {
         match client
-            .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+            .get_open_orders(
+                BybitProductType::Linear,
+                Some("BTCUSDT".to_owned()),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .await
         {
             Ok(_) => continue,
@@ -979,7 +1001,18 @@ async fn test_get_open_orders_with_symbol() {
     .unwrap();
 
     let response = client
-        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(
+            BybitProductType::Linear,
+            Some("BTCUSDT".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -1007,7 +1040,18 @@ async fn test_get_open_orders_without_symbol() {
     .unwrap();
 
     let response = client
-        .get_open_orders(BybitProductType::Linear, None)
+        .get_open_orders(
+            BybitProductType::Linear,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 

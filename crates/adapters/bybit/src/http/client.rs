@@ -123,6 +123,11 @@ const BYBIT_REPAY_ROUTE_KEY: &str = "bybit:/v5/account/no-convert-repay";
 ///
 /// This client handles request/response operations with the Bybit API,
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
+#[derive(Clone)]
 pub struct BybitRawHttpClient {
     base_url: String,
     client: HttpClient,
@@ -656,23 +661,62 @@ impl BybitRawHttpClient {
     ///
     /// Returns an error if the request fails or the response cannot be parsed.
     ///
+    /// # Panics
+    ///
+    /// Panics if the parameter builder fails (should never happen with valid inputs).
+    ///
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_open_orders(
         &self,
         category: BybitProductType,
-        symbol: Option<&str>,
+        symbol: Option<String>,
+        base_coin: Option<String>,
+        settle_coin: Option<String>,
+        order_id: Option<String>,
+        order_link_id: Option<String>,
+        open_only: Option<i32>,
+        order_filter: Option<String>,
+        limit: Option<u32>,
+        cursor: Option<String>,
     ) -> Result<BybitOpenOrdersResponse, BybitHttpError> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Params<'a> {
-            category: BybitProductType,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            symbol: Option<&'a str>,
+        let mut builder = BybitOpenOrdersParamsBuilder::default();
+        builder.category(category);
+
+        if let Some(s) = symbol {
+            builder.symbol(s);
+        }
+        if let Some(bc) = base_coin {
+            builder.base_coin(bc);
+        }
+        if let Some(sc) = settle_coin {
+            builder.settle_coin(sc);
+        }
+        if let Some(oi) = order_id {
+            builder.order_id(oi);
+        }
+        if let Some(ol) = order_link_id {
+            builder.order_link_id(ol);
+        }
+        if let Some(oo) = open_only {
+            builder.open_only(oo);
+        }
+        if let Some(of) = order_filter {
+            builder.order_filter(of);
+        }
+        if let Some(l) = limit {
+            builder.limit(l);
+        }
+        if let Some(c) = cursor {
+            builder.cursor(c);
         }
 
-        let params = Params { category, symbol };
+        let params = builder
+            .build()
+            .expect("Failed to build BybitOpenOrdersParams");
+
         self.send_request(Method::GET, "/v5/order/realtime", Some(&params), None, true)
             .await
     }
@@ -1458,12 +1502,34 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_open_orders(
         &self,
         category: BybitProductType,
-        symbol: Option<&str>,
+        symbol: Option<String>,
+        base_coin: Option<String>,
+        settle_coin: Option<String>,
+        order_id: Option<String>,
+        order_link_id: Option<String>,
+        open_only: Option<i32>,
+        order_filter: Option<String>,
+        limit: Option<u32>,
+        cursor: Option<String>,
     ) -> Result<BybitOpenOrdersResponse, BybitHttpError> {
-        self.inner.get_open_orders(category, symbol).await
+        self.inner
+            .get_open_orders(
+                category,
+                symbol,
+                base_coin,
+                settle_coin,
+                order_id,
+                order_link_id,
+                open_only,
+                order_filter,
+                limit,
+                cursor,
+            )
+            .await
     }
 
     /// Places a new order (requires authentication).

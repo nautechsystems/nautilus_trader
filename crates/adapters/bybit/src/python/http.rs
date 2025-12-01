@@ -15,6 +15,13 @@
 
 //! Python bindings for the Bybit HTTP client.
 
+use crate::{
+    common::enums::{BybitMarginMode, BybitPositionMode, BybitProductType},
+    http::{
+        client::BybitHttpClient, client::BybitRawHttpClient, error::BybitHttpError,
+        models::BybitOrderCursorList,
+    },
+};
 use chrono::{DateTime, Utc};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
@@ -26,10 +33,124 @@ use nautilus_model::{
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
-use crate::{
-    common::enums::{BybitMarginMode, BybitPositionMode, BybitProductType},
-    http::{client::BybitHttpClient, error::BybitHttpError},
-};
+#[pymethods]
+impl BybitRawHttpClient {
+    #[new]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, proxy_url=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_new(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        base_url: Option<String>,
+        demo: bool,
+        testnet: bool,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> PyResult<Self> {
+        Self::new_with_env(
+            api_key,
+            api_secret,
+            base_url,
+            demo,
+            testnet,
+            timeout_secs.or(Some(60)),
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+            recv_window_ms,
+            proxy_url,
+        )
+        .map_err(to_pyvalue_err)
+    }
+
+    #[getter]
+    #[pyo3(name = "base_url")]
+    #[must_use]
+    pub fn py_base_url(&self) -> &str {
+        self.base_url()
+    }
+
+    #[getter]
+    #[pyo3(name = "api_key")]
+    #[must_use]
+    pub fn py_api_key(&self) -> Option<String> {
+        self.credential().map(|c| c.api_key().to_string())
+    }
+
+    #[getter]
+    #[pyo3(name = "recv_window_ms")]
+    #[must_use]
+    pub fn py_recv_window_ms(&self) -> u64 {
+        self.recv_window_ms()
+    }
+
+    #[pyo3(name = "cancel_all_requests")]
+    fn py_cancel_all_requests(&self) {
+        self.cancel_all_requests();
+    }
+
+    #[pyo3(name = "get_server_time")]
+    fn py_get_server_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client.get_server_time().await.map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let server_time = Py::new(py, response.result)?;
+                Ok(server_time.into_any())
+            })
+        })
+    }
+
+    #[pyo3(name = "get_open_orders")]
+    #[pyo3(signature = (category, symbol=None, base_coin=None, settle_coin=None, order_id=None, order_link_id=None, open_only=None, order_filter=None, limit=None, cursor=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_get_open_orders<'py>(
+        &self,
+        py: Python<'py>,
+        category: BybitProductType,
+        symbol: Option<String>,
+        base_coin: Option<String>,
+        settle_coin: Option<String>,
+        order_id: Option<String>,
+        order_link_id: Option<String>,
+        open_only: Option<i32>,
+        order_filter: Option<String>,
+        limit: Option<u32>,
+        cursor: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client
+                .get_open_orders(
+                    category,
+                    symbol,
+                    base_coin,
+                    settle_coin,
+                    order_id,
+                    order_link_id,
+                    open_only,
+                    order_filter,
+                    limit,
+                    cursor,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let open_orders = BybitOrderCursorList::from(response.result);
+                let py_open_orders = Py::new(py, open_orders)?;
+                Ok(py_open_orders.into_any())
+            })
+        })
+    }
+}
 
 #[pymethods]
 impl BybitHttpClient {

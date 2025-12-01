@@ -28,7 +28,7 @@ use crate::common::{
         BybitTriggerType,
     },
     models::{
-        BybitCursorListResponse, BybitListResponse, BybitResponse, LeverageFilter,
+        BybitCursorList, BybitCursorListResponse, BybitListResponse, BybitResponse, LeverageFilter,
         LinearLotSizeFilter, LinearPriceFilter, OptionLotSizeFilter, SpotLotSizeFilter,
         SpotPriceFilter,
     },
@@ -37,17 +37,85 @@ use crate::common::{
     },
 };
 
+/// Cursor-paginated list of orders for Python bindings.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
+pub struct BybitOrderCursorList {
+    /// Collection of orders returned by the endpoint.
+    pub list: Vec<BybitOrder>,
+    /// Pagination cursor for the next page.
+    pub next_page_cursor: Option<String>,
+    /// Optional product category when the API includes it.
+    #[serde(default)]
+    pub category: Option<BybitProductType>,
+}
+
+impl From<BybitCursorList<BybitOrder>> for BybitOrderCursorList {
+    fn from(cursor_list: BybitCursorList<BybitOrder>) -> Self {
+        Self {
+            list: cursor_list.list,
+            next_page_cursor: cursor_list.next_page_cursor,
+            category: cursor_list.category,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BybitOrderCursorList {
+    #[getter]
+    #[must_use]
+    pub fn list(&self) -> Vec<BybitOrder> {
+        self.list.clone()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn next_page_cursor(&self) -> Option<&str> {
+        self.next_page_cursor.as_deref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn category(&self) -> Option<BybitProductType> {
+        self.category
+    }
+}
+
 /// Response payload returned by `GET /v5/market/time`.
 ///
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/market/time>
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitServerTime {
     /// Server timestamp in seconds represented as string.
     pub time_second: String,
     /// Server timestamp in nanoseconds represented as string.
     pub time_nano: String,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BybitServerTime {
+    #[getter]
+    #[must_use]
+    pub fn time_second(&self) -> &str {
+        &self.time_second
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn time_nano(&self) -> &str {
+        &self.time_nano
+    }
 }
 
 /// Type alias for the server time response envelope.
@@ -572,6 +640,10 @@ pub type BybitWalletBalanceResponse = BybitListResponse<BybitWalletBalance>;
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/order/order-list>
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitOrder {
     pub order_id: Ustr,
@@ -615,6 +687,256 @@ pub struct BybitOrder {
     pub place_type: Ustr,
     pub created_time: String,
     pub updated_time: String,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl BybitOrder {
+    #[getter]
+    #[must_use]
+    pub fn order_id(&self) -> &str {
+        self.order_id.as_str()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn order_link_id(&self) -> &str {
+        self.order_link_id.as_str()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn block_trade_id(&self) -> Option<&str> {
+        self.block_trade_id.as_ref().map(|s| s.as_str())
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn symbol(&self) -> &str {
+        self.symbol.as_str()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn price(&self) -> &str {
+        &self.price
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn qty(&self) -> &str {
+        &self.qty
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn side(&self) -> BybitOrderSide {
+        self.side
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn is_leverage(&self) -> &str {
+        &self.is_leverage
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn position_idx(&self) -> i32 {
+        self.position_idx
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn order_status(&self) -> BybitOrderStatus {
+        self.order_status
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn cancel_type(&self) -> BybitCancelType {
+        self.cancel_type
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn reject_reason(&self) -> &str {
+        self.reject_reason.as_str()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn avg_price(&self) -> Option<&str> {
+        self.avg_price.as_deref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn leaves_qty(&self) -> &str {
+        &self.leaves_qty
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn leaves_value(&self) -> &str {
+        &self.leaves_value
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn cum_exec_qty(&self) -> &str {
+        &self.cum_exec_qty
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn cum_exec_value(&self) -> &str {
+        &self.cum_exec_value
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn cum_exec_fee(&self) -> &str {
+        &self.cum_exec_fee
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn time_in_force(&self) -> BybitTimeInForce {
+        self.time_in_force
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn order_type(&self) -> BybitOrderType {
+        self.order_type
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn stop_order_type(&self) -> BybitStopOrderType {
+        self.stop_order_type
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn order_iv(&self) -> Option<&str> {
+        self.order_iv.as_deref()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn trigger_price(&self) -> &str {
+        &self.trigger_price
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn take_profit(&self) -> &str {
+        &self.take_profit
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn stop_loss(&self) -> &str {
+        &self.stop_loss
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn tp_trigger_by(&self) -> BybitTriggerType {
+        self.tp_trigger_by
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn sl_trigger_by(&self) -> BybitTriggerType {
+        self.sl_trigger_by
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn trigger_direction(&self) -> BybitTriggerDirection {
+        self.trigger_direction
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn trigger_by(&self) -> BybitTriggerType {
+        self.trigger_by
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn last_price_on_created(&self) -> &str {
+        &self.last_price_on_created
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn reduce_only(&self) -> bool {
+        self.reduce_only
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn close_on_trigger(&self) -> bool {
+        self.close_on_trigger
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn smp_type(&self) -> &str {
+        self.smp_type.as_str()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn smp_group(&self) -> i32 {
+        self.smp_group
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn smp_order_id(&self) -> &str {
+        self.smp_order_id.as_str()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn tpsl_mode(&self) -> Option<BybitTpSlMode> {
+        self.tpsl_mode
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn tp_limit_price(&self) -> &str {
+        &self.tp_limit_price
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn sl_limit_price(&self) -> &str {
+        &self.sl_limit_price
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn place_type(&self) -> &str {
+        self.place_type.as_str()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn created_time(&self) -> &str {
+        &self.created_time
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn updated_time(&self) -> &str {
+        &self.updated_time
+    }
 }
 
 /// Response alias for open order queries.

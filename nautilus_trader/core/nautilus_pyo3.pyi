@@ -5760,6 +5760,87 @@ class BybitMarginAction(Enum):
     REPAY = "repay"
     GET_BORROW_AMOUNT = "get_borrow_amount"
 
+class BybitOrderSide(Enum):
+    Unknown = "Unknown"
+    Buy = "Buy"
+    Sell = "Sell"
+
+class BybitOrderStatus(Enum):
+    Created = "Created"
+    New = "New"
+    Rejected = "Rejected"
+    PartiallyFilled = "PartiallyFilled"
+    PartiallyFilledCanceled = "PartiallyFilledCanceled"
+    Filled = "Filled"
+    Canceled = "Canceled"
+    Untriggered = "Untriggered"
+    Triggered = "Triggered"
+    Deactivated = "Deactivated"
+
+class BybitOrderType(Enum):
+    Market = "Market"
+    Limit = "Limit"
+    Unknown = "Unknown"
+
+class BybitCancelType(Enum):
+    CancelByUser = "CancelByUser"
+    CancelByReduceOnly = "CancelByReduceOnly"
+    CancelByPrepareLackOfMargin = "CancelByPrepareLackOfMargin"
+    CancelByPrepareOrderFilter = "CancelByPrepareOrderFilter"
+    CancelByPrepareOrderMarginCheckFailed = "CancelByPrepareOrderMarginCheckFailed"
+    CancelByPrepareOrderCommission = "CancelByPrepareOrderCommission"
+    CancelByPrepareOrderRms = "CancelByPrepareOrderRms"
+    CancelByPrepareOrderOther = "CancelByPrepareOrderOther"
+    CancelByRiskLimit = "CancelByRiskLimit"
+    CancelOnDisconnect = "CancelOnDisconnect"
+    CancelByStopOrdersExceeded = "CancelByStopOrdersExceeded"
+    CancelByPzMarketClose = "CancelByPzMarketClose"
+    CancelByMarginCheckFailed = "CancelByMarginCheckFailed"
+    CancelByPzTakeover = "CancelByPzTakeover"
+    CancelByAdmin = "CancelByAdmin"
+    CancelByTpSlTsClear = "CancelByTpSlTsClear"
+    CancelByAmendNotModified = "CancelByAmendNotModified"
+    CancelByPzCancel = "CancelByPzCancel"
+    CancelByCrossSelfMatch = "CancelByCrossSelfMatch"
+    CancelBySelfMatchPrevention = "CancelBySelfMatchPrevention"
+    Other = "Other"
+
+class BybitStopOrderType(Enum):
+    NONE = "None"
+    Unknown = "Unknown"
+    TakeProfit = "TakeProfit"
+    StopLoss = "StopLoss"
+    TrailingStop = "TrailingStop"
+    Stop = "Stop"
+    PartialTakeProfit = "PartialTakeProfit"
+    PartialStopLoss = "PartialStopLoss"
+    TpslOrder = "TpslOrder"
+    OcoOrder = "OcoOrder"
+    MmRateClose = "MmRateClose"
+    BidirectionalTpslOrder = "BidirectionalTpslOrder"
+
+class BybitTriggerType(Enum):
+    NONE = "None"
+    LastPrice = "LastPrice"
+    IndexPrice = "IndexPrice"
+    MarkPrice = "MarkPrice"
+
+class BybitTriggerDirection(Enum):
+    NONE = 0
+    RisesTo = 1
+    FallsTo = 2
+
+class BybitTpSlMode(Enum):
+    Full = "Full"
+    Partial = "Partial"
+    Unknown = "Unknown"
+
+class BybitTimeInForce(Enum):
+    GTC = "GTC"
+    IOC = "IOC"
+    FOK = "FOK"
+    PostOnly = "PostOnly"
+
 class BybitMarginBorrowResult:
     def __init__(
         self,
@@ -5829,6 +5910,104 @@ class BybitMarginStatusResult:
 class BybitPositionMode(Enum):
     MergedSingle = 0
     BothSides = 3
+
+class BybitServerTime:
+    @property
+    def time_second(self) -> str: ...
+    @property
+    def time_nano(self) -> str: ...
+
+class BybitOrder:
+    @property
+    def order_id(self) -> str: ...
+    @property
+    def order_link_id(self) -> str: ...
+    @property
+    def block_trade_id(self) -> str | None: ...
+    @property
+    def symbol(self) -> str: ...
+    @property
+    def price(self) -> str: ...
+    @property
+    def qty(self) -> str: ...
+    @property
+    def side(self) -> BybitOrderSide: ...
+    @property
+    def is_leverage(self) -> str: ...
+    @property
+    def position_idx(self) -> int: ...
+    @property
+    def order_status(self) -> BybitOrderStatus: ...
+    @property
+    def cancel_type(self) -> BybitCancelType: ...
+    @property
+    def reject_reason(self) -> str: ...
+    @property
+    def avg_price(self) -> str | None: ...
+    @property
+    def leaves_qty(self) -> str: ...
+    @property
+    def leaves_value(self) -> str: ...
+    @property
+    def cum_exec_qty(self) -> str: ...
+    @property
+    def cum_exec_value(self) -> str: ...
+    @property
+    def cum_exec_fee(self) -> str: ...
+    @property
+    def time_in_force(self) -> BybitTimeInForce: ...
+    @property
+    def order_type(self) -> BybitOrderType: ...
+    @property
+    def stop_order_type(self) -> BybitStopOrderType: ...
+    @property
+    def order_iv(self) -> str | None: ...
+    @property
+    def trigger_price(self) -> str: ...
+    @property
+    def take_profit(self) -> str: ...
+    @property
+    def stop_loss(self) -> str: ...
+    @property
+    def tp_trigger_by(self) -> BybitTriggerType: ...
+    @property
+    def sl_trigger_by(self) -> BybitTriggerType: ...
+    @property
+    def trigger_direction(self) -> BybitTriggerDirection: ...
+    @property
+    def trigger_by(self) -> BybitTriggerType: ...
+    @property
+    def last_price_on_created(self) -> str: ...
+    @property
+    def reduce_only(self) -> bool: ...
+    @property
+    def close_on_trigger(self) -> bool: ...
+    @property
+    def smp_type(self) -> str: ...
+    @property
+    def smp_group(self) -> int: ...
+    @property
+    def smp_order_id(self) -> str: ...
+    @property
+    def tpsl_mode(self) -> BybitTpSlMode | None: ...
+    @property
+    def tp_limit_price(self) -> str: ...
+    @property
+    def sl_limit_price(self) -> str: ...
+    @property
+    def place_type(self) -> str: ...
+    @property
+    def created_time(self) -> str: ...
+    @property
+    def updated_time(self) -> str: ...
+
+class BybitOrderCursorList:
+    @property
+    def list(self) -> list[BybitOrder]: ...
+    @property
+    def next_page_cursor(self) -> str | None: ...
+    @property
+    def category(self) -> BybitProductType | None: ...
 
 class BybitTickerData:
     @property
@@ -5903,6 +6082,43 @@ class BybitAccountDetails:
     def expired_at(self) -> str | None: ...
     @property
     def created_at(self) -> str: ...
+
+class BybitRawHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        demo: bool = False,
+        testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        recv_window_ms: int | None = None,
+        proxy_url: str | None = None,
+    ) -> None: ...
+    @property
+    def base_url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+    @property
+    def recv_window_ms(self) -> int: ...
+    def cancel_all_requests(self) -> None: ...
+    async def get_server_time(self) -> BybitServerTime: ...
+    async def get_open_orders(
+        self,
+        category: BybitProductType,
+        symbol: str | None = None,
+        base_coin: str | None = None,
+        settle_coin: str | None = None,
+        order_id: str | None = None,
+        order_link_id: str | None = None,
+        open_only: int | None = None,
+        order_filter: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> BybitOrderCursorList: ...
 
 class BybitHttpClient:
     def __init__(

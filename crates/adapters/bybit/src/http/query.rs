@@ -562,7 +562,7 @@ pub struct BybitCancelAllOrdersParams {
 /// Query parameters for `GET /v5/order/realtime`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/order-list>
+/// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
 #[builder(default)]
