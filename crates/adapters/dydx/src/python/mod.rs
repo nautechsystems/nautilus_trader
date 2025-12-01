@@ -19,6 +19,7 @@ pub mod enums;
 pub mod execution;
 pub mod http;
 pub mod types;
+pub mod urls;
 pub mod websocket;
 
 use pyo3::prelude::*;
@@ -40,5 +41,9 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<execution::PyDydxWallet>()?;
     m.add_class::<execution::PyDydxGrpcClient>()?;
     m.add_class::<execution::PyDydxOrderSubmitter>()?;
+    m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_urls, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_dydx_http_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_dydx_ws_url, m)?)?;
     Ok(())
 }

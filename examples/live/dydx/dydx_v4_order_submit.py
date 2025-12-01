@@ -26,7 +26,7 @@ async def main():
         return
 
     print(f"Using wallet: {wallet_address}")
-    print("="*60)
+    print("=" * 60)
 
     # 1. Create wallet
     print("\n1. Creating wallet from mnemonic...")
@@ -129,6 +129,7 @@ async def main():
     except Exception as e:
         print(f"[FAIL] Order submission failed: {e}")
         import traceback
+
         traceback.print_exc()
         return
 
@@ -150,9 +151,10 @@ async def main():
     except Exception as e:
         print(f"[FAIL] Order cancellation failed: {e}")
         import traceback
+
         traceback.print_exc()
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Test complete!")
 
 
