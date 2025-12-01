@@ -2609,12 +2609,15 @@ mod tests {
             "Wrapped Ether".into(),
             18,
         );
+        let pool_address = "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"
+            .parse()
+            .unwrap();
+        let pool_identifier = "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8".to_string();
         let pool = Arc::new(Pool::new(
             chain.clone(),
             dex.clone(),
-            "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"
-                .parse()
-                .unwrap(),
+            pool_address,
+            pool_identifier,
             12345,
             token0,
             token1,

@@ -383,7 +383,8 @@ impl BlockchainDataClientCore {
         to_block: Option<u64>,
         reset: bool,
     ) -> anyhow::Result<()> {
-        let pool: SharedPool = self.get_pool(pool_address)?.clone();
+        let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
+        let pool: SharedPool = self.get_pool(&pool_identifier)?.clone();
         let pool_display = pool.to_full_spec_string();
         let from_block = from_block.unwrap_or(pool.creation_block);
 
@@ -1664,10 +1665,10 @@ impl BlockchainDataClientCore {
     /// # Errors
     ///
     /// Returns an error if the pool is not registered in the cache.
-    pub fn get_pool(&self, pool_address: &Address) -> anyhow::Result<&SharedPool> {
-        match self.cache.get_pool(pool_address) {
+    pub fn get_pool(&self, pool_identifier: &str) -> anyhow::Result<&SharedPool> {
+        match self.cache.get_pool(pool_identifier) {
             Some(pool) => Ok(pool),
-            None => anyhow::bail!("Pool {pool_address} is not registered"),
+            None => anyhow::bail!("Pool {pool_identifier} is not registered"),
         }
     }
 

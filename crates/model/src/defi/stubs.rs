@@ -84,10 +84,12 @@ pub fn rain_pool(
     rain_token: Token,
     weth: Token,
 ) -> SharedPool {
+    let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
     let pool = Pool::new(
         arbitrum,
         uniswap_v3,
-        address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245"),
+        pool_address,
+        pool_address.to_string(),
         0,
         rain_token,
         weth,

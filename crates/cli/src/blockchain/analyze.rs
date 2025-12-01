@@ -109,9 +109,10 @@ pub async fn run_analyze_pool(
 
     // Profile pool events from database
     log::info!("Profiling pool events from database...");
+    let pool_identifier = pool_address.to_string();
     let pool = data_client
         .cache
-        .get_pool(&pool_address)
+        .get_pool(&pool_identifier)
         .expect("Pool not found in cache")
         .clone();
     let (profiler, already_valid) = data_client.bootstrap_latest_pool_profiler(&pool).await?;

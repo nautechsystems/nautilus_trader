@@ -82,10 +82,12 @@ pub fn pool_definition(
         "ANIME".to_string(),
         18,
     );
+    let pool_address = address!("0xBBf3209130dF7d19356d72Eb8a193e2D9Ec5c234");
     let mut pool = Pool::new(
         Arc::new(Chain::from_chain_id(42161).unwrap().clone()), // Arbitrum,
         dex,
-        address!("0xBBf3209130dF7d19356d72Eb8a193e2D9Ec5c234"),
+        pool_address,
+        pool_address.to_string(),
         0,
         coin_anime,
         weth,

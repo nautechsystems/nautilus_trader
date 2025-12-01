@@ -1565,10 +1565,12 @@ fn test_subscribe_and_receive_pools(
         "WETH".to_string(),
         18,
     );
+    let pool_address = Address::from([0x12; 20]);
     let pool = Pool::new(
         chain,
         Arc::new(dex),
-        Address::from([0x12; 20]),
+        pool_address,
+        pool_address.to_string(),
         1000000,
         token0,
         token1,
@@ -1680,7 +1682,8 @@ fn test_unsubscribe_pool_swaps(
         "Collect",
     );
     let pool_address = Address::from_str("0xC31E54c7A869B9fCbECC14363CF510d1C41Fa443").unwrap();
-    let instrument_id = Pool::create_instrument_id(chain.name, &dex, &pool_address);
+    let pool_identifier = pool_address.to_string();
+    let instrument_id = Pool::create_instrument_id(chain.name, &dex, &pool_identifier);
 
     actor.subscribe_pool_swaps(instrument_id, None, None);
 
