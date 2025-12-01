@@ -87,12 +87,7 @@ repos:
       - id: osv-scanner
         name: osv-scanner (dependency vulnerabilities)
         description: Scans Cargo.lock and uv.lock for known vulnerabilities (defense-in-depth)
-        args:
-          [
-            "--config=osv-scanner.toml",
-            "--lockfile=Cargo.lock",
-            "--lockfile=uv.lock",
-          ]
+        args: ["--config=osv-scanner.toml", "--lockfile=Cargo.lock", "--lockfile=uv.lock"]
 
   ##############################################################################
   #  GitHub Actions linting (complementary tools covering different aspects)
@@ -250,17 +245,18 @@ repos:
         description: Run the Clippy linter on the workspace
         entry: cargo clippy
         language: system
-        args: [
-          "--workspace",
-          "--all-targets",
-          "--features",
-          "ffi,python,high-precision,defi",
-          "--profile",
-          "nextest", # Reduce rebuild triggers between testing and linting
-          "--",
-          "-D",
-          "warnings",
-        ]
+        args:
+          [
+            "--workspace",
+            "--all-targets",
+            "--features",
+            "ffi,python,high-precision,defi",
+            "--profile",
+            "nextest", # Reduce rebuild triggers between testing and linting
+            "--",
+            "-D",
+            "warnings",
+          ]
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
@@ -315,18 +311,15 @@ repos:
       - id: docformatter
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         additional_dependencies: [tomli]
-        args:
-          [
-            "--wrap-summaries",
-            "88",
-            "--wrap-descriptions",
-            "88",
-            "--make-summary-multi-line",
-            "--pre-summary-newline",
-            "--blank",
-            "--recursive",
-            "--in-place",
-          ]
+        args: [
+          "--wrap-summaries", "88",
+          "--wrap-descriptions", "88",
+          "--make-summary-multi-line",
+          "--pre-summary-newline",
+          "--blank",
+          "--recursive",
+          "--in-place",
+        ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.19.0
@@ -334,16 +327,18 @@ repos:
       - id: mypy
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         exclude: (^python/|^nautilus_trader/.*\.pyi$)
-        args: ["--config", "pyproject.toml", "--allow-incomplete-defs"]
-        additional_dependencies:
-          [
-            msgspec,
-            types-frozendict,
-            types-pytz,
-            types-redis,
-            types-requests,
-            types-toml,
-          ]
+        args: [
+          "--config", "pyproject.toml",
+          "--allow-incomplete-defs",
+        ]
+        additional_dependencies: [
+          msgspec,
+          types-frozendict,
+          types-pytz,
+          types-redis,
+          types-requests,
+          types-toml,
+        ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.9.13 # Must match uv-version file
