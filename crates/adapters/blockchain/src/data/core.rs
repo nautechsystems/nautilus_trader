@@ -13,15 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cmp::max, collections::HashSet, sync::Arc};
+use std::{cmp::max, sync::Arc};
 
 use alloy::primitives::Address;
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
-use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolProfiler, PoolSwap, SharedChain,
-    SharedDex, SharedPool, Token,
+    SharedDex, SharedPool,
     data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
     pool_analysis::{compare::compare_pool_profiler, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
@@ -34,8 +33,7 @@ use crate::{
     contracts::{erc20::Erc20Contract, uniswap_v3_pool::UniswapV3PoolContract},
     data::subscription::DefiDataSubscriptionManager,
     events::{
-        burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, mint::MintEvent,
-        pool_created::PoolCreatedEvent, swap::SwapEvent,
+        burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, mint::MintEvent, swap::SwapEvent,
     },
     exchanges::{extended::DexExtended, get_dex_extended},
     hypersync::{
@@ -51,6 +49,7 @@ use crate::{
         http::BlockchainHttpRpcClient,
         types::BlockchainMessage,
     },
+    services::PoolDiscoveryService,
 };
 
 const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50_000;
@@ -855,328 +854,22 @@ impl BlockchainDataClientCore {
         to_block: Option<u64>,
         reset: bool,
     ) -> anyhow::Result<()> {
-        // Check for last synced block and use it as starting point if higher (unless reset is true)
-        let (last_synced_block, effective_from_block) = if reset {
-            (None, from_block)
-        } else {
-            let last_synced_block = self.cache.get_dex_last_synced_block(dex).await?;
-            let effective_from_block = last_synced_block
-                .map_or(from_block, |last_synced| max(from_block, last_synced + 1));
-            (last_synced_block, effective_from_block)
-        };
+        let dex_extended = self.get_dex_extended(dex)?.clone();
 
-        let to_block = match to_block {
-            Some(block) => block,
-            None => self.hypersync_client.current_block().await,
-        };
-
-        // Skip sync if we're already up to date
-        if effective_from_block > to_block {
-            tracing::info!(
-                "DEX {} already synced to block {} (current: {}), skipping sync",
-                dex,
-                last_synced_block.unwrap_or(0).separate_with_commas(),
-                to_block.separate_with_commas()
-            );
-            return Ok(());
-        }
-
-        let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
-        tracing::info!(
-            "Syncing DEX exchange pools from {} to {} (total: {} blocks){}",
-            effective_from_block.separate_with_commas(),
-            to_block.separate_with_commas(),
-            total_blocks.separate_with_commas(),
-            if let Some(last_synced) = last_synced_block {
-                format!(
-                    " - resuming from last synced block {}",
-                    last_synced.separate_with_commas()
-                )
-            } else {
-                String::new()
-            }
+        let mut service = PoolDiscoveryService::new(
+            self.chain.clone(),
+            &mut self.cache,
+            &self.tokens,
+            &self.hypersync_client,
+            self.cancellation_token.clone(),
+            self.config.clone(),
         );
 
-        // Enable performance settings for sync operations
-        if let Err(e) = self.cache.toggle_performance_settings(true).await {
-            tracing::warn!("Failed to enable performance settings: {e}");
-        }
-
-        let mut metrics = BlockchainSyncReporter::new(
-            BlockchainSyncReportItems::PoolCreatedEvents,
-            effective_from_block,
-            total_blocks,
-            BLOCKS_PROCESS_IN_SYNC_REPORT,
-        );
-
-        let dex = self.get_dex_extended(dex)?.clone();
-        let factory_address = &dex.factory;
-        let pair_created_event_signature = dex.pool_created_event.as_ref();
-        let pools_stream = self
-            .hypersync_client
-            .request_contract_events_stream(
-                effective_from_block,
-                Some(to_block),
-                factory_address,
-                vec![pair_created_event_signature],
-            )
-            .await;
-
-        tokio::pin!(pools_stream);
-
-        // LEVEL 1: RPC buffers (small, constrained by rate limits)
-        let token_rpc_batch_size = (self.config.multicall_calls_per_rpc_request / 3) as usize;
-        let mut token_rpc_buffer: HashSet<Address> = HashSet::new();
-
-        // LEVEL 2: DB buffers (large, optimize for throughput)
-        const POOL_DB_BATCH_SIZE: usize = 2000;
-        let mut token_db_buffer: Vec<Token> = Vec::new();
-        let mut pool_events_buffer: Vec<PoolCreatedEvent> = Vec::new();
-
-        let mut last_block_saved = effective_from_block;
-
-        let cancellation_token = self.cancellation_token.clone();
-        let sync_result = tokio::select! {
-            () = cancellation_token.cancelled() => {
-                tracing::info!("Exchange pool sync cancelled");
-                Err(anyhow::anyhow!("Sync cancelled"))
-            }
-            result = async {
-                while let Some(log) = pools_stream.next().await {
-                    let block_number = extract_block_number(&log)?;
-                    let blocks_progress = block_number - last_block_saved;
-                    last_block_saved = block_number;
-
-                    let pool = dex.parse_pool_created_event_hypersync(log)?;
-                    if self.cache.get_pool(&pool.pool_address).is_some() {
-                        // Pool is already initialized and cached.
-                        continue;
-                    }
-
-                    if self.cache.is_invalid_token(&pool.token0)
-                        || self.cache.is_invalid_token(&pool.token1)
-                    {
-                        // Skip pools with invalid tokens as they cannot be properly processed or traded.
-                        continue;
-                    }
-
-                    // Collect tokens needed for RPC fetch
-                    if self.cache.get_token(&pool.token0).is_none() {
-                        token_rpc_buffer.insert(pool.token0);
-                    }
-                    if self.cache.get_token(&pool.token1).is_none() {
-                        token_rpc_buffer.insert(pool.token1);
-                    }
-
-                    // Buffer the pool for later processing
-                    pool_events_buffer.push(pool);
-
-                    // ==== RPC FLUSHING (small batches) ====
-                    if token_rpc_buffer.len() >= token_rpc_batch_size {
-                        let fetched_tokens = self
-                            .fetch_and_cache_tokens_in_memory(&mut token_rpc_buffer)
-                            .await?;
-
-                        // Accumulate for later DB write
-                        token_db_buffer.extend(fetched_tokens);
-                    }
-
-                    // ==== DB FLUSHING (large batches) ====
-                    // Process pools when buffer is full
-                    if pool_events_buffer.len() >= POOL_DB_BATCH_SIZE {
-                        // 1. Fetch any remaining tokens in RPC buffer (needed for pool construction)
-                        if !token_rpc_buffer.is_empty() {
-                            let fetched_tokens = self
-                                .fetch_and_cache_tokens_in_memory(&mut token_rpc_buffer)
-                                .await?;
-                            token_db_buffer.extend(fetched_tokens);
-                        }
-
-                        // 2. Flush ALL tokens to DB (satisfy foreign key constraints)
-                        if !token_db_buffer.is_empty() {
-                            self.cache
-                                .add_tokens_batch(std::mem::take(&mut token_db_buffer))
-                                .await?;
-                        }
-
-                        // 3. Now safe to construct and flush pools
-                        let pools = self
-                            .construct_pools_batch(&mut pool_events_buffer, &dex.dex)
-                            .await?;
-                        self.cache.add_pools_batch(pools).await?;
-                    }
-
-                    metrics.update(blocks_progress as usize);
-                    // Log progress if needed
-                    if metrics.should_log_progress(block_number, to_block) {
-                        metrics.log_progress(block_number);
-                    }
-                }
-
-                // ==== FINAL FLUSH (all remaining data) ====
-                // 1. Fetch any remaining tokens
-                if !token_rpc_buffer.is_empty() {
-                    let fetched_tokens = self
-                        .fetch_and_cache_tokens_in_memory(&mut token_rpc_buffer)
-                        .await?;
-                    token_db_buffer.extend(fetched_tokens);
-                }
-
-                // 2. Flush all tokens to DB
-                if !token_db_buffer.is_empty() {
-                    self.cache
-                        .add_tokens_batch(std::mem::take(&mut token_db_buffer))
-                        .await?;
-                }
-
-                // 3. Process and flush all pools
-                if !pool_events_buffer.is_empty() {
-                    let pools = self
-                        .construct_pools_batch(&mut pool_events_buffer, &dex.dex)
-                        .await?;
-                    self.cache.add_pools_batch(pools).await?;
-                }
-
-                metrics.log_final_stats();
-
-                // Update the last synced block after successful completion.
-                self.cache
-                    .update_dex_last_synced_block(&dex.dex.name, to_block)
-                    .await?;
-
-                tracing::info!(
-                    "Successfully synced DEX {} pools up to block {}",
-                    dex.dex.name,
-                    to_block.separate_with_commas()
-                );
-
-                Ok(())
-            } => result
-        };
-
-        sync_result?;
-
-        // Restore default safe settings after sync completion
-        if let Err(e) = self.cache.toggle_performance_settings(false).await {
-            tracing::warn!("Failed to restore default settings: {e}");
-        }
+        service
+            .sync_pools(&dex_extended, from_block, to_block, reset)
+            .await?;
 
         Ok(())
-    }
-
-    /// Fetches token metadata via RPC and updates in-memory cache immediately.
-    ///
-    /// This method fetches token information using multicall, updates the in-memory cache right away
-    /// (so pool construction can proceed), and returns valid tokens for later batch DB writes.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the RPC multicall fails or database operations fail.
-    async fn fetch_and_cache_tokens_in_memory(
-        &mut self,
-        token_buffer: &mut HashSet<Address>,
-    ) -> anyhow::Result<Vec<Token>> {
-        let batch_addresses: Vec<Address> = token_buffer.drain().collect();
-        let token_infos = self.tokens.batch_fetch_token_info(&batch_addresses).await?;
-
-        let mut valid_tokens = Vec::new();
-
-        for (token_address, token_info) in token_infos {
-            match token_info {
-                Ok(token_info) => {
-                    let token = Token::new(
-                        self.chain.clone(),
-                        token_address,
-                        token_info.name,
-                        token_info.symbol,
-                        token_info.decimals,
-                    );
-
-                    // Update in-memory cache IMMEDIATELY (so construct_pool can read it)
-                    self.cache.insert_token_in_memory(token.clone());
-
-                    // Collect for LATER DB write
-                    valid_tokens.push(token);
-                }
-                Err(token_info_error) => {
-                    self.cache.insert_invalid_token_in_memory(token_address);
-                    if let Some(database) = &self.cache.database {
-                        database
-                            .add_invalid_token(
-                                self.chain.chain_id,
-                                &token_address,
-                                &token_info_error.to_string(),
-                            )
-                            .await?;
-                    }
-                }
-            }
-        }
-
-        Ok(valid_tokens)
-    }
-
-    /// Constructs multiple pools from pool creation events.
-    ///
-    /// Assumes all required tokens are already in the in-memory cache.
-    ///
-    /// # Errors
-    ///
-    /// Logs errors for pools that cannot be constructed (missing tokens),
-    /// but does not fail the entire batch.
-    async fn construct_pools_batch(
-        &mut self,
-        pool_events: &mut Vec<PoolCreatedEvent>,
-        dex: &SharedDex,
-    ) -> anyhow::Result<Vec<Pool>> {
-        let mut pools = Vec::with_capacity(pool_events.len());
-
-        for pool_event in pool_events.drain(..) {
-            // Both tokens should be in cache now
-            let token0 = match self.cache.get_token(&pool_event.token0) {
-                Some(token) => token.clone(),
-                None => {
-                    if !self.cache.is_invalid_token(&pool_event.token0) {
-                        tracing::warn!(
-                            "Skipping pool {}: Token0 {} not in cache and not marked as invalid",
-                            pool_event.pool_address,
-                            pool_event.token0
-                        );
-                    }
-                    continue;
-                }
-            };
-
-            let token1 = match self.cache.get_token(&pool_event.token1) {
-                Some(token) => token.clone(),
-                None => {
-                    if !self.cache.is_invalid_token(&pool_event.token1) {
-                        tracing::warn!(
-                            "Skipping pool {}: Token1 {} not in cache and not marked as invalid",
-                            pool_event.pool_address,
-                            pool_event.token1
-                        );
-                    }
-                    continue;
-                }
-            };
-
-            let pool = Pool::new(
-                self.chain.clone(),
-                dex.clone(),
-                pool_event.pool_address,
-                pool_event.block_number,
-                token0,
-                token1,
-                pool_event.fee,
-                pool_event.tick_spacing,
-                UnixNanos::default(),
-            );
-
-            pools.push(pool);
-        }
-
-        Ok(pools)
     }
 
     /// Registers a decentralized exchange for data collection and event monitoring.
