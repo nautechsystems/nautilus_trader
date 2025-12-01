@@ -19,6 +19,7 @@ use nautilus_blockchain::{
     config::BlockchainDataClientConfig,
     data::core::BlockchainDataClientCore,
     exchanges::{find_dex_type_case_insensitive, get_supported_dexes_for_chain},
+    rpc::providers::check_infura_rpc_provider,
 };
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
 use nautilus_model::defi::{chain::Chain, validation::validate_address};
@@ -70,17 +71,16 @@ pub async fn run_analyze_pool(
         database.password,
         database.database,
     );
-    // Get RPC HTTP URL from CLI argument or environment variable
+    // Get RPC HTTP URL: CLI arg, Infura provider, OR RPC_HTTP_URL env var
     let rpc_http_url = rpc_url
+        .or_else(|| check_infura_rpc_provider(&chain.name))
         .or_else(|| std::env::var("RPC_HTTP_URL").ok())
-        .unwrap_or_default();
-
-    log::info!("Using RPC HTTP URL: '{rpc_http_url}'");
-    if rpc_http_url.is_empty() {
-        log::warn!(
-            "No RPC HTTP URL provided via --rpc-url or RPC_HTTP_URL environment variable - some operations may fail"
-        );
-    }
+        .unwrap_or_else(|| {
+            panic!(
+                "No RPC URL provided for {}. Set --rpc-url, INFURA_API_KEY, or RPC_HTTP_URL",
+                chain.name
+            )
+        });
 
     let config = BlockchainDataClientConfig::new(
         Arc::new(chain.to_owned()),
