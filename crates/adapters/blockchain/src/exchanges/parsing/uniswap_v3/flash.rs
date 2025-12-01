@@ -81,10 +81,11 @@ pub fn parse_flash_event_hypersync(
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
+        let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
 
         Ok(FlashEvent::new(
             dex,
-            pool_address,
+            pool_identifier,
             extract_block_number(&log)?,
             extract_transaction_hash(&log)?,
             extract_transaction_index(&log)?,
@@ -125,9 +126,11 @@ pub fn parse_flash_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Fla
         Err(e) => anyhow::bail!("Failed to decode flash event data: {e}"),
     };
 
+    let pool_address = rpc_helpers::extract_address(log)?;
+    let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
     Ok(FlashEvent::new(
         dex,
-        rpc_helpers::extract_address(log)?,
+        pool_identifier,
         rpc_helpers::extract_block_number(log)?,
         rpc_helpers::extract_transaction_hash(log)?,
         rpc_helpers::extract_transaction_index(log)?,
@@ -204,7 +207,7 @@ mod tests {
         let event = parse_flash_event_hypersync(dex, hypersync_log).unwrap();
 
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
+            event.pool_identifier,
             "0x4cef551255ec96d89fec975446301b5c4e164c59"
         );
         assert_eq!(
@@ -230,7 +233,7 @@ mod tests {
         let event = parse_flash_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
+            event.pool_identifier,
             "0x4cef551255ec96d89fec975446301b5c4e164c59"
         );
         assert_eq!(
@@ -256,7 +259,7 @@ mod tests {
         let event_hypersync = parse_flash_event_hypersync(dex.clone(), hypersync_log).unwrap();
         let event_rpc = parse_flash_event_rpc(dex, &rpc_log).unwrap();
 
-        assert_eq!(event_hypersync.pool_address, event_rpc.pool_address);
+        assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);
         assert_eq!(event_hypersync.sender, event_rpc.sender);
         assert_eq!(event_hypersync.recipient, event_rpc.recipient);
         assert_eq!(event_hypersync.amount0, event_rpc.amount0);

@@ -13,28 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::LazyLock;
-
-use nautilus_model::defi::{
-    chain::chains,
-    dex::{AmmType, Dex, DexType},
-};
-
-use crate::exchanges::extended::DexExtended;
-
-/// Balancer V2 DEX on Ethereum.
-pub static BALANCER_V2: LazyLock<DexExtended> = LazyLock::new(|| {
-    let dex = Dex::new(
-        chains::ETHEREUM.clone(),
-        DexType::BalancerV2,
-        "0x8E9aa87E45e92bad84D5F8DD1bFf34Fb92637de9",
-        12272147,
-        AmmType::WeightedPool,
-        "",
-        "",
-        "",
-        "",
-        "",
-    );
-    DexExtended::new(dex)
-});
+pub mod initialize;

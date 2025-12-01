@@ -20,21 +20,32 @@ use nautilus_model::defi::{
     dex::{AmmType, Dex, DexType},
 };
 
-use crate::exchanges::extended::DexExtended;
+use crate::exchanges::{extended::DexExtended, parsing::uniswap_v2};
 
-/// Maverick V2 DEX on Ethereum.
-pub static MAVERICK_V2: LazyLock<DexExtended> = LazyLock::new(|| {
+/// Uniswap V2 DEX on Arbitrum.
+/// Factory: https://arbiscan.io/address/0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9
+pub static UNISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
-        chains::ETHEREUM.clone(),
-        DexType::MaverickV2,
-        "0x42cc45D0F0AC1Ff6A8c4820B9B9AB73c0784BBCb",
-        0,
-        AmmType::CLAMM,
-        "",
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV2,
+        "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9",
+        150442611,
+        AmmType::CPAMM,
+        "PairCreated(address,address,address,uint256)",
         "",
         "",
         "",
         "",
     );
-    DexExtended::new(dex)
+
+    let mut dex_extended = DexExtended::new(dex);
+
+    // Register PairCreated event parsers
+    dex_extended.set_pool_created_event_hypersync_parsing(
+        uniswap_v2::pool_created::parse_pool_created_event_hypersync,
+    );
+    dex_extended
+        .set_pool_created_event_rpc_parsing(uniswap_v2::pool_created::parse_pool_created_event_rpc);
+
+    dex_extended
 });

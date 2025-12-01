@@ -20,7 +20,7 @@ use nautilus_model::defi::{
     dex::{AmmType, Dex, DexType},
 };
 
-use crate::exchanges::extended::DexExtended;
+use crate::exchanges::{extended::DexExtended, parsing::uniswap_v3};
 
 /// Uniswap V3 DEX on Base.
 pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
@@ -36,5 +36,16 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "Burn(address,int24,int24,uint128,uint256,uint256)",
         "Collect(address,int24,int24,uint128,uint128)",
     );
-    DexExtended::new(dex)
+
+    let mut dex_extended = DexExtended::new(dex);
+
+    // HyperSync parsers
+    dex_extended.set_pool_created_event_hypersync_parsing(
+        uniswap_v3::pool_created::parse_pool_created_event_hypersync,
+    );
+    dex_extended.set_initialize_event_hypersync_parsing(
+        uniswap_v3::initialize::parse_initialize_event_hypersync,
+    );
+
+    dex_extended
 });

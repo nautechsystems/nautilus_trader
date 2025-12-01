@@ -73,6 +73,7 @@ fn parse_camelot_v3_pool_created_event_hypersync(
             token,
             token1,
             pool_address,
+            pool_address.to_string(), // For non-V4 pools, pool_identifier = pool_address
             None,
             None,
         ))

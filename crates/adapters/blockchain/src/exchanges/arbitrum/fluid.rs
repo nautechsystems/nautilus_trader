@@ -67,6 +67,7 @@ fn parse_fluid_dex_pool_created_event_hypersync(
         supply_token_address,
         borrow_token_address,
         pool_address,
+        pool_address.to_string(), // For non-V4 pools, pool_identifier = pool_address
         None,
         None,
     ))

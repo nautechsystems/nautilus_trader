@@ -70,10 +70,11 @@ pub fn parse_initialize_event_hypersync(
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
+        let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
 
         Ok(InitializeEvent::new(
             dex,
-            pool_address,
+            pool_identifier,
             decoded.sqrt_price_x96,
             i32::try_from(decoded.tick)?,
         ))
@@ -103,9 +104,11 @@ pub fn parse_initialize_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Resul
         Err(e) => anyhow::bail!("Failed to decode initialize event data: {e}"),
     };
 
+    let pool_address = rpc_helpers::extract_address(log)?;
+    let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
     Ok(InitializeEvent::new(
         dex,
-        rpc_helpers::extract_address(log)?,
+        pool_identifier,
         decoded.sqrt_price_x96,
         i32::try_from(decoded.tick)?,
     ))
@@ -173,7 +176,7 @@ mod tests {
         let event = parse_initialize_event_hypersync(dex, hypersync_log).unwrap();
 
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
+            event.pool_identifier,
             "0xd13040d4fe917ee704158cfcb3338dcd2838b245"
         );
         let expected_sqrt_price = U160::from_str_radix("3d409fc4ca983d2e3df335", 16).unwrap();
@@ -187,7 +190,7 @@ mod tests {
         let event = parse_initialize_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
+            event.pool_identifier,
             "0xd13040d4fe917ee704158cfcb3338dcd2838b245"
         );
         let expected_sqrt_price = U160::from_str_radix("3d409fc4ca983d2e3df335", 16).unwrap();
@@ -202,7 +205,7 @@ mod tests {
         let event_rpc = parse_initialize_event_rpc(dex, &rpc_log).unwrap();
 
         // Both parsers should produce identical results
-        assert_eq!(event_hypersync.pool_address, event_rpc.pool_address);
+        assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);
         assert_eq!(event_hypersync.sqrt_price_x96, event_rpc.sqrt_price_x96);
         assert_eq!(event_hypersync.tick, event_rpc.tick);
     }
