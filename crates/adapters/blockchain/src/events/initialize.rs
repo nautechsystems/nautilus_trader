@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy::primitives::{Address, U160};
+use alloy::primitives::U160;
 use nautilus_model::defi::SharedDex;
 
 /// Event emitted when a liquidity pool is initialized on a DEX.
@@ -24,8 +24,8 @@ use nautilus_model::defi::SharedDex;
 pub struct InitializeEvent {
     /// The decentralized exchange where the event happened.
     pub dex: SharedDex,
-    /// The address of the smart contract which emitted the event.
-    pub pool_address: Address,
+    /// The unique identifier for the pool.
+    pub pool_identifier: String,
     /// The square root of the price ratio encoded as a fixed point number with 96 fractional bits.
     pub sqrt_price_x96: U160,
     /// The current tick of the pool.
@@ -33,10 +33,10 @@ pub struct InitializeEvent {
 }
 
 impl InitializeEvent {
-    pub fn new(dex: SharedDex, pool_address: Address, sqrt_price_x96: U160, tick: i32) -> Self {
+    pub fn new(dex: SharedDex, pool_identifier: String, sqrt_price_x96: U160, tick: i32) -> Self {
         Self {
             dex,
-            pool_address,
+            pool_identifier,
             sqrt_price_x96,
             tick,
         }
