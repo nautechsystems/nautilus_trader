@@ -916,6 +916,10 @@ class DYDXExecutionClient(LiveExecutionClient):
         while self._clock.timestamp_ns() - start < self._track_cancel_timeout_secs * 1e9:
             order = self._cache.order(client_order_id)
 
+            if order is None:
+                self._log.error(f"Cannot track order cancel: order {client_order_id} not found")
+                break
+
             if order.status != OrderStatus.ACCEPTED:
                 self._log.info(f"Order {client_order_id} status changed to {order.status}. Stopping tracking.")
                 break
@@ -1143,6 +1147,20 @@ class DYDXExecutionClient(LiveExecutionClient):
             self._log.warning(f"Order {order} is already closed")
             return
 
+        if order.is_quote_quantity:
+            reason = "UNSUPPORTED_QUOTE_QUANTITY"
+            self._log.error(
+                f"Cannot submit order {order.client_order_id}: {reason}",
+            )
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         instrument = self._cache.instrument(order.instrument_id)
 
         if instrument is None:
@@ -1166,9 +1184,9 @@ class DYDXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        await self._broadcast_order(order=order)
+        await self._broadcast_order(order=order,instrument=instrument)
 
-    async def _broadcast_order(self, order: Order) -> None:
+    async def _broadcast_order(self, order: Order, instrument: Instrument) -> None:
         retry_manager = await self._retry_manager_pool.acquire()
         try:
             await retry_manager.run(
@@ -1176,6 +1194,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 details=[order.client_order_id],
                 func=self._attempt_order_broadcast,
                 order=order,
+                instrument=instrument,
             )
 
             if not retry_manager.result:
@@ -1189,9 +1208,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
-    async def _attempt_order_broadcast(self, order: Order) -> None:  # noqa: C901
-        instrument = self._cache.instrument(order.instrument_id)
-
+    async def _attempt_order_broadcast(self, order: Order, instrument: Instrument) -> None:  # noqa: C901
         order_builder = self._get_order_builder(instrument)
 
         client_order_id_int = self._client_order_id_generator.generate_client_order_id_int(
