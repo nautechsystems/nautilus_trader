@@ -759,12 +759,17 @@ impl BlockchainCache {
     pub async fn update_pool_last_synced_block(
         &self,
         dex: &DexType,
-        pool_address: &Address,
+        pool_identifier: &str,
         block_number: u64,
     ) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             database
-                .update_pool_last_synced_block(self.chain.chain_id, dex, pool_address, block_number)
+                .update_pool_last_synced_block(
+                    self.chain.chain_id,
+                    dex,
+                    pool_identifier,
+                    block_number,
+                )
                 .await
         } else {
             Ok(())
@@ -794,11 +799,11 @@ impl BlockchainCache {
     pub async fn get_pool_last_synced_block(
         &self,
         dex: &DexType,
-        pool_address: &Address,
+        pool_identifier: &str,
     ) -> anyhow::Result<Option<u64>> {
         if let Some(database) = &self.database {
             database
-                .get_pool_last_synced_block(self.chain.chain_id, dex, pool_address)
+                .get_pool_last_synced_block(self.chain.chain_id, dex, pool_identifier)
                 .await
         } else {
             Ok(None)
@@ -812,20 +817,24 @@ impl BlockchainCache {
     /// Returns an error if any of the database queries fail.
     pub async fn get_pool_event_tables_last_block(
         &self,
-        pool_address: &Address,
+        pool_identifier: &str,
     ) -> anyhow::Result<Option<u64>> {
         if let Some(database) = &self.database {
             let (swaps_last_block, liquidity_last_block, collect_last_block) = tokio::try_join!(
-                database.get_table_last_block(self.chain.chain_id, "pool_swap_event", pool_address),
+                database.get_table_last_block(
+                    self.chain.chain_id,
+                    "pool_swap_event",
+                    pool_identifier
+                ),
                 database.get_table_last_block(
                     self.chain.chain_id,
                     "pool_liquidity_event",
-                    pool_address
+                    pool_identifier
                 ),
                 database.get_table_last_block(
                     self.chain.chain_id,
                     "pool_collect_event",
-                    pool_address
+                    pool_identifier
                 ),
             )?;
 

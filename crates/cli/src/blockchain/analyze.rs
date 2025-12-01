@@ -102,14 +102,15 @@ pub async fn run_analyze_pool(
         .register_dex_exchange(dex_type)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {e}"))?;
+
+    let pool_identifier = pool_address.to_string();
     data_client
-        .sync_pool_events(&dex_type, &pool_address, from_block, to_block, reset)
+        .sync_pool_events(&dex_type, &pool_identifier, from_block, to_block, reset)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to sync pool events: {e}"))?;
 
     // Profile pool events from database
     log::info!("Profiling pool events from database...");
-    let pool_identifier = pool_address.to_string();
     let pool = data_client
         .cache
         .get_pool(&pool_identifier)

@@ -1100,7 +1100,7 @@ impl BlockchainCacheDatabase {
         &self,
         chain_id: u32,
         dex: &DexType,
-        pool_address: &Address,
+        pool_identifier: &str,
         block_number: u64,
     ) -> anyhow::Result<()> {
         sqlx::query(
@@ -1109,12 +1109,12 @@ impl BlockchainCacheDatabase {
             SET last_full_sync_block_number = $4
             WHERE chain_id = $1
             AND dex_name = $2
-            AND address = $3
+            AND pool_identifier = $3
             ",
         )
         .bind(chain_id as i32)
         .bind(dex.to_string())
-        .bind(pool_address.to_string())
+        .bind(pool_identifier)
         .bind(block_number as i64)
         .execute(&self.pool)
         .await
@@ -1159,7 +1159,7 @@ impl BlockchainCacheDatabase {
         &self,
         chain_id: u32,
         dex: &DexType,
-        pool_address: &Address,
+        pool_identifier: &str,
     ) -> anyhow::Result<Option<u64>> {
         let result = sqlx::query_as::<_, (Option<i64>,)>(
             r#"
@@ -1168,12 +1168,12 @@ impl BlockchainCacheDatabase {
             FROM pool
             WHERE chain_id = $1
             AND dex_name = $2
-            AND address = $3
+            AND pool_identifier = $3
             "#,
         )
         .bind(chain_id as i32)
         .bind(dex.to_string())
-        .bind(pool_address.to_string())
+        .bind(pool_identifier)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get pool last synced block: {e}"))?;
@@ -1191,14 +1191,14 @@ impl BlockchainCacheDatabase {
         &self,
         chain_id: u32,
         table_name: &str,
-        pool_address: &Address,
+        pool_identifier: &str,
     ) -> anyhow::Result<Option<u64>> {
         let query = format!(
-            "SELECT MAX(block) FROM {table_name} WHERE chain_id = $1 AND pool_address = $2"
+            "SELECT MAX(block) FROM {table_name} WHERE chain_id = $1 AND pool_identifier = $2"
         );
         let result = sqlx::query_as::<_, (Option<i64>,)>(query.as_str())
             .bind(chain_id as i32)
-            .bind(pool_address.to_string())
+            .bind(pool_identifier)
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get table last block for {table_name}: {e}"))?;
