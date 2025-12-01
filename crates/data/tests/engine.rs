@@ -69,6 +69,7 @@ use nautilus_model::{
         OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
+    defi::tick_map::tick_math::get_tick_at_sqrt_ratio,
     enums::{BookType, PriceType},
     identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
@@ -1945,7 +1946,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2303,7 +2304,7 @@ fn test_process_pool_liquidity_update(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2409,7 +2410,7 @@ fn test_process_pool_fee_collect(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2509,7 +2510,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2616,7 +2617,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -2788,7 +2789,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -2908,7 +2909,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -3051,7 +3052,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -3160,7 +3161,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -3383,7 +3384,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to the data_engine's cache (not the fixture cache!)

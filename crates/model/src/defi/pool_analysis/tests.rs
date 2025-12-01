@@ -95,7 +95,11 @@ pub fn pool_definition(
         Some(tick_spacing.unwrap_or(TICK_SPACING) as u32),
         UnixNanos::default(),
     );
-    pool.initialize(initial_sqrt_price_x96.unwrap_or(sqrt_price_x98()));
+    let initial_sqrt_price = initial_sqrt_price_x96.unwrap_or(sqrt_price_x98());
+    pool.initialize(
+        initial_sqrt_price,
+        get_tick_at_sqrt_ratio(initial_sqrt_price),
+    );
     pool
 }
 

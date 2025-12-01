@@ -272,8 +272,9 @@ impl BlockchainCache {
                 // Initialize pool with initial values if available
                 if let Some(initial_sqrt_price_x96_str) = &pool_row.initial_sqrt_price_x96
                     && let Ok(initial_sqrt_price_x96) = initial_sqrt_price_x96_str.parse()
+                    && let Some(initial_tick) = pool_row.initial_tick
                 {
-                    pool.initialize(initial_sqrt_price_x96);
+                    pool.initialize(initial_sqrt_price_x96, initial_tick);
                 }
 
                 // Add pool to cache and loaded pools list

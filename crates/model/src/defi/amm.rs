@@ -147,10 +147,20 @@ impl Pool {
     ///
     /// This method should be called when an Initialize event is processed
     /// to set the initial price and tick values for the pool.
-    pub fn initialize(&mut self, sqrt_price_x96: U160) {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided tick does not match the tick calculated from sqrt_price_x96.
+    pub fn initialize(&mut self, sqrt_price_x96: U160, tick: i32) {
         let calculated_tick = get_tick_at_sqrt_ratio(sqrt_price_x96);
+
+        assert_eq!(
+            tick, calculated_tick,
+            "Provided tick {tick} does not match calculated tick {calculated_tick} for sqrt_price_x96 {sqrt_price_x96}",
+        );
+
         self.initial_sqrt_price_x96 = Some(sqrt_price_x96);
-        self.initial_tick = Some(calculated_tick);
+        self.initial_tick = Some(tick);
     }
 
     pub fn create_instrument_id(

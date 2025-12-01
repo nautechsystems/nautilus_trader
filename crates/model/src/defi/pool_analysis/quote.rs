@@ -267,7 +267,7 @@ impl SwapQuote {
         sender: Address,
         recipient: Address,
     ) -> PoolSwap {
-        let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_address);
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, &pool_address.to_string());
         PoolSwap::new(
             chain,
             dex,
