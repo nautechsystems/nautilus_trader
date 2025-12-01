@@ -120,7 +120,7 @@ impl Default for KrakenFuturesRawHttpClient {
 
 impl Debug for KrakenFuturesRawHttpClient {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("KrakenFuturesRawHttpClient")
+        f.debug_struct(stringify!(KrakenFuturesRawHttpClient))
             .field("base_url", &self.base_url)
             .field("has_credentials", &self.credential.is_some())
             .finish()
@@ -782,7 +782,7 @@ impl Default for KrakenFuturesHttpClient {
 
 impl Debug for KrakenFuturesHttpClient {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("KrakenFuturesHttpClient")
+        f.debug_struct(stringify!(KrakenFuturesHttpClient))
             .field("inner", &self.inner)
             .finish()
     }
@@ -1057,18 +1057,6 @@ impl KrakenFuturesHttpClient {
         end: Option<DateTime<Utc>>,
         limit: Option<u64>,
     ) -> anyhow::Result<Vec<Bar>, KrakenHttpError> {
-        self.request_bars_with_tick_type(bar_type, start, end, limit, None)
-            .await
-    }
-
-    pub async fn request_bars_with_tick_type(
-        &self,
-        bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        limit: Option<u64>,
-        tick_type: Option<&str>,
-    ) -> anyhow::Result<Vec<Bar>, KrakenHttpError> {
         let instrument_id = bar_type.instrument_id();
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
@@ -1080,7 +1068,7 @@ impl KrakenFuturesHttpClient {
 
         let raw_symbol = instrument.raw_symbol().to_string();
         let ts_init = self.generate_ts_init();
-        let tick_type = tick_type.unwrap_or("trade");
+        let tick_type = "trade";
         let resolution = bar_type_to_futures_resolution(bar_type)
             .map_err(|e| KrakenHttpError::ParseError(e.to_string()))?;
 
@@ -1431,17 +1419,41 @@ impl KrakenFuturesHttpClient {
             .order_id
             .ok_or_else(|| anyhow::anyhow!("No order_id in send_status: {status}"))?;
 
-        // Query the order to get full status
-        let response = self.inner.get_open_orders().await?;
+        let ts_init = self.generate_ts_init();
 
-        let order = response
+        let open_orders_response = self.inner.get_open_orders().await?;
+        if let Some(order) = open_orders_response
             .open_orders
             .iter()
             .find(|o| o.order_id == venue_order_id)
-            .ok_or_else(|| anyhow::anyhow!("Order not found after submission: {venue_order_id}"))?;
+        {
+            return parse_futures_order_status_report(order, &instrument, account_id, ts_init);
+        }
 
-        let ts_init = self.generate_ts_init();
-        parse_futures_order_status_report(order, &instrument, account_id, ts_init)
+        // Order not in open orders - may have filled immediately (market order or aggressive limit)
+        // Try to use order_events from send_status first
+        if let Some(order_events) = &send_status.order_events
+            && let Some(event) = order_events.first()
+        {
+            return parse_futures_order_event_status_report(
+                event,
+                &instrument,
+                account_id,
+                ts_init,
+            );
+        }
+
+        // Fall back to querying order events
+        let events_response = self.inner.get_order_events(None, None, None).await?;
+        let order_event = events_response
+            .elements
+            .iter()
+            .find(|e| e.order_id == venue_order_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Order not found in open orders or events: {venue_order_id}")
+            })?;
+
+        parse_futures_order_event_status_report(order_event, &instrument, account_id, ts_init)
     }
 
     /// Cancel an order on the Kraken Futures exchange.
@@ -1481,9 +1493,12 @@ impl KrakenFuturesHttpClient {
             anyhow::bail!("Order cancellation failed: {status}");
         }
 
-        let venue_order_id_str = order_id.ok_or_else(|| {
-            anyhow::anyhow!("venue_order_id required to query order status after cancellation")
-        })?;
+        // Get venue_order_id from response if not provided by caller
+        let venue_order_id_str = order_id
+            .or(response.cancel_status.order_id.clone())
+            .ok_or_else(|| {
+                anyhow::anyhow!("No order_id in cancel response and none provided by caller")
+            })?;
 
         // Query order events to get the canceled order details
         let events_response = self.inner.get_order_events(None, None, None).await?;

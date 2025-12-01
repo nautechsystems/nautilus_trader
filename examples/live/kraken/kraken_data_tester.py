@@ -37,8 +37,8 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # Configuration - Change symbol for different trading pairs
 # SPOT examples: "BTC/USD", "ETH/USD", "SOL/USD"
 # PERP examples: "PF_XBTUSD", "PF_ETHUSD", "PF_SOLUSD"
-# symbol = "ETH/USD"  # Spot pair
-symbol = "PI_XBTUSD"  # Perpetual
+symbol = "ETH/USD"  # Spot pair
+# symbol = "PI_XBTUSD"  # Perpetual
 instrument_id = InstrumentId.from_str(f"{symbol}.{KRAKEN}")
 
 environment = KrakenEnvironment.MAINNET
@@ -82,7 +82,7 @@ config_tester = DataTesterConfig(
     bar_types=[BarType.from_str(f"{instrument_id.value}-1-MINUTE-LAST-EXTERNAL")],
     subscribe_instrument=True,
     subscribe_quotes=True,
-    # subscribe_trades=True,
+    subscribe_trades=True,
     subscribe_mark_prices=True,
     subscribe_index_prices=True,
     # subscribe_bars=True,

@@ -884,10 +884,9 @@ fn test_submit_reduce_only_order_when_position_already_closed_then_denies(
     )
     .unwrap();
 
-    // Act
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order3));
 
-    // Assert: TODO
+    // TODO
     // assert_eq!(order1.status(), OrderStatus::Filled);
     // assert_eq!(order2.status(), OrderStatus::Filled);
     // assert_eq!(order3.status(), OrderStatus::Denied);
@@ -995,7 +994,6 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
     )
     .unwrap();
 
-    // Act
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
     exec_engine.process(&OrderEventAny::Submitted(order_submitted(&order2)));
     exec_engine.process(&OrderEventAny::Accepted(order_accepted(&order2, None)));
@@ -1013,7 +1011,7 @@ fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
         None,
     )));
 
-    // Assert: TODO
+    // TODO
     // assert_eq!(order1.status(), OrderStatus::Filled);
     // assert_eq!(order2.status(), OrderStatus::Denied);
 

@@ -115,42 +115,6 @@ impl KrakenFuturesHttpClient {
         self.cancel_all_requests();
     }
 
-    #[pyo3(name = "request_mark_price")]
-    fn py_request_mark_price<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_id: InstrumentId,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mark_price = client
-                .request_mark_price(instrument_id)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            Ok(mark_price)
-        })
-    }
-
-    #[pyo3(name = "request_index_price")]
-    fn py_request_index_price<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_id: InstrumentId,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let index_price = client
-                .request_index_price(instrument_id)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            Ok(index_price)
-        })
-    }
-
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -201,6 +165,42 @@ impl KrakenFuturesHttpClient {
         })
     }
 
+    #[pyo3(name = "request_mark_price")]
+    fn py_request_mark_price<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mark_price = client
+                .request_mark_price(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            Ok(mark_price)
+        })
+    }
+
+    #[pyo3(name = "request_index_price")]
+    fn py_request_index_price<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let index_price = client
+                .request_index_price(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            Ok(index_price)
+        })
+    }
+
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None))]
     fn py_request_bars<'py>(
@@ -216,37 +216,6 @@ impl KrakenFuturesHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let bars = client
                 .request_bars(bar_type, start, end, limit)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            Python::attach(|py| {
-                let py_bars: Vec<_> = bars
-                    .into_iter()
-                    .map(|bar| data_to_pycapsule(py, Data::Bar(bar)))
-                    .collect();
-                let pylist = PyList::new(py, py_bars).unwrap();
-                Ok(pylist.unbind())
-            })
-        })
-    }
-
-    #[pyo3(name = "request_bars_with_tick_type")]
-    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, tick_type=None))]
-    fn py_request_bars_with_tick_type<'py>(
-        &self,
-        py: Python<'py>,
-        bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        limit: Option<u64>,
-        tick_type: Option<String>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let tick_type_ref = tick_type.as_deref();
-            let bars = client
-                .request_bars_with_tick_type(bar_type, start, end, limit, tick_type_ref)
                 .await
                 .map_err(to_pyruntime_err)?;
 

@@ -206,6 +206,16 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    #[pyo3(name = "send_ping")]
+    fn py_send_ping<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.send_ping().await.map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "close")]
     fn py_close<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let mut client = self.clone();
@@ -349,16 +359,6 @@ impl KrakenSpotWebSocketClient {
                 .unsubscribe_bars(bar_type)
                 .await
                 .map_err(to_pyruntime_err)?;
-            Ok(())
-        })
-    }
-
-    #[pyo3(name = "send_ping")]
-    fn py_send_ping<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client.send_ping().await.map_err(to_pyruntime_err)?;
             Ok(())
         })
     }

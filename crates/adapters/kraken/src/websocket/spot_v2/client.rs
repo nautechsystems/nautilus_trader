@@ -153,9 +153,10 @@ impl KrakenSpotWebSocketClient {
         }
 
         let signal = self.signal.clone();
+        let subscriptions = self.subscriptions.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            let mut handler = SpotFeedHandler::new(signal.clone(), cmd_rx, raw_rx);
+            let mut handler = SpotFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions);
 
             loop {
                 match handler.next().await {
@@ -486,6 +487,7 @@ impl KrakenSpotWebSocketClient {
         }
     }
 
+    /// Subscribe to order book updates for the given instrument.
     pub async fn subscribe_book(
         &self,
         instrument_id: InstrumentId,
@@ -493,14 +495,26 @@ impl KrakenSpotWebSocketClient {
     ) -> Result<(), KrakenWsError> {
         // Kraken v2 WebSocket expects ISO 4217-A3 format (e.g., "ETH/USD")
         let symbol = instrument_id.symbol.inner();
+        let book_key = format!("book:{symbol}");
+        self.subscriptions.insert(book_key, KrakenWsChannel::Book);
+
         self.subscribe(KrakenWsChannel::Book, vec![symbol], depth)
             .await
     }
 
+    /// Subscribe to quote updates for the given instrument.
+    ///
+    /// Uses the order book channel with depth 10 for low-latency top-of-book quotes
+    /// instead of the throttled ticker feed.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> Result<(), KrakenWsError> {
         let symbol = instrument_id.symbol.inner();
-        self.subscribe(KrakenWsChannel::Ticker, vec![symbol], None)
-            .await
+        let quotes_key = format!("quotes:{symbol}");
+        if self.subscriptions.contains_key(&quotes_key) {
+            return Ok(());
+        }
+
+        self.subscriptions.insert(quotes_key, KrakenWsChannel::Book);
+        self.ensure_book_subscribed(symbol).await
     }
 
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> Result<(), KrakenWsError> {
@@ -515,18 +529,25 @@ impl KrakenSpotWebSocketClient {
             .await
     }
 
+    /// Unsubscribe from order book updates for the given instrument.
+    ///
+    /// Note: Will only actually unsubscribe if quotes are not also subscribed.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> Result<(), KrakenWsError> {
         let symbol = instrument_id.symbol.inner();
-        self.unsubscribe(KrakenWsChannel::Book, vec![symbol]).await
+        let book_key = format!("book:{symbol}");
+        self.subscriptions.remove(&book_key);
+        self.maybe_unsubscribe_book(symbol).await
     }
 
+    /// Unsubscribe from quote updates for the given instrument.
     pub async fn unsubscribe_quotes(
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), KrakenWsError> {
         let symbol = instrument_id.symbol.inner();
-        self.unsubscribe(KrakenWsChannel::Ticker, vec![symbol])
-            .await
+        let quotes_key = format!("quotes:{symbol}");
+        self.subscriptions.remove(&quotes_key);
+        self.maybe_unsubscribe_book(symbol).await
     }
 
     pub async fn unsubscribe_trades(
@@ -540,5 +561,30 @@ impl KrakenSpotWebSocketClient {
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> Result<(), KrakenWsError> {
         let symbol = bar_type.instrument_id().symbol.inner();
         self.unsubscribe(KrakenWsChannel::Ohlc, vec![symbol]).await
+    }
+
+    /// Ensure book channel is subscribed for the given symbol (used internally by quotes).
+    async fn ensure_book_subscribed(&self, symbol: Ustr) -> Result<(), KrakenWsError> {
+        let channel_key = format!("{:?}:{symbol}", KrakenWsChannel::Book);
+        if !self.subscriptions.contains_key(&channel_key) {
+            self.subscribe(KrakenWsChannel::Book, vec![symbol], Some(10))
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Unsubscribe from book channel if no more dependent subscriptions.
+    async fn maybe_unsubscribe_book(&self, symbol: Ustr) -> Result<(), KrakenWsError> {
+        let quotes_key = format!("quotes:{symbol}");
+        let explicit_book_key = format!("book:{symbol}");
+
+        let has_quotes = self.subscriptions.contains_key(&quotes_key);
+        let has_explicit_book = self.subscriptions.contains_key(&explicit_book_key);
+
+        if !has_quotes && !has_explicit_book {
+            self.unsubscribe(KrakenWsChannel::Book, vec![symbol])
+                .await?;
+        }
+        Ok(())
     }
 }

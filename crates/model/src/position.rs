@@ -2440,7 +2440,7 @@ mod tests {
         assert_eq!(position.ts_closed, Some(UnixNanos::default()));
         assert_eq!(position.event_count(), 0);
 
-        // Act: Add new fill to revive the position
+        // Add new fill to revive the position
         let order2 = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(audusd_sim.id())
             .side(OrderSide::Buy)
@@ -2463,7 +2463,7 @@ mod tests {
         let fill2_typed: OrderFilled = fill2.clone().into();
         position.apply(&fill2_typed);
 
-        // Assert: Position should be alive with new timestamps
+        // Position should be alive with new timestamps
         assert!(position.is_long());
         assert!(!position.is_closed());
         assert!(position.ts_closed.is_none());

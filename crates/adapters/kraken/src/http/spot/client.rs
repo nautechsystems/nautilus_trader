@@ -100,7 +100,7 @@ impl Default for KrakenSpotRawHttpClient {
 
 impl Debug for KrakenSpotRawHttpClient {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("KrakenSpotRawHttpClient")
+        f.debug_struct(stringify!(KrakenSpotRawHttpClient))
             .field("base_url", &self.base_url)
             .field("has_credentials", &self.credential.is_some())
             .finish()
@@ -775,7 +775,7 @@ impl Default for KrakenSpotHttpClient {
 
 impl Debug for KrakenSpotHttpClient {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("KrakenSpotHttpClient")
+        f.debug_struct(stringify!(KrakenSpotHttpClient))
             .field("inner", &self.inner)
             .finish()
     }

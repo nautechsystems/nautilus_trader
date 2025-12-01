@@ -536,7 +536,6 @@ fn test_exceed_free_balance_multi_currency_raises_account_balance_negative_excep
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
     portfolio.update_order(&OrderEventAny::Submitted(submitted));
 
-    // Assert
     assert_eq!(
         account
             .balances()
@@ -647,12 +646,10 @@ fn test_update_orders_open_margin_account(
     let fill1 = fill_order(&order1);
     order1.apply(OrderEventAny::Filled(fill1)).unwrap();
 
-    // Act
     let last = get_quote_tick(&instrument_btcusdt, 25001.0, 25002.0, 15.0, 12.0);
     portfolio.update_quote_tick(&last);
     portfolio.initialize_orders();
 
-    // Assert
     // TODO: This test needs to be fixed - order1 is filled so it's not open anymore
     // and order2 was never submitted/accepted. Need to properly set up open orders
     // for initialize_orders() to work correctly.
@@ -705,10 +702,8 @@ fn test_order_accept_updates_margin_init(
         .add_order(order.clone(), None, None, true)
         .unwrap();
 
-    // Act
     portfolio.initialize_orders();
 
-    // Assert
     // TODO: This test needs to be fixed - the order setup doesn't result in open orders
     // that initialize_orders() can work with.
     let margins = portfolio.margins_init(&Venue::from("BINANCE"));
@@ -785,7 +780,6 @@ fn test_update_positions(mut portfolio: Portfolio, instrument_audusd: Instrument
     // Update the last quote
     let last = get_quote_tick(&instrument_audusd, 250001.0, 250002.0, 1.0, 1.0);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -800,7 +794,6 @@ fn test_update_positions(mut portfolio: Portfolio, instrument_audusd: Instrument
     portfolio.update_quote_tick(&last);
     portfolio.initialize_positions();
 
-    // Assert
     assert!(portfolio.is_net_long(&instrument_audusd.id()));
 }
 
@@ -829,7 +822,6 @@ fn test_opening_one_long_position_updates_portfolio(
 
     let position = Position::new(&instrument_audusd, fill);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -839,7 +831,6 @@ fn test_opening_one_long_position_updates_portfolio(
     let position_opened = get_open_position(&position);
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("SIM"))
@@ -915,7 +906,6 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
 
     let position = Position::new(&instrument_audusd, fill);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -925,7 +915,6 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
     let position_opened = get_open_position(&position);
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("SIM"))
@@ -1022,7 +1011,6 @@ fn test_opening_one_short_position_updates_portfolio(
 
     let position = Position::new(&instrument_audusd, filled);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -1032,7 +1020,6 @@ fn test_opening_one_short_position_updates_portfolio(
     let position_opened = get_open_position(&position);
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("SIM"))
@@ -1135,7 +1122,6 @@ fn test_opening_positions_with_multi_asset_account(
 
     let position = Position::new(&instrument_ethusdt, filled);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -1145,7 +1131,6 @@ fn test_opening_positions_with_multi_asset_account(
     let position_opened = get_open_position(&position);
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("BITMEX"))
@@ -1223,7 +1208,6 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
     let position = Position::new(&instrument_ethusdt, filled);
     let position_opened = get_open_position(&position);
 
-    // Act
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened));
     portfolio
         .cache
@@ -1235,7 +1219,6 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
     portfolio.update_quote_tick(&last_ethusd);
     portfolio.update_quote_tick(&last_xbtusd);
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("BITMEX"))
@@ -1340,7 +1323,6 @@ fn test_opening_several_positions_updates_portfolio(
     let position_opened1 = get_open_position(&position1);
     let position_opened2 = get_open_position(&position2);
 
-    // Act
     portfolio
         .cache
         .borrow_mut()
@@ -1354,7 +1336,6 @@ fn test_opening_several_positions_updates_portfolio(
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened1));
     portfolio.update_position(&PositionEvent::PositionOpened(position_opened2));
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("SIM"))
@@ -1522,10 +1503,8 @@ fn test_modifying_position_updates_portfolio(
     position1.apply(&fill2);
     let position1_changed = get_changed_position(&position1);
 
-    // Act
     portfolio.update_position(&PositionEvent::PositionChanged(position1_changed));
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("SIM"))
@@ -1603,7 +1582,7 @@ fn test_closing_position_updates_portfolio(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
 ) {
-    // Arrange - Create margin account with 1,000,000 USD balance
+    // Create margin account with 1,000,000 USD balance
     let account_id = AccountId::new("SIM-01234");
     let account_state = AccountState::new(
         account_id,
@@ -1714,11 +1693,11 @@ fn test_closing_position_updates_portfolio(
         .unwrap();
     portfolio.update_quote_tick(&closing_quote_tick);
 
-    // Act - Update portfolio with position closed event
+    // Update portfolio with position closed event
     let position_closed = get_close_position(&position);
     portfolio.update_position(&PositionEvent::PositionClosed(position_closed));
 
-    // Assert - Check portfolio state after position closure
+    // Check portfolio state after position closure
     let net_exposures = portfolio.net_exposures(&Venue::from("SIM"));
     assert!(net_exposures.is_none() || net_exposures.unwrap().is_empty()); // No net exposures
     let unrealized_pnls_venue = portfolio.unrealized_pnls(&Venue::from("SIM"));
@@ -1941,7 +1920,6 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
         .unwrap();
     portfolio.update_position(&PositionEvent::PositionClosed(position_closed3));
 
-    // Assert
     assert_eq!(
         portfolio
             .net_exposures(&Venue::from("SIM"))

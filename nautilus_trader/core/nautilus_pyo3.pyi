@@ -8017,14 +8017,6 @@ class KrakenFuturesHttpClient:
         end: int | None = None,
         limit: int | None = None,
     ) -> list[Bar]: ...
-    async def request_bars_with_tick_type(
-        self,
-        bar_type: BarType,
-        start: int | None = None,
-        end: int | None = None,
-        limit: int | None = None,
-        tick_type: str | None = None,
-    ) -> list[Bar]: ...
     async def request_order_status_reports(
         self,
         account_id: AccountId,
