@@ -450,28 +450,29 @@ impl BlockchainCacheDatabase {
         sqlx::query(
             r"
             INSERT INTO pool (
-                chain_id, address, dex_name, creation_block,
+                chain_id, address, pool_identifier, dex_name, creation_block,
                 token0_chain, token0_address,
                 token1_chain, token1_address,
                 fee, tick_spacing, initial_tick, initial_sqrt_price_x96
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            ON CONFLICT (chain_id, address)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (chain_id, dex_name, pool_identifier)
             DO UPDATE
             SET
-                dex_name = $3,
-                creation_block = $4,
-                token0_chain = $5,
-                token0_address = $6,
-                token1_chain = $7,
-                token1_address = $8,
-                fee = $9,
-                tick_spacing = $10,
-                initial_tick = $11,
-                initial_sqrt_price_x96 = $12
+                address = $2,
+                creation_block = $5,
+                token0_chain = $6,
+                token0_address = $7,
+                token1_chain = $8,
+                token1_address = $9,
+                fee = $10,
+                tick_spacing = $11,
+                initial_tick = $12,
+                initial_sqrt_price_x96 = $13
         ",
         )
         .bind(pool.chain.chain_id as i32)
         .bind(pool.address.to_string())
+        .bind(pool.pool_identifier.clone())
         .bind(pool.dex.name.to_string())
         .bind(pool.creation_block as i64)
         .bind(pool.token0.chain.chain_id as i32)
@@ -501,6 +502,7 @@ impl BlockchainCacheDatabase {
         // Prepare vectors for each column
         let len = pools.len();
         let mut addresses: Vec<String> = Vec::with_capacity(len);
+        let mut pool_identifiers: Vec<String> = Vec::with_capacity(len);
         let mut dex_names: Vec<String> = Vec::with_capacity(len);
         let mut creation_blocks: Vec<i64> = Vec::with_capacity(len);
         let mut token0_chains: Vec<i32> = Vec::with_capacity(len);
@@ -517,6 +519,7 @@ impl BlockchainCacheDatabase {
         for pool in pools {
             chain_ids.push(pool.chain.chain_id as i32);
             addresses.push(pool.address.to_string());
+            pool_identifiers.push(pool.pool_identifier.clone());
             dex_names.push(pool.dex.name.to_string());
             creation_blocks.push(pool.creation_block as i64);
             token0_chains.push(pool.token0.chain.chain_id as i32);
@@ -534,22 +537,23 @@ impl BlockchainCacheDatabase {
         sqlx::query(
             r"
             INSERT INTO pool (
-                chain_id, address, dex_name, creation_block,
+                chain_id, address, pool_identifier, dex_name, creation_block,
                 token0_chain, token0_address,
                 token1_chain, token1_address,
                 fee, tick_spacing, initial_tick, initial_sqrt_price_x96
             )
             SELECT *
             FROM UNNEST(
-                $1::int4[], $2::text[], $3::text[], $4::int8[],
-                $5::int4[], $6::text[], $7::int4[], $8::text[],
-                $9::int4[], $10::int4[], $11::int4[], $12::text[]
+                $1::int4[], $2::text[], $3::text[], $4::text[], $5::int8[],
+                $6::int4[], $7::text[], $8::int4[], $9::text[],
+                $10::int4[], $11::int4[], $12::int4[], $13::text[]
             )
-            ON CONFLICT (chain_id, address) DO NOTHING
+            ON CONFLICT (chain_id, dex_name, pool_identifier) DO NOTHING
            ",
         )
         .bind(&chain_ids[..])
         .bind(&addresses[..])
+        .bind(&pool_identifiers[..])
         .bind(&dex_names[..])
         .bind(&creation_blocks[..])
         .bind(&token0_chains[..])
@@ -988,6 +992,7 @@ impl BlockchainCacheDatabase {
             r"
             SELECT
                 address,
+                pool_identifier,
                 dex_name,
                 creation_block,
                 token0_chain,
@@ -1628,7 +1633,7 @@ impl BlockchainCacheDatabase {
         )
         .bind(chain_id as i32)
         .bind(initialize_event.dex.name.to_string())
-        .bind(initialize_event.pool_address.to_string())
+        .bind(&initialize_event.pool_identifier)
         .bind(initialize_event.tick)
         .bind(initialize_event.sqrt_price_x96.to_string())
         .execute(&self.pool)
@@ -1744,8 +1749,11 @@ impl BlockchainCacheDatabase {
                     anyhow::anyhow!("No DEX extended found for {} on {}", dex_name, chain.name)
                 })?;
 
-            let instrument_id =
-                Pool::create_instrument_id(chain.name, &dex_extended.dex, pool_address);
+            let instrument_id = Pool::create_instrument_id(
+                chain.name,
+                &dex_extended.dex,
+                &pool_address.to_string(),
+            );
 
             Ok(Some(PoolSnapshot::new(
                 instrument_id,

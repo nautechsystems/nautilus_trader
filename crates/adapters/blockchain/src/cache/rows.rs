@@ -59,6 +59,7 @@ impl<'r> FromRow<'r, PgRow> for TokenRow {
 #[derive(Debug)]
 pub struct PoolRow {
     pub address: Address,
+    pub pool_identifier: String,
     pub dex_name: String,
     pub creation_block: i64,
     pub token0_chain: i32,
@@ -74,6 +75,7 @@ pub struct PoolRow {
 impl<'r> FromRow<'r, PgRow> for PoolRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let address = validate_address(row.try_get::<String, _>("address")?.as_str()).unwrap();
+        let pool_identifier = row.try_get::<String, _>("pool_identifier")?;
         let dex_name = row.try_get::<String, _>("dex_name")?;
         let creation_block = row.try_get::<i64, _>("creation_block")?;
         let token0_chain = row.try_get::<i32, _>("token0_chain")?;
@@ -89,6 +91,7 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
 
         Ok(Self {
             address,
+            pool_identifier,
             dex_name,
             creation_block,
             token0_chain,

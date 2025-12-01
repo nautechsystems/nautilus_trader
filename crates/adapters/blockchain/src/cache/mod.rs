@@ -58,8 +58,8 @@ pub struct BlockchainCache {
     tokens: HashMap<Address, Token>,
     /// Cached set of invalid token addresses that failed validation or processing.
     invalid_tokens: HashSet<Address>,
-    /// Map of pool addresses to their corresponding `Pool` objects.
-    pools: HashMap<Address, SharedPool>,
+    /// Map of pool identifiers to their corresponding `Pool` objects.
+    pools: HashMap<String, SharedPool>,
     /// Optional database connection for persistent storage.
     pub database: Option<BlockchainCacheDatabase>,
 }
@@ -259,6 +259,7 @@ impl BlockchainCache {
                     self.chain.clone(),
                     dex.clone(),
                     pool_row.address,
+                    pool_row.pool_identifier.clone(),
                     pool_row.creation_block as u64,
                     token0.clone(),
                     token1.clone(),
@@ -279,7 +280,8 @@ impl BlockchainCache {
 
                 // Add pool to cache and loaded pools list
                 loaded_pools.push(pool.clone());
-                self.pools.insert(pool.address, Arc::new(pool));
+                self.pools
+                    .insert(pool.pool_identifier.clone(), Arc::new(pool));
             }
         }
         Ok(loaded_pools)
@@ -393,12 +395,12 @@ impl BlockchainCache {
     ///
     /// Returns an error if adding the pool to the database fails.
     pub async fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
-        let pool_address = pool.address;
         if let Some(database) = &self.database {
             database.add_pool(&pool).await?;
         }
 
-        self.pools.insert(pool_address, Arc::new(pool));
+        self.pools
+            .insert(pool.pool_identifier.clone(), Arc::new(pool));
         Ok(())
     }
 
@@ -415,8 +417,11 @@ impl BlockchainCache {
         if let Some(database) = &self.database {
             database.add_pools_copy(self.chain.chain_id, &pools).await?;
         }
-        self.pools
-            .extend(pools.into_iter().map(|pool| (pool.address, Arc::new(pool))));
+        self.pools.extend(
+            pools
+                .into_iter()
+                .map(|pool| (pool.pool_identifier.clone(), Arc::new(pool))),
+        );
 
         Ok(())
     }
@@ -681,12 +686,14 @@ impl BlockchainCache {
         }
 
         // Update the cached pool if it exists
-        if let Some(cached_pool) = self.pools.get(&initialize_event.pool_address) {
+        if let Some(cached_pool) = self.pools.get(&initialize_event.pool_identifier) {
             let mut updated_pool = (**cached_pool).clone();
-            updated_pool.initialize(initialize_event.sqrt_price_x96);
+            updated_pool.initialize(initialize_event.sqrt_price_x96, initialize_event.tick);
 
-            self.pools
-                .insert(initialize_event.pool_address, Arc::new(updated_pool));
+            self.pools.insert(
+                initialize_event.pool_identifier.clone(),
+                Arc::new(updated_pool),
+            );
         }
 
         Ok(())
@@ -706,8 +713,8 @@ impl BlockchainCache {
 
     /// Returns a reference to the pool associated with the given address.
     #[must_use]
-    pub fn get_pool(&self, address: &Address) -> Option<&SharedPool> {
-        self.pools.get(address)
+    pub fn get_pool(&self, pool_identifier: &str) -> Option<&SharedPool> {
+        self.pools.get(pool_identifier)
     }
 
     /// Returns a reference to the `Token` associated with the given address.
