@@ -2354,6 +2354,9 @@ class ParquetDataCatalog(BaseDataCatalog):
             table = table.replace_schema_metadata(metadata)
 
         data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
+        if len(data) == 0:
+            return []
+
         module = data[0].__class__.__module__
 
         if "nautilus_pyo3" in module:
