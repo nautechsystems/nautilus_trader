@@ -318,10 +318,11 @@ CREATE TABLE IF NOT EXISTS "token_default" PARTITION OF "token" DEFAULT;
 CREATE TABLE IF NOT EXISTS "dex" (
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    factory_address TEXT UNIQUE,
+    factory_address TEXT NOT NULL,
     creation_block BIGINT NOT NULL,
     last_full_sync_pools_block_number BIGINT,
-    PRIMARY KEY (chain_id, name)
+    PRIMARY KEY (chain_id, name),
+    UNIQUE (chain_id, factory_address)
 );
 
 CREATE TABLE IF NOT EXISTS "pool" (
