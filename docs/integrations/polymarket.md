@@ -57,7 +57,7 @@ separately depending on the use case.
 - `PolymarketLiveExecClientFactory`: Factory for Polymarket execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as below),
+Most users will define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
 

@@ -41,7 +41,7 @@ extension-module = [
 ]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
@@ -92,13 +92,13 @@ tracing-test = { workspace = true }
 url = { workspace = true }
 
 [[bin]]
-name = "kraken-http-raw"
-path = "bin/http_raw.rs"
+name = "kraken-http-spot-raw"
+path = "bin/http_spot_raw.rs"
 
 [[bin]]
-name = "kraken-http-public"
-path = "bin/http_public.rs"
+name = "kraken-http-spot-public"
+path = "bin/http_spot_public.rs"
 
 [[bin]]
-name = "kraken-ws-data"
-path = "bin/ws_data.rs"
+name = "kraken-ws-spot-data"
+path = "bin/ws_spot_data.rs"

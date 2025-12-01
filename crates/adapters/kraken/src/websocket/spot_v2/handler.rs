@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! WebSocket message handler for Kraken.
+//! WebSocket message handler for Kraken Spot v2.
 
 use std::sync::{
     Arc,
@@ -21,10 +21,13 @@ use std::sync::{
 };
 
 use ahash::AHashMap;
+use dashmap::DashMap;
+use nautilus_common::cache::quote::QuoteCache;
 use nautilus_core::{AtomicTime, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::Data,
+    data::{Data, OrderBookDeltas, QuoteTick},
     instruments::{Instrument, InstrumentAny},
+    types::{Price, Quantity},
 };
 use nautilus_network::websocket::WebSocketClient;
 use serde_json::Value;
@@ -46,7 +49,7 @@ use super::{
     clippy::large_enum_variant,
     reason = "Commands are ephemeral and immediately consumed"
 )]
-pub enum HandlerCommand {
+pub enum SpotHandlerCommand {
     /// Set the WebSocketClient for the handler to use.
     SetClient(WebSocketClient),
     /// Disconnect the WebSocket connection.
@@ -60,22 +63,26 @@ pub enum HandlerCommand {
 }
 
 /// WebSocket message handler for Kraken.
-pub(super) struct FeedHandler {
+pub(super) struct SpotFeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
     client: Option<WebSocketClient>,
-    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+    subscriptions: Arc<DashMap<String, KrakenWsChannel>>,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
+    quote_cache: QuoteCache,
     book_sequence: u64,
+    pending_quotes: Vec<QuoteTick>,
 }
 
-impl FeedHandler {
-    /// Creates a new [`FeedHandler`] instance.
+impl SpotFeedHandler {
+    /// Creates a new [`SpotFeedHandler`] instance.
     pub(super) fn new(
         signal: Arc<AtomicBool>,
-        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        subscriptions: Arc<DashMap<String, KrakenWsChannel>>,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -83,8 +90,11 @@ impl FeedHandler {
             client: None,
             cmd_rx,
             raw_rx,
+            subscriptions,
             instruments_cache: AHashMap::new(),
+            quote_cache: QuoteCache::new(),
             book_sequence: 0,
+            pending_quotes: Vec::new(),
         }
     }
 
@@ -98,33 +108,39 @@ impl FeedHandler {
 
     /// Processes messages and commands, returning when stopped or stream ends.
     pub(super) async fn next(&mut self) -> Option<NautilusWsMessage> {
+        if let Some(quote) = self.pending_quotes.pop() {
+            return Some(NautilusWsMessage::Data(vec![Data::Quote(quote)]));
+        }
+
         loop {
             tokio::select! {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
-                        HandlerCommand::SetClient(client) => {
+                        SpotHandlerCommand::SetClient(client) => {
                             tracing::debug!("WebSocketClient received by handler");
                             self.client = Some(client);
                         }
-                        HandlerCommand::Disconnect => {
+                        SpotHandlerCommand::Disconnect => {
                             tracing::debug!("Disconnect command received");
                             if let Some(client) = self.client.take() {
                                 client.disconnect().await;
                             }
                         }
-                        HandlerCommand::SendText { payload } => {
+                        SpotHandlerCommand::SendText { payload } => {
                             if let Some(client) = &self.client
                                 && let Err(e) = client.send_text(payload.clone(), None).await
                             {
                                 tracing::error!(error = %e, "Failed to send text");
                             }
                         }
-                        HandlerCommand::InitializeInstruments(instruments) => {
+                        SpotHandlerCommand::InitializeInstruments(instruments) => {
                             for inst in instruments {
+                                // Cache by symbol (ISO 4217-A3 format like "ETH/USD")
+                                // which matches what v2 WebSocket messages use
                                 self.instruments_cache.insert(inst.symbol().inner(), inst);
                             }
                         }
-                        HandlerCommand::UpdateInstrument(inst) => {
+                        SpotHandlerCommand::UpdateInstrument(inst) => {
                             self.instruments_cache.insert(inst.symbol().inner(), inst);
                         }
                     }
@@ -290,16 +306,52 @@ impl FeedHandler {
         for data in msg.data {
             match serde_json::from_value::<KrakenWsBookData>(data) {
                 Ok(book_data) => {
-                    let instrument = self.get_instrument(&book_data.symbol)?;
+                    let symbol = &book_data.symbol;
+                    let instrument = self.get_instrument(symbol)?;
                     instrument_id = Some(instrument.id());
 
-                    match parse_book_deltas(&book_data, &instrument, self.book_sequence, ts_init) {
-                        Ok(mut deltas) => {
-                            self.book_sequence += deltas.len() as u64;
-                            all_deltas.append(&mut deltas);
+                    let price_precision = instrument.price_precision();
+                    let size_precision = instrument.size_precision();
+
+                    let has_book = self.subscriptions.contains_key(&format!("book:{symbol}"));
+                    let has_quotes = self.subscriptions.contains_key(&format!("quotes:{symbol}"));
+
+                    if has_quotes {
+                        let best_bid = book_data.bids.as_ref().and_then(|bids| bids.first());
+                        let best_ask = book_data.asks.as_ref().and_then(|asks| asks.first());
+
+                        let bid_price = best_bid.map(|b| Price::new(b.price, price_precision));
+                        let ask_price = best_ask.map(|a| Price::new(a.price, price_precision));
+                        let bid_size = best_bid.map(|b| Quantity::new(b.qty, size_precision));
+                        let ask_size = best_ask.map(|a| Quantity::new(a.qty, size_precision));
+
+                        if let Ok(quote) = self.quote_cache.process(
+                            instrument.id(),
+                            bid_price,
+                            ask_price,
+                            bid_size,
+                            ask_size,
+                            ts_init,
+                            ts_init,
+                        ) {
+                            self.pending_quotes.push(quote);
                         }
-                        Err(e) => {
-                            tracing::error!("Failed to parse book deltas: {e}");
+                    }
+
+                    if has_book {
+                        match parse_book_deltas(
+                            &book_data,
+                            &instrument,
+                            self.book_sequence,
+                            ts_init,
+                        ) {
+                            Ok(mut deltas) => {
+                                self.book_sequence += deltas.len() as u64;
+                                all_deltas.append(&mut deltas);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to parse book deltas: {e}");
+                            }
                         }
                     }
                 }
@@ -310,9 +362,11 @@ impl FeedHandler {
         }
 
         if all_deltas.is_empty() {
+            if let Some(quote) = self.pending_quotes.pop() {
+                return Some(NautilusWsMessage::Data(vec![Data::Quote(quote)]));
+            }
             None
         } else {
-            use nautilus_model::data::OrderBookDeltas;
             let deltas = OrderBookDeltas::new(instrument_id?, all_deltas);
             Some(NautilusWsMessage::Deltas(deltas))
         }

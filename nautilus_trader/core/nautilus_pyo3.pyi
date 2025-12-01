@@ -5755,6 +5755,77 @@ class BybitMarginMode(Enum):
     REGULAR_MARGIN = "REGULAR_MARGIN"
     PORTFOLIO_MARGIN = "PORTFOLIO_MARGIN"
 
+class BybitMarginAction(Enum):
+    BORROW = "borrow"
+    REPAY = "repay"
+    GET_BORROW_AMOUNT = "get_borrow_amount"
+
+class BybitMarginBorrowResult:
+    def __init__(
+        self,
+        coin: str,
+        amount: str,
+        success: bool,
+        message: str,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @property
+    def coin(self) -> str: ...
+    @property
+    def amount(self) -> str: ...
+    @property
+    def success(self) -> bool: ...
+    @property
+    def message(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+class BybitMarginRepayResult:
+    def __init__(
+        self,
+        coin: str,
+        amount: str | None,
+        success: bool,
+        result_status: str,
+        message: str,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @property
+    def coin(self) -> str: ...
+    @property
+    def amount(self) -> str | None: ...
+    @property
+    def success(self) -> bool: ...
+    @property
+    def result_status(self) -> str: ...
+    @property
+    def message(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+class BybitMarginStatusResult:
+    def __init__(
+        self,
+        coin: str,
+        borrow_amount: str,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @property
+    def coin(self) -> str: ...
+    @property
+    def borrow_amount(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
 class BybitPositionMode(Enum):
     MergedSingle = 0
     BothSides = 3
@@ -5848,8 +5919,6 @@ class BybitHttpClient:
         recv_window_ms: int | None = None,
         proxy_url: str | None = None,
     ) -> None: ...
-    @staticmethod
-    def from_env() -> BybitHttpClient: ...
     @property
     def base_url(self) -> str: ...
     @property
@@ -5914,9 +5983,9 @@ class BybitHttpClient:
     ) -> list[Bar]: ...
     async def request_fee_rates(
         self,
-        account_type: BybitAccountType,
-        account_id: AccountId,
-        instrument_id: InstrumentId | None = None,
+        product_type: BybitProductType,
+        symbol: str | None = None,
+        base_coin: str | None = None,
     ) -> list[Any]: ...
     async def request_account_state(
         self,
@@ -5994,14 +6063,6 @@ class BybitHttpClient:
         quantity: Quantity | None = None,
         price: Price | None = None,
     ) -> OrderStatusReport: ...
-    async def batch_cancel_orders(
-        self,
-        account_id: AccountId,
-        product_type: BybitProductType,
-        instrument_ids: list[InstrumentId],
-        client_order_ids: list[ClientOrderId | None],
-        venue_order_ids: list[VenueOrderId | None],
-    ) -> list[OrderStatusReport]: ...
 
 class BybitWebSocketClient:
     @staticmethod
@@ -6027,14 +6088,14 @@ class BybitWebSocketClient:
         url: str | None = None,
         heartbeat: int | None = None,
     ) -> BybitWebSocketClient: ...
-    def subscription_count(self) -> int: ...
     @property
     def api_key_masked(self) -> str | None: ...
+    def subscription_count(self) -> int: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
     def set_account_id(self, account_id: AccountId) -> None: ...
     def set_mm_level(self, mm_level: int) -> None: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
-    async def is_active(self) -> bool: ...
-    async def is_closed(self) -> bool: ...
     async def connect(self, callback: Any) -> None: ...
     async def close(self) -> None: ...
     async def wait_until_active(self, timeout_secs: float) -> None: ...
@@ -6080,8 +6141,8 @@ class BybitWebSocketClient:
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId | None = None,
-        client_order_id: ClientOrderId | None = None,
         quantity: Quantity | None = None,
         price: Price | None = None,
     ) -> None: ...
@@ -6091,8 +6152,8 @@ class BybitWebSocketClient:
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId | None = None,
-        client_order_id: ClientOrderId | None = None,
     ) -> None: ...
     async def batch_place_orders(
         self,
@@ -6108,12 +6169,9 @@ class BybitWebSocketClient:
     ) -> None: ...
     async def batch_cancel_orders(
         self,
-        product_type: BybitProductType,
         trader_id: TraderId,
         strategy_id: StrategyId,
-        instrument_ids: list[InstrumentId],
-        venue_order_ids: list[VenueOrderId | None],
-        client_order_ids: list[ClientOrderId | None],
+        orders: list[BybitWsCancelOrderParams],
     ) -> None: ...
     def build_place_order_params(
         self,
@@ -6140,6 +6198,13 @@ class BybitWebSocketClient:
         quantity: Quantity | None = None,
         price: Price | None = None,
     ) -> BybitWsAmendOrderParams: ...
+    def build_cancel_order_params(
+        self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId | None = None,
+        client_order_id: ClientOrderId | None = None,
+    ) -> BybitWsCancelOrderParams: ...
 
 class BybitWsPlaceOrderParams:
     category: BybitProductType
@@ -6181,6 +6246,12 @@ class BybitWsAmendOrderParams:
     stop_loss: str | None
     tp_trigger_by: str | None
     sl_trigger_by: str | None
+
+class BybitWsCancelOrderParams:
+    category: BybitProductType
+    symbol: str
+    order_id: str | None
+    order_link_id: str | None
 
 def get_bybit_http_base_url(environment: BybitEnvironment) -> str: ...
 def get_bybit_ws_url_public(
@@ -7570,8 +7641,8 @@ class HyperliquidWebSocketClient:
     ) -> None: ...
     @property
     def url(self) -> str: ...
-    async def is_active(self) -> bool: ...
-    async def is_closed(self) -> bool: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
     async def connect(self, instruments: list[Any], callback: Callable) -> None: ...
     async def wait_until_active(self, timeout_secs: float) -> None: ...
     async def close(self) -> None: ...
@@ -7615,81 +7686,13 @@ class KrakenProductType(Enum):
     SPOT = "spot"
     FUTURES = "futures"
 
-class KrakenOrderType(Enum):
-    MARKET = "market"
-    LIMIT = "limit"
-    STOP_LOSS = "stop-loss"
-    TAKE_PROFIT = "take-profit"
-    STOP_LOSS_LIMIT = "stop-loss-limit"
-    TAKE_PROFIT_LIMIT = "take-profit-limit"
-    SETTLE_POSITION = "settle-position"
-
-class KrakenOrderSide(Enum):
-    BUY = "buy"
-    SELL = "sell"
-
-class KrakenTimeInForce(Enum):
-    GTC = "GTC"
-    IOC = "IOC"
-    GTD = "GTD"
-
-class KrakenOrderStatus(Enum):
-    PENDING = "pending"
-    OPEN = "open"
-    CLOSED = "closed"
-    CANCELED = "canceled"
-    EXPIRED = "expired"
-
-class KrakenPositionSide(Enum):
-    LONG = "long"
-    SHORT = "short"
-
-class KrakenPairStatus(Enum):
-    ONLINE = "online"
-    CANCEL_ONLY = "cancel_only"
-    POST_ONLY = "post_only"
-    LIMIT_ONLY = "limit_only"
-    REDUCE_ONLY = "reduce_only"
-
-class KrakenSystemStatus(Enum):
-    ONLINE = "online"
-    MAINTENANCE = "maintenance"
-    CANCEL_ONLY = "cancel_only"
-    POST_ONLY = "post_only"
-
-class KrakenAssetClass(Enum):
-    CURRENCY = "currency"
-
-class KrakenWsMethod(Enum):
-    SUBSCRIBE = "subscribe"
-    UNSUBSCRIBE = "unsubscribe"
-    PING = "ping"
-    PONG = "pong"
-
-class KrakenWsChannel(Enum):
-    TICKER = "ticker"
-    TRADE = "trade"
-    BOOK = "book"
-    OHLC = "ohlc"
-    SPREAD = "spread"
-    EXECUTIONS = "executions"
-    BALANCES = "balances"
-
-class KrakenWsEventType(Enum):
-    HEARTBEAT = "heartbeat"
-    STATUS = "status"
-    SUBSCRIBE = "subscribe"
-    UNSUBSCRIBE = "unsubscribe"
-    UPDATE = "update"
-    SNAPSHOT = "snapshot"
-    ERROR = "error"
-
-class KrakenHttpClient:
+class KrakenSpotHttpClient:
     def __init__(
         self,
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
+        testnet: bool = False,
         timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
@@ -7705,25 +7708,6 @@ class KrakenHttpClient:
     def cache_instrument(self, instrument: Instrument) -> None: ...
     def cancel_all_requests(self) -> None: ...
     async def get_server_time(self) -> str: ...
-    async def get_system_status(self) -> str: ...
-    async def get_asset_pairs(self, pairs: list[str] | None = None) -> str: ...
-    async def get_ticker(self, pairs: list[str]) -> str: ...
-    async def get_ohlc(
-        self,
-        pair: str,
-        interval: int | None = None,
-        since: int | None = None,
-    ) -> str: ...
-    async def get_order_book(
-        self,
-        pair: str,
-        count: int | None = None,
-    ) -> str: ...
-    async def get_trades(
-        self,
-        pair: str,
-        since: str | None = None,
-    ) -> str: ...
     async def request_instruments(
         self,
         pairs: list[str] | None = None,
@@ -7742,9 +7726,134 @@ class KrakenHttpClient:
         end: int | None = None,
         limit: int | None = None,
     ) -> list[Bar]: ...
+    async def request_order_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        open_only: bool = False,
+    ) -> list[OrderStatusReport]: ...
+    async def request_fill_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> list[FillReport]: ...
+    async def submit_order(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Price | None = None,
+        reduce_only: bool = False,
+        post_only: bool = False,
+    ) -> OrderStatusReport: ...
+    async def cancel_order(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport: ...
+    async def cancel_all_orders(self) -> int: ...
 
-class KrakenWebSocketClient:
-    def __init__(self, url: str) -> None: ...
+class KrakenFuturesHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
+    ) -> None: ...
+    @property
+    def base_url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+    @property
+    def api_key_masked(self) -> str | None: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
+    def cancel_all_requests(self) -> None: ...
+    async def request_mark_price(self, instrument_id: InstrumentId) -> float: ...
+    async def request_index_price(self, instrument_id: InstrumentId) -> float: ...
+    async def request_instruments(self) -> list[Instrument]: ...
+    async def request_trades(
+        self,
+        instrument_id: InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[TradeTick]: ...
+    async def request_bars(
+        self,
+        bar_type: BarType,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[Bar]: ...
+    async def request_order_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        open_only: bool = False,
+    ) -> list[OrderStatusReport]: ...
+    async def request_fill_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+        start: int | None = None,
+        end: int | None = None,
+    ) -> list[FillReport]: ...
+    async def request_position_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[PositionStatusReport]: ...
+    async def submit_order(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        reduce_only: bool = False,
+        post_only: bool = False,
+    ) -> OrderStatusReport: ...
+    async def cancel_order(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport: ...
+    async def cancel_all_orders(
+        self,
+        instrument_id: InstrumentId | None = None,
+    ) -> int: ...
+
+class KrakenSpotWebSocketClient:
+    def __init__(
+        self,
+        environment: KrakenEnvironment | None = None,
+        base_url: str | None = None,
+        heartbeat_secs: int | None = None,
+    ) -> None: ...
     @property
     def url(self) -> str: ...
     def is_connected(self) -> bool: ...
@@ -7769,6 +7878,50 @@ class KrakenWebSocketClient:
     async def unsubscribe_trades(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_bars(self, bar_type: BarType) -> None: ...
     async def send_ping(self) -> None: ...
+
+class KrakenFuturesWebSocketClient:
+    def __init__(
+        self,
+        environment: KrakenEnvironment | None = None,
+        base_url: str | None = None,
+        heartbeat_secs: int | None = None,
+    ) -> None: ...
+    @property
+    def url(self) -> str: ...
+    def is_closed(self) -> bool: ...
+    def cache_instruments(self, instruments: list[Instrument]) -> None: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
+    async def connect(
+        self, instruments: list[Instrument], callback: Callable[..., Any]
+    ) -> None: ...
+    async def disconnect(self) -> None: ...
+    async def close(self) -> None: ...
+    async def subscribe_mark_price(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_mark_price(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_index_price(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_index_price(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_trades(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_trades(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_book(
+        self, instrument_id: InstrumentId, depth: int | None = None
+    ) -> None: ...
+    async def unsubscribe_book(self, instrument_id: InstrumentId) -> None: ...
+
+def kraken_product_type_from_symbol(symbol: str) -> KrakenProductType: ...
+def get_kraken_http_base_url(
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+) -> str: ...
+def get_kraken_ws_public_url(
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+) -> str: ...
+def get_kraken_ws_private_url(
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+) -> str: ...
 
 # Greeks
 

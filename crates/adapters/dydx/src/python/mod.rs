@@ -16,6 +16,7 @@
 //! Python bindings from `pyo3`.
 
 pub mod enums;
+pub mod execution;
 pub mod http;
 pub mod types;
 pub mod websocket;
@@ -32,8 +33,12 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__package__", "nautilus_trader.core.nautilus_pyo3.dydx")?;
     m.add_class::<crate::http::client::DydxHttpClient>()?;
     m.add_class::<crate::websocket::client::DydxWebSocketClient>()?;
+    m.add_class::<crate::common::enums::DydxNetwork>()?;
     m.add_class::<crate::common::enums::DydxOrderSide>()?;
     m.add_class::<crate::common::enums::DydxOrderType>()?;
     m.add_class::<crate::types::DydxOraclePrice>()?;
+    m.add_class::<execution::PyDydxWallet>()?;
+    m.add_class::<execution::PyDydxGrpcClient>()?;
+    m.add_class::<execution::PyDydxOrderSubmitter>()?;
     Ok(())
 }

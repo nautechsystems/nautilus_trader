@@ -3872,28 +3872,29 @@ cdef class OrderMatchingEngine:
 
         cdef AggressorSide aggressor_side = AggressorSide.NO_AGGRESSOR
         cdef PriceRaw price_raw = tick._mem.price.raw
+        cdef PriceRaw original_bid = 0
+        cdef PriceRaw original_ask = 0
 
         self._core.set_last_raw(price_raw)
 
         if self._trade_execution:
             aggressor_side = tick.aggressor_side
 
+            # Update the natural side based on trade
             if aggressor_side == AggressorSide.BUYER:
-                self._core.set_ask_raw(price_raw)
-
-                if price_raw < self._core.bid_raw:
+                if not self._core.is_ask_initialized or price_raw > self._core.ask_raw:
+                    self._core.set_ask_raw(price_raw)
+                if not self._core.is_bid_initialized or price_raw < self._core.bid_raw:
                     self._core.set_bid_raw(price_raw)
             elif aggressor_side == AggressorSide.SELLER:
-                self._core.set_bid_raw(price_raw)
-
-                if price_raw > self._core.ask_raw:
+                if not self._core.is_bid_initialized or price_raw < self._core.bid_raw:
+                    self._core.set_bid_raw(price_raw)
+                if not self._core.is_ask_initialized or price_raw > self._core.ask_raw:
                     self._core.set_ask_raw(price_raw)
             elif aggressor_side == AggressorSide.NO_AGGRESSOR:
-                # Update both bid and ask when no specific aggressor
-                if price_raw <= self._core.bid_raw:
+                if not self._core.is_bid_initialized or price_raw <= self._core.bid_raw:
                     self._core.set_bid_raw(price_raw)
-
-                if price_raw >= self._core.ask_raw:
+                if not self._core.is_ask_initialized or price_raw >= self._core.ask_raw:
                     self._core.set_ask_raw(price_raw)
             else:
                 aggressor_side_str = aggressor_side_to_str(aggressor_side)
@@ -3901,7 +3902,23 @@ cdef class OrderMatchingEngine:
                     f"invalid `AggressorSide` for trade execution, was {aggressor_side_str}",  # pragma: no cover
                 )
 
+            # Transient override: temporarily drag the opposite side to the trade price
+            original_bid = self._core.bid_raw
+            original_ask = self._core.ask_raw
+
+            if aggressor_side == AggressorSide.SELLER and price_raw < original_ask:
+                self._core.set_ask_raw(price_raw)
+            elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
+                self._core.set_bid_raw(price_raw)
+
         self.iterate(tick.ts_init, aggressor_side)
+
+        if self._trade_execution:
+            # Restore original state after matching
+            if aggressor_side == AggressorSide.SELLER and price_raw < original_ask:
+                self._core.set_ask_raw(original_ask)
+            elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
+                self._core.set_bid_raw(original_bid)
 
     cpdef void process_bar(self, Bar bar):
         """
@@ -5293,6 +5310,21 @@ cdef class OrderMatchingEngine:
 
         cdef Price triggered_price = order.get_triggered_price_c()
         cdef Price price = order.price
+        cdef Quantity leaves_qty
+
+        # Handle trade execution mode where the order is matched via transient price override
+        # but the book doesn't have liquidity at that price.
+        if (
+            not fills
+            and order.liquidity_side == LiquiditySide.MAKER
+            and self._core.is_limit_matched(order.side, order.price)
+        ):
+            leaves_qty = Quantity.from_raw_c(
+                order.quantity._mem.raw - order.filled_qty._mem.raw,
+                order.quantity._mem.precision,
+            )
+            if leaves_qty.as_double() > 0:
+                fills = [(order.price, leaves_qty)]
 
         if (
                 fills

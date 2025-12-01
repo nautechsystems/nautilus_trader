@@ -203,8 +203,7 @@ pub fn ensure_min_notional(
     let notional = price * qty;
     if notional < min_notional {
         Err(format!(
-            "Notional value {} is less than minimum required {}",
-            notional, min_notional
+            "Notional value {notional} is less than minimum required {min_notional}"
         ))
     } else {
         Ok(())
@@ -454,7 +453,7 @@ pub fn order_to_hyperliquid_request(
     let instrument_id = order.instrument_id();
     let symbol = instrument_id.symbol.as_str();
     let asset = extract_asset_id_from_symbol(symbol)
-        .with_context(|| format!("Failed to extract asset ID from symbol: {}", symbol))?;
+        .with_context(|| format!("Failed to extract asset ID from symbol: {symbol}"))?;
 
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
@@ -464,7 +463,7 @@ pub fn order_to_hyperliquid_request(
     // Convert price to decimal
     let price_decimal = match order.price() {
         Some(price) => Decimal::from_str_exact(&price.to_string())
-            .with_context(|| format!("Failed to convert price to decimal: {}", price))?,
+            .with_context(|| format!("Failed to convert price to decimal: {price}"))?,
         None => {
             // For market orders without price, use 0 as placeholder
             // The actual market price will be determined by the exchange
@@ -509,10 +508,7 @@ pub fn order_to_hyperliquid_request(
             if let Some(trigger_price) = order.trigger_price() {
                 let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
                     .with_context(|| {
-                        format!(
-                            "Failed to convert trigger price to decimal: {}",
-                            trigger_price
-                        )
+                        format!("Failed to convert trigger price to decimal: {trigger_price}")
                     })?;
 
                 // Determine TP/SL based on order semantics
@@ -538,10 +534,7 @@ pub fn order_to_hyperliquid_request(
             if let Some(trigger_price) = order.trigger_price() {
                 let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
                     .with_context(|| {
-                        format!(
-                            "Failed to convert trigger price to decimal: {}",
-                            trigger_price
-                        )
+                        format!("Failed to convert trigger price to decimal: {trigger_price}")
                     })?;
 
                 // Determine TP/SL based on order semantics
@@ -564,10 +557,7 @@ pub fn order_to_hyperliquid_request(
             if let Some(trigger_price) = order.trigger_price() {
                 let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
                     .with_context(|| {
-                        format!(
-                            "Failed to convert trigger price to decimal: {}",
-                            trigger_price
-                        )
+                        format!("Failed to convert trigger price to decimal: {trigger_price}")
                     })?;
 
                 HyperliquidExecOrderKind::Trigger {
@@ -587,10 +577,7 @@ pub fn order_to_hyperliquid_request(
             if let Some(trigger_price) = order.trigger_price() {
                 let trigger_price_decimal = Decimal::from_str_exact(&trigger_price.to_string())
                     .with_context(|| {
-                        format!(
-                            "Failed to convert trigger price to decimal: {}",
-                            trigger_price
-                        )
+                        format!("Failed to convert trigger price to decimal: {trigger_price}")
                     })?;
 
                 HyperliquidExecOrderKind::Trigger {
@@ -604,7 +591,7 @@ pub fn order_to_hyperliquid_request(
                 anyhow::bail!("Limit-if-touched orders require a trigger price")
             }
         }
-        _ => anyhow::bail!("Unsupported order type for Hyperliquid: {:?}", order_type),
+        _ => anyhow::bail!("Unsupported order type for Hyperliquid: {order_type:?}"),
     };
 
     // Convert client order ID to CLOID
@@ -663,14 +650,10 @@ pub fn client_order_id_to_cancel_request(
     symbol: &str,
 ) -> anyhow::Result<HyperliquidExecCancelByCloidRequest> {
     let asset = extract_asset_id_from_symbol(symbol)
-        .with_context(|| format!("Failed to extract asset ID from symbol: {}", symbol))?;
+        .with_context(|| format!("Failed to extract asset ID from symbol: {symbol}"))?;
 
     let cloid = Cloid::from_hex(client_order_id).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to convert client order ID '{}' to CLOID: {}",
-            client_order_id,
-            e
-        )
+        anyhow::anyhow!("Failed to convert client order ID '{client_order_id}' to CLOID: {e}")
     })?;
 
     Ok(HyperliquidExecCancelByCloidRequest { asset, cloid })
@@ -692,7 +675,7 @@ pub fn extract_error_message(response: &HyperliquidExchangeResponse) -> String {
                 if let Some(error_msg) = response.get("error").and_then(|v| v.as_str()) {
                     error_msg.to_string()
                 } else {
-                    format!("Request failed with status: {}", status)
+                    format!("Request failed with status: {status}")
                 }
             }
         }
@@ -758,12 +741,9 @@ pub fn format_trailing_stop_info(
     let offset_desc = offset_type.format_offset(offset);
 
     if let Some(callback) = callback_price {
-        format!(
-            "Trailing stop: {} offset, callback at {}",
-            offset_desc, callback
-        )
+        format!("Trailing stop: {offset_desc} offset, callback at {callback}")
     } else {
-        format!("Trailing stop: {} offset", offset_desc)
+        format!("Trailing stop: {offset_desc} offset")
     }
 }
 
@@ -805,7 +785,7 @@ pub fn validate_conditional_order_params(
 /// Parsed Decimal value or error.
 pub fn parse_trigger_price(trigger_px: &str) -> anyhow::Result<Decimal> {
     Decimal::from_str_exact(trigger_px)
-        .with_context(|| format!("Failed to parse trigger price: {}", trigger_px))
+        .with_context(|| format!("Failed to parse trigger price: {trigger_px}"))
 }
 
 /// Parses Hyperliquid clearinghouse state into Nautilus account balances and margins.
@@ -901,7 +881,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&original).unwrap();
-        println!("Serialized: {}", json);
+        println!("Serialized: {json}");
 
         // Check that it's serialized as strings (rust_decimal may normalize precision)
         assert!(json.contains("\"123.45678901234567890123456789\""));
@@ -934,12 +914,11 @@ mod tests {
             let json = serde_json::to_string(&test_struct).unwrap();
             let parsed: TestStruct = serde_json::from_str(&json).unwrap();
 
-            assert_eq!(decimal, parsed.value, "Failed for case: {}", case);
+            assert_eq!(decimal, parsed.value, "Failed for case: {case}");
             assert_eq!(
                 Some(decimal),
                 parsed.optional_value,
-                "Failed for case: {}",
-                case
+                "Failed for case: {case}"
             );
         }
     }

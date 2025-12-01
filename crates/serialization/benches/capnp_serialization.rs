@@ -85,7 +85,7 @@ fn create_order_book_deltas(delta_count: usize) -> OrderBookDeltas {
             } else {
                 OrderSide::Sell
             },
-            Price::from(&format!("100.{}", i)),
+            Price::from(&format!("100.{i}")),
             Quantity::from("5.0"),
             i as u64,
         );

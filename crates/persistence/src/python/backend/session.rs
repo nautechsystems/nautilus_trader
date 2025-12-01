@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use nautilus_core::{
     ffi::cvec::CVec,
     python::{IntoPyObjectNautilusExt, to_pyruntime_err},
@@ -102,8 +104,10 @@ impl DataBackendSession {
     fn py_register_object_store_from_uri(
         mut slf: PyRefMut<'_, Self>,
         uri: &str,
-        storage_options: Option<std::collections::HashMap<String, String>>,
+        storage_options: Option<HashMap<String, String>>,
     ) -> PyResult<()> {
+        // Convert HashMap to AHashMap for internal use
+        let storage_options = storage_options.map(|m| m.into_iter().collect());
         slf.register_object_store_from_uri(uri, storage_options)
             .map_err(to_pyruntime_err)
     }

@@ -21,33 +21,35 @@
 use prost::Message as ProstMessage;
 use tonic::transport::Channel;
 
-use crate::error::DydxError;
-use crate::proto::{
-    cosmos_sdk_proto::cosmos::{
-        auth::v1beta1::{
-            BaseAccount, QueryAccountRequest, query_client::QueryClient as AuthClient,
-        },
-        bank::v1beta1::{QueryAllBalancesRequest, query_client::QueryClient as BankClient},
-        base::{
-            tendermint::v1beta1::{
-                Block, GetLatestBlockRequest, GetNodeInfoRequest, GetNodeInfoResponse,
-                service_client::ServiceClient as BaseClient,
+use crate::{
+    error::DydxError,
+    proto::{
+        cosmos_sdk_proto::cosmos::{
+            auth::v1beta1::{
+                BaseAccount, QueryAccountRequest, query_client::QueryClient as AuthClient,
             },
-            v1beta1::Coin,
+            bank::v1beta1::{QueryAllBalancesRequest, query_client::QueryClient as BankClient},
+            base::{
+                tendermint::v1beta1::{
+                    Block, GetLatestBlockRequest, GetNodeInfoRequest, GetNodeInfoResponse,
+                    service_client::ServiceClient as BaseClient,
+                },
+                v1beta1::Coin,
+            },
+            tx::v1beta1::{
+                BroadcastMode, BroadcastTxRequest, GetTxRequest, SimulateRequest,
+                service_client::ServiceClient as TxClient,
+            },
         },
-        tx::v1beta1::{
-            BroadcastMode, BroadcastTxRequest, GetTxRequest, SimulateRequest,
-            service_client::ServiceClient as TxClient,
-        },
-    },
-    dydxprotocol::{
-        clob::{ClobPair, QueryAllClobPairRequest, query_client::QueryClient as ClobClient},
-        perpetuals::{
-            Perpetual, QueryAllPerpetualsRequest, query_client::QueryClient as PerpetualsClient,
-        },
-        subaccounts::{
-            QueryGetSubaccountRequest, Subaccount as SubaccountInfo,
-            query_client::QueryClient as SubaccountsClient,
+        dydxprotocol::{
+            clob::{ClobPair, QueryAllClobPairRequest, query_client::QueryClient as ClobClient},
+            perpetuals::{
+                Perpetual, QueryAllPerpetualsRequest, query_client::QueryClient as PerpetualsClient,
+            },
+            subaccounts::{
+                QueryGetSubaccountRequest, Subaccount as SubaccountInfo,
+                query_client::QueryClient as SubaccountsClient,
+            },
         },
     },
 };
@@ -86,15 +88,22 @@ impl DydxGrpcClient {
     ///
     /// Returns an error if the gRPC connection cannot be established.
     pub async fn new(grpc_url: String) -> Result<Self, DydxError> {
-        let channel = Channel::from_shared(grpc_url.clone())
-            .map_err(|e| DydxError::Config(format!("Invalid gRPC URL: {e}")))?
-            .connect()
-            .await
-            .map_err(|e| {
-                DydxError::Grpc(tonic::Status::unavailable(format!(
-                    "Connection failed: {e}"
-                )))
-            })?;
+        let mut endpoint = Channel::from_shared(grpc_url.clone())
+            .map_err(|e| DydxError::Config(format!("Invalid gRPC URL: {e}")))?;
+
+        // Enable TLS for HTTPS URLs (required for public gRPC nodes)
+        if grpc_url.starts_with("https://") {
+            let tls = tonic::transport::ClientTlsConfig::new().with_enabled_roots();
+            endpoint = endpoint
+                .tls_config(tls)
+                .map_err(|e| DydxError::Config(format!("TLS config failed: {e}")))?;
+        }
+
+        let channel = endpoint.connect().await.map_err(|e| {
+            DydxError::Grpc(Box::new(tonic::Status::unavailable(format!(
+                "Connection failed: {e}"
+            ))))
+        })?;
 
         Ok(Self {
             auth: AuthClient::new(channel.clone()),
@@ -146,9 +155,9 @@ impl DydxGrpcClient {
         }
 
         Err(last_error.unwrap_or_else(|| {
-            DydxError::Grpc(tonic::Status::unavailable(
+            DydxError::Grpc(Box::new(tonic::Status::unavailable(
                 "All gRPC connection attempts failed".to_string(),
-            ))
+            )))
         }))
     }
 
@@ -215,17 +224,17 @@ impl DydxGrpcClient {
                 }
                 Err(e) => {
                     tracing::warn!("Failed to reconnect to gRPC node {url_str}: {e}");
-                    last_error = Some(DydxError::Grpc(tonic::Status::unavailable(format!(
-                        "Connection failed: {e}"
+                    last_error = Some(DydxError::Grpc(Box::new(tonic::Status::unavailable(
+                        format!("Connection failed: {e}"),
                     ))));
                 }
             }
         }
 
         Err(last_error.unwrap_or_else(|| {
-            DydxError::Grpc(tonic::Status::unavailable(
+            DydxError::Grpc(Box::new(tonic::Status::unavailable(
                 "All gRPC reconnection attempts failed".to_string(),
-            ))
+            )))
         }))
     }
 
@@ -461,7 +470,7 @@ impl DydxGrpcClient {
         if let Some(tx) = response.tx {
             // Convert through bytes since the types are incompatible
             let tx_bytes = tx.encode_to_vec();
-            cosmrs::Tx::try_from(tx_bytes.as_slice()).map_err(|e| anyhow::anyhow!("{}", e))
+            cosmrs::Tx::try_from(tx_bytes.as_slice()).map_err(|e| anyhow::anyhow!("{e}"))
         } else {
             anyhow::bail!("Transaction not found")
         }
@@ -475,57 +484,31 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_current_url_tracked() {
-        // Test that we can track the current URL
-        let url = "https://example.com:9090".to_string();
-        let client = DydxGrpcClient {
-            channel: Channel::from_static("https://example.com:9090"),
-            auth: AuthClient::new(Channel::from_static("https://example.com:9090")),
-            bank: BankClient::new(Channel::from_static("https://example.com:9090")),
-            base: BaseClient::new(Channel::from_static("https://example.com:9090")),
-            tx: TxClient::new(Channel::from_static("https://example.com:9090")),
-            clob: ClobClient::new(Channel::from_static("https://example.com:9090")),
-            perpetuals: PerpetualsClient::new(Channel::from_static("https://example.com:9090")),
-            subaccounts: SubaccountsClient::new(Channel::from_static("https://example.com:9090")),
-            current_url: url.clone(),
-        };
-
-        assert_eq!(client.current_url(), &url);
+    fn test_height_ordering() {
+        let h1 = Height(100);
+        let h2 = Height(200);
+        assert!(h1 < h2);
+        assert_eq!(h1, Height(100));
     }
 
     #[tokio::test]
     async fn test_new_with_fallback_empty_urls() {
-        let urls: Vec<String> = vec![];
-        let result = DydxGrpcClient::new_with_fallback(&urls).await;
-
+        let result = DydxGrpcClient::new_with_fallback(&[] as &[&str]).await;
         assert!(result.is_err());
-        match result.unwrap_err() {
-            DydxError::Config(msg) => assert_eq!(msg, "No gRPC URLs provided"),
-            _ => panic!("Expected Config error"),
+        if let Err(DydxError::Config(msg)) = result {
+            assert_eq!(msg, "No gRPC URLs provided");
+        } else {
+            panic!("Expected Config error");
         }
     }
 
     #[tokio::test]
-    async fn test_reconnect_with_fallback_empty_urls() {
-        let mut client = DydxGrpcClient {
-            channel: Channel::from_static("https://example.com:9090"),
-            auth: AuthClient::new(Channel::from_static("https://example.com:9090")),
-            bank: BankClient::new(Channel::from_static("https://example.com:9090")),
-            base: BaseClient::new(Channel::from_static("https://example.com:9090")),
-            tx: TxClient::new(Channel::from_static("https://example.com:9090")),
-            clob: ClobClient::new(Channel::from_static("https://example.com:9090")),
-            perpetuals: PerpetualsClient::new(Channel::from_static("https://example.com:9090")),
-            subaccounts: SubaccountsClient::new(Channel::from_static("https://example.com:9090")),
-            current_url: "https://example.com:9090".to_string(),
-        };
+    async fn test_new_with_fallback_invalid_urls() {
+        // Test with invalid URLs that will fail to connect
+        let invalid_urls = vec!["invalid://bad-url", "http://0.0.0.0:1"];
+        let result = DydxGrpcClient::new_with_fallback(&invalid_urls).await;
 
-        let urls: Vec<String> = vec![];
-        let result = client.reconnect_with_fallback(&urls).await;
-
+        // Should fail with either Config or Grpc error
         assert!(result.is_err());
-        match result.unwrap_err() {
-            DydxError::Config(msg) => assert_eq!(msg, "No gRPC URLs provided"),
-            _ => panic!("Expected Config error"),
-        }
     }
 }

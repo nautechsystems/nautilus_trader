@@ -20,8 +20,9 @@ pub mod config;
 #[cfg(test)]
 mod tests;
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::AHashMap;
 use config::RiskEngineConfig;
 use nautilus_common::{
     cache::Cache,
@@ -67,7 +68,7 @@ pub struct RiskEngine {
     portfolio: Portfolio,
     pub throttled_submit_order: Throttler<SubmitOrder, SubmitOrderFn>,
     pub throttled_modify_order: Throttler<ModifyOrder, ModifyOrderFn>,
-    max_notional_per_order: HashMap<InstrumentId, Decimal>,
+    max_notional_per_order: AHashMap<InstrumentId, Decimal>,
     trading_state: TradingState,
     config: RiskEngineConfig,
 }
@@ -98,7 +99,7 @@ impl RiskEngine {
             portfolio,
             throttled_submit_order,
             throttled_modify_order,
-            max_notional_per_order: HashMap::new(),
+            max_notional_per_order: AHashMap::new(),
             trading_state: TradingState::Active,
             config,
         }
@@ -144,7 +145,7 @@ impl RiskEngine {
             "ORDER_SUBMIT_THROTTLER".to_string(),
             success_handler,
             Some(failure_handler),
-            Ustr::from(&UUID4::new().to_string()),
+            Ustr::from(UUID4::new().as_str()),
         )
     }
 
@@ -191,7 +192,7 @@ impl RiskEngine {
             "ORDER_MODIFY_THROTTLER".to_string(),
             success_handler,
             Some(failure_handler),
-            Ustr::from(&UUID4::new().to_string()),
+            Ustr::from(UUID4::new().as_str()),
         )
     }
 
@@ -1123,14 +1124,17 @@ impl RiskEngine {
             return;
         }
 
-        let mut cache = self.cache.borrow_mut();
-        if !cache.order_exists(&order.client_order_id()) {
-            cache
-                .add_order(order.clone(), None, None, false)
-                .map_err(|e| {
-                    log::error!("Cannot add order to cache: {e}");
-                })
-                .unwrap();
+        // Scope the cache borrow to avoid RefCell conflict when sending to ExecEngine
+        {
+            let mut cache = self.cache.borrow_mut();
+            if !cache.order_exists(&order.client_order_id()) {
+                cache
+                    .add_order(order.clone(), None, None, false)
+                    .map_err(|e| {
+                        log::error!("Cannot add order to cache: {e}");
+                    })
+                    .unwrap();
+            }
         }
 
         let denied = OrderEventAny::Denied(OrderDenied::new(

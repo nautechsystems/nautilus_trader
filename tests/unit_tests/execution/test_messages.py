@@ -457,6 +457,42 @@ class TestCommands:
             == f"QueryAccount(client_id=BROKER, trader_id=TRADER-001, account_id=ACCOUNT-001, command_id={uuid}, correlation_id=None, ts_init=0)"
         )
 
+    def test_query_account_command_with_params_to_from_dict(self):
+        # Arrange
+        uuid = UUID4()
+        params = {"action": "borrow", "coin": "USDT", "amount": 1000}
+
+        command = QueryAccount(
+            trader_id=TraderId("TRADER-001"),
+            account_id=AccountId("ACCOUNT-001"),
+            command_id=uuid,
+            client_id=ClientId("BROKER"),
+            ts_init=self.clock.timestamp_ns(),
+            params=params,
+        )
+
+        # Act
+        result = QueryAccount.from_dict(QueryAccount.to_dict(command))
+
+        # Assert
+        assert result == command
+        assert result.params == params
+
+    def test_query_account_command_params_defaults_to_empty_dict(self):
+        # Arrange
+        uuid = UUID4()
+
+        command = QueryAccount(
+            trader_id=TraderId("TRADER-001"),
+            account_id=AccountId("ACCOUNT-001"),
+            command_id=uuid,
+            client_id=ClientId("BROKER"),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert command.params == {}
+
     def test_generate_order_status_report_command_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = UUID4()

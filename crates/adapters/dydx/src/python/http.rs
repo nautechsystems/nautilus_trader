@@ -91,6 +91,23 @@ impl DydxHttpClient {
         })
     }
 
+    /// Fetches all instruments from the API and caches them along with market params.
+    ///
+    /// This is the preferred method for initializing the HTTP client cache before
+    /// submitting orders, as it caches both instruments and their associated market
+    /// parameters needed for order quantization.
+    #[pyo3(name = "fetch_and_cache_instruments")]
+    fn py_fetch_and_cache_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .fetch_and_cache_instruments()
+                .await
+                .map_err(to_pyvalue_err)?;
+            Ok(())
+        })
+    }
+
     /// Gets a cached instrument by symbol.
     #[pyo3(name = "get_instrument")]
     fn py_get_instrument(&self, py: Python<'_>, symbol: &str) -> PyResult<Option<Py<PyAny>>> {
@@ -117,6 +134,32 @@ impl DydxHttpClient {
             .collect()
     }
 
+    /// Cache instruments in the HTTP client for use by order submitter.
+    ///
+    /// This method accepts a list of instrument Python objects returned from `request_instruments()`
+    /// and caches them internally for use by the order submitter.
+    #[pyo3(name = "cache_instruments")]
+    fn py_cache_instruments(
+        &self,
+        py: Python<'_>,
+        py_instruments: Vec<Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
+        use nautilus_model::{
+            instruments::InstrumentAny, python::instruments::pyobject_to_instrument_any,
+        };
+
+        let instruments: Vec<InstrumentAny> = py_instruments
+            .into_iter()
+            .map(|py_inst| {
+                // Convert Bound<PyAny> to Py<PyAny> using unbind()
+                pyobject_to_instrument_any(py, py_inst.unbind())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(to_pyvalue_err)?;
+
+        self.cache_instruments(instruments);
+        Ok(())
+    }
     fn __repr__(&self) -> String {
         format!(
             "DydxHttpClient(base_url='{}', is_testnet={}, cached_instruments={})",

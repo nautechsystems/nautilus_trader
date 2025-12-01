@@ -14,6 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::{
+    defi::RequestPoolSnapshot,
+    live::runtime::get_runtime,
     messages::{
         DataEvent,
         defi::{
@@ -24,7 +26,6 @@ use nautilus_common::{
             UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
         },
     },
-    runtime::get_runtime,
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
@@ -108,7 +109,7 @@ impl BlockchainDataClient {
 
         let cancellation_token = self.cancellation_token.clone();
 
-        let data_tx = nautilus_common::runner::get_data_event_sender();
+        let data_tx = nautilus_common::live::runner::get_data_event_sender();
 
         let mut hypersync_rx = self.hypersync_rx.take().unwrap();
         let hypersync_tx = self.hypersync_tx.take();
@@ -804,7 +805,7 @@ impl BlockchainDataClient {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for BlockchainDataClient {
     fn client_id(&self) -> ClientId {
         ClientId::from(format!("BLOCKCHAIN-{}", self.chain.name).as_str())
@@ -997,10 +998,7 @@ impl DataClient for BlockchainDataClient {
         Ok(())
     }
 
-    fn request_pool_snapshot(
-        &self,
-        cmd: &nautilus_common::messages::defi::RequestPoolSnapshot,
-    ) -> anyhow::Result<()> {
+    fn request_pool_snapshot(&self, cmd: &RequestPoolSnapshot) -> anyhow::Result<()> {
         let command = DefiDataCommand::Request(DefiRequestCommand::PoolSnapshot(cmd.clone()));
         self.command_tx.send(command)?;
         Ok(())

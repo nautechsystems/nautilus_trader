@@ -37,11 +37,11 @@
 use std::time::Duration;
 
 use nautilus_common::{
+    live::runner::set_data_event_sender,
     messages::{
         DataEvent, DataResponse,
         data::{RequestBars, SubscribeBars, SubscribeBookDeltas, SubscribeTrades},
     },
-    runner::set_data_event_sender,
 };
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_data::client::DataClient;
@@ -54,10 +54,9 @@ use nautilus_dydx::{
 };
 use nautilus_model::{
     data::{BarSpecification, BarType, Data},
-    enums::{BarAggregation, BookType, PriceType},
+    enums::{AggregationSource, BarAggregation, BookType, PriceType},
     identifiers::{ClientId, InstrumentId},
 };
-use tokio::time::timeout;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -154,11 +153,7 @@ async fn test_connect_and_subscribe(
         aggregation: BarAggregation::Minute,
         price_type: PriceType::Last,
     };
-    let bar_type = BarType::new(
-        instrument_id,
-        bar_spec,
-        nautilus_model::enums::AggregationSource::External,
-    );
+    let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
     let subscribe_bars = SubscribeBars::new(
         bar_type,
         Some(client_id),
@@ -170,7 +165,7 @@ async fn test_connect_and_subscribe(
     data_client.subscribe_bars(&subscribe_bars)?;
     tracing::info!("Subscribed to 1-minute bars");
 
-    match timeout(Duration::from_secs(30), rx.recv()).await {
+    match tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
         Ok(Some(_)) => {
             tracing::info!("Received data event from testnet");
         }
@@ -218,11 +213,7 @@ async fn test_request_historical_bars(
         aggregation: BarAggregation::Minute,
         price_type: PriceType::Last,
     };
-    let bar_type = BarType::new(
-        instrument_id,
-        bar_spec,
-        nautilus_model::enums::AggregationSource::External,
-    );
+    let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
 
     let now = chrono::Utc::now();
     let small_start = Some(now - chrono::Duration::hours(1));
@@ -262,7 +253,7 @@ async fn test_request_historical_bars(
     let timeout_at = Duration::from_secs(60);
 
     while !saw_bars_response {
-        let event = match timeout(timeout_at, rx.recv()).await {
+        let event = match tokio::time::timeout(timeout_at, rx.recv()).await {
             Ok(Some(ev)) => ev,
             Ok(None) => break,
             Err(_) => break,
@@ -343,7 +334,7 @@ async fn test_orderbook_snapshot_refresh(
     let start = tokio::time::Instant::now();
 
     while start.elapsed() < timeout_at && orderbook_updates < 5 {
-        match timeout(Duration::from_secs(5), rx.recv()).await {
+        match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
             Ok(Some(DataEvent::Data(_))) => {
                 orderbook_updates += 1;
             }
@@ -358,10 +349,7 @@ async fn test_orderbook_snapshot_refresh(
     if orderbook_updates >= 3 {
         tracing::info!("Received {} orderbook updates", orderbook_updates);
     } else {
-        anyhow::bail!(
-            "expected at least 3 orderbook updates, got {}",
-            orderbook_updates
-        );
+        anyhow::bail!("expected at least 3 orderbook updates, got {orderbook_updates}");
     }
 
     tracing::info!("");
@@ -436,11 +424,7 @@ async fn test_complete_data_flow(
         aggregation: BarAggregation::Minute,
         price_type: PriceType::Last,
     };
-    let bar_type = BarType::new(
-        instrument_id,
-        bar_spec,
-        nautilus_model::enums::AggregationSource::External,
-    );
+    let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
     let subscribe_bars = SubscribeBars::new(
         bar_type,
         Some(client_id),
@@ -459,7 +443,7 @@ async fn test_complete_data_flow(
     let start = tokio::time::Instant::now();
 
     while start.elapsed() < timeout_at && (!saw_trade || !saw_orderbook || !saw_bar) {
-        match timeout(Duration::from_secs(10), rx.recv()).await {
+        match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
             Ok(Some(DataEvent::Data(data))) => match data {
                 Data::Trade(_) => {
                     if !saw_trade {
@@ -559,11 +543,11 @@ async fn test_crossed_orderbook_detection(
     let mut saw_orderbook_delta = false;
     let mut quote_count = 0;
 
-    let _test_result = timeout(Duration::from_secs(30), async {
+    let _test_result = tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             match rx.try_recv() {
                 Ok(DataEvent::Data(data)) => {
-                    let data_type_str = format!("{:?}", data);
+                    let data_type_str = format!("{data:?}");
                     if data_type_str.contains("OrderBookDeltas") {
                         saw_orderbook_delta = true;
                     } else if data_type_str.contains("QuoteTick") {

@@ -43,7 +43,7 @@ pub async fn run_analyze_pool(
     multicall_calls_per_rpc_request: Option<u32>,
 ) -> anyhow::Result<()> {
     let chain = Chain::from_chain_name(&chain)
-        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {}", chain))?;
+        .ok_or_else(|| anyhow::anyhow!("Invalid chain name: {chain}"))?;
     let pool_address = validate_address(&pool_address)?;
 
     let dex_type = find_dex_type_case_insensitive(&dex, chain).ok_or_else(|| {
@@ -75,7 +75,7 @@ pub async fn run_analyze_pool(
         .or_else(|| std::env::var("RPC_HTTP_URL").ok())
         .unwrap_or_default();
 
-    log::info!("Using RPC HTTP URL: '{}'", rpc_http_url);
+    log::info!("Using RPC HTTP URL: '{rpc_http_url}'");
     if rpc_http_url.is_empty() {
         log::warn!(
             "No RPC HTTP URL provided via --rpc-url or RPC_HTTP_URL environment variable - some operations may fail"
@@ -101,11 +101,11 @@ pub async fn run_analyze_pool(
     data_client
         .register_dex_exchange(dex_type)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {e}"))?;
     data_client
         .sync_pool_events(&dex_type, &pool_address, from_block, to_block, reset)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to sync pool events: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to sync pool events: {e}"))?;
 
     // Profile pool events from database
     log::info!("Profiling pool events from database...");

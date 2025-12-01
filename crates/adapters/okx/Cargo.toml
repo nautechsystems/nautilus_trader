@@ -46,7 +46,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
@@ -118,4 +118,10 @@ path = "bin/ws_exec.rs"
 [[example]]
 name = "node_data_tester"
 path = "examples/node_data_tester.rs"
+required-features = []
+
+# Run with `cargo run --example node_exec_tester`.
+[[example]]
+name = "node_exec_tester"
+path = "examples/node_exec_tester.rs"
 required-features = []

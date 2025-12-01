@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use alloy_primitives::U256;
 
 use crate::defi::tick_map::{
@@ -37,7 +36,7 @@ pub mod tick_math;
 #[derive(Debug, Clone)]
 pub struct TickMap {
     /// Mapping of tick indices to tick data
-    ticks: HashMap<i32, PoolTick>,
+    ticks: AHashMap<i32, PoolTick>,
     /// Tick bitmap for efficient tick navigation
     tick_bitmap: TickBitmap,
     /// Current active liquidity
@@ -56,7 +55,7 @@ impl TickMap {
     /// Creates a new [`TickMap`] with the specified tick spacing.
     pub fn new(tick_spacing: u32) -> Self {
         Self {
-            ticks: HashMap::new(),
+            ticks: AHashMap::new(),
             tick_bitmap: TickBitmap::new(tick_spacing),
             liquidity: 0,
             max_liquidity_per_tick: tick_spacing_to_max_liquidity_per_tick(tick_spacing as i32),
@@ -217,7 +216,7 @@ impl TickMap {
 
     /// Returns a reference to all ticks in the map for debugging/analysis purposes.
     #[must_use]
-    pub fn get_all_ticks(&self) -> &HashMap<i32, PoolTick> {
+    pub fn get_all_ticks(&self) -> &AHashMap<i32, PoolTick> {
         &self.ticks
     }
 

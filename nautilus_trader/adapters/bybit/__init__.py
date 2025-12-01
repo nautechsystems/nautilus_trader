@@ -35,6 +35,10 @@ from nautilus_trader.adapters.bybit.factories import get_cached_bybit_http_clien
 from nautilus_trader.adapters.bybit.factories import get_cached_bybit_instrument_provider
 from nautilus_trader.adapters.bybit.loaders import BybitOrderBookDeltaDataLoader
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
+from nautilus_trader.core.nautilus_pyo3 import BybitMarginAction
+from nautilus_trader.core.nautilus_pyo3 import BybitMarginBorrowResult
+from nautilus_trader.core.nautilus_pyo3 import BybitMarginRepayResult
+from nautilus_trader.core.nautilus_pyo3 import BybitMarginStatusResult
 from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 from nautilus_trader.core.nautilus_pyo3 import BybitTickerData
 
@@ -48,6 +52,10 @@ __all__ = [
     "BybitInstrumentProvider",
     "BybitLiveDataClientFactory",
     "BybitLiveExecClientFactory",
+    "BybitMarginAction",
+    "BybitMarginBorrowResult",
+    "BybitMarginRepayResult",
+    "BybitMarginStatusResult",
     "BybitOrderBookDeltaDataLoader",
     "BybitProductType",
     "BybitTickerData",

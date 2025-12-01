@@ -31,7 +31,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, Data, OrderBookDelta, OrderBookDeltas, TradeTick,
@@ -375,7 +375,7 @@ impl FeedHandler {
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse trade contents: {e}")))?;
 
         let mut ticks = Vec::new();
-        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         for trade in contents.trades {
             let aggressor_side = match trade.side {
@@ -430,7 +430,7 @@ impl FeedHandler {
         let instrument_id = self.parse_instrument_id(symbol)?;
         let instrument = self.get_instrument(&instrument_id)?;
 
-        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         if is_snapshot {
             let contents: DydxOrderbookSnapshotContents =
@@ -480,7 +480,7 @@ impl FeedHandler {
         let contents: Vec<DydxOrderbookContents> = serde_json::from_value(data.contents.clone())
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse orderbook batch: {e}")))?;
 
-        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
         let mut all_deltas = Vec::new();
 
         let num_messages = contents.len();
@@ -735,7 +735,7 @@ impl FeedHandler {
         let volume = Decimal::from_str(&candle.base_token_volume)
             .map_err(|e| DydxWsError::Parse(format!("Failed to parse volume: {e}")))?;
 
-        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         // Calculate ts_event: startedAt + interval
         let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {

@@ -36,7 +36,7 @@ use ahash::AHashSet;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
@@ -497,7 +497,7 @@ impl OKXWebSocketClient {
                 let resubscribe_all = || {
                     for entry in subscriptions_inst_id.iter() {
                         let (channel, inst_ids) = entry.pair();
-                        for inst_id in inst_ids.iter() {
+                        for inst_id in inst_ids {
                             let arg = OKXSubscriptionArg {
                                 channel: channel.clone(),
                                 inst_type: None,
@@ -525,7 +525,7 @@ impl OKXWebSocketClient {
 
                     for entry in subscriptions_inst_type.iter() {
                         let (channel, inst_types) = entry.pair();
-                        for inst_type in inst_types.iter() {
+                        for inst_type in inst_types {
                             let arg = OKXSubscriptionArg {
                                 channel: channel.clone(),
                                 inst_type: Some(*inst_type),
@@ -540,7 +540,7 @@ impl OKXWebSocketClient {
 
                     for entry in subscriptions_inst_family.iter() {
                         let (channel, inst_families) = entry.pair();
-                        for inst_family in inst_families.iter() {
+                        for inst_family in inst_families {
                             let arg = OKXSubscriptionArg {
                                 channel: channel.clone(),
                                 inst_type: None,
@@ -570,11 +570,11 @@ impl OKXWebSocketClient {
                                 let mut topics = Vec::new();
                                 for entry in confirmed.iter() {
                                     let channel = entry.key();
-                                    for symbol in entry.value().iter() {
+                                    for symbol in entry.value() {
                                         if symbol.as_str() == "#" {
                                             topics.push(channel.to_string());
                                         } else {
-                                            topics.push(format!("{}{}{}", channel, OKX_WS_TOPIC_DELIMITER, symbol));
+                                            topics.push(format!("{channel}{OKX_WS_TOPIC_DELIMITER}{symbol}"));
                                         }
                                     }
                                 }
@@ -979,7 +979,7 @@ impl OKXWebSocketClient {
 
         for entry in self.subscriptions_inst_type.iter() {
             let (channel, inst_types) = entry.pair();
-            for inst_type in inst_types.iter() {
+            for inst_type in inst_types {
                 all_args.push(OKXSubscriptionArg {
                     channel: channel.clone(),
                     inst_type: Some(*inst_type),
@@ -991,7 +991,7 @@ impl OKXWebSocketClient {
 
         for entry in self.subscriptions_inst_family.iter() {
             let (channel, inst_families) = entry.pair();
-            for inst_family in inst_families.iter() {
+            for inst_family in inst_families {
                 all_args.push(OKXSubscriptionArg {
                     channel: channel.clone(),
                     inst_type: None,
@@ -1003,7 +1003,7 @@ impl OKXWebSocketClient {
 
         for entry in self.subscriptions_inst_id.iter() {
             let (channel, inst_ids) = entry.pair();
-            for inst_id in inst_ids.iter() {
+            for inst_id in inst_ids {
                 all_args.push(OKXSubscriptionArg {
                     channel: channel.clone(),
                     inst_type: None,
@@ -2017,11 +2017,7 @@ impl OKXWebSocketClient {
         };
 
         log::debug!(
-            "Order type mapping: order_type={:?}, time_in_force={:?}, post_only={:?} -> okx_ord_type={:?}",
-            order_type,
-            time_in_force,
-            post_only,
-            okx_ord_type
+            "Order type mapping: order_type={order_type:?}, time_in_force={time_in_force:?}, post_only={post_only:?} -> okx_ord_type={okx_ord_type:?}"
         );
 
         builder.ord_type(okx_ord_type);

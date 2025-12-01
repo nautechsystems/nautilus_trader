@@ -69,7 +69,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 
 axum = { workspace = true }
 criterion = { workspace = true }

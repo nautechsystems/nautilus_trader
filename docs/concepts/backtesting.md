@@ -370,7 +370,7 @@ Always verify your data's timestamp convention with a small sample to avoid simu
 
 #### Processing bar data
 
-Even when you provide bar data, Nautilus maintains an internal order book for each instrument - just like a real venue would.
+Even when you provide bar data, Nautilus maintains an internal order book for each instrument, as a real venue would.
 
 1. **Time processing**:
    - Nautilus has a specific way of handling the timing of bar data *for execution* that's crucial for accurate simulation.
@@ -395,7 +395,7 @@ In these cases, bars will still be received by strategies for analytics and deci
    - If you provide multiple timeframes (like both 1-minute and 5-minute bars), the platform uses the more granular data for highest accuracy.
 
 3. **Executions**:
-   - When you place orders, they interact with the simulated order book just like they would on a real venue.
+   - When you place orders, they interact with the simulated order book as they would on a real venue.
    - For MARKET orders, execution happens at the current simulated market price plus any configured latency.
    - For LIMIT orders working in the market, they'll execute if any of the bar's prices reach or cross your limit price (see below).
    - The matching engine continuously processes orders as OHLC prices move, rather than waiting for complete bars.
@@ -449,6 +449,39 @@ engine.add_venue(
 )
 ```
 
+### Trade based execution
+
+When you have trade tick data, enable `trade_execution=True` in your venue configuration to trigger order fills
+based on trade activity. A trade tick indicates that liquidity was accessed at the trade price, allowing resting
+limit orders to match.
+
+The matching engine uses a "transient override" mechanism: during the matching process, it temporarily updates
+the Best Bid (for BUYER trades) or Best Ask (for SELLER trades) to the trade price. This allows resting orders
+on the passive side to cross the spread and fill. After matching, the original book state is restored, ensuring
+the spread is not permanently corrupted by the transient trade price.
+
+**Fill behavior:**
+
+- **SELLER trade at P**: The engine temporarily sets the Best Ask to P. Resting BUY LIMIT orders at P or higher will fill (as they are willing to buy at P or more).
+- **BUYER trade at P**: The engine temporarily sets the Best Bid to P. Resting SELL LIMIT orders at P or lower will fill (as they are willing to sell at P or less).
+
+**Example:**
+
+```python
+engine.add_venue(
+    venue=venue,
+    oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    starting_balances=[Money(10_000, USDT)],
+    trade_execution=True,
+)
+```
+
+:::tip
+Combine trade data with book or quote data for best results: book/quote data establishes the baseline spread,
+while trade ticks trigger execution for orders that might be inside the spread or ahead of the quote updates.
+:::
+
 ### Slippage and spread handling
 
 When backtesting with different types of data, Nautilus implements specific handling for slippage and spread simulation:
@@ -489,24 +522,25 @@ The `FillModel` simulates two key aspects of trading that exist in real markets 
 #### Configuration and parameters
 
 ```python
-from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.config import BacktestVenueConfig
+from nautilus_trader.backtest.config import ImportableFillModelConfig
 
-# Create a custom fill model with your desired probabilities
-fill_model = FillModel(
-    prob_fill_on_limit=0.2,    # Chance a limit order fills when price matches (applied to bars/trades/quotes + L1/L2/L3 order book)
-    prob_fill_on_stop=0.95,    # [DEPRECATED] Will be removed in a future version, use `prob_slippage` instead
-    prob_slippage=0.5,         # Chance of 1-tick slippage (applied to bars/trades/quotes + L1 order book only)
-    random_seed=None,          # Optional: Set for reproducible results
-)
-
-# Add the fill model to your engine configuration
-engine = BacktestEngine(
-    config=BacktestEngineConfig(
-        trader_id="TESTER-001",
-        fill_model=fill_model,  # Inject your custom fill model here
-    )
+# Configure a custom fill model for the venue
+venue_config = BacktestVenueConfig(
+    name="SIM",
+    oms_type="NETTING",
+    account_type="CASH",
+    starting_balances=["100_000 USD"],
+    fill_model=ImportableFillModelConfig(
+        fill_model_path="nautilus_trader.backtest.models:FillModel",
+        config_path="nautilus_trader.backtest.config:FillModelConfig",
+        config={
+            "prob_fill_on_limit": 0.2,    # Chance a limit order fills when price matches
+            "prob_fill_on_stop": 0.95,    # [DEPRECATED] Use `prob_slippage` instead
+            "prob_slippage": 0.5,         # Chance of 1-tick slippage (L1 data only)
+            "random_seed": 42,            # Optional: Set for reproducible results
+        },
+    ),
 )
 ```
 
@@ -559,8 +593,8 @@ engine = BacktestEngine(
 
 **prob_fill_on_stop** (default: `1.0`)
 
-- Stop order is just shorter name for stop-market order, that convert to market orders when market-price touches the stop-price.
-- That means, stop order order-fill mechanics is simply market-order mechanics, that is controlled by the `prob_slippage` parameter.
+- A stop order is a shorter name for a stop-market order, which converts to a market order when the market price touches the stop price.
+- Stop order fill mechanics follow market order mechanics, controlled by the `prob_slippage` parameter.
 
 :::warning
 The `prob_fill_on_stop` parameter is deprecated and will be removed in a future version (use `prob_slippage` instead).

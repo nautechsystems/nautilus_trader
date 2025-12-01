@@ -24,7 +24,7 @@ use super::{
     enums::{KrakenEnvironment, KrakenProductType},
 };
 
-pub fn get_http_base_url(
+pub fn get_kraken_http_base_url(
     product_type: KrakenProductType,
     environment: KrakenEnvironment,
 ) -> &'static str {
@@ -35,7 +35,7 @@ pub fn get_http_base_url(
     }
 }
 
-pub fn get_ws_public_url(
+pub fn get_kraken_ws_public_url(
     product_type: KrakenProductType,
     environment: KrakenEnvironment,
 ) -> &'static str {
@@ -46,7 +46,7 @@ pub fn get_ws_public_url(
     }
 }
 
-pub fn get_ws_private_url(
+pub fn get_kraken_ws_private_url(
     product_type: KrakenProductType,
     environment: KrakenEnvironment,
 ) -> &'static str {

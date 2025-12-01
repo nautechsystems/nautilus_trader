@@ -2012,15 +2012,13 @@ mod rust_tests {
         );
         assert!(
             matches!(send_result, Err(crate::error::SendError::Timeout)),
-            "Send should return Timeout error, was: {:?}",
-            send_result
+            "Send should return Timeout error, was: {send_result:?}"
         );
         // Verify timeout respects configured value (2s), but don't check upper bound
         // as CI scheduler jitter can cause legitimate delays beyond the timeout
         assert!(
             elapsed >= Duration::from_millis(1800),
-            "Send should timeout after at least 2s (configured timeout), took {:?}",
-            elapsed
+            "Send should timeout after at least 2s (configured timeout), took {elapsed:?}"
         );
 
         client.disconnect().await;
@@ -2196,16 +2194,14 @@ mod rust_tests {
         // Should succeed after both rate limit AND reconnection
         assert!(
             send_result.is_ok(),
-            "Send should succeed after rate limit + reconnection, was: {:?}",
-            send_result
+            "Send should succeed after rate limit + reconnection, was: {send_result:?}"
         );
         // Total wait should be at least rate limit time (~1s)
         // The reconnection completes while rate limiting or after
         // Use 850ms threshold to account for timing jitter in CI
         assert!(
             elapsed >= Duration::from_millis(850),
-            "Should wait for rate limit (~1s), waited {:?}",
-            elapsed
+            "Should wait for rate limit (~1s), waited {elapsed:?}"
         );
 
         client.disconnect().await;
@@ -2351,15 +2347,13 @@ mod rust_tests {
         assert!(result.is_err(), "Send should fail when client is closed");
         assert!(
             matches!(result, Err(crate::error::SendError::Closed)),
-            "Send should return Closed error, was: {:?}",
-            result
+            "Send should return Closed error, was: {result:?}"
         );
 
         // Should fail FAST (< 100ms) without waiting for rate limit (10s)
         assert!(
             elapsed < Duration::from_millis(100),
-            "Send should fail fast without rate limiting, took {:?}",
-            elapsed
+            "Send should fail fast without rate limiting, took {elapsed:?}"
         );
 
         server.abort();

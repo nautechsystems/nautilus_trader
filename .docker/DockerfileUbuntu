@@ -14,7 +14,8 @@
 # Remove the image
 # docker image rm nautilus-dev
 
-FROM ubuntu:22.04
+# Pin to specific digest for supply-chain security (ubuntu:22.04 as of 2025-11-29)
+FROM ubuntu@sha256:104ae83764a5119017b8e8d6218fa0832b09df65aae7d5a6de29a85d813da2fb
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive

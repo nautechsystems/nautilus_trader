@@ -89,6 +89,13 @@ impl UUID4 {
             .expect("UUID byte representation should be a valid C string")
     }
 
+    /// Returns the UUID as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        // SAFETY: We always store valid ASCII UUID strings
+        self.to_cstr().to_str().expect("UUID should be valid UTF-8")
+    }
+
     /// Returns the raw UUID bytes (16 bytes).
     ///
     /// This method is optimized for serialization where the UUID bytes
@@ -379,6 +386,15 @@ mod tests {
 
         assert_eq!(cstr.to_str().unwrap(), uuid.to_string());
         assert_eq!(cstr.to_bytes_with_nul()[36], 0);
+    }
+
+    #[rstest]
+    fn test_as_str() {
+        let uuid = UUID4::new();
+        let s = uuid.as_str();
+
+        assert_eq!(s, uuid.to_string());
+        assert_eq!(s.len(), 36);
     }
 
     #[rstest]

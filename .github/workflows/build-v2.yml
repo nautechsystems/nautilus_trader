@@ -42,6 +42,8 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
+  # Dependency license, advisory, and ban checks
+  # https://embarkstudios.github.io/cargo-deny/
   cargo-deny:
     runs-on: ubuntu-22.04
     steps:
@@ -63,10 +65,56 @@ jobs:
           command: check advisories licenses sources bans
           arguments: --all-features
 
+  # Supply chain security auditing
+  # https://mozilla.github.io/cargo-vet/configuring-ci.html
+  cargo-vet:
+    runs-on: ubuntu-22.04
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Get cargo-vet version
+        run: echo "CARGO_VET_VERSION=$(bash scripts/cargo-tool-version.sh cargo-vet)" >> "$GITHUB_ENV"
+
+      - name: Get Rust toolchain version
+        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          override: true
+
+      # https://github.com/actions/cache
+      - name: Cache cargo-vet binary
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ${{ runner.tool_cache }}/cargo-vet
+          key: cargo-vet-bin-${{ env.CARGO_VET_VERSION }}
+
+      - name: Add cargo-vet to PATH
+        run: echo "${{ runner.tool_cache }}/cargo-vet/bin" >> "$GITHUB_PATH"
+
+      - name: Install cargo-vet
+        run: cargo install --root ${{ runner.tool_cache }}/cargo-vet --version ${{ env.CARGO_VET_VERSION }} cargo-vet
+
+      - name: Run cargo-vet
+        run: cargo vet --locked
+
   build:
     needs:
-      - pre-commit
       - cargo-deny
+      - cargo-vet
+      - pre-commit
     strategy:
       fail-fast: false
       matrix:

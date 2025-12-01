@@ -160,7 +160,7 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
         let client = BlockchainExecutionClient::new(
             core_execution_client,
             blockchain_execution_config.clone(),
-        );
+        )?;
 
         Ok(Box::new(client))
     }

@@ -16,13 +16,12 @@
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub struct WeightedLimiter {
     capacity: f64,       // tokens per minute (e.g., 1200)
     refill_per_sec: f64, // capacity / 60
-    state: Mutex<State>,
+    state: tokio::sync::Mutex<State>,
 }
 
 #[derive(Debug)]
@@ -37,7 +36,7 @@ impl WeightedLimiter {
         Self {
             capacity: cap,
             refill_per_sec: cap / 60.0,
-            state: Mutex::new(State {
+            state: tokio::sync::Mutex::new(State {
                 tokens: cap,
                 last_refill: Instant::now(),
             }),

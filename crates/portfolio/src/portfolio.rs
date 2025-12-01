@@ -15,13 +15,9 @@
 
 //! Provides a generic `Portfolio` for all environments.
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    rc::Rc,
-};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::{AHashMap, AHashSet};
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
@@ -50,16 +46,16 @@ use crate::{config::PortfolioConfig, manager::AccountsManager};
 struct PortfolioState {
     accounts: AccountsManager,
     analyzer: PortfolioAnalyzer,
-    unrealized_pnls: HashMap<InstrumentId, Money>,
-    realized_pnls: HashMap<InstrumentId, Money>,
-    snapshot_sum_per_position: HashMap<PositionId, Money>,
-    snapshot_last_per_position: HashMap<PositionId, Money>,
-    snapshot_processed_counts: HashMap<PositionId, usize>,
-    net_positions: HashMap<InstrumentId, Decimal>,
-    pending_calcs: HashSet<InstrumentId>,
-    bar_close_prices: HashMap<InstrumentId, Price>,
+    unrealized_pnls: AHashMap<InstrumentId, Money>,
+    realized_pnls: AHashMap<InstrumentId, Money>,
+    snapshot_sum_per_position: AHashMap<PositionId, Money>,
+    snapshot_last_per_position: AHashMap<PositionId, Money>,
+    snapshot_processed_counts: AHashMap<PositionId, usize>,
+    net_positions: AHashMap<InstrumentId, Decimal>,
+    pending_calcs: AHashSet<InstrumentId>,
+    bar_close_prices: AHashMap<InstrumentId, Price>,
     initialized: bool,
-    last_account_state_log_ts: HashMap<AccountId, u64>,
+    last_account_state_log_ts: AHashMap<AccountId, u64>,
     min_account_state_logging_interval_ns: u64,
 }
 
@@ -76,16 +72,16 @@ impl PortfolioState {
         Self {
             accounts: AccountsManager::new(clock, cache),
             analyzer: PortfolioAnalyzer::default(),
-            unrealized_pnls: HashMap::new(),
-            realized_pnls: HashMap::new(),
-            snapshot_sum_per_position: HashMap::new(),
-            snapshot_last_per_position: HashMap::new(),
-            snapshot_processed_counts: HashMap::new(),
-            net_positions: HashMap::new(),
-            pending_calcs: HashSet::new(),
-            bar_close_prices: HashMap::new(),
+            unrealized_pnls: AHashMap::new(),
+            realized_pnls: AHashMap::new(),
+            snapshot_sum_per_position: AHashMap::new(),
+            snapshot_last_per_position: AHashMap::new(),
+            snapshot_processed_counts: AHashMap::new(),
+            net_positions: AHashMap::new(),
+            pending_calcs: AHashSet::new(),
+            bar_close_prices: AHashMap::new(),
             initialized: false,
-            last_account_state_log_ts: HashMap::new(),
+            last_account_state_log_ts: AHashMap::new(),
             min_account_state_logging_interval_ns,
         }
     }
@@ -307,11 +303,11 @@ impl Portfolio {
     ///
     /// Locked balances represent funds reserved for open orders.
     #[must_use]
-    pub fn balances_locked(&self, venue: &Venue) -> HashMap<Currency, Money> {
+    pub fn balances_locked(&self, venue: &Venue) -> AHashMap<Currency, Money> {
         self.cache.borrow().account_for_venue(venue).map_or_else(
             || {
                 log::error!("Cannot get balances locked: no account generated for {venue}");
-                HashMap::new()
+                AHashMap::new()
             },
             AccountAny::balances_locked,
         )
@@ -321,19 +317,19 @@ impl Portfolio {
     ///
     /// Only applicable for margin accounts. Returns empty map for cash accounts.
     #[must_use]
-    pub fn margins_init(&self, venue: &Venue) -> HashMap<InstrumentId, Money> {
+    pub fn margins_init(&self, venue: &Venue) -> AHashMap<InstrumentId, Money> {
         self.cache.borrow().account_for_venue(venue).map_or_else(
             || {
                 log::error!(
                     "Cannot get initial (order) margins: no account registered for {venue}"
                 );
-                HashMap::new()
+                AHashMap::new()
             },
             |account| match account {
                 AccountAny::Margin(margin_account) => margin_account.initial_margins(),
                 AccountAny::Cash(_) => {
                     log::warn!("Initial margins not applicable for cash account");
-                    HashMap::new()
+                    AHashMap::new()
                 }
             },
         )
@@ -343,19 +339,19 @@ impl Portfolio {
     ///
     /// Only applicable for margin accounts. Returns empty map for cash accounts.
     #[must_use]
-    pub fn margins_maint(&self, venue: &Venue) -> HashMap<InstrumentId, Money> {
+    pub fn margins_maint(&self, venue: &Venue) -> AHashMap<InstrumentId, Money> {
         self.cache.borrow().account_for_venue(venue).map_or_else(
             || {
                 log::error!(
                     "Cannot get maintenance (position) margins: no account registered for {venue}"
                 );
-                HashMap::new()
+                AHashMap::new()
             },
             |account| match account {
                 AccountAny::Margin(margin_account) => margin_account.maintenance_margins(),
                 AccountAny::Cash(_) => {
                     log::warn!("Maintenance margins not applicable for cash account");
-                    HashMap::new()
+                    AHashMap::new()
                 }
             },
         )
@@ -365,22 +361,22 @@ impl Portfolio {
     ///
     /// Calculates mark-to-market PnL based on current market prices.
     #[must_use]
-    pub fn unrealized_pnls(&mut self, venue: &Venue) -> HashMap<Currency, Money> {
+    pub fn unrealized_pnls(&mut self, venue: &Venue) -> AHashMap<Currency, Money> {
         let instrument_ids = {
             let cache = self.cache.borrow();
             let positions = cache.positions(Some(venue), None, None, None);
 
             if positions.is_empty() {
-                return HashMap::new(); // Nothing to calculate
+                return AHashMap::new(); // Nothing to calculate
             }
 
-            let instrument_ids: HashSet<InstrumentId> =
+            let instrument_ids: AHashSet<InstrumentId> =
                 positions.iter().map(|p| p.instrument_id).collect();
 
             instrument_ids
         };
 
-        let mut unrealized_pnls: HashMap<Currency, f64> = HashMap::new();
+        let mut unrealized_pnls: AHashMap<Currency, f64> = AHashMap::new();
 
         for instrument_id in instrument_ids {
             if let Some(&pnl) = self.inner.borrow_mut().unrealized_pnls.get(&instrument_id) {
@@ -406,22 +402,22 @@ impl Portfolio {
     ///
     /// Calculates total realized profit and loss from closed positions.
     #[must_use]
-    pub fn realized_pnls(&mut self, venue: &Venue) -> HashMap<Currency, Money> {
+    pub fn realized_pnls(&mut self, venue: &Venue) -> AHashMap<Currency, Money> {
         let instrument_ids = {
             let cache = self.cache.borrow();
             let positions = cache.positions(Some(venue), None, None, None);
 
             if positions.is_empty() {
-                return HashMap::new(); // Nothing to calculate
+                return AHashMap::new(); // Nothing to calculate
             }
 
-            let instrument_ids: HashSet<InstrumentId> =
+            let instrument_ids: AHashSet<InstrumentId> =
                 positions.iter().map(|p| p.instrument_id).collect();
 
             instrument_ids
         };
 
-        let mut realized_pnls: HashMap<Currency, f64> = HashMap::new();
+        let mut realized_pnls: AHashMap<Currency, f64> = AHashMap::new();
 
         for instrument_id in instrument_ids {
             if let Some(&pnl) = self.inner.borrow_mut().realized_pnls.get(&instrument_id) {
@@ -444,7 +440,7 @@ impl Portfolio {
     }
 
     #[must_use]
-    pub fn net_exposures(&self, venue: &Venue) -> Option<HashMap<Currency, Money>> {
+    pub fn net_exposures(&self, venue: &Venue) -> Option<AHashMap<Currency, Money>> {
         let cache = self.cache.borrow();
         let account = if let Some(account) = cache.account_for_venue(venue) {
             account
@@ -455,10 +451,10 @@ impl Portfolio {
 
         let positions_open = cache.positions_open(Some(venue), None, None, None);
         if positions_open.is_empty() {
-            return Some(HashMap::new()); // Nothing to calculate
+            return Some(AHashMap::new()); // Nothing to calculate
         }
 
-        let mut net_exposures: HashMap<Currency, f64> = HashMap::new();
+        let mut net_exposures: AHashMap<Currency, f64> = AHashMap::new();
 
         for position in positions_open {
             let instrument = if let Some(instrument) = cache.instrument(&position.instrument_id) {
@@ -585,11 +581,11 @@ impl Portfolio {
     ///
     /// Total PnL = Realized PnL + Unrealized PnL for each currency
     #[must_use]
-    pub fn total_pnls(&mut self, venue: &Venue) -> HashMap<Currency, Money> {
+    pub fn total_pnls(&mut self, venue: &Venue) -> AHashMap<Currency, Money> {
         let realized_pnls = self.realized_pnls(venue);
         let unrealized_pnls = self.unrealized_pnls(venue);
 
-        let mut total_pnls: HashMap<Currency, Money> = HashMap::new();
+        let mut total_pnls: AHashMap<Currency, Money> = AHashMap::new();
 
         // Add realized PnLs
         for (currency, realized) in realized_pnls {
@@ -736,7 +732,7 @@ impl Portfolio {
             let all_orders_open = cache.orders_open(None, None, None, None);
 
             let mut instruments_with_orders = Vec::new();
-            let mut instruments = HashSet::new();
+            let mut instruments = AHashSet::new();
 
             for order in &all_orders_open {
                 instruments.insert(order.instrument_id());
@@ -814,7 +810,7 @@ impl Portfolio {
         self.inner.borrow_mut().unrealized_pnls.clear();
         self.inner.borrow_mut().realized_pnls.clear();
         let all_positions_open: Vec<Position>;
-        let mut instruments = HashSet::new();
+        let mut instruments = AHashSet::new();
         {
             let cache = self.cache.borrow();
             all_positions_open = cache

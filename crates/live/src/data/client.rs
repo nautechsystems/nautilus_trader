@@ -13,28 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cell::Ref;
+//! Live data client trait.
+//!
+//! This trait extends the base `DataClient` trait for live trading contexts.
+//! Currently empty but kept for symmetry with `LiveExecutionClient` and future use.
 
-use nautilus_common::{clock::Clock, messages::DataEvent};
 use nautilus_data::client::DataClient;
 
-#[async_trait::async_trait]
-pub trait LiveDataClient: DataClient {
-    /// Establishes a connection for live data.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if connection fails.
-    async fn connect(&mut self) -> anyhow::Result<()>;
-
-    /// Disconnects the live data client.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if disconnection fails.
-    async fn disconnect(&mut self) -> anyhow::Result<()>;
-
-    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataEvent>;
-
-    fn get_clock(&self) -> Ref<'_, dyn Clock>;
-}
+/// Marker trait for live data clients.
+///
+/// Extends `DataClient` for live trading contexts. Currently empty but kept
+/// for symmetry with `LiveExecutionClient` and potential future live-specific methods.
+pub trait LiveDataClient: DataClient {}

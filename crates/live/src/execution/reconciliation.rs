@@ -1177,7 +1177,7 @@ mod tests {
                 assert_eq!(current_lifecycle_fills.len(), 1);
                 assert_eq!(current_lifecycle_fills[0].venue_order_id, venue_order_id3);
             }
-            _ => panic!("Expected FilterToCurrentLifecycle, was {:?}", result),
+            _ => panic!("Expected FilterToCurrentLifecycle, was {result:?}"),
         }
     }
 
@@ -1243,7 +1243,7 @@ mod tests {
                 assert_eq!(synthetic_fill.side, OrderSide::Buy);
                 assert_eq!(first_venue_order_id, venue_order_id4);
             }
-            _ => panic!("Expected ReplaceCurrentLifecycle, was {:?}", result),
+            _ => panic!("Expected ReplaceCurrentLifecycle, was {result:?}"),
         }
     }
 
@@ -1280,7 +1280,7 @@ mod tests {
                 assert_eq!(synthetic_fill.qty, dec!(0.03)); // Missing 0.03
                 assert_eq!(existing_fills.len(), 1);
             }
-            _ => panic!("Expected AddSyntheticOpening, was {:?}", result),
+            _ => panic!("Expected AddSyntheticOpening, was {result:?}"),
         }
     }
 
@@ -1312,7 +1312,7 @@ mod tests {
             FillAdjustmentResult::AddSyntheticOpening { synthetic_fill, .. } => {
                 assert_eq!(synthetic_fill.ts_event, 0); // saturating_sub(1) from 0 = 0
             }
-            _ => panic!("Expected AddSyntheticOpening, was {:?}", result),
+            _ => panic!("Expected AddSyntheticOpening, was {result:?}"),
         }
     }
 
@@ -1346,7 +1346,7 @@ mod tests {
                 let avg = value / qty.abs();
                 assert_eq!(avg, dec!(105));
             }
-            _ => panic!("Expected NoAdjustment for matching flip, was {:?}", result),
+            _ => panic!("Expected NoAdjustment for matching flip, was {result:?}"),
         }
     }
 

@@ -2598,3 +2598,114 @@ class TestOrders:
         assert own_order.status == nautilus_pyo3.OrderStatus.INITIALIZED
         assert own_order.ts_last == 0
         assert own_order.ts_init == 0
+
+    def test_is_duplicate_fill_returns_true_for_exact_duplicate(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        fill = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        order.apply(fill)
+
+        # Act - check with same fill (exact duplicate)
+        result = order.is_duplicate_fill(fill)
+
+        # Assert
+        assert result is True
+
+    def test_is_duplicate_fill_returns_false_for_different_trade_id(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        fill1 = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        order.apply(fill1)
+
+        # Act - check with different trade_id
+        fill2 = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-002"),  # Different trade_id
+        )
+        result = order.is_duplicate_fill(fill2)
+
+        # Assert
+        assert result is False
+
+    def test_is_duplicate_fill_returns_false_for_same_trade_id_different_qty(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        fill1 = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+        order.apply(fill1)
+
+        # Act - check with same trade_id but different qty
+        fill2 = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(30_000),  # Different qty
+            trade_id=TradeId("TRADE-001"),  # Same trade_id
+        )
+        result = order.is_duplicate_fill(fill2)
+
+        # Assert
+        assert result is False
+
+    def test_is_duplicate_fill_returns_false_when_no_fills(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+
+        fill = TestEventStubs.order_filled(
+            order,
+            AUDUSD_SIM,
+            last_qty=Quantity.from_int(50_000),
+            trade_id=TradeId("TRADE-001"),
+        )
+
+        # Act - check before any fill is applied
+        result = order.is_duplicate_fill(fill)
+
+        # Assert
+        assert result is False

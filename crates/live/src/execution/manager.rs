@@ -751,9 +751,7 @@ impl ExecutionManager {
         // If max retries exceeded, generate rejection event
         if *retries >= self.config.open_check_missing_retries {
             log::warn!(
-                "Order {} not found at venue after {} retries, marking as REJECTED",
-                client_order_id,
-                retries
+                "Order {client_order_id} not found at venue after {retries} retries, marking as REJECTED"
             );
 
             let rejected = self.create_order_rejected(&order, Some("NOT_FOUND_AT_VENUE"));

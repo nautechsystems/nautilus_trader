@@ -22,6 +22,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -32,7 +33,6 @@ use nautilus_common::{
             UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
-    runner::get_data_event_sender,
 };
 use nautilus_core::{
     UnixNanos,
@@ -41,7 +41,7 @@ use nautilus_core::{
 use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::{Bar, BarType, Data, OrderBookDeltas_API},
-    enums::BarAggregation,
+    enums::{BarAggregation, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -427,7 +427,7 @@ impl HyperliquidDataClient {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for HyperliquidDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
@@ -693,7 +693,7 @@ impl DataClient for HyperliquidDataClient {
     fn subscribe_book_deltas(&mut self, subscription: &SubscribeBookDeltas) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
 
-        if subscription.book_type != nautilus_model::enums::BookType::L2_MBP {
+        if subscription.book_type != BookType::L2_MBP {
             anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
         }
 
@@ -739,7 +739,7 @@ impl DataClient for HyperliquidDataClient {
             subscription.instrument_id
         );
 
-        if subscription.book_type != nautilus_model::enums::BookType::L2_MBP {
+        if subscription.book_type != BookType::L2_MBP {
             anyhow::bail!("Hyperliquid only supports L2_MBP order book snapshots");
         }
 
@@ -820,7 +820,7 @@ impl DataClient for HyperliquidDataClient {
         let instruments = self.instruments.read().unwrap();
         let instrument_id = subscription.bar_type.instrument_id();
         if !instruments.contains_key(&instrument_id) {
-            anyhow::bail!("Instrument {} not found", instrument_id);
+            anyhow::bail!("Instrument {instrument_id} not found");
         }
 
         drop(instruments);

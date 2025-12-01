@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_kraken::http::client::KrakenRawHttpClient;
+use nautilus_kraken::http::spot::client::KrakenSpotRawHttpClient;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,9 +23,9 @@ async fn main() -> anyhow::Result<()> {
             .finish(),
     )?;
 
-    tracing::info!("Kraken HTTP client example");
+    tracing::info!("Kraken Spot HTTP client example");
 
-    let client = KrakenRawHttpClient::default();
+    let client = KrakenSpotRawHttpClient::default();
 
     tracing::info!("Fetching server time...");
     let server_time = client.get_server_time().await?;

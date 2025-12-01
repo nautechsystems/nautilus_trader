@@ -344,9 +344,9 @@ pub fn decode_sqrt_price_x96_to_price(sqrt_price_x96: U160) -> anyhow::Result<Pr
     let divisor = U256::from(1u128) << 192;
     let price_raw_u256 = FullMath::mul_div(price_x192, fixed_scalar, divisor)?;
 
-    let price_raw = price_raw_u256.try_into().map_err(|_| {
-        anyhow::anyhow!("Price overflow: {} exceeds PriceRaw range", price_raw_u256)
-    })?;
+    let price_raw = price_raw_u256
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Price overflow: {price_raw_u256} exceeds PriceRaw range"))?;
 
     Ok(Price::from_raw(price_raw, FIXED_PRECISION))
 }
@@ -401,22 +401,14 @@ pub fn decode_sqrt_price_x96_to_price_tokens_adjusted(
 
     let price_raw: i128 = numerator
         .try_into()
-        .map_err(|_| anyhow::anyhow!("Price overflow: {} exceeds PriceRaw range", numerator))?;
+        .map_err(|_| anyhow::anyhow!("Price overflow: {numerator} exceeds PriceRaw range"))?;
 
     // Step 5: Validate price is within valid range before creating Price
     if price_raw > PRICE_RAW_MAX {
-        anyhow::bail!(
-            "Price {} exceeds maximum valid price {}",
-            price_raw,
-            PRICE_RAW_MAX
-        );
+        anyhow::bail!("Price {price_raw} exceeds maximum valid price {PRICE_RAW_MAX}");
     }
     if price_raw < PRICE_RAW_MIN {
-        anyhow::bail!(
-            "Price {} is below minimum valid price {}",
-            price_raw,
-            PRICE_RAW_MIN
-        );
+        anyhow::bail!("Price {price_raw} is below minimum valid price {PRICE_RAW_MIN}");
     }
 
     Ok(Price::from_raw(price_raw, FIXED_PRECISION))

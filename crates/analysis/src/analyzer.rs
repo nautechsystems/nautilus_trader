@@ -13,12 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::Debug,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
+use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::Account,
@@ -55,11 +52,11 @@ pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct PortfolioAnalyzer {
-    pub statistics: HashMap<String, Statistic>,
-    pub account_balances_starting: HashMap<Currency, Money>,
-    pub account_balances: HashMap<Currency, Money>,
+    pub statistics: AHashMap<String, Statistic>,
+    pub account_balances_starting: AHashMap<Currency, Money>,
+    pub account_balances: AHashMap<Currency, Money>,
     pub positions: Vec<Position>,
-    pub realized_pnls: HashMap<Currency, Vec<(PositionId, f64)>>,
+    pub realized_pnls: AHashMap<Currency, Vec<(PositionId, f64)>>,
     pub returns: Returns,
 }
 
@@ -95,11 +92,11 @@ impl PortfolioAnalyzer {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            statistics: HashMap::new(),
-            account_balances_starting: HashMap::new(),
-            account_balances: HashMap::new(),
+            statistics: AHashMap::new(),
+            account_balances_starting: AHashMap::new(),
+            account_balances: AHashMap::new(),
             positions: Vec::new(),
-            realized_pnls: HashMap::new(),
+            realized_pnls: AHashMap::new(),
             returns: BTreeMap::new(),
         }
     }
@@ -123,6 +120,7 @@ impl PortfolioAnalyzer {
     pub fn reset(&mut self) {
         self.account_balances_starting.clear();
         self.account_balances.clear();
+        self.positions.clear();
         self.realized_pnls.clear();
         self.returns.clear();
     }
@@ -146,9 +144,13 @@ impl PortfolioAnalyzer {
     }
 
     /// Calculates statistics based on account and position data.
+    ///
+    /// This clears all previous state before calculating, so can be called
+    /// multiple times without accumulating stale data.
     pub fn calculate_statistics(&mut self, account: &dyn Account, positions: &[Position]) {
-        self.account_balances_starting = account.starting_balances();
-        self.account_balances = account.balances_total();
+        self.account_balances_starting = account.starting_balances().into_iter().collect();
+        self.account_balances = account.balances_total().into_iter().collect();
+        self.positions.clear();
         self.realized_pnls.clear();
         self.returns.clear();
 
@@ -185,16 +187,31 @@ impl PortfolioAnalyzer {
     }
 
     /// Retrieves realized PnLs for a specific currency.
+    ///
+    /// Returns `None` if no PnLs exist, or if multiple currencies exist
+    /// without an explicit currency specified.
     #[must_use]
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() {
             return None;
         }
-        let currency = currency.or_else(|| self.account_balances.keys().next())?;
+
+        // Require explicit currency for multi-currency portfolios to avoid nondeterminism
+        let currency = match currency {
+            Some(c) => c,
+            None if self.account_balances.len() == 1 => self.account_balances.keys().next()?,
+            None => return None,
+        };
+
         self.realized_pnls.get(currency).cloned()
     }
 
     /// Calculates total PnL including unrealized PnL if provided.
+    ///
+    /// # Panics
+    ///
+    /// This function does not panic. The internal `expect` is guarded by a length
+    /// check ensuring at least one currency exists.
     ///
     /// # Errors
     ///
@@ -211,9 +228,15 @@ impl PortfolioAnalyzer {
             return Ok(0.0);
         }
 
-        let currency = currency
-            .or_else(|| self.account_balances.keys().next())
-            .ok_or("Currency not specified for multi-currency portfolio")?;
+        // Require explicit currency for multi-currency portfolios to avoid nondeterminism
+        let currency = match currency {
+            Some(c) => c,
+            None if self.account_balances.len() == 1 => {
+                // SAFETY: Length is 1, so next() always returns Some
+                self.account_balances.keys().next().expect("len is 1")
+            }
+            None => return Err("Currency must be specified for multi-currency portfolio"),
+        };
 
         if let Some(unrealized_pnl) = unrealized_pnl
             && unrealized_pnl.currency != *currency
@@ -238,6 +261,11 @@ impl PortfolioAnalyzer {
 
     /// Calculates total PnL as a percentage of starting balance.
     ///
+    /// # Panics
+    ///
+    /// This function does not panic. The internal `expect` is guarded by a length
+    /// check ensuring at least one currency exists.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -253,9 +281,15 @@ impl PortfolioAnalyzer {
             return Ok(0.0);
         }
 
-        let currency = currency
-            .or_else(|| self.account_balances.keys().next())
-            .ok_or("Currency not specified for multi-currency portfolio")?;
+        // Require explicit currency for multi-currency portfolios to avoid nondeterminism
+        let currency = match currency {
+            Some(c) => c,
+            None if self.account_balances.len() == 1 => {
+                // SAFETY: Length is 1, so next() always returns Some
+                self.account_balances.keys().next().expect("len is 1")
+            }
+            None => return Err("Currency must be specified for multi-currency portfolio"),
+        };
 
         if let Some(unrealized_pnl) = unrealized_pnl
             && unrealized_pnl.currency != *currency
@@ -299,8 +333,8 @@ impl PortfolioAnalyzer {
         &self,
         currency: Option<&Currency>,
         unrealized_pnl: Option<&Money>,
-    ) -> Result<HashMap<String, f64>, &'static str> {
-        let mut output = HashMap::new();
+    ) -> Result<AHashMap<String, f64>, &'static str> {
+        let mut output = AHashMap::new();
 
         output.insert(
             "PnL (total)".to_string(),
@@ -329,8 +363,8 @@ impl PortfolioAnalyzer {
 
     /// Gets all return-based performance statistics.
     #[must_use]
-    pub fn get_performance_stats_returns(&self) -> HashMap<String, f64> {
-        let mut output = HashMap::new();
+    pub fn get_performance_stats_returns(&self) -> AHashMap<String, f64> {
+        let mut output = AHashMap::new();
 
         for (name, stat) in &self.statistics {
             if let Some(value) = stat.calculate_from_returns(&self.returns) {
@@ -343,8 +377,8 @@ impl PortfolioAnalyzer {
 
     /// Gets general portfolio statistics.
     #[must_use]
-    pub fn get_performance_stats_general(&self) -> HashMap<String, f64> {
-        let mut output = HashMap::new();
+    pub fn get_performance_stats_general(&self) -> AHashMap<String, f64> {
+        let mut output = AHashMap::new();
 
         for (name, stat) in &self.statistics {
             if let Some(value) = stat.calculate_from_positions(&self.positions) {
@@ -425,9 +459,10 @@ impl PortfolioAnalyzer {
 mod tests {
     use std::sync::Arc;
 
+    use ahash::AHashMap;
     use nautilus_core::approx_eq;
     use nautilus_model::{
-        enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide},
+        enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide, PositionSide},
         events::{AccountState, OrderFilled},
         identifiers::{
             AccountId, ClientOrderId,
@@ -491,7 +526,7 @@ mod tests {
             opening_order_id: ClientOrderId::default(),
             closing_order_id: None,
             entry: OrderSide::NoOrderSide,
-            side: nautilus_model::enums::PositionSide::NoPositionSide,
+            side: PositionSide::NoPositionSide,
             signed_qty: 0.0,
             quantity: Quantity::default(),
             peak_qty: Quantity::default(),
@@ -516,20 +551,20 @@ mod tests {
             trade_ids: Vec::new(),
             buy_qty: Quantity::default(),
             sell_qty: Quantity::default(),
-            commissions: HashMap::new(),
+            commissions: AHashMap::new(),
         }
     }
 
     struct MockAccount {
-        starting_balances: HashMap<Currency, Money>,
-        current_balances: HashMap<Currency, Money>,
+        starting_balances: AHashMap<Currency, Money>,
+        current_balances: AHashMap<Currency, Money>,
     }
 
     impl Account for MockAccount {
-        fn starting_balances(&self) -> HashMap<Currency, Money> {
+        fn starting_balances(&self) -> AHashMap<Currency, Money> {
             self.starting_balances.clone()
         }
-        fn balances_total(&self) -> HashMap<Currency, Money> {
+        fn balances_total(&self) -> AHashMap<Currency, Money> {
             self.current_balances.clone()
         }
         fn id(&self) -> AccountId {
@@ -556,13 +591,13 @@ mod tests {
         fn balance_free(&self, _: Option<Currency>) -> Option<Money> {
             todo!()
         }
-        fn balances_free(&self) -> HashMap<Currency, Money> {
+        fn balances_free(&self) -> AHashMap<Currency, Money> {
             todo!()
         }
         fn balance_locked(&self, _: Option<Currency>) -> Option<Money> {
             todo!()
         }
-        fn balances_locked(&self) -> HashMap<Currency, Money> {
+        fn balances_locked(&self) -> AHashMap<Currency, Money> {
             todo!()
         }
         fn last_event(&self) -> Option<AccountState> {
@@ -577,7 +612,7 @@ mod tests {
         fn currencies(&self) -> Vec<Currency> {
             todo!()
         }
-        fn balances(&self) -> HashMap<Currency, AccountBalance> {
+        fn balances(&self) -> AHashMap<Currency, AccountBalance> {
             todo!()
         }
         fn apply(&mut self, _: AccountState) {
@@ -652,10 +687,10 @@ mod tests {
         let currency = Currency::USD();
 
         // Set up mock account data
-        let mut starting_balances = HashMap::new();
+        let mut starting_balances = AHashMap::new();
         starting_balances.insert(currency, Money::new(1000.0, currency));
 
-        let mut current_balances = HashMap::new();
+        let mut current_balances = AHashMap::new();
         current_balances.insert(currency, Money::new(1500.0, currency));
 
         let account = MockAccount {
@@ -683,10 +718,10 @@ mod tests {
         let currency = Currency::USD();
 
         // Set up mock account data
-        let mut starting_balances = HashMap::new();
+        let mut starting_balances = AHashMap::new();
         starting_balances.insert(currency, Money::new(1000.0, currency));
 
-        let mut current_balances = HashMap::new();
+        let mut current_balances = AHashMap::new();
         current_balances.insert(currency, Money::new(1500.0, currency));
 
         let account = MockAccount {
@@ -753,10 +788,10 @@ mod tests {
             create_mock_position("AUD/USD".to_owned(), 200.0, 0.2, currency),
         ];
 
-        let mut starting_balances = HashMap::new();
+        let mut starting_balances = AHashMap::new();
         starting_balances.insert(currency, Money::new(1000.0, currency));
 
-        let mut current_balances = HashMap::new();
+        let mut current_balances = AHashMap::new();
         current_balances.insert(currency, Money::new(1500.0, currency));
 
         let account = MockAccount {
@@ -796,10 +831,10 @@ mod tests {
             create_mock_position("AUD/USD".to_owned(), 200.0, 0.2, currency),
         ];
 
-        let mut starting_balances = HashMap::new();
+        let mut starting_balances = AHashMap::new();
         starting_balances.insert(currency, Money::new(1000.0, currency));
 
-        let mut current_balances = HashMap::new();
+        let mut current_balances = AHashMap::new();
         current_balances.insert(currency, Money::new(1500.0, currency));
 
         let account = MockAccount {
@@ -836,9 +871,9 @@ mod tests {
             0.1,
             currency,
         )];
-        let mut starting_balances = HashMap::new();
+        let mut starting_balances = AHashMap::new();
         starting_balances.insert(currency, Money::new(1000.0, currency));
-        let mut current_balances = HashMap::new();
+        let mut current_balances = AHashMap::new();
         current_balances.insert(currency, Money::new(1500.0, currency));
 
         let account = MockAccount {
@@ -852,7 +887,45 @@ mod tests {
 
         assert!(analyzer.account_balances_starting.is_empty());
         assert!(analyzer.account_balances.is_empty());
+        assert!(analyzer.positions.is_empty());
         assert!(analyzer.realized_pnls.is_empty());
         assert!(analyzer.returns.is_empty());
+    }
+
+    #[rstest]
+    fn test_calculate_statistics_clears_previous_positions() {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let currency = Currency::USD();
+
+        let positions1 = vec![create_mock_position(
+            "pos1".to_owned(),
+            100.0,
+            0.1,
+            currency,
+        )];
+        let positions2 = vec![create_mock_position(
+            "pos2".to_owned(),
+            200.0,
+            0.2,
+            currency,
+        )];
+
+        let mut starting_balances = AHashMap::new();
+        starting_balances.insert(currency, Money::new(1000.0, currency));
+        let mut current_balances = AHashMap::new();
+        current_balances.insert(currency, Money::new(1500.0, currency));
+
+        let account = MockAccount {
+            starting_balances,
+            current_balances,
+        };
+
+        // First calculation
+        analyzer.calculate_statistics(&account, &positions1);
+        assert_eq!(analyzer.positions.len(), 1);
+
+        // Second calculation should NOT accumulate
+        analyzer.calculate_statistics(&account, &positions2);
+        assert_eq!(analyzer.positions.len(), 1);
     }
 }

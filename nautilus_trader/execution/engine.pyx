@@ -1226,12 +1226,19 @@ cdef class ExecutionEngine(Component):
 
         cdef OmsType oms_type
         if isinstance(event, OrderFilled):
+            if order.is_duplicate_fill_c(event):
+                self._log.warning(
+                    f"Duplicate fill: {order.client_order_id!r} trade_id={event.trade_id} already applied",
+                )
+                return  # Reject duplicate fill, skip all processing
+
             if not self._check_overfill(order, event):
                 return  # Reject overfill, skip all processing
 
             oms_type = self._determine_oms_type(event)
             self._determine_position_id(event, oms_type, order)
-            self._apply_event_to_order(order, event)
+            if not self._apply_event_to_order(order, event):
+                return  # Event rejected, skip downstream handling
             self._handle_order_fill(order, event, oms_type)
         else:
             self._apply_event_to_order(order, event)
@@ -1451,7 +1458,7 @@ cdef class ExecutionEngine(Component):
 
         return True  # No overfill
 
-    cpdef void _apply_event_to_order(self, Order order, OrderEvent event):
+    cpdef bint _apply_event_to_order(self, Order order, OrderEvent event):
         try:
             order.apply(event)
         except InvalidStateTrigger as e:
@@ -1461,10 +1468,10 @@ cdef class ExecutionEngine(Component):
                 self._log.debug(log_msg)
             else:
                 self._log.warning(log_msg)
-            return
+            return True  # Continue processing for idempotent state transitions
         except (ValueError, KeyError) as e:
             # ValueError: Protection against invalid IDs
-            # KeyError: Protection against duplicate fills
+            # KeyError: Protection against duplicate fills (same trade_id, different data)
             self._log.exception(f"Error on applying {event!r} to {order!r}", e)
 
             if isinstance(event, (OrderRejected, OrderCanceled, OrderExpired, OrderDenied)):
@@ -1479,7 +1486,7 @@ cdef class ExecutionEngine(Component):
                 # Only bypass should_handle check for closed orders (to ensure cleanup)
                 if (own_book is not None and order.is_closed_c()) or should_handle_own_book_order(order):
                     self._cache.update_own_order_book(order)
-            return
+            return False  # Event rejected, skip downstream handling
 
         self._cache.update_order(order)
 
@@ -1490,6 +1497,7 @@ cdef class ExecutionEngine(Component):
             endpoint="Portfolio.update_order",
             msg=event,
         )
+        return True
 
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)

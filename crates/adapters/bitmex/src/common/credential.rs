@@ -20,6 +20,7 @@
 use std::fmt::Debug;
 
 use aws_lc_rs::hmac;
+use nautilus_core::string::mask_api_key;
 use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
 
@@ -70,7 +71,7 @@ impl Credential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        nautilus_core::string::mask_api_key(self.api_key.as_str())
+        mask_api_key(self.api_key.as_str())
     }
 }
 

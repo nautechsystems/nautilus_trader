@@ -217,7 +217,7 @@ impl BlockchainCache {
         if let Some(database) = &self.database {
             let dex = self
                 .get_dex(dex_id)
-                .ok_or_else(|| anyhow::anyhow!("DEX {:?} has not been registered", dex_id))?;
+                .ok_or_else(|| anyhow::anyhow!("DEX {dex_id:?} has not been registered"))?;
             let pool_rows = database
                 .load_pools(self.chain.clone(), &dex_id.to_string())
                 .await?;

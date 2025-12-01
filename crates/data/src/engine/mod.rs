@@ -47,6 +47,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
+use futures::future::join_all;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
 use indexmap::IndexMap;
 use nautilus_common::{
@@ -198,7 +199,7 @@ impl DataEngine {
     ///
     /// Panics if a catalog with the same `name` has already been registered.
     pub fn register_catalog(&mut self, catalog: ParquetDataCatalog, name: Option<String>) {
-        let name = Ustr::from(&name.unwrap_or("catalog_0".to_string()));
+        let name = Ustr::from(name.as_deref().unwrap_or("catalog_0"));
 
         check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
 
@@ -311,6 +312,55 @@ impl DataEngine {
         }
 
         self.clock.borrow_mut().cancel_timers();
+    }
+
+    /// Connects all registered data clients concurrently.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to connect.
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
+        let futures: Vec<_> = self
+            .get_clients_mut()
+            .into_iter()
+            .map(|client| client.connect())
+            .collect();
+
+        let results = join_all(futures).await;
+        let errors: Vec<_> = results.into_iter().filter_map(Result::err).collect();
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            let error_msgs: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
+            anyhow::bail!("Failed to connect data clients: {}", error_msgs.join("; "))
+        }
+    }
+
+    /// Disconnects all registered data clients concurrently.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to disconnect.
+    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
+        let futures: Vec<_> = self
+            .get_clients_mut()
+            .into_iter()
+            .map(|client| client.disconnect())
+            .collect();
+
+        let results = join_all(futures).await;
+        let errors: Vec<_> = results.into_iter().filter_map(Result::err).collect();
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            let error_msgs: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
+            anyhow::bail!(
+                "Failed to disconnect data clients: {}",
+                error_msgs.join("; ")
+            )
+        }
     }
 
     /// Returns `true` if all registered data clients are currently connected.

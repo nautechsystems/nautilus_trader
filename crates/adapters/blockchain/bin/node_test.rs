@@ -26,9 +26,9 @@ use nautilus_blockchain::{
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     enums::{Environment, LogColor},
+    live::runtime::get_runtime,
     log_warn,
     logging::log_info,
-    runtime::get_runtime,
 };
 use nautilus_core::env::get_env_var;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;

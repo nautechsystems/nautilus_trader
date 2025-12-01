@@ -644,10 +644,7 @@ impl CancelBroadcaster {
             handles,
             || Ok(None),
             "Cancel",
-            format!(
-                "(client_order_id={:?}, venue_order_id={:?})",
-                client_order_id, venue_order_id
-            ),
+            format!("(client_order_id={client_order_id:?}, venue_order_id={venue_order_id:?})"),
             "order already cancelled/not found",
         )
         .await
@@ -698,10 +695,7 @@ impl CancelBroadcaster {
             handles,
             || Ok(Vec::new()),
             "Batch cancel",
-            format!(
-                "(client_order_ids={:?}, venue_order_ids={:?})",
-                client_order_ids, venue_order_ids
-            ),
+            format!("(client_order_ids={client_order_ids:?}, venue_order_ids={venue_order_ids:?})"),
             "orders already cancelled/not found",
         )
         .await
@@ -748,10 +742,7 @@ impl CancelBroadcaster {
             handles,
             || Ok(Vec::new()),
             "Cancel all",
-            format!(
-                "(instrument_id={}, order_side={:?})",
-                instrument_id, order_side
-            ),
+            format!("(instrument_id={instrument_id}, order_side={order_side:?})"),
             "no orders to cancel",
         )
         .await
@@ -803,6 +794,7 @@ impl CancelBroadcaster {
         }
     }
 
+    #[must_use]
     pub fn clone_for_async(&self) -> Self {
         Self {
             config: self.config.clone(),

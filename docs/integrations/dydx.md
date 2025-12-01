@@ -40,7 +40,7 @@ on the use case.
 - `DYDXLiveExecClientFactory`: Factory for dYdX execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as below),
+Most users will define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
 
@@ -335,7 +335,7 @@ The data client is using the wallet address to determine the trading fees. The t
 ### Testnets
 
 It's also possible to configure one or both clients to connect to the dYdX testnet.
-Simply set the `is_testnet` option to `True` (this is `False` by default):
+Set the `is_testnet` option to `True` (this is `False` by default):
 
 ```python
 config = TradingNodeConfig(

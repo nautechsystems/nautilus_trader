@@ -31,7 +31,6 @@ use std::{
 
 use dashmap::DashMap;
 use futures_util::StreamExt;
-use tokio::time::sleep;
 
 use self::{
     clock::{Clock, FakeRelativeClock, MonotonicClock},
@@ -175,7 +174,10 @@ where
     pub fn new_with_quota(base_quota: Option<Quota>, keyed_quotas: Vec<(K, Quota)>) -> Self {
         let clock = MonotonicClock {};
         let start = MonotonicClock::now(&clock);
-        let gcra = DashMap::from_iter(keyed_quotas.into_iter().map(|(k, q)| (k, Gcra::new(q))));
+        let gcra: DashMap<_, _> = keyed_quotas
+            .into_iter()
+            .map(|(k, q)| (k, Gcra::new(q)))
+            .collect();
         Self {
             default_gcra: base_quota.map(Gcra::new),
             state: DashMapStateStore::new(),
@@ -230,7 +232,7 @@ where
                     break;
                 }
                 Err(e) => {
-                    sleep(e.wait_time_from(self.clock.now())).await;
+                    tokio::time::sleep(e.wait_time_from(self.clock.now())).await;
                 }
             }
         }

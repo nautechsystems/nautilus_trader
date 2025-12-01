@@ -69,16 +69,14 @@ pub fn parse_ws_order_report(
                 .map(|entry| *entry.key())
                 .collect();
             anyhow::anyhow!(
-                "No instrument cached for clob_pair_id {}. Available: {:?}",
-                clob_pair_id,
-                available
+                "No instrument cached for clob_pair_id {clob_pair_id}. Available: {available:?}"
             )
         })?
         .value();
 
     let instrument = instruments
         .get(&instrument_id)
-        .ok_or_else(|| anyhow::anyhow!("Instrument {} not found in cache", instrument_id))?
+        .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?
         .value()
         .clone();
 
@@ -165,22 +163,24 @@ fn convert_ws_order_to_http(
         .as_ref()
         .and_then(|s| Decimal::from_str(s).ok());
 
-    // Parse updated_at - if missing, we must use current time since created_at
-    // is not available in WebSocket messages (only created_at_height exists)
+    // Parse updated_at (optional for BEST_EFFORT_OPENED orders)
     let updated_at = ws_order
         .updated_at
         .as_ref()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map_or_else(Utc::now, |dt| dt.with_timezone(&Utc));
+        .map(|dt| dt.with_timezone(&Utc));
 
+    // Parse updated_at_height (optional for BEST_EFFORT_OPENED orders)
     let updated_at_height = ws_order
         .updated_at_height
         .as_ref()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(created_at_height);
+        .and_then(|s| s.parse::<u64>().ok());
 
     // Convert order type to string using Display (gives PascalCase like "Limit", "Market")
     let order_type = ws_order.order_type.to_string();
+
+    // Calculate total filled from size - remaining_size
+    let total_filled = size.checked_sub(remaining_size).unwrap_or(Decimal::ZERO);
 
     Ok(Order {
         id: ws_order.id.clone(),
@@ -189,7 +189,7 @@ fn convert_ws_order_to_http(
         clob_pair_id,
         side: ws_order.side,
         size,
-        remaining_size,
+        total_filled,
         price,
         status: ws_order.status,
         order_type,
@@ -199,7 +199,7 @@ fn convert_ws_order_to_http(
         order_flags,
         good_til_block,
         good_til_block_time,
-        created_at_height,
+        created_at_height: Some(created_at_height),
         client_metadata,
         trigger_price,
         condition_type: None, // Not provided in WebSocket messages
@@ -207,6 +207,9 @@ fn convert_ws_order_to_http(
         execution: None,      // Inferred from post_only flag by HTTP parser
         updated_at,
         updated_at_height,
+        ticker: None,               // Not provided in WebSocket messages
+        subaccount_number: 0,       // Default to 0 for WebSocket messages
+        order_router_address: None, // Not provided in WebSocket messages
     })
 }
 
@@ -519,7 +522,7 @@ mod tests {
         assert_eq!(http_order.id, "order123");
         assert_eq!(http_order.clob_pair_id, 1);
         assert_eq!(http_order.size.to_string(), "1.5");
-        assert_eq!(http_order.remaining_size, rust_decimal_macros::dec!(1.0)); // 1.5 - 0.5
+        assert_eq!(http_order.total_filled, rust_decimal_macros::dec!(0.5)); // 0.5 filled
         assert_eq!(http_order.status, DydxOrderStatus::PartiallyFilled);
     }
 
@@ -929,7 +932,7 @@ mod tests {
         #[case] total_filled: &str,
     ) {
         let ws_order = DydxWsOrderSubaccountMessageContents {
-            id: format!("order_{:?}", status),
+            id: format!("order_{status:?}"),
             subaccount_id: "dydx1test/0".to_string(),
             client_id: "99999".to_string(),
             clob_pair_id: "1".to_string(),
@@ -973,8 +976,7 @@ mod tests {
 
         assert!(
             result.is_ok(),
-            "Failed to parse order with status {:?}",
-            status
+            "Failed to parse order with status {status:?}"
         );
         let report = result.unwrap();
 

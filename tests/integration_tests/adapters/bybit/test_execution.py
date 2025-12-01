@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -32,10 +31,12 @@ from nautilus_trader.execution.messages import GenerateFillReports
 from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryAccount
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
@@ -51,6 +52,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.bybit.conftest import _create_ws_mock
 
@@ -1293,6 +1295,240 @@ async def test_repay_spot_borrow_repays_partial_when_bought_less_than_borrowed(
         await client._disconnect()
 
 
+@pytest.mark.asyncio
+async def test_repay_spot_borrow_repays_partial_single(
+    monkeypatch,
+    exec_client_builder,
+    cache,
+):
+    # Arrange
+    # Use TestClock with time outside blackout window (04:00-05:30 UTC) so repayment logic runs
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"auto_repay_spot_borrows": True, "repay_queue_interval_secs": 0.05},
+        clock=test_clock,
+    )
+
+    # Create a SPOT instrument
+    spot_instrument = CurrencyPair(
+        instrument_id=InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("BTCUSDT"),
+        base_currency=BTC,
+        quote_currency=USDT,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        ts_event=0,
+        ts_init=0,
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+    )
+    cache.add_instrument(spot_instrument)
+
+    # Create a BUY order for SPOT - buying 0.5 BTC
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=spot_instrument.id,
+        client_order_id=ClientOrderId("O-PARTIAL-REPAY"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.500000"),  # Buying 0.5 BTC
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    # Mock HTTP client to simulate:
+    # - Borrowed amount: 2.0 BTC (more than what we're buying)
+    # - We're only buying: 0.5 BTC
+    # - Expected repayment: 0.5 BTC (not the full 2.0 BTC)
+    http_client.get_spot_borrow_amount = AsyncMock(return_value=Decimal("2.000000"))
+    http_client.repay_spot_borrow = AsyncMock()
+
+    # Start the repayment queue processor
+    await client._connect()
+
+    try:
+        # Create a fill report for the full order (0.5 BTC)
+        fill_report = nautilus_pyo3.FillReport(
+            account_id=nautilus_pyo3.AccountId("BYBIT-UNIFIED"),
+            instrument_id=nautilus_pyo3.InstrumentId.from_str(spot_instrument.id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId("BYBIT-PARTIAL-123"),
+            trade_id=nautilus_pyo3.TradeId("T-PARTIAL-001"),
+            order_side=nautilus_pyo3.OrderSide.BUY,
+            last_qty=nautilus_pyo3.Quantity.from_str("0.500000"),
+            last_px=nautilus_pyo3.Price.from_str("50000.00"),
+            commission=nautilus_pyo3.Money.from_str("0.025 USDT"),
+            liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+            ts_event=0,
+            client_order_id=nautilus_pyo3.ClientOrderId("O-PARTIAL-REPAY"),
+            report_id=nautilus_pyo3.UUID4(),
+            ts_init=0,
+        )
+
+        # Act - Process the fill report
+        client._handle_fill_report_pyo3(fill_report)
+
+        # Wait for repayment to be processed
+        await eventually(lambda: http_client.repay_spot_borrow.called)
+
+        # Assert - Verify the complete flow executed correctly
+        # 1. Borrow amount was checked
+        http_client.get_spot_borrow_amount.assert_called_once_with("BTC")
+
+        # 2. Repayment was called with the partial amount (0.5 BTC, not full 2.0 BTC)
+        assert http_client.repay_spot_borrow.call_count == 1
+        call_args = http_client.repay_spot_borrow.call_args
+        assert call_args[0][0] == "BTC"  # Currency
+        # Should repay min(borrowed=2.0, bought=0.5) = 0.5
+        assert float(call_args[0][1]) == 0.5
+
+        # 3. Order tracking should be cleaned up after full fill
+        assert order.client_order_id not in client._order_filled_qty
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_repay_spot_borrow_repays_partial_multiple(
+    monkeypatch,
+    exec_client_builder,
+    cache,
+):
+    # Arrange
+    # Use TestClock with time outside blackout window (04:00-05:30 UTC) so repayment logic runs
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"auto_repay_spot_borrows": True, "repay_queue_interval_secs": 0.05},
+        clock=test_clock,
+    )
+
+    # Create a SPOT instrument
+    spot_instrument = CurrencyPair(
+        instrument_id=InstrumentId.from_str("ETHUSDT-SPOT.BYBIT"),
+        raw_symbol=Symbol("ETHUSDT"),
+        base_currency=ETH,
+        quote_currency=USDT,
+        price_precision=2,
+        size_precision=6,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.000001"),
+        ts_event=0,
+        ts_init=0,
+        maker_fee=Decimal("0.0001"),
+        taker_fee=Decimal("0.0006"),
+    )
+    cache.add_instrument(spot_instrument)
+
+    # Create multiple BUY orders for SPOT
+    # Initial borrowed amount: 1.0 ETH
+    # We'll buy in fractions: +15% (+0.15), +30% (+0.30), +40% (+0.40), +5% (+0.05) = 0.9 ETH total
+    # This ensures we never repay the full borrowed amount (1.0 ETH)
+
+    orders = []
+    order_ids = [
+        ("O-PARTIAL-1", "0.150000"),  # 15% of 1.0 = 0.15 ETH
+        ("O-PARTIAL-2", "0.300000"),  # 30% of 1.0 = 0.30 ETH
+        ("O-PARTIAL-3", "0.400000"),  # 40% of 1.0 = 0.40 ETH
+        ("O-PARTIAL-4", "0.050000"),  # 5% of 1.0 = 0.05 ETH
+    ]
+
+    for order_id, qty in order_ids:
+        order = LimitOrder(
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=spot_instrument.id,
+            client_order_id=ClientOrderId(order_id),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str(qty),
+            price=Price.from_str("3000.00"),
+            init_id=TestIdStubs.uuid(),
+            ts_init=0,
+        )
+        cache.add_order(order, None)
+        orders.append((order, qty))
+
+    # Mock HTTP client to simulate borrowed amount that decreases after each repayment
+    # Initial: 1.0 ETH
+    # After 1st repay (0.15): 0.85 ETH
+    # After 2nd repay (0.30): 0.55 ETH
+    # After 3rd repay (0.40): 0.15 ETH
+    # After 4th repay (0.05): 0.10 ETH (never reaches 0, so we never repay full amount)
+    borrow_amounts = [
+        Decimal("1.000000"),  # Initial
+        Decimal("0.850000"),  # After 1st repayment
+        Decimal("0.550000"),  # After 2nd repayment
+        Decimal("0.150000"),  # After 3rd repayment
+        Decimal("0.100000"),  # After 4th repayment
+    ]
+    http_client.get_spot_borrow_amount = AsyncMock(side_effect=borrow_amounts)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    # Start the repayment queue processor
+    await client._connect()
+
+    try:
+        expected_repayments = []
+
+        # Process each order as a separate fill
+        for i, (order, qty) in enumerate(orders):
+            fill_report = nautilus_pyo3.FillReport(
+                account_id=nautilus_pyo3.AccountId("BYBIT-UNIFIED"),
+                instrument_id=nautilus_pyo3.InstrumentId.from_str(spot_instrument.id.value),
+                venue_order_id=nautilus_pyo3.VenueOrderId(f"BYBIT-MULTI-{i}"),
+                trade_id=nautilus_pyo3.TradeId(f"T-MULTI-{i:03d}"),
+                order_side=nautilus_pyo3.OrderSide.BUY,
+                last_qty=nautilus_pyo3.Quantity.from_str(qty),
+                last_px=nautilus_pyo3.Price.from_str("3000.00"),
+                commission=nautilus_pyo3.Money.from_str("0.025 USDT"),
+                liquidity_side=nautilus_pyo3.LiquiditySide.TAKER,
+                ts_event=0,
+                client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
+                report_id=nautilus_pyo3.UUID4(),
+                ts_init=0,
+            )
+
+            # Act - Process the fill report
+            client._handle_fill_report_pyo3(fill_report)
+
+            # Track expected repayment for this iteration
+            expected_repayments.append(float(qty))
+
+            # Wait for repayment to be processed
+            expected_count = len(expected_repayments)
+            await eventually(lambda c=expected_count: http_client.repay_spot_borrow.call_count >= c)
+
+        # 1. Borrow amount should be checked 4 times (once for each order)
+        assert http_client.get_spot_borrow_amount.call_count == 4
+
+        # 2. Repayment should be called 4 times with partial amounts
+        assert http_client.repay_spot_borrow.call_count == 4
+
+        # 3. Verify each repayment amount
+        for i, expected_amt in enumerate(expected_repayments):
+            call_args = http_client.repay_spot_borrow.call_args_list[i]
+            assert call_args[0][0] == "ETH"  # Currency
+            # Each repayment should be min(borrowed_amount, bought_qty)
+            # Since we always have sufficient borrow, repayment = bought_qty
+            assert float(call_args[0][1]) == expected_amt
+
+        # 4. Total repaid should be 0.9 ETH (less than 1.0 ETH borrowed)
+        total_repaid = sum(expected_repayments)
+        assert total_repaid == 0.9  # 0.15 + 0.30 + 0.40 + 0.05 = 0.90
+
+        # 5. All orders should be cleaned up from tracking
+        for order, _ in orders:
+            assert order.client_order_id not in client._order_filled_qty
+    finally:
+        await client._disconnect()
+
+
 def test_is_repay_blackout_window_during_hour_4(monkeypatch, exec_client_builder):
     # Arrange
     test_clock = TestClock()
@@ -1415,7 +1651,7 @@ async def test_handle_fill_report_tracks_partial_fills_for_spot_buy(
     test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
     client, _, http_client, _ = exec_client_builder(
         monkeypatch,
-        config_kwargs={"auto_repay_spot_borrows": True},
+        config_kwargs={"auto_repay_spot_borrows": True, "repay_queue_interval_secs": 0.05},
         clock=test_clock,
     )
 
@@ -1496,8 +1732,8 @@ async def test_handle_fill_report_tracks_partial_fills_for_spot_buy(
         )
         client._handle_fill_report_pyo3(fill_report2)
 
-        # Give async task time to execute
-        await asyncio.sleep(0.1)
+        # Wait for repayment check to be called
+        await eventually(lambda: http_client.get_spot_borrow_amount.called)
 
         # Assert - Order should be removed from tracking after full fill
         assert order.client_order_id not in client._order_filled_qty
@@ -1564,5 +1800,465 @@ async def test_handle_fill_report_ignores_non_spot_orders(
         # Assert - Should NOT track or trigger repayment for LINEAR
         assert order.client_order_id not in client._order_filled_qty
         http_client.get_spot_borrow_amount.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+# ============================================================================
+# MARGIN ACTION TESTS
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_success(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.borrow_spot = AsyncMock()
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT", "amount": 1000},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        http_client.borrow_spot.assert_awaited_once()
+        call_args = http_client.borrow_spot.call_args
+        assert call_args[0][0] == "USDT"
+        assert float(call_args[0][1]) == 1000.0
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_publishes_result(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.borrow_spot = AsyncMock()
+
+    received_data = []
+
+    def handler(data):
+        received_data.append(data)
+
+    # Subscribe to the margin borrow result topic
+    data_type = DataType(nautilus_pyo3.BybitMarginBorrowResult)
+    msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT", "amount": 1000},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Result was published and received
+        assert len(received_data) == 1
+        result = received_data[0]
+        assert isinstance(result, nautilus_pyo3.BybitMarginBorrowResult)
+        assert result.coin == "USDT"
+        assert result.amount == "1000"
+        assert result.success is True
+        assert result.message == ""
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_publishes_failure_result(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.borrow_spot = AsyncMock(side_effect=Exception("Insufficient balance"))
+
+    received_data = []
+
+    def handler(data):
+        received_data.append(data)
+
+    data_type = DataType(nautilus_pyo3.BybitMarginBorrowResult)
+    msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT", "amount": 1000},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Failure result was published
+        assert len(received_data) == 1
+        result = received_data[0]
+        assert isinstance(result, nautilus_pyo3.BybitMarginBorrowResult)
+        assert result.success is False
+        assert "Insufficient balance" in result.message
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_repay_action_publishes_result(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    received_data = []
+
+    def handler(data):
+        received_data.append(data)
+
+    data_type = DataType(nautilus_pyo3.BybitMarginRepayResult)
+    msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.REPAY, "coin": "USDT", "amount": 500},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        assert len(received_data) == 1
+        result = received_data[0]
+        assert isinstance(result, nautilus_pyo3.BybitMarginRepayResult)
+        assert result.coin == "USDT"
+        assert result.amount == "500"
+        assert result.success is True
+        assert result.result_status == "SU"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_get_borrow_amount_publishes_result(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    http_client.get_spot_borrow_amount = AsyncMock(return_value=Decimal("1234.56"))
+
+    received_data = []
+
+    def handler(data):
+        received_data.append(data)
+
+    data_type = DataType(nautilus_pyo3.BybitMarginStatusResult)
+    msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.GET_BORROW_AMOUNT, "coin": "USDT"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        assert len(received_data) == 1
+        result = received_data[0]
+        assert isinstance(result, nautilus_pyo3.BybitMarginStatusResult)
+        assert result.coin == "USDT"
+        assert result.borrow_amount == "1234.56"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_failure(
+    monkeypatch,
+    exec_client_builder,
+    msgbus,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.borrow_spot = AsyncMock(side_effect=Exception("Insufficient balance"))
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT", "amount": 1000},
+    )
+
+    try:
+        # Act - Should not raise
+        await client._query_account(command)
+
+        # Assert - Borrow was attempted
+        http_client.borrow_spot.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_borrow_action_missing_params(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    http_client.borrow_spot = AsyncMock()
+
+    # Missing 'amount' param
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.BORROW, "coin": "USDT"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Borrow should NOT be called due to missing param
+        http_client.borrow_spot.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_repay_action_success(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.REPAY, "coin": "USDT", "amount": 500},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        http_client.repay_spot_borrow.assert_awaited_once()
+        call_args = http_client.repay_spot_borrow.call_args
+        assert call_args[0][0] == "USDT"
+        assert float(call_args[0][1]) == 500.0
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_repay_action_repay_all(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 10:00:00", tz="UTC").value)
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    # No 'amount' param means repay all
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.REPAY, "coin": "USDT"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        http_client.repay_spot_borrow.assert_awaited_once()
+        call_args = http_client.repay_spot_borrow.call_args
+        assert call_args[0][0] == "USDT"
+        assert call_args[0][1] is None  # None means repay all
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_repay_action_blocked_during_blackout(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    test_clock = TestClock()
+    test_clock.set_time(pd.Timestamp("2025-01-15 04:30:00", tz="UTC").value)  # Blackout window
+    client, _, http_client, _ = exec_client_builder(monkeypatch, clock=test_clock)
+    http_client.repay_spot_borrow = AsyncMock()
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.REPAY, "coin": "USDT", "amount": 500},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Repay should NOT be called during blackout window
+        http_client.repay_spot_borrow.assert_not_called()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_get_borrow_amount_success(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    http_client.get_spot_borrow_amount = AsyncMock(return_value=Decimal("1234.56"))
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": nautilus_pyo3.BybitMarginAction.GET_BORROW_AMOUNT, "coin": "USDT"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert
+        http_client.get_spot_borrow_amount.assert_awaited_once_with("USDT")
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_unknown_action_falls_back_to_update_state(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    # Mock _update_account_state directly to avoid complex dict mocking
+    update_state_mock = AsyncMock()
+    monkeypatch.setattr(client, "_update_account_state", update_state_mock)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+        params={"action": "unknown_action"},
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - Falls back to update account state
+        update_state_mock.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_query_account_no_action_updates_account_state(
+    monkeypatch,
+    exec_client_builder,
+):
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+
+    # Mock _update_account_state directly to avoid complex dict mocking
+    update_state_mock = AsyncMock()
+    monkeypatch.setattr(client, "_update_account_state", update_state_mock)
+
+    command = QueryAccount(
+        trader_id=TestIdStubs.trader_id(),
+        account_id=client.account_id,
+        command_id=TestIdStubs.uuid(),
+        client_id=client.id,
+        ts_init=0,
+    )
+
+    try:
+        # Act
+        await client._query_account(command)
+
+        # Assert - No action means update account state
+        update_state_mock.assert_awaited_once()
     finally:
         await client._disconnect()

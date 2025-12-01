@@ -373,7 +373,7 @@ These timestamps serve distinct purposes and help maintain precise timing inform
 | Custom event     | Time when event conditions actually occurred.         | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
 
 :::note
-The `ts_init` field represents a more general concept than just the "time of reception" for events.
+The `ts_init` field represents a more general concept than "time of reception" for events.
 It denotes the timestamp when an object, such as a data point or command, was initialized within Nautilus.
 This distinction is important because `ts_init` is not exclusive to "received events" — it applies to any internal
 initialization process.
@@ -1614,7 +1614,7 @@ def subscribe_to_greeks(self):
     self.subscribe_data(DataType(GreeksData))
 
 def on_data(self, data):
-    if isinstance(GreeksData):
+    if isinstance(data, GreeksData):
         print("Data", data)
 ```
 

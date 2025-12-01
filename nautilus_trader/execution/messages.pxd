@@ -226,6 +226,8 @@ cdef class QueryAccount(Command):
     """The trader ID associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly AccountId account_id
     """The account ID to query.\n\n:returns: `AccountId`"""
+    cdef readonly dict params
+    """Additional parameters for the command.\n\n:returns: `dict[str, object]`"""
 
     @staticmethod
     cdef QueryAccount from_dict_c(dict values)

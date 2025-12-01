@@ -1108,6 +1108,38 @@ cdef class Order:
             )
         return Quantity.zero_c(fill_qty._mem.precision)
 
+    cdef bint is_duplicate_fill_c(self, OrderFilled fill):
+        cdef OrderEvent event
+        for event in self._events:
+            if not isinstance(event, OrderFilled):
+                continue
+
+            if (
+                event.trade_id == fill.trade_id
+                and event.order_side == fill.order_side
+                and event.last_px == fill.last_px
+                and event.last_qty == fill.last_qty
+            ):
+                return True
+
+        return False
+
+    def is_duplicate_fill(self, OrderFilled fill) -> bool:
+        """
+        Return whether a fill with matching trade_id, side, qty, and price already exists.
+
+        Parameters
+        ----------
+        fill : OrderFilled
+            The fill event to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_duplicate_fill_c(fill)
+
     cdef void _denied(self, OrderDenied event):
         self.ts_closed = event.ts_event
 

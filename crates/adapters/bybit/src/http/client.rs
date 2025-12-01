@@ -30,7 +30,8 @@ use std::{
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
+    consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
@@ -259,6 +260,67 @@ impl BybitRawHttpClient {
         })
     }
 
+    /// Creates a new [`BybitRawHttpClient`] with environment variable credential resolution.
+    ///
+    /// If `api_key` or `api_secret` are not provided, they will be loaded from
+    /// environment variables based on the environment flags:
+    /// - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+    /// - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+    /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_env(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        base_url: Option<String>,
+        demo: bool,
+        testnet: bool,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> Result<Self, BybitHttpError> {
+        let (api_key_env, api_secret_env) = if demo {
+            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
+        } else if testnet {
+            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
+        } else {
+            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
+        };
+
+        let key = get_or_env_var_opt(api_key, api_key_env);
+        let secret = get_or_env_var_opt(api_secret, api_secret_env);
+
+        if let (Some(k), Some(s)) = (key, secret) {
+            Self::with_credentials(
+                k,
+                s,
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
+            )
+        } else {
+            Self::new(
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
+            )
+        }
+    }
+
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([
             (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
@@ -363,7 +425,7 @@ impl BybitRawHttpClient {
                     if query.is_empty() {
                         url
                     } else {
-                        format!("{}?{}", url, query)
+                        format!("{url}?{query}")
                     }
                 } else {
                     url
@@ -1120,6 +1182,67 @@ impl BybitHttpClient {
         })
     }
 
+    /// Creates a new [`BybitHttpClient`] with optional credentials resolved from environment variables.
+    ///
+    /// Credentials are resolved in the following order:
+    /// 1. Use provided `api_key`/`api_secret` if `Some`
+    /// 2. Fall back to environment variables based on environment:
+    ///    - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+    ///    - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+    ///    - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_env(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        base_url: Option<String>,
+        demo: bool,
+        testnet: bool,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> Result<Self, BybitHttpError> {
+        let (api_key_env, api_secret_env) = if demo {
+            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
+        } else if testnet {
+            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
+        } else {
+            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
+        };
+
+        let key = get_or_env_var_opt(api_key, api_key_env);
+        let secret = get_or_env_var_opt(api_secret, api_secret_env);
+
+        match (key, secret) {
+            (Some(k), Some(s)) => Self::with_credentials(
+                k,
+                s,
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
+            ),
+            _ => Self::new(
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
+            ),
+        }
+    }
+
     #[must_use]
     pub fn base_url(&self) -> &str {
         self.inner.base_url()
@@ -1574,7 +1697,7 @@ impl BybitHttpClient {
         self.inner
             .borrow(coin, &amount_str)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to borrow {} {}: {}", amount, coin, e))
+            .map_err(|e| anyhow::anyhow!("Failed to borrow {amount} {coin}: {e}"))
     }
 
     /// Repays spot borrows for a specific coin.

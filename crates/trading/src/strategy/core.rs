@@ -20,6 +20,7 @@ use std::{
     rc::Rc,
 };
 
+use ahash::AHashMap;
 use nautilus_common::{
     actor::{DataActorConfig, DataActorCore},
     cache::Cache,
@@ -28,16 +29,18 @@ use nautilus_common::{
 };
 use nautilus_core::time::get_atomic_clock_static;
 use nautilus_execution::order_manager::manager::OrderManager;
-use nautilus_model::identifiers::{ActorId, StrategyId, TraderId};
+use nautilus_model::identifiers::{ActorId, ClientOrderId, StrategyId, TraderId};
 use nautilus_portfolio::portfolio::Portfolio;
+use ustr::Ustr;
 
 use super::config::StrategyConfig;
 
-/// The core component of a [`Strategy`], managing data, orders, and state.
+/// The core component of a [`Strategy`](super::Strategy), managing data, orders, and state.
 ///
 /// This struct is intended to be held as a member within a user's custom strategy struct.
 /// The user's struct should then `Deref` and `DerefMut` to this `StrategyCore` instance
-/// to satisfy the trait bounds of [`Strategy`] and [`DataActor`].
+/// to satisfy the trait bounds of [`Strategy`](super::Strategy) and
+/// [`DataActor`](nautilus_common::actor::data_actor::DataActor).
 pub struct StrategyCore {
     /// The underlying data actor core.
     pub actor: DataActorCore,
@@ -49,6 +52,8 @@ pub struct StrategyCore {
     pub order_factory: Option<OrderFactory>,
     /// The portfolio.
     pub portfolio: Option<Rc<RefCell<Portfolio>>>,
+    /// Maps client order IDs to GTD expiry timer names.
+    pub gtd_timers: AHashMap<ClientOrderId, Ustr>,
 }
 
 impl Debug for StrategyCore {
@@ -79,6 +84,7 @@ impl StrategyCore {
             order_manager: None,
             order_factory: None,
             portfolio: None,
+            gtd_timers: AHashMap::new(),
         }
     }
 

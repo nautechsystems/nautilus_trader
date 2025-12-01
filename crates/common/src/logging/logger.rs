@@ -128,12 +128,12 @@ impl LoggerConfig {
             } else {
                 let parts: Vec<&str> = kv.split('=').collect();
                 if parts.len() != 2 {
-                    anyhow::bail!("Invalid spec pair: {}", kv);
+                    anyhow::bail!("Invalid spec pair: {kv}");
                 }
                 let k = parts[0].trim(); // Trim key
                 let v = parts[1].trim(); // Trim value
                 let lvl = LevelFilter::from_str(v)
-                    .map_err(|_| anyhow::anyhow!("Invalid log level: {}", v))?;
+                    .map_err(|_| anyhow::anyhow!("Invalid log level: {v}"))?;
                 let k_lower = k.to_lowercase(); // Case-insensitive key matching
                 match k_lower.as_str() {
                     "stdout" => config.stdout_level = lvl,

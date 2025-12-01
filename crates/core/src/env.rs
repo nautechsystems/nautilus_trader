@@ -46,6 +46,17 @@ pub fn get_or_env_var(value: Option<String>, key: &str) -> anyhow::Result<String
     }
 }
 
+/// Returns the provided `value` if `Some`, otherwise falls back to reading
+/// the environment variable for the given `key`.
+///
+/// Unlike [`get_or_env_var`], this function returns `None` instead of an error
+/// when the environment variable is not set. Use this for optional credentials
+/// where missing values are acceptable (e.g., public-only API clients).
+#[must_use]
+pub fn get_or_env_var_opt(value: Option<String>, key: &str) -> Option<String> {
+    value.or_else(|| std::env::var(key).ok())
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -131,6 +142,37 @@ mod tests {
             let result = get_or_env_var(provided, "PATH");
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), "custom_value_takes_priority");
+        }
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_opt_with_some_value() {
+        let provided_value = Some("provided_value".to_string());
+        let result = get_or_env_var_opt(provided_value, "PATH");
+        assert_eq!(result, Some("provided_value".to_string()));
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_opt_with_none_and_env_var_set() {
+        if let Ok(path) = std::env::var("PATH") {
+            let result = get_or_env_var_opt(None, "PATH");
+            assert_eq!(result, Some(path));
+        }
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_opt_with_none_and_env_var_not_set() {
+        let result = get_or_env_var_opt(None, "NONEXISTENT_ENV_VAR_OPT_12345");
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_get_or_env_var_opt_priority() {
+        // When both value and env var are available, value takes precedence
+        if std::env::var("PATH").is_ok() {
+            let provided = Some("custom_value".to_string());
+            let result = get_or_env_var_opt(provided, "PATH");
+            assert_eq!(result, Some("custom_value".to_string()));
         }
     }
 }

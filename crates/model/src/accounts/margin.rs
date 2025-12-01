@@ -19,12 +19,12 @@
 #![allow(dead_code)]
 
 use std::{
-    collections::HashMap,
     fmt::Display,
     hash::{Hash, Hasher},
     ops::{Deref, DerefMut},
 };
 
+use ahash::AHashMap;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -45,8 +45,8 @@ use crate::{
 )]
 pub struct MarginAccount {
     pub base: BaseAccount,
-    pub leverages: HashMap<InstrumentId, Decimal>,
-    pub margins: HashMap<InstrumentId, MarginBalance>,
+    pub leverages: AHashMap<InstrumentId, Decimal>,
+    pub margins: AHashMap<InstrumentId, MarginBalance>,
     pub default_leverage: Decimal,
 }
 
@@ -55,8 +55,8 @@ impl MarginAccount {
     pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
         Self {
             base: BaseAccount::new(event, calculate_account_state),
-            leverages: HashMap::new(),
-            margins: HashMap::new(),
+            leverages: AHashMap::new(),
+            margins: AHashMap::new(),
             default_leverage: Decimal::ONE,
         }
     }
@@ -92,8 +92,8 @@ impl MarginAccount {
     }
 
     #[must_use]
-    pub fn initial_margins(&self) -> HashMap<InstrumentId, Money> {
-        let mut initial_margins: HashMap<InstrumentId, Money> = HashMap::new();
+    pub fn initial_margins(&self) -> AHashMap<InstrumentId, Money> {
+        let mut initial_margins: AHashMap<InstrumentId, Money> = AHashMap::new();
         self.margins.values().for_each(|margin_balance| {
             initial_margins.insert(margin_balance.instrument_id, margin_balance.initial);
         });
@@ -101,8 +101,8 @@ impl MarginAccount {
     }
 
     #[must_use]
-    pub fn maintenance_margins(&self) -> HashMap<InstrumentId, Money> {
-        let mut maintenance_margins: HashMap<InstrumentId, Money> = HashMap::new();
+    pub fn maintenance_margins(&self) -> AHashMap<InstrumentId, Money> {
+        let mut maintenance_margins: AHashMap<InstrumentId, Money> = AHashMap::new();
         self.margins.values().for_each(|margin_balance| {
             maintenance_margins.insert(margin_balance.instrument_id, margin_balance.maintenance);
         });
@@ -354,7 +354,7 @@ impl Account for MarginAccount {
         self.base_balance_total(currency)
     }
 
-    fn balances_total(&self) -> HashMap<Currency, Money> {
+    fn balances_total(&self) -> AHashMap<Currency, Money> {
         self.base_balances_total()
     }
 
@@ -362,7 +362,7 @@ impl Account for MarginAccount {
         self.base_balance_free(currency)
     }
 
-    fn balances_free(&self) -> HashMap<Currency, Money> {
+    fn balances_free(&self) -> AHashMap<Currency, Money> {
         self.base_balances_free()
     }
 
@@ -370,7 +370,7 @@ impl Account for MarginAccount {
         self.base_balance_locked(currency)
     }
 
-    fn balances_locked(&self) -> HashMap<Currency, Money> {
+    fn balances_locked(&self) -> AHashMap<Currency, Money> {
         self.base_balances_locked()
     }
 
@@ -394,11 +394,11 @@ impl Account for MarginAccount {
         self.balances.keys().copied().collect()
     }
 
-    fn starting_balances(&self) -> HashMap<Currency, Money> {
+    fn starting_balances(&self) -> AHashMap<Currency, Money> {
         self.balances_starting.clone()
     }
 
-    fn balances(&self) -> HashMap<Currency, AccountBalance> {
+    fn balances(&self) -> AHashMap<Currency, AccountBalance> {
         self.balances.clone()
     }
 
@@ -498,8 +498,7 @@ impl Hash for MarginAccount {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
+    use ahash::AHashMap;
     use nautilus_core::UnixNanos;
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -550,13 +549,13 @@ mod tests {
             margin_account.balance_locked(None),
             Some(Money::from("25000 USD"))
         );
-        let mut balances_total_expected = HashMap::new();
+        let mut balances_total_expected = AHashMap::new();
         balances_total_expected.insert(Currency::from("USD"), Money::from("1525000 USD"));
         assert_eq!(margin_account.balances_total(), balances_total_expected);
-        let mut balances_free_expected = HashMap::new();
+        let mut balances_free_expected = AHashMap::new();
         balances_free_expected.insert(Currency::from("USD"), Money::from("1500000 USD"));
         assert_eq!(margin_account.balances_free(), balances_free_expected);
-        let mut balances_locked_expected = HashMap::new();
+        let mut balances_locked_expected = AHashMap::new();
         balances_locked_expected.insert(Currency::from("USD"), Money::from("25000 USD"));
         assert_eq!(margin_account.balances_locked(), balances_locked_expected);
     }

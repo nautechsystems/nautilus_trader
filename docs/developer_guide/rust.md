@@ -336,17 +336,19 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 
 ### Hash collections
 
-Prefer `AHashMap` and `AHashSet` from the `ahash` crate over the standard library's `HashMap` and `HashSet`:
+Use `AHashMap` and `AHashSet` from the `ahash` crate for performance-critical hot paths.
+For non-performance-critical code, standard `HashMap`/`HashSet` are preferred for simplicity:
 
 ```rust
+// For hot paths - using AHashMap/AHashSet
 use ahash::{AHashMap, AHashSet};
 
-// Preferred - using AHashMap/AHashSet
 let mut symbols: AHashSet<Symbol> = AHashSet::new();
 let mut prices: AHashMap<InstrumentId, Price> = AHashMap::new();
 
-// Instead of - standard library HashMap/HashSet
+// For non-hot paths - standard library HashMap/HashSet
 use std::collections::{HashMap, HashSet};
+
 let mut symbols: HashSet<Symbol> = HashSet::new();
 let mut prices: HashMap<InstrumentId, Price> = HashMap::new();
 ```
@@ -359,8 +361,10 @@ let mut prices: HashMap<InstrumentId, Price> = HashMap::new();
 
 **When to use standard `HashMap`/`HashSet`:**
 
+- **Non-performance-critical code**: For simple cases where performance is not critical (e.g., factory registries, configuration maps, test fixtures), standard `HashMap`/`HashSet` are acceptable and even preferred for simplicity.
 - **Cryptographic security required**: Use standard `HashMap` when hash flooding attacks are a concern (e.g., handling untrusted user input in network protocols).
-- **Network clients**: Currently prefer standard `HashMap` for network-facing components where security considerations outweigh performance benefits.
+- **Network clients**: Prefer standard `HashMap` for network-facing components where security considerations outweigh performance benefits.
+- **External library boundaries**: Use standard `HashMap` when interfacing with external libraries that expect it (e.g., Arrow serialization metadata).
 
 ### Thread-safe hash map patterns
 
@@ -804,7 +808,7 @@ of interoperating between Cython and Rust. The ability to step outside the bound
 implement many of the most fundamental features of the Rust language itself, just as C and C++ are used to implement
 their own standard libraries.
 
-Great care will be taken with the use of Rusts `unsafe` facility - which just enables a small set of additional language features, thereby changing
+Great care will be taken with the use of Rusts `unsafe` facility - which enables a small set of additional language features, thereby changing
 the contract between the interface and caller, shifting some responsibility for guaranteeing correctness
 from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding *any* undefined behavior.
 The definition for what the Rust language designers consider undefined behavior can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).

@@ -19,12 +19,12 @@
 //! and utilities for constructing data responses.
 
 use std::{
-    any::Any,
     fmt::{Debug, Display},
     ops::{Deref, DerefMut},
 };
 
 use ahash::AHashSet;
+use async_trait::async_trait;
 use nautilus_common::messages::data::{
     RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestInstrument,
     RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
@@ -56,8 +56,8 @@ use nautilus_model::{
 use crate::defi::client as _;
 
 /// Defines the interface for a data client, managing connections, subscriptions, and requests.
-#[async_trait::async_trait]
-pub trait DataClient: Any + Sync + Send {
+#[async_trait(?Send)]
+pub trait DataClient {
     /// Returns the unique identifier for this data client.
     fn client_id(&self) -> ClientId;
 
@@ -92,29 +92,35 @@ pub trait DataClient: Any + Sync + Send {
     /// Returns an error if the operation fails.
     fn dispose(&mut self) -> anyhow::Result<()>;
 
-    /// Connects external API's if needed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the operation fails.
-    async fn connect(&mut self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    /// Disconnects external API's if needed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the operation fails.
-    async fn disconnect(&mut self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     /// Returns `true` if the client is currently connected.
     fn is_connected(&self) -> bool;
 
     /// Returns `true` if the client is currently disconnected.
     fn is_disconnected(&self) -> bool;
+
+    /// Connects the client to the data provider.
+    ///
+    /// For live clients, this triggers the actual connection to external APIs.
+    /// For backtest clients, this is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection fails.
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Disconnects the client from the data provider.
+    ///
+    /// For live clients, this closes connections to external APIs.
+    /// For backtest clients, this is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the disconnection fails.
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     /// Subscribes to custom data types according to the command.
     ///
@@ -770,6 +776,24 @@ impl DataClientAdapter {
     #[must_use]
     pub fn get_client(&self) -> &Box<dyn DataClient> {
         &self.client
+    }
+
+    /// Connects the underlying client to the data provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection fails.
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
+        self.client.connect().await
+    }
+
+    /// Disconnects the underlying client from the data provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the disconnection fails.
+    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.client.disconnect().await
     }
 
     #[inline]

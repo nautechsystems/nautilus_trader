@@ -96,11 +96,11 @@ visualization = ["plotly>=6.3.1,<7.0.0"]
 [dependency-groups]
 dev = [
   "cython==3.2.1", # Pinned to 3.2.1 for stability
-  "setuptools>=75",
-  "mypy==1.18.2,<2.0.0", # Pinned to 1.18.2 (keep in line with pre-commit)
+  "setuptools>=80",
+  "mypy==1.19.0,<2.0.0", # Pinned to 1.19.0 (keep in line with pre-commit)
   "pandas-stubs>=2.3.2,<3.0.0",
   "pre-commit>=4.5.0,<5.0.0",
-  "ruff==0.14.6", # Pinned to 0.14.6 (keep in line with pre-commit)
+  "ruff==0.14.7", # Pinned to 0.14.7 (keep in line with pre-commit)
   "types-pytz>=2025.2,<2026.0",
   "types-toml>=0.10.2,<1.0.0",
 ]

@@ -15,8 +15,6 @@
 
 //! Conversion routines that map BitMEX REST models into Nautilus domain structures.
 
-use std::str::FromStr;
-
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
@@ -213,22 +211,22 @@ pub fn parse_spot_instrument(
 
     let taker_fee = definition
         .taker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
     let maker_fee = definition
         .maker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
     let margin_maint = definition
         .maint_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
 
     let lot_size =
@@ -305,22 +303,22 @@ pub fn parse_perpetual_instrument(
 
     let taker_fee = definition
         .taker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
     let maker_fee = definition
         .maker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
     let margin_maint = definition
         .maint_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
 
     // TODO: How to handle negative multipliers?
@@ -406,22 +404,22 @@ pub fn parse_futures_instrument(
 
     let taker_fee = definition
         .taker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
     let maker_fee = definition
         .maker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
     let margin_maint = definition
         .maint_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
 
     // TODO: How to handle negative multipliers?
@@ -526,16 +524,16 @@ pub fn parse_trade_bin(
 
     let open = bin
         .open
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {instrument_id}"))?;
     let high = bin
         .high
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {instrument_id}"))?;
     let low = bin
         .low
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {instrument_id}"))?;
     let close = bin
         .close
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {instrument_id}"))?;
 
     let open = Price::new(open, price_precision);
     let high = Price::new(high, price_precision);
@@ -932,10 +930,13 @@ pub fn get_currency(code: &str) -> Currency {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use chrono::{DateTime, Utc};
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, LiquiditySide, PositionSide, PriceType},
+        instruments::InstrumentAny,
     };
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -2643,7 +2644,7 @@ mod tests {
 
         // Check it's a CurrencyPair variant
         match result {
-            nautilus_model::instruments::InstrumentAny::CurrencyPair(spot) => {
+            InstrumentAny::CurrencyPair(spot) => {
                 assert_eq!(spot.id.symbol.as_str(), "XBTUSD");
                 assert_eq!(spot.id.venue.as_str(), "BITMEX");
                 assert_eq!(spot.raw_symbol.as_str(), "XBTUSD");
@@ -2667,7 +2668,7 @@ mod tests {
 
         // Check it's a CryptoPerpetual variant
         match result {
-            nautilus_model::instruments::InstrumentAny::CryptoPerpetual(perp) => {
+            InstrumentAny::CryptoPerpetual(perp) => {
                 assert_eq!(perp.id.symbol.as_str(), "XBTUSD");
                 assert_eq!(perp.id.venue.as_str(), "BITMEX");
                 assert_eq!(perp.raw_symbol.as_str(), "XBTUSD");
@@ -2691,7 +2692,7 @@ mod tests {
 
         // Check it's a CryptoFuture variant
         match result {
-            nautilus_model::instruments::InstrumentAny::CryptoFuture(instrument) => {
+            InstrumentAny::CryptoFuture(instrument) => {
                 assert_eq!(instrument.id.symbol.as_str(), "XBTH25");
                 assert_eq!(instrument.id.venue.as_str(), "BITMEX");
                 assert_eq!(instrument.raw_symbol.as_str(), "XBTH25");

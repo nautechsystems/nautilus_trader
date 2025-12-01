@@ -27,7 +27,7 @@ From the repository root:
 make pytest
 # or
 uv run --active --no-sync pytest --new-first --failed-first
-# or simply
+# or
 pytest
 ```
 

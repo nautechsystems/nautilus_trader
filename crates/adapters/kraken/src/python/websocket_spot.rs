@@ -52,22 +52,30 @@ use pyo3::prelude::*;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    common::enums::KrakenEnvironment,
     config::KrakenDataClientConfig,
-    websocket::{client::KrakenWebSocketClient, messages::NautilusWsMessage},
+    websocket::spot_v2::{client::KrakenSpotWebSocketClient, messages::NautilusWsMessage},
 };
 
 #[pymethods]
-impl KrakenWebSocketClient {
+impl KrakenSpotWebSocketClient {
     #[new]
-    fn py_new(url: String) -> PyResult<Self> {
+    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=None))]
+    fn py_new(
+        environment: Option<KrakenEnvironment>,
+        base_url: Option<String>,
+        heartbeat_secs: Option<u64>,
+    ) -> PyResult<Self> {
         let config = KrakenDataClientConfig {
-            ws_public_url: Some(url),
+            environment: environment.unwrap_or(KrakenEnvironment::Mainnet),
+            ws_public_url: base_url,
+            heartbeat_interval_secs: heartbeat_secs,
             ..Default::default()
         };
 
         let token = CancellationToken::new();
 
-        Ok(KrakenWebSocketClient::new(config, token))
+        Ok(KrakenSpotWebSocketClient::new(config, token))
     }
 
     #[getter]
@@ -194,6 +202,16 @@ impl KrakenWebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client.disconnect().await.map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "send_ping")]
+    fn py_send_ping<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.send_ping().await.map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
@@ -341,16 +359,6 @@ impl KrakenWebSocketClient {
                 .unsubscribe_bars(bar_type)
                 .await
                 .map_err(to_pyruntime_err)?;
-            Ok(())
-        })
-    }
-
-    #[pyo3(name = "send_ping")]
-    fn py_send_ping<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client.send_ping().await.map_err(to_pyruntime_err)?;
             Ok(())
         })
     }

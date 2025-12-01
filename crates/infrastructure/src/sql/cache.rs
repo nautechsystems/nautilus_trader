@@ -20,8 +20,8 @@ use bytes::Bytes;
 use nautilus_common::{
     cache::database::{CacheDatabaseAdapter, CacheMap},
     custom::CustomData,
+    live::runtime::get_runtime,
     logging::{log_task_awaiting, log_task_started, log_task_stopped},
-    runtime::get_runtime,
     signal::Signal,
 };
 use nautilus_core::UnixNanos;
@@ -248,7 +248,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             self.load_orders(),
             self.load_positions()
         )
-        .map_err(|e| anyhow::anyhow!("Error loading cache data: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
         // For now, we don't load greeks and yield curves from the database
         // This will be implemented in the future

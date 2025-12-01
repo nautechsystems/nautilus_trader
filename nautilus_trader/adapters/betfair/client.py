@@ -16,6 +16,8 @@
 import asyncio
 
 from betfair_parser.endpoints import ENDPOINTS
+from betfair_parser.exceptions import BetfairError
+from betfair_parser.exceptions import JSONError
 from betfair_parser.spec.accounts.operations import GetAccountDetails
 from betfair_parser.spec.accounts.operations import GetAccountFunds
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
@@ -121,13 +123,27 @@ class BetfairHttpClient:
             self._log.debug(f"[RESP] {response.body.decode()}")
         return response
 
+    def _parse_response(self, request: Request, response: HttpResponse) -> Request.return_type:
+        try:
+            return request.parse_response(response.body, raise_errors=True)
+        except ValueError as e:
+            # Handle betfair-parser bug with undocumented error codes like -32099
+            if "is not a valid JSONExceptionCode" in str(e):
+                self._log.warning(f"Betfair parser error (treating as session error): {e}")
+                raise BetfairError(f"INVALID_SESSION_INFORMATION: {e}") from e
+            raise
+        except JSONError as e:
+            # Handle betfair-parser msgspec parsing errors
+            self._log.warning(f"Betfair JSON parsing error: {e}")
+            raise BetfairError(f"JSON_PARSE_ERROR: {e}") from e
+
     async def _post(self, request: Request) -> Request.return_type:
         response: HttpResponse = await self._request(HttpMethod.POST, request)
-        return request.parse_response(response.body, raise_errors=True)
+        return self._parse_response(request, response)
 
     async def _get(self, request: Request) -> Request.return_type:
         response: HttpResponse = await self._request(HttpMethod.GET, request)
-        return request.parse_response(response.body, raise_errors=True)
+        return self._parse_response(request, response)
 
     @property
     def session_token(self) -> str | None:

@@ -167,13 +167,13 @@ impl BybitWebSocketError {
             let mut parts = vec![];
 
             if let Some(op) = &response.op {
-                parts.push(format!("op={}", op));
+                parts.push(format!("op={op}"));
             }
             if let Some(topic) = &response.topic {
-                parts.push(format!("topic={}", topic));
+                parts.push(format!("topic={topic}"));
             }
             if let Some(success) = response.success {
-                parts.push(format!("success={}", success));
+                parts.push(format!("success={success}"));
             }
 
             if parts.is_empty() {

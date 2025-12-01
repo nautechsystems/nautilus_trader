@@ -52,7 +52,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
@@ -60,7 +60,8 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-persistence = { workspace = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
-nautilus-system = { workspace = true }
+nautilus-system = { workspace = true, features = ["live"] }
+nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }

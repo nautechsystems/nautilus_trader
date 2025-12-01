@@ -24,17 +24,19 @@ use nautilus_common::{
     messages::execution::{
         CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
     },
+    msgbus,
+    timer::TimeEvent,
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, PositionSide, TimeInForce},
+    enums::{OrderSide, OrderStatus, PositionSide, TimeInForce, TriggerType},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderEventAny, OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
         OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
-    identifiers::{ClientId, InstrumentId, PositionId, StrategyId},
+    identifiers::{ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId},
     orders::{Order, OrderAny, OrderCore, OrderList},
     position::Position,
     types::{Price, Quantity},
@@ -105,13 +107,15 @@ pub trait Strategy: DataActor {
             anyhow::bail!("Strategy not registered: OrderManager missing");
         };
 
-        if order.emulation_trigger().is_some() {
+        if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
             manager.send_emulator_command(TradingCommand::SubmitOrder(command));
         } else if order.exec_algorithm_id().is_some() {
             manager.send_algo_command(command, order.exec_algorithm_id().unwrap());
         } else {
             manager.send_risk_command(TradingCommand::SubmitOrder(command));
         }
+
+        self.set_gtd_expiry(&order)?;
         Ok(())
     }
 
@@ -138,7 +142,7 @@ pub trait Strategy: DataActor {
                 anyhow::bail!("OrderList denied: duplicate {}", order_list.id);
             }
 
-            for order in order_list.orders.iter() {
+            for order in &order_list.orders {
                 if order.status() != OrderStatus::Initialized {
                     anyhow::bail!(
                         "Order in list denied: invalid status for {}, expected INITIALIZED",
@@ -176,10 +180,13 @@ pub trait Strategy: DataActor {
             ts_init,
         )?;
 
-        let has_emulated_order = order_list
-            .orders
-            .iter()
-            .any(|o| o.emulation_trigger().is_some() || o.is_emulated());
+        let has_emulated_order = order_list.orders.iter().any(|o| {
+            matches!(o.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
+                || o.is_emulated()
+        });
+
+        let first_order = order_list.orders.first();
+        let exec_algorithm_id = first_order.and_then(|o| o.exec_algorithm_id());
 
         let Some(manager) = &mut core.order_manager else {
             anyhow::bail!("Strategy not registered: OrderManager missing");
@@ -187,9 +194,17 @@ pub trait Strategy: DataActor {
 
         if has_emulated_order {
             manager.send_emulator_command(TradingCommand::SubmitOrderList(command));
+        } else if let Some(algo_id) = exec_algorithm_id {
+            let endpoint = format!("{algo_id}.execute");
+            msgbus::send_any(endpoint.into(), &TradingCommand::SubmitOrderList(command));
         } else {
             manager.send_risk_command(TradingCommand::SubmitOrderList(command));
         }
+
+        for order in &order_list.orders {
+            self.set_gtd_expiry(order)?;
+        }
+
         Ok(())
     }
 
@@ -230,7 +245,7 @@ pub trait Strategy: DataActor {
             anyhow::bail!("Strategy not registered: OrderManager missing");
         };
 
-        if order.emulation_trigger().is_some() {
+        if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
             manager.send_emulator_command(TradingCommand::ModifyOrder(command));
         } else if order.exec_algorithm_id().is_some() {
             manager.send_risk_command(TradingCommand::ModifyOrder(command));
@@ -267,10 +282,13 @@ pub trait Strategy: DataActor {
             anyhow::bail!("Strategy not registered: OrderManager missing");
         };
 
-        if order.emulation_trigger().is_some() || order.is_emulated() {
+        if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
+            || order.is_emulated()
+        {
             manager.send_emulator_command(TradingCommand::CancelOrder(command));
-        } else if order.exec_algorithm_id().is_some() {
-            manager.send_risk_command(TradingCommand::CancelOrder(command));
+        } else if let Some(algo_id) = order.exec_algorithm_id() {
+            let endpoint = format!("{algo_id}.execute");
+            msgbus::send_any(endpoint.into(), &TradingCommand::CancelOrder(command));
         } else {
             manager.send_exec_command(TradingCommand::CancelOrder(command));
         }
@@ -301,12 +319,27 @@ pub trait Strategy: DataActor {
         let emulated_orders =
             cache.orders_emulated(None, Some(&instrument_id), Some(&strategy_id), order_side);
 
+        let exec_algorithm_ids = cache.exec_algorithm_ids();
+        let mut algo_orders = Vec::new();
+
+        for algo_id in &exec_algorithm_ids {
+            let orders = cache.orders_for_exec_algorithm(
+                algo_id,
+                None,
+                Some(&instrument_id),
+                Some(&strategy_id),
+                order_side,
+            );
+            algo_orders.extend(orders.iter().map(|o| (*o).clone()));
+        }
+
         let open_count = open_orders.len();
         let emulated_count = emulated_orders.len();
+        let algo_count = algo_orders.len();
 
         drop(cache);
 
-        if open_count == 0 && emulated_count == 0 {
+        if open_count == 0 && emulated_count == 0 && algo_count == 0 {
             let side_str = order_side.map(|s| format!(" {s}")).unwrap_or_default();
             log::info!("No {instrument_id} open or emulated{side_str} orders to cancel");
             return Ok(());
@@ -340,6 +373,10 @@ pub trait Strategy: DataActor {
                 ts_init,
             )?;
             manager.send_emulator_command(TradingCommand::CancelAllOrders(command));
+        }
+
+        for order in algo_orders {
+            self.cancel_order(order, client_id)?;
         }
 
         Ok(())
@@ -459,6 +496,16 @@ pub trait Strategy: DataActor {
 
     /// Handles an order event, dispatching to the appropriate handler and routing to the order manager.
     fn handle_order_event(&mut self, event: OrderEventAny) {
+        let client_order_id = event.client_order_id();
+        let is_terminal = matches!(
+            &event,
+            OrderEventAny::Filled(_)
+                | OrderEventAny::Canceled(_)
+                | OrderEventAny::Rejected(_)
+                | OrderEventAny::Expired(_)
+                | OrderEventAny::Denied(_)
+        );
+
         match &event {
             OrderEventAny::Initialized(e) => self.on_order_initialized(e.clone()),
             OrderEventAny::Denied(e) => self.on_order_denied(*e),
@@ -480,6 +527,10 @@ pub trait Strategy: DataActor {
             }
         }
 
+        if is_terminal {
+            self.cancel_gtd_expiry(&client_order_id);
+        }
+
         let core = self.core_mut();
         if let Some(manager) = &mut core.order_manager {
             manager.handle_event(event);
@@ -496,6 +547,42 @@ pub trait Strategy: DataActor {
                 // No handler for adjusted events yet
             }
         }
+    }
+
+    // -- LIFECYCLE METHODS -----------------------------------------------------------------------
+
+    /// Called when the strategy is started.
+    ///
+    /// Override this method to implement custom initialization logic.
+    /// The default implementation reactivates GTD timers if `manage_gtd_expiry` is enabled.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if strategy initialization fails.
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        let core = self.core_mut();
+        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        log::info!("Starting {strategy_id}");
+
+        if core.config.manage_gtd_expiry {
+            self.reactivate_gtd_timers();
+        }
+
+        Ok(())
+    }
+
+    /// Called when a time event is received.
+    ///
+    /// Routes GTD expiry timer events to the expiry handler.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if time event handling fails.
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        if event.name.starts_with("GTD-EXPIRY:") {
+            self.expire_gtd_order(event.clone());
+        }
+        Ok(())
     }
 
     // -- EVENT HANDLERS --------------------------------------------------------------------------
@@ -609,6 +696,137 @@ pub trait Strategy: DataActor {
     /// Override this method to implement custom logic when a position is closed.
     #[allow(unused_variables)]
     fn on_position_closed(&mut self, event: PositionClosed) {}
+
+    // -- GTD EXPIRY MANAGEMENT -------------------------------------------------------------------
+
+    /// Sets a GTD expiry timer for an order.
+    ///
+    /// Creates a timer that will automatically cancel the order when it expires.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if timer creation fails.
+    fn set_gtd_expiry(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        let core = self.core_mut();
+
+        if !core.config.manage_gtd_expiry || order.time_in_force() != TimeInForce::Gtd {
+            return Ok(());
+        }
+
+        let Some(expire_time) = order.expire_time() else {
+            return Ok(());
+        };
+
+        let client_order_id = order.client_order_id();
+        let timer_name = format!("GTD-EXPIRY:{client_order_id}");
+
+        let current_time_ns = {
+            let clock = core.clock();
+            clock.timestamp_ns()
+        };
+
+        if current_time_ns >= expire_time.as_u64() {
+            log::info!("GTD order {client_order_id} already expired, canceling immediately");
+            return self.cancel_order(order.clone(), None);
+        }
+
+        {
+            let mut clock = core.clock();
+            clock.set_time_alert_ns(&timer_name, expire_time, None, None)?;
+        }
+
+        core.gtd_timers
+            .insert(client_order_id, Ustr::from(&timer_name));
+
+        log::debug!("Set GTD expiry timer for {client_order_id} at {expire_time}");
+        Ok(())
+    }
+
+    /// Cancels a GTD expiry timer for an order.
+    fn cancel_gtd_expiry(&mut self, client_order_id: &ClientOrderId) {
+        let core = self.core_mut();
+
+        if let Some(timer_name) = core.gtd_timers.remove(client_order_id) {
+            core.clock().cancel_timer(timer_name.as_str());
+            log::debug!("Canceled GTD expiry timer for {client_order_id}");
+        }
+    }
+
+    /// Checks if a GTD expiry timer exists for an order.
+    fn has_gtd_expiry_timer(&mut self, client_order_id: &ClientOrderId) -> bool {
+        let core = self.core_mut();
+        core.gtd_timers.contains_key(client_order_id)
+    }
+
+    /// Handles GTD order expiry by canceling the order.
+    ///
+    /// This method is called when a GTD expiry timer fires.
+    fn expire_gtd_order(&mut self, event: TimeEvent) {
+        let timer_name = event.name.to_string();
+        let Some(client_order_id_str) = timer_name.strip_prefix("GTD-EXPIRY:") else {
+            log::error!("Invalid GTD timer name format: {timer_name}");
+            return;
+        };
+
+        let client_order_id = ClientOrderId::from(client_order_id_str);
+
+        let core = self.core_mut();
+        core.gtd_timers.remove(&client_order_id);
+
+        let cache = core.cache();
+        let Some(order) = cache.order(&client_order_id) else {
+            log::warn!("GTD order {client_order_id} not found in cache");
+            return;
+        };
+
+        let order = order.clone();
+        drop(cache);
+
+        log::info!("GTD order {client_order_id} expired");
+
+        if let Err(e) = self.cancel_order(order, None) {
+            log::error!("Failed to cancel expired GTD order {client_order_id}: {e}");
+        }
+    }
+
+    /// Reactivates GTD timers for open orders on strategy start.
+    ///
+    /// Queries the cache for all open GTD orders and creates timers for those
+    /// that haven't expired yet. Orders that have already expired are canceled immediately.
+    fn reactivate_gtd_timers(&mut self) {
+        let core = self.core_mut();
+        let strategy_id = StrategyId::from(core.actor_id().inner().as_str());
+        let current_time_ns = core.clock().timestamp_ns();
+        let cache = core.cache();
+
+        let open_orders = cache.orders_open(None, None, Some(&strategy_id), None);
+
+        let gtd_orders: Vec<_> = open_orders
+            .iter()
+            .filter(|o| o.time_in_force() == TimeInForce::Gtd)
+            .map(|o| (*o).clone())
+            .collect();
+
+        drop(cache);
+
+        for order in gtd_orders {
+            let Some(expire_time) = order.expire_time() else {
+                continue;
+            };
+
+            let expire_time_ns = expire_time.as_u64();
+            let client_order_id = order.client_order_id();
+
+            if current_time_ns >= expire_time_ns {
+                log::info!("GTD order {client_order_id} already expired, canceling immediately");
+                if let Err(e) = self.cancel_order(order, None) {
+                    log::error!("Failed to cancel expired GTD order {client_order_id}: {e}");
+                }
+            } else if let Err(e) = self.set_gtd_expiry(&order) {
+                log::error!("Failed to set GTD expiry timer for {client_order_id}: {e}");
+            }
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -803,5 +1021,214 @@ mod tests {
         strategy.on_order_modify_rejected(Default::default());
         strategy.on_order_cancel_rejected(Default::default());
         strategy.on_order_updated(Default::default());
+    }
+
+    // -- GTD EXPIRY TESTS ----------------------------------------------------------------------------
+
+    #[rstest]
+    fn test_has_gtd_expiry_timer_when_timer_not_set() {
+        let mut strategy = create_test_strategy();
+        let client_order_id = ClientOrderId::from("O-001");
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_has_gtd_expiry_timer_when_timer_set() {
+        let mut strategy = create_test_strategy();
+        let client_order_id = ClientOrderId::from("O-001");
+
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        assert!(strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_cancel_gtd_expiry_removes_timer() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let client_order_id = ClientOrderId::from("O-001");
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        strategy.cancel_gtd_expiry(&client_order_id);
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_cancel_gtd_expiry_when_timer_not_set() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let client_order_id = ClientOrderId::from("O-001");
+
+        strategy.cancel_gtd_expiry(&client_order_id);
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_handle_order_event_cancels_gtd_timer_on_filled() {
+        use nautilus_model::events::OrderFilled;
+
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let client_order_id = ClientOrderId::from("O-001");
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        use nautilus_model::enums::{LiquiditySide, OrderType};
+
+        let event = OrderEventAny::Filled(OrderFilled {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("TEST-001"),
+            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+            client_order_id,
+            venue_order_id: Default::default(),
+            account_id: AccountId::from("ACC-001"),
+            trade_id: Default::default(),
+            position_id: Default::default(),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Market,
+            last_qty: Default::default(),
+            last_px: Default::default(),
+            currency: Currency::from("USD"),
+            liquidity_side: LiquiditySide::Taker,
+            event_id: Default::default(),
+            ts_event: Default::default(),
+            ts_init: Default::default(),
+            reconciliation: false,
+            commission: None,
+        });
+        strategy.handle_order_event(event);
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_handle_order_event_cancels_gtd_timer_on_canceled() {
+        use nautilus_model::events::OrderCanceled;
+
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let client_order_id = ClientOrderId::from("O-001");
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        let event = OrderEventAny::Canceled(OrderCanceled {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("TEST-001"),
+            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+            client_order_id,
+            venue_order_id: Default::default(),
+            account_id: Some(AccountId::from("ACC-001")),
+            event_id: Default::default(),
+            ts_event: Default::default(),
+            ts_init: Default::default(),
+            reconciliation: 0,
+        });
+        strategy.handle_order_event(event);
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_handle_order_event_cancels_gtd_timer_on_rejected() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let client_order_id = ClientOrderId::from("O-001");
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        let event = OrderEventAny::Rejected(OrderRejected {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("TEST-001"),
+            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+            client_order_id,
+            account_id: AccountId::from("ACC-001"),
+            reason: "Test rejection".into(),
+            event_id: Default::default(),
+            ts_event: Default::default(),
+            ts_init: Default::default(),
+            reconciliation: 0,
+            due_post_only: 0,
+        });
+        strategy.handle_order_event(event);
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_handle_order_event_cancels_gtd_timer_on_expired() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let client_order_id = ClientOrderId::from("O-001");
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, Ustr::from("GTD-EXPIRY:O-001"));
+
+        let event = OrderEventAny::Expired(OrderExpired {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("TEST-001"),
+            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+            client_order_id,
+            venue_order_id: Default::default(),
+            account_id: Some(AccountId::from("ACC-001")),
+            event_id: Default::default(),
+            ts_event: Default::default(),
+            ts_init: Default::default(),
+            reconciliation: 0,
+        });
+        strategy.handle_order_event(event);
+
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+    }
+
+    #[rstest]
+    fn test_on_start_calls_reactivate_gtd_timers_when_enabled() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("TEST-001")),
+            order_id_tag: Some("001".to_string()),
+            manage_gtd_expiry: true,
+            ..Default::default()
+        };
+        let mut strategy = TestStrategy::new(config);
+        register_strategy(&mut strategy);
+
+        let result = Strategy::on_start(&mut strategy);
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_on_start_does_not_panic_when_gtd_disabled() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("TEST-001")),
+            order_id_tag: Some("001".to_string()),
+            manage_gtd_expiry: false,
+            ..Default::default()
+        };
+        let mut strategy = TestStrategy::new(config);
+        register_strategy(&mut strategy);
+
+        let result = Strategy::on_start(&mut strategy);
+        assert!(result.is_ok());
     }
 }

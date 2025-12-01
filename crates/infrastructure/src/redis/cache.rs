@@ -24,8 +24,8 @@ use nautilus_common::{
     },
     custom::CustomData,
     enums::SerializationEncoding,
+    live::runtime::get_runtime,
     logging::{log_task_awaiting, log_task_started, log_task_stopped},
-    runtime::get_runtime,
     signal::Signal,
 };
 use nautilus_core::{UUID4, UnixNanos, correctness::check_slice_not_empty};
@@ -45,7 +45,6 @@ use nautilus_model::{
     types::Currency,
 };
 use redis::{Pipeline, aio::ConnectionManager};
-use tokio::try_join;
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
@@ -834,7 +833,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             positions,
             greeks,
             yield_curves,
-        ) = try_join!(
+        ) = tokio::try_join!(
             self.load_currencies(),
             self.load_instruments(),
             self.load_synthetics(),

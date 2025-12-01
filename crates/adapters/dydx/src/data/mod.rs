@@ -23,6 +23,7 @@ use std::sync::{
 use anyhow::Context;
 use dashmap::DashMap;
 use nautilus_common::{
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -34,7 +35,6 @@ use nautilus_common::{
             UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
-    runner::get_data_event_sender,
 };
 use nautilus_core::{
     UnixNanos,
@@ -43,10 +43,10 @@ use nautilus_core::{
 use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, Data as NautilusData, OrderBookDelta, OrderBookDeltas_API,
-        QuoteTick,
+        Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, IndexPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, QuoteTick,
     },
-    enums::{BookAction, OrderSide, RecordFlag},
+    enums::{BarAggregation, BookAction, BookType, OrderSide, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -57,7 +57,9 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
-    common::consts::DYDX_VENUE, config::DydxDataClientConfig, http::client::DydxHttpClient,
+    common::{consts::DYDX_VENUE, parse::extract_raw_symbol},
+    config::DydxDataClientConfig,
+    http::client::DydxHttpClient,
     websocket::client::DydxWebSocketClient,
 };
 
@@ -71,6 +73,7 @@ struct WsMessageContext<'a> {
     active_orderbook_subs: &'a Arc<DashMap<InstrumentId, ()>>,
     active_trade_subs: &'a Arc<DashMap<InstrumentId, ()>>,
     active_bar_subs: &'a Arc<DashMap<(InstrumentId, String), BarType>>,
+    incomplete_bars: &'a Arc<DashMap<BarType, Bar>>,
 }
 
 /// dYdX data client for live market data streaming and historical data requests.
@@ -103,16 +106,16 @@ pub struct DydxDataClient {
     /// High-resolution clock for timestamps.
     clock: &'static AtomicTime,
     /// Local order books maintained for generating quotes and resolving crosses.
-    #[allow(dead_code)]
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     /// Last quote tick per instrument (used for quote generation from book deltas).
-    #[allow(dead_code)]
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
-    /// Incomplete bars cache (bars not yet closed, keyed by BarType).
-    #[allow(dead_code)]
+    /// Incomplete bars cache for bar aggregation.
+    /// Tracks bars not yet closed (ts_event > current_time), keyed by BarType.
+    /// Bars are emitted only when they close (ts_event <= current_time).
     incomplete_bars: Arc<DashMap<BarType, Bar>>,
-    /// Map WebSocket topic strings to BarType for bar subscriptions.
-    #[allow(dead_code)]
+    /// WebSocket topic to BarType mappings.
+    /// Maps dYdX candle topics (e.g., "BTC-USD/1MIN") to Nautilus BarType.
+    /// Used for subscription validation and reconnection recovery.
     bar_type_mappings: Arc<DashMap<String, BarType>>,
     /// Active orderbook subscriptions for periodic snapshot refresh.
     active_orderbook_subs: Arc<DashMap<InstrumentId, ()>>,
@@ -128,12 +131,7 @@ impl DydxDataClient {
     /// # Errors
     ///
     /// Returns an error if the bar aggregation or step is not supported by dYdX.
-    #[allow(dead_code)]
-    fn map_bar_spec_to_resolution(
-        spec: &nautilus_model::data::BarSpecification,
-    ) -> anyhow::Result<&'static str> {
-        use nautilus_model::enums::BarAggregation;
-
+    fn map_bar_spec_to_resolution(spec: &BarSpecification) -> anyhow::Result<&'static str> {
         match spec.step.get() {
             1 => match spec.aggregation {
                 BarAggregation::Minute => Ok("1MIN"),
@@ -202,7 +200,7 @@ impl DydxDataClient {
             .context("websocket client not initialized; call connect first")
     }
 
-    #[allow(dead_code)]
+    /// Mutable WebSocket client access for operations requiring mutable references.
     fn ws_client_mut(&mut self) -> anyhow::Result<&mut DydxWebSocketClient> {
         self.ws_client
             .as_mut()
@@ -274,7 +272,7 @@ impl DydxDataClient {
 }
 
 // Implement DataClient trait for integration with Nautilus DataEngine
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for DydxDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
@@ -324,7 +322,9 @@ impl DataClient for DydxDataClient {
         self.bootstrap_instruments().await?;
 
         // Connect WebSocket client and subscribe to market updates
-        if let Some(ref mut ws) = self.ws_client {
+        if self.ws_client.is_some() {
+            let ws = self.ws_client_mut()?;
+
             ws.connect()
                 .await
                 .context("failed to connect dYdX websocket")?;
@@ -343,6 +343,7 @@ impl DataClient for DydxDataClient {
                 let active_orderbook_subs = self.active_orderbook_subs.clone();
                 let active_trade_subs = self.active_trade_subs.clone();
                 let active_bar_subs = self.active_bar_subs.clone();
+                let incomplete_bars = self.incomplete_bars.clone();
 
                 let task = tokio::spawn(async move {
                     let mut rx = rx;
@@ -356,6 +357,7 @@ impl DataClient for DydxDataClient {
                             active_orderbook_subs: &active_orderbook_subs,
                             active_trade_subs: &active_trade_subs,
                             active_bar_subs: &active_bar_subs,
+                            incomplete_bars: &incomplete_bars,
                         };
                         Self::handle_ws_message(msg, &ctx);
                     }
@@ -455,8 +457,6 @@ impl DataClient for DydxDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
-        use nautilus_model::enums::BookType;
-
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!(
                 "dYdX only supports L2_MBP order book deltas, received {:?}",
@@ -486,8 +486,6 @@ impl DataClient for DydxDataClient {
     }
 
     fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
-        use nautilus_model::enums::BookType;
-
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!(
                 "dYdX only supports L2_MBP order book snapshots, received {:?}",
@@ -521,9 +519,6 @@ impl DataClient for DydxDataClient {
         );
 
         // Simply delegate to book deltas subscription
-        use nautilus_common::messages::data::SubscribeBookDeltas;
-        use nautilus_model::enums::BookType;
-
         let book_cmd = SubscribeBookDeltas {
             client_id: cmd.client_id,
             venue: cmd.venue,
@@ -544,59 +539,22 @@ impl DataClient for DydxDataClient {
         let instrument_id = cmd.bar_type.instrument_id();
         let spec = cmd.bar_type.spec();
 
-        // Map BarType spec to dYdX candle resolution string
-        let resolution = match spec.step.get() {
-            1 => match spec.aggregation {
-                nautilus_model::enums::BarAggregation::Minute => "1MIN",
-                nautilus_model::enums::BarAggregation::Hour => "1HOUR",
-                nautilus_model::enums::BarAggregation::Day => "1DAY",
-                _ => {
-                    anyhow::bail!("Unsupported bar aggregation: {:?}", spec.aggregation);
-                }
-            },
-            5 => {
-                if spec.aggregation == nautilus_model::enums::BarAggregation::Minute {
-                    "5MINS"
-                } else {
-                    anyhow::bail!("Unsupported 5-step aggregation: {:?}", spec.aggregation);
-                }
-            }
-            15 => {
-                if spec.aggregation == nautilus_model::enums::BarAggregation::Minute {
-                    "15MINS"
-                } else {
-                    anyhow::bail!("Unsupported 15-step aggregation: {:?}", spec.aggregation);
-                }
-            }
-            30 => {
-                if spec.aggregation == nautilus_model::enums::BarAggregation::Minute {
-                    "30MINS"
-                } else {
-                    anyhow::bail!("Unsupported 30-step aggregation: {:?}", spec.aggregation);
-                }
-            }
-            4 => {
-                if spec.aggregation == nautilus_model::enums::BarAggregation::Hour {
-                    "4HOURS"
-                } else {
-                    anyhow::bail!("Unsupported 4-step aggregation: {:?}", spec.aggregation);
-                }
-            }
-            step => {
-                anyhow::bail!("Unsupported bar step: {step}");
-            }
-        };
+        // Use centralized bar spec mapping
+        let resolution = Self::map_bar_spec_to_resolution(&spec)?;
 
         // Track active subscription for reconnection recovery
         let bar_type = cmd.bar_type;
         self.active_bar_subs
             .insert((instrument_id, resolution.to_string()), bar_type);
 
+        // Register topic → BarType mapping for validation and lookup
+        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
+        let topic = format!("{ticker}/{resolution}");
+        self.bar_type_mappings.insert(topic.clone(), bar_type);
+
         self.spawn_ws(
             async move {
-                // Register bar type BEFORE subscribing to avoid race condition
-                let ticker = instrument_id.symbol.as_str().trim_end_matches(".DYDX");
-                let topic = format!("{ticker}/{resolution}");
+                // Register bar type in handler BEFORE subscribing to avoid race condition
                 if let Err(e) =
                     ws.send_command(crate::websocket::handler::HandlerCommand::RegisterBarType {
                         topic,
@@ -705,36 +663,36 @@ impl DataClient for DydxDataClient {
         // Map BarType spec to dYdX candle resolution string
         let resolution = match spec.step.get() {
             1 => match spec.aggregation {
-                nautilus_model::enums::BarAggregation::Minute => "1MIN",
-                nautilus_model::enums::BarAggregation::Hour => "1HOUR",
-                nautilus_model::enums::BarAggregation::Day => "1DAY",
+                BarAggregation::Minute => "1MIN",
+                BarAggregation::Hour => "1HOUR",
+                BarAggregation::Day => "1DAY",
                 _ => {
                     anyhow::bail!("Unsupported bar aggregation: {:?}", spec.aggregation);
                 }
             },
             5 => {
-                if spec.aggregation == nautilus_model::enums::BarAggregation::Minute {
+                if spec.aggregation == BarAggregation::Minute {
                     "5MINS"
                 } else {
                     anyhow::bail!("Unsupported 5-step aggregation: {:?}", spec.aggregation);
                 }
             }
             15 => {
-                if spec.aggregation == nautilus_model::enums::BarAggregation::Minute {
+                if spec.aggregation == BarAggregation::Minute {
                     "15MINS"
                 } else {
                     anyhow::bail!("Unsupported 15-step aggregation: {:?}", spec.aggregation);
                 }
             }
             30 => {
-                if spec.aggregation == nautilus_model::enums::BarAggregation::Minute {
+                if spec.aggregation == BarAggregation::Minute {
                     "30MINS"
                 } else {
                     anyhow::bail!("Unsupported 30-step aggregation: {:?}", spec.aggregation);
                 }
             }
             4 => {
-                if spec.aggregation == nautilus_model::enums::BarAggregation::Hour {
+                if spec.aggregation == BarAggregation::Hour {
                     "4HOURS"
                 } else {
                     anyhow::bail!("Unsupported 4-step aggregation: {:?}", spec.aggregation);
@@ -749,9 +707,11 @@ impl DataClient for DydxDataClient {
         self.active_bar_subs
             .remove(&(instrument_id, resolution.to_string()));
 
-        // Unregister bar type from handler
-        let ticker = instrument_id.symbol.as_str().trim_end_matches(".DYDX");
+        // Unregister bar type from handler and local mappings
+        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let topic = format!("{ticker}/{resolution}");
+        self.bar_type_mappings.remove(&topic);
+
         if let Err(e) =
             ws.send_command(crate::websocket::handler::HandlerCommand::UnregisterBarType { topic })
         {
@@ -1590,8 +1550,7 @@ impl DydxDataClient {
                             }
 
                             // Emit the snapshot deltas
-                            use nautilus_model::data::OrderBookDeltas_API;
-                            let data = nautilus_model::data::Data::from(OrderBookDeltas_API::new(deltas));
+                            let data = NautilusData::from(OrderBookDeltas_API::new(deltas));
                             if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                                 tracing::error!("Failed to emit orderbook snapshot: {}", e);
                             }
@@ -1612,7 +1571,7 @@ impl DydxDataClient {
         instrument_id: InstrumentId,
         snapshot: &crate::http::models::OrderbookResponse,
         instrument: &InstrumentAny,
-    ) -> anyhow::Result<nautilus_model::data::OrderBookDeltas> {
+    ) -> anyhow::Result<OrderBookDeltas> {
         use nautilus_model::{
             data::{BookOrder, OrderBookDelta},
             enums::{BookAction, OrderSide, RecordFlag},
@@ -1676,10 +1635,7 @@ impl DydxDataClient {
             ));
         }
 
-        Ok(nautilus_model::data::OrderBookDeltas::new(
-            instrument_id,
-            deltas,
-        ))
+        Ok(OrderBookDeltas::new(instrument_id, deltas))
     }
 
     /// Get a cached instrument by symbol.
@@ -1694,14 +1650,27 @@ impl DydxDataClient {
         self.instruments.iter().map(|i| i.clone()).collect()
     }
 
-    fn ensure_order_book(
-        &self,
-        instrument_id: InstrumentId,
-        book_type: nautilus_model::enums::BookType,
-    ) {
+    fn ensure_order_book(&self, instrument_id: InstrumentId, book_type: BookType) {
         self.order_books
             .entry(instrument_id)
             .or_insert_with(|| OrderBook::new(instrument_id, book_type));
+    }
+
+    /// Get BarType for a given WebSocket candle topic.
+    #[must_use]
+    pub fn get_bar_type_for_topic(&self, topic: &str) -> Option<BarType> {
+        self.bar_type_mappings
+            .get(topic)
+            .map(|entry| *entry.value())
+    }
+
+    /// Get all registered bar topics.
+    #[must_use]
+    pub fn get_bar_topics(&self) -> Vec<String> {
+        self.bar_type_mappings
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect()
     }
 
     /// Convert a dYdX HTTP candle into a Nautilus [`Bar`].
@@ -1754,7 +1723,7 @@ impl DydxDataClient {
     ) {
         match message {
             crate::websocket::messages::NautilusWsMessage::Data(payloads) => {
-                Self::handle_data_message(payloads, ctx.data_sender);
+                Self::handle_data_message(payloads, ctx.data_sender, ctx.incomplete_bars);
             }
             crate::websocket::messages::NautilusWsMessage::Deltas(deltas) => {
                 Self::handle_deltas_message(
@@ -1832,7 +1801,7 @@ impl DydxDataClient {
                         let ws_clone = ws.clone();
 
                         // Re-register bar type with handler
-                        let ticker = instrument_id.symbol.as_str().trim_end_matches(".DYDX");
+                        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
                         let topic = format!("{ticker}/{resolution}");
                         if let Err(e) = ws.send_command(
                             crate::websocket::handler::HandlerCommand::RegisterBarType {
@@ -1881,11 +1850,47 @@ impl DydxDataClient {
     fn handle_data_message(
         payloads: Vec<NautilusData>,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        incomplete_bars: &Arc<DashMap<BarType, Bar>>,
     ) {
         for data in payloads {
-            if let Err(e) = data_sender.send(DataEvent::Data(data)) {
+            // Filter bars through incomplete bars cache
+            if let NautilusData::Bar(bar) = data {
+                Self::handle_bar_message(bar, data_sender, incomplete_bars);
+            } else if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                 tracing::error!("Failed to emit data event: {e}");
             }
+        }
+    }
+
+    /// Handles bar messages by tracking incomplete bars and only emitting completed ones.
+    ///
+    /// WebSocket candle updates arrive continuously. This method:
+    /// - Caches bars where ts_event > current_time (incomplete)
+    /// - Emits bars where ts_event <= current_time (complete)
+    /// - Updates cached incomplete bars with latest data
+    fn handle_bar_message(
+        bar: Bar,
+        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        incomplete_bars: &Arc<DashMap<BarType, Bar>>,
+    ) {
+        let current_time_ns = get_atomic_clock_realtime().get_time_ns();
+        let bar_type = bar.bar_type;
+
+        if bar.ts_event <= current_time_ns {
+            // Bar is complete - emit it and remove from incomplete cache
+            incomplete_bars.remove(&bar_type);
+            if let Err(e) = data_sender.send(DataEvent::Data(NautilusData::Bar(bar))) {
+                tracing::error!("Failed to emit completed bar: {e}");
+            }
+        } else {
+            // Bar is incomplete - cache it (updates existing entry)
+            tracing::trace!(
+                "Caching incomplete bar for {} (ts_event={}, current={})",
+                bar_type,
+                bar.ts_event,
+                current_time_ns
+            );
+            incomplete_bars.insert(bar_type, bar);
         }
     }
 
@@ -1908,9 +1913,9 @@ impl DydxDataClient {
     /// The algorithm continues until no more crosses exist or the book is empty.
     fn resolve_crossed_order_book(
         book: &mut OrderBook,
-        venue_deltas: nautilus_model::data::OrderBookDeltas,
+        venue_deltas: OrderBookDeltas,
         instrument: &InstrumentAny,
-    ) -> anyhow::Result<nautilus_model::data::OrderBookDeltas> {
+    ) -> anyhow::Result<OrderBookDeltas> {
         let instrument_id = venue_deltas.instrument_id;
         let ts_init = venue_deltas.ts_init;
         let mut all_deltas = venue_deltas.deltas.clone();
@@ -2046,8 +2051,7 @@ impl DydxDataClient {
             }
 
             // Apply temporary deltas to the book
-            let temp_deltas_obj =
-                nautilus_model::data::OrderBookDeltas::new(instrument_id, temp_deltas.clone());
+            let temp_deltas_obj = OrderBookDeltas::new(instrument_id, temp_deltas.clone());
             book.apply_deltas(&temp_deltas_obj)?;
             all_deltas.extend(temp_deltas);
 
@@ -2066,21 +2070,16 @@ impl DydxDataClient {
             last_delta.flags = RecordFlag::F_LAST as u8;
         }
 
-        Ok(nautilus_model::data::OrderBookDeltas::new(
-            instrument_id,
-            all_deltas,
-        ))
+        Ok(OrderBookDeltas::new(instrument_id, all_deltas))
     }
 
     fn handle_deltas_message(
-        deltas: nautilus_model::data::OrderBookDeltas,
+        deltas: OrderBookDeltas,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
         order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
         last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
         instruments: &Arc<DashMap<Ustr, InstrumentAny>>,
     ) {
-        use nautilus_model::enums::BookType;
-
         let instrument_id = deltas.instrument_id;
 
         // Get instrument for crossed orderbook resolution
@@ -2175,7 +2174,7 @@ impl DydxDataClient {
             crate::websocket::types::DydxOraclePriceMarket,
         >,
         instruments: &Arc<DashMap<Ustr, InstrumentAny>>,
-        _data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     ) {
         use crate::types::DydxOraclePrice;
 
@@ -2222,11 +2221,19 @@ impl DydxDataClient {
             tracing::debug!(
                 instrument_id = %instrument_id,
                 oracle_price = %oracle_price,
-                "Received dYdX oracle price: {oracle_price_event:?} (not yet forwarded as Data event)"
+                "Received dYdX oracle price: {oracle_price_event:?}"
             );
 
-            // TODO: Forward oracle price once nautilus_model::data::Data supports custom types
-            // Similar to databento adapter handling of imbalance/statistics data
+            let data = NautilusData::IndexPriceUpdate(IndexPriceUpdate::new(
+                instrument_id,
+                oracle_price,
+                ts_init, // Use ts_init as ts_event since dYdX doesn't provide event timestamp
+                ts_init,
+            ));
+
+            if let Err(e) = data_sender.send(DataEvent::Data(data)) {
+                tracing::error!("Failed to emit oracle price: {e}");
+            }
         }
     }
 }
@@ -2246,8 +2253,8 @@ mod tests {
     };
     use indexmap::IndexMap;
     use nautilus_common::{
+        live::runner::set_data_event_sender,
         messages::{DataEvent, data::DataResponse},
-        runner::set_data_event_sender,
     };
     use nautilus_core::UUID4;
     use nautilus_model::{
@@ -2262,7 +2269,7 @@ mod tests {
         identifiers::{ClientId, InstrumentId, Symbol, Venue},
         instruments::{CryptoPerpetual, Instrument, InstrumentAny},
         orderbook::OrderBook,
-        types::{Price, Quantity},
+        types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -2347,6 +2354,111 @@ mod tests {
         assert!(client.unsubscribe_instruments(&unsubscribe).is_ok());
     }
 
+    #[rstest]
+    fn test_bar_type_mappings_registration() {
+        setup_test_env();
+
+        let client_id = ClientId::from("DYDX-TEST");
+        let config = DydxDataClientConfig::default();
+        let http_client = DydxHttpClient::default();
+
+        let client = DydxDataClient::new(client_id, config, http_client, None).unwrap();
+
+        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+        let spec = BarSpecification {
+            step: std::num::NonZeroUsize::new(1).unwrap(),
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
+
+        // Initially no topics registered
+        assert!(client.get_bar_topics().is_empty());
+        assert!(client.get_bar_type_for_topic("BTC-USD/1MIN").is_none());
+
+        // Register topic
+        client
+            .bar_type_mappings
+            .insert("BTC-USD/1MIN".to_string(), bar_type);
+
+        // Verify registration
+        assert_eq!(client.get_bar_topics().len(), 1);
+        assert!(
+            client
+                .get_bar_topics()
+                .contains(&"BTC-USD/1MIN".to_string())
+        );
+        assert_eq!(
+            client.get_bar_type_for_topic("BTC-USD/1MIN"),
+            Some(bar_type)
+        );
+
+        // Register another topic
+        let spec_5min = BarSpecification {
+            step: std::num::NonZeroUsize::new(5).unwrap(),
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Last,
+        };
+        let bar_type_5min = BarType::new(instrument_id, spec_5min, AggregationSource::External);
+        client
+            .bar_type_mappings
+            .insert("BTC-USD/5MINS".to_string(), bar_type_5min);
+
+        // Verify multiple topics
+        assert_eq!(client.get_bar_topics().len(), 2);
+        assert_eq!(
+            client.get_bar_type_for_topic("BTC-USD/5MINS"),
+            Some(bar_type_5min)
+        );
+    }
+
+    #[rstest]
+    fn test_bar_type_mappings_unregistration() {
+        setup_test_env();
+
+        let client_id = ClientId::from("DYDX-TEST");
+        let config = DydxDataClientConfig::default();
+        let http_client = DydxHttpClient::default();
+
+        let client = DydxDataClient::new(client_id, config, http_client, None).unwrap();
+
+        let instrument_id = InstrumentId::from("ETH-USD-PERP.DYDX");
+        let spec = BarSpecification {
+            step: std::num::NonZeroUsize::new(1).unwrap(),
+            aggregation: BarAggregation::Hour,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
+
+        // Register topic
+        client
+            .bar_type_mappings
+            .insert("ETH-USD/1HOUR".to_string(), bar_type);
+        assert_eq!(client.get_bar_topics().len(), 1);
+
+        // Unregister topic
+        client.bar_type_mappings.remove("ETH-USD/1HOUR");
+
+        // Verify unregistration
+        assert!(client.get_bar_topics().is_empty());
+        assert!(client.get_bar_type_for_topic("ETH-USD/1HOUR").is_none());
+    }
+
+    #[rstest]
+    fn test_bar_type_mappings_lookup_nonexistent() {
+        setup_test_env();
+
+        let client_id = ClientId::from("DYDX-TEST");
+        let config = DydxDataClientConfig::default();
+        let http_client = DydxHttpClient::default();
+
+        let client = DydxDataClient::new(client_id, config, http_client, None).unwrap();
+
+        // Lookup non-existent topic
+        assert!(client.get_bar_type_for_topic("NONEXISTENT/1MIN").is_none());
+        assert!(client.get_bar_topics().is_empty());
+    }
+
     #[tokio::test]
     async fn test_handle_ws_message_deltas_updates_orderbook_and_emits_quote() {
         setup_test_env();
@@ -2404,12 +2516,7 @@ mod tests {
         let bid_delta = OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
-            nautilus_model::data::order::BookOrder::new(
-                nautilus_model::enums::OrderSide::Buy,
-                price,
-                size,
-                1,
-            ),
+            BookOrder::new(OrderSide::Buy, price, size, 1),
             0,
             1,
             bar_ts,
@@ -2418,12 +2525,7 @@ mod tests {
         let ask_delta = OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
-            nautilus_model::data::order::BookOrder::new(
-                nautilus_model::enums::OrderSide::Sell,
-                Price::from("101.00"),
-                size,
-                1,
-            ),
+            BookOrder::new(OrderSide::Sell, Price::from("101.00"), size, 1),
             0,
             1,
             bar_ts,
@@ -2433,6 +2535,7 @@ mod tests {
 
         let message = crate::websocket::messages::NautilusWsMessage::Deltas(Box::new(deltas));
 
+        let incomplete_bars = Arc::new(DashMap::new());
         let ctx = WsMessageContext {
             data_sender: &sender,
             instruments: &instruments,
@@ -2442,6 +2545,7 @@ mod tests {
             active_orderbook_subs: &active_orderbook_subs,
             active_trade_subs: &active_trade_subs,
             active_bar_subs: &active_bar_subs,
+            incomplete_bars: &incomplete_bars,
         };
         DydxDataClient::handle_ws_message(message, &ctx);
 
@@ -2479,6 +2583,7 @@ mod tests {
         let active_orderbook_subs = Arc::new(DashMap::new());
         let active_trade_subs = Arc::new(DashMap::new());
         let active_bar_subs = Arc::new(DashMap::new());
+        let incomplete_bars = Arc::new(DashMap::new());
 
         let ctx = WsMessageContext {
             data_sender: &sender,
@@ -2489,6 +2594,7 @@ mod tests {
             active_orderbook_subs: &active_orderbook_subs,
             active_trade_subs: &active_trade_subs,
             active_bar_subs: &active_bar_subs,
+            incomplete_bars: &incomplete_bars,
         };
 
         let err = crate::websocket::error::DydxWebSocketError::from_message(
@@ -2565,7 +2671,7 @@ mod tests {
             response: Arc::new(candles_response),
         };
         let addr = start_candles_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-BARS-MONTHS");
         let config = DydxDataClientConfig {
@@ -2735,9 +2841,9 @@ mod tests {
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             instrument_id,
             instrument_id.symbol,
-            nautilus_model::types::currency::Currency::BTC(),
-            nautilus_model::types::currency::Currency::USD(),
-            nautilus_model::types::currency::Currency::USD(),
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::USD(),
             false,
             2,                                // price_precision
             8,                                // size_precision
@@ -2894,7 +3000,7 @@ mod tests {
             response: Arc::new(candles_response),
         };
         let addr = start_candles_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-BARS-SKEW");
         let config = DydxDataClientConfig {
@@ -2986,7 +3092,7 @@ mod tests {
             snapshot: Arc::new(snapshot),
         };
         let addr = start_orderbook_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         // Configure the data client with a short refresh interval and mock HTTP base URL.
         let client_id = ClientId::from("DYDX-REFRESH");
@@ -4322,7 +4428,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state.clone()).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-TRADES-SUCCESS");
         let config = DydxDataClientConfig {
@@ -4411,7 +4517,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state.clone()).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-TRADES-EMPTY");
         let config = DydxDataClientConfig {
@@ -4513,7 +4619,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-TRADES-FILTER");
         let config = DydxDataClientConfig {
@@ -4589,7 +4695,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-TRADES-CORR");
         let config = DydxDataClientConfig {
@@ -4664,7 +4770,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-TRADES-FORMAT");
         let config = DydxDataClientConfig {
@@ -4771,7 +4877,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state.clone()).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-TRADES-LIMIT");
         let config = DydxDataClientConfig {
@@ -5293,7 +5399,7 @@ mod tests {
 
         let client_id = ClientId::from("DYDX-MALFORMED");
         let config = DydxDataClientConfig {
-            base_url_http: Some(format!("http://127.0.0.1:{}", port)),
+            base_url_http: Some(format!("http://127.0.0.1:{port}")),
             http_timeout_secs: Some(2),
             ..Default::default()
         };
@@ -5376,7 +5482,7 @@ mod tests {
 
         let client_id = ClientId::from("DYDX-MISSING");
         let config = DydxDataClientConfig {
-            base_url_http: Some(format!("http://127.0.0.1:{}", port)),
+            base_url_http: Some(format!("http://127.0.0.1:{port}")),
             http_timeout_secs: Some(2),
             ..Default::default()
         };
@@ -5461,7 +5567,7 @@ mod tests {
 
         let client_id = ClientId::from("DYDX-TYPES");
         let config = DydxDataClientConfig {
-            base_url_http: Some(format!("http://127.0.0.1:{}", port)),
+            base_url_http: Some(format!("http://127.0.0.1:{port}")),
             http_timeout_secs: Some(2),
             ..Default::default()
         };
@@ -5541,7 +5647,7 @@ mod tests {
 
         let client_id = ClientId::from("DYDX-STRUCT");
         let config = DydxDataClientConfig {
-            base_url_http: Some(format!("http://127.0.0.1:{}", port)),
+            base_url_http: Some(format!("http://127.0.0.1:{port}")),
             http_timeout_secs: Some(2),
             ..Default::default()
         };
@@ -5616,7 +5722,7 @@ mod tests {
 
         let client_id = ClientId::from("DYDX-EMPTY");
         let config = DydxDataClientConfig {
-            base_url_http: Some(format!("http://127.0.0.1:{}", port)),
+            base_url_http: Some(format!("http://127.0.0.1:{port}")),
             http_timeout_secs: Some(2),
             ..Default::default()
         };
@@ -5699,7 +5805,7 @@ mod tests {
 
         let client_id = ClientId::from("DYDX-NULL");
         let config = DydxDataClientConfig {
-            base_url_http: Some(format!("http://127.0.0.1:{}", port)),
+            base_url_http: Some(format!("http://127.0.0.1:{port}")),
             http_timeout_secs: Some(2),
             ..Default::default()
         };
@@ -6175,7 +6281,7 @@ mod tests {
 
         let client_id = ClientId::from("DYDX-VENUE-TEST");
         let config = DydxDataClientConfig {
-            base_url_http: Some(format!("http://127.0.0.1:{}", port)),
+            base_url_http: Some(format!("http://127.0.0.1:{port}")),
             http_timeout_secs: Some(2),
             ..Default::default()
         };
@@ -6924,7 +7030,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-VEC-TEST");
         let config = DydxDataClientConfig {
@@ -6971,7 +7077,7 @@ mod tests {
             assert_eq!(trade_ticks.len(), 2, "Should contain 2 TradeTick elements");
 
             // Each element is a TradeTick
-            for tick in trade_ticks.iter() {
+            for tick in &trade_ticks {
                 assert_eq!(tick.instrument_id, instrument_id);
             }
         }
@@ -7005,7 +7111,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-INSTID-TEST");
         let config = DydxDataClientConfig {
@@ -7054,7 +7160,7 @@ mod tests {
             );
 
             // Verify all trade ticks have the same instrument_id
-            for tick in resp.data.iter() {
+            for tick in &resp.data {
                 assert_eq!(
                     tick.instrument_id, instrument_id,
                     "Each TradeTick should have correct instrument_id"
@@ -7111,7 +7217,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-ORDER-TEST");
         let config = DydxDataClientConfig {
@@ -7205,7 +7311,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-FIELDS-TEST");
         let config = DydxDataClientConfig {
@@ -7312,7 +7418,7 @@ mod tests {
         };
 
         let addr = start_trades_test_server(state).await;
-        let base_url = format!("http://{}", addr);
+        let base_url = format!("http://{addr}");
 
         let client_id = ClientId::from("DYDX-META-TEST");
         let config = DydxDataClientConfig {
@@ -7416,17 +7522,21 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore]
     fn test_instrument_id_validation_rejects_invalid_formats() {
-        let invalid_ids = vec!["", "INVALID", "NO-VENUE", ".DYDX", "SYMBOL."];
+        // InstrumentId::from() validates format and panics on invalid input
+        let test_cases = vec![
+            ("", "Empty string missing separator"),
+            ("INVALID", "No venue separator"),
+            ("NO-VENUE", "No venue separator"),
+            (".DYDX", "Empty symbol"),
+            ("SYMBOL.", "Empty venue"),
+        ];
 
-        for invalid_id in invalid_ids {
-            let result = std::panic::catch_unwind(|| {
-                let _ = InstrumentId::from(invalid_id);
-            });
+        for (invalid_id, description) in test_cases {
+            let result = std::panic::catch_unwind(|| InstrumentId::from(invalid_id));
             assert!(
                 result.is_err(),
-                "Expected {invalid_id} to panic or be rejected"
+                "Expected {invalid_id} to panic: {description}"
             );
         }
     }
@@ -7601,5 +7711,17 @@ mod tests {
 
         let result = client.request_trades(&request);
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_candle_topic_format() {
+        let instrument_id = InstrumentId::new(Symbol::from("BTC-USD-PERP"), Venue::from("DYDX"));
+        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
+        let resolution = "1MIN";
+        let topic = format!("{ticker}/{resolution}");
+
+        assert_eq!(topic, "BTC-USD/1MIN");
+        assert!(!topic.contains("-PERP"));
+        assert!(!topic.contains(".DYDX"));
     }
 }

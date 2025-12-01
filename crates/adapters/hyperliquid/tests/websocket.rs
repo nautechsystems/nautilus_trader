@@ -45,37 +45,36 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 const TEST_USER_ADDRESS: &str = "0x1234567890123456789012345678901234567890";
 const TEST_PING_PAYLOAD: &[u8] = b"test-server-ping";
 
 #[derive(Clone)]
 struct TestServerState {
-    connection_count: Arc<Mutex<usize>>,
-    subscriptions: Arc<Mutex<Vec<(String, Value)>>>, // (type, full subscription data)
-    unsubscriptions: Arc<Mutex<Vec<Value>>>,
-    subscription_events: Arc<Mutex<Vec<(String, bool)>>>, // (type, success)
-    fail_next_subscriptions: Arc<Mutex<Vec<String>>>,
+    connection_count: Arc<tokio::sync::Mutex<usize>>,
+    subscriptions: Arc<tokio::sync::Mutex<Vec<(String, Value)>>>, // (type, full subscription data)
+    unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>, // (type, success)
+    fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     drop_next_connection: Arc<AtomicBool>,
     send_initial_ping: Arc<AtomicBool>,
     received_pong: Arc<AtomicBool>,
-    last_pong: Arc<Mutex<Option<Vec<u8>>>>,
+    last_pong: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
     ping_count: Arc<AtomicUsize>,
 }
 
 impl Default for TestServerState {
     fn default() -> Self {
         Self {
-            connection_count: Arc::new(Mutex::new(0)),
-            subscriptions: Arc::new(Mutex::new(Vec::new())),
-            unsubscriptions: Arc::new(Mutex::new(Vec::new())),
-            subscription_events: Arc::new(Mutex::new(Vec::new())),
-            fail_next_subscriptions: Arc::new(Mutex::new(Vec::new())),
+            connection_count: Arc::new(tokio::sync::Mutex::new(0)),
+            subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            unsubscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            subscription_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            fail_next_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             drop_next_connection: Arc::new(AtomicBool::new(false)),
             send_initial_ping: Arc::new(AtomicBool::new(false)),
             received_pong: Arc::new(AtomicBool::new(false)),
-            last_pong: Arc::new(Mutex::new(None)),
+            last_pong: Arc::new(tokio::sync::Mutex::new(None)),
             ping_count: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -344,7 +343,7 @@ fn cache_test_instruments(client: &mut HyperliquidWebSocketClient) {
     let mut test_instruments = Vec::new();
     for (raw_symbol, symbol_str) in instruments {
         let raw_symbol = Symbol::new(raw_symbol);
-        let instrument_id = InstrumentId::from(format!("{}.HYPERLIQUID", symbol_str));
+        let instrument_id = InstrumentId::from(format!("{symbol_str}.HYPERLIQUID"));
 
         let instrument = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             instrument_id,

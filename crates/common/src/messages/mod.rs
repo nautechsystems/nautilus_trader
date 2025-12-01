@@ -22,6 +22,7 @@
 use nautilus_model::{
     data::Data,
     events::{AccountState, OrderEventAny},
+    instruments::InstrumentAny,
 };
 use strum::Display;
 
@@ -42,6 +43,8 @@ pub use execution::ExecutionReport;
 pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
+    Instrument(InstrumentAny), // TODO: Eventually this can be `Data` once Cython is gone
+    // nautilus-import-ok: conditional compilation import
     #[cfg(feature = "defi")]
     DeFi(nautilus_model::defi::data::DefiData),
 }

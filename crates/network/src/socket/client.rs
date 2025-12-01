@@ -1875,20 +1875,17 @@ mod rust_tests {
 
         assert!(
             send_result.is_err(),
-            "Send should fail when client stuck in RECONNECT, was: {:?}",
-            send_result
+            "Send should fail when client stuck in RECONNECT, was: {send_result:?}"
         );
         assert!(
             matches!(send_result, Err(crate::error::SendError::Timeout)),
-            "Send should return Timeout error, was: {:?}",
-            send_result
+            "Send should return Timeout error, was: {send_result:?}"
         );
         // Verify timeout respects configured value (1s), but don't check upper bound
         // as CI scheduler jitter can cause legitimate delays beyond the timeout
         assert!(
             elapsed >= Duration::from_millis(900),
-            "Send should timeout after at least 1s (configured timeout), took {:?}",
-            elapsed
+            "Send should timeout after at least 1s (configured timeout), took {elapsed:?}"
         );
 
         client.close().await;

@@ -10,7 +10,7 @@ Adapters provide connectivity to trading venues and data providers—translating
 NautilusTrader adapters follow a layered architecture pattern with:
 
 - **Rust core** for networking clients and performance-critical operations.
-- **Python layer** (optional) for integrating into the legacy system.
+- **Python layer** for integrating Rust clients into the platform's data and execution engines.
 
 Good references for consistent patterns are currently:
 
@@ -94,7 +94,7 @@ nautilus_trader/adapters/your_adapter/
 - **Configurations (`config.rs`)**: Expose typed config structs in `src/config.rs` so Python callers toggle venue-specific behaviour (see how OKX wires demo URLs, retries, and channel flags). Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
 - **Error taxonomy (`error.rs`)**: Centralise HTTP/WebSocket failure handling in an adapter-specific error enum. BitMEX, for example, separates retryable, non-retryable, and fatal variants while embedding the original transport error—follow that shape so operational tooling can react consistently.
 - **Python exports (`python/mod.rs`)**: Mirror the Rust surface area through PyO3 modules by re-exporting clients, enums, and helper functions. When new functionality lands in Rust, add it to `python/mod.rs` so the Python layer stays in sync (the OKX adapter is a good reference).
-- **Python bindings (`python/`)**: Expose Rust functionality to Python through PyO3. Mark venue-specific structs that need Python access with `#[pyclass]` and implement `#[pymethods]` blocks with `#[getter]` attributes for field access. For async methods in the HTTP client, use `pyo3_async_runtimes::tokio::future_into_py` to convert Rust futures into Python awaitables. When returning lists of custom types, map each item with `Py::new(py, item)` before constructing the Python list. Register all exported classes and enums in `python/mod.rs` using `m.add_class::<YourType>()` so they're available to Python code. Follow the pattern established in other adapters: prefixing Python-facing methods with `py_*` in Rust while using `#[pyo3(name = "method_name")]` to expose them without the prefix. When delivering instruments from WebSocket to Python, use `instrument_any_to_pyobject()` which returns PyO3 types for caching. Never call `.into_py_any()` directly on `InstrumentAny` as it doesn't implement the required trait.
+- **Python bindings (`python/`)**: Expose Rust functionality to Python through PyO3. Mark venue-specific structs that need Python access with `#[pyclass]` and implement `#[pymethods]` blocks with `#[getter]` attributes for field access. For async methods in the HTTP client, use `pyo3_async_runtimes::tokio::future_into_py` to convert Rust futures into Python awaitables. When returning lists of custom types, map each item with `Py::new(py, item)` before constructing the Python list. Register all exported classes and enums in `python/mod.rs` using `m.add_class::<YourType>()` so they're available to Python code. Follow the pattern established in other adapters: prefixing Python-facing methods with `py_*` in Rust while using `#[pyo3(name = "method_name")]` to expose them without the prefix. When delivering instruments from WebSocket to Python, use `instrument_any_to_pyobject()` which returns PyO3 types for caching. For the reverse direction (Python→Rust), use `pyobject_to_instrument_any()` in `cache_instrument()` methods. Never call `.into_py_any()` directly on `InstrumentAny` as it doesn't implement the required trait.
 - **Type qualification**: Adapter-specific types (enums, structs) and Nautilus domain types should not be fully qualified. Import them at the module level and use short names (e.g., `OKXContractType` instead of `crate::common::enums::OKXContractType`, `InstrumentId` instead of `nautilus_model::identifiers::InstrumentId`). This keeps code concise and readable. Only fully qualify types from `anyhow` and `tokio` to avoid ambiguity with similarly-named types from other crates.
 - **String interning**: Use `ustr::Ustr` for any non-unique strings the platform stores repeatedly (venues, symbols, instrument IDs) to minimise allocations and comparisons.
 - **Instrument cache standardization**: All clients that cache instruments must implement three methods with standardized names: `cache_instruments()` (plural, bulk replace), `cache_instrument()` (singular, upsert), and `get_instrument()` (retrieve by symbol). WebSocket clients should use the dual-tier cache architecture (outer `DashMap`, inner `AHashMap`, command channel sync) documented under WebSocket patterns.
@@ -205,7 +205,54 @@ impl Default for InstrumentsInfoParams {
 
 ### Request signing and authentication
 
-Keep signing logic in the inner client.
+Keep signing logic in a `Credential` struct under `common/credential.rs`:
+
+- Store API keys using `Ustr` for efficient comparison, secrets in `Box<[u8]>` with `#[zeroize]`.
+- Implement `sign()` and `sign_bytes()` methods that compute HMAC-SHA256 signatures.
+- Pass the credential to the raw HTTP client; the domain client delegates signing through the inner client.
+
+For WebSocket authentication, the handler constructs login messages using the same `Credential::sign()` method with a WebSocket-specific timestamp format.
+
+### Environment variable conventions
+
+Adapters support loading API credentials from environment variables when not provided directly. This enables secure credential management without hardcoding secrets.
+
+**Naming conventions:**
+
+| Environment  | API Key Variable          | API Secret Variable |
+|--------------|---------------------------|---------------------|
+| Mainnet/Live | `{VENUE}_API_KEY`         | `{VENUE}_API_SECRET` |
+| Testnet      | `{VENUE}_TESTNET_API_KEY` | `{VENUE}_TESTNET_API_SECRET` |
+| Demo         | `{VENUE}_DEMO_API_KEY`    | `{VENUE}_DEMO_API_SECRET` |
+
+Some venues require additional credentials:
+
+- OKX: `OKX_API_PASSPHRASE`
+- Coinbase INTX: `COINBASE_INTX_API_PASSPHRASE`, `COINBASE_INTX_PORTFOLIO_ID`
+
+**Implementation pattern:**
+
+Use `nautilus_core::env::get_or_env_var_opt` for optional credential resolution (returns `None` if missing) or `get_or_env_var` when credentials are required (returns error if missing):
+
+```rust
+use nautilus_core::env::get_or_env_var_opt;
+
+let (api_key_env, api_secret_env) = if testnet {
+    ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
+} else {
+    ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
+};
+
+let key = get_or_env_var_opt(api_key, api_key_env);
+let secret = get_or_env_var_opt(api_secret, api_secret_env);
+```
+
+**Key principles:**
+
+- Environment variable resolution should happen in core Rust code, not Python bindings.
+- Use `get_or_env_var_opt` for optional credentials (public-only clients).
+- Use `get_or_env_var` when credentials are required (returns error if missing).
+- Document supported environment variables in adapter README files.
 
 ### Error handling and retry logic
 
@@ -213,7 +260,40 @@ Use the `RetryManager` from `nautilus_network` for consistent retry behavior.
 
 ### Rate limiting
 
-Configure rate limiting through `HttpClient`.
+Configure rate limiting through `HttpClient` using `LazyLock<Quota>` static variables.
+
+**Naming conventions:**
+
+- REST quotas: `{VENUE}_REST_QUOTA` (e.g., `OKX_REST_QUOTA`, `BYBIT_REST_QUOTA`)
+- WebSocket quotas: `{VENUE}_WS_{OPERATION}_QUOTA` (e.g., `OKX_WS_CONNECTION_QUOTA`, `OKX_WS_ORDER_QUOTA`)
+- Rate limit keys: `{VENUE}_RATE_LIMIT_KEY_{OPERATION}` (e.g., `OKX_RATE_LIMIT_KEY_SUBSCRIPTION`, `OKX_RATE_LIMIT_KEY_ORDER`)
+
+**Standard rate limit keys for WebSocket:**
+
+| Key | Operations |
+|-----|------------|
+| `*_RATE_LIMIT_KEY_SUBSCRIPTION` | Subscribe, unsubscribe, login. |
+| `*_RATE_LIMIT_KEY_ORDER` | Place orders (regular and algo). |
+| `*_RATE_LIMIT_KEY_CANCEL` | Cancel orders, mass cancel. |
+| `*_RATE_LIMIT_KEY_AMEND` | Amend/modify orders. |
+
+**Example:**
+
+```rust
+pub static OKX_REST_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
+
+pub static OKX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_hour(NonZeroU32::new(480).unwrap()));
+
+pub const OKX_RATE_LIMIT_KEY_ORDER: &str = "order";
+```
+
+Pass rate limit keys when sending WebSocket messages to enforce per-operation quotas:
+
+```rust
+self.send_with_retry(payload, Some(vec![OKX_RATE_LIMIT_KEY_ORDER.to_string()])).await
+```
 
 ## WebSocket client patterns
 
@@ -360,7 +440,12 @@ On reconnection, restore authentication and subscriptions:
 
 ### Ping/Pong handling
 
-Support both control frame pings and application-level pings.
+Support both WebSocket control frame pings and application-level text pings:
+
+- **Control frame pings**: Handled automatically by `WebSocketClient` via the `PingHandler` callback.
+- **Text pings**: Some venues (e.g., OKX) use `"ping"`/`"pong"` text messages. Configure `heartbeat_msg: Some(TEXT_PING.to_string())` in `WebSocketConfig` and respond to incoming `TEXT_PING` with `TEXT_PONG` in the handler.
+
+The handler should check for ping messages early in the message processing loop and respond immediately to maintain connection health.
 
 ### Instrument cache architecture
 
@@ -379,7 +464,13 @@ WebSocket clients that cache instruments use a **dual-tier pattern** for perform
 
 ### Message routing
 
-Route different message types to appropriate handlers.
+Define two message enums for the transformation pipeline:
+
+1. **`{Venue}WsMessage`**: Venue-specific message variants parsed directly from WebSocket JSON (login responses, subscriptions, channel data). Use `#[serde(untagged)]` or explicit tags based on venue format.
+
+2. **`NautilusWsMessage`**: Normalized domain messages emitted to the client (data, deltas, order events, errors, `Reconnected`, `Authenticated`). Include a `Raw(serde_json::Value)` variant for unhandled channels during development.
+
+The handler parses incoming JSON into `{Venue}WsMessage`, transforms to `NautilusWsMessage`, and sends via `out_tx`. The client receives from `out_rx` and routes to data/execution callbacks.
 
 ### Error handling
 

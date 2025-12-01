@@ -25,7 +25,7 @@ use ahash::{AHashMap, AHashSet};
 use chrono::Utc;
 use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
-use nautilus_common::{logging::log_task_stopped, runtime::get_runtime};
+use nautilus_common::{live::runtime::get_runtime, logging::log_task_stopped};
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, env::get_or_env_var, time::get_atomic_clock_realtime,
 };
@@ -149,11 +149,7 @@ impl CoinbaseIntxWebSocketClient {
         self.inner
             .try_read()
             .ok()
-            .and_then(|guard| {
-                guard
-                    .as_ref()
-                    .map(nautilus_network::websocket::WebSocketClient::is_active)
-            })
+            .and_then(|guard| guard.as_ref().map(WebSocketClient::is_active))
             .unwrap_or(false)
     }
 
@@ -163,11 +159,7 @@ impl CoinbaseIntxWebSocketClient {
         self.inner
             .try_read()
             .ok()
-            .and_then(|guard| {
-                guard
-                    .as_ref()
-                    .map(nautilus_network::websocket::WebSocketClient::is_closed)
-            })
+            .and_then(|guard| guard.as_ref().map(WebSocketClient::is_closed))
             .unwrap_or(true)
     }
 

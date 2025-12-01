@@ -26,7 +26,7 @@ use crate::{
         },
     },
     enums::OrderSide,
-    types::{Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
+    types::{Price, Quantity, fixed::FIXED_PRECISION},
 };
 
 /// Trade information derived from raw swap data, normalized to market conventions.
@@ -267,20 +267,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
             )
         };
 
-        // Quantity expects raw values scaled to at least FIXED_PRECISION or higher(WEI)
-        let scaled_amount = if precision < FIXED_PRECISION {
-            amount
-                .checked_mul(U256::from(10u128.pow((FIXED_PRECISION - precision) as u32)))
-                .ok_or_else(|| anyhow::anyhow!("Base quantity overflow during scaling"))?
-        } else {
-            amount
-        };
-
-        let raw = QuantityRaw::try_from(scaled_amount).map_err(|_| {
-            anyhow::anyhow!("Base quantity {} exceeds QuantityRaw range", scaled_amount)
-        })?;
-
-        Ok(Quantity::from_raw(raw, precision))
+        Quantity::from_u256(amount, precision)
     }
 
     /// Returns the quantity of the quote token involved in the swap.
@@ -307,20 +294,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
             )
         };
 
-        // Quantity expects raw values scaled to at least FIXED_PRECISION or higher(WEI)
-        let scaled_amount = if precision < FIXED_PRECISION {
-            amount
-                .checked_mul(U256::from(10u128.pow((FIXED_PRECISION - precision) as u32)))
-                .ok_or_else(|| anyhow::anyhow!("Quote quantity overflow during scaling"))?
-        } else {
-            amount
-        };
-
-        let raw = QuantityRaw::try_from(scaled_amount).map_err(|_| {
-            anyhow::anyhow!("Quote quantity {} exceeds QuantityRaw range", scaled_amount)
-        })?;
-
-        Ok(Quantity::from_raw(raw, precision))
+        Quantity::from_u256(amount, precision)
     }
 
     /// Returns the human-readable spot price in base/quote (market) convention.
@@ -420,8 +394,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
         // Convert to PriceRaw (i128)
         anyhow::ensure!(
             price_raw_u256 <= U256::from(i128::MAX as u128),
-            "Price overflow: {} exceeds i128::MAX",
-            price_raw_u256
+            "Price overflow: {price_raw_u256} exceeds i128::MAX"
         );
 
         let price_raw = price_raw_u256.to::<i128>();

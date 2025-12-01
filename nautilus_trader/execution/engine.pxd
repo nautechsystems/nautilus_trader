@@ -151,7 +151,7 @@ cdef class ExecutionEngine(Component):
     cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill, Order order=*)
     cpdef PositionId _determine_netting_position_id(self, OrderFilled fill)
     cdef bint _check_overfill(self, Order order, OrderFilled fill)
-    cpdef void _apply_event_to_order(self, Order order, OrderEvent event)
+    cpdef bint _apply_event_to_order(self, Order order, OrderEvent event)
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type)
     cdef bint _is_leg_fill(self, OrderFilled fill)
     cdef void _handle_position_update(self, Instrument instrument, OrderFilled fill, OmsType oms_type)

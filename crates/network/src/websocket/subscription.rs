@@ -241,7 +241,7 @@ impl SubscriptionState {
         let mut topics = Vec::new();
         let marker = *CHANNEL_LEVEL_MARKER;
 
-        for entry in map.iter() {
+        for entry in map {
             let channel = entry.key();
             let symbols = entry.value();
 
@@ -251,7 +251,7 @@ impl SubscriptionState {
             }
 
             // Add symbol-level subscriptions (skip marker)
-            for symbol in symbols.iter() {
+            for symbol in symbols {
                 if *symbol != marker {
                     topics.push(format!(
                         "{}{}{}",

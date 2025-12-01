@@ -11,6 +11,7 @@ CARGO_AUDIT_VERSION := $(shell grep '^cargo-audit *= *"' Cargo.toml | awk -F\" '
 CARGO_DENY_VERSION := $(shell grep '^cargo-deny *= *"' Cargo.toml | awk -F\" '{print $$2}')
 CARGO_LLVM_COV_VERSION := $(shell grep '^cargo-llvm-cov *= *"' Cargo.toml | awk -F\" '{print $$2}')
 CARGO_NEXTEST_VERSION := $(shell grep '^cargo-nextest *= *"' Cargo.toml | awk -F\" '{print $$2}')
+CARGO_VET_VERSION := $(shell grep '^cargo-vet *= *"' Cargo.toml | awk -F\" '{print $$2}')
 LYCHEE_VERSION := $(shell grep '^lychee *= *"' Cargo.toml | awk -F\" '{print $$2}')
 UV_VERSION := $(shell cat uv-version | tr -d '\n')
 
@@ -24,6 +25,28 @@ VERBOSE ?= true
 # TARGET_DIR controls where cargo places build artifacts.
 # Can be overridden to use a separate directory: make build-debug TARGET_DIR=target-python
 TARGET_DIR ?= target
+
+# Compiler configuration
+# Uses clang by default (required by ed25519-blake2b and other deps).
+# When sccache is available, wraps the compiler for build caching.
+# Set CARGO_INCREMENTAL=0 with sccache for better cache hit rates.
+# To disable sccache: make build SCCACHE=
+SCCACHE ?= $(shell command -v sccache 2>/dev/null)
+
+ifeq ($(SCCACHE),)
+CC ?= clang
+CXX ?= clang++
+else
+CC ?= sccache clang
+CXX ?= sccache clang++
+RUSTC_WRAPPER ?= sccache
+CARGO_INCREMENTAL ?= 0
+export RUSTC_WRAPPER
+export CARGO_INCREMENTAL
+endif
+
+export CC
+export CXX
 
 # FAIL_FAST controls whether `cargo nextest` should stop after the first test
 # failure. When set to `true` the `--no-fail-fast` flag is omitted so tests
@@ -169,7 +192,7 @@ clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc, .c files)
 .PHONY: clean-caches
 clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
 	rm -rf .pytest_cache .mypy_cache .ruff_cache 2>/dev/null || true
-	-uv cache prune
+	-uv cache prune --force
 	-cargo clean
 
 .PHONY: distclean
@@ -247,7 +270,7 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	uv tree --outdated --depth 1 --all-groups
 	@printf "\n$(CYAN)Checking tool versions...$(RESET)\n"
 	@outdated_count=0; \
-	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) lychee:$(LYCHEE_VERSION); do \
+	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) lychee:$(LYCHEE_VERSION); do \
 		name=$${tool%%:*}; current=$${tool##*:}; \
 		latest=$$(cargo search $$name --limit 1 2>/dev/null | head -1 | awk -F\" '{print $$2}'); \
 		if [ "$$current" != "$$latest" ]; then \
@@ -267,6 +290,7 @@ install-tools:  #-- Install required development tools (Rust tools from Cargo.to
 	&& cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked \
 	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
 	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked \
+	&& cargo install cargo-vet --version $(CARGO_VET_VERSION) --locked \
 	&& cargo install lychee --version $(LYCHEE_VERSION) --locked \
 	&& uv self update $(UV_VERSION)
 
@@ -282,6 +306,10 @@ security-audit: check-audit-installed  #-- Run security audit for Rust dependenc
 .PHONY: cargo-deny
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
 	cargo deny --all-features check
+
+.PHONY: cargo-vet
+cargo-vet: check-vet-installed  #-- Run cargo-vet supply chain audit
+	cargo vet
 
 #== Documentation
 
@@ -366,6 +394,13 @@ check-llvm-cov-installed:  #-- Verify cargo-llvm-cov is installed
 check-hack-installed:  #-- Verify cargo-hack is installed
 	@if ! cargo hack --version >/dev/null 2>&1; then \
 		echo "cargo-hack is not installed. You can install it using 'cargo install cargo-hack'"; \
+		exit 1; \
+	fi
+
+.PHONY: check-vet-installed
+check-vet-installed:  #-- Verify cargo-vet is installed
+	@if ! cargo vet --version >/dev/null 2>&1; then \
+		echo "cargo-vet is not installed. You can install it using 'cargo install cargo-vet'"; \
 		exit 1; \
 	fi
 

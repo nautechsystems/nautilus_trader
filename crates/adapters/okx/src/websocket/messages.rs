@@ -1095,7 +1095,7 @@ mod tests {
                 assert_eq!(msg, "Login successful");
                 assert_eq!(conn_id, "a4d3ae55");
             }
-            _ => panic!("Expected Login variant, was: {:?}", parsed),
+            _ => panic!("Expected Login variant, was: {parsed:?}"),
         }
     }
 

@@ -21,6 +21,7 @@ use std::{
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
     rc::Rc,
+    sync::Arc,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -132,7 +133,7 @@ pub struct ImportableActorConfig {
     pub config: HashMap<String, serde_json::Value>,
 }
 
-type RequestCallback = Box<dyn Fn(UUID4) + Send + Sync>; // TODO: TBD
+type RequestCallback = Arc<dyn Fn(UUID4) + Send + Sync>;
 
 pub trait DataActor:
     Component + Deref<Target = DataActorCore> + DerefMut<Target = DataActorCore>
@@ -1961,6 +1962,7 @@ where
 }
 
 /// Core functionality for all actors.
+#[derive(Clone)]
 #[allow(
     dead_code,
     reason = "TODO: Under development (pending_requests, signal_classes)"

@@ -516,6 +516,7 @@ impl BarType {
     }
 
     /// Returns the standard bar type component.
+    #[must_use]
     pub fn standard(&self) -> Self {
         match self {
             &b @ Self::Standard { .. } => b,
@@ -529,6 +530,7 @@ impl BarType {
     }
 
     /// Returns any composite bar type component.
+    #[must_use]
     pub fn composite(&self) -> Self {
         match self {
             &b @ Self::Standard { .. } => b, // case shouldn't be used if is_composite is called before
@@ -588,6 +590,7 @@ pub struct BarTypeParseError {
 impl FromStr for BarType {
     type Err = BarTypeParseError;
 
+    #[allow(clippy::needless_collect)] // Collect needed for .rev() and indexing
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split('@').collect();
         let standard = parts[0];

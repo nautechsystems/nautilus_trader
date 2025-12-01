@@ -19,11 +19,12 @@
 
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::BTreeMap,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
 };
 
+use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
 use rust_decimal::Decimal;
@@ -350,7 +351,7 @@ impl OwnOrderBook {
     /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn bids_as_map(
         &self,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
@@ -363,7 +364,7 @@ impl OwnOrderBook {
     /// at least that many nanoseconds before `ts_now` (defaults to now).
     pub fn asks_as_map(
         &self,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
@@ -379,7 +380,7 @@ impl OwnOrderBook {
     /// If `depth` is provided, limits the number of price levels returned.
     pub fn bid_quantity(
         &self,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         depth: Option<usize>,
         group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
@@ -410,7 +411,7 @@ impl OwnOrderBook {
     /// If `depth` is provided, limits the number of price levels returned.
     pub fn ask_quantity(
         &self,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         depth: Option<usize>,
         group_size: Option<Decimal>,
         accepted_buffer_ns: Option<u64>,
@@ -441,7 +442,7 @@ impl OwnOrderBook {
         pprint_own_book(self, num_levels, group_size)
     }
 
-    pub fn audit_open_orders(&mut self, open_order_ids: &HashSet<ClientOrderId>) {
+    pub fn audit_open_orders(&mut self, open_order_ids: &AHashSet<ClientOrderId>) {
         log::debug!("Auditing {self}");
 
         // Audit bids
@@ -494,7 +495,7 @@ fn log_audit_error(client_order_id: &ClientOrderId) {
 /// `ACCEPTED` / `PARTIALLY_FILLED`).
 fn filter_orders<'a>(
     levels: impl Iterator<Item = &'a OwnBookLevel>,
-    status: Option<&HashSet<OrderStatus>>,
+    status: Option<&AHashSet<OrderStatus>>,
     accepted_buffer_ns: Option<u64>,
     ts_now: Option<u64>,
 ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
@@ -575,7 +576,7 @@ where
 pub(crate) struct OwnBookLadder {
     pub side: OrderSideSpecified,
     pub levels: BTreeMap<BookPrice, OwnBookLevel>,
-    pub cache: HashMap<ClientOrderId, BookPrice>,
+    pub cache: AHashMap<ClientOrderId, BookPrice>,
 }
 
 impl OwnBookLadder {
@@ -585,7 +586,7 @@ impl OwnBookLadder {
         Self {
             side,
             levels: BTreeMap::new(),
-            cache: HashMap::new(),
+            cache: AHashMap::new(),
         }
     }
 
@@ -685,17 +686,13 @@ impl OwnBookLadder {
     /// Returns an error if the order is not found.
     pub fn remove(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
         let Some(price) = self.cache.get(client_order_id).copied() else {
-            log::error!(
-                "Own book remove failed - order {client_order_id} not in cache",
-                client_order_id = client_order_id
-            );
+            log::error!("Own book remove failed - order {client_order_id} not in cache");
             anyhow::bail!("Order {client_order_id} not found in own book (cache)");
         };
 
         let Some(level) = self.levels.get_mut(&price) else {
             log::error!(
-                "Own book remove failed - order {client_order_id} cached level {price:?} missing",
-                client_order_id = client_order_id
+                "Own book remove failed - order {client_order_id} cached level {price:?} missing"
             );
             anyhow::bail!("Order {client_order_id} not found in own book (level)");
         };

@@ -41,7 +41,7 @@ The Cache serves multiple key purposes:
 Within a strategy, you can access the `Cache` through `self.cache`. Here’s a typical example:
 
 :::note
-Anywhere you find `self`, it refers mostly to the `Strategy` itself.
+Within a `Strategy` class, `self` refers to the strategy instance.
 :::
 
 ```python

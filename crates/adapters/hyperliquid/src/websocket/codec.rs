@@ -52,8 +52,7 @@ impl HyperliquidCodec {
             Ok(())
         } else {
             Err(HyperliquidWsError::UrlParsing(format!(
-                "URL must start with ws:// or wss://, was: {}",
-                url
+                "URL must start with ws:// or wss://, was: {url}"
             )))
         }
     }
@@ -69,8 +68,7 @@ impl HyperliquidCodec {
     pub fn decode(&self, data: &[u8]) -> Result<HyperliquidWsMessage, HyperliquidWsError> {
         serde_json::from_slice(data).map_err(|e| {
             HyperliquidWsError::MessageDeserialization(format!(
-                "Failed to deserialize message: {}",
-                e
+                "Failed to deserialize message: {e}"
             ))
         })
     }
@@ -445,7 +443,7 @@ pub fn decode_inbound(msg: &HyperliquidWsMessage) -> WsInbound {
             WsInbound::SubscriptionResponse(SubResp {
                 ok: true,
                 id: None,
-                message: Some(format!("Subscribed to {:?}", data)),
+                message: Some(format!("Subscribed to {data:?}")),
             })
         }
         HyperliquidWsMessage::Post { data } => WsInbound::Post(PostAck {

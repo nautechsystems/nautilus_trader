@@ -50,5 +50,11 @@ pub mod websocket;
 pub mod python;
 
 pub use config::{KrakenDataClientConfig, KrakenExecClientConfig};
-pub use http::client::{KrakenHttpClient, KrakenRawHttpClient};
-pub use websocket::client::KrakenWebSocketClient;
+// HTTP clients
+pub use http::{
+    KrakenFuturesHttpClient, KrakenFuturesRawHttpClient, KrakenHttpError, KrakenSpotHttpClient,
+    KrakenSpotRawHttpClient,
+};
+// WebSocket clients
+pub use websocket::futures::client::KrakenFuturesWebSocketClient;
+pub use websocket::spot_v2::client::KrakenSpotWebSocketClient;

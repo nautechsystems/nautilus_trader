@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashSet;
-
+use ahash::AHashSet;
 use nautilus_core::UnixNanos;
 use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
@@ -444,10 +443,9 @@ fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth10) {
     for (i, level) in bid_levels.iter().enumerate() {
         assert_eq!(
             level.price.value, expected_bid_prices[i],
-            "Bid level {} price mismatch",
-            i
+            "Bid level {i} price mismatch"
         );
-        assert!(level.size() > 0.0, "Bid level {} has zero size", i);
+        assert!(level.size() > 0.0, "Bid level {i} has zero size");
     }
 
     // Verify ask prices in ascending order (100, 101, 102, ..., 109)
@@ -466,10 +464,9 @@ fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth10) {
     for (i, level) in ask_levels.iter().enumerate() {
         assert_eq!(
             level.price.value, expected_ask_prices[i],
-            "Ask level {} price mismatch",
-            i
+            "Ask level {i} price mismatch"
         );
-        assert!(level.size() > 0.0, "Ask level {} has zero size", i);
+        assert!(level.size() > 0.0, "Ask level {i} has zero size");
     }
 
     // Verify sizes increase with each level (100, 200, 300, ..., 1000)
@@ -480,16 +477,14 @@ fn test_book_apply_depth_all_levels(stub_depth10: OrderBookDepth10) {
         assert_eq!(
             level.size(),
             expected_sizes[i],
-            "Bid level {} size mismatch",
-            i
+            "Bid level {i} size mismatch"
         );
     }
     for (i, level) in ask_levels.iter().enumerate() {
         assert_eq!(
             level.size(),
             expected_sizes[i],
-            "Ask level {} size mismatch",
-            i
+            "Ask level {i} size mismatch"
         );
     }
 }
@@ -536,10 +531,8 @@ fn test_book_apply_depth_empty_snapshot() {
     assert!(!book.has_bid(), "Empty snapshot should not have bid");
     assert!(!book.has_ask(), "Empty snapshot should not have ask");
 
-    let bid_levels: Vec<_> = book.bids(None).collect();
-    let ask_levels: Vec<_> = book.asks(None).collect();
-    assert_eq!(bid_levels.len(), 0, "Should have 0 bid levels");
-    assert_eq!(ask_levels.len(), 0, "Should have 0 ask levels");
+    assert_eq!(book.bids(None).count(), 0, "Should have 0 bid levels");
+    assert_eq!(book.asks(None).count(), 0, "Should have 0 ask levels");
 
     // Verify metadata was still updated
     assert_eq!(book.sequence, 12345);
@@ -629,14 +622,14 @@ fn test_book_apply_depth_partial_snapshot() {
     assert_eq!(ask_levels.len(), 3, "Should have exactly 3 ask levels");
 
     // Verify no zero-price levels
-    for level in bid_levels.iter() {
+    for level in &bid_levels {
         assert!(
             level.price.value > Price::from("0.0"),
             "No zero-price bid levels"
         );
         assert!(level.size() > 0.0, "No zero-size bid levels");
     }
-    for level in ask_levels.iter() {
+    for level in &ask_levels {
         assert!(
             level.price.value > Price::from("0.0"),
             "No zero-price ask levels"
@@ -1445,7 +1438,7 @@ fn test_book_filtered_with_status_filter() {
     own_book.add(own_ask_submitted);
 
     // Create a status filter for only ACCEPTED orders
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Accepted);
 
     // Get filtered maps with status filter
@@ -1678,7 +1671,7 @@ fn test_book_filtered_with_accepted_buffer() {
     own_book.add(own_ask_older);
 
     // Status filter for ACCEPTED orders only
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Accepted);
 
     // Test with a 200 ns buffer - only orders accepted before 800 ns should be filtered
@@ -1827,7 +1820,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
     assert_eq!(bids_filtered.get(&dec!(100.00)), Some(&dec!(50)));
 
     // Now test with a status filter for SUBMITTED only
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Submitted);
 
     let bids_filtered_submitted = book.bids_filtered_as_map(
@@ -1843,7 +1836,7 @@ fn test_book_filtered_with_accepted_buffer_mixed_statuses() {
     assert_eq!(bids_filtered_submitted.get(&dec!(100.00)), Some(&dec!(70)));
 
     // Now test with a status filter for both SUBMITTED and ACCEPTED
-    let mut status_filter_both = HashSet::new();
+    let mut status_filter_both = AHashSet::new();
     status_filter_both.insert(OrderStatus::Submitted);
     status_filter_both.insert(OrderStatus::Accepted);
 
@@ -2128,7 +2121,7 @@ fn test_book_group_with_status_filter() {
     own_book.add(own_submitted);
 
     // Create a status filter for ACCEPTED orders only
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Accepted);
 
     // Group with status filter
@@ -3755,7 +3748,7 @@ fn test_status_filtering_bids_as_map() {
     assert_eq!(all_orders.get(&dec!(99.50)).unwrap().len(), 1); // One order at 99.50
 
     // Filter for just SUBMITTED status
-    let mut filter_submitted = HashSet::new();
+    let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
     let submitted_orders = book.bids_as_map(Some(filter_submitted), None, None);
     assert_eq!(submitted_orders.len(), 1); // One price level
@@ -3767,7 +3760,7 @@ fn test_status_filtering_bids_as_map() {
     assert!(submitted_orders.get(&dec!(99.50)).is_none()); // No SUBMITTED orders at 99.50
 
     // Filter for ACCEPTED and CANCELED statuses
-    let mut filter_accepted_canceled = HashSet::new();
+    let mut filter_accepted_canceled = AHashSet::new();
     filter_accepted_canceled.insert(OrderStatus::Accepted);
     filter_accepted_canceled.insert(OrderStatus::Canceled);
     let accepted_canceled_orders = book.bids_as_map(Some(filter_accepted_canceled), None, None);
@@ -3779,7 +3772,7 @@ fn test_status_filtering_bids_as_map() {
     assert_eq!(accepted_canceled_orders.get(&dec!(99.50)).unwrap().len(), 1); // One CANCELED at 99.50
 
     // Filter for non-existent status
-    let mut filter_filled = HashSet::new();
+    let mut filter_filled = AHashSet::new();
     filter_filled.insert(OrderStatus::Filled);
     let filled_orders = book.bids_as_map(Some(filter_filled), None, None);
     assert_eq!(filled_orders.len(), 0); // No orders match
@@ -3832,7 +3825,7 @@ fn test_status_filtering_asks_as_map() {
     assert_eq!(all_orders.get(&dec!(101.00)).unwrap().len(), 2); // Two orders at 101.00
 
     // Filter for just SUBMITTED status
-    let mut filter_submitted = HashSet::new();
+    let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
     let submitted_orders = book.asks_as_map(Some(filter_submitted), None, None);
     assert_eq!(submitted_orders.len(), 1); // One price level
@@ -3908,7 +3901,7 @@ fn test_status_filtering_bid_quantity() {
     assert_eq!(all_quantities.get(&dec!(99.50)), Some(&dec!(20))); // 20
 
     // Filter for just SUBMITTED status
-    let mut filter_submitted = HashSet::new();
+    let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
     let submitted_quantities = book.bid_quantity(Some(filter_submitted), None, None, None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
@@ -3916,7 +3909,7 @@ fn test_status_filtering_bid_quantity() {
     assert!(submitted_quantities.get(&dec!(99.50)).is_none()); // No SUBMITTED orders at 99.50
 
     // Filter for ACCEPTED and CANCELED statuses
-    let mut filter_accepted_canceled = HashSet::new();
+    let mut filter_accepted_canceled = AHashSet::new();
     filter_accepted_canceled.insert(OrderStatus::Accepted);
     filter_accepted_canceled.insert(OrderStatus::Canceled);
     let accepted_canceled_quantities =
@@ -3997,7 +3990,7 @@ fn test_status_filtering_ask_quantity() {
     assert_eq!(all_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20
 
     // Filter for just SUBMITTED status
-    let mut filter_submitted = HashSet::new();
+    let mut filter_submitted = AHashSet::new();
     filter_submitted.insert(OrderStatus::Submitted);
     let submitted_quantities = book.ask_quantity(Some(filter_submitted), None, None, None, None);
     assert_eq!(submitted_quantities.len(), 1); // One price level
@@ -4005,7 +3998,7 @@ fn test_status_filtering_ask_quantity() {
     assert!(submitted_quantities.get(&dec!(102.00)).is_none()); // No SUBMITTED orders at 102.00
 
     // Filter for multiple statuses
-    let mut filter_multiple = HashSet::new();
+    let mut filter_multiple = AHashSet::new();
     filter_multiple.insert(OrderStatus::Submitted);
     filter_multiple.insert(OrderStatus::Canceled);
     let multiple_quantities = book.ask_quantity(Some(filter_multiple), None, None, None, None);
@@ -4014,7 +4007,7 @@ fn test_status_filtering_ask_quantity() {
     assert_eq!(multiple_quantities.get(&dec!(102.00)), Some(&dec!(20))); // 20 (Canceled only)
 
     // Check empty price levels are filtered out
-    let mut filter_filled = HashSet::new();
+    let mut filter_filled = AHashSet::new();
     filter_filled.insert(OrderStatus::Filled);
     let filled_quantities = book.ask_quantity(Some(filter_filled), None, None, None, None);
     assert_eq!(filled_quantities.len(), 0); // No orders match
@@ -4661,7 +4654,7 @@ fn test_own_book_group_with_status_and_buffer() {
     own_book.add(own_older);
 
     // Create a status filter for ACCEPTED orders
-    let mut status_filter = HashSet::new();
+    let mut status_filter = AHashSet::new();
     status_filter.insert(OrderStatus::Accepted);
 
     // Group with a buffer of 300 ns - only orders accepted before 700 ns should be included
@@ -4732,7 +4725,7 @@ fn test_own_book_audit_open_orders_no_removals() {
     own_book.add(ask_order);
 
     // Create a set of open order IDs that includes both orders
-    let mut open_order_ids = HashSet::new();
+    let mut open_order_ids = AHashSet::new();
     open_order_ids.insert(ClientOrderId::from("BID-1"));
     open_order_ids.insert(ClientOrderId::from("ASK-1"));
 
@@ -4822,7 +4815,7 @@ fn test_own_book_audit_open_orders_with_removals() {
     assert_eq!(own_book.ask_client_order_ids().len(), 2);
 
     // Create a set of open order IDs that only includes one bid and one ask
-    let mut open_order_ids = HashSet::new();
+    let mut open_order_ids = AHashSet::new();
     open_order_ids.insert(ClientOrderId::from("BID-1"));
     open_order_ids.insert(ClientOrderId::from("ASK-1"));
 
@@ -4966,11 +4959,11 @@ fn sanitize_operations(
     operations: Vec<OrderBookOperation>,
     book_type: BookType,
 ) -> Vec<OrderBookOperation> {
-    use std::collections::{HashMap, HashSet};
+    use ahash::{AHashMap, AHashSet};
 
-    let mut live_order_ids: HashMap<OrderSide, HashSet<u64>> = HashMap::new();
-    live_order_ids.insert(OrderSide::Buy, HashSet::new());
-    live_order_ids.insert(OrderSide::Sell, HashSet::new());
+    let mut live_order_ids: AHashMap<OrderSide, AHashSet<u64>> = AHashMap::new();
+    live_order_ids.insert(OrderSide::Buy, AHashSet::new());
+    live_order_ids.insert(OrderSide::Sell, AHashSet::new());
 
     let mut sanitized = Vec::new();
 

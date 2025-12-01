@@ -49,46 +49,20 @@ impl BybitHttpClient {
         recv_window_ms: Option<u64>,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
-        let timeout = timeout_secs.or(Some(60));
-
-        // Try to get credentials from parameters or environment variables
-        // Priority: demo > testnet > mainnet
-        let (api_key_env, api_secret_env) = if demo {
-            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
-        } else if testnet {
-            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
-        } else {
-            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
-        };
-
-        let key = api_key.or_else(|| std::env::var(api_key_env).ok());
-        let secret = api_secret.or_else(|| std::env::var(api_secret_env).ok());
-
-        if let (Some(k), Some(s)) = (key, secret) {
-            Self::with_credentials(
-                k,
-                s,
-                base_url,
-                timeout,
-                max_retries,
-                retry_delay_ms,
-                retry_delay_max_ms,
-                recv_window_ms,
-                proxy_url,
-            )
-            .map_err(to_pyvalue_err)
-        } else {
-            Self::new(
-                base_url,
-                timeout,
-                max_retries,
-                retry_delay_ms,
-                retry_delay_max_ms,
-                recv_window_ms,
-                proxy_url,
-            )
-            .map_err(to_pyvalue_err)
-        }
+        Self::new_with_env(
+            api_key,
+            api_secret,
+            base_url,
+            demo,
+            testnet,
+            timeout_secs.or(Some(60)),
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+            recv_window_ms,
+            proxy_url,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[getter]
@@ -125,8 +99,8 @@ impl BybitHttpClient {
     }
 
     #[pyo3(name = "set_use_spot_position_reports")]
-    fn py_set_use_spot_position_reports(&self, use_spot_position_reports: bool) {
-        self.set_use_spot_position_reports(use_spot_position_reports);
+    fn py_set_use_spot_position_reports(&self, value: bool) {
+        self.set_use_spot_position_reports(value);
     }
 
     #[pyo3(name = "set_margin_mode")]

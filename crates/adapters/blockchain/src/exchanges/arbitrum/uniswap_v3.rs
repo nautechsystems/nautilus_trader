@@ -40,13 +40,30 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     dex.set_flash_event("Flash(address,address,uint256,uint256,uint256,uint256)");
     let mut dex_extended = DexExtended::new(dex);
 
-    dex_extended.set_pool_created_event_parsing(uniswap_v3::pool_created::parse_pool_created_event);
-    dex_extended.set_initialize_event_parsing(uniswap_v3::initialize::parse_initialize_event);
-    dex_extended.set_swap_event_parsing(uniswap_v3::swap::parse_swap_event);
-    dex_extended.set_mint_event_parsing(uniswap_v3::mint::parse_mint_event);
-    dex_extended.set_burn_event_parsing(uniswap_v3::burn::parse_burn_event);
-    dex_extended.set_collect_event_parsing(uniswap_v3::collect::parse_collect_event);
-    dex_extended.set_flash_event_parsing(uniswap_v3::flash::parse_flash_event);
+    // HyperSync parsers
+    dex_extended.set_pool_created_event_hypersync_parsing(
+        uniswap_v3::pool_created::parse_pool_created_event_hypersync,
+    );
+    dex_extended.set_initialize_event_hypersync_parsing(
+        uniswap_v3::initialize::parse_initialize_event_hypersync,
+    );
+    dex_extended.set_swap_event_hypersync_parsing(uniswap_v3::swap::parse_swap_event_hypersync);
+    dex_extended.set_mint_event_hypersync_parsing(uniswap_v3::mint::parse_mint_event_hypersync);
+    dex_extended.set_burn_event_hypersync_parsing(uniswap_v3::burn::parse_burn_event_hypersync);
+    dex_extended
+        .set_collect_event_hypersync_parsing(uniswap_v3::collect::parse_collect_event_hypersync);
+    dex_extended.set_flash_event_hypersync_parsing(uniswap_v3::flash::parse_flash_event_hypersync);
+
+    // RPC parsers
+    dex_extended
+        .set_pool_created_event_rpc_parsing(uniswap_v3::pool_created::parse_pool_created_event_rpc);
+    dex_extended
+        .set_initialize_event_rpc_parsing(uniswap_v3::initialize::parse_initialize_event_rpc);
+    dex_extended.set_swap_event_rpc_parsing(uniswap_v3::swap::parse_swap_event_rpc);
+    dex_extended.set_mint_event_rpc_parsing(uniswap_v3::mint::parse_mint_event_rpc);
+    dex_extended.set_burn_event_rpc_parsing(uniswap_v3::burn::parse_burn_event_rpc);
+    dex_extended.set_collect_event_rpc_parsing(uniswap_v3::collect::parse_collect_event_rpc);
+    dex_extended.set_flash_event_rpc_parsing(uniswap_v3::flash::parse_flash_event_rpc);
 
     dex_extended
 });

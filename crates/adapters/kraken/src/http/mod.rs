@@ -13,14 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! HTTP/REST client implementation for the Kraken v2 API.
+//! HTTP/REST client implementations for Kraken APIs.
 //!
-//! This module provides a HTTP client for interacting with Kraken's REST endpoints, including:
+//! This module provides HTTP clients for interacting with Kraken's REST endpoints:
 //!
-//! - Market data queries (instruments, trades, bars, tickers, order books).
-//! - System information (server time, system status).
-//! - Request signing and rate limiting.
+//! - [`spot`]: Kraken Spot REST API
+//! - [`futures`]: Kraken Futures REST API
 
-pub mod client;
 pub mod error;
+pub mod futures;
 pub mod models;
+pub mod spot;
+
+// Re-exports
+pub use error::KrakenHttpError;
+pub use futures::client::{KrakenFuturesHttpClient, KrakenFuturesRawHttpClient};
+pub use spot::client::{KrakenSpotHttpClient, KrakenSpotRawHttpClient};

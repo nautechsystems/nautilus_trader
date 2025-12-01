@@ -16,6 +16,7 @@ This guide outlines the style conventions and best practices for writing documen
 - Use future tense only for planned features.
 - Avoid unnecessary jargon; define technical terms on first use.
 - Be direct and concise; avoid filler words like "basically", "simply", "just".
+- Use parallel structure in lists; keep grammatical patterns consistent across items.
 
 ## Markdown tables
 
@@ -52,7 +53,7 @@ This guide outlines the style conventions and best practices for writing documen
 
 - Use backticks for inline code, method names, class names, and configuration options.
 - Use code blocks for multi-line examples.
-- When referencing functions or code locations, include the pattern `file_path:line_number` to allow easy navigation.
+- When referencing code locations, use `file_path::function_name` or `file_path::ClassName` rather than line numbers, which become stale as code changes.
 
 ## Headings
 
@@ -104,12 +105,19 @@ It improves readability, reduces cognitive load, and is more accessible for inte
 - Use realistic variable names and values.
 - Add comments to explain non-obvious parts of examples.
 
-## Warnings and notes
+## Admonitions
 
-- Use appropriate admonition blocks for important information:
-  - `:::note` for general information.
-  - `:::warning` for important caveats.
-  - `:::tip` for helpful suggestions.
+Use admonition blocks to highlight important information:
+
+| Admonition | Purpose |
+|------------|---------|
+| `:::note` | Supplementary context that clarifies but isn't essential. |
+| `:::info` | Important information the reader should be aware of. |
+| `:::tip` | Helpful suggestions or best practices. |
+| `:::warning` | Potential pitfalls or important caveats. |
+| `:::danger` | Critical issues that could cause data loss or system failure. |
+
+Avoid overusing admonitions; too many diminish their impact.
 
 ## Line length and wrapping
 

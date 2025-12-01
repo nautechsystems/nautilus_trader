@@ -74,7 +74,7 @@ repos:
         types_or: [rust, python, cython, toml, yaml, rst, markdown]
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.29.1
+    rev: v8.30.0
     hooks:
       - id: gitleaks
         name: gitleaks (secrets scan)
@@ -105,13 +105,13 @@ repos:
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.17.0
+    rev: v1.18.0
     hooks:
       - id: zizmor
         name: zizmor (security)
         description: Scans GitHub Actions workflows for security misconfigurations
-        args: ["--no-online-audits", "--min-severity", "medium"]
-        files: ^\.github/(workflows|actions)/.*\.yml$
+        args: ["--no-online-audits", "--min-severity", "medium", ".github/"]
+        pass_filenames: false
 
   ##############################################################################
   #  Custom hooks
@@ -177,6 +177,16 @@ repos:
 
   - repo: local
     hooks:
+      - id: cargo-vet
+        name: cargo vet (supply chain audit)
+        description: Run cargo-vet supply chain audit if installed
+        entry: .pre-commit-hooks/cargo_vet.sh
+        language: script
+        files: '^Cargo\.(toml|lock)$|^supply-chain/'
+        pass_filenames: false
+
+  - repo: local
+    hooks:
       - id: check-anyhow-usage
         name: check anyhow usage
         description: Enforces anyhow conventions
@@ -193,6 +203,14 @@ repos:
         files: '\.rs$'
         pass_filenames: false
 
+      - id: check-tokio-usage
+        name: check tokio usage
+        description: Enforces tokio usage conventions
+        entry: .pre-commit-hooks/check_tokio_usage.sh
+        language: script
+        files: '\.rs$|Cargo\.toml$'
+        pass_filenames: false
+
       - id: check-pyo3-conventions
         name: check pyo3 conventions
         description: Enforces PyO3 naming conventions
@@ -207,6 +225,14 @@ repos:
         entry: .pre-commit-hooks/check_testing_conventions.sh
         language: script
         types_or: [rust]
+        pass_filenames: false
+
+      - id: check-nautilus-conventions
+        name: check nautilus conventions
+        description: Enforces Nautilus type usage conventions
+        entry: .pre-commit-hooks/check_nautilus_conventions.sh
+        language: script
+        files: '\.rs$'
         pass_filenames: false
 
       - id: fmt
@@ -268,7 +294,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.6
+    rev: v0.14.7
     hooks:
       - id: ruff
         name: ruff
@@ -287,7 +313,7 @@ repos:
     rev: v1.7.7
     hooks:
       - id: docformatter
-        language_version: python3.13 # Pin to 3.13 due to untokenize incompatibility with 3.14
+        language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         additional_dependencies: [tomli]
         args:
           [
@@ -303,9 +329,10 @@ repos:
           ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v1.19.0
     hooks:
       - id: mypy
+        language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         exclude: (^python/|^nautilus_trader/.*\.pyi$)
         args: ["--config", "pyproject.toml", "--allow-incomplete-defs"]
         additional_dependencies:
@@ -319,7 +346,7 @@ repos:
           ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.12 # Must match uv-version file
+    rev: 0.9.13 # Must match uv-version file
     hooks:
       - id: uv-lock
         files: ^python/uv\.lock$

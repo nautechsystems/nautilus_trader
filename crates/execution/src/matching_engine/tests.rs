@@ -2983,7 +2983,6 @@ fn test_process_stop_orders_with_protection_rejeceted_and_valid(
 
 #[rstest]
 fn test_process_monthly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
-    // Arrange
     let config = OrderMatchingEngineConfig {
         bar_execution: true,
         ..Default::default()
@@ -3003,10 +3002,9 @@ fn test_process_monthly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
         ts_init: UnixNanos::from(1_000_000_000),
     };
 
-    // Act - process the monthly bar
+    // Process the monthly bar
     engine.process_bar(&monthly_bar);
 
-    // Assert - verify the bar was processed by checking that last price was updated
     // Monthly bars should now be processed for execution (LAST price type bars update last price)
     assert!(
         engine.core.is_last_initialized,
@@ -3016,7 +3014,6 @@ fn test_process_monthly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
 
 #[rstest]
 fn test_process_yearly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
-    // Arrange
     let config = OrderMatchingEngineConfig {
         bar_execution: true,
         ..Default::default()
@@ -3036,10 +3033,9 @@ fn test_process_yearly_bar_not_skipped(instrument_eth_usdt: InstrumentAny) {
         ts_init: UnixNanos::from(1_000_000_000),
     };
 
-    // Act - process the yearly bar
+    // Process the yearly bar
     engine.process_bar(&yearly_bar);
 
-    // Assert - verify the bar was processed by checking that last price was updated
     // Yearly bars should now be processed for execution (LAST price type bars update last price)
     assert!(
         engine.core.is_last_initialized,

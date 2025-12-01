@@ -62,10 +62,17 @@ pub const DYDX_WS_URL: &str = "wss://indexer.dydx.trade/v4/ws";
 /// Multiple nodes are provided for redundancy. The client should attempt to connect
 /// to nodes in order, falling back to the next if connection fails. This is critical
 /// for DEX environments where individual nodes can fail or become unavailable.
+///
+/// Endpoints sourced from:
+/// - https://docs.dydx.xyz/interaction/endpoints#node
+///
+/// # Notes
+///
+/// URLs use domain:port format for tonic gRPC client (TLS is automatic on port 443).
 pub const DYDX_GRPC_URLS: &[&str] = &[
-    "https://dydx-grpc.publicnode.com:443",
     "https://dydx-ops-grpc.kingnodes.com:443",
-    "https://dydx-mainnet-grpc.autostake.com:443",
+    "https://dydx-dao-grpc-1.polkachu.com:443",
+    "https://dydx-grpc.publicnode.com:443",
 ];
 
 /// dYdX v4 mainnet gRPC URL (primary public node).
@@ -87,9 +94,16 @@ pub const DYDX_TESTNET_WS_URL: &str = "wss://indexer.v4testnet.dydx.exchange/v4/
 ///
 /// Multiple nodes are provided for redundancy. The client should attempt to connect
 /// to nodes in order, falling back to the next if connection fails.
+///
+/// Endpoints sourced from:
+/// - https://docs.dydx.xyz/interaction/endpoints#node
+///
+/// # Notes
+///
+/// URLs use domain:port format for tonic gRPC client (TLS is automatic on port 443).
 pub const DYDX_TESTNET_GRPC_URLS: &[&str] = &[
-    "https://dydx-testnet-grpc.publicnode.com:443",
     "https://test-dydx-grpc.kingnodes.com:443",
+    "https://testnet-dydx.lavenderfive.com:443",
 ];
 
 /// dYdX v4 testnet gRPC URL (primary public node).

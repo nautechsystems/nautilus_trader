@@ -19,6 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nautilus_trader.adapters.kraken.providers import KrakenInstrumentProvider
+from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
@@ -33,8 +34,8 @@ async def test_load_all_async_populates_provider(monkeypatch, instrument):
     mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
 
     provider = KrakenInstrumentProvider(
-        client=mock_http_client,
-        product_types=["spot"],
+        http_client_spot=mock_http_client,
+        product_types=[KrakenProductType.SPOT],
     )
 
     monkeypatch.setattr(
@@ -59,8 +60,8 @@ async def test_load_ids_async_loads_all_instruments(monkeypatch, instrument, ven
     mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
 
     provider = KrakenInstrumentProvider(
-        client=mock_http_client,
-        product_types=["spot"],
+        http_client_spot=mock_http_client,
+        product_types=[KrakenProductType.SPOT],
     )
 
     btc = instrument.base_currency
@@ -103,8 +104,8 @@ async def test_load_ids_async_propagates_exceptions(instrument):
     )
 
     provider = KrakenInstrumentProvider(
-        client=mock_http_client,
-        product_types=["spot"],
+        http_client_spot=mock_http_client,
+        product_types=[KrakenProductType.SPOT],
     )
 
     # Act & Assert
@@ -120,8 +121,8 @@ async def test_load_async_delegates_to_load_ids(monkeypatch, instrument):
     mock_http_client.request_instruments = AsyncMock(return_value=pyo3_instruments)
 
     provider = KrakenInstrumentProvider(
-        client=mock_http_client,
-        product_types=["spot"],
+        http_client_spot=mock_http_client,
+        product_types=[KrakenProductType.SPOT],
     )
 
     monkeypatch.setattr(
@@ -142,13 +143,13 @@ async def test_product_types_returns_copy(instrument):
     # Arrange
     mock_http_client = MagicMock()
     provider = KrakenInstrumentProvider(
-        client=mock_http_client,
-        product_types=["spot"],
+        http_client_spot=mock_http_client,
+        product_types=[KrakenProductType.SPOT],
     )
 
     # Act
     product_types = provider.product_types
-    product_types.append("futures")  # Try to modify
+    product_types.append(KrakenProductType.FUTURES)  # Try to modify
 
     # Assert
-    assert provider.product_types == ["spot"]  # Should be unchanged
+    assert provider.product_types == [KrakenProductType.SPOT]  # Should be unchanged

@@ -17,9 +17,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use std::time::Duration;
+
 use futures_util::StreamExt;
 use nautilus_bitmex::{http::client::BitmexHttpClient, websocket::client::BitmexWebSocketClient};
-use tokio::time::Duration;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]

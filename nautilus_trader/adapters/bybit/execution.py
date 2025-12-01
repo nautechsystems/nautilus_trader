@@ -22,6 +22,9 @@ WebSocket clients exposed via PyO3 for performance.
 """
 
 import asyncio
+import contextlib
+from asyncio import Queue
+from decimal import Decimal
 from typing import Any
 
 from nautilus_trader.accounting.factory import AccountFactory
@@ -36,6 +39,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import BybitAccountType
+from nautilus_trader.core.nautilus_pyo3 import BybitMarginAction
 from nautilus_trader.core.nautilus_pyo3 import BybitPositionMode
 from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 from nautilus_trader.execution.messages import BatchCancelOrders
@@ -52,7 +56,9 @@ from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.enqueue import ThrottledEnqueuer
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -211,6 +217,17 @@ class BybitExecutionClient(LiveExecutionClient):
         # Hot cache for accumulating spot borrow fills (only)
         self._order_filled_qty: dict[ClientOrderId, Quantity] = {}
 
+        # Repayment queue system: one queue per base currency
+        self._repay_queues: dict[str, Queue[Decimal]] = {}
+        self._repay_enqueuers: dict[str, ThrottledEnqueuer[Decimal]] = {}
+        self._repay_queue_interval_secs = config.repay_queue_interval_secs
+
+        # Start repayment processor coroutine
+        self._repay_task = loop.create_task(
+            self._process_repayment_queues(),
+            name="repay_processor",
+        )
+
     @property
     def bybit_instrument_provider(self) -> BybitInstrumentProvider:
         return self._instrument_provider  # type: ignore
@@ -276,6 +293,16 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._log.warning("Timeout while waiting for websockets shutdown to complete")
 
         self._ws_client_futures.clear()
+
+        # Cancel repayment processor task
+        if self._repay_task and not self._repay_task.done():
+            self._repay_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._repay_task
+
+        # Cancel pending enqueuer tasks
+        for enqueuer in self._repay_enqueuers.values():
+            enqueuer.cancel_pending_tasks()
 
     async def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
@@ -696,8 +723,125 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return None
 
-    async def _query_account(self, _command: QueryAccount) -> None:
-        await self._update_account_state()
+    async def _query_account(self, command: QueryAccount) -> None:
+        params = command.params or {}
+        action = params.get("action")
+
+        if action is None:
+            await self._update_account_state()
+            return
+
+        if action == BybitMarginAction.BORROW:
+            await self._handle_borrow_action(command, params)
+        elif action == BybitMarginAction.REPAY:
+            await self._handle_repay_action(command, params)
+        elif action == BybitMarginAction.GET_BORROW_AMOUNT:
+            await self._handle_get_borrow_amount_action(command, params)
+        else:
+            self._log.warning(f"Unknown query_account action: {action}")
+            await self._update_account_state()
+
+    async def _handle_borrow_action(self, command: QueryAccount, params: dict[str, Any]) -> None:
+        coin = params.get("coin")
+        amount = params.get("amount")
+
+        if not coin or not amount:
+            self._log.error("Borrow action requires 'coin' and 'amount' params")
+            return
+
+        ts_now = self._clock.timestamp_ns()
+        success = False
+        message = ""
+
+        try:
+            pyo3_amount = nautilus_pyo3.Quantity.from_str(str(amount))
+            await self._http_client.borrow_spot(coin, pyo3_amount)
+            success = True
+            self._log.info(f"Successfully borrowed {amount} {coin}", LogColor.GREEN)
+        except Exception as e:
+            message = str(e)
+            self._log.error(f"Borrow failed: {e}")
+
+        response = nautilus_pyo3.BybitMarginBorrowResult(
+            coin=coin,
+            amount=str(amount),
+            success=success,
+            message=message,
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+        self._publish_margin_data(response)
+
+    async def _handle_repay_action(self, command: QueryAccount, params: dict[str, Any]) -> None:
+        coin = params.get("coin")
+        amount = params.get("amount")  # Optional - None means repay all
+
+        if not coin:
+            self._log.error("Repay action requires 'coin' param")
+            return
+
+        # Check Bybit blackout window (04:00-05:30 UTC)
+        if self._is_repay_blackout_window():
+            self._log.warning(
+                "Cannot repay during Bybit blackout window (04:00-05:30 UTC)",
+                LogColor.YELLOW,
+            )
+            return
+
+        ts_now = self._clock.timestamp_ns()
+        success = False
+        result_status = "FAIL"
+        message = ""
+
+        try:
+            pyo3_amount = nautilus_pyo3.Quantity.from_str(str(amount)) if amount else None
+            await self._http_client.repay_spot_borrow(coin, pyo3_amount)
+            success = True
+            result_status = "SU"
+            self._log.info(f"Successfully repaid {amount or 'all'} {coin}", LogColor.GREEN)
+        except Exception as e:
+            message = str(e)
+            self._log.error(f"Repay failed: {e}")
+
+        response = nautilus_pyo3.BybitMarginRepayResult(
+            coin=coin,
+            amount=str(amount) if amount else None,
+            success=success,
+            result_status=result_status,
+            message=message,
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+        self._publish_margin_data(response)
+
+    async def _handle_get_borrow_amount_action(
+        self, command: QueryAccount, params: dict[str, Any],
+    ) -> None:
+        coin = params.get("coin")
+
+        if not coin:
+            self._log.error("Get borrow amount action requires 'coin' param")
+            return
+
+        ts_now = self._clock.timestamp_ns()
+
+        try:
+            borrow_amount = await self._http_client.get_spot_borrow_amount(coin)
+
+            response = nautilus_pyo3.BybitMarginStatusResult(
+                coin=coin,
+                borrow_amount=str(borrow_amount),
+                ts_event=ts_now,
+                ts_init=ts_now,
+            )
+            self._log.info(f"Borrow amount for {coin}: {borrow_amount}")
+            self._publish_margin_data(response)
+        except Exception as e:
+            self._log.error(f"Get borrow amount failed: {e}")
+
+    def _publish_margin_data(self, data) -> None:
+        data_type = DataType(type(data))
+        self._msgbus.publish(topic=f"data.{data_type.topic}", msg=data)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -890,11 +1034,7 @@ class BybitExecutionClient(LiveExecutionClient):
         pyo3_trader_id = nautilus_pyo3.TraderId(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        pyo3_client_order_id = (
-            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
-            if command.client_order_id
-            else None
-        )
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
         pyo3_venue_order_id = (
             nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
             if command.venue_order_id
@@ -948,11 +1088,7 @@ class BybitExecutionClient(LiveExecutionClient):
         pyo3_trader_id = nautilus_pyo3.TraderId(order.trader_id.value)
         pyo3_strategy_id = nautilus_pyo3.StrategyId(order.strategy_id.value)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        pyo3_client_order_id = (
-            nautilus_pyo3.ClientOrderId(command.client_order_id.value)
-            if command.client_order_id
-            else None
-        )
+        pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
         pyo3_venue_order_id = (
             nautilus_pyo3.VenueOrderId(command.venue_order_id.value)
             if command.venue_order_id
@@ -1014,60 +1150,58 @@ class BybitExecutionClient(LiveExecutionClient):
         if not command.cancels:
             return
 
-        # Extract data from cancel commands
-        instrument_ids = []
-        client_order_ids = []
-        venue_order_ids = []
-
-        for cancel in command.cancels:
-            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
-            instrument_ids.append(pyo3_instrument_id)
-
-            pyo3_client_order_id = (
-                nautilus_pyo3.ClientOrderId(cancel.client_order_id.value)
-                if cancel.client_order_id
-                else None
-            )
-            client_order_ids.append(pyo3_client_order_id)
-
-            pyo3_venue_order_id = (
-                nautilus_pyo3.VenueOrderId(cancel.venue_order_id.value)
-                if cancel.venue_order_id
-                else None
-            )
-            venue_order_ids.append(pyo3_venue_order_id)
-
         # Derive product type from first cancel (all must be same product type for batch operation)
         product_type = nautilus_pyo3.bybit_product_type_from_symbol(
             command.cancels[0].instrument_id.symbol.value,
         )
 
-        pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)
-        pyo3_strategy_id = nautilus_pyo3.StrategyId(command.strategy_id.value)
-
-        try:
-            # Batch cancel via WebSocket
-            await self._ws_trade_client.batch_cancel_orders(
-                product_type=product_type,
-                trader_id=pyo3_trader_id,
-                strategy_id=pyo3_strategy_id,
-                instrument_ids=instrument_ids,
-                venue_order_ids=venue_order_ids,
-                client_order_ids=client_order_ids,
+        # Build cancel order params
+        order_params = []
+        for cancel in command.cancels:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(cancel.instrument_id.value)
+            pyo3_client_order_id = (
+                nautilus_pyo3.ClientOrderId(cancel.client_order_id.value)
+                if cancel.client_order_id
+                else None
             )
-        except Exception as e:
-            self._log.error(f"Failed to batch cancel orders: {e}")
-            for cancel in command.cancels:
-                order = self._cache.order(cancel.client_order_id)
-                if order and not order.is_closed:
-                    self.generate_order_cancel_rejected(
-                        strategy_id=order.strategy_id,
-                        instrument_id=order.instrument_id,
-                        client_order_id=order.client_order_id,
-                        venue_order_id=order.venue_order_id,
-                        reason=str(e),
-                        ts_event=self._clock.timestamp_ns(),
-                    )
+            pyo3_venue_order_id = (
+                nautilus_pyo3.VenueOrderId(cancel.venue_order_id.value)
+                if cancel.venue_order_id
+                else None
+            )
+
+            params = self._ws_trade_client.build_cancel_order_params(
+                product_type=product_type,
+                instrument_id=pyo3_instrument_id,
+                venue_order_id=pyo3_venue_order_id,
+                client_order_id=pyo3_client_order_id,
+            )
+            order_params.append(params)
+
+        if order_params:
+            pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)
+            pyo3_strategy_id = nautilus_pyo3.StrategyId(command.strategy_id.value)
+
+            try:
+                # Batch cancel via WebSocket
+                await self._ws_trade_client.batch_cancel_orders(
+                    pyo3_trader_id,
+                    pyo3_strategy_id,
+                    order_params,
+                )
+            except Exception as e:
+                self._log.error(f"Failed to batch cancel orders: {e}")
+                for cancel in command.cancels:
+                    order = self._cache.order(cancel.client_order_id)
+                    if order and not order.is_closed:
+                        self.generate_order_cancel_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            venue_order_id=order.venue_order_id,
+                            reason=str(e),
+                            ts_event=self._clock.timestamp_ns(),
+                        )
 
     # -- MESSAGE HANDLERS -------------------------------------------------------------------------
 
@@ -1273,30 +1407,73 @@ class BybitExecutionClient(LiveExecutionClient):
                 if product_type != BybitProductType.SPOT:
                     return
 
-                filled_current = self._order_filled_qty.get(order.client_order_id, order.filled_qty)
-                if filled_current >= order.quantity:
-                    return  # Already triggered repayment
-
+                # Get current filled quantity (from tracking or order state)
+                filled_current = self._order_filled_qty.get(order.client_order_id, Quantity.zero())
                 filled_new = filled_current + report.last_qty
 
                 if filled_new >= order.quantity:
-                    # Order is now fully filled: clean up and trigger repayment
+                    # Order is now fully filled: enqueue repayment and clean up tracking
                     self._order_filled_qty.pop(order.client_order_id, None)
                     base_currency = instrument.base_currency.code
-                    self.create_task(
-                        self._repay_spot_borrow_if_needed(base_currency, order.quantity),
-                    )
+
+                    # Ensure queue and enqueuer exist for this currency
+                    if base_currency not in self._repay_queues:
+                        self._repay_queues[base_currency] = Queue(maxsize=1000)
+                        self._repay_enqueuers[base_currency] = ThrottledEnqueuer(
+                            qname=f"repay_queue_{base_currency}",
+                            queue=self._repay_queues[base_currency],
+                            loop=self._loop,
+                            clock=self._clock,
+                            logger=self._log,
+                        )
+
+                    # Enqueue the filled quantity for repayment
+                    qty_decimal = order.quantity.as_decimal()
+                    self._repay_enqueuers[base_currency].enqueue(qty_decimal)
                 else:
                     # Partial fill: update tracking
                     self._order_filled_qty[order.client_order_id] = filled_new
             except Exception as e:
-                self._log.warning(f"Failed to check for spot borrow repayment: {e}")
+                self._log.warning(f"Failed to enqueue spot borrow repayment: {e}")
 
     def _handle_position_status_report_pyo3(self, msg: nautilus_pyo3.PositionStatusReport) -> None:
         report = PositionStatusReport.from_pyo3(msg)
         self._log.debug(f"Received {report}", LogColor.MAGENTA)
         # Do not send position reports from WebSocket stream - we use HTTP endpoint for reconciliation
         # to avoid noise from position updates every time a fill occurs
+
+    async def _process_repayment_queues(self) -> None:
+        self._log.debug("Repayment queue processor starting")
+        try:
+            while True:
+                await asyncio.sleep(self._repay_queue_interval_secs)
+
+                for base_currency, queue in list(self._repay_queues.items()):
+                    try:
+                        # Accumulate all pending quantities for this currency
+                        total_qty = Decimal(0)
+
+                        while not queue.empty():
+                            try:
+                                qty = queue.get_nowait()
+                                total_qty += qty
+                            except asyncio.QueueEmpty:
+                                break
+
+                        # If we have accumulated quantity, trigger repayment
+                        if total_qty > 0:
+                            qty_obj = Quantity.from_str(str(total_qty))
+                            await self._repay_spot_borrow_if_needed(base_currency, qty_obj)
+                    except Exception as e:
+                        self._log.error(
+                            f"Error processing repayment queue for {base_currency}: {e}",
+                        )
+        except asyncio.CancelledError:
+            self._log.debug("Repayment queue processor cancelled")
+        except Exception as e:
+            self._log.error(f"Unexpected error in repayment queue processor: {e}")
+        finally:
+            self._log.debug("Repayment queue processor stopped")
 
     async def _repay_spot_borrow_if_needed(self, coin: str, bought_qty: Quantity) -> None:
         # Repay outstanding spot borrows for a specific coin, this method is called when

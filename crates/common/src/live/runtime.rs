@@ -15,17 +15,11 @@
 
 //! The centralized Tokio runtime for a running Nautilus system.
 
-#[cfg(feature = "python")]
-use std::sync::Once;
 use std::{sync::OnceLock, time::Duration};
 
-#[cfg(feature = "python")]
-use pyo3::Python;
 use tokio::{runtime::Builder, task, time::timeout};
 
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-#[cfg(feature = "python")]
-static PYTHON_INIT: Once = Once::new();
 
 /// Environment variable name to configure the number of OS threads for the common runtime.
 /// If not set or if the value cannot be parsed as a positive integer, the default value is used.
@@ -46,14 +40,10 @@ const DEFAULT_OS_THREADS: usize = 0;
 /// Panics if the runtime could not be created, which typically indicates
 /// an inability to spawn threads or allocate necessary resources.
 fn initialize_runtime() -> tokio::runtime::Runtime {
+    // Initialize Python if running as a Python extension module
     #[cfg(feature = "python")]
     {
-        // Python hosts the process when we build as an extension module. Initializing
-        // here keeps the interpreter alive for the lifetime of the shared Tokio runtime
-        // so every worker thread sees a prepared PyO3 environment before using it.
-        PYTHON_INIT.call_once(|| {
-            Python::initialize();
-        });
+        crate::python::runtime::initialize_python();
     }
 
     let worker_threads = std::env::var(NAUTILUS_WORKER_THREADS)

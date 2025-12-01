@@ -23,6 +23,7 @@ use nautilus_bybit::{
     common::enums::{BybitEnvironment, BybitProductType},
     websocket::{client::BybitWebSocketClient, messages::NautilusWsMessage},
 };
+use nautilus_model::data::Data;
 use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
 
@@ -65,13 +66,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         tracing::info!(count = data_vec.len(), "data update");
                         for data in data_vec {
                             match data {
-                                nautilus_model::data::Data::Trade(tick) => {
+                                Data::Trade(tick) => {
                                     tracing::info!(instrument = %tick.instrument_id, price = %tick.price, size = %tick.size, "trade");
                                 }
-                                nautilus_model::data::Data::Quote(quote) => {
+                                Data::Quote(quote) => {
                                     tracing::info!(instrument = %quote.instrument_id, bid = %quote.bid_price, ask = %quote.ask_price, "quote");
                                 }
-                                nautilus_model::data::Data::Bar(bar) => {
+                                Data::Bar(bar) => {
                                     tracing::info!(bar_type = %bar.bar_type, close = %bar.close, "bar");
                                 }
                                 _ => {

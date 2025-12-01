@@ -139,6 +139,8 @@ pub enum OrderError {
     AlreadyInitialized,
     #[error("Order had no previous state")]
     NoPreviousState,
+    #[error("Duplicate fill: trade_id {0} already applied to order")]
+    DuplicateFill(TradeId),
     #[error("{0}")]
     Invariant(#[from] anyhow::Error),
 }
@@ -352,6 +354,20 @@ pub trait Order: 'static + Send {
     fn trade_ids(&self) -> Vec<&TradeId>;
 
     fn has_price(&self) -> bool;
+
+    /// Returns `true` if a fill with matching trade_id, side, qty, and price already exists.
+    fn is_duplicate_fill(&self, fill: &OrderFilled) -> bool {
+        self.events().iter().any(|event| {
+            if let OrderEventAny::Filled(existing) = event {
+                existing.trade_id == fill.trade_id
+                    && existing.order_side == fill.order_side
+                    && existing.last_qty == fill.last_qty
+                    && existing.last_px == fill.last_px
+            } else {
+                false
+            }
+        })
+    }
 
     fn is_buy(&self) -> bool {
         self.order_side() == OrderSide::Buy
@@ -671,6 +687,13 @@ impl OrderCore {
             OrderStatus::PendingUpdate | OrderStatus::PendingCancel
         ) {
             self.previous_status = Some(self.status);
+        }
+
+        // Check for duplicate fill before state transition to maintain consistency
+        if let OrderEventAny::Filled(fill) = &event
+            && self.trade_ids.contains(&fill.trade_id)
+        {
+            return Err(OrderError::DuplicateFill(fill.trade_id));
         }
 
         let new_status = self.status.transition(&event)?;
@@ -1424,5 +1447,79 @@ mod tests {
         // Order for 2450.5, if fill of 2488.0 arrives
         let overfill = order.calculate_overfill(Quantity::from("2488.0"));
         assert_eq!(overfill, Quantity::from("37.5"));
+    }
+
+    #[rstest]
+    fn test_duplicate_fill_rejected() {
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let fill1 = OrderFilledBuilder::default()
+            .last_qty(Quantity::from(50_000))
+            .trade_id(TradeId::from("TRADE-001"))
+            .build()
+            .unwrap();
+        let fill2_duplicate = OrderFilledBuilder::default()
+            .last_qty(Quantity::from(50_000))
+            .trade_id(TradeId::from("TRADE-001")) // Same trade_id as fill1
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(fill1)).unwrap();
+
+        // Verify first fill applied successfully
+        assert_eq!(order.filled_qty(), Quantity::from(50_000));
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+
+        // Applying duplicate fill should return DuplicateFill error
+        let result = order.apply(OrderEventAny::Filled(fill2_duplicate));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            OrderError::DuplicateFill(trade_id) => {
+                assert_eq!(trade_id, TradeId::from("TRADE-001"));
+            }
+            e => panic!("Expected DuplicateFill error, got: {e:?}"),
+        }
+
+        // Order state should be unchanged after rejected duplicate
+        assert_eq!(order.filled_qty(), Quantity::from(50_000));
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    }
+
+    #[rstest]
+    fn test_different_trade_ids_allowed() {
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let fill1 = OrderFilledBuilder::default()
+            .last_qty(Quantity::from(50_000))
+            .trade_id(TradeId::from("TRADE-001"))
+            .build()
+            .unwrap();
+        let fill2 = OrderFilledBuilder::default()
+            .last_qty(Quantity::from(50_000))
+            .trade_id(TradeId::from("TRADE-002")) // Different trade_id
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(fill1)).unwrap();
+        order.apply(OrderEventAny::Filled(fill2)).unwrap();
+
+        // Both fills should be applied
+        assert_eq!(order.filled_qty(), Quantity::from(100_000));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.trade_ids.len(), 2);
     }
 }

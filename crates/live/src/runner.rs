@@ -16,27 +16,27 @@
 use std::{fmt::Debug, sync::Arc};
 
 use nautilus_common::{
+    live::runner::{set_data_event_sender, set_exec_event_sender},
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport, data::DataCommand, execution::TradingCommand,
     },
     msgbus::{self, switchboard::MessagingSwitchboard},
     runner::{
         DataCommandSender, TimeEventSender, TradingCommandSender, set_data_cmd_sender,
-        set_data_event_sender, set_exec_cmd_sender, set_exec_event_sender, set_time_event_sender,
+        set_exec_cmd_sender, set_time_event_sender,
     },
     timer::TimeEventHandlerV2,
 };
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 /// Asynchronous implementation of `DataCommandSender` for live environments.
 #[derive(Debug)]
 pub struct AsyncDataCommandSender {
-    cmd_tx: UnboundedSender<DataCommand>,
+    cmd_tx: tokio::sync::mpsc::UnboundedSender<DataCommand>,
 }
 
 impl AsyncDataCommandSender {
     #[must_use]
-    pub const fn new(cmd_tx: UnboundedSender<DataCommand>) -> Self {
+    pub const fn new(cmd_tx: tokio::sync::mpsc::UnboundedSender<DataCommand>) -> Self {
         Self { cmd_tx }
     }
 }
@@ -52,12 +52,12 @@ impl DataCommandSender for AsyncDataCommandSender {
 /// Asynchronous implementation of `TimeEventSender` for live environments.
 #[derive(Debug, Clone)]
 pub struct AsyncTimeEventSender {
-    time_tx: UnboundedSender<TimeEventHandlerV2>,
+    time_tx: tokio::sync::mpsc::UnboundedSender<TimeEventHandlerV2>,
 }
 
 impl AsyncTimeEventSender {
     #[must_use]
-    pub const fn new(time_tx: UnboundedSender<TimeEventHandlerV2>) -> Self {
+    pub const fn new(time_tx: tokio::sync::mpsc::UnboundedSender<TimeEventHandlerV2>) -> Self {
         Self { time_tx }
     }
 
@@ -66,7 +66,7 @@ impl AsyncTimeEventSender {
     /// This allows async contexts to get a direct channel sender that
     /// can be moved into async tasks without `RefCell` borrowing issues.
     #[must_use]
-    pub fn get_channel_sender(&self) -> UnboundedSender<TimeEventHandlerV2> {
+    pub fn get_channel_sender(&self) -> tokio::sync::mpsc::UnboundedSender<TimeEventHandlerV2> {
         self.time_tx.clone()
     }
 }
@@ -82,12 +82,12 @@ impl TimeEventSender for AsyncTimeEventSender {
 /// Asynchronous implementation of `TradingCommandSender` for live environments.
 #[derive(Debug)]
 pub struct AsyncTradingCommandSender {
-    cmd_tx: UnboundedSender<TradingCommand>,
+    cmd_tx: tokio::sync::mpsc::UnboundedSender<TradingCommand>,
 }
 
 impl AsyncTradingCommandSender {
     #[must_use]
-    pub const fn new(cmd_tx: UnboundedSender<TradingCommand>) -> Self {
+    pub const fn new(cmd_tx: tokio::sync::mpsc::UnboundedSender<TradingCommand>) -> Self {
         Self { cmd_tx }
     }
 }
@@ -105,13 +105,13 @@ pub trait Runner {
 }
 
 pub struct AsyncRunner {
-    time_evt_rx: UnboundedReceiver<TimeEventHandlerV2>,
-    data_evt_rx: UnboundedReceiver<DataEvent>,
-    data_cmd_rx: UnboundedReceiver<DataCommand>,
-    exec_evt_rx: UnboundedReceiver<ExecutionEvent>,
-    exec_cmd_rx: UnboundedReceiver<TradingCommand>,
-    signal_rx: UnboundedReceiver<()>,
-    signal_tx: UnboundedSender<()>,
+    time_evt_rx: tokio::sync::mpsc::UnboundedReceiver<TimeEventHandlerV2>,
+    data_evt_rx: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_cmd_rx: tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    exec_evt_rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    exec_cmd_rx: tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+    signal_rx: tokio::sync::mpsc::UnboundedReceiver<()>,
+    signal_tx: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 impl Default for AsyncRunner {
@@ -129,7 +129,7 @@ impl Debug for AsyncRunner {
 impl AsyncRunner {
     #[must_use]
     pub fn new() -> Self {
-        use tokio::sync::mpsc::unbounded_channel; // Inlined for readability
+        use tokio::sync::mpsc::unbounded_channel; // tokio-import-ok
 
         let (time_evt_tx, time_evt_rx) = unbounded_channel::<TimeEventHandlerV2>();
         let (data_cmd_tx, data_cmd_rx) = unbounded_channel::<DataCommand>();
@@ -211,6 +211,9 @@ impl AsyncRunner {
     fn handle_data_event(event: DataEvent) {
         match event {
             DataEvent::Data(data) => {
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &data);
+            }
+            DataEvent::Instrument(data) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_process(), &data);
             }
             DataEvent::Response(resp) => {
@@ -789,7 +792,7 @@ mod tests {
         let command = DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
             client_id: Some(ClientId::from("TEST")),
             venue: None,
-            data_type: nautilus_model::data::DataType::new("QuoteTick", None),
+            data_type: DataType::new("QuoteTick", None),
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
             params: None,
@@ -819,9 +822,7 @@ mod tests {
             UnixNanos::from(2),
         );
         exec_evt_tx
-            .send(ExecutionEvent::Order(
-                nautilus_model::events::OrderEventAny::Submitted(order_event),
-            ))
+            .send(ExecutionEvent::Order(OrderEventAny::Submitted(order_event)))
             .unwrap();
 
         // Send execution report (OrderStatus)

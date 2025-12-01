@@ -264,7 +264,7 @@ impl HyperliquidDataConverter {
     fn get_config(&self, symbol: &Ustr) -> HyperliquidInstrumentInfo {
         self.configs.get(symbol).cloned().unwrap_or_else(|| {
             // Create default config with a placeholder instrument_id based on symbol
-            let instrument_id = InstrumentId::from(format!("{}.HYPER", symbol).as_str());
+            let instrument_id = InstrumentId::from(format!("{symbol}.HYPER").as_str());
             HyperliquidInstrumentInfo::default_crypto(instrument_id)
         })
     }
@@ -573,10 +573,10 @@ impl From<anyhow::Error> for ConversionError {
 impl Display for ConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidPrice { value } => write!(f, "Invalid price: {}", value),
-            Self::InvalidSize { value } => write!(f, "Invalid size: {}", value),
+            Self::InvalidPrice { value } => write!(f, "Invalid price: {value}"),
+            Self::InvalidSize { value } => write!(f, "Invalid size: {value}"),
             Self::OrderBookDeltasError(msg) => {
-                write!(f, "OrderBookDeltas error: {}", msg)
+                write!(f, "OrderBookDeltas error: {msg}")
             }
         }
     }
@@ -871,7 +871,7 @@ mod tests {
     where
         T: serde::de::DeserializeOwned,
     {
-        let path = format!("test_data/{}", filename);
+        let path = format!("test_data/{filename}");
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
     }
@@ -1251,7 +1251,7 @@ mod tests {
         assert_eq!(default_model.delete_latency_nanos.as_u64(), 5_000_000);
 
         // Test that Display trait works
-        let display_str = format!("{}", default_model);
+        let display_str = format!("{default_model}");
         assert_eq!(display_str, "LatencyModel()");
     }
 

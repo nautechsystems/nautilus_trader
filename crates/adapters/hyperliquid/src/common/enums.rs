@@ -15,7 +15,7 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus};
+use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus, OrderType, TriggerType};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
@@ -262,7 +262,7 @@ pub enum HyperliquidTriggerPriceType {
     Oracle,
 }
 
-impl From<HyperliquidTriggerPriceType> for nautilus_model::enums::TriggerType {
+impl From<HyperliquidTriggerPriceType> for TriggerType {
     fn from(value: HyperliquidTriggerPriceType) -> Self {
         match value {
             HyperliquidTriggerPriceType::Last => Self::LastPrice,
@@ -272,12 +272,12 @@ impl From<HyperliquidTriggerPriceType> for nautilus_model::enums::TriggerType {
     }
 }
 
-impl From<nautilus_model::enums::TriggerType> for HyperliquidTriggerPriceType {
-    fn from(value: nautilus_model::enums::TriggerType) -> Self {
+impl From<TriggerType> for HyperliquidTriggerPriceType {
+    fn from(value: TriggerType) -> Self {
         match value {
-            nautilus_model::enums::TriggerType::LastPrice => Self::Last,
-            nautilus_model::enums::TriggerType::MarkPrice => Self::Mark,
-            nautilus_model::enums::TriggerType::IndexPrice => Self::Oracle,
+            TriggerType::LastPrice => Self::Last,
+            TriggerType::MarkPrice => Self::Mark,
+            TriggerType::IndexPrice => Self::Oracle,
             _ => Self::Last, // Default fallback
         }
     }
@@ -322,7 +322,7 @@ pub enum HyperliquidConditionalOrderType {
     TrailingStopLimit,
 }
 
-impl From<HyperliquidConditionalOrderType> for nautilus_model::enums::OrderType {
+impl From<HyperliquidConditionalOrderType> for OrderType {
     fn from(value: HyperliquidConditionalOrderType) -> Self {
         match value {
             HyperliquidConditionalOrderType::StopMarket => Self::StopMarket,
@@ -335,16 +335,16 @@ impl From<HyperliquidConditionalOrderType> for nautilus_model::enums::OrderType 
     }
 }
 
-impl From<nautilus_model::enums::OrderType> for HyperliquidConditionalOrderType {
-    fn from(value: nautilus_model::enums::OrderType) -> Self {
+impl From<OrderType> for HyperliquidConditionalOrderType {
+    fn from(value: OrderType) -> Self {
         match value {
-            nautilus_model::enums::OrderType::StopMarket => Self::StopMarket,
-            nautilus_model::enums::OrderType::StopLimit => Self::StopLimit,
-            nautilus_model::enums::OrderType::MarketIfTouched => Self::TakeProfitMarket,
-            nautilus_model::enums::OrderType::LimitIfTouched => Self::TakeProfitLimit,
-            nautilus_model::enums::OrderType::TrailingStopMarket => Self::TrailingStopMarket,
-            nautilus_model::enums::OrderType::TrailingStopLimit => Self::TrailingStopLimit,
-            _ => panic!("Unsupported OrderType for conditional orders: {:?}", value),
+            OrderType::StopMarket => Self::StopMarket,
+            OrderType::StopLimit => Self::StopLimit,
+            OrderType::MarketIfTouched => Self::TakeProfitMarket,
+            OrderType::LimitIfTouched => Self::TakeProfitLimit,
+            OrderType::TrailingStopMarket => Self::TrailingStopMarket,
+            OrderType::TrailingStopLimit => Self::TrailingStopLimit,
+            _ => panic!("Unsupported OrderType for conditional orders: {value:?}"),
         }
     }
 }

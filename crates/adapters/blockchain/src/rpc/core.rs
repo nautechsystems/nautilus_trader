@@ -22,7 +22,6 @@ use nautilus_network::{
     websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use reqwest::header::USER_AGENT;
-use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::rpc::{
@@ -58,7 +57,7 @@ pub struct CoreBlockchainRpcClient {
     /// Channel receiver for consuming WebSocket messages.
     wss_consumer_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Message>>,
     /// Tracks confirmed subscriptions that need to be re-established on reconnection.
-    subscriptions: Arc<RwLock<HashMap<RpcEventType, String>>>,
+    subscriptions: Arc<tokio::sync::RwLock<HashMap<RpcEventType, String>>>,
 }
 
 impl Debug for CoreBlockchainRpcClient {
@@ -96,7 +95,7 @@ impl CoreBlockchainRpcClient {
             pending_subscription_request: HashMap::new(),
             subscription_event_types: HashMap::new(),
             wss_consumer_rx: None,
-            subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         }
     }
 

@@ -646,9 +646,7 @@ mod tests {
                     if aux_value > 0 {
                         assert!(
                             aux_value >= max_aux_seen,
-                            "Acquire/Release contract violated: aux went backwards from {} to {}",
-                            max_aux_seen,
-                            aux_value
+                            "Acquire/Release contract violated: aux went backwards from {max_aux_seen} to {aux_value}"
                         );
                         max_aux_seen = aux_value;
                     }
@@ -666,9 +664,7 @@ mod tests {
                 if final_aux > 0 {
                     assert!(
                         final_aux >= max_aux_seen,
-                        "Acquire/Release contract violated: final aux {} < max {}",
-                        final_aux,
-                        max_aux_seen
+                        "Acquire/Release contract violated: final aux {final_aux} < max {max_aux_seen}"
                     );
                     max_aux_seen = final_aux;
                 }
@@ -724,9 +720,7 @@ mod tests {
                     if aux_value > 0 {
                         assert!(
                             aux_value >= max_aux,
-                            "AcqRel contract violated: aux regressed from {} to {}",
-                            max_aux,
-                            aux_value
+                            "AcqRel contract violated: aux regressed from {max_aux} to {aux_value}"
                         );
                         max_aux = aux_value;
                     }
@@ -744,9 +738,7 @@ mod tests {
                 if final_aux > 0 {
                     assert!(
                         final_aux >= max_aux,
-                        "AcqRel contract violated: final aux {} < max {}",
-                        final_aux,
-                        max_aux
+                        "AcqRel contract violated: final aux {final_aux} < max {max_aux}"
                     );
                     max_aux = final_aux;
                 }

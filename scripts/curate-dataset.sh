@@ -26,9 +26,33 @@
 # Notes:
 # • Only basic validation is performed. The caller is responsible for
 #   ensuring that the licence really permits redistribution.
-# • `curl` and `sha256sum` must be available in the environment.
+# • `curl` must be available in the environment.
+# • Works on both Linux (GNU coreutils) and macOS (BSD).
 
 set -euo pipefail
+
+# Portable sha256 hash function (GNU sha256sum or BSD shasum)
+sha256_file() {
+  if command -v sha256sum > /dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum > /dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    echo "No sha256 tool found (sha256sum/shasum)." >&2
+    exit 1
+  fi
+}
+
+# Portable file size function (GNU stat or BSD stat)
+file_size_bytes() {
+  if stat --version > /dev/null 2>&1; then
+    # GNU stat
+    stat -c%s "$1"
+  else
+    # BSD stat (macOS)
+    stat -f%z "$1"
+  fi
+}
 
 if [[ $# -lt 4 ]]; then
   echo "Usage: $0 <slug> <filename> <download-url> <licence>" >&2
@@ -52,8 +76,8 @@ echo "[curate-dataset] Downloading dataset from ${url}" >&2
 curl -L --fail --retry 3 -o "${target_path}" "${url}"
 
 # Compute checksum and size
-sha256=$(sha256sum "${target_path}" | awk '{print $1}')
-size_bytes=$(stat -c%s "${target_path}")
+sha256=$(sha256_file "${target_path}")
+size_bytes=$(file_size_bytes "${target_path}")
 
 # Write LICENCE file (overwrites if already present)
 echo "${licence}" > "${root_dir}/LICENSE.txt"

@@ -21,6 +21,7 @@ import pytest
 from nautilus_trader.adapters.kraken.config import KrakenDataClientConfig
 from nautilus_trader.adapters.kraken.constants import KRAKEN_VENUE
 from nautilus_trader.adapters.kraken.data import KrakenDataClient
+from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -50,7 +51,7 @@ def data_client_builder(
         ]
 
         config = KrakenDataClientConfig(
-            product_types=("spot",),
+            product_types=(KrakenProductType.SPOT,),
             **(config_kwargs or {}),
         )
 
@@ -62,7 +63,8 @@ def data_client_builder(
 
         client = KrakenDataClient(
             loop=event_loop,
-            client=mock_http_client,
+            http_client_spot=mock_http_client,
+            http_client_futures=None,
             msgbus=msgbus,
             cache=cache,
             clock=live_clock,
@@ -71,8 +73,9 @@ def data_client_builder(
             name=None,
         )
 
-        # Override the WebSocket client with our mock
+        # Override the WebSocket clients with our mock
         client._ws_client = ws_client
+        client._ws_client_spot = ws_client
 
         return client, ws_client, mock_http_client, mock_instrument_provider
 

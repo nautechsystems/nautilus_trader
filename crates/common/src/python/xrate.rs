@@ -13,9 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use ahash::AHashMap;
+use ahash::HashMap;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::enums::PriceType;
 use pyo3::prelude::*;
@@ -46,8 +44,8 @@ pub fn py_get_exchange_rate(
         Ustr::from(from_currency),
         Ustr::from(to_currency),
         price_type,
-        AHashMap::from_iter(quotes_bid),
-        AHashMap::from_iter(quotes_ask),
+        quotes_bid.into_iter().collect(),
+        quotes_ask.into_iter().collect(),
     )
     .map_err(to_pyvalue_err)
 }

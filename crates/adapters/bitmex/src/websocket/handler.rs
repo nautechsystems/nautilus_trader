@@ -850,7 +850,7 @@ impl FeedHandler {
                 }
 
                 // Update instruments_cache with new instruments
-                for (symbol, instrument) in temp_cache.iter() {
+                for (symbol, instrument) in &temp_cache {
                     self.instruments_cache.insert(*symbol, instrument.clone());
                 }
 

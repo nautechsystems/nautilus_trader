@@ -185,7 +185,7 @@ async fn init_instrument_cache(client: &BybitHttpClient) {
 #[tokio::test]
 async fn test_bars_chronological_order_single_page() {
     let addr = start_pagination_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -234,7 +234,7 @@ async fn test_bars_chronological_order_single_page() {
 #[tokio::test]
 async fn test_bars_chronological_order_multiple_pages() {
     let addr = start_pagination_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -286,7 +286,7 @@ async fn test_bars_chronological_order_multiple_pages() {
 #[tokio::test]
 async fn test_bars_limit_returns_most_recent() {
     let addr = start_pagination_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -328,8 +328,7 @@ async fn test_bars_limit_returns_most_recent() {
     let time_diff = (end - last_bar_time).num_minutes().abs();
     assert!(
         time_diff < 100,
-        "Last bar should be close to end time, but was {} minutes away",
-        time_diff
+        "Last bar should be close to end time, but was {time_diff} minutes away"
     );
 }
 
@@ -416,7 +415,7 @@ fn test_open_orders_response_empty_cursor() {
     assert_eq!(response.ret_code, 0);
     assert!(response.result.list.is_empty());
     // Empty string should deserialize to Some("")
-    assert_eq!(response.result.next_page_cursor, Some("".to_string()));
+    assert_eq!(response.result.next_page_cursor, Some(String::new()));
 }
 
 /// Test that order history response supports cursor pagination
@@ -493,7 +492,7 @@ fn test_pagination_loop_pattern() {
     let mut all_items: Vec<String> = Vec::new();
     let mut page_count = 0;
 
-    for response_json in responses.iter() {
+    for response_json in &responses {
         #[derive(serde::Deserialize)]
         struct MockResponse {
             result: MockResult,
@@ -523,7 +522,7 @@ fn test_pagination_loop_pattern() {
 /// Test that pagination stops on empty cursor
 #[rstest]
 fn test_pagination_stops_on_empty_cursor() {
-    let cursor: Option<String> = Some("".to_string());
+    let cursor: Option<String> = Some(String::new());
 
     // This is the termination condition used in the pagination loops
     let should_stop = cursor.is_none() || cursor.as_ref().is_none_or(|c| c.is_empty());

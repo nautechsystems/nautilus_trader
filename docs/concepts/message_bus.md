@@ -248,7 +248,7 @@ Here's a quick reference to help you decide which messaging style to use:
 |:--------------------------------------------|:--------------------------------------------------------------------------------|:-------------------|
 | Custom events or system-level communication | `MessageBus` + Pub/Sub to topic                                                 | Topic + Handler management |
 | Structured trading data                     | `Actor` + Pub/Sub Data + optional `@customdataclass` if serialization is needed | New class definition inheriting from `Data` (handler `on_data` is predefined) |
-| Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Just signal name |
+| Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Signal name only |
 
 ## External publishing
 
@@ -388,8 +388,8 @@ specifying which types of messages should be excluded from external publication.
 
 ```python
 from nautilus_trader.config import MessageBusConfig
-from nautilus_trader.data import TradeTick
-from nautilus_trader.data import QuoteTick
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 
 # Create a MessageBusConfig instance with types filtering
 message_bus = MessageBusConfig(

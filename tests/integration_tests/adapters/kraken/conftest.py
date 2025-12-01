@@ -102,7 +102,7 @@ def account_state(account_id) -> AccountState:
 
 @pytest.fixture
 def mock_http_client():
-    mock = MagicMock(spec=nautilus_pyo3.KrakenHttpClient)
+    mock = MagicMock(spec=nautilus_pyo3.KrakenSpotHttpClient)
     mock.api_key = "test_api_key"
     mock.api_secret = "test_api_secret"
 
@@ -115,7 +115,7 @@ def mock_http_client():
 
 
 def _create_ws_mock() -> MagicMock:
-    mock = MagicMock(spec=nautilus_pyo3.KrakenWebSocketClient)
+    mock = MagicMock(spec=nautilus_pyo3.KrakenSpotWebSocketClient)
     mock.url = "wss://ws.kraken.com/v2"
     mock.is_closed = MagicMock(return_value=False)
     mock.is_active = AsyncMock(return_value=True)

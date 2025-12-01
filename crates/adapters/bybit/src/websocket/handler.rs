@@ -39,7 +39,6 @@ use nautilus_network::{
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
 };
-use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -125,7 +124,7 @@ pub enum HandlerCommand {
 }
 
 /// Type alias for the funding rate cache.
-type FundingCache = Arc<RwLock<AHashMap<Ustr, (Option<String>, Option<String>)>>>;
+type FundingCache = Arc<tokio::sync::RwLock<AHashMap<Ustr, (Option<String>, Option<String>)>>>;
 
 /// Data cached for pending place requests to correlate with responses.
 type PlaceRequestData = (ClientOrderId, TraderId, StrategyId, InstrumentId);
@@ -1532,7 +1531,7 @@ mod tests {
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
         let auth_tracker = AuthTracker::new();
         let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER);
-        let funding_cache = Arc::new(RwLock::new(AHashMap::new()));
+        let funding_cache = Arc::new(tokio::sync::RwLock::new(AHashMap::new()));
 
         FeedHandler::new(
             signal,
@@ -1626,8 +1625,7 @@ mod tests {
             let id = handler.generate_unique_request_id();
             assert!(
                 ids.insert(id.clone()),
-                "Generated duplicate request ID: {}",
-                id
+                "Generated duplicate request ID: {id}"
             );
         }
         assert_eq!(ids.len(), 100);

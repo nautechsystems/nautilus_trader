@@ -17,7 +17,7 @@
 
 use crate::common::{
     enums::{KrakenEnvironment, KrakenProductType},
-    urls::{get_http_base_url, get_ws_private_url, get_ws_public_url},
+    urls::{get_kraken_http_base_url, get_kraken_ws_private_url, get_kraken_ws_public_url},
 };
 
 #[derive(Debug, Clone)]
@@ -59,21 +59,21 @@ impl KrakenDataClientConfig {
     }
 
     pub fn http_base_url(&self) -> String {
-        self.base_url
-            .clone()
-            .unwrap_or_else(|| get_http_base_url(self.product_type, self.environment).to_string())
+        self.base_url.clone().unwrap_or_else(|| {
+            get_kraken_http_base_url(self.product_type, self.environment).to_string()
+        })
     }
 
     pub fn ws_public_url(&self) -> String {
-        self.ws_public_url
-            .clone()
-            .unwrap_or_else(|| get_ws_public_url(self.product_type, self.environment).to_string())
+        self.ws_public_url.clone().unwrap_or_else(|| {
+            get_kraken_ws_public_url(self.product_type, self.environment).to_string()
+        })
     }
 
     pub fn ws_private_url(&self) -> String {
-        self.ws_private_url
-            .clone()
-            .unwrap_or_else(|| get_ws_private_url(self.product_type, self.environment).to_string())
+        self.ws_private_url.clone().unwrap_or_else(|| {
+            get_kraken_ws_private_url(self.product_type, self.environment).to_string()
+        })
     }
 }
 
@@ -93,14 +93,14 @@ pub struct KrakenExecClientConfig {
 
 impl KrakenExecClientConfig {
     pub fn http_base_url(&self) -> String {
-        self.base_url
-            .clone()
-            .unwrap_or_else(|| get_http_base_url(self.product_type, self.environment).to_string())
+        self.base_url.clone().unwrap_or_else(|| {
+            get_kraken_http_base_url(self.product_type, self.environment).to_string()
+        })
     }
 
     pub fn ws_url(&self) -> String {
-        self.ws_url
-            .clone()
-            .unwrap_or_else(|| get_ws_private_url(self.product_type, self.environment).to_string())
+        self.ws_url.clone().unwrap_or_else(|| {
+            get_kraken_ws_private_url(self.product_type, self.environment).to_string()
+        })
     }
 }

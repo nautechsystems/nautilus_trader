@@ -621,11 +621,7 @@ impl SubmitBroadcaster {
         let actual_tries = if let Some(t) = submit_tries {
             if t > pool_size {
                 // Use log macro for Python visibility for now
-                log::warn!(
-                    "submit_tries={} exceeds pool_size={}, capping at pool_size",
-                    t,
-                    pool_size
-                );
+                log::warn!("submit_tries={t} exceeds pool_size={pool_size}, capping at pool_size");
             }
             std::cmp::min(t, pool_size)
         } else {
@@ -691,7 +687,7 @@ impl SubmitBroadcaster {
         self.process_submit_results(
             handles,
             "Submit",
-            format!("(client_order_id={:?})", client_order_id),
+            format!("(client_order_id={client_order_id:?})"),
         )
         .await
     }
@@ -741,6 +737,7 @@ impl SubmitBroadcaster {
         }
     }
 
+    #[must_use]
     pub fn clone_for_async(&self) -> Self {
         Self {
             config: self.config.clone(),

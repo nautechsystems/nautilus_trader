@@ -15,8 +15,7 @@
 
 //! Python bindings for reconciliation functions.
 
-use std::collections::HashMap;
-
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::{UUID4, UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
@@ -80,7 +79,7 @@ pub fn py_adjust_fills_for_partial_window(
             let fills_dict = PyDict::new(py);
 
             // Add all orders for this instrument
-            for (venue_order_id, order) in all_orders.iter() {
+            for (venue_order_id, order) in &all_orders {
                 if order.instrument_id == instrument_id {
                     orders_dict
                         .set_item(venue_order_id.to_string(), order.clone().into_py_any(py)?)?;
@@ -88,7 +87,7 @@ pub fn py_adjust_fills_for_partial_window(
             }
 
             // Add all fills for this instrument
-            for (venue_order_id, fills) in all_fills.iter() {
+            for (venue_order_id, fills) in &all_fills {
                 if let Some(first_fill) = fills.first()
                     && first_fill.instrument_id == instrument_id
                 {
@@ -127,8 +126,8 @@ pub fn py_adjust_fills_for_partial_window(
 
     // Extract fills for this instrument and convert to FillSnapshot
     let mut fill_snapshots = Vec::new();
-    let mut fill_map: HashMap<VenueOrderId, Vec<FillReport>> = HashMap::new();
-    let mut order_map: HashMap<VenueOrderId, OrderStatusReport> = HashMap::new();
+    let mut fill_map: AHashMap<VenueOrderId, Vec<FillReport>> = AHashMap::new();
+    let mut order_map: AHashMap<VenueOrderId, OrderStatusReport> = AHashMap::new();
 
     // Seed order_map with ALL orders for this instrument (including those without fills)
     for (venue_order_id, order) in mass_status_obj.order_reports() {
@@ -279,10 +278,10 @@ pub fn py_adjust_fills_for_partial_window(
             )?;
 
             // Return ONLY the synthetic order and fill using the real venue_order_id
-            let mut adjusted_orders = HashMap::new();
+            let mut adjusted_orders = AHashMap::new();
             adjusted_orders.insert(first_venue_order_id, synthetic_order);
 
-            let mut adjusted_fills = HashMap::new();
+            let mut adjusted_fills = AHashMap::new();
             adjusted_fills.insert(first_venue_order_id, vec![synthetic_fill_report]);
 
             (adjusted_orders, adjusted_fills)
@@ -292,12 +291,11 @@ pub fn py_adjust_fills_for_partial_window(
             current_lifecycle_fills: _,
         } => {
             // Filter fills to only those AFTER last zero-crossing
-            let mut result_fills = HashMap::new();
-            let mut result_orders = HashMap::new();
+            let mut result_fills = AHashMap::new();
+            let mut result_orders = AHashMap::new();
 
             // Track which orders had fills in the original fill_map
-            let orders_with_fills: std::collections::HashSet<VenueOrderId> =
-                fill_map.keys().copied().collect();
+            let orders_with_fills: AHashSet<VenueOrderId> = fill_map.keys().copied().collect();
 
             // First, process orders that have fills
             for (venue_order_id, fills) in fill_map {
@@ -345,7 +343,7 @@ fn create_synthetic_venue_order_id(ts_event: u64) -> VenueOrderId {
     // Use hex timestamp and first 8 chars of UUID for uniqueness while keeping it short
     let uuid_str = uuid.to_string();
     let uuid_suffix = &uuid_str[..8];
-    let venue_order_id_value = format!("S-{:x}-{}", ts_event, uuid_suffix);
+    let venue_order_id_value = format!("S-{ts_event:x}-{uuid_suffix}");
     VenueOrderId::new(&venue_order_id_value)
 }
 
@@ -423,11 +421,11 @@ fn create_synthetic_fill_report(
     ))
 }
 
-/// Convert HashMaps of orders and fills to Python tuple of dicts.
+/// Convert AHashMaps of orders and fills to Python tuple of dicts.
 fn py_tuple_from_reports(
     py: Python<'_>,
-    order_map: &HashMap<VenueOrderId, OrderStatusReport>,
-    fill_map: &HashMap<VenueOrderId, Vec<FillReport>>,
+    order_map: &AHashMap<VenueOrderId, OrderStatusReport>,
+    fill_map: &AHashMap<VenueOrderId, Vec<FillReport>>,
 ) -> PyResult<Py<PyTuple>> {
     // Create order reports dict
     let orders_dict = PyDict::new(py);

@@ -62,14 +62,17 @@ impl PortfolioStatistic for ProfitFactor {
             return Some(f64::NAN);
         }
 
+        // Zero returns are excluded from both sums (neither profit nor loss)
         let (positive_returns_sum, negative_returns_sum) =
             returns
                 .values()
                 .fold((0.0, 0.0), |(pos_sum, neg_sum), &pnl| {
-                    if pnl >= 0.0 {
+                    if pnl > 0.0 {
                         (pos_sum + pnl, neg_sum)
-                    } else {
+                    } else if pnl < 0.0 {
                         (pos_sum, neg_sum + pnl)
+                    } else {
+                        (pos_sum, neg_sum)
                     }
                 });
 
@@ -157,7 +160,7 @@ mod profit_factor_tests {
         let returns = create_returns(vec![10.0, 0.0, -20.0, -30.0]);
         let result = profit_factor.calculate_from_returns(&returns);
         assert!(result.is_some());
-        // (10.0 + 0.0) / |-20.0 + -30.0| = 10 / 50 = 0.2
+        // Zero excluded: 10.0 / |-20.0 + -30.0| = 10 / 50 = 0.2
         assert!(approx_eq!(f64, result.unwrap(), 0.2, epsilon = 1e-9));
     }
 

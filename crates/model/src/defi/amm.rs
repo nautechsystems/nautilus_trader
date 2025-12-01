@@ -201,7 +201,7 @@ impl Display for Pool {
             self.instrument_id,
             self.dex.name,
             self.fee
-                .map_or("None".to_string(), |fee| format!("fee={}, ", fee)),
+                .map_or("None".to_string(), |fee| format!("fee={fee}, ")),
             self.address
         )
     }

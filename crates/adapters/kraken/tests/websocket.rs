@@ -33,19 +33,18 @@ use axum::{
 use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 use nautilus_kraken::{
     common::parse::parse_spot_instrument, config::KrakenDataClientConfig,
-    http::models::AssetPairInfo, websocket::client::KrakenWebSocketClient,
+    http::models::AssetPairInfo, websocket::spot_v2::client::KrakenSpotWebSocketClient,
 };
 use nautilus_model::{data::BarType, identifiers::InstrumentId, instruments::InstrumentAny};
 use rstest::rstest;
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Default)]
 struct TestServerState {
-    connection_count: Arc<Mutex<usize>>,
-    subscriptions: Arc<Mutex<Vec<Value>>>,
-    unsubscriptions: Arc<Mutex<Vec<Value>>>,
+    connection_count: Arc<tokio::sync::Mutex<usize>>,
+    subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     send_ping: Arc<AtomicBool>,
     received_pong: Arc<AtomicBool>,
     drop_next_connection: Arc<AtomicBool>,
@@ -243,7 +242,7 @@ async fn test_websocket_connection() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     let result = client.connect().await;
@@ -267,7 +266,7 @@ async fn test_websocket_is_active_lifecycle() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
 
     assert!(!client.is_active());
     assert!(client.is_closed());
@@ -296,7 +295,7 @@ async fn test_websocket_subscribe_quotes() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -328,7 +327,7 @@ async fn test_websocket_subscribe_trades() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -359,7 +358,7 @@ async fn test_websocket_subscribe_book() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -390,7 +389,7 @@ async fn test_websocket_subscribe_bars() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -421,7 +420,7 @@ async fn test_websocket_unsubscribe_quotes() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -455,7 +454,7 @@ async fn test_websocket_unsubscribe_trades() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -489,7 +488,7 @@ async fn test_websocket_unsubscribe_book() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -526,7 +525,7 @@ async fn test_websocket_unsubscribe_bars() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -561,7 +560,7 @@ async fn test_websocket_send_ping() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
 
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
@@ -587,7 +586,7 @@ async fn test_websocket_multiple_subscriptions() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -622,7 +621,7 @@ async fn test_websocket_get_subscriptions() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     client.connect().await.unwrap();
@@ -654,7 +653,7 @@ async fn test_websocket_wait_until_active_timeout() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
 
     // Connection will fail, so wait_until_active should timeout
     let _ = client.connect().await; // May or may not succeed initially
@@ -674,7 +673,7 @@ async fn test_websocket_disconnect_and_close() {
         ..Default::default()
     };
 
-    let mut client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
 
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
@@ -686,7 +685,7 @@ async fn test_websocket_disconnect_and_close() {
     assert!(!client.is_active());
 
     // Test that close also works
-    let mut client2 = KrakenWebSocketClient::new(
+    let mut client2 = KrakenSpotWebSocketClient::new(
         KrakenDataClientConfig {
             ws_public_url: Some(url),
             ..Default::default()
@@ -711,7 +710,7 @@ async fn test_websocket_cancel_all_requests() {
         ..Default::default()
     };
 
-    let client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
 
     // Verify cancellation token is accessible before cancelling
     let token = client.cancellation_token();
@@ -733,7 +732,7 @@ async fn test_websocket_url_getter() {
         ..Default::default()
     };
 
-    let client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
 
     assert_eq!(client.url(), url);
 }
@@ -749,7 +748,7 @@ async fn test_websocket_cache_instrument() {
         ..Default::default()
     };
 
-    let client = KrakenWebSocketClient::new(config, CancellationToken::new());
+    let client = KrakenSpotWebSocketClient::new(config, CancellationToken::new());
     let instruments = load_instruments();
 
     // Cache individual instrument

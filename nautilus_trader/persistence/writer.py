@@ -37,6 +37,7 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import urisafe_identifier
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
@@ -116,7 +117,7 @@ class StreamingFeatherWriter:
 
         if self.fs.exists(self.path) and replace:
             for fn in self.fs.ls(self.path):
-                self.fs.rm(fn)
+                self.fs.rm(fn, recursive=True)
 
             self.fs.rmdir(self.path)
 
@@ -246,6 +247,8 @@ class StreamingFeatherWriter:
             # Use the appropriate key for file size tracking
             if isinstance(obj, Bar):
                 size_key = (table, str(obj.bar_type))
+            elif isinstance(obj, Instrument):
+                size_key = (table, obj.id.value)
             elif use_per_instrument_writer:
                 size_key = (table, actual_data.instrument_id.value)
             else:
@@ -435,6 +438,10 @@ class StreamingFeatherWriter:
             return
 
         schema = self._schemas[cls]
+
+        # Add metadata for Instrument subclasses so it's preserved in feather files
+        schema = schema.with_metadata({"class": cls.__name__})
+
         timestamp = self.clock.timestamp_ns()
         full_path = f"{self.path}/{table_name}_{timestamp}.feather"
 

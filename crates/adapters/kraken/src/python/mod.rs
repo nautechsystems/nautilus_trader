@@ -18,45 +18,50 @@
 use pyo3::prelude::*;
 
 use crate::{
-    common::enums::{
-        KrakenAssetClass, KrakenEnvironment, KrakenOrderSide, KrakenOrderStatus, KrakenOrderType,
-        KrakenPairStatus, KrakenPositionSide, KrakenProductType, KrakenSystemStatus,
-        KrakenTimeInForce,
-    },
-    http::client::KrakenHttpClient,
+    common::enums::{KrakenEnvironment, KrakenProductType},
+    http::{KrakenFuturesHttpClient, KrakenSpotHttpClient},
     websocket::{
-        client::KrakenWebSocketClient,
-        enums::{KrakenWsChannel, KrakenWsMessageType, KrakenWsMethod},
+        futures::client::KrakenFuturesWebSocketClient, spot_v2::client::KrakenSpotWebSocketClient,
     },
 };
 
 pub mod enums;
-pub mod http;
+pub mod http_futures;
+pub mod http_spot;
 pub mod urls;
-pub mod websocket;
+pub mod websocket_futures;
+pub mod websocket_spot;
+
+/// Determines the product type from a Kraken symbol.
+///
+/// Futures symbols have the following prefixes:
+/// - `PI_` - Perpetual Inverse futures (e.g., `PI_XBTUSD`)
+/// - `PF_` - Perpetual Fixed-margin futures (e.g., `PF_XBTUSD`)
+/// - `FI_` - Fixed maturity Inverse futures (e.g., `FI_XBTUSD_230929`)
+/// - `FF_` - Flex futures
+///
+/// All other symbols are considered spot.
+#[pyfunction]
+#[pyo3(name = "kraken_product_type_from_symbol")]
+fn py_kraken_product_type_from_symbol(symbol: &str) -> KrakenProductType {
+    crate::common::enums::product_type_from_symbol(symbol)
+}
 
 #[pymodule]
 pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KrakenEnvironment>()?;
     m.add_class::<KrakenProductType>()?;
-    m.add_class::<KrakenOrderType>()?;
-    m.add_class::<KrakenOrderSide>()?;
-    m.add_class::<KrakenTimeInForce>()?;
-    m.add_class::<KrakenOrderStatus>()?;
-    m.add_class::<KrakenPositionSide>()?;
-    m.add_class::<KrakenPairStatus>()?;
-    m.add_class::<KrakenSystemStatus>()?;
-    m.add_class::<KrakenAssetClass>()?;
-    m.add_class::<KrakenWsMethod>()?;
-    m.add_class::<KrakenWsChannel>()?;
-    m.add_class::<KrakenWsMessageType>()?;
+    // HTTP clients
+    m.add_class::<KrakenSpotHttpClient>()?;
+    m.add_class::<KrakenFuturesHttpClient>()?;
+    // WebSocket clients
+    m.add_class::<KrakenSpotWebSocketClient>()?;
+    m.add_class::<KrakenFuturesWebSocketClient>()?;
 
-    m.add_class::<KrakenHttpClient>()?;
-    m.add_class::<KrakenWebSocketClient>()?;
-
-    m.add_function(wrap_pyfunction!(urls::py_get_http_base_url, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::py_get_ws_public_url, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::py_get_ws_private_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_kraken_get_http_base_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_kraken_ws_public_url, m)?)?;
+    m.add_function(wrap_pyfunction!(urls::py_get_kraken_ws_private_url, m)?)?;
+    m.add_function(wrap_pyfunction!(py_kraken_product_type_from_symbol, m)?)?;
 
     Ok(())
 }

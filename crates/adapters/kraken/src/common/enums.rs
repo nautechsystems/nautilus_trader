@@ -15,6 +15,7 @@
 
 //! Enumerations that model Kraken string/int enums across HTTP and WebSocket payloads.
 
+use nautilus_model::enums::{OrderSide, OrderStatus, OrderType};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumString, FromRepr};
 
@@ -35,7 +36,13 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.kraken",
+        eq,
+        eq_int,
+        frozen,
+        hash
+    )
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
@@ -62,7 +69,13 @@ pub enum KrakenEnvironment {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.kraken",
+        eq,
+        eq_int,
+        frozen,
+        hash
+    )
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
@@ -311,4 +324,245 @@ pub enum KrakenSystemStatus {
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
 pub enum KrakenAssetClass {
     Currency,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+pub enum KrakenFuturesOrderType {
+    #[serde(rename = "lmt")]
+    #[strum(serialize = "lmt")]
+    Limit,
+    #[serde(rename = "ioc")]
+    #[strum(serialize = "ioc")]
+    Ioc,
+    #[serde(rename = "post")]
+    #[strum(serialize = "post")]
+    Post,
+    #[serde(rename = "mkt")]
+    #[strum(serialize = "mkt")]
+    Market,
+    #[serde(rename = "stp")]
+    #[strum(serialize = "stp")]
+    Stop,
+    #[serde(rename = "take_profit")]
+    #[strum(serialize = "take_profit")]
+    TakeProfit,
+    #[serde(rename = "stop_loss")]
+    #[strum(serialize = "stop_loss")]
+    StopLoss,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+)]
+#[serde(rename_all = "camelCase")]
+#[strum(ascii_case_insensitive, serialize_all = "camelCase")]
+pub enum KrakenFuturesOrderStatus {
+    Untouched,
+    PartiallyFilled,
+    Filled,
+    Cancelled,
+    Expired,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+pub enum KrakenTriggerSignal {
+    Last,
+    Mark,
+    Index,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+pub enum KrakenFillType {
+    Maker,
+    Taker,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+pub enum KrakenApiResult {
+    Success,
+    Error,
+}
+
+impl From<KrakenOrderSide> for OrderSide {
+    fn from(value: KrakenOrderSide) -> Self {
+        match value {
+            KrakenOrderSide::Buy => Self::Buy,
+            KrakenOrderSide::Sell => Self::Sell,
+        }
+    }
+}
+
+impl From<KrakenOrderType> for OrderType {
+    fn from(value: KrakenOrderType) -> Self {
+        match value {
+            KrakenOrderType::Market => Self::Market,
+            KrakenOrderType::Limit => Self::Limit,
+            KrakenOrderType::StopLoss => Self::StopMarket,
+            KrakenOrderType::TakeProfit => Self::MarketIfTouched,
+            KrakenOrderType::StopLossLimit => Self::StopLimit,
+            KrakenOrderType::TakeProfitLimit => Self::LimitIfTouched,
+            KrakenOrderType::SettlePosition => Self::Market,
+        }
+    }
+}
+
+impl From<KrakenOrderStatus> for OrderStatus {
+    fn from(value: KrakenOrderStatus) -> Self {
+        match value {
+            KrakenOrderStatus::Pending => Self::Initialized,
+            KrakenOrderStatus::Open => Self::Accepted,
+            KrakenOrderStatus::Closed => Self::Filled,
+            KrakenOrderStatus::Canceled => Self::Canceled,
+            KrakenOrderStatus::Expired => Self::Expired,
+        }
+    }
+}
+
+impl From<KrakenFuturesOrderType> for OrderType {
+    fn from(value: KrakenFuturesOrderType) -> Self {
+        match value {
+            KrakenFuturesOrderType::Limit
+            | KrakenFuturesOrderType::Ioc
+            | KrakenFuturesOrderType::Post => Self::Limit,
+            KrakenFuturesOrderType::Market => Self::Market,
+            KrakenFuturesOrderType::Stop => Self::StopMarket,
+            KrakenFuturesOrderType::TakeProfit => Self::MarketIfTouched,
+            KrakenFuturesOrderType::StopLoss => Self::StopMarket,
+        }
+    }
+}
+
+impl From<OrderSide> for KrakenOrderSide {
+    fn from(value: OrderSide) -> Self {
+        match value {
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
+            OrderSide::NoOrderSide => Self::Buy, // Default fallback
+        }
+    }
+}
+
+impl From<KrakenFuturesOrderStatus> for OrderStatus {
+    fn from(value: KrakenFuturesOrderStatus) -> Self {
+        match value {
+            KrakenFuturesOrderStatus::Untouched => Self::Accepted,
+            KrakenFuturesOrderStatus::PartiallyFilled => Self::PartiallyFilled,
+            KrakenFuturesOrderStatus::Filled => Self::Filled,
+            KrakenFuturesOrderStatus::Cancelled => Self::Canceled,
+            KrakenFuturesOrderStatus::Expired => Self::Expired,
+        }
+    }
+}
+
+/// Determines the product type from a Kraken symbol.
+///
+/// Futures symbols have the following prefixes:
+/// - `PI_` - Perpetual Inverse futures (e.g., `PI_XBTUSD`)
+/// - `PF_` - Perpetual Fixed-margin futures (e.g., `PF_XBTUSD`)
+/// - `FI_` - Fixed maturity Inverse futures (e.g., `FI_XBTUSD_230929`)
+/// - `FF_` - Flex futures
+///
+/// All other symbols are considered spot.
+#[must_use]
+pub fn product_type_from_symbol(symbol: &str) -> KrakenProductType {
+    if symbol.starts_with("PI_")
+        || symbol.starts_with("PF_")
+        || symbol.starts_with("FI_")
+        || symbol.starts_with("FF_")
+    {
+        KrakenProductType::Futures
+    } else {
+        KrakenProductType::Spot
+    }
 }

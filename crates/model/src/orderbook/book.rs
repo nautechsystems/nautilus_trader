@@ -15,8 +15,9 @@
 
 //! A performant, generic, multi-purpose order book.
 
-use std::{collections::HashSet, fmt::Display};
+use std::fmt::Display;
 
+use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
 use rust_decimal::Decimal;
@@ -198,7 +199,7 @@ impl OrderBook {
         // Collect prices to remove for asks (prices <= best_bid)
         let mut ask_prices_to_remove = Vec::new();
         if clear_asks {
-            for (bp, _level) in self.asks.levels.iter() {
+            for bp in self.asks.levels.keys() {
                 if bp.value <= best_bid {
                     ask_prices_to_remove.push(*bp);
                 } else {
@@ -210,7 +211,7 @@ impl OrderBook {
         // Collect prices to remove for bids (prices >= best_ask)
         let mut bid_prices_to_remove = Vec::new();
         if clear_bids {
-            for (bp, _level) in self.bids.levels.iter() {
+            for bp in self.bids.levels.keys() {
                 if bp.value >= best_ask {
                     bid_prices_to_remove.push(*bp);
                 } else {
@@ -435,7 +436,7 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -463,7 +464,7 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -492,7 +493,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -518,7 +519,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<AHashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -652,7 +653,7 @@ impl OrderBook {
                 self.sequence, sequence
             );
             debug_assert!(sequence >= self.sequence, "{}", msg);
-            log::warn!("{}", msg);
+            log::warn!("{msg}");
         }
 
         if ts_event < self.ts_last {
@@ -661,7 +662,7 @@ impl OrderBook {
                 self.ts_last, ts_event
             );
             debug_assert!(ts_event >= self.ts_last, "{}", msg);
-            log::warn!("{}", msg);
+            log::warn!("{msg}");
         }
 
         if self.update_count == u64::MAX {

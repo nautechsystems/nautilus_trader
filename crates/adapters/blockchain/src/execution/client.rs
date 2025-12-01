@@ -13,67 +13,99 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use nautilus_common::{
-    messages::{
-        ExecutionEvent,
-        execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount,
-            QueryOrder, SubmitOrder, SubmitOrderList,
-        },
-    },
-    runner::get_exec_event_sender,
+use nautilus_common::messages::execution::{
+    BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+    GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount, QueryOrder,
+    SubmitOrder, SubmitOrderList,
 };
 use nautilus_core::UnixNanos;
 use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
 use nautilus_live::execution::client::LiveExecutionClient;
 use nautilus_model::{
     accounts::AccountAny,
-    defi::{SharedChain, validation::validate_address},
+    defi::{
+        SharedChain, Token,
+        validation::validate_address,
+        wallet::{TokenBalance, WalletBalance},
+    },
     enums::OmsType,
     identifiers::{AccountId, ClientId, Venue},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money},
 };
 
-use crate::{config::BlockchainExecutionClientConfig, rpc::http::BlockchainHttpRpcClient};
+use crate::{
+    cache::BlockchainCache, config::BlockchainExecutionClientConfig,
+    contracts::erc20::Erc20Contract, rpc::http::BlockchainHttpRpcClient,
+};
 
-#[derive(Debug, Clone)]
+/// Execution client for blockchain interactions including balance tracking and order execution.
+#[derive(Debug)]
 pub struct BlockchainExecutionClient {
+    /// Core execution client providing base functionality.
     core: ExecutionClientCore,
+    /// Cache for storing token metadata and other blockchain data.
+    cache: BlockchainCache,
+    /// The blockchain network configuration.
     chain: SharedChain,
+    /// The wallet address used for transactions and balance queries.
     wallet_address: Address,
+    /// Tracks native currency and ERC-20 token balances.
+    wallet_balance: WalletBalance,
+    /// Contract interface for ERC-20 token interactions.
+    erc20_contract: Erc20Contract,
+    /// Whether the client is currently connected.
     connected: bool,
+    /// HTTP RPC client for blockchain queries.
     http_rpc_client: Arc<BlockchainHttpRpcClient>,
 }
 
 impl BlockchainExecutionClient {
     /// Creates a new [`BlockchainExecutionClient`] instance for the specified configuration.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the wallet address in the configuration is invalid or malformed.
-    #[must_use]
-    pub fn new(core_client: ExecutionClientCore, config: BlockchainExecutionClientConfig) -> Self {
+    /// Returns an error if the wallet address or any token address in the config is invalid.
+    pub fn new(
+        core_client: ExecutionClientCore,
+        config: BlockchainExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
+        let chain = Arc::new(config.chain);
+        let cache = BlockchainCache::new(chain.clone());
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             config.http_rpc_url.clone(),
             config.rpc_requests_per_second,
         ));
-        let wallet_address =
-            validate_address(config.wallet_address.as_str()).expect("Invalid wallet address");
-        Self {
+        let wallet_address = validate_address(config.wallet_address.as_str())?;
+        let erc20_contract = Erc20Contract::new(http_rpc_client.clone(), true);
+
+        // Initialize token universe, so we can fetch them from the blockchain later.
+        let mut token_universe = HashSet::new();
+        if let Some(specified_tokens) = config.tokens {
+            for token in specified_tokens {
+                let token_address = validate_address(token.as_str())?;
+                token_universe.insert(token_address);
+            }
+        }
+        let wallet_balance = WalletBalance::new(token_universe);
+
+        Ok(Self {
             core: core_client,
             connected: false,
-            chain: Arc::new(config.chain),
+            wallet_balance,
+            chain,
+            cache,
+            erc20_contract,
             http_rpc_client,
             wallet_address,
-        }
+        })
     }
 
+    /// Fetches the native currency balance (e.g., ETH) for the wallet from the blockchain.
     async fn fetch_native_currency_balance(&self) -> anyhow::Result<Money> {
         let balance_u256 = self
             .http_rpc_client
@@ -88,17 +120,73 @@ impl BlockchainExecutionClient {
         Ok(balance)
     }
 
-    async fn refresh_wallet_balances(&self) {
-        if let Ok(native_balance) = self.fetch_native_currency_balance().await {
-            tracing::info!(
-                "Blockchain wallet balance: {} {}",
-                native_balance.as_decimal(),
-                native_balance.currency
+    /// Fetches the balance of a specific ERC-20 token for the wallet.
+    async fn fetch_token_balance(
+        &mut self,
+        token_address: &Address,
+    ) -> anyhow::Result<TokenBalance> {
+        // Get the cached token or fetch it from the blockchain and cache it.
+        let token = if let Some(token) = self.cache.get_token(token_address) {
+            token.to_owned()
+        } else {
+            let token_info = self.erc20_contract.fetch_token_info(token_address).await?;
+            let token = Token::new(
+                self.chain.clone(),
+                *token_address,
+                token_info.name,
+                token_info.symbol,
+                token_info.decimals,
             );
+            self.cache.add_token(token.clone()).await?;
+            token
+        };
+
+        let amount = self
+            .erc20_contract
+            .balance_of(token_address, &self.wallet_address)
+            .await?;
+        let token_balance = TokenBalance::new(amount, token);
+
+        // TODO: Use price oracle here and cache, to get the latest price then convert to USD
+        // then use token_balance.set_amount_usd(amount_usd) to set the amount_usd value.
+
+        Ok(token_balance)
+    }
+
+    /// Refreshes all wallet balances including native currency and tracked ERC-20 tokens.
+    async fn refresh_wallet_balances(&mut self) -> anyhow::Result<()> {
+        let native_currency_balance = self.fetch_native_currency_balance().await?;
+        tracing::info!(
+            "Initializing wallet balance with native currency balance: {} {}",
+            native_currency_balance.as_decimal(),
+            native_currency_balance.currency
+        );
+        self.wallet_balance
+            .set_native_currency_balance(native_currency_balance);
+
+        // Fetch token balances from the blockchain.
+        if !self.wallet_balance.is_token_universe_initialized() {
+            // TODO sync from transfer events for tokens that wallet interacted with.
+        } else {
+            let tokens: Vec<Address> = self
+                .wallet_balance
+                .token_universe
+                .clone()
+                .into_iter()
+                .collect();
+            for token in tokens {
+                if let Ok(token_balance) = self.fetch_token_balance(&token).await {
+                    tracing::info!("Adding token balance to the wallet: {}", token_balance);
+                    self.wallet_balance.add_token_balance(token_balance);
+                }
+            }
         }
+
+        Ok(())
     }
 }
 
+#[async_trait(?Send)]
 impl ExecutionClient for BlockchainExecutionClient {
     fn is_connected(&self) -> bool {
         self.connected
@@ -173,10 +261,7 @@ impl ExecutionClient for BlockchainExecutionClient {
     fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
         todo!("implement query_order")
     }
-}
 
-#[async_trait(?Send)]
-impl LiveExecutionClient for BlockchainExecutionClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             tracing::warn!("Blockchain execution client already connected");
@@ -188,7 +273,7 @@ impl LiveExecutionClient for BlockchainExecutionClient {
             self.chain.name
         );
 
-        self.refresh_wallet_balances().await;
+        self.refresh_wallet_balances().await?;
 
         self.connected = true;
         tracing::info!(
@@ -199,17 +284,13 @@ impl LiveExecutionClient for BlockchainExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        todo!("implement disconnect")
+        self.connected = false;
+        Ok(())
     }
+}
 
-    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
-        get_exec_event_sender()
-    }
-
-    fn get_clock(&self) -> std::cell::Ref<'_, dyn nautilus_common::clock::Clock> {
-        self.core.clock().borrow()
-    }
-
+#[async_trait(?Send)]
+impl LiveExecutionClient for BlockchainExecutionClient {
     async fn generate_order_status_report(
         &self,
         _cmd: &GenerateOrderStatusReport,

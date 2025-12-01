@@ -42,7 +42,7 @@ The OKX adapter includes multiple components, which can be used separately or to
 - `OKXLiveExecClientFactory`: Factory for OKX execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as shown below),
+Most users will define a configuration for a live trading node (as shown below),
 and won’t need to work directly with these lower-level components.
 :::
 

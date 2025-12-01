@@ -156,8 +156,7 @@ impl DataClientFactory for DatabentoDataClientFactory {
             .downcast_ref::<DatabentoLiveClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for DatabentoDataClientFactory. Expected DatabentoLiveClientConfig, was {:?}",
-                    config
+                    "Invalid config type for DatabentoDataClientFactory. Expected DatabentoLiveClientConfig, was {config:?}"
                 )
             })?;
 

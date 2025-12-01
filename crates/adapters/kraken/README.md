@@ -25,20 +25,41 @@ highest level, with the aim of supporting mission-critical, trading system backt
 
 ## Features
 
-- HTTP REST API v2 client for market data.
-- WebSocket v2 client for real-time data feeds.
+- HTTP REST API clients for market data (Spot v2, Futures v3).
+- WebSocket clients for real-time data feeds (Spot v2, Futures).
 - Support for both Spot and Futures markets.
 - Instrument, ticker, trade, orderbook, and OHLC data.
 - Prepared for execution support (orders, positions, balances) - WIP.
+
+## Architecture
+
+This crate provides **separate HTTP and WebSocket clients for Spot and Futures markets**.
+This design reflects fundamental differences between the two APIs:
+
+| Aspect         | Spot                  | Futures                      |
+|----------------|-----------------------|------------------------------|
+| API Version    | REST API v2           | Derivatives API v3           |
+| Base URL       | `api.kraken.com`      | `futures.kraken.com`         |
+| Auth Headers   | `API-Key`, `API-Sign` | `APIKey`, `Authent`, `Nonce` |
+| Request Format | URL-encoded form      | JSON body                    |
+| WebSocket      | v2 protocol           | Futures-specific protocol    |
+
+Kraken Futures was originally a separate platform (Crypto Facilities) acquired by Kraken,
+which explains why the APIs remain distinct rather than unified.
+
+### Client Types
+
+- **`KrakenSpotHttpClient`** / **`KrakenSpotWebSocketClient`**: For spot trading pairs (e.g., `BTC/USD`, `ETH/EUR`).
+- **`KrakenFuturesHttpClient`** / **`KrakenFuturesWebSocketClient`**: For perpetual and fixed-maturity futures (e.g., `PF_XBTUSD`, `PI_ETHUSD`).
 
 ## Examples
 
 See the `bin/` directory for example usage:
 
 ```bash
-cargo run --bin kraken-http-raw
-cargo run --bin kraken-http-public
-cargo run --bin kraken-ws-data
+cargo run --bin kraken-http-spot-raw
+cargo run --bin kraken-http-spot-public
+cargo run --bin kraken-ws-spot-data
 ```
 
 ## Feature flags

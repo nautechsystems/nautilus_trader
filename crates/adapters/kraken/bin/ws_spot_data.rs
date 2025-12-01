@@ -19,7 +19,7 @@
 use futures_util::StreamExt;
 use nautilus_kraken::{
     config::KrakenDataClientConfig,
-    websocket::{client::KrakenWebSocketClient, enums::KrakenWsChannel},
+    websocket::spot_v2::{client::KrakenSpotWebSocketClient, enums::KrakenWsChannel},
 };
 use tokio::{pin, signal};
 use tokio_util::sync::CancellationToken;
@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     let config = KrakenDataClientConfig::default();
     let token = CancellationToken::new();
 
-    let mut client = KrakenWebSocketClient::new(config, token.clone());
+    let mut client = KrakenSpotWebSocketClient::new(config, token.clone());
 
     client.connect().await?;
 

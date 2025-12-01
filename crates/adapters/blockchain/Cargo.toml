@@ -46,7 +46,7 @@ features = ["python"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true, features = ["defi"] }
+nautilus-common = { workspace = true, features = ["defi", "live"] }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true, features = ["defi"] }
 nautilus-execution = { workspace = true }
