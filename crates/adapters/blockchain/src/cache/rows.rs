@@ -70,6 +70,7 @@ pub struct PoolRow {
     pub tick_spacing: Option<i32>,
     pub initial_tick: Option<i32>,
     pub initial_sqrt_price_x96: Option<String>,
+    pub hook_address: Option<String>,
 }
 
 impl<'r> FromRow<'r, PgRow> for PoolRow {
@@ -88,6 +89,7 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
         let tick_spacing = row.try_get::<Option<i32>, _>("tick_spacing")?;
         let initial_tick = row.try_get::<Option<i32>, _>("initial_tick")?;
         let initial_sqrt_price_x96 = row.try_get::<Option<String>, _>("initial_sqrt_price_x96")?;
+        let hook_address = row.try_get::<Option<String>, _>("hook_address")?;
 
         Ok(Self {
             address,
@@ -102,6 +104,7 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
             tick_spacing,
             initial_tick,
             initial_sqrt_price_x96,
+            hook_address,
         })
     }
 }

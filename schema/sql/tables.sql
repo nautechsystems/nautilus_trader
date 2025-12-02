@@ -339,6 +339,7 @@ CREATE TABLE IF NOT EXISTS "pool" (
     tick_spacing INTEGER,
     initial_tick INTEGER,
     initial_sqrt_price_x96 TEXT,
+    hook_address TEXT,
     last_full_sync_block_number BIGINT,
     PRIMARY KEY (chain_id, dex_name, pool_identifier),
     FOREIGN KEY (token0_chain, token0_address) REFERENCES token(chain_id, address),

@@ -459,6 +459,11 @@ impl<'a> PoolDiscoveryService<'a> {
                 nautilus_core::UnixNanos::default(),
             );
 
+            // Set hooks if available (UniswapV4)
+            if let Some(hooks) = pool_event.hooks {
+                pool.set_hooks(hooks);
+            }
+
             // Initialize pool with sqrt_price_x96 and tick if available (UniswapV4)
             if let (Some(sqrt_price_x96), Some(tick)) = (pool_event.sqrt_price_x96, pool_event.tick)
             {

@@ -279,6 +279,13 @@ impl BlockchainCache {
                     UnixNanos::default(), // TODO use default for now
                 );
 
+                // Set hooks if available
+                if let Some(ref hook_address_str) = pool_row.hook_address
+                    && let Ok(hooks) = hook_address_str.parse()
+                {
+                    pool.set_hooks(hooks);
+                }
+
                 // Initialize pool with initial values if available
                 if let Some(initial_sqrt_price_x96_str) = &pool_row.initial_sqrt_price_x96
                     && let Ok(initial_sqrt_price_x96) = initial_sqrt_price_x96_str.parse()

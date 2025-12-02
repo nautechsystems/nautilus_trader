@@ -162,7 +162,7 @@ impl<'a> PostgresCopyHandler<'a> {
             COPY pool (
                 chain_id, dex_name, address, pool_identifier, creation_block,
                 token0_chain, token0_address, token1_chain, token1_address,
-                fee, tick_spacing, initial_tick, initial_sqrt_price_x96
+                fee, tick_spacing, initial_tick, initial_sqrt_price_x96, hook_address
             ) FROM STDIN WITH (FORMAT BINARY)";
 
         let mut copy_in = self
@@ -873,7 +873,7 @@ impl<'a> PostgresCopyHandler<'a> {
         use std::io::Write;
         let mut row_data = Vec::new();
 
-        row_data.write_all(&13u16.to_be_bytes())?;
+        row_data.write_all(&14u16.to_be_bytes())?;
 
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
         row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
@@ -939,6 +939,14 @@ impl<'a> PostgresCopyHandler<'a> {
             let sqrt_price_bytes = format_numeric(initial_sqrt_price).as_bytes().to_vec();
             row_data.write_all(&(sqrt_price_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&sqrt_price_bytes)?;
+        } else {
+            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+        }
+
+        if let Some(ref hooks) = pool.hooks {
+            let hooks_bytes = hooks.to_string().as_bytes().to_vec();
+            row_data.write_all(&(hooks_bytes.len() as i32).to_be_bytes())?;
+            row_data.write_all(&hooks_bytes)?;
         } else {
             row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
         }

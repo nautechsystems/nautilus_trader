@@ -454,8 +454,8 @@ impl BlockchainCacheDatabase {
                 chain_id, address, pool_identifier, dex_name, creation_block,
                 token0_chain, token0_address,
                 token1_chain, token1_address,
-                fee, tick_spacing, initial_tick, initial_sqrt_price_x96
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                fee, tick_spacing, initial_tick, initial_sqrt_price_x96, hook_address
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (chain_id, dex_name, pool_identifier)
             DO UPDATE
             SET
@@ -468,7 +468,8 @@ impl BlockchainCacheDatabase {
                 fee = $10,
                 tick_spacing = $11,
                 initial_tick = $12,
-                initial_sqrt_price_x96 = $13
+                initial_sqrt_price_x96 = $13,
+                hook_address = $14
         ",
         )
         .bind(pool.chain.chain_id as i32)
@@ -484,6 +485,7 @@ impl BlockchainCacheDatabase {
         .bind(pool.tick_spacing.map(|tick_spacing| tick_spacing as i32))
         .bind(pool.initial_tick)
         .bind(pool.initial_sqrt_price_x96.as_ref().map(|p| p.to_string()))
+        .bind(pool.hooks.as_ref().map(|h| h.to_string()))
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -514,6 +516,7 @@ impl BlockchainCacheDatabase {
         let mut tick_spacings: Vec<Option<i32>> = Vec::with_capacity(len);
         let mut initial_ticks: Vec<Option<i32>> = Vec::with_capacity(len);
         let mut initial_sqrt_price_x96s: Vec<Option<String>> = Vec::with_capacity(len);
+        let mut hook_addresses: Vec<Option<String>> = Vec::with_capacity(len);
         let mut chain_ids: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from pools
@@ -532,6 +535,7 @@ impl BlockchainCacheDatabase {
             initial_ticks.push(pool.initial_tick);
             initial_sqrt_price_x96s
                 .push(pool.initial_sqrt_price_x96.as_ref().map(|p| p.to_string()));
+            hook_addresses.push(pool.hooks.as_ref().map(|h| h.to_string()));
         }
 
         // Execute batch insert with UNNEST
@@ -541,13 +545,13 @@ impl BlockchainCacheDatabase {
                 chain_id, address, pool_identifier, dex_name, creation_block,
                 token0_chain, token0_address,
                 token1_chain, token1_address,
-                fee, tick_spacing, initial_tick, initial_sqrt_price_x96
+                fee, tick_spacing, initial_tick, initial_sqrt_price_x96, hook_address
             )
             SELECT *
             FROM UNNEST(
                 $1::int4[], $2::text[], $3::text[], $4::text[], $5::int8[],
                 $6::int4[], $7::text[], $8::int4[], $9::text[],
-                $10::int4[], $11::int4[], $12::int4[], $13::text[]
+                $10::int4[], $11::int4[], $12::int4[], $13::text[], $14::text[]
             )
             ON CONFLICT (chain_id, dex_name, pool_identifier) DO NOTHING
            ",
@@ -565,6 +569,7 @@ impl BlockchainCacheDatabase {
         .bind(&tick_spacings[..])
         .bind(&initial_ticks[..])
         .bind(&initial_sqrt_price_x96s[..])
+        .bind(&hook_addresses as &[Option<String>])
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -1011,7 +1016,8 @@ impl BlockchainCacheDatabase {
                 fee,
                 tick_spacing,
                 initial_tick,
-                initial_sqrt_price_x96
+                initial_sqrt_price_x96,
+                hook_address
             FROM pool
             WHERE chain_id = $1 AND dex_name = $2
             ORDER BY creation_block ASC

@@ -41,6 +41,8 @@ pub struct PoolCreatedEvent {
     pub sqrt_price_x96: Option<U160>,
     /// The current tick of the pool.
     pub tick: Option<i32>,
+    /// The hooks contract address for Uniswap V4 pools.
+    pub hooks: Option<Address>,
 }
 
 impl PoolCreatedEvent {
@@ -65,6 +67,7 @@ impl PoolCreatedEvent {
             tick_spacing,
             sqrt_price_x96: None,
             tick: None,
+            hooks: None,
         }
     }
 
@@ -72,5 +75,12 @@ impl PoolCreatedEvent {
     pub fn set_initialize_params(&mut self, sqrt_price_x96: U160, tick: i32) {
         self.sqrt_price_x96 = Some(sqrt_price_x96);
         self.tick = Some(tick);
+    }
+
+    /// Sets the hooks contract address for this pool.
+    ///
+    /// This is typically called for Uniswap V4 pools that have hooks enabled.
+    pub fn set_hooks(&mut self, hooks: Address) {
+        self.hooks = Some(hooks);
     }
 }

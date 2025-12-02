@@ -90,6 +90,9 @@ pub struct Pool {
     pub initial_tick: Option<i32>,
     /// The initial square root price when the pool was first initialized.
     pub initial_sqrt_price_x96: Option<U160>,
+    /// The hooks contract address for Uniswap V4 pools.
+    /// For V2/V3 pools, this will be None. For V4, it contains the hooks contract address.
+    pub hooks: Option<Address>,
     /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
@@ -128,6 +131,7 @@ impl Pool {
             tick_spacing,
             initial_tick: None,
             initial_sqrt_price_x96: None,
+            hooks: None,
             ts_init,
         }
     }
@@ -161,6 +165,13 @@ impl Pool {
 
         self.initial_sqrt_price_x96 = Some(sqrt_price_x96);
         self.initial_tick = Some(tick);
+    }
+
+    /// Sets the hooks contract address for this pool.
+    ///
+    /// This is typically called for Uniswap V4 pools that have hooks enabled.
+    pub fn set_hooks(&mut self, hooks: Address) {
+        self.hooks = Some(hooks);
     }
 
     pub fn create_instrument_id(

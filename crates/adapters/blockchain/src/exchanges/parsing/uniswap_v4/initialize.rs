@@ -144,6 +144,7 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
         );
 
         event.set_initialize_params(decoded.sqrtPriceX96, i32::try_from(decoded.tick)?);
+        event.set_hooks(decoded.hooks);
 
         Ok(event)
     } else {
@@ -212,6 +213,7 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
     );
 
     event.set_initialize_params(decoded.sqrtPriceX96, i32::try_from(decoded.tick)?);
+    event.set_hooks(decoded.hooks);
 
     Ok(event)
 }
