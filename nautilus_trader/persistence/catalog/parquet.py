@@ -1913,7 +1913,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
-    ):
+    ) -> list[str]:
         file_prefix = class_to_filename(data_cls)
         base_path = self.path.rstrip("/")
         glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
