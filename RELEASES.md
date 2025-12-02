@@ -55,6 +55,7 @@ This release adds support for Python 3.14 with the following limitations:
 TBD
 
 ### Fixes
+- Fixed SyntheticInstrument formula error during parsing with hyphened InstrumentId
 - Fixed cache dropped same-timestamp market data on insert
 - Fixed race condition in InstrumentProvider causing duplicate instrument initialization in shared providers
 - Fixed portfolio statistics various bugs and edge cases
