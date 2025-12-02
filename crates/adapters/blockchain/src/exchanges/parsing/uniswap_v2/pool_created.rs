@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::Address;
-use nautilus_model::defi::rpc::RpcLog;
+use nautilus_model::defi::{PoolIdentifier, rpc::RpcLog};
+use ustr::Ustr;
 
 use crate::{
     events::pool_created::PoolCreatedEvent,
@@ -64,15 +65,16 @@ pub fn parse_pool_created_event_hypersync(log: HypersyncLog) -> anyhow::Result<P
 
         // Extract pair address (first 32 bytes, address is right-aligned)
         let pair_address = Address::from_slice(&data_bytes[12..32]);
+        let pool_identifier = PoolIdentifier::Address(Ustr::from(&pair_address.to_string()));
 
         Ok(PoolCreatedEvent::new(
             block_number,
             token0,
             token1,
             pair_address,
-            pair_address.to_string(), // For V2/V3, pool_identifier = pool_address
-            None,                     // V2 has no fee tiers (fixed 0.3%)
-            None,                     // V2 has no tick spacing (CPAMM)
+            pool_identifier, // For V2/V3, pool_identifier = pool_address
+            None,            // V2 has no fee tiers (fixed 0.3%)
+            None,            // V2 has no tick spacing (CPAMM)
         ))
     } else {
         Err(anyhow::anyhow!("Missing data in pair created event log"))
@@ -106,15 +108,16 @@ pub fn parse_pool_created_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedE
 
     // Pair address is in the first 32 bytes (right-aligned)
     let pair_address = Address::from_slice(&data_bytes[12..32]);
+    let pool_identifier = PoolIdentifier::Address(Ustr::from(&pair_address.to_string()));
 
     Ok(PoolCreatedEvent::new(
         block_number,
         token0,
         token1,
         pair_address,
-        pair_address.to_string(), // For V2/V3, pool_identifier = pool_address
-        None,                     // V2 has no fee tiers
-        None,                     // V2 has no tick spacing
+        pool_identifier, // For V2/V3, pool_identifier = pool_address
+        None,            // V2 has no fee tiers
+        None,            // V2 has no tick spacing
     ))
 }
 
@@ -190,8 +193,8 @@ mod tests {
             "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
         );
         assert_eq!(
-            event.pool_identifier.to_lowercase(),
-            "0xf64dfe17c8b87f012fcf50fbda1d62bfa148366a",
+            event.pool_identifier.to_string(),
+            "0xF64Dfe17C8b87F012FCf50FbDA1D62bfA148366a",
         );
         assert_eq!(event.fee, None);
         assert_eq!(event.tick_spacing, None);
@@ -213,8 +216,8 @@ mod tests {
             "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
         );
         assert_eq!(
-            event.pool_identifier.to_lowercase(),
-            "0xf64dfe17c8b87f012fcf50fbda1d62bfa148366a"
+            event.pool_identifier.to_string(),
+            "0xF64Dfe17C8b87F012FCf50FbDA1D62bfA148366a"
         );
         assert_eq!(event.fee, None);
         assert_eq!(event.tick_spacing, None);

@@ -17,7 +17,7 @@ use alloy_primitives::{Address, I256, U160, U256};
 
 use crate::{
     defi::{
-        Pool, PoolSwap, SharedChain, SharedDex, Token,
+        Pool, PoolIdentifier, PoolSwap, SharedChain, SharedDex, Token,
         data::{
             block::BlockPosition,
             swap::RawSwapData,
@@ -262,12 +262,12 @@ impl SwapQuote {
         &self,
         chain: SharedChain,
         dex: SharedDex,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         block: BlockPosition,
         sender: Address,
         recipient: Address,
     ) -> PoolSwap {
-        let instrument_id = Pool::create_instrument_id(chain.name, &dex, &pool_identifier);
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_identifier.as_str());
         PoolSwap::new(
             chain,
             dex,

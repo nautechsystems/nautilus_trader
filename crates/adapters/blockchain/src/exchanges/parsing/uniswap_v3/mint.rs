@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::{dyn_abi::SolType, primitives::Address, sol};
-use nautilus_model::defi::{SharedDex, rpc::RpcLog};
+use nautilus_model::defi::{PoolIdentifier, SharedDex, rpc::RpcLog};
+use ustr::Ustr;
 
 use crate::{
     events::mint::MintEvent,
@@ -95,7 +96,7 @@ pub fn parse_mint_event_hypersync(dex: SharedDex, log: HypersyncLog) -> anyhow::
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
-        let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
+        let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
         Ok(MintEvent::new(
             dex,
             pool_identifier,
@@ -148,7 +149,7 @@ pub fn parse_mint_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Mint
     };
 
     let pool_address = rpc_helpers::extract_address(log)?;
-    let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
+    let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     Ok(MintEvent::new(
         dex,
         pool_identifier,
@@ -192,7 +193,7 @@ mod tests {
             "transaction_hash": "0x8f91d60156ea7a34a6bf1d411852f3ef2ad255ec84e493c9e902e4a1ff4a46af",
             "block_hash": null,
             "block_number": "0x175122df",
-            "address": "0xd13040d4fe917ee704158cfcb3338dcd2838b245",
+            "address": "0xd13040d4fe917EE704158CfCB3338dCd2838B245",
             "data": "0x000000000000000000000000c36442b4a4522e871399cd717abdd847ab11fe88000000000000000000000000000000000000000000000074009aac72ba0a9b1c00000000000000000000000000000000000000000001e4d2be93cf3635c879b10000000000000000000000000000000000000000000000001bc16d674ec80000",
             "topics": [
                 "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde",
@@ -214,7 +215,7 @@ mod tests {
             "transactionHash": "0x8f91d60156ea7a34a6bf1d411852f3ef2ad255ec84e493c9e902e4a1ff4a46af",
             "blockHash": "0xfc49f94161e2cdef8339c0b430868d64ee1f5d0bd8b8b6e45a25487958d68b25",
             "blockNumber": "0x175122df",
-            "address": "0xd13040d4fe917ee704158cfcb3338dcd2838b245",
+            "address": "0xd13040d4fe917EE704158CfCB3338dCd2838B245",
             "data": "0x000000000000000000000000c36442b4a4522e871399cd717abdd847ab11fe88000000000000000000000000000000000000000000000074009aac72ba0a9b1c00000000000000000000000000000000000000000001e4d2be93cf3635c879b10000000000000000000000000000000000000000000000001bc16d674ec80000",
             "topics": [
                 "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde",
@@ -232,8 +233,8 @@ mod tests {
         let event = parse_mint_event_hypersync(dex, hypersync_log).unwrap();
 
         assert_eq!(
-            event.pool_identifier,
-            "0xd13040d4fe917ee704158cfcb3338dcd2838b245"
+            event.pool_identifier.to_string(),
+            "0xd13040d4fe917EE704158CfCB3338dCd2838B245"
         );
         assert_eq!(
             event.owner.to_string().to_lowercase(),
@@ -256,8 +257,8 @@ mod tests {
         let event = parse_mint_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
-            event.pool_identifier,
-            "0xd13040d4fe917ee704158cfcb3338dcd2838b245"
+            event.pool_identifier.to_string(),
+            "0xd13040d4fe917EE704158CfCB3338dCd2838B245"
         );
         assert_eq!(
             event.owner.to_string().to_lowercase(),

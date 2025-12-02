@@ -29,9 +29,10 @@ use nautilus_common::{
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
-    defi::{DefiData, SharedChain, validation::validate_address},
+    defi::{DefiData, PoolIdentifier, SharedChain, validation::validate_address},
     identifiers::{ClientId, Venue},
 };
+use ustr::Ustr;
 
 use crate::{
     config::BlockchainDataClientConfig,
@@ -742,7 +743,8 @@ impl BlockchainDataClient {
                         )
                     })?;
 
-                let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
+                let pool_identifier =
+                    PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
                 match core_client.get_pool(&pool_identifier) {
                     Ok(pool) => {
                         let pool = pool.clone();
@@ -763,7 +765,11 @@ impl BlockchainDataClient {
                                 );
                                 core_client
                                     .cache
-                                    .add_pool_snapshot(&pool.address, &snapshot)
+                                    .add_pool_snapshot(
+                                        &pool.dex.name,
+                                        &pool.pool_identifier,
+                                        &snapshot,
+                                    )
                                     .await?;
 
                                 // If snapshot is valid, send it back to the data engine.

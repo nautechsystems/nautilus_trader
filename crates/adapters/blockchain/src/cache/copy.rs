@@ -887,7 +887,7 @@ impl<'a> PostgresCopyHandler<'a> {
         row_data.write_all(&(address_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(&address_bytes)?;
 
-        let pool_identifier_bytes = pool.pool_identifier.as_bytes();
+        let pool_identifier_bytes = pool.pool_identifier.as_str().as_bytes();
         row_data.write_all(&(pool_identifier_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(pool_identifier_bytes)?;
 

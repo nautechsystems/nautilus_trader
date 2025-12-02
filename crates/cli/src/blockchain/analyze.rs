@@ -22,7 +22,8 @@ use nautilus_blockchain::{
     rpc::providers::check_infura_rpc_provider,
 };
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
-use nautilus_model::defi::{chain::Chain, validation::validate_address};
+use nautilus_model::defi::{PoolIdentifier, chain::Chain, validation::validate_address};
+use ustr::Ustr;
 
 use crate::opt::DatabaseConfig;
 
@@ -103,9 +104,9 @@ pub async fn run_analyze_pool(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {e}"))?;
 
-    let pool_identifier = pool_address.to_string();
+    let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     data_client
-        .sync_pool_events(&dex_type, &pool_identifier, from_block, to_block, reset)
+        .sync_pool_events(&dex_type, pool_identifier, from_block, to_block, reset)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to sync pool events: {e}"))?;
 
@@ -127,7 +128,7 @@ pub async fn run_analyze_pool(
     );
     data_client
         .cache
-        .add_pool_snapshot(&pool.address, &snapshot)
+        .add_pool_snapshot(&pool.dex.name, &pool.pool_identifier, &snapshot)
         .await?;
     log::info!("Saved complete pool snapshot to database");
     data_client

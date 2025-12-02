@@ -141,7 +141,10 @@ pub fn transform_row_to_dex_pool_data(
     instrument_id: InstrumentId,
 ) -> Result<DexPoolData, sqlx::Error> {
     let event_type = row.try_get::<String, _>("event_type")?;
-    let pool_identifier = row.try_get::<String, _>("pool_identifier")?;
+    let pool_identifier_str = row.try_get::<String, _>("pool_identifier")?;
+    let pool_identifier = pool_identifier_str
+        .parse()
+        .map_err(|e| sqlx::Error::Decode(format!("Invalid pool identifier: {e}").into()))?;
     let block = row.try_get::<i64, _>("block")? as u64;
     let transaction_hash = row.try_get::<String, _>("transaction_hash")?;
     let transaction_index = row.try_get::<i32, _>("transaction_index")? as u32;

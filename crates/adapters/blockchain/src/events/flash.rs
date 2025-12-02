@@ -16,7 +16,7 @@
 use alloy::primitives::{Address, U256};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    defi::{SharedChain, SharedDex, data::PoolFlash},
+    defi::{PoolIdentifier, SharedChain, SharedDex, data::PoolFlash},
     identifiers::InstrumentId,
 };
 
@@ -29,7 +29,7 @@ pub struct FlashEvent {
     /// The decentralized exchange where the event happened.
     pub dex: SharedDex,
     /// The unique identifier for the pool.
-    pub pool_identifier: String,
+    pub pool_identifier: PoolIdentifier,
     /// The block number in which this flash loan transaction was included.
     pub block_number: u64,
     /// The unique hash identifier of the transaction containing this event.
@@ -58,7 +58,7 @@ impl FlashEvent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         dex: SharedDex,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -92,14 +92,13 @@ impl FlashEvent {
         &self,
         chain: SharedChain,
         instrument_id: InstrumentId,
-        pool_identifier: String,
         timestamp: Option<UnixNanos>,
     ) -> PoolFlash {
         PoolFlash::new(
             chain,
             self.dex.clone(),
             instrument_id,
-            pool_identifier,
+            self.pool_identifier,
             self.block_number,
             self.transaction_hash.clone(),
             self.transaction_index,

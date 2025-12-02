@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     data::HasTsInit,
     defi::{
-        Blockchain, SharedDex, chain::SharedChain, dex::Dex,
+        Blockchain, PoolIdentifier, SharedDex, chain::SharedChain, dex::Dex,
         tick_map::tick_math::get_tick_at_sqrt_ratio, token::Token,
     },
     identifiers::{InstrumentId, Symbol, Venue},
@@ -67,7 +67,7 @@ pub struct Pool {
     /// The blockchain address where the pool smart contract code is deployed.
     pub address: Address,
     /// The unique identifier for this pool across all pools on the DEX.
-    pub pool_identifier: String,
+    pub pool_identifier: PoolIdentifier,
     /// The instrument ID for the pool.
     pub instrument_id: InstrumentId,
     /// The block number when this pool was created on the blockchain.
@@ -105,7 +105,7 @@ impl Pool {
         chain: SharedChain,
         dex: SharedDex,
         address: Address,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         creation_block: u64,
         token0: Token,
         token1: Token,
@@ -113,7 +113,7 @@ impl Pool {
         tick_spacing: Option<u32>,
         ts_init: UnixNanos,
     ) -> Self {
-        let instrument_id = Self::create_instrument_id(chain.name, &dex, &pool_identifier);
+        let instrument_id = Self::create_instrument_id(chain.name, &dex, pool_identifier.as_str());
 
         Self {
             chain,
@@ -300,7 +300,7 @@ mod tests {
         let pool_address: Address = "0x11b815efB8f581194ae79006d24E0d814B7697F6"
             .parse()
             .unwrap();
-        let pool_identifier = pool_address.to_string();
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
         let ts_init = UnixNanos::from(1_234_567_890_000_000_000u64);
 
         let pool = Pool::new(
@@ -385,7 +385,7 @@ mod tests {
             chain,
             Arc::new(dex),
             pool_address,
-            pool_address.to_string(),
+            PoolIdentifier::from_address(pool_address),
             0,
             token0,
             token1,

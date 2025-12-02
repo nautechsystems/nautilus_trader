@@ -31,6 +31,7 @@ pub mod data;
 pub mod dex;
 pub mod hex;
 pub mod pool_analysis;
+pub mod pool_identifier;
 pub mod reporting;
 pub mod rpc;
 pub mod tick_map;
@@ -56,6 +57,7 @@ pub use data::{
 };
 pub use dex::{AmmType, Dex, DexType, SharedDex};
 pub use pool_analysis::PoolProfiler;
+pub use pool_identifier::PoolIdentifier;
 pub use token::{SharedToken, Token};
 
 /// Number of decimal places used by the native Ether denomination.

@@ -20,7 +20,7 @@ use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    defi::{SharedChain, SharedDex},
+    defi::{PoolIdentifier, SharedChain, SharedDex},
     identifiers::InstrumentId,
 };
 
@@ -42,7 +42,7 @@ pub struct PoolFlash {
     /// The instrument ID for this pool's trading pair.
     pub instrument_id: InstrumentId,
     /// The unique identifier for this pool (could be an address or other protocol-specific hex string).
-    pub pool_identifier: String,
+    pub pool_identifier: PoolIdentifier,
     /// The blockchain block number at which the flash loan was executed.
     pub block: u64,
     /// The unique hash identifier of the blockchain transaction containing the flash loan.
@@ -75,7 +75,7 @@ impl PoolFlash {
         chain: SharedChain,
         dex: SharedDex,
         instrument_id: InstrumentId,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,

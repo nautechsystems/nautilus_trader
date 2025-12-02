@@ -44,7 +44,9 @@ use ustr::Ustr;
 #[cfg(feature = "defi")]
 use {
     alloy_primitives::Address,
-    nautilus_model::defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap},
+    nautilus_model::defi::{
+        Block, Blockchain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap,
+    },
 };
 
 use super::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig};
@@ -1570,7 +1572,7 @@ fn test_subscribe_and_receive_pools(
         chain,
         Arc::new(dex),
         pool_address,
-        pool_address.to_string(),
+        PoolIdentifier::from_address(pool_address),
         1000000,
         token0,
         token1,
@@ -1629,7 +1631,7 @@ fn test_subscribe_and_receive_pool_swaps(
         chain,
         Arc::new(dex),
         instrument_id,
-        pool_address.to_string(),
+        PoolIdentifier::from_address(pool_address),
         1000u64,
         "0x123".to_string(),
         0,
@@ -1693,7 +1695,7 @@ fn test_unsubscribe_pool_swaps(
         chain.clone(),
         Arc::new(dex.clone()),
         instrument_id,
-        pool_address.to_string(),
+        PoolIdentifier::from_address(pool_address),
         1000u64,
         "0x123".to_string(),
         0,
@@ -1716,7 +1718,7 @@ fn test_unsubscribe_pool_swaps(
         chain,
         Arc::new(dex),
         instrument_id,
-        pool_address.to_string(),
+        PoolIdentifier::from_address(pool_address),
         2000u64,
         "0x456".to_string(),
         0,

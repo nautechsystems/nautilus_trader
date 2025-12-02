@@ -314,6 +314,7 @@ impl Pool {
         ts_init: u64,
     ) -> PyResult<Self> {
         let address = address.parse().map_err(to_pyvalue_err)?;
+        let pool_identifier = pool_identifier.parse().map_err(to_pyvalue_err)?;
         Ok(Self::new(
             Arc::new(chain),
             Arc::new(dex),

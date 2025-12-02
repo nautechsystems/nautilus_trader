@@ -19,7 +19,9 @@ use alloy_primitives::address;
 use nautilus_core::UnixNanos;
 use rstest::fixture;
 
-use crate::defi::{AmmType, Chain, Dex, DexType, Pool, SharedChain, SharedDex, SharedPool, Token};
+use crate::defi::{
+    AmmType, Chain, Dex, DexType, Pool, PoolIdentifier, SharedChain, SharedDex, SharedPool, Token,
+};
 
 #[fixture]
 pub fn arbitrum() -> SharedChain {
@@ -89,7 +91,7 @@ pub fn rain_pool(
         arbitrum,
         uniswap_v3,
         pool_address,
-        pool_address.to_string(),
+        PoolIdentifier::from_address(pool_address),
         0,
         rain_token,
         weth,

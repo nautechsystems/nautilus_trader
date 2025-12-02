@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::U160;
-use nautilus_model::defi::SharedDex;
+use nautilus_model::defi::{PoolIdentifier, SharedDex};
 
 /// Event emitted when a liquidity pool is initialized on a DEX.
 ///
@@ -25,7 +25,7 @@ pub struct InitializeEvent {
     /// The decentralized exchange where the event happened.
     pub dex: SharedDex,
     /// The unique identifier for the pool.
-    pub pool_identifier: String,
+    pub pool_identifier: PoolIdentifier,
     /// The square root of the price ratio encoded as a fixed point number with 96 fractional bits.
     pub sqrt_price_x96: U160,
     /// The current tick of the pool.
@@ -33,7 +33,12 @@ pub struct InitializeEvent {
 }
 
 impl InitializeEvent {
-    pub fn new(dex: SharedDex, pool_identifier: String, sqrt_price_x96: U160, tick: i32) -> Self {
+    pub fn new(
+        dex: SharedDex,
+        pool_identifier: PoolIdentifier,
+        sqrt_price_x96: U160,
+        tick: i32,
+    ) -> Self {
         Self {
             dex,
             pool_identifier,

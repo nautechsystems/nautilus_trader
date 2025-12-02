@@ -450,7 +450,7 @@ impl<'a> PoolDiscoveryService<'a> {
                 self.chain.clone(),
                 dex.clone(),
                 pool_event.pool_address,
-                pool_event.pool_identifier.clone(),
+                pool_event.pool_identifier,
                 pool_event.block_number,
                 token0,
                 token1,

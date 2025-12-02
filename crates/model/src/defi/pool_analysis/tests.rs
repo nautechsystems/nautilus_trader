@@ -28,7 +28,7 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 
 use crate::defi::{
-    Chain, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
+    Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
     data::{DexPoolData, PoolFeeCollect, block::BlockPosition},
     pool_analysis::{profiler::PoolProfiler, quote::SwapQuote},
     stubs::{arbitrum, uniswap_v3},
@@ -87,7 +87,7 @@ pub fn pool_definition(
         Arc::new(Chain::from_chain_id(42161).unwrap().clone()), // Arbitrum,
         dex,
         pool_address,
-        pool_address.to_string(),
+        PoolIdentifier::from_address(pool_address),
         0,
         coin_anime,
         weth,
@@ -556,7 +556,7 @@ fn test_execute_burn_equivalence() {
 #[rstest]
 fn test_execute_swap_equivalence() {
     let pool_definition = pool_definition(None, None, None);
-    let pool_identifier = pool_definition.pool_identifier.clone();
+    let pool_identifier = pool_definition.pool_identifier;
     // Create two identical profilers
     let mut profiler1 = PoolProfiler::new(Arc::new(pool_definition.clone()));
     let mut profiler2 = PoolProfiler::new(Arc::new(pool_definition));

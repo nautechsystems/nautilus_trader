@@ -18,8 +18,8 @@ use std::{cmp::max, sync::Arc};
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
 use nautilus_model::defi::{
-    Block, Blockchain, DexType, Pool, PoolLiquidityUpdate, PoolProfiler, PoolSwap, SharedChain,
-    SharedDex, SharedPool,
+    Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
+    SharedChain, SharedDex, SharedPool,
     data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
     pool_analysis::{compare::compare_pool_profiler, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
@@ -376,12 +376,12 @@ impl BlockchainDataClientCore {
     pub async fn sync_pool_events(
         &mut self,
         dex: &DexType,
-        pool_identifier: &str,
+        pool_identifier: PoolIdentifier,
         from_block: Option<u64>,
         to_block: Option<u64>,
         reset: bool,
     ) -> anyhow::Result<()> {
-        let pool: SharedPool = self.get_pool(pool_identifier)?.clone();
+        let pool: SharedPool = self.get_pool(&pool_identifier)?.clone();
         let pool_display = pool.to_full_spec_string();
         let from_block = from_block.unwrap_or(pool.creation_block);
         // Extract address for blockchain queries
@@ -392,7 +392,7 @@ impl BlockchainDataClientCore {
         } else {
             let last_synced_block = self
                 .cache
-                .get_pool_last_synced_block(dex, pool_identifier)
+                .get_pool_last_synced_block(dex, &pool_identifier)
                 .await?;
             let effective_from_block = last_synced_block
                 .map_or(from_block, |last_synced| max(from_block, last_synced + 1));
@@ -418,7 +418,7 @@ impl BlockchainDataClientCore {
         // Query table max blocks to detect last blocks to use batch insert before that, then COPY command.
         let last_block_across_pool_events_table = self
             .cache
-            .get_pool_event_tables_last_block(pool_identifier)
+            .get_pool_event_tables_last_block(&pool_identifier)
             .await?;
 
         let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
@@ -624,7 +624,7 @@ impl BlockchainDataClientCore {
             if metrics.should_log_progress(block_number, to_block) {
                 metrics.log_progress(block_number);
                 self.cache
-                    .update_pool_last_synced_block(dex, pool_identifier, block_number)
+                    .update_pool_last_synced_block(dex, &pool_identifier, block_number)
                     .await?;
             }
         }
@@ -642,7 +642,7 @@ impl BlockchainDataClientCore {
 
         metrics.log_final_stats();
         self.cache
-            .update_pool_last_synced_block(dex, pool_identifier, to_block)
+            .update_pool_last_synced_block(dex, &pool_identifier, to_block)
             .await?;
 
         tracing::info!(
@@ -718,7 +718,7 @@ impl BlockchainDataClientCore {
         let mut swap = swap_event.to_pool_swap(
             self.chain.clone(),
             pool.instrument_id,
-            pool.pool_identifier.clone(),
+            pool.pool_identifier,
             timestamp,
         );
         swap.calculate_trade_info(&pool.token0, &pool.token1, None)?;
@@ -746,7 +746,6 @@ impl BlockchainDataClientCore {
             self.chain.clone(),
             dex_extended.dex.clone(),
             pool.instrument_id,
-            pool.pool_identifier.clone(),
             timestamp,
         );
 
@@ -776,7 +775,7 @@ impl BlockchainDataClientCore {
             self.chain.clone(),
             dex_extended.dex.clone(),
             pool.instrument_id,
-            pool.pool_identifier.clone(),
+            pool.pool_identifier,
             timestamp,
         );
 
@@ -805,7 +804,6 @@ impl BlockchainDataClientCore {
             self.chain.clone(),
             dex_extended.dex.clone(),
             pool.instrument_id,
-            pool.pool_identifier.clone(),
             timestamp,
         );
 
@@ -827,12 +825,7 @@ impl BlockchainDataClientCore {
             .get_block_timestamp(flash_event.block_number)
             .copied();
 
-        let flash = flash_event.to_pool_flash(
-            self.chain.clone(),
-            pool.instrument_id,
-            pool.pool_identifier.clone(),
-            timestamp,
-        );
+        let flash = flash_event.to_pool_flash(self.chain.clone(), pool.instrument_id, timestamp);
 
         Ok(flash)
     }
@@ -946,7 +939,7 @@ impl BlockchainDataClientCore {
             .database
             .as_ref()
             .unwrap()
-            .load_latest_valid_pool_snapshot(pool.chain.chain_id, &pool.address)
+            .load_latest_valid_pool_snapshot(pool.chain.chain_id, &pool.pool_identifier)
             .await
         {
             Ok(Some(snapshot)) => {
@@ -986,7 +979,7 @@ impl BlockchainDataClientCore {
 
         // Sync the pool events before bootstrapping of pool profiler
         if let Err(e) = self
-            .sync_pool_events(&pool.dex.name, &pool.pool_identifier, None, None, false)
+            .sync_pool_events(&pool.dex.name, pool.pool_identifier, None, None, false)
             .await
         {
             tracing::error!("Failed to sync pool events for snapshot request: {}", e);
@@ -1017,7 +1010,7 @@ impl BlockchainDataClientCore {
             pool.chain.clone(),
             pool.dex.clone(),
             pool.instrument_id,
-            &pool.address,
+            pool.pool_identifier,
             from_position.clone(),
         );
 
@@ -1226,7 +1219,7 @@ impl BlockchainDataClientCore {
             cache_database
                 .mark_pool_snapshot_valid(
                     profiler.pool.chain.chain_id,
-                    &profiler.pool.address,
+                    &profiler.pool.pool_identifier,
                     block_position.number,
                     block_position.transaction_index,
                     block_position.log_index,
@@ -1288,7 +1281,7 @@ impl BlockchainDataClientCore {
                 self.chain.clone(),
                 dex.clone(),
                 pool.instrument_id,
-                &pool.address,
+                pool.pool_identifier,
                 None,
             );
             let mut event_count = 0;
@@ -1358,7 +1351,7 @@ impl BlockchainDataClientCore {
     /// # Errors
     ///
     /// Returns an error if the pool is not registered in the cache.
-    pub fn get_pool(&self, pool_identifier: &str) -> anyhow::Result<&SharedPool> {
+    pub fn get_pool(&self, pool_identifier: &PoolIdentifier) -> anyhow::Result<&SharedPool> {
         match self.cache.get_pool(pool_identifier) {
             Some(pool) => Ok(pool),
             None => anyhow::bail!("Pool {pool_identifier} is not registered"),

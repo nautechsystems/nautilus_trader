@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::{Address, U160};
+use nautilus_model::defi::PoolIdentifier;
 
 /// Represents a liquidity pool creation event from a decentralized exchange.
 ///
@@ -31,9 +32,7 @@ pub struct PoolCreatedEvent {
     /// For V4: the PoolManager contract address
     pub pool_address: Address,
     /// The unique identifier for this pool.
-    /// For V2/V3: same as pool_address (hex string)
-    /// For V4: the Pool ID (bytes32 as hex string)
-    pub pool_identifier: String,
+    pub pool_identifier: PoolIdentifier,
     /// The fee tier of the pool, specified in basis points (e.g., 500 = 0.05%, 3000 = 0.3%).
     pub fee: Option<u32>,
     /// The tick spacing parameter that controls the granularity of price ranges.
@@ -52,7 +51,7 @@ impl PoolCreatedEvent {
         token0: Address,
         token1: Address,
         pool_address: Address,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         fee: Option<u32>,
         tick_spacing: Option<u32>,
     ) -> Self {

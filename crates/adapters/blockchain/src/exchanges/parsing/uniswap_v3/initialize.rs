@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::{dyn_abi::SolType, primitives::Address, sol};
-use nautilus_model::defi::{SharedDex, rpc::RpcLog};
+use nautilus_model::defi::{PoolIdentifier, SharedDex, rpc::RpcLog};
+use ustr::Ustr;
 
 use crate::{
     events::initialize::InitializeEvent,
@@ -70,7 +71,7 @@ pub fn parse_initialize_event_hypersync(
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
-        let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
+        let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
 
         Ok(InitializeEvent::new(
             dex,
@@ -105,7 +106,7 @@ pub fn parse_initialize_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Resul
     };
 
     let pool_address = rpc_helpers::extract_address(log)?;
-    let pool_identifier = format!("0x{}", hex::encode(pool_address.as_slice()));
+    let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     Ok(InitializeEvent::new(
         dex,
         pool_identifier,
@@ -176,8 +177,8 @@ mod tests {
         let event = parse_initialize_event_hypersync(dex, hypersync_log).unwrap();
 
         assert_eq!(
-            event.pool_identifier,
-            "0xd13040d4fe917ee704158cfcb3338dcd2838b245"
+            event.pool_identifier.to_string(),
+            "0xd13040d4fe917EE704158CfCB3338dCd2838B245"
         );
         let expected_sqrt_price = U160::from_str_radix("3d409fc4ca983d2e3df335", 16).unwrap();
         assert_eq!(event.sqrt_price_x96, expected_sqrt_price);
@@ -190,8 +191,8 @@ mod tests {
         let event = parse_initialize_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
-            event.pool_identifier,
-            "0xd13040d4fe917ee704158cfcb3338dcd2838b245"
+            event.pool_identifier.to_string(),
+            "0xd13040d4fe917EE704158CfCB3338dCd2838B245"
         );
         let expected_sqrt_price = U160::from_str_radix("3d409fc4ca983d2e3df335", 16).unwrap();
         assert_eq!(event.sqrt_price_x96, expected_sqrt_price);

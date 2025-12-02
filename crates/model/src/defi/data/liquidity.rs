@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
 use crate::{
-    defi::{SharedChain, SharedDex},
+    defi::{PoolIdentifier, SharedChain, SharedDex},
     identifiers::InstrumentId,
 };
 
@@ -67,7 +67,7 @@ pub struct PoolLiquidityUpdate {
     /// The instrument ID for this pool's trading pair.
     pub instrument_id: InstrumentId,
     /// The unique identifier for this pool (could be an address or other protocol-specific hex string).
-    pub pool_identifier: String,
+    pub pool_identifier: PoolIdentifier,
     /// The type of the pool liquidity update.
     pub kind: PoolLiquidityUpdateType,
     /// The blockchain block number where the liquidity update occurred.
@@ -106,7 +106,7 @@ impl PoolLiquidityUpdate {
         chain: SharedChain,
         dex: SharedDex,
         instrument_id: InstrumentId,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         kind: PoolLiquidityUpdateType,
         block: u64,
         transaction_hash: String,

@@ -16,7 +16,7 @@
 use alloy::primitives::{Address, I256, U160};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    defi::{PoolSwap, SharedChain, SharedDex},
+    defi::{PoolIdentifier, PoolSwap, SharedChain, SharedDex},
     identifiers::InstrumentId,
 };
 
@@ -29,9 +29,7 @@ pub struct SwapEvent {
     /// The decentralized exchange where the event happened.
     pub dex: SharedDex,
     /// The unique identifier for the pool.
-    /// For V2/V3: same as pool address (hex string)
-    /// For V4: the Pool ID (bytes32 as hex string)
-    pub pool_identifier: String,
+    pub pool_identifier: PoolIdentifier,
     /// The block number in which this swap transaction was included.
     pub block_number: u64,
     /// The unique hash identifier of the transaction containing this event.
@@ -65,7 +63,7 @@ impl SwapEvent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         dex: SharedDex,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -102,7 +100,7 @@ impl SwapEvent {
         &self,
         chain: SharedChain,
         instrument_id: InstrumentId,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         timestamp: Option<UnixNanos>,
     ) -> PoolSwap {
         PoolSwap::new(

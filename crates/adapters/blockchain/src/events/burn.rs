@@ -16,7 +16,7 @@
 use alloy::primitives::{Address, U256};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    defi::{PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain, SharedDex},
+    defi::{PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain, SharedDex},
     identifiers::InstrumentId,
 };
 
@@ -26,7 +26,7 @@ pub struct BurnEvent {
     /// The decentralized exchange where the event happened.
     pub dex: SharedDex,
     /// The unique identifier for the pool.
-    pub pool_identifier: String,
+    pub pool_identifier: PoolIdentifier,
     /// The block number when the burn occurred.
     pub block_number: u64,
     /// The unique hash identifier of the transaction containing this event.
@@ -55,7 +55,7 @@ impl BurnEvent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         dex: SharedDex,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -91,7 +91,7 @@ impl BurnEvent {
         chain: SharedChain,
         dex: SharedDex,
         instrument_id: InstrumentId,
-        pool_identifier: String,
+        pool_identifier: PoolIdentifier,
         timestamp: Option<UnixNanos>,
     ) -> PoolLiquidityUpdate {
         PoolLiquidityUpdate::new(

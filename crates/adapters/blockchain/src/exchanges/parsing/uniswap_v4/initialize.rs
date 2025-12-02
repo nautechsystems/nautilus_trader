@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::{dyn_abi::SolType, primitives::Address, sol};
-use nautilus_model::defi::rpc::RpcLog;
+use nautilus_model::defi::{PoolIdentifier, rpc::RpcLog};
+use ustr::Ustr;
 
 use crate::{
     events::pool_created::PoolCreatedEvent,
@@ -98,7 +99,7 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Missing poolId topic"))?
         .as_ref();
-    let pool_identifier = format!("0x{}", hex::encode(pool_id_bytes));
+    let pool_identifier = Ustr::from(format!("0x{}", hex::encode(pool_id_bytes)).as_str());
 
     let currency0 = Address::from_slice(
         topics[2]
@@ -137,7 +138,7 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
             currency0,
             currency1,
             pool_manager_address, // V4 pools are managed by PoolManager
-            pool_identifier,      // Pool ID (bytes32 as hex string)
+            PoolIdentifier::PoolId(pool_identifier), // Pool ID (bytes32 as hex string)
             Some(decoded.fee.to::<u32>()),
             Some(i32::try_from(decoded.tick_spacing)? as u32),
         );
@@ -178,7 +179,7 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
 
     // Extract Pool ID from topics[1] - this is the unique identifier for V4 pools
     let pool_id_bytes = rpc_helpers::decode_hex(&log.topics[1])?;
-    let pool_identifier = format!("0x{}", hex::encode(pool_id_bytes));
+    let pool_identifier = Ustr::from(format!("0x{}", hex::encode(pool_id_bytes)).as_str());
 
     let currency0_bytes = rpc_helpers::decode_hex(&log.topics[2])?;
     let currency0 = Address::from_slice(&currency0_bytes[12..32]);
@@ -205,7 +206,7 @@ pub fn parse_initialize_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEve
         currency0,
         currency1,
         pool_manager_address,
-        pool_identifier, // Pool ID (bytes32 as hex string)
+        PoolIdentifier::PoolId(pool_identifier), // Pool ID (bytes32 as hex string)
         Some(decoded.fee.to::<u32>()),
         Some(i32::try_from(decoded.tick_spacing)? as u32),
     );
@@ -290,7 +291,7 @@ mod tests {
             "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
         );
         assert_eq!(
-            event.pool_identifier.to_lowercase(),
+            event.pool_identifier.to_string(),
             "0xc9bc8043294146424a4e4607d8ad837d6a659142822bbaaabc83bb57e7447461"
         );
         assert_eq!(event.fee, Some(3000));
@@ -313,7 +314,7 @@ mod tests {
             "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
         );
         assert_eq!(
-            event.pool_identifier.to_lowercase(),
+            event.pool_identifier.to_string(),
             "0xc9bc8043294146424a4e4607d8ad837d6a659142822bbaaabc83bb57e7447461"
         );
         assert_eq!(event.fee, Some(3000));
