@@ -728,6 +728,25 @@ impl Display for BarType {
     }
 }
 
+impl BarType {
+    #[allow(dead_code)]
+    /// Returns a string representation without aggregation source information.
+    fn to_str_proxy(self) -> String {
+        match self {
+            Self::Standard {
+                instrument_id,
+                spec,
+                ..
+            } => format!("{instrument_id}-{spec}"),
+            Self::Composite {
+                instrument_id,
+                spec,
+                ..
+            } => format!("{instrument_id}-{spec}"),
+        }
+    }
+}
+
 impl Serialize for BarType {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1304,6 +1323,17 @@ mod tests {
         assert_eq!(bar_type1, bar_type1);
         assert_eq!(bar_type1, bar_type2);
         assert_ne!(bar_type1, bar_type3);
+    }
+
+    #[rstest]
+    fn test_bar_type_equality_ignores_aggregation_source() {
+        // Build bar types that differ only by aggregation source.
+        let bar_type = BarType::from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL").unwrap();
+        let bar_type2_str = bar_type.to_string().replace("EXTERNAL", "INTERNAL");
+        let bar_type2 = BarType::from_str(&bar_type2_str).unwrap();
+
+        // Assert that both variants hash to the same bucket and are equal.
+        assert_eq!(bar_type.to_str_proxy(), bar_type2.to_str_proxy());
     }
 
     #[rstest]

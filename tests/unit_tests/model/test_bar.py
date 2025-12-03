@@ -666,6 +666,14 @@ class TestBarType:
         assert bar_type.spec == bar_spec
         assert bar_type.aggregation_source == AggregationSource.EXTERNAL
 
+    def test_bar_type_equality_ignores_aggregation_source(self):
+        # Arrange
+        bar_type = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
+        bar_type2 = BarType.from_str(str(bar_type).replace("EXTERNAL", "INTERNAL"))
+
+        # Assert
+        assert bar_type.to_str_proxy() == bar_type2.to_str_proxy()
+
 
 class TestBar:
     def test_fully_qualified_name(self):

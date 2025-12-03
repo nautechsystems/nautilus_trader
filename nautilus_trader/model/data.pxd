@@ -152,6 +152,7 @@ cdef class BarType:
     cdef BarType_t _mem
 
     cdef str to_str(self)
+    cpdef str to_str_proxy(self)
 
     @staticmethod
     cdef BarType from_mem_c(BarType_t raw)

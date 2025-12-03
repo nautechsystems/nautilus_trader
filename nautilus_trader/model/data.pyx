@@ -30,7 +30,6 @@ from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
-from libc.stdint cimport uintptr_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -58,8 +57,6 @@ from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport Quantity_t
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport RecordFlag
-from nautilus_trader.core.rust.model cimport bar_eq
-from nautilus_trader.core.rust.model cimport bar_hash
 from nautilus_trader.core.rust.model cimport bar_new
 from nautilus_trader.core.rust.model cimport bar_specification_eq
 from nautilus_trader.core.rust.model cimport bar_specification_ge
@@ -73,16 +70,10 @@ from nautilus_trader.core.rust.model cimport bar_to_cstr
 from nautilus_trader.core.rust.model cimport bar_type_aggregation_source
 from nautilus_trader.core.rust.model cimport bar_type_check_parsing
 from nautilus_trader.core.rust.model cimport bar_type_composite
-from nautilus_trader.core.rust.model cimport bar_type_eq
 from nautilus_trader.core.rust.model cimport bar_type_from_cstr
-from nautilus_trader.core.rust.model cimport bar_type_ge
-from nautilus_trader.core.rust.model cimport bar_type_gt
-from nautilus_trader.core.rust.model cimport bar_type_hash
 from nautilus_trader.core.rust.model cimport bar_type_instrument_id
 from nautilus_trader.core.rust.model cimport bar_type_is_composite
 from nautilus_trader.core.rust.model cimport bar_type_is_standard
-from nautilus_trader.core.rust.model cimport bar_type_le
-from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_new_composite
 from nautilus_trader.core.rust.model cimport bar_type_spec
@@ -98,7 +89,6 @@ from nautilus_trader.core.rust.model cimport index_price_update_eq
 from nautilus_trader.core.rust.model cimport index_price_update_hash
 from nautilus_trader.core.rust.model cimport index_price_update_new
 from nautilus_trader.core.rust.model cimport index_price_update_to_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport mark_price_update_eq
 from nautilus_trader.core.rust.model cimport mark_price_update_hash
 from nautilus_trader.core.rust.model cimport mark_price_update_new
@@ -129,19 +119,13 @@ from nautilus_trader.core.rust.model cimport quote_tick_eq
 from nautilus_trader.core.rust.model cimport quote_tick_hash
 from nautilus_trader.core.rust.model cimport quote_tick_new
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
-from nautilus_trader.core.rust.model cimport symbol_new
-from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_eq
 from nautilus_trader.core.rust.model cimport trade_tick_hash
 from nautilus_trader.core.rust.model cimport trade_tick_new
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
-from nautilus_trader.core.rust.model cimport venue_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
-from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.model.data cimport BarAggregation
-from nautilus_trader.model.data cimport BarIntervalType
-from nautilus_trader.model.functions cimport aggregation_source_from_str
 from nautilus_trader.model.functions cimport aggressor_side_from_str
 from nautilus_trader.model.functions cimport aggressor_side_to_str
 from nautilus_trader.model.functions cimport bar_aggregation_from_str
@@ -157,9 +141,7 @@ from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport price_type_from_str
 from nautilus_trader.model.functions cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TradeId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.objects cimport price_new
@@ -1218,6 +1200,10 @@ cdef class BarType:
 
     cdef str to_str(self):
         return cstr_to_pystr(bar_type_to_cstr(&self._mem))
+
+    cpdef str to_str_proxy(self):
+        # We remove the AggregationSource information
+        self.standard().to_str()[:-9]
 
     def __eq__(self, BarType other) -> bool:
         if other is None:

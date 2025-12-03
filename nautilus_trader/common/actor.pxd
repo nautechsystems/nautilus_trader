@@ -65,7 +65,7 @@ cdef class Actor(Component):
     cdef list[Indicator] _indicators
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_quotes
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_trades
-    cdef dict[BarType, list[Indicator]] _indicators_for_bars
+    cdef dict[str, list[Indicator]] _indicators_for_bars
 
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the actor.\n\n:returns: `PortfolioFacade`"""

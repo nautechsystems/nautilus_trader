@@ -165,7 +165,7 @@ cdef class Actor(Component):
         self._indicators: list[Indicator] = []
         self._indicators_for_quotes: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
-        self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
+        self._indicators_for_bars: dict[str, list[Indicator]] = {}
 
         # Topic cache
 
@@ -840,15 +840,15 @@ cdef class Actor(Component):
         if indicator not in self._indicators:
             self._indicators.append(indicator)
 
-        cdef BarType standard_bar_type = bar_type.standard()
-        if standard_bar_type not in self._indicators_for_bars:
-            self._indicators_for_bars[standard_bar_type] = []  # type: list[Indicator]
+        cdef str bar_type_proxy = bar_type.to_str_proxy()
+        if bar_type_proxy not in self._indicators_for_bars:
+            self._indicators_for_bars[bar_type_proxy] = []  # type: list[Indicator]
 
-        if indicator not in self._indicators_for_bars[standard_bar_type]:
-            self._indicators_for_bars[standard_bar_type].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {standard_bar_type} bars")
+        if indicator not in self._indicators_for_bars[bar_type_proxy]:
+            self._indicators_for_bars[bar_type_proxy].append(indicator)
+            self.log.info(f"Registered Indicator {indicator} for {bar_type_proxy} bars")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {standard_bar_type} bars")
+            self.log.error(f"Indicator {indicator} already registered for {bar_type_proxy} bars")
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
@@ -3989,7 +3989,7 @@ cdef class Actor(Component):
         Condition.not_none(bar, "bar")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(bar.bar_type)
+        cdef list indicators = self._indicators_for_bars.get(bar.bar_type.to_str_proxy())
         if indicators:
             self._handle_indicators_for_bar(indicators, bar)
 
