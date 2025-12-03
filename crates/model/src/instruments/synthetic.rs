@@ -186,6 +186,12 @@ impl SyntheticInstrument {
         })
     }
 
+    pub fn is_valid_formula_for_components(formula: &str, components: &[InstrumentId]) -> bool {
+        let (safe_formula, _, _) =
+            make_safe_formula_with_variables_and_mapping(formula, components);
+        evalexpr::build_operator_tree(&safe_formula).is_ok()
+    }
+
     /// Creates a new [`SyntheticInstrument`] instance, parsing the given formula.
     ///
     /// # Panics
@@ -212,9 +218,7 @@ impl SyntheticInstrument {
 
     #[must_use]
     pub fn is_valid_formula(&self, formula: &str) -> bool {
-        let (safe_formula, _, _) =
-            make_safe_formula_with_variables_and_mapping(formula, &self.components);
-        evalexpr::build_operator_tree(&safe_formula).is_ok()
+        Self::is_valid_formula_for_components(formula, &self.components)
     }
 
     /// # Errors
@@ -223,8 +227,6 @@ impl SyntheticInstrument {
     pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
         let (safe_formula, variables, safe_to_original) =
             make_safe_formula_with_variables_and_mapping(&formula, &self.components);
-        self.variables = variables;
-        self.safe_to_original = safe_to_original;
         let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
         self.formula = safe_formula;
         self.operator_tree = operator_tree;
