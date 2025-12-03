@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 Kraken Futures Demo - Comprehensive testing of the Kraken Futures adapter.
 
@@ -38,9 +37,9 @@ Usage:
 
 import asyncio
 import os
-import sys
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from datetime import UTC
+from datetime import datetime
+from datetime import timedelta
 
 from nautilus_trader.core.nautilus_pyo3 import AccountId
 from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
@@ -51,24 +50,26 @@ from nautilus_trader.core.nautilus_pyo3 import OrderType
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import TimeInForce
-from nautilus_trader.core.nautilus_pyo3 import VenueOrderId
-from nautilus_trader.model.data import BarType
 
 
 def get_testnet_credentials():
-    """Check for testnet credentials in environment."""
+    """
+    Check for testnet credentials in environment.
+    """
     api_key = os.environ.get("KRAKEN_TESTNET_API_KEY")
     api_secret = os.environ.get("KRAKEN_TESTNET_API_SECRET")
-    
+
     if api_key and api_secret:
         return api_key, api_secret
     return None, None
 
 
 async def test_futures_public(client: KrakenFuturesHttpClient):
-    """Test Futures public endpoints."""
+    """
+    Test Futures public endpoints.
+    """
     print("\n=== Testing Futures Public Endpoints ===")
-    
+
     # Test 1: Request instruments
     print("\n[1/5] Requesting instruments...")
     try:
@@ -83,14 +84,14 @@ async def test_futures_public(client: KrakenFuturesHttpClient):
     except Exception as e:
         print(f"[ERROR] Instruments request failed: {e}")
         return
-    
+
     # Use PI_XBTUSD for remaining tests
     instrument_id = InstrumentId.from_str("PI_XBTUSD.KRAKEN")
-    
+
     # Test 2: Request trades
     print("\n[2/5] Requesting recent trades for PI_XBTUSD...")
     try:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(minutes=5)
         trades = await client.request_trades(instrument_id, start, end, limit=10)
         print(f"[OK] Received {len(trades)} trades")
@@ -99,47 +100,49 @@ async def test_futures_public(client: KrakenFuturesHttpClient):
             print(f"  Latest: {latest.price} @ {latest.size} ({latest.aggressor_side})")
     except Exception as e:
         print(f"[ERROR] Trades request failed: {e}")
-    
+
     # Test 3: Request mark price
     print("\n[3/5] Requesting mark price for PI_XBTUSD...")
     mark_price = None
     try:
         mark_price = await client.request_mark_price(instrument_id)
         print(f"[OK] Mark price: {mark_price}")
-    except Exception as e:
-        print(f"[WARN] Mark price unavailable in testnet")
-    
+    except Exception:
+        print("[WARN] Mark price unavailable in testnet")
+
     # Test 4: Request index price
     print("\n[4/5] Requesting index price for PI_XBTUSD...")
     try:
         index_price = await client.request_index_price(instrument_id)
         print(f"[OK] Index price: {index_price}")
-    except Exception as e:
-        print(f"[WARN] Index price unavailable in testnet")
-    
+    except Exception:
+        print("[WARN] Index price unavailable in testnet")
+
     # Return mark price or latest trade price for order placement tests
     return mark_price or (trades[-1].price if trades else None)
-    
+
     # Test 5: Request bars
     print("\n[5/5] Requesting 1-minute bars for PI_XBTUSD...")
     try:
         from nautilus_trader.model.data import BarType as NautilusBarType
         bar_type = NautilusBarType.from_str("PI_XBTUSD.KRAKEN-1-MINUTE-LAST-EXTERNAL")
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(hours=1)
         bars = await client.request_bars(bar_type, start, end, limit=10)
         print(f"[OK] Received {len(bars)} bars")
         if bars:
             latest = bars[-1]
             print(f"  Latest: O={latest.open} H={latest.high} L={latest.low} C={latest.close} V={latest.volume}")
-    except Exception as e:
-        print(f"[WARN] Bars unavailable in testnet")
+    except Exception:
+        print("[WARN] Bars unavailable in testnet")
 
 
 async def test_futures_authenticated(client: KrakenFuturesHttpClient, account_id: AccountId):
-    """Test Futures authenticated endpoints."""
+    """
+    Test Futures authenticated endpoints.
+    """
     print("\n=== Testing Futures Authenticated Endpoints ===")
-    
+
     # Test 1: Request open orders
     print("\n[1/3] Requesting open orders...")
     try:
@@ -154,7 +157,7 @@ async def test_futures_authenticated(client: KrakenFuturesHttpClient, account_id
     except Exception as e:
         print(f"[ERROR] Open orders request failed: {e}")
         return
-    
+
     # Test 2: Request positions
     print("\n[2/3] Requesting open positions...")
     try:
@@ -165,11 +168,11 @@ async def test_futures_authenticated(client: KrakenFuturesHttpClient, account_id
                 print(f"  Position: {pos.instrument_id} size={pos.quantity}")
     except Exception as e:
         print(f"[ERROR] Positions request failed: {e}")
-    
+
     # Test 3: Request recent fills
     print("\n[3/3] Requesting recent fills...")
     try:
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(hours=24)
         fills = await client.request_fill_reports(
             account_id=account_id,
@@ -184,27 +187,33 @@ async def test_futures_authenticated(client: KrakenFuturesHttpClient, account_id
         print(f"[ERROR] Fills request failed: {e}")
 
 
-async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_id: AccountId, reference_price):
-    """Test order placement with all required order types."""
+async def test_futures_order_placement(  # noqa: C901
+    client: KrakenFuturesHttpClient,
+    account_id: AccountId,
+    reference_price,
+):
+    """
+    Test order placement with all required order types.
+    """
     print("\n=== Testing Order Placement ===")
-    
+
     instrument_id = InstrumentId.from_str("PI_XBTUSD.KRAKEN")
     placed_order_ids = []
-    
+
     # Use provided reference price
     if not reference_price:
         print("[ERROR] No reference price available, skipping order placement tests")
         return
-    
+
     mark_price = float(reference_price)
     print(f"\nUsing reference price: {mark_price}")
-    
+
     # Test 1: LIMIT order (Post-only, far from market)
     print("\n[Test 1/8] Placing LIMIT order (post-only, 50% of market price)...")
     try:
         limit_price = float(mark_price) * 0.50  # 50% below market
         client_order_id = ClientOrderId(f"test-limit-{int(datetime.now().timestamp())}")
-        
+
         report = await client.submit_order(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -216,19 +225,19 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
             price=Price.from_str(f"{limit_price:.2f}"),
             post_only=True,
         )
-        
+
         venue_order_id = report.venue_order_id
         print(f"[OK] LIMIT order placed: {venue_order_id}")
         print(f"  Price: {limit_price:.2f}, Status: {report.order_status}")
         placed_order_ids.append(venue_order_id)
-        
+
     except Exception as e:
         error_msg = str(e)
         if "502" in error_msg:
-            print(f"[WARN] LIMIT order skipped (testnet API returned 502 - infrastructure issue)")
+            print("[WARN] LIMIT order skipped (testnet API returned 502 - infrastructure issue)")
         else:
             print(f"[ERROR] LIMIT order failed: {e}")
-    
+
     # Test 2: Cancel the LIMIT order
     print("\n[Test 2/8] Cancelling LIMIT order...")
     try:
@@ -242,15 +251,15 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
             placed_order_ids.pop(0)
     except Exception as e:
         print(f"[ERROR] Cancel failed: {e}")
-    
+
     await asyncio.sleep(2)  # Longer delay to avoid rate limiting
-    
+
     # Test 3: STOP_MARKET order (stop-loss trigger)
     print("\n[Test 3/8] Placing STOP_MARKET order (trigger at 60% of market)...")
     try:
         stop_price = float(mark_price) * 0.60  # 60% of market (stop-loss)
         client_order_id = ClientOrderId(f"test-stop-{int(datetime.now().timestamp())}")
-        
+
         report = await client.submit_order(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -261,28 +270,28 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
             time_in_force=TimeInForce.GTC,
             trigger_price=Price.from_str(f"{stop_price:.2f}"),
         )
-        
+
         venue_order_id = report.venue_order_id
         print(f"[OK] STOP_MARKET order placed: {venue_order_id}")
         print(f"  Trigger: {stop_price:.2f}, Status: {report.order_status}")
         placed_order_ids.append(venue_order_id)
-        
+
     except Exception as e:
         error_msg = str(e)
         if "502" in error_msg:
-            print(f"[WARN] STOP_MARKET order skipped (testnet API returned 502 - infrastructure issue)")
+            print("[WARN] STOP_MARKET order skipped (testnet API returned 502 - infrastructure issue)")
         else:
             print(f"[ERROR] STOP_MARKET order failed: {e}")
-    
+
     await asyncio.sleep(2)  # Longer delay to avoid rate limiting
-    
+
     # Test 4: STOP_LIMIT order (stop-loss with limit price)
     print("\n[Test 4/8] Placing STOP_LIMIT order (trigger at 65% with limit at 64%)...")
     try:
         stop_trigger = float(mark_price) * 0.65  # 65% of market
         stop_limit = float(mark_price) * 0.64   # 64% of market
         client_order_id = ClientOrderId(f"test-stop-limit-{int(datetime.now().timestamp())}")
-        
+
         report = await client.submit_order(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -294,21 +303,21 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
             price=Price.from_str(f"{stop_limit:.2f}"),  # Limit price
             trigger_price=Price.from_str(f"{stop_trigger:.2f}"),  # Stop trigger
         )
-        
+
         venue_order_id = report.venue_order_id
         print(f"[OK] STOP_LIMIT order placed: {venue_order_id}")
         print(f"  Trigger: {stop_trigger:.2f}, Limit: {stop_limit:.2f}, Status: {report.order_status}")
         placed_order_ids.append(venue_order_id)
-        
+
     except Exception as e:
         error_msg = str(e)
         if "502" in error_msg:
-            print(f"[WARN] STOP_LIMIT order skipped (testnet API returned 502 - infrastructure issue)")
+            print("[WARN] STOP_LIMIT order skipped (testnet API returned 502 - infrastructure issue)")
         else:
             print(f"[ERROR] STOP_LIMIT order failed: {e}")
-    
+
     await asyncio.sleep(2)  # Longer delay to avoid rate limiting
-    
+
     # Test 5: MARKET_IF_TOUCHED order (take-profit trigger)
     print("\n[Test 5/8] Placing MARKET_IF_TOUCHED order (trigger at 150% of market)...")
     try:
@@ -316,7 +325,7 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
         # Add a limit price slightly above trigger for take-profit orders
         limit_price = profit_price * 1.01  # 1% above trigger
         client_order_id = ClientOrderId(f"test-profit-{int(datetime.now().timestamp())}")
-        
+
         report = await client.submit_order(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -328,22 +337,22 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
             price=Price.from_str(f"{limit_price:.2f}"),  # Limit price for execution
             trigger_price=Price.from_str(f"{profit_price:.2f}"),  # Trigger price
         )
-        
+
         venue_order_id = report.venue_order_id
         print(f"[OK] MARKET_IF_TOUCHED order placed: {venue_order_id}")
         print(f"  Trigger: {profit_price:.2f}, Limit: {limit_price:.2f}, Status: {report.order_status}")
         placed_order_ids.append(venue_order_id)
-        
+
     except Exception as e:
         print(f"[WARN] MARKET_IF_TOUCHED order skipped (testnet API limitation): {str(e)[:60]}")
-    
+
     await asyncio.sleep(1)
-    
+
     # Test 6: MARKET order (immediate execution)
     print("\n[Test 6/8] Placing MARKET order (immediate execution)...")
     try:
         client_order_id = ClientOrderId(f"test-market-{int(datetime.now().timestamp())}")
-        
+
         report = await client.submit_order(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -353,15 +362,15 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
             quantity=Quantity.from_int(1),
             time_in_force=TimeInForce.IOC,
         )
-        
-        print(f"[OK] MARKET order executed")
+
+        print("[OK] MARKET order executed")
         print(f"  Status: {report.order_status}, Filled: {report.filled_qty}")
-        
+
     except Exception as e:
         print(f"[ERROR] MARKET order failed: {e}")
-    
+
     await asyncio.sleep(1)
-    
+
     # Test 7: Close position with reduce_only MARKET order
     print("\n[Test 7/8] Closing position with reduce_only MARKET order...")
     try:
@@ -370,35 +379,35 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
             account_id=account_id,
             instrument_id=instrument_id,
         )
-        
+
         if positions:
             pos = positions[0]
             print(f"  Current position size: {pos.quantity}")
-            
+
             # Close with opposite side based on quantity sign
-            position_qty = float(pos.quantity)
+            position_qty = pos.quantity.as_double()
             close_side = OrderSide.SELL if position_qty > 0 else OrderSide.BUY
             client_order_id = ClientOrderId(f"test-close-{int(datetime.now().timestamp())}")
-            
+
             report = await client.submit_order(
                 account_id=account_id,
                 instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 order_side=close_side,
                 order_type=OrderType.MARKET,
-                quantity=Quantity.from_str(str(abs(float(pos.quantity)))),
+                quantity=Quantity.from_str(str(abs(pos.quantity.as_double()))),
                 time_in_force=TimeInForce.IOC,
                 reduce_only=True,
             )
-            
-            print(f"[OK] Position close order executed")
+
+            print("[OK] Position close order executed")
             print(f"  Status: {report.order_status}, Filled: {report.filled_qty}")
         else:
             print("  No position to close")
-            
+
     except Exception as e:
         print(f"[ERROR] Position close failed: {e}")
-    
+
     # Cleanup: Cancel any remaining open orders
     if placed_order_ids:
         print(f"\n[Cleanup] Cancelling {len(placed_order_ids)} remaining orders...")
@@ -407,7 +416,7 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
             print(f"[OK] Cancelled {cancelled_count} orders")
         except Exception as e:
             print(f"[ERROR] Cleanup failed: {e}")
-    
+
     # Final status check
     print("\n[Final Status] Checking open orders and positions...")
     try:
@@ -420,13 +429,13 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
         print(f"  Open positions: {len(positions)}")
     except Exception as e:
         print(f"[ERROR] Status check failed: {e}")
-    
+
     # Test 8: IOC (Immediate-or-Cancel) LIMIT order
     print("\n[Test 8/8] Placing IOC LIMIT order (immediate-or-cancel)...")
     try:
         ioc_price = float(mark_price) * 0.55  # 55% below market (unlikely to fill)
         client_order_id = ClientOrderId(f"test-ioc-{int(datetime.now().timestamp())}")
-        
+
         report = await client.submit_order(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -437,59 +446,61 @@ async def test_futures_order_placement(client: KrakenFuturesHttpClient, account_
             time_in_force=TimeInForce.IOC,  # IOC time in force
             price=Price.from_str(f"{ioc_price:.2f}"),
         )
-        
-        print(f"[OK] IOC LIMIT order executed")
+
+        print("[OK] IOC LIMIT order executed")
         print(f"  Price: {ioc_price:.2f}, Status: {report.order_status}")
         # IOC orders auto-cancel if not filled, no need to track
-        
+
     except Exception as e:
         error_msg = str(e)
         if "502" in error_msg:
-            print(f"[WARN] IOC LIMIT order skipped (testnet API returned 502 - infrastructure issue)")
+            print("[WARN] IOC LIMIT order skipped (testnet API returned 502 - infrastructure issue)")
         else:
             print(f"[ERROR] IOC LIMIT order failed: {e}")
-    
+
     print("\nAll order type tests complete!")
 
 
 async def main():
-    """Main demo entry point."""
+    """
+    Run the main demo entry point.
+    """
     print("=== Kraken Futures Adapter Demo (TESTNET) ===\n")
-    
+
     # Check for testnet credentials
     api_key, api_secret = get_testnet_credentials()
-    
+
     if api_key and api_secret:
         print(f"Using KRAKEN_TESTNET_API_KEY: {api_key[:8]}...")
         print(f"Using KRAKEN_TESTNET_API_SECRET: {api_secret[:8]}...\n")
-        
+
         # Create authenticated client
         client = KrakenFuturesHttpClient(
             api_key=api_key,
             api_secret=api_secret,
             testnet=True,
         )
-        
+
         # Test public endpoints and get reference price
         reference_price = await test_futures_public(client)
-        
+
         # Test authenticated endpoints
         account_id = AccountId("KRAKEN-001")
         await test_futures_authenticated(client, account_id)
-        
+
         # Test order placement
         await test_futures_order_placement(client, account_id, reference_price)
-        
+
     else:
         print("No testnet credentials found")
         print("Running public endpoint tests only...\n")
-        
+
         # Create public client
         client = KrakenFuturesHttpClient(testnet=True)
-        
+
         # Test public endpoints only
         await test_futures_public(client)
-    
+
     print("\n=== Demo Complete ===")
 
 

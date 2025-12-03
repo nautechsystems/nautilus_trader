@@ -1523,9 +1523,7 @@ impl KrakenFuturesHttpClient {
                     reduce_only: prior_exec.reduce_only,
                 }
             } else {
-                return Err(anyhow::anyhow!(
-                    "No order, orderTrigger, or orderPriorExecution data in event"
-                ));
+                anyhow::bail!("No order, orderTrigger, or orderPriorExecution data in event");
             };
             return parse_futures_order_event_status_report(
                 &event,
