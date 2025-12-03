@@ -1296,6 +1296,8 @@ pub fn parse_instrument_any(
     taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<InstrumentAny>> {
+    let maker_fee = maker_fee.map(|v| -v);
+    let taker_fee = taker_fee.map(|v| -v);
     match instrument.inst_type {
         OKXInstrumentType::Spot => parse_spot_instrument(
             instrument,
