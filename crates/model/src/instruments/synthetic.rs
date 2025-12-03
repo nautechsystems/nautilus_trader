@@ -247,7 +247,7 @@ impl SyntheticInstrument {
             let value = inputs
                 .get(original)
                 .copied()
-                .ok_or_else(|| anyhow::anyhow!("Missing price for component: {variable}"))?;
+                .ok_or_else(|| anyhow::anyhow!("Missing price for component: {original}"))?;
 
             input_values.push(value);
 
