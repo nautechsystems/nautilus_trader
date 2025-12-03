@@ -305,6 +305,7 @@ impl Pool {
         chain: Chain,
         dex: Dex,
         address: String,
+        pool_identifier: String,
         creation_block: u64,
         token0: Token,
         token1: Token,
@@ -313,10 +314,12 @@ impl Pool {
         ts_init: u64,
     ) -> PyResult<Self> {
         let address = address.parse().map_err(to_pyvalue_err)?;
+        let pool_identifier = pool_identifier.parse().map_err(to_pyvalue_err)?;
         Ok(Self::new(
             Arc::new(chain),
             Arc::new(dex),
             address,
+            pool_identifier,
             creation_block,
             token0,
             token1,

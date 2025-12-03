@@ -18,10 +18,54 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesMarginType
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveInt
 from nautilus_trader.model.identifiers import Venue
+
+
+class BinanceInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
+    """
+    Configuration for ``BinanceInstrumentProvider`` instances.
+
+    Parameters
+    ----------
+    load_all : bool, default False
+        If all venue instruments should be loaded on start.
+    load_ids : frozenset[InstrumentId], optional
+        The list of instrument IDs to be loaded on start (if `load_all` is False).
+    filters : frozendict or dict[str, Any], optional
+        The venue specific instrument loading filters to apply.
+    filter_callable: str, optional
+        A fully qualified path to a callable that takes a single argument, `instrument` and returns a bool, indicating
+        whether the instrument should be loaded
+    log_warnings : bool, default True
+        If parser warnings should be logged.
+    query_commission_rates : bool, default False
+        If commission rates should be queried per symbol from the exchange.
+        When False, uses venue fee tier tables as fallback.
+        Recommended for market maker accounts with negative maker fees.
+
+    """
+
+    def __eq__(self, other: object) -> bool:
+        if other is None:
+            return False
+        if not isinstance(other, BinanceInstrumentProviderConfig):
+            return False
+        return (
+            self.load_all == other.load_all
+            and self.load_ids == other.load_ids
+            and self.filters == other.filters
+            and self.query_commission_rates == other.query_commission_rates
+        )
+
+    def __hash__(self) -> int:
+        filters = frozenset(self.filters.items()) if self.filters else None
+        return hash((self.load_all, self.load_ids, filters, self.query_commission_rates))
+
+    query_commission_rates: bool = False
 
 
 class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):

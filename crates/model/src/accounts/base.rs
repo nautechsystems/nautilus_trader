@@ -18,8 +18,7 @@
 //! Concrete account types (`CashAccount`, `MarginAccount`, etc.) build on the abstractions defined
 //! in this file.
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use nautilus_core::{UnixNanos, datetime::secs_to_nanos};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -44,16 +43,16 @@ pub struct BaseAccount {
     pub base_currency: Option<Currency>,
     pub calculate_account_state: bool,
     pub events: Vec<AccountState>,
-    pub commissions: HashMap<Currency, f64>,
-    pub balances: HashMap<Currency, AccountBalance>,
-    pub balances_starting: HashMap<Currency, Money>,
+    pub commissions: AHashMap<Currency, f64>,
+    pub balances: AHashMap<Currency, AccountBalance>,
+    pub balances_starting: AHashMap<Currency, Money>,
 }
 
 impl BaseAccount {
     /// Creates a new [`BaseAccount`] instance.
     pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
-        let mut balances_starting: HashMap<Currency, Money> = HashMap::new();
-        let mut balances: HashMap<Currency, AccountBalance> = HashMap::new();
+        let mut balances_starting: AHashMap<Currency, Money> = AHashMap::new();
+        let mut balances: AHashMap<Currency, AccountBalance> = AHashMap::new();
         event.balances.iter().for_each(|balance| {
             balances_starting.insert(balance.currency, balance.total);
             balances.insert(balance.currency, *balance);
@@ -64,7 +63,7 @@ impl BaseAccount {
             base_currency: event.base_currency,
             calculate_account_state,
             events: vec![event],
-            commissions: HashMap::new(),
+            commissions: AHashMap::new(),
             balances,
             balances_starting,
         }
@@ -98,7 +97,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_total(&self) -> HashMap<Currency, Money> {
+    pub fn base_balances_total(&self) -> AHashMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.total))
@@ -120,7 +119,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_free(&self) -> HashMap<Currency, Money> {
+    pub fn base_balances_free(&self) -> AHashMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.free))
@@ -142,7 +141,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_locked(&self) -> HashMap<Currency, Money> {
+    pub fn base_balances_locked(&self) -> AHashMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.locked))
@@ -242,7 +241,7 @@ impl BaseAccount {
                 .calculate_notional_value(quantity, price, use_quote_for_inverse)
                 .as_f64(),
             OrderSide::Sell => quantity.as_f64(),
-            _ => panic!("Invalid `OrderSide` in `base_calculate_balance_locked`"),
+            _ => anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}"),
         };
 
         // Handle inverse
@@ -253,7 +252,7 @@ impl BaseAccount {
         } else if side == OrderSide::Sell {
             Ok(Money::new(notional, base_currency))
         } else {
-            panic!("Invalid `OrderSide` in `base_calculate_balance_locked`")
+            anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}")
         }
     }
 
@@ -272,7 +271,7 @@ impl BaseAccount {
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
-        let mut pnls: HashMap<Currency, Money> = HashMap::new();
+        let mut pnls: AHashMap<Currency, Money> = AHashMap::new();
         let base_currency = instrument.base_currency();
 
         let fill_qty_value = position.map_or(fill.last_qty.as_f64(), |pos| {
@@ -305,20 +304,23 @@ impl BaseAccount {
                 Money::new(notional.as_f64(), notional.currency),
             );
         } else {
-            panic!("Invalid `OrderSide` in base_calculate_pnls")
+            anyhow::bail!(
+                "Invalid `OrderSide` in base_calculate_pnls: {}",
+                fill.order_side
+            );
         }
         Ok(pnls.into_values().collect())
     }
 
     /// Calculates commission fees for a filled order.
     ///
-    /// # Errors
-    ///
-    /// This function never returns an error (TBD).
-    ///
     /// # Panics
     ///
-    /// Panics if `liquidity_side` is `LiquiditySide::NoLiquiditySide` or otherwise invalid.
+    /// Panics if instrument fees cannot be converted to f64, or if base currency is unavailable for inverse instruments.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "Error conditions documented inline"
+    )]
     pub fn base_calculate_commission(
         &self,
         instrument: InstrumentAny,
@@ -327,9 +329,9 @@ impl BaseAccount {
         liquidity_side: LiquiditySide,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        assert!(
+        anyhow::ensure!(
             liquidity_side != LiquiditySide::NoLiquiditySide,
-            "Invalid `LiquiditySide`"
+            "Invalid `LiquiditySide`: {liquidity_side}"
         );
         let notional = instrument
             .calculate_notional_value(last_qty, last_px, use_quote_for_inverse)
@@ -339,7 +341,7 @@ impl BaseAccount {
         } else if liquidity_side == LiquiditySide::Taker {
             notional * instrument.taker_fee().to_f64().unwrap()
         } else {
-            panic!("Invalid `LiquiditySide` {liquidity_side}")
+            anyhow::bail!("Invalid `LiquiditySide`: {liquidity_side}");
         };
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
             Ok(Money::new(commission, instrument.base_currency().unwrap()))

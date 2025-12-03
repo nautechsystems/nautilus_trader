@@ -19,13 +19,28 @@ use nautilus_model::position::Position;
 
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the risk-return ratio (mean/std) for portfolio returns.
+///
+/// This is a non-annualized ratio of mean return to standard deviation.
+/// For an annualized version, use `SharpeRatio`.
+///
+/// Downsamples high-frequency returns to daily bins before calculation
+/// for consistency with other ratio-based statistics.
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct RiskReturnRatio {}
+
+impl RiskReturnRatio {
+    /// Creates a new [`RiskReturnRatio`] instance.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {}
+    }
+}
 
 impl Display for RiskReturnRatio {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -40,15 +55,16 @@ impl PortfolioStatistic for RiskReturnRatio {
         self.to_string()
     }
 
-    fn calculate_from_returns(&self, returns: &Returns) -> Option<Self::Item> {
-        if !self.check_valid_returns(returns) {
+    fn calculate_from_returns(&self, raw_returns: &Returns) -> Option<Self::Item> {
+        if !self.check_valid_returns(raw_returns) {
             return Some(f64::NAN);
         }
 
+        let returns = self.downsample_to_daily_bins(raw_returns);
         let mean = returns.values().sum::<f64>() / returns.len() as f64;
-        let std = self.calculate_std(returns);
+        let std = self.calculate_std(&returns);
 
-        if std < f64::EPSILON {
+        if std < f64::EPSILON || std.is_nan() {
             Some(f64::NAN)
         } else {
             Some(mean / std)
@@ -78,15 +94,20 @@ mod tests {
 
     fn create_returns(values: Vec<f64>) -> Returns {
         let mut new_return = BTreeMap::new();
-        for (i, value) in values.iter().enumerate() {
-            new_return.insert(UnixNanos::from(i as u64), *value);
+        let one_day_in_nanos = 86_400_000_000_000;
+        let start_time = 1_600_000_000_000_000_000;
+
+        for (i, &value) in values.iter().enumerate() {
+            let timestamp = start_time + i as u64 * one_day_in_nanos;
+            new_return.insert(UnixNanos::from(timestamp), value);
         }
+
         new_return
     }
 
     #[rstest]
     fn test_empty_returns() {
-        let ratio = RiskReturnRatio {};
+        let ratio = RiskReturnRatio::new();
         let returns = create_returns(vec![]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
@@ -95,7 +116,7 @@ mod tests {
 
     #[rstest]
     fn test_zero_std_dev() {
-        let ratio = RiskReturnRatio {};
+        let ratio = RiskReturnRatio::new();
         let returns = create_returns(vec![0.05; 10]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
@@ -104,7 +125,7 @@ mod tests {
 
     #[rstest]
     fn test_valid_risk_return_ratio() {
-        let ratio = RiskReturnRatio {};
+        let ratio = RiskReturnRatio::new();
         let returns = create_returns(vec![0.1, -0.05, 0.2, -0.1, 0.15]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
@@ -118,7 +139,7 @@ mod tests {
 
     #[rstest]
     fn test_name() {
-        let ratio = RiskReturnRatio {};
+        let ratio = RiskReturnRatio::new();
         assert_eq!(ratio.name(), "Risk Return Ratio");
     }
 }

@@ -22,7 +22,6 @@
 pub mod core;
 pub mod database;
 pub mod handler;
-pub mod listener;
 pub mod matching;
 pub mod message;
 pub mod stubs;
@@ -31,8 +30,7 @@ pub mod switchboard;
 #[cfg(test)]
 mod tests;
 
-pub use core::MessageBus;
-use core::{Endpoint, Subscription};
+pub use core::{Endpoint, MStr, MessageBus, Pattern, Subscription, Topic};
 use std::{
     self,
     any::Any,
@@ -47,8 +45,6 @@ use nautilus_model::data::Data;
 use ustr::Ustr;
 
 use crate::messages::data::DataResponse;
-// Re-exports
-pub use crate::msgbus::core::{MStr, Pattern, Topic};
 pub use crate::msgbus::message::BusMessage;
 
 // Thread-local storage for MessageBus instances. Each thread (including async runtimes)
@@ -122,7 +118,9 @@ pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
 
 /// Publish [`Data`] to a topic.
 pub fn publish_data(topic: &Ustr, message: Data) {
-    let matching_subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    let matching_subs = get_message_bus()
+        .borrow_mut()
+        .matching_subscriptions(*topic);
 
     for sub in matching_subs {
         sub.handler.0.handle(&message);
@@ -221,7 +219,7 @@ pub fn subscribe(pattern: MStr<Pattern>, handler: ShareableMessageHandler, prior
     }
 
     // Find existing patterns which match this topic
-    for (topic, subs) in msgbus_ref_mut.topics.iter_mut() {
+    for (topic, subs) in &mut msgbus_ref_mut.topics {
         if is_matching_backtracking(*topic, sub.pattern) {
             // TODO: Consider binary_search and then insert
             subs.push(sub.clone());
@@ -242,7 +240,7 @@ pub fn subscribe_str<T: AsRef<str>>(
     handler: ShareableMessageHandler,
     priority: Option<u8>,
 ) {
-    subscribe(MStr::from(pattern), handler, priority);
+    subscribe(MStr::from(pattern.as_ref()), handler, priority);
 }
 
 /// Unsubscribes the `handler` from the `pattern`.
@@ -275,7 +273,7 @@ pub fn unsubscribe_topic(topic: MStr<Topic>, handler: ShareableMessageHandler) {
 }
 
 pub fn unsubscribe_str<T: AsRef<str>>(pattern: T, handler: ShareableMessageHandler) {
-    unsubscribe(MStr::from(pattern), handler);
+    unsubscribe(MStr::from(pattern.as_ref()), handler);
 }
 
 pub fn is_subscribed<T: AsRef<str>>(pattern: T, handler: ShareableMessageHandler) -> bool {

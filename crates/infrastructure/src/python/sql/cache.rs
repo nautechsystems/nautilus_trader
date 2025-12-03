@@ -13,11 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use bytes::Bytes;
 use nautilus_common::{
-    cache::database::CacheDatabaseAdapter, custom::CustomData, runtime::get_runtime, signal::Signal,
+    cache::database::CacheDatabaseAdapter, custom::CustomData, live::runtime::get_runtime,
+    signal::Signal,
 };
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
@@ -64,9 +63,10 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "load")]
-    fn py_load(&self) -> PyResult<HashMap<String, Vec<u8>>> {
+    fn py_load(&self) -> PyResult<std::collections::HashMap<String, Vec<u8>>> {
         get_runtime()
             .block_on(async { DatabaseQueries::load(&self.pool).await })
+            .map(|m| m.into_iter().collect())
             .map_err(to_pyruntime_err)
     }
 

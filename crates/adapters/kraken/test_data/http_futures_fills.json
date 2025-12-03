@@ -1,0 +1,43 @@
+{
+  "result": "success",
+  "serverTime": "2023-04-07T16:00:00.000Z",
+  "fills": [
+    {
+      "fill_id": "cad76f07-814e-4dc6-8478-7867407b6bff",
+      "symbol": "PI_XBTUSD",
+      "side": "buy",
+      "order_id": "9e30258b-5a98-4002-968a-5b0e149bcfbf",
+      "fillTime": "2023-04-07T15:45:10.739Z",
+      "size": 5000.0,
+      "price": 27937.5,
+      "fillType": "maker",
+      "fee_paid": 0.00008957,
+      "fee_currency": "BTC"
+    },
+    {
+      "fill_id": "b1aa44b2-4f2a-4031-999c-ae1175c91580",
+      "symbol": "PI_ETHUSD",
+      "side": "buy",
+      "order_id": "7e60b6e8-e4c2-4ce8-bbd0-ef81e18b65bb",
+      "fillTime": "2023-04-07T15:50:45.531Z",
+      "size": 5000.0,
+      "price": 1764.65,
+      "fillType": "taker",
+      "cli_ord_id": "my-order-ref-456",
+      "fee_paid": 0.00685589,
+      "fee_currency": "ETH"
+    },
+    {
+      "fill_id": "d3f4e5a6-b7c8-9d0e-1f2a-3b4c5d6e7f8a",
+      "symbol": "PI_XBTUSD",
+      "side": "sell",
+      "order_id": "f8a7b6c5-d4e3-2f1a-0b9c-8d7e6f5a4b3c",
+      "fillTime": "2023-04-07T15:55:20.123Z",
+      "size": 2500.0,
+      "price": 28050.0,
+      "fillType": "maker",
+      "fee_paid": 0.00004456,
+      "fee_currency": "BTC"
+    }
+  ]
+}

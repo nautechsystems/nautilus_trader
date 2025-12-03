@@ -29,15 +29,19 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-ffi = ["nautilus-core/ffi", "nautilus-model/ffi", "cbindgen"]
+ffi = ["nautilus-core/ffi", "nautilus-model/ffi", "cbindgen", "live"]
 indicators = ["nautilus-indicators"]
 python = [
   "nautilus-core/python",
   "nautilus-model/python",
   "pyo3",
   "pyo3-async-runtimes",
+  "pyo3-stub-gen",
+  "live",
 ]
+live = ["tokio"]
 defi = ["nautilus-model/defi", "alloy-primitives"]
+capnp = ["nautilus-serialization/capnp"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -47,6 +51,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true }
 nautilus-indicators = { workspace = true, optional = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-serialization = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -58,25 +63,25 @@ derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
-pyo3-stub-gen = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 sysinfo = { workspace = true }
 thousands = { workspace = true }
-tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
-uuid = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 rstest = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
+capnp = { workspace = true }
 criterion = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }

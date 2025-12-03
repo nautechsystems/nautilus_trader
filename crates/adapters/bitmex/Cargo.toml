@@ -48,7 +48,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
@@ -59,6 +59,7 @@ nautilus-serialization = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }

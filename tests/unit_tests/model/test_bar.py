@@ -421,8 +421,6 @@ class TestBarSpecification:
             BarAggregation.TICK_RUNS,
             BarAggregation.VOLUME_RUNS,
             BarAggregation.VALUE_RUNS,
-            BarAggregation.MONTH,
-            BarAggregation.YEAR,
         ],
     )
     def test_get_interval_ns_and_timedelta_non_time_aggregations_raise_error(
@@ -433,15 +431,43 @@ class TestBarSpecification:
         spec = BarSpecification(1, aggregation, PriceType.LAST)
 
         # Act & Assert
-        if aggregation in [BarAggregation.MONTH, BarAggregation.YEAR]:
-            match = f"get_interval_ns not supported for the `BarAggregation.{aggregation.name}` aggregation"
-        else:
-            match = "Aggregation not time based"
+        match = "Aggregation not time based"
 
         with pytest.raises(ValueError, match=match):
             spec.get_interval_ns()
         with pytest.raises(ValueError, match=match):
             spec.timedelta
+
+    @pytest.mark.parametrize(
+        ("step", "aggregation", "expected_timedelta"),
+        [
+            # MONTH aggregations - returns proxy value (30 days)
+            (1, BarAggregation.MONTH, pd.Timedelta(days=30)),
+            (2, BarAggregation.MONTH, pd.Timedelta(days=60)),
+            (3, BarAggregation.MONTH, pd.Timedelta(days=90)),
+            # YEAR aggregations - returns proxy value (365 days)
+            (1, BarAggregation.YEAR, pd.Timedelta(days=365)),
+            (2, BarAggregation.YEAR, pd.Timedelta(days=730)),
+        ],
+    )
+    def test_get_interval_ns_and_timedelta_month_year_proxy_values(
+        self,
+        step: int,
+        aggregation: BarAggregation,
+        expected_timedelta: pd.Timedelta,
+    ):
+        # Arrange
+        spec = BarSpecification(step, aggregation, PriceType.LAST)
+
+        # Act
+        actual_ns = spec.get_interval_ns()
+        actual_timedelta = spec.timedelta
+
+        # Assert
+        assert actual_ns == expected_timedelta.value
+        assert actual_timedelta == expected_timedelta
+        # Verify consistency between methods
+        assert actual_timedelta == pd.Timedelta(nanoseconds=actual_ns)
 
     def test_properties(self):
         # Arrange, Act

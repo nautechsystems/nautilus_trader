@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
-
 use chrono::{DateTime, Utc};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -696,7 +694,7 @@ fn parse_multiplier(value: Option<f64>) -> Option<Quantity> {
 
 /// Parses the fee rate from the given `value`.
 fn parse_fee_rate(value: f64) -> Decimal {
-    Decimal::from_str(&value.to_string()).expect("Invalid decimal value")
+    Decimal::try_from(value).expect("Invalid decimal value")
 }
 
 /// Parses the given RFC 3339 datetime string (UTC) into a `UnixNanos` timestamp.

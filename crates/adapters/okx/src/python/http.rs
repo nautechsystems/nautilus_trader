@@ -98,6 +98,13 @@ impl OKXHttpClient {
         self.api_key()
     }
 
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    #[must_use]
+    pub fn py_api_key_masked(&self) -> Option<String> {
+        self.api_key_masked()
+    }
+
     #[pyo3(name = "is_initialized")]
     #[must_use]
     pub fn py_is_initialized(&self) -> bool {
@@ -187,6 +194,24 @@ impl OKXHttpClient {
                     .unbind();
                 Ok(pylist)
             })
+        })
+    }
+
+    #[pyo3(name = "request_instrument")]
+    fn py_request_instrument<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let instrument = client
+                .request_instrument(instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| instrument_any_to_pyobject(py, instrument))
         })
     }
 

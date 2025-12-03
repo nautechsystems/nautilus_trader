@@ -63,6 +63,76 @@ impl Token {
             decimals,
         }
     }
+
+    /// Returns true if this token is a stablecoin.
+    ///
+    /// Checks against common stablecoin symbols including USD-pegged tokens,
+    /// Euro-pegged tokens, and other algorithmic/collateralized stablecoins.
+    pub fn is_stablecoin(&self) -> bool {
+        matches!(
+            self.symbol.as_str(),
+            "USDC"
+                | "USDT"
+                | "DAI"
+                | "BUSD"
+                | "FRAX"
+                | "LUSD"
+                | "TUSD"
+                | "USDP"
+                | "GUSD"
+                | "SUSD"
+                | "UST"
+                | "USDD"
+                | "CUSD"
+                | "EUROC"
+                | "EURT"
+                | "EURS"
+                | "AGEUR"
+                | "MIM"
+                | "FEI"
+                | "OUSD"
+                | "USDB"
+        )
+    }
+
+    /// Returns true if this token is a native blockchain currency wrapper.
+    ///
+    /// Identifies wrapped versions of native currencies like WETH (Wrapped ETH),
+    /// WMATIC (Wrapped MATIC), WBNB (Wrapped BNB), etc.
+    pub fn is_native_currency(&self) -> bool {
+        matches!(
+            self.symbol.as_str(),
+            "WETH"
+                | "ETH"
+                | "WMATIC"
+                | "MATIC"
+                | "WBNB"
+                | "BNB"
+                | "WAVAX"
+                | "AVAX"
+                | "WFTM"
+                | "FTM"
+        )
+    }
+
+    /// Returns the priority of this token for base/quote determination.
+    ///
+    /// Lower numbers indicate higher priority to become the quote token (pricing currency).
+    /// This follows market conventions where trades are quoted in the most liquid/stable assets.
+    ///
+    /// # Priority Levels
+    /// - **1**: Stablecoins (USDC, USDT, DAI, etc.) - Highest priority to be quote
+    /// - **2**: Native currencies (WETH, WMATIC, WBNB, etc.) - Medium priority
+    /// - **3**: Other tokens - Lowest priority (typically become base tokens)
+    pub fn get_token_priority(&self) -> u8 {
+        if self.is_stablecoin() {
+            1
+        } else if self.is_native_currency() {
+            2
+        } else {
+            3
+        }
+    }
 }
 
 impl Display for Token {
@@ -82,28 +152,15 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::defi::chain::chains;
+    use crate::defi::{chain::chains, stubs::weth};
 
     #[rstest]
-    fn test_token_constructor() {
-        let chain = Arc::new(chains::ETHEREUM.clone());
-        let address = "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
-            .parse()
-            .unwrap();
-
-        let token = Token::new(
-            chain.clone(),
-            address,
-            "Wrapped Ether".to_string(),
-            "WETH".to_string(),
-            18,
-        );
-
-        assert_eq!(token.chain.chain_id, chain.chain_id);
-        assert_eq!(token.address, address);
-        assert_eq!(token.name, "Wrapped Ether");
-        assert_eq!(token.symbol, "WETH");
-        assert_eq!(token.decimals, 18);
+    fn test_token_constructor(weth: Token) {
+        assert_eq!(weth.chain.chain_id, chains::ARBITRUM.chain_id);
+        assert_eq!(weth.name, "Wrapped Ether");
+        assert_eq!(weth.symbol, "WETH");
+        assert_eq!(weth.decimals, 18);
+        assert!(weth.is_native_currency());
     }
 
     #[rstest]
@@ -125,5 +182,8 @@ mod tests {
             display,
             "Token(symbol=TEST-1, name=Test Token (with parentheses))"
         );
+        assert!(!token.is_native_currency());
+        assert!(!token.is_stablecoin());
+        assert_eq!(token.get_token_priority(), 3);
     }
 }

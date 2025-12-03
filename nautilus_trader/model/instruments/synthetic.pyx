@@ -146,6 +146,8 @@ cdef class SyntheticInstrument(Data):
     #     )
 
     def __eq__(self, SyntheticInstrument other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:

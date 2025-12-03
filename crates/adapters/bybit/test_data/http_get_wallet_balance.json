@@ -52,6 +52,23 @@
                         "marginCollateral": true,
                         "coin": "USDT",
                         "spotBorrow": "0"
+                    },
+                    {
+                        "availableToBorrow": "5000",
+                        "bonus": "0",
+                        "accruedInterest": "0.02",
+                        "availableToWithdraw": "0",
+                        "equity": "0",
+                        "usdValue": "-191.31",
+                        "unrealisedPnl": "0",
+                        "borrowAmount": "0.06142",
+                        "walletBalance": "0",
+                        "cumRealisedPnl": "0",
+                        "locked": "0",
+                        "collateralSwitch": true,
+                        "marginCollateral": true,
+                        "coin": "ETH",
+                        "spotBorrow": "0.06142"
                     }
                 ]
             }

@@ -77,6 +77,18 @@ pub fn cash_account_multi(cash_account_state_multi: AccountState) -> CashAccount
     CashAccount::new(cash_account_state_multi, true, false)
 }
 
+#[fixture]
+pub fn cash_account_borrowing(cash_account_state: AccountState) -> CashAccount {
+    CashAccount::new(cash_account_state, true, true)
+}
+
+#[fixture]
+pub fn cash_account_borrowing_million_usd(
+    cash_account_state_million_usd: AccountState,
+) -> CashAccount {
+    CashAccount::new(cash_account_state_million_usd, true, true)
+}
+
 /// Helper to calculate commission in test fixtures.
 ///
 /// # Panics

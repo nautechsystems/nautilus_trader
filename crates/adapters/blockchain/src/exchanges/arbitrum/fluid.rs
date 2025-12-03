@@ -15,17 +15,21 @@
 
 use std::sync::LazyLock;
 
-use hypersync_client::simple_types::Log;
 use nautilus_model::defi::{
+    PoolIdentifier,
     chain::chains,
     dex::{AmmType, Dex, DexType},
 };
+use ustr::Ustr;
 
 use crate::{
     events::pool_created::PoolCreatedEvent,
     exchanges::extended::DexExtended,
-    hypersync::helpers::{
-        extract_address_from_topic, extract_block_number, validate_event_signature_hash,
+    hypersync::{
+        HypersyncLog,
+        helpers::{
+            extract_address_from_topic, extract_block_number, validate_event_signature_hash,
+        },
     },
 };
 
@@ -46,15 +50,18 @@ pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
     ));
-    dex.set_pool_created_event_parsing(parse_fluid_dex_pool_created_event);
+    dex.set_pool_created_event_hypersync_parsing(parse_fluid_dex_pool_created_event_hypersync);
     dex
 });
 
-fn parse_fluid_dex_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
+fn parse_fluid_dex_pool_created_event_hypersync(
+    log: HypersyncLog,
+) -> anyhow::Result<PoolCreatedEvent> {
     validate_event_signature_hash("DexT1Deployed", POOL_CREATED_EVENT_SIGNATURE_HASH, &log)?;
 
     let block_number = extract_block_number(&log)?;
     let pool_address = extract_address_from_topic(&log, 1, "pool")?;
+    let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     let supply_token_address = extract_address_from_topic(&log, 2, "supply_token")?;
     let borrow_token_address = extract_address_from_topic(&log, 3, "borrow_token")?;
 
@@ -63,6 +70,7 @@ fn parse_fluid_dex_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEve
         supply_token_address,
         borrow_token_address,
         pool_address,
+        pool_identifier,
         None,
         None,
     ))

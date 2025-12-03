@@ -15,9 +15,9 @@
 
 //! WebSocket client bindings for the Bybit adapter.
 
-pub(crate) mod cache;
 pub mod client;
 pub mod enums;
 pub mod error;
+pub mod handler;
 pub mod messages;
 pub mod parse;

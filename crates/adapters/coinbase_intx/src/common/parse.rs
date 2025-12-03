@@ -128,18 +128,18 @@ pub fn parse_notional(value: &str, currency: Currency) -> anyhow::Result<Option<
 #[must_use]
 pub const fn parse_aggressor_side(side: &Option<CoinbaseIntxSide>) -> AggressorSide {
     match side {
-        Some(CoinbaseIntxSide::Buy) => nautilus_model::enums::AggressorSide::Buyer,
-        Some(CoinbaseIntxSide::Sell) => nautilus_model::enums::AggressorSide::Seller,
-        None => nautilus_model::enums::AggressorSide::NoAggressor,
+        Some(CoinbaseIntxSide::Buy) => AggressorSide::Buyer,
+        Some(CoinbaseIntxSide::Sell) => AggressorSide::Seller,
+        None => AggressorSide::NoAggressor,
     }
 }
 
 #[must_use]
 pub const fn parse_execution_type(liquidity: &Option<CoinbaseIntxExecType>) -> LiquiditySide {
     match liquidity {
-        Some(CoinbaseIntxExecType::Maker) => nautilus_model::enums::LiquiditySide::Maker,
-        Some(CoinbaseIntxExecType::Taker) => nautilus_model::enums::LiquiditySide::Taker,
-        _ => nautilus_model::enums::LiquiditySide::NoLiquiditySide,
+        Some(CoinbaseIntxExecType::Maker) => LiquiditySide::Maker,
+        Some(CoinbaseIntxExecType::Taker) => LiquiditySide::Taker,
+        _ => LiquiditySide::NoLiquiditySide,
     }
 }
 

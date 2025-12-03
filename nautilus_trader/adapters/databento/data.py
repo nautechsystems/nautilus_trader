@@ -145,6 +145,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
         self._bars_timestamp_on_close: bool = config.bars_timestamp_on_close
+        self._reconnect_timeout_mins: int | None = config.reconnect_timeout_mins
         self._parent_symbols: dict[Dataset, set[str]] = defaultdict(set)
         self._venue_dataset_map: dict[Venue, Dataset] | None = config.venue_dataset_map
         self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
@@ -153,6 +154,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._log.info(f"{config.timeout_initial_load=}", LogColor.BLUE)
         self._log.info(f"{config.mbo_subscriptions_delay=}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
+        self._log.info(f"{config.reconnect_timeout_mins=}", LogColor.BLUE)
 
         # Clients
         self._http_client = http_client
@@ -311,6 +313,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
                 use_exchange_as_venue=self._use_exchange_as_venue,
                 bars_timestamp_on_close=self._bars_timestamp_on_close,
+                reconnect_timeout_mins=self._reconnect_timeout_mins,
             )
             self._live_clients[dataset] = live_client
 
@@ -327,6 +330,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
                 use_exchange_as_venue=self._use_exchange_as_venue,
                 bars_timestamp_on_close=self._bars_timestamp_on_close,
+                reconnect_timeout_mins=self._reconnect_timeout_mins,
             )
             self._live_clients_mbo[dataset] = live_client
 

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from contextlib import suppress
+
 import pyarrow as pa
 
 from nautilus_trader.core.data import Data
@@ -125,26 +127,20 @@ def generate_signal_class(name: str, value_type: type) -> type:
         },
     )
     # Register for arrow serialization (only if not already registered)
-    try:
+    with suppress(KeyError, ValueError):
         register_arrow(
             data_cls=SignalData,
             encoder=serialize_signal,
             decoder=deserialize_signal,
             schema=schema,
         )
-    except (KeyError, ValueError):
-        # Already registered, skip
-        pass
 
     # Register for message bus serialization (only if not already registered)
-    try:
+    with suppress(KeyError):
         register_serializable_type(
             cls=SignalData,
             to_dict=SignalData.to_dict_c,
             from_dict=SignalData.from_dict_c,
         )
-    except KeyError:
-        # Already registered, skip
-        pass
 
     return SignalData

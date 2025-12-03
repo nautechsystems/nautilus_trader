@@ -14,6 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
+
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXLiveDataClientFactory
@@ -35,7 +37,7 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # Configuration - Change instrument_type to switch between trading modes
-instrument_type = OKXInstrumentType.SPOT  # SPOT, MARGIN, SWAP, FUTURES, OPTION
+instrument_type = OKXInstrumentType.SWAP  # SPOT, MARGIN, SWAP, FUTURES, OPTION
 token = "ETH"
 
 # Symbol mapping based on instrument type
@@ -132,11 +134,13 @@ config_tester = DataTesterConfig(
     # book_group_size=Decimal("1"),  # Only PyO3 wrapped book (not legacy Cython)
     # book_depth=5,
     # book_levels_to_print=50,
-    book_interval_ms=100,
+    # book_interval_ms=100,
     # manage_book=True,
     # use_pyo3_book=True,
-    # request_bars=True,
-    # request_trades=True,  # TODO: Needs to be fixed
+    # request_instruments=True,
+    request_bars=True,
+    # request_trades=True,
+    requests_start_delta=pd.Timedelta(minutes=60),
 )
 tester = DataTester(config=config_tester)
 

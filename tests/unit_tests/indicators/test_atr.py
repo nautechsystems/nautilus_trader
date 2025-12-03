@@ -49,7 +49,7 @@ class TestAverageTrueRange:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange, Act
-        for _i in range(10):
+        for _ in range(10):
             self.atr.update_raw(1.00000, 1.00000, 1.00000)
 
         # Assert
@@ -109,7 +109,7 @@ class TestAverageTrueRange:
         low = 1.00000
 
         # Act
-        for _i in range(1000):
+        for _ in range(1000):
             high += 0.00010
             low += 0.00010
             close = high
@@ -124,7 +124,7 @@ class TestAverageTrueRange:
         low = 1.00000
 
         # Act
-        for _i in range(1000):
+        for _ in range(1000):
             high -= 0.00010
             low -= 0.00010
             close = low
@@ -138,7 +138,7 @@ class TestAverageTrueRange:
         floor = 0.00005
         floored_atr = AverageTrueRange(10, value_floor=floor)
 
-        for _i in range(20):
+        for _ in range(20):
             floored_atr.update_raw(1.00000, 1.00000, 1.00000)
 
         # Act, Assert
@@ -153,7 +153,7 @@ class TestAverageTrueRange:
         low = 1.00000
         close = 1.00000
 
-        for _i in range(20):
+        for _ in range(20):
             high -= (high - low) / 2
             floored_atr.update_raw(high, low, close)
 
@@ -162,7 +162,7 @@ class TestAverageTrueRange:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(1000):
+        for _ in range(1000):
             self.atr.update_raw(1.00010, 1.00000, 1.00005)
 
         # Act

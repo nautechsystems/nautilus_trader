@@ -1710,8 +1710,7 @@ binance,BTCUSDT,1640995202000000,1640995202100000,50001.12,1.12,49999.12,1.62,50
         std::fs::write(&temp_file, "").unwrap();
 
         let stream = stream_deltas(&temp_file, 10, None, None, None, None).unwrap();
-        let chunks: Vec<_> = stream.collect();
-        assert_eq!(chunks.len(), 0);
+        assert_eq!(stream.count(), 0);
 
         // Clean up
         std::fs::remove_file(&temp_file).ok();
@@ -1734,11 +1733,7 @@ binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.
 
         // Stream in chunks and collect
         let stream = stream_deltas(&temp_file, 2, None, None, None, None).unwrap();
-        let chunks: Vec<_> = stream.collect();
-        let streamed_deltas: Vec<_> = chunks
-            .into_iter()
-            .flat_map(|chunk| chunk.unwrap())
-            .collect();
+        let streamed_deltas: Vec<_> = stream.flat_map(|chunk| chunk.unwrap()).collect();
 
         // Should have same number of deltas
         assert_eq!(bulk_deltas.len(), streamed_deltas.len());

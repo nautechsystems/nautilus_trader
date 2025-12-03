@@ -131,7 +131,7 @@ pub struct Dex {
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
     /// Collection of liquidity pools managed by this DEX.
-    #[allow(dead_code, reason = "TBD")]
+    #[allow(dead_code)]
     pairs: Vec<Pool>,
 }
 
@@ -183,7 +183,12 @@ impl Dex {
             "0x{encoded_hash}",
             encoded_hash = hex::encode(collect_event_hash)
         );
-        let factory_address = validate_address(factory).unwrap();
+        let factory_address = match validate_address(factory) {
+            Ok(address) => address,
+            Err(e) => panic!(
+                "Invalid factory address for DEX {name} on chain {chain} for factory address {factory}: {e}"
+            ),
+        };
         Self {
             chain,
             name,

@@ -42,7 +42,7 @@ from nautilus_trader.trading.strategy import StrategyConfig
 from nautilus_trader.trading.trader import Trader
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_id(venue):
     return AccountId(f"{venue.value}-001")
 
@@ -52,7 +52,7 @@ def has_live_components_marker(request) -> bool:
     return "live_components" in marker_names
 
 
-@pytest.fixture()
+@pytest.fixture
 def clock(request):
     if has_live_components_marker(request):
         clock = LiveClock()
@@ -62,23 +62,23 @@ def clock(request):
     return clock
 
 
-@pytest.fixture()
+@pytest.fixture
 def live_clock():
     clock = LiveClock()
     return clock
 
 
-@pytest.fixture()
+@pytest.fixture
 def trader_id():
     return TestIdStubs.trader_id()
 
 
-@pytest.fixture()
+@pytest.fixture
 def instance_id():
     return UUID4()
 
 
-@pytest.fixture()
+@pytest.fixture
 def msgbus(trader_id, clock):
     return MessageBus(
         trader_id,
@@ -86,7 +86,7 @@ def msgbus(trader_id, clock):
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def cache(instrument):
     cache = TestComponentStubs.cache()
     if instrument is not None:
@@ -94,7 +94,7 @@ def cache(instrument):
     return cache
 
 
-@pytest.fixture()
+@pytest.fixture
 def portfolio(clock, cache, msgbus, account_state):
     portfolio = Portfolio(
         msgbus,
@@ -106,7 +106,7 @@ def portfolio(clock, cache, msgbus, account_state):
     return portfolio
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_engine(msgbus, cache, clock, data_client):
     engine = DataEngine(
         msgbus,
@@ -118,7 +118,7 @@ def data_engine(msgbus, cache, clock, data_client):
     return engine
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_engine(request, event_loop, msgbus, cache, clock, exec_client):
     if has_live_components_marker(request):
         engine = LiveExecutionEngine(
@@ -138,7 +138,7 @@ def exec_engine(request, event_loop, msgbus, cache, clock, exec_client):
     return engine
 
 
-@pytest.fixture()
+@pytest.fixture
 def risk_engine(portfolio, msgbus, cache, clock):
     risk_engine = RiskEngine(
         portfolio,
@@ -177,7 +177,7 @@ def trader(
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_data_engine_process(mocker: MockerFixture, msgbus, data_engine):
     mock = mocker.MagicMock()
     msgbus.deregister(endpoint="DataEngine.process", handler=data_engine.process)
@@ -188,7 +188,7 @@ def mock_data_engine_process(mocker: MockerFixture, msgbus, data_engine):
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_exec_engine_process(mocker: MockerFixture, msgbus, exec_engine):
     mock = mocker.MagicMock()
     msgbus.deregister(endpoint="ExecEngine.process", handler=exec_engine.process)
@@ -199,7 +199,7 @@ def mock_exec_engine_process(mocker: MockerFixture, msgbus, exec_engine):
     return mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def strategy(trader_id, portfolio, msgbus, cache, clock):
     strategy = Strategy(config=StrategyConfig(strategy_id="S", order_id_tag="001"))
     strategy.register(
@@ -212,22 +212,22 @@ def strategy(trader_id, portfolio, msgbus, cache, clock):
     return strategy
 
 
-@pytest.fixture()
+@pytest.fixture
 def strategy_id(strategy):
     return strategy.id
 
 
-@pytest.fixture()
+@pytest.fixture
 def client_order_id(strategy):
     return TestIdStubs.client_order_id()
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue_order_id(strategy):
     return TestIdStubs.venue_order_id()
 
 
-@pytest.fixture()
+@pytest.fixture
 def trade_id(strategy):
     return TestIdStubs.trade_id()
 
@@ -250,61 +250,61 @@ def _collect_events(msgbus, filter_types: tuple[type, ...] | None = None):
     return events
 
 
-@pytest.fixture()
+@pytest.fixture
 def events(msgbus: MessageBus) -> list[Event]:
     return _collect_events(msgbus, filter_types=None)
 
 
-@pytest.fixture()
+@pytest.fixture
 def fill_events(msgbus: MessageBus) -> list[Event]:
     return _collect_events(msgbus, filter_types=(OrderFilled,))
 
 
-@pytest.fixture()
+@pytest.fixture
 def cancel_events(msgbus: MessageBus) -> list[Event]:
     return _collect_events(msgbus, filter_types=(OrderCanceled,))
 
 
-@pytest.fixture()
+@pytest.fixture
 def messages(msgbus: MessageBus) -> list[Any]:
     messages: list[Any] = []
     msgbus.subscribe("*", handler=messages.append)
     return messages
 
 
-@pytest.fixture()
+@pytest.fixture
 def account(account_state, cache):
     return AccountFactory.create(account_state)
 
 
 # TO BE IMPLEMENTED IN ADAPTER conftest.py
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     raise NotImplementedError("`venue` needs to be implemented in adapter `conftest.py`")
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument_provider():
     raise NotImplementedError(
         "`instrument_provider` needs to be implemented in adapter `conftest.py`",
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     raise NotImplementedError("`data_client` needs to be implemented in adapter `conftest.py`")
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client():
     raise NotImplementedError("`exec_client` needs to be implemented in adapter `conftest.py`")
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     raise NotImplementedError("`instrument` needs to be implemented in adapter `conftest.py`")
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state() -> AccountState:
     raise NotImplementedError("`account_state` needs to be implemented in adapter `conftest.py`")

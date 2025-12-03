@@ -182,12 +182,13 @@ class MockLiveExecutionClient(LiveExecutionClient):
         msgbus,
         cache,
         clock,
+        oms_type=OmsType.HEDGING,
     ) -> None:
         super().__init__(
             loop=loop,
             client_id=client_id,
             venue=venue,
-            oms_type=OmsType.HEDGING,
+            oms_type=oms_type,
             account_type=account_type,
             base_currency=base_currency,
             instrument_provider=instrument_provider,
@@ -301,9 +302,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         if current_frame:
             self.calls.append(current_frame.f_code.co_name)
 
-        reports = []
-        for _, report in self._order_status_reports.items():
-            reports.append(report)
+        reports = list(self._order_status_reports.values())
 
         if command.instrument_id is not None:
             reports = [r for r in reports if r.instrument_id == command.instrument_id]

@@ -17,9 +17,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use std::time::Duration;
+
 use futures_util::StreamExt;
 use nautilus_bitmex::{http::client::BitmexHttpClient, websocket::client::BitmexWebSocketClient};
-use tokio::time::Duration;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -59,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(5), // 5 second heartbeat
     )
     .unwrap();
-    ws_client.initialize_instruments_cache(instruments);
+    ws_client.cache_instruments(instruments);
     ws_client.connect().await?;
 
     // Give the connection a moment to stabilize

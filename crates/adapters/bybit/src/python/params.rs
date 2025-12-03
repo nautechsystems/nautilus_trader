@@ -39,6 +39,8 @@ pub struct BybitWsPlaceOrderParams {
     #[pyo3(get, set)]
     pub qty: String,
     #[pyo3(get, set)]
+    pub is_leverage: Option<i32>,
+    #[pyo3(get, set)]
     pub market_unit: Option<String>,
     #[pyo3(get, set)]
     pub price: Option<String>,
@@ -90,6 +92,7 @@ impl BybitWsPlaceOrderParams {
         side: String,
         order_type: String,
         qty: String,
+        is_leverage: Option<i32>,
         market_unit: Option<String>,
         price: Option<String>,
         time_in_force: Option<String>,
@@ -117,6 +120,7 @@ impl BybitWsPlaceOrderParams {
             side,
             order_type,
             qty,
+            is_leverage,
             market_unit,
             price,
             time_in_force,
@@ -160,8 +164,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let time_in_force = params
             .time_in_force
             .map(|v| {
-                serde_json::from_str::<BybitTimeInForce>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid time_in_force '{}': {}", v, e))
+                serde_json::from_str::<BybitTimeInForce>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid time_in_force '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -169,8 +173,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let trigger_by = params
             .trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -178,8 +182,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let tp_trigger_by = params
             .tp_trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid tp_trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid tp_trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -187,8 +191,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let sl_trigger_by = params
             .sl_trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid sl_trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid sl_trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -196,8 +200,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let sl_order_type = params
             .sl_order_type
             .map(|v| {
-                serde_json::from_str::<BybitOrderType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid sl_order_type '{}': {}", v, e))
+                serde_json::from_str::<BybitOrderType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid sl_order_type '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -205,8 +209,8 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
         let tp_order_type = params
             .tp_order_type
             .map(|v| {
-                serde_json::from_str::<BybitOrderType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid tp_order_type '{}': {}", v, e))
+                serde_json::from_str::<BybitOrderType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid tp_order_type '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -217,6 +221,7 @@ impl TryFrom<BybitWsPlaceOrderParams> for messages::BybitWsPlaceOrderParams {
             side,
             order_type,
             qty: params.qty,
+            is_leverage: params.is_leverage,
             market_unit: params.market_unit,
             price: params.price,
             time_in_force,
@@ -294,6 +299,7 @@ impl From<messages::BybitWsPlaceOrderParams> for BybitWsPlaceOrderParams {
             side,
             order_type,
             qty: params.qty,
+            is_leverage: params.is_leverage,
             market_unit: params.market_unit,
             price: params.price,
             time_in_force,
@@ -386,8 +392,8 @@ impl TryFrom<BybitWsAmendOrderParams> for messages::BybitWsAmendOrderParams {
         let tp_trigger_by = params
             .tp_trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid tp_trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid tp_trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -395,8 +401,8 @@ impl TryFrom<BybitWsAmendOrderParams> for messages::BybitWsAmendOrderParams {
         let sl_trigger_by = params
             .sl_trigger_by
             .map(|v| {
-                serde_json::from_str::<BybitTriggerType>(&format!("\"{}\"", v)).map_err(|e| {
-                    BybitWsError::ClientError(format!("Invalid sl_trigger_by '{}': {}", v, e))
+                serde_json::from_str::<BybitTriggerType>(&format!("\"{v}\"")).map_err(|e| {
+                    BybitWsError::ClientError(format!("Invalid sl_trigger_by '{v}': {e}"))
                 })
             })
             .transpose()?;
@@ -444,6 +450,106 @@ impl From<messages::BybitWsAmendOrderParams> for BybitWsAmendOrderParams {
             stop_loss: params.stop_loss,
             tp_trigger_by,
             sl_trigger_by,
+        }
+    }
+}
+
+/// Parameters for canceling an order via WebSocket.
+#[pyclass]
+#[derive(Clone, Debug)]
+pub struct BybitWsCancelOrderParams {
+    #[pyo3(get, set)]
+    pub category: BybitProductType,
+    #[pyo3(get, set)]
+    pub symbol: String,
+    #[pyo3(get, set)]
+    pub order_id: Option<String>,
+    #[pyo3(get, set)]
+    pub order_link_id: Option<String>,
+}
+
+#[pymethods]
+impl BybitWsCancelOrderParams {
+    #[new]
+    fn py_new(
+        category: BybitProductType,
+        symbol: String,
+        order_id: Option<String>,
+        order_link_id: Option<String>,
+    ) -> Self {
+        Self {
+            category,
+            symbol,
+            order_id,
+            order_link_id,
+        }
+    }
+}
+
+impl TryFrom<BybitWsCancelOrderParams> for messages::BybitWsCancelOrderParams {
+    type Error = BybitWsError;
+
+    fn try_from(params: BybitWsCancelOrderParams) -> Result<Self, Self::Error> {
+        Ok(Self {
+            category: params.category,
+            symbol: Ustr::from(&params.symbol),
+            order_id: params.order_id,
+            order_link_id: params.order_link_id,
+        })
+    }
+}
+
+impl From<messages::BybitWsCancelOrderParams> for BybitWsCancelOrderParams {
+    fn from(params: messages::BybitWsCancelOrderParams) -> Self {
+        Self {
+            category: params.category,
+            symbol: params.symbol.to_string(),
+            order_id: params.order_id,
+            order_link_id: params.order_link_id,
+        }
+    }
+}
+
+/// Parameters for fetching tickers via HTTP API.
+#[pyclass]
+#[derive(Clone, Debug)]
+pub struct BybitTickersParams {
+    #[pyo3(get, set)]
+    pub category: BybitProductType,
+    #[pyo3(get, set)]
+    pub symbol: Option<String>,
+    #[pyo3(get, set)]
+    pub base_coin: Option<String>,
+    #[pyo3(get, set)]
+    pub exp_date: Option<String>,
+}
+
+#[pymethods]
+impl BybitTickersParams {
+    #[new]
+    #[pyo3(signature = (category, symbol=None, base_coin=None, exp_date=None))]
+    fn py_new(
+        category: BybitProductType,
+        symbol: Option<String>,
+        base_coin: Option<String>,
+        exp_date: Option<String>,
+    ) -> Self {
+        Self {
+            category,
+            symbol,
+            base_coin,
+            exp_date,
+        }
+    }
+}
+
+impl From<BybitTickersParams> for crate::http::query::BybitTickersParams {
+    fn from(params: BybitTickersParams) -> Self {
+        Self {
+            category: params.category,
+            symbol: params.symbol,
+            base_coin: params.base_coin,
+            exp_date: params.exp_date,
         }
     }
 }

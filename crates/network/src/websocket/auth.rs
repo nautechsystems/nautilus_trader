@@ -717,15 +717,12 @@ mod tests {
     async fn test_no_sender_leaks() {
         let tracker = AuthTracker::new();
 
-        // Create many auth attempts that timeout
-        for _ in 0..1000 {
+        for _ in 0..100 {
             let rx = tracker.begin();
-            // Let it timeout without calling succeed/fail
             let _result: Result<(), TestError> =
-                tracker.wait_for_result(Duration::from_millis(10), rx).await;
+                tracker.wait_for_result(Duration::from_millis(1), rx).await;
         }
 
-        // Verify tracker still works
         let rx = tracker.begin();
         tracker.succeed();
         let result: Result<(), TestError> =

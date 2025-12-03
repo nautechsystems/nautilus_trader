@@ -23,8 +23,7 @@ pub mod margin;
 #[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use enum_dispatch::enum_dispatch;
 use nautilus_core::UnixNanos;
 
@@ -50,18 +49,18 @@ pub trait Account: 'static + Send {
     fn is_margin_account(&self) -> bool;
     fn calculated_account_state(&self) -> bool;
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money>;
-    fn balances_total(&self) -> HashMap<Currency, Money>;
+    fn balances_total(&self) -> AHashMap<Currency, Money>;
     fn balance_free(&self, currency: Option<Currency>) -> Option<Money>;
-    fn balances_free(&self) -> HashMap<Currency, Money>;
+    fn balances_free(&self) -> AHashMap<Currency, Money>;
     fn balance_locked(&self, currency: Option<Currency>) -> Option<Money>;
-    fn balances_locked(&self) -> HashMap<Currency, Money>;
+    fn balances_locked(&self) -> AHashMap<Currency, Money>;
     fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance>;
     fn last_event(&self) -> Option<AccountState>;
     fn events(&self) -> Vec<AccountState>;
     fn event_count(&self) -> usize;
     fn currencies(&self) -> Vec<Currency>;
-    fn starting_balances(&self) -> HashMap<Currency, Money>;
-    fn balances(&self) -> HashMap<Currency, AccountBalance>;
+    fn starting_balances(&self) -> AHashMap<Currency, Money>;
+    fn balances(&self) -> AHashMap<Currency, AccountBalance>;
     fn apply(&mut self, event: AccountState);
     fn purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64);
 

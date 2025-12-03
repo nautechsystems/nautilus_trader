@@ -41,6 +41,7 @@ pub extern "C" fn unix_nanos_to_iso8601_cstr(timestamp_ns: u64) -> *const c_char
 pub extern "C" fn unix_nanos_to_iso8601_millis_cstr(timestamp_ns: u64) -> *const c_char {
     abort_on_panic(|| str_to_cstr(&unix_nanos_to_iso8601_millis(timestamp_ns.into())))
 }
+
 /// Converts seconds to nanoseconds (ns).
 #[cfg(feature = "ffi")]
 #[unsafe(no_mangle)]

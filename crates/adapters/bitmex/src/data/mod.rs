@@ -28,6 +28,7 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use nautilus_common::{
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -40,7 +41,6 @@ use nautilus_common::{
             UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
-    runner::get_data_event_sender,
 };
 use nautilus_core::{
     UnixNanos,
@@ -206,6 +206,15 @@ impl BitmexDataClient {
                     Self::send_data(sender, data);
                 }
             }
+            NautilusWsMessage::Instruments(insts) => {
+                let mut guard = instruments.write().expect("instrument cache lock poisoned");
+                for instrument in insts {
+                    let instrument_id = instrument.id();
+                    guard.insert(instrument_id, instrument);
+                }
+                // TODO: Send instruments to data engine
+                let _ = sender;
+            }
             NautilusWsMessage::FundingRateUpdates(updates) => {
                 for update in updates {
                     tracing::debug!(
@@ -225,11 +234,10 @@ impl BitmexDataClient {
             NautilusWsMessage::Reconnected => {
                 tracing::info!("BitMEX websocket reconnected");
             }
+            NautilusWsMessage::Authenticated => {
+                tracing::debug!("BitMEX websocket authenticated");
+            }
         }
-
-        // Instrument updates arrive via the REST bootstrap. Keep the argument alive so Clippy
-        // doesn't flag the unused parameter warning when we expand handling later.
-        let _ = instruments;
     }
 
     async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -253,7 +261,7 @@ impl BitmexDataClient {
         }
 
         for instrument in &instruments {
-            self.http_client.add_instrument(instrument.clone());
+            self.http_client.cache_instrument(instrument.clone());
         }
 
         Ok(instruments)
@@ -308,13 +316,13 @@ impl BitmexDataClient {
                                         .write()
                                         .expect("instrument cache lock poisoned");
                                     guard.clear();
-                                    for instrument in instruments.iter() {
+                                    for instrument in &instruments {
                                         guard.insert(instrument.id(), instrument.clone());
                                     }
                                 }
 
                                 for instrument in instruments {
-                                    http_client.add_instrument(instrument);
+                                    http_client.cache_instrument(instrument);
                                 }
 
                                 tracing::debug!(client_id=%client_id, "BitMEX instruments refreshed");
@@ -341,7 +349,7 @@ fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
         .map(UnixNanos::from)
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for BitmexDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
@@ -406,7 +414,7 @@ impl DataClient for BitmexDataClient {
 
         let instruments = self.bootstrap_instruments().await?;
         if let Some(ws) = self.ws_client.as_mut() {
-            ws.initialize_instruments_cache(instruments);
+            ws.cache_instruments(instruments);
         }
 
         let ws = self.ws_client_mut()?;
@@ -422,7 +430,7 @@ impl DataClient for BitmexDataClient {
         self.maybe_spawn_instrument_refresh()?;
 
         self.is_connected.store(true, Ordering::Relaxed);
-        tracing::info!("BitMEX data client connected");
+        tracing::info!("Connected");
         Ok(())
     }
 
@@ -453,7 +461,7 @@ impl DataClient for BitmexDataClient {
             .clear();
         self.instrument_refresh_active = false;
 
-        tracing::info!("BitMEX data client disconnected");
+        tracing::info!("Disconnected");
         Ok(())
     }
 
@@ -844,7 +852,7 @@ impl DataClient for BitmexDataClient {
                         guard.clear();
                         for instrument in &instruments {
                             guard.insert(instrument.id(), instrument.clone());
-                            http_client.add_instrument(instrument.clone());
+                            http_client.cache_instrument(instrument.clone());
                         }
                     }
 
@@ -911,7 +919,7 @@ impl DataClient for BitmexDataClient {
                 .context("failed to request instrument from BitMEX")
             {
                 Ok(Some(instrument)) => {
-                    http_client.add_instrument(instrument.clone());
+                    http_client.cache_instrument(instrument.clone());
                     {
                         let mut guard = instruments_cache
                             .write()

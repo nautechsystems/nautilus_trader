@@ -90,15 +90,15 @@ class SpotSwapQuoter(Strategy):
         self.swap_instrument: Instrument | None = None
 
         # Spot state
-        self._spot_tick_size = Decimal("0")
-        self._spot_price_offset = Decimal("0")
+        self._spot_tick_size = Decimal(0)
+        self._spot_price_offset = Decimal(0)
         self._spot_order_qty = None
         self._spot_bid_order: LimitOrder | None = None
         self._spot_ask_order: LimitOrder | None = None
 
         # Swap state
-        self._swap_tick_size = Decimal("0")
-        self._swap_price_offset = Decimal("0")
+        self._swap_tick_size = Decimal(0)
+        self._swap_price_offset = Decimal(0)
         self._swap_order_qty = None
         self._swap_bid_order: LimitOrder | None = None
         self._swap_ask_order: LimitOrder | None = None

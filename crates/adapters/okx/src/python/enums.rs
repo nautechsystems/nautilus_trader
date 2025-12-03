@@ -102,13 +102,13 @@ impl OKXInstrumentType {
 
     #[classattr]
     #[pyo3(name = "FUTURES")]
-    fn futures() -> Self {
+    fn py_futures() -> Self {
         Self::Futures
     }
 
     #[classattr]
     #[pyo3(name = "OPTION")]
-    fn option() -> Self {
+    fn py_option() -> Self {
         Self::Option
     }
 }

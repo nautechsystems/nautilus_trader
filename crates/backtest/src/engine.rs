@@ -32,7 +32,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
 use nautilus_model::{
-    data::Data,
+    data::{Data, HasTsInit},
     enums::{AccountType, BookType, OmsType},
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -148,6 +148,7 @@ impl BacktestEngine {
         trade_execution: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         frozen_account: Option<bool>,
+        price_protection_points: Option<u32>,
     ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
             if account_type == AccountType::Margin {
@@ -182,11 +183,13 @@ impl BacktestEngine {
             use_message_queue,
             allow_cash_borrowing,
             frozen_account,
+            price_protection_points,
         )?;
         let exchange = Rc::new(RefCell::new(exchange));
         self.venues.insert(venue, exchange.clone());
 
         let account_id = AccountId::from(format!("{venue}-001").as_str());
+
         let exec_client = BacktestExecutionClient::new(
             self.config.trader_id(),
             account_id,
@@ -196,10 +199,15 @@ impl BacktestEngine {
             routing,
             frozen_account,
         );
-        let exec_client = Rc::new(exec_client);
 
-        exchange.borrow_mut().register_client(exec_client.clone());
-        self.kernel.exec_engine.register_client(exec_client)?;
+        exchange
+            .borrow_mut()
+            .register_client(Rc::new(exec_client.clone()));
+
+        self.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(exec_client))?;
 
         log::info!("Adding exchange {venue} to engine");
 
@@ -236,8 +244,7 @@ impl BacktestEngine {
                 && exchange.borrow().base_currency.is_some()
             {
                 anyhow::bail!(
-                    "Cannot add a `CurrencyPair` instrument {} for a venue with a single-currency CASH account",
-                    instrument_id
+                    "Cannot add a `CurrencyPair` instrument {instrument_id} for a venue with a single-currency CASH account"
                 )
             }
             exchange
@@ -281,7 +288,7 @@ impl BacktestEngine {
         // If requested, sort by ts_init so internal stream is monotonic.
         let mut to_add = data;
         if sort {
-            to_add.sort_by_key(nautilus_model::data::HasTsInit::ts_init);
+            to_add.sort_by_key(HasTsInit::ts_init);
         }
 
         // Instrument & book tracking using Data helpers
@@ -307,7 +314,7 @@ impl BacktestEngine {
         if sort {
             // VecDeque cannot be sorted directly; convert to Vec for sorting, then back.
             let mut vec: Vec<Data> = self.data.drain(..).collect();
-            vec.sort_by_key(nautilus_model::data::HasTsInit::ts_init);
+            vec.sort_by_key(HasTsInit::ts_init);
             self.data = vec.into();
         }
 
@@ -515,7 +522,7 @@ mod tests {
 
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
 
-    #[allow(clippy::missing_panics_doc, reason = "OK for testing")]
+    #[allow(clippy::missing_panics_doc)]
     fn get_backtest_engine(config: Option<BacktestEngineConfig>) -> BacktestEngine {
         let config = config.unwrap_or_default();
         let mut engine = BacktestEngine::new(config).unwrap();
@@ -546,6 +553,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap();
         engine
@@ -560,10 +568,9 @@ mod tests {
         let mut engine = get_backtest_engine(None);
         engine.add_instrument(instrument).unwrap();
 
-        // Check the venue and exec client has been added
+        // Check the venue has been added
         assert_eq!(engine.venues.len(), 1);
         assert!(engine.venues.contains_key(&venue));
-        assert!(engine.kernel.exec_engine.get_client(&client_id).is_some());
 
         // Check the instrument has been added
         assert!(

@@ -89,6 +89,26 @@ impl UUID4 {
             .expect("UUID byte representation should be a valid C string")
     }
 
+    /// Returns the UUID as a string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        // SAFETY: We always store valid ASCII UUID strings
+        self.to_cstr().to_str().expect("UUID should be valid UTF-8")
+    }
+
+    /// Returns the raw UUID bytes (16 bytes).
+    ///
+    /// This method is optimized for serialization where the UUID bytes
+    /// are needed directly without string conversion overhead.
+    #[must_use]
+    pub fn as_bytes(&self) -> [u8; 16] {
+        // Parse the string representation to extract the raw bytes
+        // This is done once at read time to avoid repeated parsing
+        let uuid_str = self.to_cstr().to_str().expect("Valid UTF-8");
+        let uuid = Uuid::parse_str(uuid_str).expect("Valid UUID4");
+        *uuid.as_bytes()
+    }
+
     fn validate_v4(uuid: &Uuid) {
         // Validate this is a v4 UUID
         assert_eq!(
@@ -167,6 +187,13 @@ impl From<uuid::Uuid> for UUID4 {
     }
 }
 
+impl From<UUID4> for uuid::Uuid {
+    /// Creates a [`uuid::Uuid`] from a [`UUID4`].
+    fn from(value: UUID4) -> Self {
+        Self::from_bytes(value.as_bytes())
+    }
+}
+
 impl Default for UUID4 {
     /// Creates a new default [`UUID4`] instance.
     ///
@@ -178,7 +205,7 @@ impl Default for UUID4 {
 
 impl Debug for UUID4 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}('{}')", stringify!(UUID4), self)
+        write!(f, "{}({})", stringify!(UUID4), self)
     }
 }
 
@@ -342,7 +369,7 @@ mod tests {
     fn test_debug() {
         let uuid_string = "2d89666b-1a1e-4a75-b193-4eb3b454c757";
         let uuid = UUID4::from(uuid_string);
-        assert_eq!(format!("{uuid:?}"), format!("UUID4('{uuid_string}')"));
+        assert_eq!(format!("{uuid:?}"), format!("UUID4({uuid_string})"));
     }
 
     #[rstest]
@@ -359,6 +386,15 @@ mod tests {
 
         assert_eq!(cstr.to_str().unwrap(), uuid.to_string());
         assert_eq!(cstr.to_bytes_with_nul()[36], 0);
+    }
+
+    #[rstest]
+    fn test_as_str() {
+        let uuid = UUID4::new();
+        let s = uuid.as_str();
+
+        assert_eq!(s, uuid.to_string());
+        assert_eq!(s.len(), 36);
     }
 
     #[rstest]
@@ -401,5 +437,30 @@ mod tests {
         let deserialized: UUID4 = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(uuid, deserialized);
+    }
+
+    #[rstest]
+    fn test_as_bytes() {
+        let uuid_string = "2d89666b-1a1e-4a75-b193-4eb3b454c757";
+        let uuid = UUID4::from(uuid_string);
+
+        let bytes = uuid.as_bytes();
+        assert_eq!(bytes.len(), 16);
+
+        // Reconstruct UUID from bytes and verify it matches
+        let reconstructed = Uuid::from_bytes(bytes);
+        assert_eq!(reconstructed.to_string(), uuid_string);
+
+        // Verify version 4
+        assert_eq!(reconstructed.get_version().unwrap(), uuid::Version::Random);
+    }
+
+    #[rstest]
+    fn test_as_bytes_round_trip() {
+        let uuid1 = UUID4::new();
+        let bytes = uuid1.as_bytes();
+        let uuid2 = UUID4::from(Uuid::from_bytes(bytes));
+
+        assert_eq!(uuid1, uuid2);
     }
 }

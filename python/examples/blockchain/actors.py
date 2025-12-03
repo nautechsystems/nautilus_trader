@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# ruff: noqa (under development)
-
 from dataclasses import dataclass
 
 from nautilus_trader.common import DataActor  # type: ignore[attr-defined]

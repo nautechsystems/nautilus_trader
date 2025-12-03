@@ -119,8 +119,8 @@ class TestInstrumentProvider:
             min_notional=Money(0.00010000, BTC),
             max_price=Price(1000, precision=8),
             min_price=Price(1e-8, precision=8),
-            margin_init=Decimal("0"),
-            margin_maint=Decimal("0"),
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
             maker_fee=Decimal("0.0010"),
             taker_fee=Decimal("0.0010"),
             ts_event=0,
@@ -156,8 +156,8 @@ class TestInstrumentProvider:
             min_notional=Money(0.00010000, BTC),
             max_price=Price(1000, precision=4),
             min_price=Price(1e-8, precision=4),
-            margin_init=Decimal("0"),
-            margin_maint=Decimal("0"),
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
             maker_fee=Decimal("0.0010"),
             taker_fee=Decimal("0.0010"),
             ts_event=0,
@@ -828,8 +828,8 @@ class TestInstrumentProvider:
             size_increment=Quantity.from_str("0.1"),
             maker_fee=Decimal("0.0003"),
             taker_fee=Decimal("0.0003"),
-            margin_init=Decimal("0"),
-            margin_maint=Decimal("0"),
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
             max_quantity=Quantity.from_str("9000"),
             min_quantity=Quantity.from_str("0.1"),
             min_notional=Money(10.00, USD),
@@ -853,10 +853,10 @@ class TestInstrumentProvider:
             price_increment=Price.from_str("0.01"),
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
-            margin_init=Decimal("0"),
-            margin_maint=Decimal("0"),
-            maker_fee=Decimal("0"),
-            taker_fee=Decimal("0"),
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
+            maker_fee=Decimal(0),
+            taker_fee=Decimal(0),
             ts_event=0,
             ts_init=0,
         )
@@ -877,10 +877,10 @@ class TestInstrumentProvider:
             price_increment=Price.from_str("0.01"),
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
-            margin_init=Decimal("0"),
-            margin_maint=Decimal("0"),
-            maker_fee=Decimal("0"),
-            taker_fee=Decimal("0"),
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
+            maker_fee=Decimal(0),
+            taker_fee=Decimal(0),
             ts_event=0,
             ts_init=0,
         )
@@ -1208,7 +1208,7 @@ class TestDataGenerator:
         bars = [first_bar]
 
         # Generate subsequent bars
-        for i in range(bar_count - 1):  # -1 because we already have the first bar
+        for _ in range(bar_count - 1):  # -1 because we already have the first bar
             prev_bar = bars[-1]  # Get the last bar
             ts_event = prev_bar.ts_event + time_change_nanos
             ts_init = prev_bar.ts_init + time_change_nanos

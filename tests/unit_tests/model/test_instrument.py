@@ -604,7 +604,7 @@ class TestInstrument:
         with pytest.raises(ValueError):
             instrument.next_bid_price(100.123456)
 
-        tick_scheme_name = "FOREX_5DECIMAL"
+        tick_scheme_name = "FIXED_PRECISION_5"
 
         # Act
         instrument.set_tick_scheme(tick_scheme_name)

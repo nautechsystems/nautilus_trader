@@ -28,10 +28,10 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 
 use crate::defi::{
-    AmmType, Chain, Dex, DexType, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
-    SharedChain, SharedDex, Token,
+    Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
     data::{DexPoolData, PoolFeeCollect, block::BlockPosition},
-    pool_analysis::profiler::PoolProfiler,
+    pool_analysis::{profiler::PoolProfiler, quote::SwapQuote},
+    stubs::{arbitrum, uniswap_v3},
     tick_map::{
         liquidity_math::tick_spacing_to_max_liquidity_per_tick,
         sqrt_price_math::{
@@ -48,26 +48,6 @@ static LOG_INDEX_COUNTER: AtomicU32 = AtomicU32::new(0);
 /// Gets the next log index for test events
 fn next_log_index() -> u32 {
     LOG_INDEX_COUNTER.fetch_add(1, Ordering::SeqCst)
-}
-
-fn arbitrum() -> SharedChain {
-    Arc::new(Chain::from_chain_id(42161).unwrap().clone())
-}
-
-fn uniswap_v3(arbitrum: SharedChain) -> SharedDex {
-    let dex = Dex::new(
-        (*arbitrum).clone(),
-        DexType::UniswapV3,
-        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-        0,
-        AmmType::CLAMM,
-        "PoolCreated",
-        "Swap",
-        "Mint",
-        "Burn",
-        "Collect",
-    );
-    Arc::new(dex)
 }
 
 const TICK_SPACING: i32 = 60;
@@ -87,7 +67,7 @@ pub fn pool_definition(
     initial_sqrt_price_x96: Option<U160>,
 ) -> Pool {
     let arbitrum = arbitrum();
-    let dex = uniswap_v3(arbitrum.clone());
+    let dex = uniswap_v3();
     let weth = Token::new(
         arbitrum.clone(),
         address!("0x37a645648dF29205C6261289983FB04ECD70b4B3"),
@@ -102,10 +82,12 @@ pub fn pool_definition(
         "ANIME".to_string(),
         18,
     );
+    let pool_address = address!("0xBBf3209130dF7d19356d72Eb8a193e2D9Ec5c234");
     let mut pool = Pool::new(
         Arc::new(Chain::from_chain_id(42161).unwrap().clone()), // Arbitrum,
         dex,
-        address!("0xBBf3209130dF7d19356d72Eb8a193e2D9Ec5c234"),
+        pool_address,
+        PoolIdentifier::from_address(pool_address),
         0,
         coin_anime,
         weth,
@@ -113,7 +95,11 @@ pub fn pool_definition(
         Some(tick_spacing.unwrap_or(TICK_SPACING) as u32),
         UnixNanos::default(),
     );
-    pool.initialize(initial_sqrt_price_x96.unwrap_or(sqrt_price_x98()));
+    let initial_sqrt_price = initial_sqrt_price_x96.unwrap_or(sqrt_price_x98());
+    pool.initialize(
+        initial_sqrt_price,
+        get_tick_at_sqrt_ratio(initial_sqrt_price),
+    );
     pool
 }
 
@@ -133,9 +119,9 @@ fn create_mint_event(
     );
     PoolLiquidityUpdate::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
-        pool_definition.address,
+        pool_definition.pool_identifier,
         PoolLiquidityUpdateType::Mint,
         100000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
@@ -168,9 +154,9 @@ fn create_burn_event(
     );
     PoolLiquidityUpdate::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
-        pool_definition.address,
+        pool_definition.pool_identifier,
         PoolLiquidityUpdateType::Burn,
         100000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
@@ -196,9 +182,9 @@ fn create_collect_event(
     let pool_definition = pool_definition(None, None, None);
     PoolFeeCollect::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
-        pool_definition.address,
+        pool_definition.pool_identifier,
         100000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
         0,
@@ -327,9 +313,9 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
     let pool_definition = pool_definition(None, None, None);
     let mint_event = PoolLiquidityUpdate::new(
         arbitrum(),
-        uniswap_v3(arbitrum()),
+        uniswap_v3(),
         pool_definition.instrument_id,
-        pool_definition.address,
+        pool_definition.pool_identifier,
         PoolLiquidityUpdateType::Mint,
         100000,
         "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
@@ -348,11 +334,7 @@ fn test_if_pool_process_fails_if_outside_tick_bounds(mut profiler: PoolProfiler)
     assert!(result.is_err());
     assert_eq!(
         result.err().unwrap().to_string(),
-        format!(
-            "Invalid tick bounds for {} and {}",
-            invalid_tick_lower, invalid_tick_upper
-        )
-        .as_str(),
+        format!("Invalid tick bounds for {invalid_tick_lower} and {invalid_tick_upper}").as_str(),
     );
 }
 
@@ -574,6 +556,7 @@ fn test_execute_burn_equivalence() {
 #[rstest]
 fn test_execute_swap_equivalence() {
     let pool_definition = pool_definition(None, None, None);
+    let pool_identifier = pool_definition.pool_identifier;
     // Create two identical profilers
     let mut profiler1 = PoolProfiler::new(Arc::new(pool_definition.clone()));
     let mut profiler2 = PoolProfiler::new(Arc::new(pool_definition));
@@ -595,15 +578,19 @@ fn test_execute_swap_equivalence() {
         .unwrap();
 
     // Parameters for the swap
-    let sender = user_address();
-    let recipient = user_address();
-    let block = create_block_position();
     let amount0_in = U256::from(1000u32);
 
-    // Method 1: Use execute_swap to create and apply the swap
-    let swap_event = profiler1
-        .swap_exact0_for_1(sender, recipient, block, amount0_in, None)
-        .unwrap();
+    // Method 1: Use swap quoting to create a swap quote and then apply it
+    let swap_quote = profiler1.swap_exact_in(amount0_in, true, None).unwrap();
+    let swap_event = swap_quote.to_swap_event(
+        arbitrum(),
+        uniswap_v3(),
+        pool_identifier,
+        create_block_position(),
+        user_address(),
+        user_address(),
+    );
+    profiler1.apply_swap_quote(&swap_quote);
 
     // Method 2: Use process_swap with the created swap event
     profiler2.process(&DexPoolData::Swap(swap_event)).unwrap();
@@ -1117,26 +1104,26 @@ fn test_position_fee_growth_and_tokens_owed_after_swaps(mut uni_pool_profiler: P
 
     // Execute swaps to generate fees
     // Swap 0.1e18 token0 for token1
-    uni_pool_profiler
-        .swap_exact0_for_1(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            U256::from(expand_to_18_decimals(1)) / U256::from(10),
-            None,
-        )
-        .unwrap();
+    uni_pool_profiler.apply_swap_quote(
+        &uni_pool_profiler
+            .swap_exact_in(
+                U256::from(expand_to_18_decimals(1)) / U256::from(10),
+                true,
+                None,
+            )
+            .unwrap(),
+    );
 
     // Swap 0.01e18 token1 for token0
-    uni_pool_profiler
-        .swap_exact1_for_0(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            U256::from(expand_to_18_decimals(1)) / U256::from(100),
-            None,
-        )
-        .unwrap();
+    uni_pool_profiler.apply_swap_quote(
+        &uni_pool_profiler
+            .swap_exact_in(
+                U256::from(expand_to_18_decimals(1)) / U256::from(100),
+                false,
+                None,
+            )
+            .unwrap(),
+    );
 
     // Now mint 1 wei of liquidity for "lp_address" (wallet) - this creates a NEW position
     let mint_1_wei = create_mint_event(lp_address(), lower_tick, upper_tick, 1);
@@ -1207,26 +1194,18 @@ fn test_does_not_clear_position_fee_growth_snapshot_if_no_more_liquidity(
 
     // Execute swaps to generate fees
     // Swap 1e18 token0 for token1
-    medium_fee_pool_profiler
-        .swap_exact0_for_1(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            U256::from(expand_to_18_decimals(1)),
-            None,
-        )
-        .unwrap();
+    medium_fee_pool_profiler.apply_swap_quote(
+        &medium_fee_pool_profiler
+            .swap_exact_in(U256::from(expand_to_18_decimals(1)), true, None)
+            .unwrap(),
+    );
 
     // Swap 1e18 token1 for token0
-    medium_fee_pool_profiler
-        .swap_exact1_for_0(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            U256::from(expand_to_18_decimals(1)),
-            None,
-        )
-        .unwrap();
+    medium_fee_pool_profiler.apply_swap_quote(
+        &medium_fee_pool_profiler
+            .swap_exact_in(U256::from(expand_to_18_decimals(1)), false, None)
+            .unwrap(),
+    );
 
     // Burn all liquidity
     let burn_event = create_burn_event(
@@ -1513,15 +1492,11 @@ fn test_collect_works_with_multiple_lps(mut empty_low_fee_pool_profiler: PoolPro
         .unwrap();
 
     // Execute swap: 1e18 token0 for token1
-    empty_low_fee_pool_profiler
-        .swap_exact0_for_1(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            U256::from(expand_to_18_decimals(1)),
-            None,
-        )
-        .unwrap();
+    empty_low_fee_pool_profiler.apply_swap_quote(
+        &empty_low_fee_pool_profiler
+            .swap_exact_in(U256::from(expand_to_18_decimals(1)), true, None)
+            .unwrap(),
+    );
 
     // "Poke" positions by burning 0 liquidity to update fee accounting
     let burn_event1 = create_burn_event(lp_address(), min_tick, max_tick, 0);
@@ -1681,15 +1656,11 @@ fn test_overflow_boundary_token0(mut empty_low_fee_pool_profiler: PoolProfiler) 
         .unwrap();
 
     // Swap 1e18 token0 for token1
-    empty_low_fee_pool_profiler
-        .swap_exact0_for_1(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            U256::from(expand_to_18_decimals(1)),
-            None,
-        )
-        .unwrap();
+    empty_low_fee_pool_profiler.apply_swap_quote(
+        &empty_low_fee_pool_profiler
+            .swap_exact_in(U256::from(expand_to_18_decimals(1)), true, None)
+            .unwrap(),
+    );
 
     // "Poke" position by burning 0 liquidity to update fee accounting
     let burn_event = create_burn_event(lp_address(), min_tick, max_tick, 0);
@@ -1724,15 +1695,11 @@ fn test_overflow_boundary_token1(mut empty_low_fee_pool_profiler: PoolProfiler) 
         .unwrap();
 
     // Swap 1e18 token1 for token0
-    empty_low_fee_pool_profiler
-        .swap_exact1_for_0(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            U256::from(expand_to_18_decimals(1)),
-            None,
-        )
-        .unwrap();
+    empty_low_fee_pool_profiler.apply_swap_quote(
+        &empty_low_fee_pool_profiler
+            .swap_exact_in(U256::from(expand_to_18_decimals(1)), false, None)
+            .unwrap(),
+    );
 
     // "Poke" position by burning 0 liquidity
     let burn_event = create_burn_event(lp_address(), min_tick, max_tick, 0);
@@ -1765,27 +1732,18 @@ fn test_overflow_boundary_token0_and_token1(mut empty_low_fee_pool_profiler: Poo
         .unwrap();
 
     // Swap 1e18 token0 for token1
-    empty_low_fee_pool_profiler
-        .swap_exact0_for_1(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            U256::from(expand_to_18_decimals(1)),
-            None,
-        )
-        .unwrap();
+    empty_low_fee_pool_profiler.apply_swap_quote(
+        &empty_low_fee_pool_profiler
+            .swap_exact_in(U256::from(expand_to_18_decimals(1)), true, None)
+            .unwrap(),
+    );
 
     // Swap 1e18 token1 for token0
-    empty_low_fee_pool_profiler
-        .swap_exact1_for_0(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            U256::from(expand_to_18_decimals(1)),
-            None,
-        )
-        .unwrap();
-
+    empty_low_fee_pool_profiler.apply_swap_quote(
+        &empty_low_fee_pool_profiler
+            .swap_exact_in(U256::from(expand_to_18_decimals(1)), false, None)
+            .unwrap(),
+    );
     // "Poke" position by burning 0 liquidity
     let burn_event = create_burn_event(lp_address(), min_tick, max_tick, 0);
     empty_low_fee_pool_profiler
@@ -1865,23 +1823,17 @@ fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolPr
 
     // Execute swap: token0 for token1 to move price down into the position range
     let amount0_in = U256::from(expand_to_18_decimals(1));
-    let _ = uni_pool_profiler
-        .swap_exact0_for_1(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            amount0_in,
-            None,
-        )
-        .unwrap();
+    uni_pool_profiler.apply_swap_quote(
+        &uni_pool_profiler
+            .swap_exact_in(amount0_in, true, None)
+            .unwrap(),
+    );
 
     // Verify price moved down past the upper tick of the position
     let new_tick = uni_pool_profiler.state.current_tick;
     assert!(
         new_tick <= upper_tick,
-        "Price should have crossed to or below tick {}, got {}",
-        upper_tick,
-        new_tick
+        "Price should have crossed to or below tick {upper_tick}, was {new_tick}"
     );
 
     // When crossing tick -23040 downward (cross_tick_down):
@@ -1937,23 +1889,17 @@ fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProf
 
     // Execute large swap: token1 for token0 to move price up, crossing tick -22980
     let amount1_in = U256::from(expand_to_18_decimals(1000));
-    let _ = uni_pool_profiler
-        .swap_exact1_for_0(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            amount1_in,
-            None,
-        )
-        .unwrap();
+    uni_pool_profiler.apply_swap_quote(
+        &uni_pool_profiler
+            .swap_exact_in(amount1_in, false, None)
+            .unwrap(),
+    );
 
     // Verify price moved up past the lower tick of the position
     let new_tick = uni_pool_profiler.state.current_tick;
     assert!(
         new_tick >= lower_tick,
-        "Price should have crossed above or at tick {}, got {}",
-        lower_tick,
-        new_tick
+        "Price should have crossed above or at tick {lower_tick}, was {new_tick}"
     );
 
     // When crossing tick -22980 upward (cross_tick_up):
@@ -2041,62 +1987,30 @@ struct ExpectedSwapResult {
     execution_price: String,
 }
 
-fn execute_swap(pool_profiler: &mut PoolProfiler, test: SwapTestCase) -> anyhow::Result<PoolSwap> {
+fn quote_swap(pool_profiler: &mut PoolProfiler, test: SwapTestCase) -> anyhow::Result<SwapQuote> {
     match test {
         SwapTestCase::SwapExact0For1 {
             amount0,
             sqrt_price_limit,
-        } => pool_profiler.swap_exact0_for_1(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            amount0,
-            sqrt_price_limit,
-        ),
+        } => pool_profiler.swap_exact_in(amount0, true, sqrt_price_limit),
         SwapTestCase::SwapExact1For0 {
             amount1,
             sqrt_price_limit,
-        } => pool_profiler.swap_exact1_for_0(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            amount1,
-            sqrt_price_limit,
-        ),
+        } => pool_profiler.swap_exact_in(amount1, false, sqrt_price_limit),
         SwapTestCase::Swap0ForExact1 {
             amount1,
             sqrt_price_limit,
-        } => pool_profiler.swap_0_for_exact1(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            amount1,
-            sqrt_price_limit,
-        ),
+        } => pool_profiler.swap_exact_out(amount1, true, sqrt_price_limit),
         SwapTestCase::Swap1ForExact0 {
             amount0,
             sqrt_price_limit,
-        } => pool_profiler.swap_1_for_exact0(
-            user_address(),
-            user_address(),
-            create_block_position(),
-            amount0,
-            sqrt_price_limit,
-        ),
-        SwapTestCase::SwapToLowerPrice { sqrt_price_limit } => pool_profiler
-            .swap_to_lower_sqrt_price(
-                user_address(),
-                user_address(),
-                create_block_position(),
-                sqrt_price_limit,
-            ),
-        SwapTestCase::SwapToHigherPrice { sqrt_price_limit } => pool_profiler
-            .swap_to_higher_sqrt_price(
-                user_address(),
-                user_address(),
-                create_block_position(),
-                sqrt_price_limit,
-            ),
+        } => pool_profiler.swap_exact_out(amount0, false, sqrt_price_limit),
+        SwapTestCase::SwapToLowerPrice { sqrt_price_limit } => {
+            pool_profiler.swap_to_lower_sqrt_price(sqrt_price_limit)
+        }
+        SwapTestCase::SwapToHigherPrice { sqrt_price_limit } => {
+            pool_profiler.swap_to_higher_sqrt_price(sqrt_price_limit)
+        }
     }
 }
 
@@ -2205,7 +2119,7 @@ fn get_execution_price_string(amount0: I256, amount1: I256) -> String {
     let execution_price = amount1_decimal.div(amount0_decimal).mul(Decimal::from(-1));
 
     // Format to 5 significant digits to mimic toPrecision(5)
-    format!("{:.5}", execution_price)
+    format!("{execution_price:.5}")
         .trim_end_matches('0')
         .trim_end_matches('.')
         .to_string()
@@ -2234,7 +2148,7 @@ fn format_price(sqrt_price_x96: U160) -> String {
     if rounded_decimal >= U256::from(10000u64) {
         format!("{}.0000", integer_part + U256::from(1u64))
     } else {
-        format!("{}.{:04}", integer_part, rounded_decimal)
+        format!("{integer_part}.{rounded_decimal:04}")
     }
 }
 
@@ -2274,10 +2188,13 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
         );
 
         // Execute swap and test
-        match execute_swap(&mut profiler, swap) {
-            Ok(swap_event) => {
-                assert_eq!(swap_event.amount0, expected_result.amount0_delta);
-                assert_eq!(swap_event.amount1, expected_result.amount1_delta);
+        match quote_swap(&mut profiler, swap) {
+            Ok(swap_quote) => {
+                // Apply swap quote to have the correct pool profiler state
+                profiler.apply_swap_quote(&swap_quote);
+
+                assert_eq!(swap_quote.amount0, expected_result.amount0_delta);
+                assert_eq!(swap_quote.amount1, expected_result.amount1_delta);
                 assert_eq!(profiler.state.current_tick, expected_result.tick_after);
                 assert_eq!(
                     format_price(profiler.state.price_sqrt_ratio_x96),
@@ -2309,4 +2226,44 @@ fn test_pool_swaps(pool_test_case: PoolTestCase) {
 #[rstest]
 fn test_swaps_for_pool_high_fee_1on1_price_2e18_max_liquidity() {
     test_pool_swaps(pool_high_fee_1on1_price_2e18_max_liquidity());
+}
+
+#[rstest]
+fn test_size_for_impact_bps_validation(medium_fee_pool_profiler: PoolProfiler) {
+    // Test a subset of BPS values that work with 2e18 liquidity
+    let bps_test_values = vec![100, 500, 1000];
+    for target_bps in &bps_test_values {
+        for zero_for_one in [true, false] {
+            // Get size for target impact
+            let result = medium_fee_pool_profiler
+                .size_for_impact_bps_detailed(*target_bps, zero_for_one)
+                .expect("Size estimation should succeed");
+
+            // Simulate swap with that size
+            let mut quote = medium_fee_pool_profiler
+                .swap_exact_in(result.size, zero_for_one, None)
+                .expect("Swap simulation should succeed");
+
+            // Calculate trade info
+            let pool = medium_fee_pool_profiler.pool.as_ref();
+            quote
+                .calculate_trade_info(&pool.token0, &pool.token1)
+                .expect("Trade info calculation should succeed");
+
+            // Extract and validate actual slippage
+            let trade_info = quote
+                .trade_info
+                .as_ref()
+                .expect("Trade info should be initialized");
+
+            let actual_slippage = trade_info.get_slippage_bps().expect("Should get slippage");
+
+            // Verify within tolerance (1 BPS)
+            let diff = actual_slippage.abs_diff(*target_bps);
+            assert!(
+                diff <= 1,
+                "Slippage should be within 1 BPS tolerance. Target: {target_bps}, Actual: {actual_slippage}, Diff: {diff}"
+            );
+        }
+    }
 }

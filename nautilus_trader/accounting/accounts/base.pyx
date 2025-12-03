@@ -52,6 +52,8 @@ cdef class Account:
         self.update_balances(event.balances)
 
     def __eq__(self, Account other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:

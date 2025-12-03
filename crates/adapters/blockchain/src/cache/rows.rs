@@ -19,7 +19,7 @@ use alloy::primitives::{Address, I256, U160, U256};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{
-        PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
+        PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, SharedChain, SharedDex,
         data::{DexPoolData, PoolFeeCollect, PoolFlash},
         validation::validate_address,
     },
@@ -59,6 +59,7 @@ impl<'r> FromRow<'r, PgRow> for TokenRow {
 #[derive(Debug)]
 pub struct PoolRow {
     pub address: Address,
+    pub pool_identifier: String,
     pub dex_name: String,
     pub creation_block: i64,
     pub token0_chain: i32,
@@ -69,11 +70,13 @@ pub struct PoolRow {
     pub tick_spacing: Option<i32>,
     pub initial_tick: Option<i32>,
     pub initial_sqrt_price_x96: Option<String>,
+    pub hook_address: Option<String>,
 }
 
 impl<'r> FromRow<'r, PgRow> for PoolRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let address = validate_address(row.try_get::<String, _>("address")?.as_str()).unwrap();
+        let pool_identifier = row.try_get::<String, _>("pool_identifier")?;
         let dex_name = row.try_get::<String, _>("dex_name")?;
         let creation_block = row.try_get::<i64, _>("creation_block")?;
         let token0_chain = row.try_get::<i32, _>("token0_chain")?;
@@ -86,9 +89,11 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
         let tick_spacing = row.try_get::<Option<i32>, _>("tick_spacing")?;
         let initial_tick = row.try_get::<Option<i32>, _>("initial_tick")?;
         let initial_sqrt_price_x96 = row.try_get::<Option<String>, _>("initial_sqrt_price_x96")?;
+        let hook_address = row.try_get::<Option<String>, _>("hook_address")?;
 
         Ok(Self {
             address,
+            pool_identifier,
             dex_name,
             creation_block,
             token0_chain,
@@ -99,6 +104,7 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
             tick_spacing,
             initial_tick,
             initial_sqrt_price_x96,
+            hook_address,
         })
     }
 }
@@ -133,19 +139,19 @@ impl FromRow<'_, PgRow> for BlockTimestampRow {
 /// Returns an error if row field extraction fails or data validation fails.
 pub fn transform_row_to_dex_pool_data(
     row: &PgRow,
-    chain: nautilus_model::defi::SharedChain,
-    dex: nautilus_model::defi::SharedDex,
+    chain: SharedChain,
+    dex: SharedDex,
     instrument_id: InstrumentId,
 ) -> Result<DexPoolData, sqlx::Error> {
     let event_type = row.try_get::<String, _>("event_type")?;
-    let pool_address_str = row.try_get::<String, _>("pool_address")?;
+    let pool_identifier_str = row.try_get::<String, _>("pool_identifier")?;
+    let pool_identifier = pool_identifier_str
+        .parse()
+        .map_err(|e| sqlx::Error::Decode(format!("Invalid pool identifier: {e}").into()))?;
     let block = row.try_get::<i64, _>("block")? as u64;
     let transaction_hash = row.try_get::<String, _>("transaction_hash")?;
     let transaction_index = row.try_get::<i32, _>("transaction_index")? as u32;
     let log_index = row.try_get::<i32, _>("log_index")? as u32;
-
-    let pool_address = validate_address(&pool_address_str)
-        .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
 
     match event_type.as_str() {
         "swap" => {
@@ -168,7 +174,7 @@ pub fn transform_row_to_dex_pool_data(
                 })?;
             let sqrt_price_x96 = U160::from_str(&sqrt_price_x96_str).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid sqrt_price_x96 '{}': {}", sqrt_price_x96_str, e).into(),
+                    format!("Invalid sqrt_price_x96 '{sqrt_price_x96_str}': {e}").into(),
                 )
             })?;
 
@@ -183,7 +189,7 @@ pub fn transform_row_to_dex_pool_data(
                 .ok_or_else(|| sqlx::Error::Decode("Missing swap_amount0 for swap event".into()))?;
             let amount0 = I256::from_str(&swap_amount0_str).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid swap_amount0 '{}': {}", swap_amount0_str, e).into(),
+                    format!("Invalid swap_amount0 '{swap_amount0_str}': {e}").into(),
                 )
             })?;
 
@@ -192,7 +198,7 @@ pub fn transform_row_to_dex_pool_data(
                 .ok_or_else(|| sqlx::Error::Decode("Missing swap_amount1 for swap event".into()))?;
             let amount1 = I256::from_str(&swap_amount1_str).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid swap_amount1 '{}': {}", swap_amount1_str, e).into(),
+                    format!("Invalid swap_amount1 '{swap_amount1_str}': {e}").into(),
                 )
             })?;
 
@@ -200,7 +206,7 @@ pub fn transform_row_to_dex_pool_data(
                 chain,
                 dex,
                 instrument_id,
-                pool_address,
+                pool_identifier,
                 block,
                 transaction_hash,
                 transaction_index,
@@ -213,9 +219,6 @@ pub fn transform_row_to_dex_pool_data(
                 sqrt_price_x96,
                 swap_liquidity,
                 swap_tick,
-                None,
-                None,
-                None,
             );
 
             Ok(DexPoolData::Swap(pool_swap))
@@ -232,7 +235,7 @@ pub fn transform_row_to_dex_pool_data(
                 "Burn" => PoolLiquidityUpdateType::Burn,
                 _ => {
                     return Err(sqlx::Error::Decode(
-                        format!("Unknown liquidity update type: {}", kind_str).into(),
+                        format!("Unknown liquidity update type: {kind_str}").into(),
                     ));
                 }
             };
@@ -253,22 +256,18 @@ pub fn transform_row_to_dex_pool_data(
             let position_liquidity_str = row.try_get::<String, _>("position_liquidity")?;
             let position_liquidity = position_liquidity_str.parse::<u128>().map_err(|e| {
                 sqlx::Error::Decode(
-                    format!(
-                        "Invalid position_liquidity '{}': {}",
-                        position_liquidity_str, e
-                    )
-                    .into(),
+                    format!("Invalid position_liquidity '{position_liquidity_str}': {e}").into(),
                 )
             })?;
 
             let amount0_str = row.try_get::<String, _>("amount0")?;
             let amount0 = U256::from_str_radix(&amount0_str, 10).map_err(|e| {
-                sqlx::Error::Decode(format!("Invalid amount0 '{}': {}", amount0_str, e).into())
+                sqlx::Error::Decode(format!("Invalid amount0 '{amount0_str}': {e}").into())
             })?;
 
             let amount1_str = row.try_get::<String, _>("amount1")?;
             let amount1 = U256::from_str_radix(&amount1_str, 10).map_err(|e| {
-                sqlx::Error::Decode(format!("Invalid amount1 '{}': {}", amount1_str, e).into())
+                sqlx::Error::Decode(format!("Invalid amount1 '{amount1_str}': {e}").into())
             })?;
 
             let tick_lower = row
@@ -287,7 +286,7 @@ pub fn transform_row_to_dex_pool_data(
                 chain,
                 dex,
                 instrument_id,
-                pool_address,
+                pool_identifier,
                 kind,
                 block,
                 transaction_hash,
@@ -315,12 +314,12 @@ pub fn transform_row_to_dex_pool_data(
             // UNION queries return NUMERIC type, not domain types, so we need to read as strings
             let amount0_str = row.try_get::<String, _>("amount0")?;
             let amount0 = amount0_str.parse::<u128>().map_err(|e| {
-                sqlx::Error::Decode(format!("Invalid amount0 '{}': {}", amount0_str, e).into())
+                sqlx::Error::Decode(format!("Invalid amount0 '{amount0_str}': {e}").into())
             })?;
 
             let amount1_str = row.try_get::<String, _>("amount1")?;
             let amount1 = amount1_str.parse::<u128>().map_err(|e| {
-                sqlx::Error::Decode(format!("Invalid amount1 '{}': {}", amount1_str, e).into())
+                sqlx::Error::Decode(format!("Invalid amount1 '{amount1_str}': {e}").into())
             })?;
 
             let tick_lower = row
@@ -339,7 +338,7 @@ pub fn transform_row_to_dex_pool_data(
                 chain,
                 dex,
                 instrument_id,
-                pool_address,
+                pool_identifier,
                 block,
                 transaction_hash,
                 transaction_index,
@@ -371,36 +370,32 @@ pub fn transform_row_to_dex_pool_data(
             let flash_amount0_str = row.try_get::<String, _>("flash_amount0")?;
             let amount0 = U256::from_str_radix(&flash_amount0_str, 10).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid flash_amount0 '{}': {}", flash_amount0_str, e).into(),
+                    format!("Invalid flash_amount0 '{flash_amount0_str}': {e}").into(),
                 )
             })?;
 
             let flash_amount1_str = row.try_get::<String, _>("flash_amount1")?;
             let amount1 = U256::from_str_radix(&flash_amount1_str, 10).map_err(|e| {
                 sqlx::Error::Decode(
-                    format!("Invalid flash_amount1 '{}': {}", flash_amount1_str, e).into(),
+                    format!("Invalid flash_amount1 '{flash_amount1_str}': {e}").into(),
                 )
             })?;
 
             let flash_paid0_str = row.try_get::<String, _>("flash_paid0")?;
             let paid0 = U256::from_str_radix(&flash_paid0_str, 10).map_err(|e| {
-                sqlx::Error::Decode(
-                    format!("Invalid flash_paid0 '{}': {}", flash_paid0_str, e).into(),
-                )
+                sqlx::Error::Decode(format!("Invalid flash_paid0 '{flash_paid0_str}': {e}").into())
             })?;
 
             let flash_paid1_str = row.try_get::<String, _>("flash_paid1")?;
             let paid1 = U256::from_str_radix(&flash_paid1_str, 10).map_err(|e| {
-                sqlx::Error::Decode(
-                    format!("Invalid flash_paid1 '{}': {}", flash_paid1_str, e).into(),
-                )
+                sqlx::Error::Decode(format!("Invalid flash_paid1 '{flash_paid1_str}': {e}").into())
             })?;
 
             let pool_flash = PoolFlash::new(
                 chain,
                 dex,
                 instrument_id,
-                pool_address,
+                pool_identifier,
                 block,
                 transaction_hash,
                 transaction_index,
@@ -417,7 +412,7 @@ pub fn transform_row_to_dex_pool_data(
             Ok(DexPoolData::Flash(pool_flash))
         }
         _ => Err(sqlx::Error::Decode(
-            format!("Unknown event type: {}", event_type).into(),
+            format!("Unknown event type: {event_type}").into(),
         )),
     }
 }

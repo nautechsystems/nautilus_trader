@@ -279,9 +279,9 @@ class TestExecutionReports:
 
         # Assert
         assert report1.position_side == PositionSide.LONG
-        assert report1.signed_decimal_qty == Decimal("1000000")
+        assert report1.signed_decimal_qty == Decimal(1000000)
         assert report2.position_side == PositionSide.SHORT
-        assert report2.signed_decimal_qty == Decimal("-1000000")
+        assert report2.signed_decimal_qty == Decimal(-1000000)
         assert (
             str(report1)
             == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, avg_px_open=None, signed_decimal_qty=1000000, report_id={report_id1}, ts_last=0, ts_init=0)"
@@ -319,7 +319,7 @@ class TestExecutionReports:
         assert report.instrument_id == AUDUSD_IDEALPRO
         assert report.position_side == PositionSide.FLAT
         assert report.quantity == Quantity.from_str("0.000000")
-        assert report.signed_decimal_qty == Decimal("0")
+        assert report.signed_decimal_qty == Decimal(0)
         assert report.venue_position_id is None
         assert report.id == report_id
         assert report.ts_last == ts_init
@@ -343,7 +343,7 @@ class TestExecutionReports:
         assert report.instrument_id == AUDUSD_IDEALPRO
         assert report.position_side == PositionSide.FLAT
         assert report.quantity == Quantity.from_str("0.00")
-        assert report.signed_decimal_qty == Decimal("0")
+        assert report.signed_decimal_qty == Decimal(0)
         assert report.venue_position_id is None
         assert isinstance(report.id, UUID4)
         assert report.ts_last == ts_init
@@ -879,7 +879,7 @@ class TestExecutionReports:
         assert report.venue_position_id == PositionId("P-003")
         assert report.position_side == PositionSide.LONG
         assert report.quantity == Quantity.from_str("100000")
-        assert report.signed_decimal_qty == Decimal("100000")
+        assert report.signed_decimal_qty == Decimal(100000)
         assert report.ts_last == 1_000_000_000
         assert report.ts_init == 2_000_000_000
 
@@ -900,7 +900,7 @@ class TestExecutionReports:
         # Assert
         assert report.position_side == PositionSide.SHORT
         assert report.quantity == Quantity.from_str("50000")
-        assert report.signed_decimal_qty == Decimal("-50000")
+        assert report.signed_decimal_qty == Decimal(-50000)
 
     def test_position_status_report_with_avg_px_open(self):
         # Arrange
@@ -1066,7 +1066,7 @@ class TestExecutionReports:
         # Assert
         assert report.position_side == PositionSide.FLAT
         assert report.quantity == Quantity.zero(0)
-        assert report.signed_decimal_qty == Decimal("0")
+        assert report.signed_decimal_qty == Decimal(0)
 
     def test_fill_report_with_zero_commission(self):
         # Arrange
@@ -1088,7 +1088,7 @@ class TestExecutionReports:
 
         # Assert
         assert report.commission == Money(0, USD)
-        assert report.commission.as_decimal() == Decimal("0")
+        assert report.commission.as_decimal() == Decimal(0)
 
     def test_order_status_report_with_trigger_price_but_not_triggered(self):
         # Arrange

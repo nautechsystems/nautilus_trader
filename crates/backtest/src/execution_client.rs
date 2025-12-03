@@ -21,6 +21,7 @@
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -47,6 +48,7 @@ use crate::exchange::SimulatedExchange;
 /// backtesting environments, handling order management and trade execution
 /// through simulated exchanges. It processes trading commands and coordinates
 /// with the simulation infrastructure to provide realistic execution behavior.
+#[derive(Clone)]
 pub struct BacktestExecutionClient {
     core: ExecutionClientCore,
     exchange: WeakCell<SimulatedExchange>,
@@ -107,6 +109,7 @@ impl BacktestExecutionClient {
     }
 }
 
+#[async_trait(?Send)]
 impl ExecutionClient for BacktestExecutionClient {
     fn is_connected(&self) -> bool {
         self.is_connected

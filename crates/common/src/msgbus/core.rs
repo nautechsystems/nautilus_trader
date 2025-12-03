@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 2Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,7 @@ use nautilus_core::{
     correctness::{FAILED, check_predicate_true, check_valid_string_ascii},
 };
 use nautilus_model::identifiers::TraderId;
+use serde::{Deserialize, Serialize};
 use switchboard::MessagingSwitchboard;
 use ustr::Ustr;
 
@@ -57,9 +58,11 @@ pub struct Topic;
 pub struct Endpoint;
 
 /// A message bus string type. It can be a pattern or a topic.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct MStr<T> {
     value: Ustr,
+    #[serde(skip)]
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -77,6 +80,12 @@ impl<T> Deref for MStr<T> {
     }
 }
 
+impl<T> AsRef<str> for MStr<T> {
+    fn as_ref(&self) -> &str {
+        self.value.as_str()
+    }
+}
+
 impl MStr<Pattern> {
     /// Create a new pattern from a string.
     pub fn pattern<T: AsRef<str>>(value: T) -> Self {
@@ -89,9 +98,21 @@ impl MStr<Pattern> {
     }
 }
 
-impl<T: AsRef<str>> From<T> for MStr<Pattern> {
-    fn from(value: T) -> Self {
+impl From<&str> for MStr<Pattern> {
+    fn from(value: &str) -> Self {
         Self::pattern(value)
+    }
+}
+
+impl From<String> for MStr<Pattern> {
+    fn from(value: String) -> Self {
+        value.as_str().into()
+    }
+}
+
+impl From<&String> for MStr<Pattern> {
+    fn from(value: &String) -> Self {
+        value.as_str().into()
     }
 }
 
@@ -122,9 +143,33 @@ impl MStr<Topic> {
     }
 }
 
-impl<T: AsRef<str>> From<T> for MStr<Topic> {
-    fn from(value: T) -> Self {
+impl From<&str> for MStr<Topic> {
+    fn from(value: &str) -> Self {
         Self::topic(value).expect(FAILED)
+    }
+}
+
+impl From<String> for MStr<Topic> {
+    fn from(value: String) -> Self {
+        value.as_str().into()
+    }
+}
+
+impl From<&String> for MStr<Topic> {
+    fn from(value: &String) -> Self {
+        value.as_str().into()
+    }
+}
+
+impl From<Ustr> for MStr<Topic> {
+    fn from(value: Ustr) -> Self {
+        value.as_str().into()
+    }
+}
+
+impl From<&Ustr> for MStr<Topic> {
+    fn from(value: &Ustr) -> Self {
+        (*value).into()
     }
 }
 
@@ -146,9 +191,27 @@ impl MStr<Endpoint> {
     }
 }
 
-impl<T: AsRef<str>> From<T> for MStr<Endpoint> {
-    fn from(value: T) -> Self {
+impl From<&str> for MStr<Endpoint> {
+    fn from(value: &str) -> Self {
         Self::endpoint(value).expect(FAILED)
+    }
+}
+
+impl From<String> for MStr<Endpoint> {
+    fn from(value: String) -> Self {
+        value.as_str().into()
+    }
+}
+
+impl From<&String> for MStr<Endpoint> {
+    fn from(value: &String) -> Self {
+        value.as_str().into()
+    }
+}
+
+impl From<Ustr> for MStr<Endpoint> {
+    fn from(value: Ustr) -> Self {
+        value.as_str().into()
     }
 }
 
@@ -349,7 +412,7 @@ impl MessageBus {
     ///
     /// Returns an error if the endpoint is not valid topic string.
     #[must_use]
-    pub fn is_registered<T: AsRef<str>>(&self, endpoint: T) -> bool {
+    pub fn is_registered<T: Into<MStr<Endpoint>>>(&self, endpoint: T) -> bool {
         let endpoint: MStr<Endpoint> = endpoint.into();
         self.endpoints.contains_key(&endpoint)
     }
@@ -405,9 +468,8 @@ impl MessageBus {
     /// Finds the subscriptions which match the `topic` and caches the
     /// results in the `patterns` map.
     #[must_use]
-    pub fn matching_subscriptions<T: AsRef<str>>(&mut self, topic: T) -> Vec<Subscription> {
-        let topic = MStr::<Topic>::from(topic);
-        self.inner_matching_subscriptions(topic)
+    pub fn matching_subscriptions<T: Into<MStr<Topic>>>(&mut self, topic: T) -> Vec<Subscription> {
+        self.inner_matching_subscriptions(topic.into())
     }
 
     pub(crate) fn inner_matching_subscriptions(&mut self, topic: MStr<Topic>) -> Vec<Subscription> {

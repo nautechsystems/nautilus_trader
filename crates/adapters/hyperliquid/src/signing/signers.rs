@@ -241,7 +241,7 @@ impl HyperliquidEip712Signer {
         let v_byte = if v { 28u8 } else { 27u8 };
 
         // Format as Ethereum signature: 0x + r + s + v (132 hex chars total)
-        Ok(format!("0x{:064x}{:064x}{:02x}", r, s, v_byte))
+        Ok(format!("0x{r:064x}{s:064x}{v_byte:02x}"))
     }
 
     fn canonicalize_action(action: &Value) -> Result<Value> {
@@ -282,9 +282,9 @@ impl HyperliquidEip712Signer {
     fn canonicalize_decimal(decimal: &str) -> String {
         if let Ok(num) = decimal.parse::<f64>() {
             if num.fract() == 0.0 {
-                format!("{:.0}", num)
+                format!("{num:.0}")
             } else {
-                let trimmed = format!("{}", num)
+                let trimmed = format!("{num}")
                     .trim_end_matches('0')
                     .trim_end_matches('.')
                     .to_string();

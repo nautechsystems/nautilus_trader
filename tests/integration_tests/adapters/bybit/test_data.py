@@ -29,7 +29,7 @@ from nautilus_trader.model.identifiers import Symbol
 from tests.integration_tests.adapters.bybit.conftest import _create_ws_mock
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client_builder(
     event_loop,
     mock_http_client,
@@ -91,7 +91,7 @@ async def test_connect_and_disconnect_manage_resources(data_client_builder, monk
     try:
         # Assert
         instrument_provider.initialize.assert_awaited_once()
-        http_client.add_instrument.assert_called_once_with(
+        http_client.cache_instrument.assert_called_once_with(
             instrument_provider.instruments_pyo3.return_value[0],
         )
         ws_client.connect.assert_awaited_once()
@@ -139,7 +139,7 @@ async def test_subscribe_quote_ticks(data_client_builder, monkeypatch):
 
     await client._connect()
     try:
-        ws_client.subscribe_ticker.reset_mock()
+        ws_client.subscribe_orderbook.reset_mock()
 
         command = SimpleNamespace(
             instrument_id=InstrumentId(Symbol("BTCUSDT-SPOT"), BYBIT_VENUE),
@@ -148,9 +148,9 @@ async def test_subscribe_quote_ticks(data_client_builder, monkeypatch):
         # Act
         await client._subscribe_quote_ticks(command)
 
-        # Assert
+        # Assert: SPOT instruments use orderbook depth=1 for quotes
         expected_id = nautilus_pyo3.InstrumentId.from_str("BTCUSDT-SPOT.BYBIT")
-        ws_client.subscribe_ticker.assert_awaited_once_with(expected_id)
+        ws_client.subscribe_orderbook.assert_awaited_once_with(expected_id, 1)
     finally:
         await client._disconnect()
 
@@ -220,6 +220,7 @@ async def test_subscribe_funding_rates(data_client_builder, monkeypatch):
     try:
         ws_client.subscribe_ticker.reset_mock()
 
+        # SPOT instruments don't support funding rates
         command = SimpleNamespace(
             instrument_id=InstrumentId(Symbol("BTCUSDT-SPOT"), BYBIT_VENUE),
         )
@@ -227,9 +228,8 @@ async def test_subscribe_funding_rates(data_client_builder, monkeypatch):
         # Act
         await client._subscribe_funding_rates(command)
 
-        # Assert
-        expected_id = nautilus_pyo3.InstrumentId.from_str("BTCUSDT-SPOT.BYBIT")
-        ws_client.subscribe_ticker.assert_awaited_once_with(expected_id)
+        # Assert: SPOT should not subscribe (returns early with warning)
+        ws_client.subscribe_ticker.assert_not_awaited()
     finally:
         await client._disconnect()
 

@@ -538,7 +538,7 @@ price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_mai
     }
 }
 
-pub const EXPIRING_INSTRUMENT_TYPES: [InstrumentClass; 4] = [
+pub const EXPIRING_INSTRUMENT_CLASSES: [InstrumentClass; 4] = [
     InstrumentClass::Future,
     InstrumentClass::FuturesSpread,
     InstrumentClass::Option,

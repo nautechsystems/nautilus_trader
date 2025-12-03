@@ -15,26 +15,24 @@
 
 use alloy::primitives::Address;
 
+use super::HypersyncLog;
+use crate::exchanges::parsing::core;
+
 /// Extracts an address from a specific topic in a log entry
 ///
 /// # Errors
 ///
 /// Returns an error if the topic at the specified index is not present in the log.
 pub fn extract_address_from_topic(
-    log: &hypersync_client::simple_types::Log,
+    log: &HypersyncLog,
     topic_index: usize,
     description: &str,
 ) -> anyhow::Result<Address> {
     match log.topics.get(topic_index).and_then(|t| t.as_ref()) {
-        Some(topic) => {
-            // Address is stored in the last 20 bytes of the 32-byte topic
-            Ok(Address::from_slice(&topic.as_ref()[12..32]))
+        Some(topic) => core::extract_address_from_bytes(topic.as_ref()),
+        None => {
+            anyhow::bail!("Missing {description} address in topic{topic_index} when parsing event")
         }
-        None => anyhow::bail!(
-            "Missing {} address in topic{} when parsing event",
-            description,
-            topic_index
-        ),
     }
 }
 
@@ -43,9 +41,7 @@ pub fn extract_address_from_topic(
 /// # Errors
 ///
 /// Returns an error if the transaction hash is not present in the log.
-pub fn extract_transaction_hash(
-    log: &hypersync_client::simple_types::Log,
-) -> anyhow::Result<String> {
+pub fn extract_transaction_hash(log: &HypersyncLog) -> anyhow::Result<String> {
     log.transaction_hash
         .as_ref()
         .map(ToString::to_string)
@@ -57,7 +53,7 @@ pub fn extract_transaction_hash(
 /// # Errors
 ///
 /// Returns an error if the transaction index is not present in the log.
-pub fn extract_transaction_index(log: &hypersync_client::simple_types::Log) -> anyhow::Result<u32> {
+pub fn extract_transaction_index(log: &HypersyncLog) -> anyhow::Result<u32> {
     log.transaction_index
         .as_ref()
         .map(|index| **index as u32)
@@ -69,7 +65,7 @@ pub fn extract_transaction_index(log: &hypersync_client::simple_types::Log) -> a
 /// # Errors
 ///
 /// Returns an error if the log index is not present in the log.
-pub fn extract_log_index(log: &hypersync_client::simple_types::Log) -> anyhow::Result<u32> {
+pub fn extract_log_index(log: &HypersyncLog) -> anyhow::Result<u32> {
     log.log_index
         .as_ref()
         .map(|index| **index as u32)
@@ -81,7 +77,7 @@ pub fn extract_log_index(log: &hypersync_client::simple_types::Log) -> anyhow::R
 /// # Errors
 ///
 /// Returns an error if the block number is not present in the log.
-pub fn extract_block_number(log: &hypersync_client::simple_types::Log) -> anyhow::Result<u64> {
+pub fn extract_block_number(log: &HypersyncLog) -> anyhow::Result<u64> {
     log.block_number
         .as_ref()
         .map(|number| **number)
@@ -93,9 +89,7 @@ pub fn extract_block_number(log: &hypersync_client::simple_types::Log) -> anyhow
 /// # Errors
 ///
 /// Returns an error if the event signature (topic0) is not present in the log.
-pub fn extract_event_signature(
-    log: &hypersync_client::simple_types::Log,
-) -> anyhow::Result<String> {
+pub fn extract_event_signature(log: &HypersyncLog) -> anyhow::Result<String> {
     if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
         Ok(hex::encode(topic))
     } else {
@@ -108,9 +102,7 @@ pub fn extract_event_signature(
 /// # Errors
 ///
 /// Returns an error if the event signature (topic0) is not present in the log.
-pub fn extract_event_signature_bytes(
-    log: &hypersync_client::simple_types::Log,
-) -> anyhow::Result<&[u8]> {
+pub fn extract_event_signature_bytes(log: &HypersyncLog) -> anyhow::Result<&[u8]> {
     if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
         Ok(topic.as_ref())
     } else {
@@ -126,25 +118,21 @@ pub fn extract_event_signature_bytes(
 pub fn validate_event_signature_hash(
     event_name: &str,
     target_event_signature_hash: &str,
-    log: &hypersync_client::simple_types::Log,
+    log: &HypersyncLog,
 ) -> anyhow::Result<()> {
-    let event_signature = extract_event_signature(log)?;
-    if event_signature.as_str() != target_event_signature_hash {
-        anyhow::bail!("Invalid event signature for event '{event_name}'");
-    }
-    Ok(())
+    let sig_bytes = extract_event_signature_bytes(log)?;
+    core::validate_signature_bytes(sig_bytes, target_event_signature_hash, event_name)
 }
 
 #[cfg(test)]
 mod tests {
-    use hypersync_client::simple_types::Log;
     use rstest::*;
     use serde_json::json;
 
     use super::*;
 
     #[fixture]
-    fn swap_log_1() -> Log {
+    fn swap_log_1() -> HypersyncLog {
         let log_json = json!({
             "removed": null,
             "log_index": null,
@@ -165,7 +153,7 @@ mod tests {
     }
 
     #[fixture]
-    fn swap_log_2() -> Log {
+    fn swap_log_2() -> HypersyncLog {
         let log_json = json!({
             "removed": null,
             "log_index": null,
@@ -186,7 +174,7 @@ mod tests {
     }
 
     #[fixture]
-    fn log_without_topics() -> Log {
+    fn log_without_topics() -> HypersyncLog {
         let log_json = json!({
             "removed": null,
             "log_index": null,
@@ -202,7 +190,7 @@ mod tests {
     }
 
     #[fixture]
-    fn log_with_none_topic0() -> Log {
+    fn log_with_none_topic0() -> HypersyncLog {
         let log_json = json!({
             "removed": null,
             "log_index": null,
@@ -218,7 +206,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_event_signature_hash_success(swap_log_1: Log) {
+    fn test_validate_event_signature_hash_success(swap_log_1: HypersyncLog) {
         // The topic0 from swap_log_1 is the swap event signature
         let expected_hash = "c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
 
@@ -227,7 +215,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_event_signature_hash_success_log2(swap_log_2: Log) {
+    fn test_validate_event_signature_hash_success_log2(swap_log_2: HypersyncLog) {
         // The topic0 from swap_log_2 is also the swap event signature
         let expected_hash = "c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
 
@@ -236,20 +224,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_event_signature_hash_mismatch(swap_log_1: Log) {
+    fn test_validate_event_signature_hash_mismatch(swap_log_1: HypersyncLog) {
         // Using a different event signature (e.g., Transfer event)
         let wrong_hash = "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
         let result = validate_event_signature_hash("Transfer", wrong_hash, &swap_log_1);
         assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid event signature for event 'Transfer'"
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid event signature for 'Transfer'")
         );
     }
 
     #[rstest]
-    fn test_validate_event_signature_hash_missing_topic0(log_without_topics: Log) {
+    fn test_validate_event_signature_hash_missing_topic0(log_without_topics: HypersyncLog) {
         let expected_hash = "c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
 
         let result = validate_event_signature_hash("Swap", expected_hash, &log_without_topics);
@@ -261,7 +251,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_event_signature_hash_none_topic0(log_with_none_topic0: Log) {
+    fn test_validate_event_signature_hash_none_topic0(log_with_none_topic0: HypersyncLog) {
         let expected_hash = "c42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
 
         let result = validate_event_signature_hash("Swap", expected_hash, &log_with_none_topic0);
@@ -285,7 +275,8 @@ mod tests {
             "data": "0x",
             "topics": []
         });
-        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+        let log: HypersyncLog =
+            serde_json::from_value(log_json).expect("Failed to deserialize log");
 
         let result = extract_transaction_hash(&log);
         assert!(result.is_ok());
@@ -308,7 +299,8 @@ mod tests {
             "data": "0x",
             "topics": []
         });
-        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+        let log: HypersyncLog =
+            serde_json::from_value(log_json).expect("Failed to deserialize log");
 
         let result = extract_transaction_hash(&log);
         assert!(result.is_err());
@@ -331,7 +323,8 @@ mod tests {
             "data": "0x",
             "topics": []
         });
-        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+        let log: HypersyncLog =
+            serde_json::from_value(log_json).expect("Failed to deserialize log");
 
         let result = extract_transaction_index(&log);
         assert!(result.is_ok());
@@ -351,7 +344,8 @@ mod tests {
             "data": "0x",
             "topics": []
         });
-        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+        let log: HypersyncLog =
+            serde_json::from_value(log_json).expect("Failed to deserialize log");
 
         let result = extract_transaction_index(&log);
         assert!(result.is_err());
@@ -374,7 +368,8 @@ mod tests {
             "data": "0x",
             "topics": []
         });
-        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+        let log: HypersyncLog =
+            serde_json::from_value(log_json).expect("Failed to deserialize log");
 
         let result = extract_log_index(&log);
         assert!(result.is_ok());
@@ -394,7 +389,8 @@ mod tests {
             "data": "0x",
             "topics": []
         });
-        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+        let log: HypersyncLog =
+            serde_json::from_value(log_json).expect("Failed to deserialize log");
 
         let result = extract_log_index(&log);
         assert!(result.is_err());
@@ -417,7 +413,8 @@ mod tests {
             "data": "0x",
             "topics": []
         });
-        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+        let log: HypersyncLog =
+            serde_json::from_value(log_json).expect("Failed to deserialize log");
 
         let result = extract_block_number(&log);
         assert!(result.is_ok());
@@ -437,7 +434,8 @@ mod tests {
             "data": "0x",
             "topics": []
         });
-        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+        let log: HypersyncLog =
+            serde_json::from_value(log_json).expect("Failed to deserialize log");
 
         let result = extract_block_number(&log);
         assert!(result.is_err());
@@ -448,7 +446,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_extract_address_from_topic_success(swap_log_1: Log) {
+    fn test_extract_address_from_topic_success(swap_log_1: HypersyncLog) {
         // Extract sender address from topic1
         let result = extract_address_from_topic(&swap_log_1, 1, "sender");
         assert!(result.is_ok());
@@ -460,7 +458,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_extract_address_from_topic_success_log2(swap_log_2: Log) {
+    fn test_extract_address_from_topic_success_log2(swap_log_2: HypersyncLog) {
         // Extract sender address from topic1
         let result = extract_address_from_topic(&swap_log_2, 1, "sender");
         assert!(result.is_ok());
@@ -481,7 +479,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_extract_address_from_topic_missing_topic(swap_log_1: Log) {
+    fn test_extract_address_from_topic_missing_topic(swap_log_1: HypersyncLog) {
         // Try to extract from topic index 5 (doesn't exist)
         let result = extract_address_from_topic(&swap_log_1, 5, "nonexistent");
         assert!(result.is_err());
@@ -492,7 +490,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_extract_address_from_topic_none_topic(swap_log_1: Log) {
+    fn test_extract_address_from_topic_none_topic(swap_log_1: HypersyncLog) {
         // Try to extract from topic index 3 (which is null in swap_log_1)
         let result = extract_address_from_topic(&swap_log_1, 3, "null_topic");
         assert!(result.is_err());
@@ -503,7 +501,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_extract_address_from_topic_no_topics(log_without_topics: Log) {
+    fn test_extract_address_from_topic_no_topics(log_without_topics: HypersyncLog) {
         let result = extract_address_from_topic(&log_without_topics, 1, "sender");
         assert!(result.is_err());
         assert_eq!(

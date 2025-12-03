@@ -37,6 +37,7 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import urisafe_identifier
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
@@ -116,7 +117,7 @@ class StreamingFeatherWriter:
 
         if self.fs.exists(self.path) and replace:
             for fn in self.fs.ls(self.path):
-                self.fs.rm(fn)
+                self.fs.rm(fn, recursive=True)
 
             self.fs.rmdir(self.path)
 
@@ -130,8 +131,8 @@ class StreamingFeatherWriter:
         self._instrument_writers: dict[tuple[str, str], RecordBatchStreamWriter] = {}
         self._per_instrument_writers = {
             "bar",
-            "order_book_delta",
-            "order_book_depth10",
+            "order_book_deltas",
+            "order_book_depths",
             "quote_tick",
             "trade_tick",
         }
@@ -246,6 +247,8 @@ class StreamingFeatherWriter:
             # Use the appropriate key for file size tracking
             if isinstance(obj, Bar):
                 size_key = (table, str(obj.bar_type))
+            elif isinstance(obj, Instrument):
+                size_key = (table, obj.id.value)
             elif use_per_instrument_writer:
                 size_key = (table, actual_data.instrument_id.value)
             else:
@@ -340,10 +343,7 @@ class StreamingFeatherWriter:
         table_name = class_to_filename(cls)
 
         # Extract identifier: bar_type for bars, instrument_id for other data
-        if isinstance(obj, Bar):
-            identifier_str = str(obj.bar_type)
-        else:
-            identifier_str = obj.instrument_id.value
+        identifier_str = str(obj.bar_type) if isinstance(obj, Bar) else obj.instrument_id.value
 
         key = (table_name, identifier_str)
 
@@ -397,10 +397,7 @@ class StreamingFeatherWriter:
         schema = self._schemas[mapped_cls].with_metadata(metadata)
         table_name = class_to_filename(cls)
 
-        if isinstance(obj, Bar):
-            identifier_str = str(obj.bar_type)
-        else:
-            identifier_str = obj.instrument_id.value
+        identifier_str = str(obj.bar_type) if isinstance(obj, Bar) else obj.instrument_id.value
 
         folder = f"{self.path}/{table_name}/{urisafe_identifier(identifier_str)}"
         key = (table_name, identifier_str)
@@ -426,7 +423,7 @@ class StreamingFeatherWriter:
         if self.include_types is not None and cls not in self.include_types:
             return
 
-        table_name = class_to_filename(cls) if not table_name else table_name
+        table_name = table_name if table_name else class_to_filename(cls)
 
         if table_name in self._writers:
             return
@@ -441,6 +438,10 @@ class StreamingFeatherWriter:
             return
 
         schema = self._schemas[cls]
+
+        # Add metadata for Instrument subclasses so it's preserved in feather files
+        schema = schema.with_metadata({"class": cls.__name__})
+
         timestamp = self.clock.timestamp_ns()
         full_path = f"{self.path}/{table_name}_{timestamp}.feather"
 

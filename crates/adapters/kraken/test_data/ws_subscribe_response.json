@@ -1,0 +1,12 @@
+{
+  "method": "subscribe",
+  "result": {
+    "channel": "ticker",
+    "symbol": "BTC/USD",
+    "snapshot": true
+  },
+  "success": true,
+  "time_in": "2023-09-25T09:04:31.742599Z",
+  "time_out": "2023-09-25T09:04:31.742648Z",
+  "req_id": 1
+}

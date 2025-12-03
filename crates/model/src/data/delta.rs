@@ -201,7 +201,13 @@ mod tests {
         hash::{Hash, Hasher},
     };
 
-    use nautilus_core::{UnixNanos, serialization::Serializable};
+    use nautilus_core::{
+        UnixNanos,
+        serialization::{
+            Serializable,
+            msgpack::{FromMsgPack, ToMsgPack},
+        },
+    };
     use rstest::rstest;
 
     use crate::{

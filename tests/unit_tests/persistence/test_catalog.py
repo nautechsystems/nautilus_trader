@@ -57,7 +57,7 @@ def test_list_data_types(catalog_betfair: ParquetDataCatalog) -> None:
         "custom_betfair_sequence_completed",
         "custom_betfair_ticker",
         "instrument_status",
-        "order_book_delta",
+        "order_book_deltas",
         "trade_tick",
     ]
     assert data_types == expected
@@ -75,7 +75,7 @@ def test_catalog_query_filtered(
     trades = catalog_betfair.trade_ticks(start=1576875378384999936)
     assert len(trades) == 121
 
-    trades = catalog_betfair.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18))
+    trades = catalog_betfair.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18, tzinfo=datetime.UTC))
     assert len(trades) == 121
 
     deltas = catalog_betfair.order_book_deltas()
@@ -730,17 +730,19 @@ class TestConsolidateDataByPeriod:
         request_end = pd.Timestamp("1970-01-01 00:00:00.000004", tz="UTC")  # 4000 ns
 
         # Mock the filesystem exists check to return False (no existing target files)
-        with patch.object(self.catalog.fs, "exists", return_value=False):
-            with patch.object(self.catalog, "_make_path", return_value="/test/path"):
-                queries = self.catalog._prepare_consolidation_queries(
-                    intervals=intervals,
-                    period=period,
-                    start=request_start,
-                    end=request_end,
-                    ensure_contiguous_files=False,
-                    data_cls=QuoteTick,
-                    identifier="EURUSD.SIM",
-                )
+        with (
+            patch.object(self.catalog.fs, "exists", return_value=False),
+            patch.object(self.catalog, "_make_path", return_value="/test/path"),
+        ):
+            queries = self.catalog._prepare_consolidation_queries(
+                intervals=intervals,
+                period=period,
+                start=request_start,
+                end=request_end,
+                ensure_contiguous_files=False,
+                data_cls=QuoteTick,
+                identifier="EURUSD.SIM",
+            )
 
         # Should have 3 queries: split before, split after, and consolidation
         assert len(queries) == 3
@@ -1017,7 +1019,7 @@ class TestConsolidateDataByPeriod:
         # Verify data values are preserved
         for original_bar, retrieved_bar in zip(
             sorted(test_bars, key=lambda x: x.ts_init),
-            sorted(all_bars, key=lambda x: x.ts_init),
+            sorted(all_bars, key=lambda x: x.ts_init), strict=False,
         ):
             assert original_bar.open == retrieved_bar.open
             assert original_bar.high == retrieved_bar.high
@@ -1061,7 +1063,7 @@ class TestConsolidateDataByPeriod:
         retrieved_sorted = sorted(all_bars, key=lambda x: x.ts_init)
 
         # Verify each bar's timestamp is exactly preserved
-        for i, (original, retrieved) in enumerate(zip(original_sorted, retrieved_sorted)):
+        for i, (original, retrieved) in enumerate(zip(original_sorted, retrieved_sorted, strict=False)):
             assert original.ts_init == retrieved.ts_init, f"Timestamp mismatch at index {i}"
 
     def test_consolidate_mixed_data_types_integration(self):
@@ -2254,3 +2256,50 @@ def test_backend_session_table_naming_special_characters(catalog: ParquetDataCat
     assert len(instrument_ids) == 2
     assert str(eurusd_instrument.id) in instrument_ids
     assert str(btcusd_instrument.id) in instrument_ids
+
+
+def test_query_first_and_last_timestamp(catalog: ParquetDataCatalog) -> None:
+    # Arrange
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+    first_ts = 1000000000
+    last_ts = 2000000000
+
+    trade_ticks = [
+        TradeTick(
+            instrument_id=instrument.id,
+            price=Price.from_str("1.0"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("1"),
+            ts_event=first_ts,
+            ts_init=first_ts,
+        ),
+        TradeTick(
+            instrument_id=instrument.id,
+            price=Price.from_str("1.1"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.SELLER,
+            trade_id=TradeId("2"),
+            ts_event=last_ts,
+            ts_init=last_ts,
+        ),
+    ]
+    catalog.write_data([instrument])
+    catalog.write_data(trade_ticks)
+
+    # Act
+    first_result = catalog.query_first_timestamp(TradeTick, str(instrument.id))
+    last_result = catalog.query_last_timestamp(TradeTick, str(instrument.id))
+
+    # Assert
+    assert first_result == pd.Timestamp(first_ts, tz="UTC")
+    assert last_result == pd.Timestamp(last_ts, tz="UTC")
+    assert first_result < last_result
+
+
+def test_query_first_timestamp_returns_none_when_no_data(catalog: ParquetDataCatalog) -> None:
+    # Act
+    result = catalog.query_first_timestamp(TradeTick, "NONEXISTENT.VENUE")
+
+    # Assert
+    assert result is None

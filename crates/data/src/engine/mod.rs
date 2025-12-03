@@ -47,6 +47,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
+use futures::future::join_all;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
 use indexmap::IndexMap;
 use nautilus_common::{
@@ -90,8 +91,10 @@ use crate::defi::engine as _;
 use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
-        BarAggregator, RenkoBarAggregator, TickBarAggregator, TimeBarAggregator,
-        ValueBarAggregator, VolumeBarAggregator,
+        BarAggregator, RenkoBarAggregator, TickBarAggregator, TickImbalanceBarAggregator,
+        TickRunsBarAggregator, TimeBarAggregator, ValueBarAggregator, ValueImbalanceBarAggregator,
+        ValueRunsBarAggregator, VolumeBarAggregator, VolumeImbalanceBarAggregator,
+        VolumeRunsBarAggregator,
     },
     client::DataClientAdapter,
 };
@@ -196,7 +199,7 @@ impl DataEngine {
     ///
     /// Panics if a catalog with the same `name` has already been registered.
     pub fn register_catalog(&mut self, catalog: ParquetDataCatalog, name: Option<String>) {
-        let name = Ustr::from(&name.unwrap_or("catalog_0".to_string()));
+        let name = Ustr::from(name.as_deref().unwrap_or("catalog_0"));
 
         check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
 
@@ -309,6 +312,55 @@ impl DataEngine {
         }
 
         self.clock.borrow_mut().cancel_timers();
+    }
+
+    /// Connects all registered data clients concurrently.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to connect.
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
+        let futures: Vec<_> = self
+            .get_clients_mut()
+            .into_iter()
+            .map(|client| client.connect())
+            .collect();
+
+        let results = join_all(futures).await;
+        let errors: Vec<_> = results.into_iter().filter_map(Result::err).collect();
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            let error_msgs: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
+            anyhow::bail!("Failed to connect data clients: {}", error_msgs.join("; "))
+        }
+    }
+
+    /// Disconnects all registered data clients concurrently.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to disconnect.
+    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
+        let futures: Vec<_> = self
+            .get_clients_mut()
+            .into_iter()
+            .map(|client| client.disconnect())
+            .collect();
+
+        let results = join_all(futures).await;
+        let errors: Vec<_> = results.into_iter().filter_map(Result::err).collect();
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            let error_msgs: Vec<_> = errors.iter().map(|e| e.to_string()).collect();
+            anyhow::bail!(
+                "Failed to disconnect data clients: {}",
+                error_msgs.join("; ")
+            )
+        }
     }
 
     /// Returns `true` if all registered data clients are currently connected.
@@ -1223,13 +1275,49 @@ impl DataEngine {
                     size_precision,
                     handler,
                 )) as Box<dyn BarAggregator>,
+                BarAggregation::TickImbalance => Box::new(TickImbalanceBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::TickRuns => Box::new(TickRunsBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
                 BarAggregation::Volume => Box::new(VolumeBarAggregator::new(
                     bar_type,
                     price_precision,
                     size_precision,
                     handler,
                 )) as Box<dyn BarAggregator>,
+                BarAggregation::VolumeImbalance => Box::new(VolumeImbalanceBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::VolumeRuns => Box::new(VolumeRunsBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
                 BarAggregation::Value => Box::new(ValueBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::ValueImbalance => Box::new(ValueImbalanceBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::ValueRuns => Box::new(ValueRunsBarAggregator::new(
                     bar_type,
                     price_precision,
                     size_precision,
@@ -1243,7 +1331,7 @@ impl DataEngine {
                     handler,
                 )) as Box<dyn BarAggregator>,
                 _ => panic!(
-                    "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, VOLUME, VALUE, RENKO",
+                    "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, TICK_IMBALANCE, TICK_RUNS, VOLUME, VOLUME_IMBALANCE, VOLUME_RUNS, VALUE, VALUE_IMBALANCE, VALUE_RUNS, RENKO",
                     bar_type.spec().aggregation
                 ),
             }
@@ -1314,7 +1402,69 @@ impl DataEngine {
         }
 
         self.bar_aggregator_handlers.insert(bar_key, handlers);
+
+        // Setup time bar aggregator if needed (matches Cython _setup_bar_aggregator)
+        self.setup_bar_aggregator(bar_type, false)?;
+
         aggregator.borrow_mut().set_is_running(true);
+
+        Ok(())
+    }
+
+    /// Sets up a bar aggregator, matching Cython _setup_bar_aggregator logic.
+    ///
+    /// This method handles historical mode, message bus subscriptions, and time bar aggregator setup.
+    fn setup_bar_aggregator(&mut self, bar_type: BarType, historical: bool) -> anyhow::Result<()> {
+        let bar_key = bar_type.standard();
+        let aggregator = self.bar_aggregators.get(&bar_key).ok_or_else(|| {
+            anyhow::anyhow!("Cannot setup bar aggregator: no aggregator found for {bar_type}")
+        })?;
+
+        // Set historical mode and handler
+        let handler: Box<dyn FnMut(Bar)> = if historical {
+            // Historical handler - process_historical equivalent
+            let cache = self.cache.clone();
+            Box::new(move |bar: Bar| {
+                if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
+                    log_error_on_cache_insert(&e);
+                }
+                // In historical mode, bars are processed but not published to message bus
+            })
+        } else {
+            // Regular handler - process equivalent
+            let cache = self.cache.clone();
+            Box::new(move |bar: Bar| {
+                if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
+                    log_error_on_cache_insert(&e);
+                }
+                let topic = switchboard::get_bars_topic(bar.bar_type);
+                msgbus::publish(topic, &bar as &dyn Any);
+            })
+        };
+
+        aggregator
+            .borrow_mut()
+            .set_historical_mode(historical, handler);
+
+        // For TimeBarAggregator, set clock and start timer
+        if bar_type.spec().is_time_aggregated() {
+            use nautilus_common::clock::TestClock;
+
+            if historical {
+                // Each aggregator gets its own independent clock
+                let test_clock = Rc::new(RefCell::new(TestClock::new()));
+                aggregator.borrow_mut().set_clock(test_clock);
+                // Set weak reference for historical mode (start_timer called later from preprocess_historical_events)
+                // Store weak reference so start_timer can use it when called later
+                let aggregator_weak = Rc::downgrade(aggregator);
+                aggregator.borrow_mut().set_aggregator_weak(aggregator_weak);
+            } else {
+                aggregator.borrow_mut().set_clock(self.clock.clone());
+                aggregator
+                    .borrow_mut()
+                    .start_timer(Some(aggregator.clone()));
+            }
+        }
 
         Ok(())
     }

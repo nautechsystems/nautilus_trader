@@ -170,7 +170,7 @@ class TestDYDXDataClientBarPartitioning:
     # =====================================================================================
 
     @pytest.mark.parametrize(
-        "bars_count,max_bars,expected",
+        ("bars_count", "max_bars", "expected"),
         [
             (999, 1000, False),  # Just below threshold
             (1000, 1000, False),  # Exactly at threshold
@@ -248,7 +248,7 @@ class TestDYDXDataClientBarPartitioning:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "total_bars,expected_chunks",
+        ("total_bars", "expected_chunks"),
         [
             (1000, 1),  # Single chunk
             (1500, 2),  # Two chunks: 1000 + 500
@@ -298,14 +298,16 @@ class TestDYDXDataClientBarPartitioning:
             return bars
 
         # Mock the fetch_candles method
-        with patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles):
-            with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
-                # Act
-                await self.data_client._request_bars(request)
+        with (
+            patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles),
+            patch.object(self.data_client, "_handle_bars_py") as mock_handle,
+        ):
+            # Act
+            await self.data_client._request_bars(request)
 
-                # Assert
-                assert fetch_call_count == expected_chunks
-                mock_handle.assert_called_once()
+            # Assert
+            assert fetch_call_count == expected_chunks
+            mock_handle.assert_called_once()
 
     # =====================================================================================
     # BAR AGGREGATION TESTS
@@ -456,7 +458,7 @@ class TestDYDXDataClientBarPartitioning:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "total_bars,limit,expected_result_bars",
+        ("total_bars", "limit", "expected_result_bars"),
         [
             (2000, 1500, 1499),  # 1500 limit applied, minus 1 for partial
             (3000, 2500, 2499),  # 2500 limit applied, minus 1 for partial
@@ -527,22 +529,24 @@ class TestDYDXDataClientBarPartitioning:
             return bars
 
         # Mock the _fetch_candles method
-        with patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles):
-            with patch.object(self.data_client, "_handle_bars_py") as mock_handle:
-                # Act
-                await self.data_client._request_bars(request)
+        with (
+            patch.object(self.data_client, "_fetch_candles", side_effect=mock_fetch_candles),
+            patch.object(self.data_client, "_handle_bars_py") as mock_handle,
+        ):
+            # Act
+            await self.data_client._request_bars(request)
 
-                # Assert
-                mock_handle.assert_called_once()
-                call_args = mock_handle.call_args
-                bars = call_args[0][1]  # The bars argument
+            # Assert
+            mock_handle.assert_called_once()
+            call_args = mock_handle.call_args
+            bars = call_args[0][1]  # The bars argument
 
-                # For the test, we just verify that bars were returned
-                # and that the limit was applied if specified
-                if limit > 0:
-                    assert len(bars) <= limit
-                else:
-                    assert len(bars) > 0
+            # For the test, we just verify that bars were returned
+            # and that the limit was applied if specified
+            if limit > 0:
+                assert len(bars) <= limit
+            else:
+                assert len(bars) > 0
 
     # =====================================================================================
     # BASIC FUNCTIONALITY TESTS

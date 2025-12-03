@@ -16,11 +16,11 @@
 //! Implementation of a simple *cash* account – an account that cannot hold leveraged positions.
 
 use std::{
-    collections::HashMap,
     fmt::Display,
     ops::{Deref, DerefMut},
 };
 
+use ahash::AHashMap;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
@@ -132,7 +132,7 @@ impl Account for CashAccount {
         self.base_balance_total(currency)
     }
 
-    fn balances_total(&self) -> HashMap<Currency, Money> {
+    fn balances_total(&self) -> AHashMap<Currency, Money> {
         self.base_balances_total()
     }
 
@@ -140,7 +140,7 @@ impl Account for CashAccount {
         self.base_balance_free(currency)
     }
 
-    fn balances_free(&self) -> HashMap<Currency, Money> {
+    fn balances_free(&self) -> AHashMap<Currency, Money> {
         self.base_balances_free()
     }
 
@@ -148,7 +148,7 @@ impl Account for CashAccount {
         self.base_balance_locked(currency)
     }
 
-    fn balances_locked(&self) -> HashMap<Currency, Money> {
+    fn balances_locked(&self) -> AHashMap<Currency, Money> {
         self.base_balances_locked()
     }
 
@@ -172,11 +172,11 @@ impl Account for CashAccount {
         self.balances.keys().copied().collect()
     }
 
-    fn starting_balances(&self) -> HashMap<Currency, Money> {
+    fn starting_balances(&self) -> AHashMap<Currency, Money> {
         self.balances_starting.clone()
     }
 
-    fn balances(&self) -> HashMap<Currency, AccountBalance> {
+    fn balances(&self) -> AHashMap<Currency, AccountBalance> {
         self.balances.clone()
     }
 
@@ -280,8 +280,7 @@ impl Display for CashAccount {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
-
+    use ahash::{AHashMap, AHashSet};
     use rstest::rstest;
 
     use crate::{
@@ -326,13 +325,13 @@ mod tests {
             cash_account.balance_locked(None),
             Some(Money::from("25000 USD"))
         );
-        let mut balances_total_expected = HashMap::new();
+        let mut balances_total_expected = AHashMap::new();
         balances_total_expected.insert(Currency::from("USD"), Money::from("1525000 USD"));
         assert_eq!(cash_account.balances_total(), balances_total_expected);
-        let mut balances_free_expected = HashMap::new();
+        let mut balances_free_expected = AHashMap::new();
         balances_free_expected.insert(Currency::from("USD"), Money::from("1500000 USD"));
         assert_eq!(cash_account.balances_free(), balances_free_expected);
-        let mut balances_locked_expected = HashMap::new();
+        let mut balances_locked_expected = AHashMap::new();
         balances_locked_expected.insert(Currency::from("USD"), Money::from("25000 USD"));
         assert_eq!(cash_account.balances_locked(), balances_locked_expected);
     }
@@ -375,15 +374,15 @@ mod tests {
             cash_account_multi.balance_locked(Some(Currency::ETH())),
             Some(Money::from("0 ETH"))
         );
-        let mut balances_total_expected = HashMap::new();
+        let mut balances_total_expected = AHashMap::new();
         balances_total_expected.insert(Currency::from("BTC"), Money::from("10 BTC"));
         balances_total_expected.insert(Currency::from("ETH"), Money::from("20 ETH"));
         assert_eq!(cash_account_multi.balances_total(), balances_total_expected);
-        let mut balances_free_expected = HashMap::new();
+        let mut balances_free_expected = AHashMap::new();
         balances_free_expected.insert(Currency::from("BTC"), Money::from("10 BTC"));
         balances_free_expected.insert(Currency::from("ETH"), Money::from("20 ETH"));
         assert_eq!(cash_account_multi.balances_free(), balances_free_expected);
-        let mut balances_locked_expected = HashMap::new();
+        let mut balances_locked_expected = AHashMap::new();
         balances_locked_expected.insert(Currency::from("BTC"), Money::from("0 BTC"));
         balances_locked_expected.insert(Currency::from("ETH"), Money::from("0 ETH"));
         assert_eq!(
@@ -575,13 +574,13 @@ mod tests {
             )
             .unwrap();
         // use hash set to ignore order of results
-        let result1_set: HashSet<Money> = result1.into_iter().collect();
-        let result1_expected: HashSet<Money> =
+        let result1_set: AHashSet<Money> = result1.into_iter().collect();
+        let result1_expected: AHashSet<Money> =
             vec![Money::from("22750 USDT"), Money::from("-0.5 BTC")]
                 .into_iter()
                 .collect();
-        let result2_set: HashSet<Money> = result2.into_iter().collect();
-        let result2_expected: HashSet<Money> =
+        let result2_set: AHashSet<Money> = result2.into_iter().collect();
+        let result2_expected: AHashSet<Money> =
             vec![Money::from("-22750 USDT"), Money::from("0.5 BTC")]
                 .into_iter()
                 .collect();

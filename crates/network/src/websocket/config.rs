@@ -14,6 +14,16 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Configuration for WebSocket client connections.
+//!
+//! # Reconnection Strategy
+//!
+//! The default configuration uses unlimited reconnection attempts (`reconnect_max_attempts: None`).
+//! This is intentional for trading systems because:
+//! - Venues may be down for extended periods but eventually recover.
+//! - Exponential backoff already prevents resource waste.
+//! - Automatic recovery can be useful when manual intervention is not desirable.
+//!
+//! Use `Some(n)` primarily for testing, development, or non-critical connections.
 
 use std::fmt::Debug;
 
@@ -77,6 +87,11 @@ pub struct WebSocketConfig {
     /// The maximum jitter (milliseconds) added to reconnection delays.
     /// **Note**: Only applies to handler mode. Ignored in stream mode.
     pub reconnect_jitter_ms: Option<u64>,
+    /// The maximum number of reconnection attempts before giving up.
+    /// **Note**: Only applies to handler mode. Ignored in stream mode.
+    /// - `None`: Unlimited reconnection attempts (default, recommended for production).
+    /// - `Some(n)`: After n failed attempts, transition to CLOSED state.
+    pub reconnect_max_attempts: Option<u32>,
 }
 
 impl Debug for WebSocketConfig {
@@ -102,6 +117,7 @@ impl Debug for WebSocketConfig {
             .field("reconnect_delay_max_ms", &self.reconnect_delay_max_ms)
             .field("reconnect_backoff_factor", &self.reconnect_backoff_factor)
             .field("reconnect_jitter_ms", &self.reconnect_jitter_ms)
+            .field("reconnect_max_attempts", &self.reconnect_max_attempts)
             .finish()
     }
 }
@@ -120,6 +136,7 @@ impl Clone for WebSocketConfig {
             reconnect_delay_max_ms: self.reconnect_delay_max_ms,
             reconnect_backoff_factor: self.reconnect_backoff_factor,
             reconnect_jitter_ms: self.reconnect_jitter_ms,
+            reconnect_max_attempts: self.reconnect_max_attempts,
         }
     }
 }

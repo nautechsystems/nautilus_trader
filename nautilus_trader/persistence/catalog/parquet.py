@@ -154,10 +154,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.max_rows_per_group = max_rows_per_group
         self.show_query_paths = show_query_paths
 
-        if self.fs_protocol == "file":
-            final_path = str(make_path_posix(str(path)))
-        else:
-            final_path = str(path)
+        final_path = str(make_path_posix(str(path))) if self.fs_protocol == "file" else str(path)
 
         if (
             isinstance(self.fs, MemoryFileSystem)
@@ -541,15 +538,17 @@ class ParquetDataCatalog(BaseDataCatalog):
             for j in range(row_group_metadata.num_columns):
                 col_metadata = row_group_metadata.column(j)
 
-                if col_metadata.path_in_schema == column_name:
-                    if col_metadata.statistics is not None:
-                        min_value = col_metadata.statistics.min
-                        max_value = col_metadata.statistics.max
+                if (
+                    col_metadata.path_in_schema == column_name
+                    and col_metadata.statistics is not None
+                ):
+                    min_value = col_metadata.statistics.min
+                    max_value = col_metadata.statistics.max
 
-                        if overall_min_value is None or min_value < overall_min_value:
-                            overall_min_value = min_value
-                        if overall_max_value is None or max_value > overall_max_value:
-                            overall_max_value = max_value
+                    if overall_min_value is None or min_value < overall_min_value:
+                        overall_min_value = min_value
+                    if overall_max_value is None or max_value > overall_max_value:
+                        overall_max_value = max_value
 
         if overall_min_value is None or overall_max_value is None:
             print(f"Column '{column_name}' not found or has no statistics in any row group.")
@@ -1704,7 +1703,6 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
-        file_list = files if files else self._query_files(data_cls, identifiers, start, end)
         file_prefix = class_to_filename(data_cls)
 
         if session is None:
@@ -1714,31 +1712,90 @@ class ParquetDataCatalog(BaseDataCatalog):
         if self.fs_protocol != "file":
             self._register_object_store_with_session(session)
 
-        for file in file_list:
-            # Extract identifier from file path and filename to create meaningful table names
-            identifier = file.split("/")[-2]
-            safe_sql_identifier = (
-                urisafe_identifier(identifier)
-                .replace(".", "_")
-                .replace("-", "_")
-                .replace(" ", "_")
-                .replace("^", "_")
-                .lower()
-            )
-            safe_filename = _extract_sql_safe_filename(file)
-            table = f"{file_prefix}_{safe_sql_identifier}_{safe_filename}"
-            query = self._build_query(
-                table,
-                start=start,
-                end=end,
-                where=where,
-            )
-
-            file_uri = self._build_file_uri(file)
-
-            session.add_file(data_type, table, file_uri, query)
+        if files:
+            # If specific files are requested, register them individually
+            for file in files:
+                self._register_file_table(
+                    session=session,
+                    file=file,
+                    data_type=data_type,
+                    file_prefix=file_prefix,
+                    start=start,
+                    end=end,
+                    where=where,
+                )
+        else:
+            # Otherwise, group by directory (instrument) to reduce the number of
+            # registered tables and streams. This significantly reduces memory usage
+            # when dealing with many small files.
+            file_list = self._query_files(data_cls, identifiers, start, end)
+            directories = {os.path.dirname(file) for file in file_list}
+            for directory in directories:
+                self._register_directory_table(
+                    session=session,
+                    directory=directory,
+                    data_type=data_type,
+                    file_prefix=file_prefix,
+                    start=start,
+                    end=end,
+                    where=where,
+                )
 
         return session
+
+    def _register_file_table(
+        self,
+        session: DataBackendSession,
+        file: str,
+        data_type: NautilusDataType,
+        file_prefix: str,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        where: str | None = None,
+    ) -> None:
+        # Extract identifier from file path and filename to create meaningful table names
+        identifier = file.split("/")[-2]
+        safe_sql_identifier = _sanitize_sql_identifier(urisafe_identifier(identifier))
+        safe_filename = _extract_safe_filename(file)
+        table = f"{file_prefix}_{safe_sql_identifier}_{safe_filename}"
+
+        query = self._build_query(
+            table,
+            start=start,
+            end=end,
+            where=where,
+        )
+
+        file_uri = self._build_file_uri(file)
+        session.add_file(data_type, table, file_uri, query)
+
+    def _register_directory_table(
+        self,
+        session: DataBackendSession,
+        directory: str,
+        data_type: NautilusDataType,
+        file_prefix: str,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        where: str | None = None,
+    ) -> None:
+        # Extract identifier from directory path
+        identifier = directory.split("/")[-1]
+        safe_sql_identifier = _sanitize_sql_identifier(urisafe_identifier(identifier))
+        table = f"{file_prefix}_{safe_sql_identifier}"
+
+        query = self._build_query(
+            table,
+            start=start,
+            end=end,
+            where=where,
+        )
+
+        # Ensure directory URI ends with / to be treated as a directory by some backends
+        # although DataFusion usually handles it.
+        file_uri = self._build_file_uri(directory)
+        session.add_file(data_type, table, file_uri, query)
+
 
     def _build_file_uri(self, file: str) -> str:
         """
@@ -1847,7 +1904,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
     ) -> str:
         # Build datafusion SQL query
-        query = f"SELECT * FROM {table}"  # noqa (possible SQL injection)
+        query = f"SELECT * FROM {table}"  # noqa: S608
         conditions: list[str] = [] + ([where] if where else [])
 
         if start:
@@ -1894,10 +1951,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if used_end is not None:
             filters.append(pds.field("ts_init") <= used_end.value)
 
-        if filters:
-            combined_filters = combine_filters(*filters)
-        else:
-            combined_filters = None
+        combined_filters = combine_filters(*filters) if filters else None
 
         table = dataset.to_table(filter=combined_filters)
 
@@ -1913,7 +1967,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
-    ):
+    ) -> list[str]:
         file_prefix = class_to_filename(data_cls)
         base_path = self.path.rstrip("/")
         glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
@@ -1961,6 +2015,21 @@ class ParquetDataCatalog(BaseDataCatalog):
                 print(file_path)
 
         return file_paths
+
+    def query_first_timestamp(
+        self,
+        data_cls: type,
+        identifier: str | None = None,
+    ) -> pd.Timestamp | None:
+        subclasses = [data_cls, *data_cls.__subclasses__()]
+
+        for cls in subclasses:
+            intervals = self.get_intervals(cls, identifier)
+
+            if intervals:
+                return time_object_to_dt(intervals[0][0])
+
+        return None
 
     def query_last_timestamp(
         self,
@@ -2300,6 +2369,9 @@ class ParquetDataCatalog(BaseDataCatalog):
             table = table.replace_schema_metadata(metadata)
 
         data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
+        if len(data) == 0:
+            return []
+
         module = data[0].__class__.__module__
 
         if "nautilus_pyo3" in module:
@@ -2321,7 +2393,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         instance_id: str,
         data_cls: type | None = None,
         identifiers: list[str] | None = None,
-    ) -> Generator[FeatherFile, None, None]:
+    ) -> Generator[FeatherFile]:
         """
         List feather files for a given instance.
 
@@ -2391,7 +2463,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         instance_id: str,
         data_cls: type,
         identifiers: list[str] | None = None,
-    ) -> Generator[FeatherFile, None, None]:
+    ) -> Generator[FeatherFile]:
         """
         List feather files for a specific data class.
         """
@@ -2495,11 +2567,7 @@ def _are_intervals_contiguous(intervals: list[tuple[int, int]]) -> bool:
     if n <= 1:
         return True
 
-    for i in range(1, n):
-        if intervals[i - 1][1] + 1 != intervals[i][0]:
-            return False
-
-    return True
+    return all(intervals[i - 1][1] + 1 == intervals[i][0] for i in range(1, n))
 
 
 def _query_interval_diff(
@@ -2537,16 +2605,21 @@ def _get_integer_interval_set(intervals: list[tuple[int, int]]) -> P.Interval:
     return union_result
 
 
-def _extract_sql_safe_filename(file_path: str) -> str:
+def _extract_safe_filename(file_path: str) -> str:
     if not file_path:
         return "unknown_file"
 
-    filename = file_path.split("/")[-1]
+    filename = file_path.split("/")[-1].replace(".parquet", "")
 
+    return _sanitize_sql_identifier(filename)
+
+
+def _sanitize_sql_identifier(identifier: str) -> str:
     return (
-        filename.replace(".parquet", "")
+        identifier.replace(".", "_")
         .replace("-", "_")
+        .replace(" ", "_")
+        .replace("^", "_")
         .replace(":", "_")
-        .replace(".", "_")
         .lower()
     )

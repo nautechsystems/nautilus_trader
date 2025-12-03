@@ -15,10 +15,13 @@
 
 mod common;
 
-use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc, str::FromStr, sync::Arc};
+use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc};
+#[cfg(feature = "defi")]
+use std::{str::FromStr, sync::Arc};
 
+#[cfg(feature = "defi")]
 use alloy_primitives::{Address, I256, U160, U256};
-use common::mocks::MockDataClient;
+use common::mocks::{FailingMockDataClient, MockDataClient};
 #[cfg(feature = "defi")]
 use nautilus_common::defi;
 #[cfg(feature = "defi")]
@@ -51,26 +54,26 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{AmmType, Dex, DexType, chain::chains};
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{
+    Block, Blockchain, DefiData, Pool, PoolIdentifier, PoolLiquidityUpdate,
+    PoolLiquidityUpdateType, PoolProfiler, PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
+};
+#[cfg(feature = "defi")]
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
         OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
-    defi::{AmmType, Dex, DexType, chain::chains},
+    defi::tick_map::tick_math::get_tick_at_sqrt_ratio,
     enums::{BookType, PriceType},
-    identifiers::{ClientId, InstrumentId, TraderId, Venue},
+    identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     types::Price,
-};
-#[cfg(feature = "defi")]
-use nautilus_model::{
-    defi::{
-        Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType,
-        PoolProfiler, PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
-    },
-    enums::OrderSide,
-    types::Quantity,
 };
 use rstest::*;
 
@@ -433,7 +436,6 @@ fn test_execute_subscribe_book_deltas(
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
-#[ignore = "Attempt to subtract with overflow"]
 #[rstest]
 fn test_execute_subscribe_book_snapshots(
     audusd_sim: CurrencyPair,
@@ -1832,7 +1834,7 @@ fn test_execute_subscribe_pool_swaps(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -1934,6 +1936,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -1943,7 +1946,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -1958,7 +1961,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         chain,
         dex,
         instrument_id,
-        pool.address,
+        pool.pool_identifier,
         1000u64,
         "0x123".to_string(),
         0,
@@ -1971,9 +1974,6 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         U160::from(59000000000000u128),
         1000000,
         100,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
 
     let sub = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
@@ -2059,7 +2059,7 @@ fn test_execute_subscribe_pool_liquidity_updates(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -2146,7 +2146,7 @@ fn test_execute_subscribe_pool_fee_collects(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -2229,7 +2229,7 @@ fn test_execute_subscribe_pool_flash_events(
                 assert_eq!(request.client_id, Some(client_id));
             }
             _ => panic!(
-                "Expected second command to be RequestPoolSnapshot, got: {:?}",
+                "Expected second command to be RequestPoolSnapshot, was: {:?}",
                 recorded[1]
             ),
         }
@@ -2294,6 +2294,7 @@ fn test_process_pool_liquidity_update(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2303,7 +2304,7 @@ fn test_process_pool_liquidity_update(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2318,7 +2319,7 @@ fn test_process_pool_liquidity_update(
         chain,
         dex,
         instrument_id,
-        pool.address,
+        pool.pool_identifier,
         PoolLiquidityUpdateType::Mint,
         1000u64,
         "0x123".to_string(),
@@ -2399,6 +2400,7 @@ fn test_process_pool_fee_collect(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2408,7 +2410,7 @@ fn test_process_pool_fee_collect(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2423,7 +2425,7 @@ fn test_process_pool_fee_collect(
         chain,
         dex,
         instrument_id,
-        pool.address,
+        pool.pool_identifier,
         1000u64,
         "0x123".to_string(),
         0,
@@ -2498,6 +2500,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2507,7 +2510,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2522,7 +2525,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         chain,
         dex,
         instrument_id,
-        pool.address,
+        pool.pool_identifier,
         1000u64,
         "0x123".to_string(),
         0,
@@ -2604,6 +2607,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2613,7 +2617,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -2627,7 +2631,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         chain.clone(),
         dex.clone(),
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
         999u64,
         "0x122".to_string(),
@@ -2654,8 +2658,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         .liquidity;
     assert!(
         active_liquidity > 0,
-        "Active liquidity should be > 0 after mint, got: {}",
-        active_liquidity
+        "Active liquidity should be > 0 after mint, was: {active_liquidity}"
     );
 
     // Capture initial profiler state (after mint)
@@ -2690,7 +2693,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         1000u64,
         "0x123".to_string(),
         0,
@@ -2703,9 +2706,6 @@ fn test_pool_updater_processes_swap_updates_profiler(
         new_price,
         1000u128,
         0i32,
-        Some(OrderSide::Buy),
-        Some(Quantity::from("1000")),
-        Some(Price::from("500")),
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -2732,14 +2732,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
 
     assert!(
         tick_changed || fees_increased,
-        "PoolUpdater should have updated PoolProfiler: tick_changed={}, fees_increased={}, \
-        initial_tick={:?}, final_tick={:?}, initial_fee_growth={}, final_fee_growth={}",
-        tick_changed,
-        fees_increased,
-        initial_tick,
-        final_tick,
-        initial_fee_growth_0,
-        final_fee_growth_0
+        "PoolUpdater should have updated PoolProfiler: tick_changed={tick_changed}, fees_increased={fees_increased}, \
+        initial_tick={initial_tick:?}, final_tick={final_tick:?}, initial_fee_growth={initial_fee_growth_0}, final_fee_growth={final_fee_growth_0}"
     );
 }
 
@@ -2785,6 +2779,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2794,7 +2789,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -2829,7 +2824,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
         1000u64,
         "0x123".to_string(),
@@ -2904,6 +2899,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2913,7 +2909,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -2928,7 +2924,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
         chain.clone(),
         dex.clone(),
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
         1000u64,
         "0x123".to_string(),
@@ -2971,7 +2967,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Burn,
         1001u64,
         "0x124".to_string(),
@@ -3046,6 +3042,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -3055,7 +3052,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -3083,7 +3080,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         1000u64,
         "0x123".to_string(),
         0,
@@ -3154,6 +3151,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         0u64,
         token0,
         token1,
@@ -3163,7 +3161,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -3192,7 +3190,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         1000u64,
         "0x123".to_string(),
         0,
@@ -3317,7 +3315,7 @@ fn test_setup_pool_updater_requests_snapshot(
             assert_eq!(request.client_id, Some(client_id));
         }
         _ => panic!(
-            "Expected second command to be RequestPoolSnapshot, got: {:?}",
+            "Expected second command to be RequestPoolSnapshot, was: {:?}",
             recorded[1]
         ),
     }
@@ -3376,6 +3374,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
         chain,
         dex,
         Address::from([0x88; 20]),
+        PoolIdentifier::from_address(Address::from([0x88; 20])),
         0u64,
         token0,
         token1,
@@ -3385,7 +3384,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to the data_engine's cache (not the fixture cache!)
@@ -3475,4 +3474,56 @@ fn test_pool_snapshot_request_routing_by_client_id(
     assert_eq!(recorder_1.borrow().len(), 1);
     assert_eq!(recorder_1.borrow()[0], cmd);
     assert_eq!(recorder_2.borrow().len(), 0);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Connection error propagation tests
+// ------------------------------------------------------------------------------------------------
+
+#[rstest]
+#[tokio::test]
+#[allow(clippy::await_holding_refcell_ref)] // Single-threaded test
+async fn test_data_engine_connect_propagates_client_error(
+    #[from(data_engine)] data_engine: Rc<RefCell<DataEngine>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let client_id = ClientId::from("FAILING_CLIENT");
+    let venue = Venue::from("TEST");
+    let error_message = "Authentication failed: invalid API key";
+
+    let client = FailingMockDataClient::new(client_id, Some(venue), error_message);
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
+    data_engine.register_client(adapter, None);
+
+    let result = data_engine.connect().await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains(error_message),
+        "Expected error message to contain '{error_message}', got: {err}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+#[allow(clippy::await_holding_refcell_ref)] // Single-threaded test
+async fn test_data_engine_connect_succeeds_with_working_client(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    #[from(data_engine)] data_engine: Rc<RefCell<DataEngine>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let client_id = ClientId::from("WORKING_CLIENT");
+    let venue = Venue::from("TEST");
+
+    let client = MockDataClient::new(clock, cache, client_id, Some(venue));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
+    data_engine.register_client(adapter, None);
+
+    let result = data_engine.connect().await;
+
+    assert!(result.is_ok());
 }

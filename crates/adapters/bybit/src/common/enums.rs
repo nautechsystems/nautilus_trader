@@ -15,9 +15,9 @@
 
 //! Enumerations that model Bybit string/int enums across HTTP and WebSocket payloads.
 
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 
-use nautilus_model::enums::{AggressorSide, OrderSide};
+use nautilus_model::enums::{AggressorSide, OrderSide, TriggerType};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::{AsRefStr, EnumIter, EnumString};
@@ -353,7 +353,7 @@ pub enum BybitKlineInterval {
 }
 
 impl Display for BybitKlineInterval {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Self::Minute1 => "1",
             Self::Minute3 => "3",
@@ -375,6 +375,10 @@ impl Display for BybitKlineInterval {
 
 /// Order status values returned by Bybit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitOrderStatus {
     #[serde(rename = "Created")]
     Created,
@@ -400,6 +404,10 @@ pub enum BybitOrderStatus {
 
 /// Order side enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitOrderSide {
     #[serde(rename = "")]
     Unknown,
@@ -429,9 +437,24 @@ impl From<BybitOrderSide> for OrderSide {
     }
 }
 
+impl From<BybitTriggerType> for TriggerType {
+    fn from(value: BybitTriggerType) -> Self {
+        match value {
+            BybitTriggerType::None => Self::Default,
+            BybitTriggerType::LastPrice => Self::LastPrice,
+            BybitTriggerType::IndexPrice => Self::IndexPrice,
+            BybitTriggerType::MarkPrice => Self::MarkPrice,
+        }
+    }
+}
+
 /// Order cancel reason values as returned by Bybit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitCancelType {
     CancelByUser,
     CancelByReduceOnly,
@@ -479,6 +502,10 @@ pub enum BybitCreateType {
 
 /// Venue order type enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitOrderType {
     #[serde(rename = "Market")]
     Market,
@@ -490,6 +517,10 @@ pub enum BybitOrderType {
 
 /// Stop order type classification.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitStopOrderType {
     #[serde(rename = "")]
     None,
@@ -519,6 +550,10 @@ pub enum BybitStopOrderType {
 
 /// Trigger type configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitTriggerType {
     #[serde(rename = "")]
     None,
@@ -533,6 +568,10 @@ pub enum BybitTriggerType {
 /// Trigger direction integers used by the API.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
 #[repr(i32)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitTriggerDirection {
     None = 0,
     RisesTo = 1,
@@ -542,6 +581,10 @@ pub enum BybitTriggerDirection {
 /// Take-profit/stop-loss mode for derivatives orders.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitTpSlMode {
     Full,
     Partial,
@@ -551,6 +594,10 @@ pub enum BybitTpSlMode {
 
 /// Time-in-force enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
 pub enum BybitTimeInForce {
     #[serde(rename = "GTC")]
     Gtc,
@@ -615,4 +662,80 @@ pub enum BybitEndpointType {
     Trade,
     Position,
     User,
+}
+
+/// Filter for open orders query.
+///
+/// Used with `GET /v5/order/realtime` to filter order status.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
+#[repr(i32)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
+pub enum BybitOpenOnly {
+    /// Query open status orders only (New, PartiallyFilled).
+    #[default]
+    OpenOnly = 0,
+    /// Query up to 500 recent closed orders (cancelled, rejected, filled).
+    ClosedRecent = 1,
+}
+
+/// Order filter for querying specific order types.
+///
+/// Used with `GET /v5/order/realtime` to filter by order category.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters", eq, eq_int)
+)]
+pub enum BybitOrderFilter {
+    /// Active orders (default).
+    #[default]
+    Order,
+    /// Conditional orders (futures and spot).
+    StopOrder,
+    /// Spot take-profit/stop-loss orders.
+    #[serde(rename = "tpslOrder")]
+    TpslOrder,
+    /// Spot one-cancels-other orders.
+    OcoOrder,
+    /// Spot bidirectional TP/SL orders.
+    BidirectionalTpslOrder,
+}
+
+/// Margin actions for spot margin trading operations.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        hash,
+        frozen,
+        module = "nautilus_trader.core.nautilus_pyo3.bybit"
+    )
+)]
+pub enum BybitMarginAction {
+    /// Borrow funds for margin trading.
+    Borrow,
+    /// Repay borrowed funds.
+    Repay,
+    /// Query current borrowed amount.
+    GetBorrowAmount,
 }

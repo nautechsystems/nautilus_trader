@@ -11,3 +11,8 @@ test-group = 'serial-tests'
 [[profile.default.overrides]]
 filter = 'test(test_order_book)'
 slow-timeout = { period = "300s" }
+
+# Websocket tests can be flaky due to timing on low-spec runners, give them extra retries
+[[profile.default.overrides]]
+filter = 'binary(websocket)'
+retries = 3

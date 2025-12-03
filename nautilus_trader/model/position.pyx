@@ -110,6 +110,8 @@ cdef class Position:
         self.apply(fill)
 
     def __eq__(self, Position other) -> bool:
+        if other is None:
+            return False
         return self.id == other.id
 
     def __hash__(self) -> int:

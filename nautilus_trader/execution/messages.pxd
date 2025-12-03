@@ -83,6 +83,9 @@ cdef class GenerateFillReports(ExecutionReportCommand):
 
 
 cdef class GeneratePositionStatusReports(ExecutionReportCommand):
+    cdef readonly LogLevel log_receipt_level
+    """The log level for logging received reports.\n\n:returns: `LogLevel`"""
+
     @staticmethod
     cdef GeneratePositionStatusReports from_dict_c(dict values)
 
@@ -223,6 +226,8 @@ cdef class QueryAccount(Command):
     """The trader ID associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly AccountId account_id
     """The account ID to query.\n\n:returns: `AccountId`"""
+    cdef readonly dict params
+    """Additional parameters for the command.\n\n:returns: `dict[str, object]`"""
 
     @staticmethod
     cdef QueryAccount from_dict_c(dict values)

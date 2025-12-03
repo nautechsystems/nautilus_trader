@@ -57,7 +57,7 @@ separately depending on the use case.
 - `PolymarketLiveExecClientFactory`: Factory for Polymarket execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as below),
+Most users will define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
 
@@ -393,6 +393,25 @@ a separate `PolymarketWebSocketClient` is created for each new instrument (asset
 Polymarket does not support unsubscribing from channel streams once subscribed.
 :::
 
+### Subscription limits
+
+Polymarket enforces a **maximum of 500 instruments per WebSocket connection** (undocumented limitation).
+
+When you attempt to subscribe to 501 or more instruments on a single WebSocket connection:
+
+- You will **not** receive the initial order book snapshot for each instrument.
+- You will only receive subsequent order book updates.
+
+To handle this limitation, NautilusTrader automatically manages WebSocket connections:
+
+- When the subscription count exceeds 500 instruments, the adapter **automatically creates additional WebSocket connections**.
+- Each connection maintains up to 500 instrument subscriptions.
+- This protection ensures you receive complete order book data (including initial snapshots) for all subscribed instruments.
+
+:::tip
+If you need to subscribe to a large number of instruments (e.g., 5000+), the adapter will automatically distribute these subscriptions across multiple WebSocket connections, with each connection handling up to 500 instruments.
+:::
+
 ## Limitations and considerations
 
 The following limitations and considerations are currently known:
@@ -485,8 +504,9 @@ All data loader methods are **asynchronous** and must be called with `await`.
 ```python
 import asyncio
 from datetime import UTC, datetime, timedelta
+
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket import parse_polymarket_instrument
 from nautilus_trader.core.datetime import millis_to_nanos
 
 async def load_market_data():
@@ -498,7 +518,7 @@ async def load_market_data():
     token = market_details["tokens"][0]
     token_id = token["token_id"]
 
-    instrument = parse_instrument(
+    instrument = parse_polymarket_instrument(
         market_info=market_details,
         token_id=token_id,
         outcome=token["outcome"],
@@ -607,19 +627,20 @@ A complete working example is available at `examples/backtest/polymarket_simple_
 
 ```python
 import asyncio
-from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+
+import pandas as pd
 
 from nautilus_trader.adapters.polymarket import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket import PolymarketDataLoader
-from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.model.currencies import USDC_POS
-from nautilus_trader.model.enums import AccountType, BookType, OmsType
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 
@@ -629,8 +650,8 @@ async def run_backtest():
     instrument = loader.instrument
 
     # Fetch historical data
-    end = pd.Timestamp.now(tz="UTC")
-    start = end - pd.Timedelta(hours=24)
+    start = pd.Timestamp("2025-10-30", tz="UTC")
+    end = pd.Timestamp("2025-10-31", tz="UTC")
 
     deltas = await loader.load_orderbook_snapshots(
         start=start,

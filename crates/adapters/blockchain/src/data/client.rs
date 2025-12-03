@@ -14,6 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::{
+    defi::RequestPoolSnapshot,
+    live::runtime::get_runtime,
     messages::{
         DataEvent,
         defi::{
@@ -24,13 +26,13 @@ use nautilus_common::{
             UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
         },
     },
-    runtime::get_runtime,
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
-    defi::{DefiData, SharedChain, validation::validate_address},
+    defi::{DefiData, PoolIdentifier, SharedChain, validation::validate_address},
     identifiers::{ClientId, Venue},
 };
+use ustr::Ustr;
 
 use crate::{
     config::BlockchainDataClientConfig,
@@ -108,7 +110,7 @@ impl BlockchainDataClient {
 
         let cancellation_token = self.cancellation_token.clone();
 
-        let data_tx = nautilus_common::runner::get_data_event_sender();
+        let data_tx = nautilus_common::live::runner::get_data_event_sender();
 
         let mut hypersync_rx = self.hypersync_rx.take().unwrap();
         let hypersync_tx = self.hypersync_tx.take();
@@ -201,14 +203,9 @@ impl BlockchainDataClient {
                                     Some(DataEvent::DeFi(DefiData::Block(block)))
                                 }
                                 BlockchainMessage::SwapEvent(swap_event) => {
-                                    match core_client.get_pool(&swap_event.pool_address) {
+                                    match core_client.get_pool(&swap_event.pool_identifier) {
                                         Ok(pool) => {
-                                            let dex_extended = get_dex_extended(core_client.chain.name, &pool.dex.name).expect("Failed to get dex extended");
-                                            match core_client.process_pool_swap_event(
-                                                &swap_event,
-                                                pool,
-                                                dex_extended,
-                                            ){
+                                            match core_client.process_pool_swap_event(&swap_event, pool){
                                                 Ok(swap) => Some(DataEvent::DeFi(DefiData::PoolSwap(swap))),
                                                 Err(e) => {
                                                     tracing::error!("Error processing pool swap event: {e}");
@@ -217,13 +214,13 @@ impl BlockchainDataClient {
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", swap_event.pool_address, e);
+                                            tracing::error!("Failed to get pool {} with error {:?}", swap_event.pool_identifier, e);
                                             None
                                         }
                                     }
                                 }
                                 BlockchainMessage::BurnEvent(burn_event) => {
-                                    match core_client.get_pool(&burn_event.pool_address) {
+                                    match core_client.get_pool(&burn_event.pool_identifier) {
                                         Ok(pool) => {
                                             let dex_extended = get_dex_extended(core_client.chain.name, &pool.dex.name).expect("Failed to get dex extended");
                                             match core_client.process_pool_burn_event(
@@ -239,13 +236,13 @@ impl BlockchainDataClient {
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", burn_event.pool_address, e);
+                                            tracing::error!("Failed to get pool {} with error {:?}", burn_event.pool_identifier, e);
                                             None
                                         }
                                     }
                                 }
                                 BlockchainMessage::MintEvent(mint_event) => {
-                                    match core_client.get_pool(&mint_event.pool_address) {
+                                    match core_client.get_pool(&mint_event.pool_identifier) {
                                         Ok(pool) => {
                                             let dex_extended = get_dex_extended(core_client.chain.name,&pool.dex.name).expect("Failed to get dex extended");
                                             match core_client.process_pool_mint_event(
@@ -261,13 +258,13 @@ impl BlockchainDataClient {
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", mint_event.pool_address, e);
+                                            tracing::error!("Failed to get pool {} with error {:?}", mint_event.pool_identifier, e);
                                             None
                                         }
                                     }
                                 }
                                 BlockchainMessage::CollectEvent(collect_event) => {
-                                    match core_client.get_pool(&collect_event.pool_address) {
+                                    match core_client.get_pool(&collect_event.pool_identifier) {
                                         Ok(pool) => {
                                             let dex_extended = get_dex_extended(core_client.chain.name, &pool.dex.name).expect("Failed to get dex extended");
                                             match core_client.process_pool_collect_event(
@@ -283,13 +280,13 @@ impl BlockchainDataClient {
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", collect_event.pool_address, e);
+                                            tracing::error!("Failed to get pool {} with error {:?}", collect_event.pool_identifier, e);
                                             None
                                         }
                                     }
                                 }
                             BlockchainMessage::FlashEvent(flash_event) => {
-                                    match core_client.get_pool(&flash_event.pool_address) {
+                                    match core_client.get_pool(&flash_event.pool_identifier) {
                                         Ok(pool) => {
                                             match core_client.process_pool_flash_event(&flash_event,pool){
                                                 Ok(flash) => Some(DataEvent::DeFi(DefiData::PoolFlash(flash))),
@@ -300,7 +297,7 @@ impl BlockchainDataClient {
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to get pool {} with error {:?}", flash_event.pool_address, e);
+                                            tracing::error!("Failed to get pool {} with error {:?}", flash_event.pool_identifier, e);
                                             None
                                         }
                                     }
@@ -746,7 +743,9 @@ impl BlockchainDataClient {
                         )
                     })?;
 
-                match core_client.get_pool(&pool_address) {
+                let pool_identifier =
+                    PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
+                match core_client.get_pool(&pool_identifier) {
                     Ok(pool) => {
                         let pool = pool.clone();
                         tracing::debug!("Found pool for snapshot request: {}", cmd.instrument_id);
@@ -766,7 +765,11 @@ impl BlockchainDataClient {
                                 );
                                 core_client
                                     .cache
-                                    .add_pool_snapshot(&pool.address, &snapshot)
+                                    .add_pool_snapshot(
+                                        &pool.dex.name,
+                                        &pool.pool_identifier,
+                                        &snapshot,
+                                    )
                                     .await?;
 
                                 // If snapshot is valid, send it back to the data engine.
@@ -809,7 +812,7 @@ impl BlockchainDataClient {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for BlockchainDataClient {
     fn client_id(&self) -> ClientId {
         ClientId::from(format!("BLOCKCHAIN-{}", self.chain.name).as_str())
@@ -1002,10 +1005,7 @@ impl DataClient for BlockchainDataClient {
         Ok(())
     }
 
-    fn request_pool_snapshot(
-        &self,
-        cmd: &nautilus_common::messages::defi::RequestPoolSnapshot,
-    ) -> anyhow::Result<()> {
+    fn request_pool_snapshot(&self, cmd: &RequestPoolSnapshot) -> anyhow::Result<()> {
         let command = DefiDataCommand::Request(DefiRequestCommand::PoolSnapshot(cmd.clone()));
         self.command_tx.send(command)?;
         Ok(())

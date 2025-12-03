@@ -40,6 +40,7 @@ from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId
@@ -469,6 +470,91 @@ class TestCacheDatabaseAdapter:
 
         # Assert
         assert True  # No exception raised
+
+    @pytest.mark.asyncio
+    async def test_position_flip_cache_reload_netting_mode(self):
+        """
+        Test that position flip in NETTING mode can be reloaded from cache.
+
+        Reproduces issue #3081 where a position flip causes duplicate event IDs when
+        reloading from Redis cache.
+
+        """
+        # Arrange
+        self.database.add_instrument(_AUDUSD_SIM)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
+
+        order1 = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position_id = PositionId("P-1")
+        self.database.add_order(order1)
+
+        await eventually(lambda: self.database.load_order(order1.client_order_id))
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=_AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("1"),
+        )
+
+        position = Position(instrument=_AUDUSD_SIM, fill=fill1)
+        self.database.add_position(position)
+
+        await eventually(lambda: self.database.load_position(position.id))
+
+        order2 = self.strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(150_000),
+        )
+
+        self.database.add_order(order2)
+
+        await eventually(lambda: self.database.load_order(order2.client_order_id))
+
+        # Simulate position flip: close with partial fill, reopen with remainder
+        fill2_close = TestEventStubs.order_filled(
+            order2,
+            instrument=_AUDUSD_SIM,
+            position_id=position_id,
+            last_qty=Quantity.from_int(100_000),
+            last_px=Price.from_str("1.00010"),
+            trade_id=TradeId("2"),
+        )
+
+        position.apply(fill2_close)
+        self.database.update_position(position)
+
+        await eventually(lambda: (p := self.database.load_position(position_id)) and p.is_closed)
+
+        fill2_flip = TestEventStubs.order_filled(
+            order2,
+            instrument=_AUDUSD_SIM,
+            position_id=position_id,
+            last_qty=Quantity.from_int(50_000),
+            last_px=Price.from_str("1.00010"),
+            trade_id=TradeId("2"),
+        )
+
+        position_flipped = Position(instrument=_AUDUSD_SIM, fill=fill2_flip)
+        self.database.add_position(position_flipped)
+
+        await eventually(lambda: (p := self.database.load_position(position_id)) and p.is_open)
+
+        loaded_position = self.database.load_position(position_id)
+
+        assert loaded_position is not None
+        assert loaded_position.side == PositionSide.SHORT
+        assert loaded_position.quantity == Quantity.from_int(50_000)
+        assert len(loaded_position.events) == 1
 
     @pytest.mark.asyncio
     async def test_update_actor(self):

@@ -45,7 +45,7 @@ class TestOnBalanceVolume:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        for _i in range(100):
+        for _ in range(100):
             self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act, Assert
@@ -105,7 +105,7 @@ class TestOnBalanceVolume:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(100):
+        for _ in range(100):
             self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act

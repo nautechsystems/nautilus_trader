@@ -83,7 +83,7 @@ class Strat_oca_test(Strategy):
                 self.clock.set_time_alert(
                     "modify_test",
                     self.clock.utc_now() + pd.Timedelta(seconds=10),
-                    lambda event: self.test_oca_modification(instrument.id),
+                    lambda event, instrument=instrument: self.test_oca_modification(instrument.id),
                 )
 
     def create_oca_orders(self, instrument_id):
@@ -184,7 +184,7 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         log_level_file="INFO",
         log_file_name=datetime.datetime.strftime(
-            datetime.datetime.now(datetime.UTC),
+            datetime.datetime.now(tz=datetime.UTC),
             "%Y-%m-%d_%H-%M",
         )
         + "_oca_test.log",

@@ -22,12 +22,18 @@ use strum::Display;
 use crate::indicator::Indicator;
 
 #[repr(C)]
-#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Display, Clone, Hash, PartialEq, Eq, Copy)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+    )
 )]
 pub enum CandleBodySize {
     None = 0,
@@ -38,12 +44,18 @@ pub enum CandleBodySize {
 }
 
 #[repr(C)]
-#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Display, Clone, Hash, PartialEq, Eq, Copy)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+    )
 )]
 pub enum CandleDirection {
     Bull = 1,
@@ -52,12 +64,18 @@ pub enum CandleDirection {
 }
 
 #[repr(C)]
-#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Display, Clone, Hash, PartialEq, Eq, Copy)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+    )
 )]
 pub enum CandleSize {
     None = 0,
@@ -70,12 +88,18 @@ pub enum CandleSize {
 }
 
 #[repr(C)]
-#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Display, Clone, Hash, PartialEq, Eq, Copy)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        hash,
+        module = "nautilus_trader.core.nautilus_pyo3.indicators"
+    )
 )]
 pub enum CandleWickSize {
     None = 0,

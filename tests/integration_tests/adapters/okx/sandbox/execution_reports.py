@@ -44,7 +44,7 @@ async def main():
     logger.info(f"Received {len(instruments)} instruments")
 
     for inst in instruments:
-        http_client.add_instrument(inst)
+        http_client.cache_instrument(inst)
 
     logger.info("Cached instruments for HTTP client")
 

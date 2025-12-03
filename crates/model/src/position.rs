@@ -16,11 +16,11 @@
 //! A `Position` for the trading domain model.
 
 use std::{
-    collections::{HashMap, HashSet},
     fmt::Display,
     hash::{Hash, Hasher},
 };
 
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::{
     UUID4, UnixNanos,
     correctness::{FAILED, check_equal, check_predicate_true},
@@ -86,7 +86,7 @@ pub struct Position {
     pub trade_ids: Vec<TradeId>,
     pub buy_qty: Quantity,
     pub sell_qty: Quantity,
-    pub commissions: HashMap<Currency, Money>,
+    pub commissions: AHashMap<Currency, Money>,
 }
 
 impl Position {
@@ -116,7 +116,7 @@ impl Position {
             trade_ids: Vec::<TradeId>::new(),
             buy_qty: Quantity::zero(instrument.size_precision()),
             sell_qty: Quantity::zero(instrument.size_precision()),
-            commissions: HashMap::<Currency, Money>::new(),
+            commissions: AHashMap::<Currency, Money>::new(),
             trader_id: fill.trader_id,
             strategy_id: fill.strategy_id,
             instrument_id: fill.instrument_id,
@@ -579,10 +579,7 @@ impl Position {
         // Runtime check to prevent division by zero even in release builds
         if total_qty <= 0.0 {
             anyhow::bail!(
-                "Total quantity unexpectedly zero or negative in average price calculation: qty={}, last_qty={}, total_qty={}",
-                qty,
-                last_qty,
-                total_qty
+                "Total quantity unexpectedly zero or negative in average price calculation: qty={qty}, last_qty={last_qty}, total_qty={total_qty}"
             );
         }
 
@@ -592,7 +589,7 @@ impl Position {
     fn calculate_avg_px_open_px(&self, last_px: f64, last_qty: f64) -> f64 {
         self.calculate_avg_px(self.quantity.as_f64(), self.avg_px_open, last_px, last_qty)
             .unwrap_or_else(|e| {
-                log::error!("Error calculating average open price: {}", e);
+                log::error!("Error calculating average open price: {e}");
                 last_px
             })
     }
@@ -608,7 +605,7 @@ impl Position {
         };
         self.calculate_avg_px(closing_qty.as_f64(), avg_px_close, last_px, last_qty)
             .unwrap_or_else(|e| {
-                log::error!("Error calculating average close price: {}", e);
+                log::error!("Error calculating average close price: {e}");
                 last_px
             })
     }
@@ -628,14 +625,12 @@ impl Position {
         // Invalid state: zero or near-zero prices should never occur in valid market data
         if avg_px_open.abs() < EPSILON {
             anyhow::bail!(
-                "Cannot calculate inverse points: open price is zero or too small ({})",
-                avg_px_open
+                "Cannot calculate inverse points: open price is zero or too small ({avg_px_open})"
             );
         }
         if avg_px_close.abs() < EPSILON {
             anyhow::bail!(
-                "Cannot calculate inverse points: close price is zero or too small ({})",
-                avg_px_close
+                "Cannot calculate inverse points: close price is zero or too small ({avg_px_close})"
             );
         }
 
@@ -653,8 +648,7 @@ impl Position {
         // Prevent division by zero in return calculation
         if avg_px_open == 0.0 {
             anyhow::bail!(
-                "Cannot calculate return: open price is zero (close price: {})",
-                avg_px_close
+                "Cannot calculate return: open price is zero (close price: {avg_px_close})"
             );
         }
         Ok(self.calculate_points(avg_px_open, avg_px_close) / avg_px_open)
@@ -749,7 +743,7 @@ impl Position {
             .events
             .iter()
             .map(|event| event.client_order_id)
-            .collect::<HashSet<ClientOrderId>>()
+            .collect::<AHashSet<ClientOrderId>>()
             .into_iter()
             .collect::<Vec<ClientOrderId>>();
         result.sort_unstable();
@@ -763,7 +757,7 @@ impl Position {
             .events
             .iter()
             .map(|event| event.venue_order_id)
-            .collect::<HashSet<VenueOrderId>>()
+            .collect::<AHashSet<VenueOrderId>>()
             .into_iter()
             .collect::<Vec<VenueOrderId>>();
         result.sort_unstable();
@@ -776,7 +770,7 @@ impl Position {
             .events
             .iter()
             .map(|event| event.trade_id)
-            .collect::<HashSet<TradeId>>()
+            .collect::<AHashSet<TradeId>>()
             .into_iter()
             .collect::<Vec<TradeId>>();
         result.sort_unstable();
@@ -2446,7 +2440,7 @@ mod tests {
         assert_eq!(position.ts_closed, Some(UnixNanos::default()));
         assert_eq!(position.event_count(), 0);
 
-        // Act: Add new fill to revive the position
+        // Add new fill to revive the position
         let order2 = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(audusd_sim.id())
             .side(OrderSide::Buy)
@@ -2469,7 +2463,7 @@ mod tests {
         let fill2_typed: OrderFilled = fill2.clone().into();
         position.apply(&fill2_typed);
 
-        // Assert: Position should be alive with new timestamps
+        // Position should be alive with new timestamps
         assert!(position.is_long());
         assert!(!position.is_closed());
         assert!(position.ts_closed.is_none());
@@ -2731,16 +2725,14 @@ mod tests {
         let total_commission: f64 = position.commissions().iter().map(|c| c.as_f64()).sum();
         assert!(
             (total_commission - 1.0).abs() < 1e-10,
-            "Commission accumulation should be accurate: expected 1.0, got {}",
-            total_commission
+            "Commission accumulation should be accurate: expected 1.0, was {total_commission}"
         );
 
         // Verify average price is reasonable (should be around 1.0005)
         let avg_px = position.avg_px_open;
         assert!(
             avg_px > 1.0 && avg_px < 1.001,
-            "Average price should be reasonable: got {}",
-            avg_px
+            "Average price should be reasonable: got {avg_px}"
         );
     }
 
@@ -2862,8 +2854,7 @@ mod tests {
         let realized = position.realized_pnl.unwrap().as_f64();
         assert!(
             (realized - (-1.0)).abs() < 1e-10,
-            "Realized PnL should be exactly -1.0 USD (commissions), got {}",
-            realized
+            "Realized PnL should be exactly -1.0 USD (commissions), was {realized}"
         );
     }
 
@@ -2898,14 +2889,14 @@ mod tests {
         // Position quantity should be 1.0 - 0.001 = 0.999 BTC
         assert!(
             (position.quantity.as_f64() - 0.999).abs() < 1e-9,
-            "Position quantity should be 0.999 BTC (1.0 - 0.001 commission), got {}",
+            "Position quantity should be 0.999 BTC (1.0 - 0.001 commission), was {}",
             position.quantity.as_f64()
         );
 
         // Signed qty should also be 0.999
         assert!(
             (position.signed_qty - 0.999).abs() < 1e-9,
-            "Signed qty should be 0.999, got {}",
+            "Signed qty should be 0.999, was {}",
             position.signed_qty
         );
 
@@ -2959,14 +2950,14 @@ mod tests {
         // (you sold 1.0 and paid 0.001 commission, so total short exposure is 1.001)
         assert!(
             (position.quantity.as_f64() - 1.001).abs() < 1e-9,
-            "Position quantity should be 1.001 BTC (1.0 + 0.001 commission), got {}",
+            "Position quantity should be 1.001 BTC (1.0 + 0.001 commission), was {}",
             position.quantity.as_f64()
         );
 
         // Signed qty should be -1.001 (short position)
         assert!(
             (position.signed_qty - (-1.001)).abs() < 1e-9,
-            "Signed qty should be -1.001, got {}",
+            "Signed qty should be -1.001, was {}",
             position.signed_qty
         );
 
@@ -3020,7 +3011,7 @@ mod tests {
         // Position quantity should be exactly 1.0 BTC (no adjustment)
         assert!(
             (position.quantity.as_f64() - 1.0).abs() < 1e-9,
-            "Position quantity should be 1.0 BTC (no adjustment for quote currency commission), got {}",
+            "Position quantity should be 1.0 BTC (no adjustment for quote currency commission), was {}",
             position.quantity.as_f64()
         );
 
@@ -3346,142 +3337,6 @@ mod tests {
     }
 
     #[rstest]
-    #[ignore = "Test has incorrect expectations - closing with commission doesn't leave remainder"]
-    fn test_position_long_close_with_base_currency_commission() {
-        // Test opening and closing a long position with commission in base currency
-        let btc_usdt = currency_pair_btcusdt();
-        let btc_usdt = InstrumentAny::CurrencyPair(btc_usdt);
-
-        let buy_order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(btc_usdt.id())
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from("1.0"))
-            .build();
-
-        let sell_order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(btc_usdt.id())
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from("1.0"))
-            .build();
-
-        // Open: Buy 1.0 BTC with 0.001 BTC commission
-        let open_fill = TestOrderEventStubs::filled(
-            &buy_order,
-            &btc_usdt,
-            Some(TradeId::new("1")),
-            None,
-            Some(Price::from("50000.0")),
-            Some(Quantity::from("1.0")),
-            None,
-            Some(Money::new(-0.001, btc_usdt.base_currency().unwrap())),
-            None,
-            None,
-        );
-
-        let mut position = Position::new(&btc_usdt, open_fill.into());
-
-        // After opening, position should be 0.999 BTC
-        assert!(
-            (position.quantity.as_f64() - 0.999).abs() < 1e-9,
-            "Position after open should be 0.999 BTC, got {}",
-            position.quantity.as_f64()
-        );
-
-        // Close: Sell 0.999 BTC with 0.001 BTC commission (will close slightly less due to commission)
-        let close_fill = TestOrderEventStubs::filled(
-            &sell_order,
-            &btc_usdt,
-            Some(TradeId::new("2")),
-            None,
-            Some(Price::from("51000.0")),
-            Some(Quantity::from("0.999")),
-            None,
-            Some(Money::new(-0.001, btc_usdt.base_currency().unwrap())),
-            None,
-            None,
-        );
-
-        position.apply(&close_fill.into());
-
-        // After closing with 0.999 - 0.001 = 0.998, we should have 0.001 BTC remaining
-        // (opened 0.999 - closed 0.998 = 0.001)
-        assert!(
-            (position.quantity.as_f64() - 0.001).abs() < 1e-9,
-            "Position after close should be ~0.001 BTC remaining, got {}",
-            position.quantity.as_f64()
-        );
-    }
-
-    #[rstest]
-    #[ignore = "Test has incorrect expectations - closing with commission doesn't leave remainder"]
-    fn test_position_short_close_with_base_currency_commission() {
-        // Test opening and closing a short position with commission in base currency
-        let btc_usdt = currency_pair_btcusdt();
-        let btc_usdt = InstrumentAny::CurrencyPair(btc_usdt);
-
-        let sell_order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(btc_usdt.id())
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from("1.0"))
-            .build();
-
-        let buy_order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(btc_usdt.id())
-            .side(OrderSide::Buy)
-            .quantity(Quantity::from("1.0"))
-            .build();
-
-        // Open: Sell 1.0 BTC with 0.001 BTC commission
-        let open_fill = TestOrderEventStubs::filled(
-            &sell_order,
-            &btc_usdt,
-            Some(TradeId::new("1")),
-            None,
-            Some(Price::from("50000.0")),
-            Some(Quantity::from("1.0")),
-            None,
-            Some(Money::new(-0.001, btc_usdt.base_currency().unwrap())),
-            None,
-            None,
-        );
-
-        let mut position = Position::new(&btc_usdt, open_fill.into());
-
-        // After opening, position should be 1.001 BTC (short)
-        // (sold 1.0 + paid 0.001 commission = 1.001 total obligation)
-        assert!(
-            (position.quantity.as_f64() - 1.001).abs() < 1e-9,
-            "Position after open should be 1.001 BTC, got {}",
-            position.quantity.as_f64()
-        );
-        assert_eq!(position.side, PositionSide::Short);
-
-        // Close: Buy 0.999 BTC with 0.001 BTC commission
-        let close_fill = TestOrderEventStubs::filled(
-            &buy_order,
-            &btc_usdt,
-            Some(TradeId::new("2")),
-            None,
-            Some(Price::from("49000.0")),
-            Some(Quantity::from("0.999")),
-            None,
-            Some(Money::new(-0.001, btc_usdt.base_currency().unwrap())),
-            None,
-            None,
-        );
-
-        position.apply(&close_fill.into());
-
-        // After closing with 0.999 - 0.001 = 0.998, we should have 0.003 BTC remaining
-        // (opened 1.001 - closed 0.998 = 0.003)
-        assert!(
-            (position.quantity.as_f64() - 0.003).abs() < 1e-9,
-            "Position after close should be ~0.003 BTC remaining, got {}",
-            position.quantity.as_f64()
-        );
-    }
-
-    #[rstest]
     fn test_position_commission_affects_buy_and_sell_qty() {
         // Test that commission in base currency affects both buy_qty and sell_qty tracking
         let btc_usdt = currency_pair_btcusdt();
@@ -3512,14 +3367,14 @@ mod tests {
         // buy_qty tracks order fills (1.0 BTC), adjustments tracked separately
         assert!(
             (position.buy_qty.as_f64() - 1.0).abs() < 1e-9,
-            "buy_qty should be 1.0 (order fill amount), got {}",
+            "buy_qty should be 1.0 (order fill amount), was {}",
             position.buy_qty.as_f64()
         );
 
         // Position quantity reflects both order fill and commission adjustment
         assert!(
             (position.quantity.as_f64() - 0.999).abs() < 1e-9,
-            "position.quantity should be 0.999 (1.0 - 0.001 commission), got {}",
+            "position.quantity should be 0.999 (1.0 - 0.001 commission), was {}",
             position.quantity.as_f64()
         );
 
@@ -3562,14 +3417,14 @@ mod tests {
         // Position quantity should be exactly 1.0 (NO adjustment for derivatives)
         assert!(
             (position.quantity.as_f64() - 1.0).abs() < 1e-9,
-            "Perpetual position should be 1.0 contracts (no adjustment), got {}",
+            "Perpetual position should be 1.0 contracts (no adjustment), was {}",
             position.quantity.as_f64()
         );
 
         // Signed qty should also be 1.0
         assert!(
             (position.signed_qty - 1.0).abs() < 1e-9,
-            "Signed qty should be 1.0, got {}",
+            "Signed qty should be 1.0, was {}",
             position.signed_qty
         );
     }

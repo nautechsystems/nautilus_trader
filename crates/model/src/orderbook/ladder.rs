@@ -124,12 +124,12 @@ impl BookLadder {
 
     /// Returns true if the ladder has no price levels.
     #[must_use]
-    #[allow(dead_code, reason = "Used in tests")]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.levels.is_empty()
     }
 
-    #[allow(dead_code, reason = "Used in tests")]
+    #[allow(dead_code)]
     /// Adds multiple orders to the ladder.
     pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
         for order in orders {
@@ -348,14 +348,14 @@ impl BookLadder {
 
     /// Returns the total size of all orders in the ladder.
     #[must_use]
-    #[allow(dead_code, reason = "Used in tests")]
+    #[allow(dead_code)]
     pub fn sizes(&self) -> f64 {
         self.levels.values().map(BookLevel::size).sum()
     }
 
     /// Returns the total value exposure (price * size) of all orders in the ladder.
     #[must_use]
-    #[allow(dead_code, reason = "Used in tests")]
+    #[allow(dead_code)]
     pub fn exposures(&self) -> f64 {
         self.levels.values().map(BookLevel::exposure).sum()
     }

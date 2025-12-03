@@ -134,7 +134,7 @@ class InteractiveBrokersClient(
         # ConnectionMixin
         self._connection_attempts: int = 0
         self._max_connection_attempts: int = int(os.getenv("IB_MAX_CONNECTION_ATTEMPTS", 0))
-        self._indefinite_reconnect: bool = False if self._max_connection_attempts else True
+        self._indefinite_reconnect: bool = not self._max_connection_attempts
         self._reconnect_delay: int = 5  # seconds
         self._last_disconnection_ns: int | None = None
 

@@ -13,13 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![cfg(feature = "live")]
+
 use bytes::Bytes;
 use futures::pin_mut;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
 use pyo3::prelude::*;
 use ustr::Ustr;
 
-use crate::msgbus::listener::MessageBusListener;
+use crate::live::listener::MessageBusListener;
 
 #[pymethods]
 impl MessageBusListener {

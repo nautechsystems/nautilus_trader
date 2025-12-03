@@ -15,8 +15,6 @@
 
 //! Conversion routines that map BitMEX REST models into Nautilus domain structures.
 
-use std::str::FromStr;
-
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime, uuid::UUID4};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
@@ -213,22 +211,22 @@ pub fn parse_spot_instrument(
 
     let taker_fee = definition
         .taker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
     let maker_fee = definition
         .maker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
     let margin_maint = definition
         .maint_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
 
     let lot_size =
@@ -305,22 +303,22 @@ pub fn parse_perpetual_instrument(
 
     let taker_fee = definition
         .taker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
     let maker_fee = definition
         .maker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
     let margin_maint = definition
         .maint_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
 
     // TODO: How to handle negative multipliers?
@@ -406,22 +404,22 @@ pub fn parse_futures_instrument(
 
     let taker_fee = definition
         .taker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
     let maker_fee = definition
         .maker_fee
-        .and_then(|fee| Decimal::from_str(&fee.to_string()).ok())
+        .and_then(|fee| Decimal::try_from(fee).ok())
         .unwrap_or(Decimal::ZERO);
 
     let margin_init = definition
         .init_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
     let margin_maint = definition
         .maint_margin
         .as_ref()
-        .and_then(|margin| Decimal::from_str(&margin.to_string()).ok())
+        .and_then(|margin| Decimal::try_from(*margin).ok())
         .unwrap_or(Decimal::ZERO);
 
     // TODO: How to handle negative multipliers?
@@ -526,16 +524,16 @@ pub fn parse_trade_bin(
 
     let open = bin
         .open
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing open price for {instrument_id}"))?;
     let high = bin
         .high
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing high price for {instrument_id}"))?;
     let low = bin
         .low
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing low price for {instrument_id}"))?;
     let close = bin
         .close
-        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {}", instrument_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Trade bin missing close price for {instrument_id}"))?;
 
     let open = Price::new(open, price_precision);
     let high = Price::new(high, price_precision);
@@ -858,10 +856,8 @@ pub fn parse_fill_report(
     // Map BitMEX currency to standard currency code
     let settlement_currency_str = exec.settl_currency.unwrap_or(Ustr::from("XBT")).as_str();
     let mapped_currency = map_bitmex_currency(settlement_currency_str);
-    let commission = Money::new(
-        exec.commission.unwrap_or(0.0),
-        Currency::from(mapped_currency.as_str()),
-    );
+    let currency = get_currency(&mapped_currency);
+    let commission = Money::new(exec.commission.unwrap_or(0.0), currency);
     let liquidity_side = parse_liquidity_side(&exec.last_liquidity_ind);
     let client_order_id = exec.cl_ord_id.map(ClientOrderId::new);
     let venue_position_id = None; // Not applicable on BitMEX
@@ -924,7 +920,7 @@ pub fn parse_position_report(
 ///
 /// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
 /// which automatically registers newly listed BitMEX assets.
-fn get_currency(code: &str) -> Currency {
+pub fn get_currency(code: &str) -> Currency {
     Currency::get_or_create_crypto(code)
 }
 
@@ -934,10 +930,13 @@ fn get_currency(code: &str) -> Currency {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use chrono::{DateTime, Utc};
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, LiquiditySide, PositionSide, PriceType},
+        instruments::InstrumentAny,
     };
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -1123,10 +1122,12 @@ mod tests {
         let bar = parse_trade_bin(bins[0].clone(), &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
-        let expected_open = Price::from_decimal(Decimal::from_str("98900.0").unwrap(), precision)
-            .expect("open price");
-        let expected_close = Price::from_decimal(Decimal::from_str("98950.0").unwrap(), precision)
-            .expect("close price");
+        let expected_open =
+            Price::from_decimal_dp(Decimal::from_str("98900.0").unwrap(), precision)
+                .expect("open price");
+        let expected_close =
+            Price::from_decimal_dp(Decimal::from_str("98950.0").unwrap(), precision)
+                .expect("close price");
 
         assert_eq!(bar.bar_type, bar_type);
         assert_eq!(bar.open, expected_open);
@@ -1165,12 +1166,14 @@ mod tests {
         let bar = parse_trade_bin(bin, &instrument_any, &bar_type, ts_init).unwrap();
 
         let precision = instrument_any.price_precision();
-        let expected_high = Price::from_decimal(Decimal::from_str("50010.0").unwrap(), precision)
-            .expect("high price");
-        let expected_low = Price::from_decimal(Decimal::from_str("49990.0").unwrap(), precision)
+        let expected_high =
+            Price::from_decimal_dp(Decimal::from_str("50010.0").unwrap(), precision)
+                .expect("high price");
+        let expected_low = Price::from_decimal_dp(Decimal::from_str("49990.0").unwrap(), precision)
             .expect("low price");
-        let expected_open = Price::from_decimal(Decimal::from_str("50000.0").unwrap(), precision)
-            .expect("open price");
+        let expected_open =
+            Price::from_decimal_dp(Decimal::from_str("50000.0").unwrap(), precision)
+                .expect("open price");
 
         assert_eq!(bar.high, expected_high);
         assert_eq!(bar.low, expected_low);
@@ -2641,7 +2644,7 @@ mod tests {
 
         // Check it's a CurrencyPair variant
         match result {
-            nautilus_model::instruments::InstrumentAny::CurrencyPair(spot) => {
+            InstrumentAny::CurrencyPair(spot) => {
                 assert_eq!(spot.id.symbol.as_str(), "XBTUSD");
                 assert_eq!(spot.id.venue.as_str(), "BITMEX");
                 assert_eq!(spot.raw_symbol.as_str(), "XBTUSD");
@@ -2665,7 +2668,7 @@ mod tests {
 
         // Check it's a CryptoPerpetual variant
         match result {
-            nautilus_model::instruments::InstrumentAny::CryptoPerpetual(perp) => {
+            InstrumentAny::CryptoPerpetual(perp) => {
                 assert_eq!(perp.id.symbol.as_str(), "XBTUSD");
                 assert_eq!(perp.id.venue.as_str(), "BITMEX");
                 assert_eq!(perp.raw_symbol.as_str(), "XBTUSD");
@@ -2689,7 +2692,7 @@ mod tests {
 
         // Check it's a CryptoFuture variant
         match result {
-            nautilus_model::instruments::InstrumentAny::CryptoFuture(instrument) => {
+            InstrumentAny::CryptoFuture(instrument) => {
                 assert_eq!(instrument.id.symbol.as_str(), "XBTH25");
                 assert_eq!(instrument.id.venue.as_str(), "BITMEX");
                 assert_eq!(instrument.raw_symbol.as_str(), "XBTH25");

@@ -74,7 +74,7 @@ impl LighterHttpClientInner {
 
         let response = self
             .client
-            .request(Method::GET, url, None, None, None, None)
+            .request(Method::GET, url, None, None, None, None, None)
             .await
             .map_err(|e| LighterHttpError::Other(e.to_string()))?;
 
@@ -93,7 +93,7 @@ impl LighterHttpClientInner {
 
         let response = self
             .client
-            .request(Method::GET, url, None, None, None, None)
+            .request(Method::GET, url, None, None, None, None, None)
             .await
             .map_err(|e| LighterHttpError::Other(e.to_string()))?;
 
@@ -112,7 +112,7 @@ impl LighterHttpClientInner {
 
         let response = self
             .client
-            .request(Method::GET, url, None, None, None, None)
+            .request(Method::GET, url, None, None, None, None, None)
             .await
             .map_err(|e| LighterHttpError::Other(e.to_string()))?;
 
@@ -131,7 +131,7 @@ impl LighterHttpClientInner {
 
         let response = self
             .client
-            .request(Method::GET, url, None, None, None, None)
+            .request(Method::GET, url, None, None, None, None, None)
             .await
             .map_err(|e| LighterHttpError::Other(e.to_string()))?;
 
@@ -150,7 +150,7 @@ impl LighterHttpClientInner {
 
         let response = self
             .client
-            .request(Method::GET, url, None, None, None, None)
+            .request(Method::GET, url, None, None, None, None, None)
             .await
             .map_err(|e| LighterHttpError::Other(e.to_string()))?;
 
@@ -170,7 +170,7 @@ impl LighterHttpClientInner {
 
             let response = self
                 .client
-                .request(Method::GET, url, None, None, None, None)
+                .request(Method::GET, url, None, None, None, None, None)
                 .await
                 .map_err(|e| LighterHttpError::Other(e.to_string()))?;
 

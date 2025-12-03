@@ -72,8 +72,8 @@ class TestDataMessage:
         assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
 
+        handler = []
         with pytest.raises(ValueError) as e:
-            handler = []
             RequestData(
                 data_type=DataType(QuoteTick),
                 instrument_id=None,
@@ -87,6 +87,7 @@ class TestDataMessage:
                 ts_init=self.clock.timestamp_ns(),
                 params=None,
             )
+
         assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
 
@@ -129,7 +130,8 @@ class TestDataMessage:
             f"client_id=None, "
             f"venue=BINANCE, "
             f"data_type=Data{{'type': 'newswire'}}, "
-            f"id={command_id}, params={{'filter': 'ABC'}})"
+            f"id={command_id}, "
+            f"correlation_id=None, params={{'filter': 'ABC'}})"
         )
 
     def test_venue_data_command_str_and_repr(self):
@@ -155,7 +157,8 @@ class TestDataMessage:
             f"client_id=BINANCE, "
             f"venue=BINANCE, "
             f"data_type=TradeTick{{'instrument_id': 'BTCUSDT'}}, "
-            f"id={command_id})"
+            f"id={command_id}, "
+            f"correlation_id=None)"
         )
 
     def test_data_request_message_str_and_repr(self):
@@ -190,7 +193,8 @@ class TestDataMessage:
         )
         assert repr(request) == (
             f"RequestData(data_type=Data{{'instrument_id': InstrumentId('SOMETHING.RANDOM')}}, "
-            f"instrument_id=SOMETHING.RANDOM, start=None, end=None, limit=1000, client_id=None, venue=BINANCE, callback={handler!r}, id={request_id})"
+            f"instrument_id=SOMETHING.RANDOM, start=None, end=None, limit=1000, client_id=None, "
+            f"venue=BINANCE, callback={handler!r}, id={request_id}, correlation_id=None)"
         )
 
     def test_venue_data_request_message_str_and_repr(self):
@@ -325,7 +329,7 @@ class TestDataMessage:
         assert request.client_id == ClientId("TEST")
         assert request.venue == instrument_id.venue
         assert request.callback == callback
-        assert request.id == command_id
+        assert request.correlation_id == command_id
         assert "subscription_name" in request.params
         assert request.params["subscription_name"] == "OrderBookDepth10.AUD/USD.SIM"
 

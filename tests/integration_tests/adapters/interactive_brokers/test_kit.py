@@ -712,7 +712,7 @@ class IBTestExecStubs:
             "isOmsContainer": False,
             "discretionaryUpToLimitPrice": False,
             "autoCancelDate": "",
-            "filledQuantity": Decimal("170141183460469231731687303715884105727"),
+            "filledQuantity": Decimal(170141183460469231731687303715884105727),
             "refFuturesConId": 0,
             "autoCancelParent": False,
             "shareholder": "",

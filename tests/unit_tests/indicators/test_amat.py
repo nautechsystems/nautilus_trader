@@ -42,7 +42,7 @@ class TestArcherMovingAveragesTrends:
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange, Act
-        for _i in range(20):
+        for _ in range(20):
             self.amat.update_raw(109.61)
 
         # Assert
@@ -99,7 +99,7 @@ class TestArcherMovingAveragesTrends:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(1000):
+        for _ in range(1000):
             self.amat.update_raw(109.93)
 
         # Act

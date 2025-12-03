@@ -1,4 +1,5 @@
-FROM python:3.13-slim AS base
+# Pin to specific digest for supply-chain security (python:3.13-slim as of 2025-11-29)
+FROM python@sha256:326df678c20c78d465db501563f3492d17c42a4afe33a1f2bf5406a1d56b0e86 AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=off \

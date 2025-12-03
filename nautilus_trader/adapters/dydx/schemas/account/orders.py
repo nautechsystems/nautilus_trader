@@ -100,7 +100,7 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=False):
         filled_qty = (
             Quantity(Decimal(self.totalFilled), size_precision)
             if self.totalFilled is not None
-            else Quantity(Decimal("0"), size_precision)
+            else Quantity(Decimal(0), size_precision)
         )
         ts_last = dt_to_unix_nanos(self.updatedAt) if self.updatedAt is not None else ts_init
         trigger_type = (

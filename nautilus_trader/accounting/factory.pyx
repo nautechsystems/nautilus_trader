@@ -100,6 +100,23 @@ cdef class AccountFactory:
         _ISSUER_CASH_BORROWING[issuer] = True
 
     @staticmethod
+    def deregister_cash_borrowing(str issuer):
+        """
+        Deregister cash borrowing for the given issuer.
+
+        This is primarily intended for test cleanup to prevent global state leakage.
+
+        Parameters
+        ----------
+        issuer : str
+            The issuer to deregister.
+
+        """
+        Condition.not_none(issuer, "issuer")
+
+        _ISSUER_CASH_BORROWING.pop(issuer, None)
+
+    @staticmethod
     cdef Account create_c(AccountState event):
         Condition.not_none(event, "event")
 

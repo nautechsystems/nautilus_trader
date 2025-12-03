@@ -272,6 +272,7 @@ impl GateioHttpClient {
             .request(
                 method,
                 url.to_string(),
+                None,
                 Some(headers),
                 Some(body.as_bytes().to_vec()),
                 None,

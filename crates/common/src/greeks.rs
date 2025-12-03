@@ -221,7 +221,7 @@ pub struct PortfolioGreeksParams {
     pub vega_time_weight_base: Option<i32>,
 }
 
-impl std::fmt::Debug for PortfolioGreeksParams {
+impl Debug for PortfolioGreeksParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(PortfolioGreeksParams))
             .field("underlyings", &self.underlyings)

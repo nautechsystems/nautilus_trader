@@ -23,7 +23,6 @@ Usage:
 """
 
 import asyncio
-import logging
 import os
 import sys
 import uuid
@@ -44,31 +43,22 @@ async def main():
     """
     Test Hyperliquid testnet order placement.
     """
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-
     private_key = os.getenv("HYPERLIQUID_TESTNET_PK")
     if not private_key:
-        logging.error("HYPERLIQUID_TESTNET_PK not set")
+        print("Error: HYPERLIQUID_TESTNET_PK not set")
         sys.exit(1)
 
-    logging.info(f"Private key from environment: {private_key[:10]}...{private_key[-8:]}")
-
     try:
-        logging.info("Creating HTTP client with credentials...")
         http_client = HyperliquidHttpClient(
             private_key=private_key,
             vault_address=None,
             is_testnet=True,
             timeout_secs=None,
         )
-        logging.info("✓ Client created")
 
         # Verify the derived address
         address = http_client.get_user_address()
-        logging.info(f"Derived wallet address: {address}")
-        logging.info("Expected address: 0x09bab0ad3c86DE1ad847a57c0C0A7A0F3f44be8a")
 
-        logging.info("Loading instruments...")
         instruments = await http_client.load_instrument_definitions(
             include_perp=True,
             include_spot=False,
@@ -79,10 +69,8 @@ async def main():
 
         http_client.add_instrument(instrument)
         http_client.set_account_id(f"HYPERLIQUID-{address}")
-        logging.info(f"✓ Instrument: {instrument.id}")
 
         # Get current BTC price
-        logging.info("Fetching BTC order book...")
         import json
 
         book_json = await http_client.get_l2_book("BTC")
@@ -91,12 +79,6 @@ async def main():
 
         # Place order at best bid minus $100
         limit_price = int(best_bid - 100)  # $100 below best bid for safety
-
-        # Use 0.001 BTC (same as Rust binary)
-        quantity = 0.001
-
-        logging.info(f"Best bid: ${best_bid}, Order price: ${limit_price}")
-        logging.info(f"Quantity: {quantity} BTC (~${quantity * limit_price:.2f} notional)")
 
         cloid_hex = "0x" + uuid.UUID(UUID4().value).hex
         order = LimitOrder(
@@ -115,18 +97,17 @@ async def main():
             ts_init=0,
         )
 
-        logging.info("Submitting order...")
         report = await http_client.submit_order(order)
-        logging.info("=" * 60)
-        logging.info("✓ ORDER SUBMITTED SUCCESSFULLY!")
-        logging.info(f"  Client Order ID: {report.client_order_id}")
-        logging.info(f"  Venue Order ID:  {report.venue_order_id}")
-        logging.info(f"  Order Status:    {report.order_status}")
-        logging.info(f"  Filled Qty:      {report.filled_qty}")
-        logging.info("=" * 60)
+        print("=" * 60)
+        print("✓ ORDER SUBMITTED SUCCESSFULLY!")
+        print(f"  Client Order ID: {report.client_order_id}")
+        print(f"  Venue Order ID:  {report.venue_order_id}")
+        print(f"  Order Status:    {report.order_status}")
+        print(f"  Filled Qty:      {report.filled_qty}")
+        print("=" * 60)
     except Exception as e:
-        logging.error(f"Error: {e}", exc_info=True)
-        sys.exit(1)
+        print(f"Error: {e}")
+        raise
 
 
 if __name__ == "__main__":

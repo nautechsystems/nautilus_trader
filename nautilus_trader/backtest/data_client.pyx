@@ -16,10 +16,8 @@
 """
 This module provides a data client for backtesting.
 """
-
-from libc.stdint cimport uint64_t
-
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.core.uuid import UUID4
 
 from nautilus_trader.backtest.models cimport SpreadQuoteAggregator
 from nautilus_trader.cache.cache cimport Cache
@@ -595,9 +593,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
                 instrument_id=component_id,
                 client_id=command.client_id,
                 venue=command.venue,
-                command_id=command.id,
+                command_id=UUID4(),
                 ts_init=command.ts_init,
                 params=command.params,
+                correlation_id=command.id,
             )
 
             # Send command to message bus for normal treatment

@@ -333,15 +333,16 @@ def on_data(self, data: Data):
 
 Binance uses an interval-based rate limiting system where request weight is tracked per fixed time window (e.g., every minute resets at :00 seconds). The adapter uses token bucket rate limiters to approximate this behavior, helping to reduce the risk of quota violations while maintaining high throughput for normal trading operations.
 
-| Key / Endpoint        | Limit (weight/min) | Notes                                                 |
-|-----------------------|--------------------|-------------------------------------------------------|
-| `binance:global`      | Spot: 6,000<br>Futures: 2,400 | Default bucket applied to every request.   |
-| `/api/v3/order`       | 3,000              | Spot order placement.                                 |
-| `/api/v3/allOrders`   | 150                | Spot all-orders endpoint (20× weight multiplier).     |
-| `/api/v3/klines`      | 600                | Spot historical klines.                               |
-| `/fapi/v1/order`      | 1,200              | Futures order placement.                              |
-| `/fapi/v1/allOrders`  | 60                 | Futures historical orders (20× multiplier).           |
-| `/fapi/v1/klines`     | 600                | Futures historical klines.                            |
+| Key / Endpoint           | Limit (weight/min) | Notes                                                 |
+|--------------------------|--------------------| ------------------------------------------------------|
+| `binance:global`         | Spot: 6,000<br>Futures: 2,400 | Default bucket applied to every request.   |
+| `/api/v3/order`          | 3,000              | Spot order placement.                                 |
+| `/api/v3/allOrders`      | 150                | Spot all-orders endpoint (20× weight multiplier).     |
+| `/api/v3/klines`         | 600                | Spot historical klines.                               |
+| `/fapi/v1/order`         | 1,200              | Futures order placement.                              |
+| `/fapi/v1/allOrders`     | 60                 | Futures historical orders (20× multiplier).           |
+| `/fapi/v1/commissionRate`| 120                | Futures commission rate query (20× multiplier).       |
+| `/fapi/v1/klines`        | 600                | Futures historical klines.                            |
 
 Binance assigns request weight dynamically (e.g. `/klines` scales with `limit`). The quotas above mirror the static limits but the client still draws a single token per call, so long history pulls may need manual pacing to respect the live `X-MBX-USED-WEIGHT-*` headers.
 
@@ -569,6 +570,32 @@ ticks between a `start_time` and `end_time`.
 
 To use aggregated trades and the endpoint features, set the `use_agg_trade_ticks` option
 to `True` (this is `False` by default.)
+
+### Commission rate queries
+
+By default, Binance Futures instruments use fee tier tables based on your VIP level.
+For market maker accounts with negative maker fees or when precise rates are required,
+enable per-symbol commission rate queries:
+
+```python
+from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
+
+instrument_provider=BinanceInstrumentProviderConfig(
+    load_all=True,
+    query_commission_rates=True,  # Query accurate rates per symbol
+)
+```
+
+When enabled, the adapter queries Binance's `/fapi/v1/commissionRate` endpoint for
+each symbol in parallel during instrument loading. This is particularly useful for:
+
+- Market maker accounts with negative maker fees.
+- Accounts with custom fee arrangements.
+- Ensuring exact commission rates for PnL calculations.
+
+The adapter uses parallel requests with proper rate limiting (120 requests/minute
+accounting for the endpoint's weight of 20). If a query fails, it automatically
+falls back to the fee tier table.
 
 ### Parser warnings
 

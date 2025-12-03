@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashSet;
-
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::prelude::*;
@@ -206,11 +204,17 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.bids_filtered_as_map(depth, own_book, status, accepted_buffer_ns, ts_now)
+        self.bids_filtered_as_map(
+            depth,
+            own_book,
+            status.map(|s| s.into_iter().collect()),
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
     #[pyo3(name = "asks_filtered_to_dict")]
@@ -219,11 +223,17 @@ impl OrderBook {
         &self,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
-        self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, ts_now)
+        self.asks_filtered_as_map(
+            depth,
+            own_book,
+            status.map(|s| s.into_iter().collect()),
+            accepted_buffer_ns,
+            ts_now,
+        )
     }
 
     #[pyo3(name = "group_bids_filtered")]
@@ -233,7 +243,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -241,7 +251,7 @@ impl OrderBook {
             group_size,
             depth,
             own_book,
-            status,
+            status.map(|s| s.into_iter().collect()),
             accepted_buffer_ns,
             ts_now,
         )
@@ -254,7 +264,7 @@ impl OrderBook {
         group_size: Decimal,
         depth: Option<usize>,
         own_book: Option<&OwnOrderBook>,
-        status: Option<HashSet<OrderStatus>>,
+        status: Option<std::collections::HashSet<OrderStatus>>,
         accepted_buffer_ns: Option<u64>,
         ts_now: Option<u64>,
     ) -> IndexMap<Decimal, Decimal> {
@@ -262,7 +272,7 @@ impl OrderBook {
             group_size,
             depth,
             own_book,
-            status,
+            status.map(|s| s.into_iter().collect()),
             accepted_buffer_ns,
             ts_now,
         )

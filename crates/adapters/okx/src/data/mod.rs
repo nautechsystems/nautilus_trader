@@ -15,19 +15,17 @@
 
 //! Live market data client implementation for the OKX adapter.
 
-use std::{
-    future::Future,
-    sync::{
-        Arc, RwLock,
-        atomic::{AtomicBool, Ordering},
-    },
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicBool, Ordering},
 };
 
 use ahash::AHashMap;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use futures_util::StreamExt;
+use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -40,7 +38,6 @@ use nautilus_common::{
             UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
-    runner::get_data_event_sender,
 };
 use nautilus_core::{
     MUTEX_POISONED, UnixNanos,
@@ -60,6 +57,7 @@ use crate::{
     common::{
         consts::OKX_VENUE,
         enums::{OKXBookChannel, OKXContractType, OKXInstrumentType, OKXVipLevel},
+        parse::okx_instrument_type_from_symbol,
     },
     config::OKXDataClientConfig,
     http::client::OKXHttpClient,
@@ -80,7 +78,6 @@ pub struct OKXDataClient {
     instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
     book_channels: Arc<RwLock<AHashMap<InstrumentId, OKXBookChannel>>>,
     clock: &'static AtomicTime,
-    instrument_refresh_active: bool,
 }
 
 impl OKXDataClient {
@@ -118,9 +115,15 @@ impl OKXDataClient {
             )?
         };
 
-        let ws_public =
-            OKXWebSocketClient::new(Some(config.ws_public_url()), None, None, None, None, None)
-                .context("failed to construct OKX public websocket client")?;
+        let ws_public = OKXWebSocketClient::new(
+            Some(config.ws_public_url()),
+            None,
+            None,
+            None,
+            None,
+            Some(20), // Heartbeat
+        )
+        .context("failed to construct OKX public websocket client")?;
 
         let ws_business = if config.requires_business_ws() {
             Some(
@@ -130,7 +133,7 @@ impl OKXDataClient {
                     config.api_secret.clone(),
                     config.api_passphrase.clone(),
                     None,
-                    None,
+                    Some(20), // Heartbeat
                 )
                 .context("failed to construct OKX business websocket client")?,
             )
@@ -158,7 +161,6 @@ impl OKXDataClient {
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             book_channels: Arc::new(RwLock::new(AHashMap::new())),
             clock,
-            instrument_refresh_active: false,
         })
     }
 
@@ -176,21 +178,9 @@ impl OKXDataClient {
             .context("public websocket client not initialized")
     }
 
-    fn public_ws_mut(&mut self) -> anyhow::Result<&mut OKXWebSocketClient> {
-        self.ws_public
-            .as_mut()
-            .context("public websocket client not initialized")
-    }
-
     fn business_ws(&self) -> anyhow::Result<&OKXWebSocketClient> {
         self.ws_business
             .as_ref()
-            .context("business websocket client not available (credentials required)")
-    }
-
-    fn business_ws_mut(&mut self) -> anyhow::Result<&mut OKXWebSocketClient> {
-        self.ws_business
-            .as_mut()
             .context("business websocket client not available (credentials required)")
     }
 
@@ -209,61 +199,6 @@ impl OKXDataClient {
                 tracing::error!("{context}: {e:?}");
             }
         });
-    }
-
-    async fn bootstrap_instruments(&mut self) -> anyhow::Result<Vec<InstrumentAny>> {
-        let instrument_types = if self.config.instrument_types.is_empty() {
-            vec![OKXInstrumentType::Spot]
-        } else {
-            self.config.instrument_types.clone()
-        };
-
-        let mut collected: Vec<InstrumentAny> = Vec::new();
-
-        for inst_type in instrument_types {
-            let mut instruments = self
-                .http_client
-                .request_instruments(inst_type, None)
-                .await
-                .with_context(|| format!("failed to load instruments for {inst_type:?}"))?;
-            instruments.retain(|instrument| self.contract_filter(instrument));
-            tracing::debug!(
-                "loaded {count} instruments for {inst_type:?}",
-                count = instruments.len()
-            );
-            collected.extend(instruments);
-        }
-
-        if collected.is_empty() {
-            tracing::warn!("No OKX instruments were loaded");
-            return Ok(collected);
-        }
-
-        self.http_client.cache_instruments(collected.clone());
-
-        if let Some(ws) = self.ws_public.as_mut() {
-            ws.initialize_instruments_cache(collected.clone());
-        }
-        if let Some(ws) = self.ws_business.as_mut() {
-            ws.initialize_instruments_cache(collected.clone());
-        }
-
-        {
-            let mut guard = self
-                .instruments
-                .write()
-                .expect("instrument cache lock poisoned");
-            guard.clear();
-            for instrument in &collected {
-                guard.insert(instrument.id(), instrument.clone());
-            }
-        }
-
-        Ok(collected)
-    }
-
-    fn contract_filter(&self, instrument: &InstrumentAny) -> bool {
-        contract_filter_with_config(&self.config, instrument)
     }
 
     fn handle_ws_message(
@@ -287,6 +222,7 @@ impl OKXDataClient {
                 upsert_instrument(instruments, *instrument);
             }
             NautilusWsMessage::AccountUpdate(_)
+            | NautilusWsMessage::PositionUpdate(_)
             | NautilusWsMessage::OrderRejected(_)
             | NautilusWsMessage::OrderCancelRejected(_)
             | NautilusWsMessage::OrderModifyRejected(_)
@@ -302,138 +238,10 @@ impl OKXDataClient {
             NautilusWsMessage::Reconnected => {
                 tracing::info!("Websocket reconnected");
             }
-        }
-    }
-
-    fn spawn_public_stream(&mut self) -> anyhow::Result<()> {
-        let ws = self.public_ws_mut()?;
-        let stream = ws.stream();
-        self.spawn_stream_task(stream)
-    }
-
-    fn spawn_business_stream(&mut self) -> anyhow::Result<()> {
-        if self.ws_business.is_none() {
-            return Ok(());
-        }
-
-        let ws = self.business_ws_mut()?;
-        let stream = ws.stream();
-        self.spawn_stream_task(stream)
-    }
-
-    fn spawn_stream_task(
-        &mut self,
-        stream: impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static,
-    ) -> anyhow::Result<()> {
-        let data_sender = self.data_sender.clone();
-        let instruments = self.instruments.clone();
-        let cancellation = self.cancellation_token.clone();
-
-        let handle = tokio::spawn(async move {
-            tokio::pin!(stream);
-
-            loop {
-                tokio::select! {
-                    maybe_msg = stream.next() => {
-                        match maybe_msg {
-                            Some(msg) => {
-                                Self::handle_ws_message(msg, &data_sender, &instruments);
-                            }
-                            None => {
-                                tracing::debug!("Websocket stream ended");
-                                break;
-                            }
-                        }
-                    }
-                    _ = cancellation.cancelled() => {
-                        tracing::debug!("Websocket stream task cancelled");
-                        break;
-                    }
-                }
+            NautilusWsMessage::Authenticated => {
+                tracing::debug!("Websocket authenticated");
             }
-        });
-
-        self.tasks.push(handle);
-        Ok(())
-    }
-
-    fn maybe_spawn_instrument_refresh(&mut self) -> anyhow::Result<()> {
-        let Some(minutes) = self.config.update_instruments_interval_mins else {
-            return Ok(());
-        };
-
-        if minutes == 0 || self.instrument_refresh_active {
-            return Ok(());
         }
-
-        let interval_secs = minutes.saturating_mul(60);
-        if interval_secs == 0 {
-            return Ok(());
-        }
-
-        let interval = Duration::from_secs(interval_secs);
-        let cancellation = self.cancellation_token.clone();
-        let instruments_cache = Arc::clone(&self.instruments);
-        let http_client = self.http_client.clone();
-        let config = self.config.clone();
-        let client_id = self.client_id;
-
-        let handle = tokio::spawn(async move {
-            loop {
-                let sleep = tokio::time::sleep(interval);
-                tokio::pin!(sleep);
-                tokio::select! {
-                    _ = cancellation.cancelled() => {
-                        tracing::debug!("OKX instrument refresh task cancelled");
-                        break;
-                    }
-                    _ = &mut sleep => {
-                        let instrument_types = if config.instrument_types.is_empty() {
-                            vec![OKXInstrumentType::Spot]
-                        } else {
-                            config.instrument_types.clone()
-                        };
-
-                        let mut collected: Vec<InstrumentAny> = Vec::new();
-
-                        for inst_type in instrument_types {
-                            match http_client.request_instruments(inst_type, None).await {
-                                Ok(mut instruments) => {
-                                    instruments.retain(|instrument| contract_filter_with_config(&config, instrument));
-                                    collected.extend(instruments);
-                                }
-                                Err(e) => {
-                                    tracing::warn!(client_id=%client_id, instrument_type=?inst_type, error=?e, "Failed to refresh OKX instruments for type");
-                                }
-                            }
-                        }
-
-                        if collected.is_empty() {
-                            tracing::debug!(client_id=%client_id, "OKX instrument refresh yielded no instruments");
-                            continue;
-                        }
-
-                        http_client.cache_instruments(collected.clone());
-
-                        {
-                            let mut guard = instruments_cache
-                                .write()
-                                .expect("instrument cache lock poisoned");
-                            guard.clear();
-                            for instrument in &collected {
-                                guard.insert(instrument.id(), instrument.clone());
-                            }
-                        }
-
-                        tracing::debug!(client_id=%client_id, count=collected.len(), "OKX instruments refreshed");
-                    }
-                }
-            }
-        });
-
-        self.tasks.push(handle);
-        self.instrument_refresh_active = true;
-        Ok(())
     }
 }
 
@@ -466,7 +274,14 @@ fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
 }
 
 fn contract_filter_with_config(config: &OKXDataClientConfig, instrument: &InstrumentAny) -> bool {
-    match config.contract_types.as_ref() {
+    contract_filter_with_config_types(config.contract_types.as_ref(), instrument)
+}
+
+fn contract_filter_with_config_types(
+    contract_types: Option<&Vec<OKXContractType>>,
+    instrument: &InstrumentAny,
+) -> bool {
+    match contract_types {
         None => true,
         Some(filter) if filter.is_empty() => true,
         Some(filter) => {
@@ -477,7 +292,7 @@ fn contract_filter_with_config(config: &OKXDataClientConfig, instrument: &Instru
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 impl DataClient for OKXDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
@@ -504,7 +319,6 @@ impl DataClient for OKXDataClient {
         tracing::info!("Stopping OKX data client {id}", id = self.client_id);
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
-        self.instrument_refresh_active = false;
         Ok(())
     }
 
@@ -517,7 +331,6 @@ impl DataClient for OKXDataClient {
             .write()
             .expect("book channel cache lock poisoned")
             .clear();
-        self.instrument_refresh_active = false;
         Ok(())
     }
 
@@ -531,64 +344,126 @@ impl DataClient for OKXDataClient {
             return Ok(());
         }
 
-        self.bootstrap_instruments().await?;
-
-        {
-            let ws_public = self.public_ws_mut()?;
-            ws_public
-                .connect()
-                .await
-                .context("failed to connect OKX public websocket")?;
-            ws_public
-                .wait_until_active(10.0)
-                .await
-                .context("public websocket did not become active")?;
-        }
-
         let instrument_types = if self.config.instrument_types.is_empty() {
             vec![OKXInstrumentType::Spot]
         } else {
             self.config.instrument_types.clone()
         };
 
-        let public_clone = self.public_ws()?.clone();
+        let mut all_instruments = Vec::new();
+        for inst_type in &instrument_types {
+            let mut fetched = self
+                .http_client
+                .request_instruments(*inst_type, None)
+                .await
+                .with_context(|| format!("failed to request OKX instruments for {inst_type:?}"))?;
 
-        self.spawn_ws(
-            async move {
-                for inst_type in instrument_types {
-                    public_clone
-                        .subscribe_instruments(inst_type)
-                        .await
-                        .with_context(|| {
-                            format!("failed to subscribe to instrument type {inst_type:?}")
-                        })?;
-                }
-                Ok(())
-            },
-            "instrument subscription",
-        );
+            fetched.retain(|instrument| contract_filter_with_config(&self.config, instrument));
+            self.http_client.cache_instruments(fetched.clone());
 
-        self.spawn_public_stream()?;
-
-        if self.ws_business.is_some() {
-            {
-                let ws_business = self.business_ws_mut()?;
-                ws_business
-                    .connect()
-                    .await
-                    .context("failed to connect OKX business websocket")?;
-                ws_business
-                    .wait_until_active(10.0)
-                    .await
-                    .context("business websocket did not become active")?;
+            let mut guard = self.instruments.write().expect(MUTEX_POISONED);
+            for instrument in &fetched {
+                guard.insert(instrument.id(), instrument.clone());
             }
-            self.spawn_business_stream()?;
+            drop(guard);
+
+            all_instruments.extend(fetched);
         }
 
-        self.maybe_spawn_instrument_refresh()?;
+        for instrument in all_instruments {
+            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                tracing::warn!("Failed to send instrument: {e}");
+            }
+        }
 
-        self.is_connected.store(true, Ordering::Relaxed);
-        tracing::info!("OKX data client connected");
+        if let Some(ref mut ws) = self.ws_public {
+            // Cache instruments to websocket before connecting so handler has them
+            let instruments: Vec<_> = self
+                .instruments
+                .read()
+                .expect(MUTEX_POISONED)
+                .values()
+                .cloned()
+                .collect();
+            ws.cache_instruments(instruments);
+
+            ws.connect()
+                .await
+                .context("failed to connect OKX public websocket")?;
+            ws.wait_until_active(10.0)
+                .await
+                .context("public websocket did not become active")?;
+
+            let stream = ws.stream();
+            let sender = self.data_sender.clone();
+            let insts = self.instruments.clone();
+            let cancel = self.cancellation_token.clone();
+            let handle = tokio::spawn(async move {
+                pin_mut!(stream);
+                loop {
+                    tokio::select! {
+                        Some(message) = stream.next() => {
+                            Self::handle_ws_message(message, &sender, &insts);
+                        }
+                        _ = cancel.cancelled() => {
+                            tracing::debug!("Public websocket stream task cancelled");
+                            break;
+                        }
+                    }
+                }
+            });
+            self.tasks.push(handle);
+
+            for inst_type in &instrument_types {
+                ws.subscribe_instruments(*inst_type)
+                    .await
+                    .with_context(|| {
+                        format!("failed to subscribe to instrument type {inst_type:?}")
+                    })?;
+            }
+        }
+
+        if let Some(ref mut ws) = self.ws_business {
+            // Cache instruments to websocket before connecting so handler has them
+            let instruments: Vec<_> = self
+                .instruments
+                .read()
+                .expect(MUTEX_POISONED)
+                .values()
+                .cloned()
+                .collect();
+            ws.cache_instruments(instruments);
+
+            ws.connect()
+                .await
+                .context("failed to connect OKX business websocket")?;
+            ws.wait_until_active(10.0)
+                .await
+                .context("business websocket did not become active")?;
+
+            let stream = ws.stream();
+            let sender = self.data_sender.clone();
+            let insts = self.instruments.clone();
+            let cancel = self.cancellation_token.clone();
+            let handle = tokio::spawn(async move {
+                pin_mut!(stream);
+                loop {
+                    tokio::select! {
+                        Some(message) = stream.next() => {
+                            Self::handle_ws_message(message, &sender, &insts);
+                        }
+                        _ = cancel.cancelled() => {
+                            tracing::debug!("Business websocket stream task cancelled");
+                            break;
+                        }
+                    }
+                }
+            });
+            self.tasks.push(handle);
+        }
+
+        self.is_connected.store(true, Ordering::Release);
+        tracing::info!(client_id = %self.client_id, "Connected");
         Ok(())
     }
 
@@ -599,41 +474,37 @@ impl DataClient for OKXDataClient {
 
         self.cancellation_token.cancel();
 
-        if let Some(ws) = self.ws_public.as_ref()
+        if let Some(ref ws) = self.ws_public
             && let Err(e) = ws.unsubscribe_all().await
         {
             tracing::warn!("Failed to unsubscribe all from public websocket: {e:?}");
         }
-        if let Some(ws) = self.ws_business.as_ref()
+        if let Some(ref ws) = self.ws_business
             && let Err(e) = ws.unsubscribe_all().await
         {
             tracing::warn!("Failed to unsubscribe all from business websocket: {e:?}");
         }
 
-        // Brief delay to allow unsubscribe confirmations to be processed
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Allow time for unsubscribe confirmations
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
-        if let Some(ws) = self.ws_public.as_mut() {
+        if let Some(ref mut ws) = self.ws_public {
             let _ = ws.close().await;
         }
-        if let Some(ws) = self.ws_business.as_mut() {
+        if let Some(ref mut ws) = self.ws_business {
             let _ = ws.close().await;
         }
 
-        for handle in self.tasks.drain(..) {
+        let handles: Vec<_> = self.tasks.drain(..).collect();
+        for handle in handles {
             if let Err(e) = handle.await {
                 tracing::error!("Error joining websocket task: {e}");
             }
         }
 
-        self.cancellation_token = CancellationToken::new();
-        self.is_connected.store(false, Ordering::Relaxed);
-        self.book_channels
-            .write()
-            .expect("book channel cache lock poisoned")
-            .clear();
-        self.instrument_refresh_active = false;
-        tracing::info!("OKX data client disconnected");
+        self.book_channels.write().expect(MUTEX_POISONED).clear();
+        self.is_connected.store(false, Ordering::Release);
+        tracing::info!(client_id = %self.client_id, "Disconnected");
         Ok(())
     }
 
@@ -646,7 +517,6 @@ impl DataClient for OKXDataClient {
     }
 
     fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
-        // Subscribe to instruments channel for all configured instrument types
         for inst_type in &self.config.instrument_types {
             let ws = self.public_ws()?.clone();
             let inst_type = *inst_type;
@@ -1003,58 +873,180 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
-        let instruments = {
-            let guard = self
-                .instruments
-                .read()
-                .expect("instrument cache lock poisoned");
-            guard.values().cloned().collect::<Vec<_>>()
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instruments_cache = self.instruments.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let venue = self.venue();
+        let start = request.start;
+        let end = request.end;
+        let params = request.params.clone();
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+        let instrument_types = if self.config.instrument_types.is_empty() {
+            vec![OKXInstrumentType::Spot]
+        } else {
+            self.config.instrument_types.clone()
         };
+        let contract_types = self.config.contract_types.clone();
+        let instrument_families = self.config.instrument_families.clone();
 
-        let response = DataResponse::Instruments(InstrumentsResponse::new(
-            request.request_id,
-            request.client_id.unwrap_or(self.client_id),
-            self.venue(),
-            instruments,
-            datetime_to_unix_nanos(request.start),
-            datetime_to_unix_nanos(request.end),
-            self.clock.get_time_ns(),
-            request.params.clone(),
-        ));
+        tokio::spawn(async move {
+            let mut all_instruments = Vec::new();
 
-        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send instruments response: {e}");
-        }
+            for inst_type in instrument_types {
+                let supports_family = matches!(
+                    inst_type,
+                    OKXInstrumentType::Futures
+                        | OKXInstrumentType::Swap
+                        | OKXInstrumentType::Option
+                );
+
+                let families = match (&instrument_families, inst_type, supports_family) {
+                    (Some(families), OKXInstrumentType::Option, true) => families.clone(),
+                    (Some(families), _, true) => families.clone(),
+                    (None, OKXInstrumentType::Option, _) => {
+                        tracing::warn!(
+                            "Skipping OPTION type: instrument_families required but not configured"
+                        );
+                        continue;
+                    }
+                    _ => vec![],
+                };
+
+                if families.is_empty() {
+                    match http.request_instruments(inst_type, None).await {
+                        Ok(instruments) => {
+                            for instrument in instruments {
+                                if !contract_filter_with_config_types(
+                                    contract_types.as_ref(),
+                                    &instrument,
+                                ) {
+                                    continue;
+                                }
+
+                                upsert_instrument(&instruments_cache, instrument.clone());
+                                all_instruments.push(instrument);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to fetch instruments for {inst_type:?}: {e:?}");
+                        }
+                    }
+                } else {
+                    for family in families {
+                        match http
+                            .request_instruments(inst_type, Some(family.clone()))
+                            .await
+                        {
+                            Ok(instruments) => {
+                                for instrument in instruments {
+                                    if !contract_filter_with_config_types(
+                                        contract_types.as_ref(),
+                                        &instrument,
+                                    ) {
+                                        continue;
+                                    }
+
+                                    upsert_instrument(&instruments_cache, instrument.clone());
+                                    all_instruments.push(instrument);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed to fetch instruments for {inst_type:?} family {family}: {e:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            let response = DataResponse::Instruments(InstrumentsResponse::new(
+                request_id,
+                client_id,
+                venue,
+                all_instruments,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                params,
+            ));
+
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                tracing::error!("Failed to send instruments response: {e}");
+            }
+        });
 
         Ok(())
     }
 
     fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
-        let instrument = {
-            let guard = self
-                .instruments
-                .read()
-                .expect("instrument cache lock poisoned");
-            guard
-                .get(&request.instrument_id)
-                .cloned()
-                .context("instrument not found in cache")?
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instruments = self.instruments.clone();
+        let instrument_id = request.instrument_id;
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let start = request.start;
+        let end = request.end;
+        let params = request.params.clone();
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+        let instrument_types = if self.config.instrument_types.is_empty() {
+            vec![OKXInstrumentType::Spot]
+        } else {
+            self.config.instrument_types.clone()
         };
+        let contract_types = self.config.contract_types.clone();
 
-        let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-            request.request_id,
-            request.client_id.unwrap_or(self.client_id),
-            instrument.id(),
-            instrument,
-            datetime_to_unix_nanos(request.start),
-            datetime_to_unix_nanos(request.end),
-            self.clock.get_time_ns(),
-            request.params.clone(),
-        )));
+        tokio::spawn(async move {
+            match http
+                .request_instrument(instrument_id)
+                .await
+                .context("fetch instrument from API")
+            {
+                Ok(instrument) => {
+                    let inst_id = instrument.id();
+                    let symbol = inst_id.symbol.as_str();
+                    let inst_type = okx_instrument_type_from_symbol(symbol);
+                    if !instrument_types.contains(&inst_type) {
+                        tracing::error!(
+                            "Instrument {instrument_id} type {inst_type:?} not in configured types {instrument_types:?}"
+                        );
+                        return;
+                    }
 
-        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
-            tracing::error!("Failed to send instrument response: {e}");
-        }
+                    if !contract_filter_with_config_types(contract_types.as_ref(), &instrument) {
+                        tracing::error!(
+                            "Instrument {instrument_id} filtered out by contract_types config"
+                        );
+                        return;
+                    }
+
+                    upsert_instrument(&instruments, instrument.clone());
+
+                    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                        request_id,
+                        client_id,
+                        instrument.id(),
+                        instrument,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    )));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send instrument response: {e}");
+                    }
+                }
+                Err(e) => tracing::error!("Instrument request failed: {e:?}"),
+            }
+        });
 
         Ok(())
     }

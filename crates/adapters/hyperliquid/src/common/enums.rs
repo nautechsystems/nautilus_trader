@@ -15,7 +15,7 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus};
+use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus, OrderType, TriggerType};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
@@ -262,7 +262,7 @@ pub enum HyperliquidTriggerPriceType {
     Oracle,
 }
 
-impl From<HyperliquidTriggerPriceType> for nautilus_model::enums::TriggerType {
+impl From<HyperliquidTriggerPriceType> for TriggerType {
     fn from(value: HyperliquidTriggerPriceType) -> Self {
         match value {
             HyperliquidTriggerPriceType::Last => Self::LastPrice,
@@ -272,12 +272,12 @@ impl From<HyperliquidTriggerPriceType> for nautilus_model::enums::TriggerType {
     }
 }
 
-impl From<nautilus_model::enums::TriggerType> for HyperliquidTriggerPriceType {
-    fn from(value: nautilus_model::enums::TriggerType) -> Self {
+impl From<TriggerType> for HyperliquidTriggerPriceType {
+    fn from(value: TriggerType) -> Self {
         match value {
-            nautilus_model::enums::TriggerType::LastPrice => Self::Last,
-            nautilus_model::enums::TriggerType::MarkPrice => Self::Mark,
-            nautilus_model::enums::TriggerType::IndexPrice => Self::Oracle,
+            TriggerType::LastPrice => Self::Last,
+            TriggerType::MarkPrice => Self::Mark,
+            TriggerType::IndexPrice => Self::Oracle,
             _ => Self::Last, // Default fallback
         }
     }
@@ -322,7 +322,7 @@ pub enum HyperliquidConditionalOrderType {
     TrailingStopLimit,
 }
 
-impl From<HyperliquidConditionalOrderType> for nautilus_model::enums::OrderType {
+impl From<HyperliquidConditionalOrderType> for OrderType {
     fn from(value: HyperliquidConditionalOrderType) -> Self {
         match value {
             HyperliquidConditionalOrderType::StopMarket => Self::StopMarket,
@@ -335,16 +335,16 @@ impl From<HyperliquidConditionalOrderType> for nautilus_model::enums::OrderType 
     }
 }
 
-impl From<nautilus_model::enums::OrderType> for HyperliquidConditionalOrderType {
-    fn from(value: nautilus_model::enums::OrderType) -> Self {
+impl From<OrderType> for HyperliquidConditionalOrderType {
+    fn from(value: OrderType) -> Self {
         match value {
-            nautilus_model::enums::OrderType::StopMarket => Self::StopMarket,
-            nautilus_model::enums::OrderType::StopLimit => Self::StopLimit,
-            nautilus_model::enums::OrderType::MarketIfTouched => Self::TakeProfitMarket,
-            nautilus_model::enums::OrderType::LimitIfTouched => Self::TakeProfitLimit,
-            nautilus_model::enums::OrderType::TrailingStopMarket => Self::TrailingStopMarket,
-            nautilus_model::enums::OrderType::TrailingStopLimit => Self::TrailingStopLimit,
-            _ => panic!("Unsupported OrderType for conditional orders: {:?}", value),
+            OrderType::StopMarket => Self::StopMarket,
+            OrderType::StopLimit => Self::StopLimit,
+            OrderType::MarketIfTouched => Self::TakeProfitMarket,
+            OrderType::LimitIfTouched => Self::TakeProfitLimit,
+            OrderType::TrailingStopMarket => Self::TrailingStopMarket,
+            OrderType::TrailingStopLimit => Self::TrailingStopLimit,
+            _ => panic!("Unsupported OrderType for conditional orders: {value:?}"),
         }
     }
 }
@@ -432,6 +432,40 @@ impl From<bool> for HyperliquidLiquidityFlag {
     fn from(crossed: bool) -> Self {
         if crossed { Self::Taker } else { Self::Maker }
     }
+}
+
+/// Hyperliquid liquidation method.
+#[derive(
+    Clone, Copy, Debug, Display, PartialEq, Eq, Hash, Serialize, Deserialize, AsRefStr, EnumString,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum HyperliquidLiquidationMethod {
+    Market,
+    Backstop,
+}
+
+/// Hyperliquid position type/mode.
+#[derive(
+    Clone, Copy, Debug, Display, PartialEq, Eq, Hash, Serialize, Deserialize, AsRefStr, EnumString,
+)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "camelCase")]
+pub enum HyperliquidPositionType {
+    OneWay,
+}
+
+/// Hyperliquid TWAP order status.
+#[derive(
+    Clone, Copy, Debug, Display, PartialEq, Eq, Hash, Serialize, Deserialize, AsRefStr, EnumString,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum HyperliquidTwapStatus {
+    Activated,
+    Terminated,
+    Finished,
+    Error,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -626,6 +660,160 @@ pub fn hyperliquid_status_to_order_status(status: &str) -> OrderStatus {
         "rejected" => OrderStatus::Rejected,
         "expired" => OrderStatus::Expired,
         _ => OrderStatus::Rejected,
+    }
+}
+
+/// Represents the direction of a fill (open/close position).
+///
+/// For perpetuals:
+/// - OpenLong: Opening a long position
+/// - OpenShort: Opening a short position
+/// - CloseLong: Closing an existing long position
+/// - CloseShort: Closing an existing short position
+///
+/// For spot:
+/// - Sell: Selling an asset
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "PascalCase")]
+#[strum(serialize_all = "PascalCase")]
+pub enum HyperliquidFillDirection {
+    /// Opening a long position.
+    #[serde(rename = "Open Long")]
+    #[strum(serialize = "Open Long")]
+    OpenLong,
+    /// Opening a short position.
+    #[serde(rename = "Open Short")]
+    #[strum(serialize = "Open Short")]
+    OpenShort,
+    /// Closing an existing long position.
+    #[serde(rename = "Close Long")]
+    #[strum(serialize = "Close Long")]
+    CloseLong,
+    /// Closing an existing short position.
+    #[serde(rename = "Close Short")]
+    #[strum(serialize = "Close Short")]
+    CloseShort,
+    /// Selling an asset (spot only).
+    Sell,
+}
+
+/// Represents info request types for the Hyperliquid info endpoint.
+///
+/// These correspond to the "type" field in info endpoint requests.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "camelCase")]
+pub enum HyperliquidInfoRequestType {
+    /// Get metadata about available markets.
+    Meta,
+    /// Get spot metadata (tokens and pairs).
+    SpotMeta,
+    /// Get metadata with asset contexts (for price precision).
+    MetaAndAssetCtxs,
+    /// Get spot metadata with asset contexts.
+    SpotMetaAndAssetCtxs,
+    /// Get L2 order book for a coin.
+    L2Book,
+    /// Get user fills.
+    UserFills,
+    /// Get order status for a user.
+    OrderStatus,
+    /// Get all open orders for a user.
+    OpenOrders,
+    /// Get frontend open orders (includes more detail).
+    FrontendOpenOrders,
+    /// Get user state (balances, positions, margin).
+    ClearinghouseState,
+    /// Get candle/bar data.
+    CandleSnapshot,
+}
+
+impl HyperliquidInfoRequestType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Meta => "meta",
+            Self::SpotMeta => "spotMeta",
+            Self::MetaAndAssetCtxs => "metaAndAssetCtxs",
+            Self::SpotMetaAndAssetCtxs => "spotMetaAndAssetCtxs",
+            Self::L2Book => "l2Book",
+            Self::UserFills => "userFills",
+            Self::OrderStatus => "orderStatus",
+            Self::OpenOrders => "openOrders",
+            Self::FrontendOpenOrders => "frontendOpenOrders",
+            Self::ClearinghouseState => "clearinghouseState",
+            Self::CandleSnapshot => "candleSnapshot",
+        }
+    }
+}
+
+/// Hyperliquid product type.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.hyperliquid")
+)]
+#[serde(rename_all = "UPPERCASE")]
+#[strum(serialize_all = "UPPERCASE")]
+pub enum HyperliquidProductType {
+    /// Perpetual futures.
+    Perp,
+    /// Spot markets.
+    Spot,
+}
+
+impl HyperliquidProductType {
+    /// Extract product type from an instrument symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if symbol doesn't match expected format.
+    pub fn from_symbol(symbol: &str) -> anyhow::Result<Self> {
+        if symbol.ends_with("-PERP") {
+            Ok(Self::Perp)
+        } else if symbol.ends_with("-SPOT") {
+            Ok(Self::Spot)
+        } else {
+            anyhow::bail!("Invalid Hyperliquid symbol format: {symbol}")
+        }
     }
 }
 

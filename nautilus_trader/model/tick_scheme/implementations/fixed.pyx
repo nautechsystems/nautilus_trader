@@ -18,6 +18,7 @@ from nautilus_trader.core.rust.model cimport PRICE_RAW_MAX
 from nautilus_trader.core.rust.model cimport PRICE_RAW_MIN
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
+from nautilus_trader.model.tick_scheme.base cimport is_close
 from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
 from nautilus_trader.model.tick_scheme.base cimport round_down
 from nautilus_trader.model.tick_scheme.base cimport round_up
@@ -56,8 +57,17 @@ cdef class FixedTickScheme(TickScheme):
     ):
         super().__init__(name=name, min_tick=min_tick, max_tick=max_tick)
         self.price_precision = price_precision
-        self.increment = Price.from_str(str(increment or "0." + "1".zfill(price_precision)))
+
+        if increment is not None:
+            self.increment = Price.from_str(str(increment))
+        elif price_precision == 0:
+            self.increment = Price.from_int(1)
+        else:
+            self.increment = Price.from_str("0." + "1".zfill(price_precision))
+
         self._increment = self.increment.as_f64_c()
+        self._min_price = min_tick.as_f64_c()
+        self._max_price = max_tick.as_f64_c()
 
     cpdef Price next_ask_price(self, double value, int n=0):
         """
@@ -77,10 +87,17 @@ cdef class FixedTickScheme(TickScheme):
         Price
 
         """
-        if value > self.max_price:
+        if n < 0:
+            raise ValueError(f"n must be >= 0, was {n}")
+
+        if value < self._min_price or value > self._max_price:
             return None
 
         cdef double rounded = round_up(value=value, base=self._increment) + (n * self._increment)
+
+        if (rounded < self._min_price and not is_close(rounded, self._min_price)) or \
+           (rounded > self._max_price and not is_close(rounded, self._max_price)):
+            return None
 
         return Price(rounded, precision=self.price_precision)
 
@@ -102,10 +119,17 @@ cdef class FixedTickScheme(TickScheme):
         Price
 
         """
-        if value < self.min_price:
+        if n < 0:
+            raise ValueError(f"n must be >= 0, was {n}")
+
+        if value < self._min_price:
             return None
 
         cdef double rounded = round_down(value=value, base=self._increment) - (n * self._increment)
+
+        if (rounded < self._min_price and not is_close(rounded, self._min_price)) or \
+           (rounded > self._max_price and not is_close(rounded, self._max_price)):
+            return None
 
         return Price(rounded, precision=self.price_precision)
 

@@ -45,18 +45,18 @@ if product_type == BybitProductType.SPOT:
     symbol = f"ETHUSDT-{product_type.value.upper()}"
     order_qty = Decimal("0.01")
     order_params = {"is_leverage": True}
-    enable_sells = False
+    enable_limit_sells = False
     use_spot_position_reports = True  # CAUTION: Experimental feature
 elif product_type == BybitProductType.LINEAR:
     symbol = f"ETHUSDT-{product_type.value.upper()}"
     order_qty = Decimal("0.01")
     order_params = {}
-    enable_sells = True
+    enable_limit_sells = True
     use_spot_position_reports = False
 elif product_type == BybitProductType.INVERSE:
     symbol = f"XRPUSD-{product_type.value.upper()}"
-    order_qty = Decimal("50")
-    enable_sells = True
+    order_qty = Decimal(50)
+    enable_limit_sells = True
     use_spot_position_reports = False
 else:
     raise NotImplementedError
@@ -139,7 +139,11 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            # instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=InstrumentProviderConfig(
+                load_all=False,
+                load_ids=frozenset(reconciliation_instrument_ids),
+            ),
             product_types=product_types,
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
@@ -151,7 +155,11 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             base_url_ws_private=None,  # Override with custom endpoint
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            # instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=InstrumentProviderConfig(
+                load_all=False,
+                load_ids=frozenset(reconciliation_instrument_ids),
+            ),
             product_types=product_types,
             use_spot_position_reports=use_spot_position_reports,
             demo=False,  # If client uses the demo API
@@ -175,7 +183,7 @@ config_tester = ExecTesterConfig(
     subscribe_quotes=True,
     subscribe_trades=True,
     # subscribe_book=True,
-    enable_sells=enable_sells,
+    enable_limit_sells=enable_limit_sells,
     # enable_stop_buys=True,  # Test stop orders
     # enable_stop_sells=True,  # Test stop orders
     # enable_brackets=True,
@@ -184,7 +192,7 @@ config_tester = ExecTesterConfig(
     # tob_offset_ticks=0,
     use_post_only=True,
     # test_reject_post_only=True,
-    # reduce_only_on_stop=False,  # Not supported for Bybit SPOT
+    reduce_only_on_stop=False,  # Not supported for Bybit SPOT
     # cancel_orders_on_stop=False,
     # close_positions_on_stop=False,
     # use_batch_cancel_on_stop=True,

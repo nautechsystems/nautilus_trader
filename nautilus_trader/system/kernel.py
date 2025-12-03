@@ -598,6 +598,7 @@ class NautilusKernel:
             rotation_interval=config.rotation_interval,
             rotation_time=config.rotation_time,
             rotation_timezone=config.rotation_timezone,
+            replace=config.replace_existing,
         )
         self._trader.subscribe("*", self._writer.write)
         self._log.info(f"Writing data & events to {path}")
@@ -1344,7 +1345,7 @@ class NautilusKernel:
 
     async def _await_portfolio_initialization(self) -> bool:
         self._log.info(
-            "Awaiting portfolio initialization " f"({self._config.timeout_portfolio}s timeout)...",
+            f"Awaiting portfolio initialization ({self._config.timeout_portfolio}s timeout)...",
             color=LogColor.BLUE,
         )
 

@@ -55,7 +55,7 @@ impl EvmPrivateKey {
 
         // Convert to lowercase for consistency
         let normalized = hex_key.to_lowercase();
-        let formatted = format!("0x{}", normalized);
+        let formatted = format!("0x{normalized}");
 
         // Parse to bytes for validation
         let raw_bytes = hex::decode(&normalized)
@@ -208,11 +208,6 @@ impl Secrets {
 
     /// Create secrets from explicit private key and vault address.
     ///
-    /// # Arguments
-    ///
-    /// * `private_key_str` - The private key hex string (with or without 0x prefix)
-    /// * `vault_address_str` - Optional vault address for vault trading
-    ///
     /// # Errors
     ///
     /// Returns an error if the private key or vault address is invalid.
@@ -354,7 +349,7 @@ mod tests {
     #[rstest]
     fn test_evm_private_key_debug_redacts() {
         let key = EvmPrivateKey::new(TEST_PRIVATE_KEY.to_string()).unwrap();
-        let debug_str = format!("{:?}", key);
+        let debug_str = format!("{key:?}");
         assert_eq!(debug_str, "EvmPrivateKey(***redacted***)");
         assert!(!debug_str.contains("1234"));
     }
@@ -376,7 +371,7 @@ mod tests {
     #[rstest]
     fn test_vault_address_debug_redacts_middle() {
         let addr = VaultAddress::parse(TEST_VAULT_ADDRESS).unwrap();
-        let debug_str = format!("{:?}", addr);
+        let debug_str = format!("{addr:?}");
         assert!(debug_str.starts_with("VaultAddress(0x1234"));
         assert!(debug_str.ends_with("7890)"));
         assert!(debug_str.contains("..."));
@@ -386,11 +381,10 @@ mod tests {
     fn test_secrets_from_json() {
         let json = format!(
             r#"{{
-            "privateKey": "{}",
-            "vaultAddress": "{}",
+            "privateKey": "{TEST_PRIVATE_KEY}",
+            "vaultAddress": "{TEST_VAULT_ADDRESS}",
             "network": "testnet"
-        }}"#,
-            TEST_PRIVATE_KEY, TEST_VAULT_ADDRESS
+        }}"#
         );
 
         let secrets = Secrets::from_json(&json).unwrap();
@@ -404,9 +398,8 @@ mod tests {
     fn test_secrets_from_json_minimal() {
         let json = format!(
             r#"{{
-            "privateKey": "{}"
-        }}"#,
-            TEST_PRIVATE_KEY
+            "privateKey": "{TEST_PRIVATE_KEY}"
+        }}"#
         );
 
         let secrets = Secrets::from_json(&json).unwrap();
@@ -434,28 +427,6 @@ mod tests {
 
         for (input, expected) in test_cases {
             assert_eq!(normalize_address(input).unwrap(), expected);
-        }
-    }
-
-    #[rstest]
-    #[ignore = "This test modifies environment variables - run manually if needed"]
-    fn test_secrets_from_env() {
-        // Note: This test requires setting environment variables manually
-        // HYPERLIQUID_PK=1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
-        // HYPERLIQUID_VAULT=0x1234567890abcdef1234567890abcdef12345678
-        // HYPERLIQUID_NETWORK=testnet
-
-        // For now, just test the error case when variables are not set
-        match Secrets::from_env() {
-            Err(e) => {
-                assert!(
-                    e.to_string().contains("HYPERLIQUID_PK")
-                        || e.to_string().contains("environment variable not set")
-                );
-            }
-            Ok(_) => {
-                // If environment variables are actually set, that's fine too
-            }
         }
     }
 }

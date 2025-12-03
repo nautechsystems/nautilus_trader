@@ -185,11 +185,7 @@ pub fn check_consistent_symbology(symbols: &[&str]) -> anyhow::Result<()> {
         let next_stype = infer_symbology_type(symbol);
         if next_stype != first_stype {
             anyhow::bail!(
-                "Inconsistent symbology types: '{}' for {} vs '{}' for {}",
-                first_stype,
-                first_symbol,
-                next_stype,
-                symbol
+                "Inconsistent symbology types: '{first_stype}' for {first_symbol} vs '{next_stype}' for {symbol}"
             );
         }
     }

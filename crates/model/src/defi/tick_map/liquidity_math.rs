@@ -32,11 +32,7 @@ pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
         let z = x.wrapping_sub(delta);
         assert!(
             z < x,
-            "Liquidity subtraction underflow: x={}, y={}, delta={}, result={}",
-            x,
-            y,
-            delta,
-            z
+            "Liquidity subtraction underflow: x={x}, y={y}, delta={delta}, result={z}"
         );
         z
     } else {
@@ -44,11 +40,7 @@ pub fn liquidity_math_add(x: u128, y: i128) -> u128 {
         let z = x.wrapping_add(delta);
         assert!(
             z >= x,
-            "Liquidity addition overflow: x={}, y={}, delta={}, result={}",
-            x,
-            y,
-            delta,
-            z
+            "Liquidity addition overflow: x={x}, y={y}, delta={delta}, result={z}"
         );
         z
     }

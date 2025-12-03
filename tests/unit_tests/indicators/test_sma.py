@@ -165,7 +165,7 @@ class TestSimpleMovingAverage:
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        for _i in range(1000):
+        for _ in range(1000):
             self.sma.update_raw(1.0)
 
         # Act

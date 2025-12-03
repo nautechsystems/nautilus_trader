@@ -81,7 +81,7 @@ impl BacktestDataIterator {
         }
 
         // Ensure sorted by ts_init
-        data.sort_by_key(nautilus_model::data::HasTsInit::ts_init);
+        data.sort_by_key(HasTsInit::ts_init);
 
         let priority = if let Some(p) = self.priorities.get(name) {
             // Replace existing stream – remove previous traces then re-insert below.

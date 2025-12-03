@@ -52,13 +52,14 @@
 
 use std::{path::Path, time::Duration};
 
+use nautilus_common::live::runtime::shutdown_runtime;
 use pyo3::{prelude::*, pyfunction};
 
 const RUNTIME_SHUTDOWN_TIMEOUT_SECS: u64 = 10;
 
 #[pyfunction]
 fn _shutdown_nautilus_runtime() -> PyResult<()> {
-    nautilus_common::runtime::shutdown_runtime(Duration::from_secs(RUNTIME_SHUTDOWN_TIMEOUT_SECS));
+    shutdown_runtime(Duration::from_secs(RUNTIME_SHUTDOWN_TIMEOUT_SECS));
     Ok(())
 }
 
@@ -83,6 +84,7 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Set pyo3_nautilus to be recognized as a subpackage
     sys_modules.set_item(module_name, m)?;
 
+    // nautilus-import-ok: wrap_pymodule! requires fully qualified paths
     let n = "analysis";
     let submodule = pyo3::wrap_pymodule!(nautilus_analysis::python::analysis);
     m.add_wrapped(submodule)?;
@@ -206,8 +208,22 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
+    let n = "dydx";
+    let submodule = pyo3::wrap_pymodule!(nautilus_dydx::python::dydx);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
     let n = "hyperliquid";
     let submodule = pyo3::wrap_pymodule!(nautilus_hyperliquid::python::hyperliquid);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    #[cfg(feature = "cython-compat")]
+    re_export_module_attributes(m, n)?;
+
+    let n = "kraken";
+    let submodule = pyo3::wrap_pymodule!(nautilus_kraken::python::kraken);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     #[cfg(feature = "cython-compat")]
@@ -229,6 +245,7 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[cfg(feature = "defi")]
     {
+        // nautilus-import-ok: wrap_pymodule! requires fully qualified paths
         let n = "blockchain";
         let submodule = pyo3::wrap_pymodule!(nautilus_blockchain::python::blockchain);
         m.add_wrapped(submodule)?;

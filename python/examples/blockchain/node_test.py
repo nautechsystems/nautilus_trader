@@ -21,7 +21,7 @@ mirroring the capabilities shown in crates/adapters/blockchain/bin/node_test.rs
 
 """
 
-# ruff: noqa (under development)
+# ruff: noqa: F401
 
 import os
 

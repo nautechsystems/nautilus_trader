@@ -8,8 +8,10 @@ members = [
   "crates/adapters/coinbase_intx",
   "crates/adapters/asterdex2",
   "crates/adapters/databento",
+  "crates/adapters/dydx",
   "crates/adapters/gateio2",
   "crates/adapters/hyperliquid",
+  "crates/adapters/kraken",
   "crates/adapters/hyperliquid2",
   "crates/adapters/lighter2",
   "crates/adapters/okx",
@@ -40,7 +42,7 @@ members = [
 [workspace.package]
 version = "0.52.0"
 edition = "2024"
-rust-version = "1.91.0"
+rust-version = "1.91.1"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
 readme = "README.md"
@@ -88,7 +90,9 @@ nautilus-bybit = { path = "crates/adapters/bybit", version = "0.52.0" }
 nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.52.0" }
 nautilus-bitmex = { path = "crates/adapters/bitmex", version = "0.52.0" }
 nautilus-databento = { path = "crates/adapters/databento", version = "0.52.0" }
+nautilus-dydx = { path = "crates/adapters/dydx", version = "0.52.0" }
 nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.52.0" }
+nautilus-kraken = { path = "crates/adapters/kraken", version = "0.52.0" }
 nautilus-hyperliquid2 = { path = "crates/adapters/hyperliquid2", version = "0.52.0" }
 nautilus-okx = { path = "crates/adapters/okx", version = "0.52.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
@@ -96,56 +100,62 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
 # -----------------------------------------------------------------------------
 # Dependencies
 # -----------------------------------------------------------------------------
-ahash = "0.8.12"
-alloy = { version = "1.0.42", default-features = false, features = [
+ahash = { version = "0.8.12", features = ["serde"] }
+alloy = { version = "1.1.2", default-features = false, features = [
   "sol-types",
   "contract",
 ] }
 alloy-primitives = { version = "1.4.1", features = ["serde"] }
-alloy-signer = { version = "1.0.42", default-features = false }
-alloy-signer-local = { version = "1.0.42", default-features = false, features = [
+alloy-signer = { version = "1.1.2", default-features = false }
+alloy-signer-local = { version = "1.1.2", default-features = false, features = [
   "mnemonic",
 ] }
 anyhow = "1.0.100"
+arc-swap = "1.7.1"
 arraydeque = "0.5.1"
 # Keep arrow major version in line with datafusion
-arrow = { version = "56.2.0", default-features = false, features = [
+arrow = { version = "57.1.0", default-features = false, features = [
   "csv",
   "json",
   "ipc",
 ] }
 async-stream = "0.3.6"
 async-trait = "0.1.89"
-aws-lc-rs = { version = "1.14.1", default-features = false, features = [
+aws-lc-rs = { version = "1.15.1", default-features = false, features = [
   "non-fips",
 ] }
 base64 = "0.22.1"
 binary-heap-plus = "0.5.0"
-bytes = { version = "1.10.1", features = ["serde"] }
+bip32 = "0.5.3"
+bytes = { version = "1.11.0", features = ["serde"] }
+capnp = "0.23.0"
 chrono = { version = "0.4.42", default-features = false, features = [
   "serde",
   "std",
   "clock",
 ] }
 chrono-tz = "0.10.4"
-clap = { version = "4.5.51", features = ["derive", "env"] }
+clap = { version = "4.5.53", features = ["derive", "env"] }
 compare = "0.1.0"
+cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
 dashmap = "6.1.0"
-databento = { version = "0.35.0", default-features = false, features = [
+databento = { version = "0.36.0", default-features = false, features = [
   "historical",
   "live",
 ] }
-datafusion = { version = "50.3.0", default-features = false, features = [
+datafusion = { version = "51.0.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
+  "sql",
 ] }
 deranged = "0.5.5"
 derive_builder = { version = "0.20.2", default-features = false, features = [
   "alloc",
 ] }
 dotenvy = "0.15.7"
+dydx-proto = "0.4.0"
 ed25519-dalek = "2.2.0"
 enum_dispatch = "0.3.13"
 evalexpr = "=11.3.1" # Pinned to v11.3.1 for MIT licensing
@@ -159,14 +169,14 @@ futures-util = "0.3.31"
 heck = "0.5.0"
 hex = "0.4.3"
 hostname = "0.4.1"
-http = "1.3.1"
-hypersync-client = { version = "0.19.0" }
-hypersync-schema = { version = "0.3.0" }
+http = "1.4.0"
+hypersync-client = { version = "0.22.0" }
+hypersync-schema = { version = "0.3.1" }
 implied-vol = { version = "2.0.0" }
-indexmap = { version = "2.12.0", features = ["serde"] }
+indexmap = { version = "2.12.1", features = ["serde"] }
 itertools = "0.14.0"
 itoa = "1.0.15"
-log = { version = "0.4.28", features = [
+log = { version = "0.4.29", features = [
   "std",
   "kv_unstable",
   "serde",
@@ -182,12 +192,15 @@ object_store = { version = "0.12.4", default-features = false, features = [
   "http",
 ] }
 # Keep parquet major version in line with datafusion
-parquet = { version = "56.2.0", default-features = false, features = [
+parquet = { version = "57.1.0", default-features = false, features = [
   "arrow",
   "async",
 ] }
 pem = "3.0.6"
-pyo3 = { version = "0.27.1", default-features = false, features = [
+# Keep prost in sync with dydx-proto
+prost = { version = "0.13.5", default-features = false, features = ["std"] }
+prost-types = "0.13.5"
+pyo3 = { version = "0.27.2", default-features = false, features = [
   "chrono",
   "hashbrown",
   "indexmap",
@@ -229,7 +242,7 @@ reqwest = { version = "0.12.24", default-features = false, features = [
 rmp-serde = "1.3.0"
 rust_decimal = "1.39.0"
 rust_decimal_macros = "1.39.0"
-rustls = { version = "0.23.34", default-features = false, features = [
+rustls = { version = "0.23.35", default-features = false, features = [
   "aws-lc-rs",
   "std",
 ] }
@@ -246,6 +259,7 @@ serde_json = { version = "1.0.145", default-features = false, features = [
 ] }
 serde_repr = "0.1.20"
 serde_urlencoded = "0.7.1"
+serde_with = "3.16.1"
 simple_logger = "5.1.0"
 static_assertions = "1.1.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
@@ -253,6 +267,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
   "runtime-tokio",
   "json",
   "derive",
+  "rust_decimal",
 ] }
 strum = { version = "0.27.2", features = ["derive"] }
 sysinfo = { version = "0.37.2", default-features = false, features = [
@@ -285,17 +300,23 @@ tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.28.0", features = [
   "rustls-tls-webpki-roots",
 ] }
-tokio-util = { version = "0.7.16", default-features = false, features = ["io"] }
+tokio-util = { version = "0.7.17", default-features = false, features = ["io"] }
+# Keep tonic in sync with dydx-proto
+tonic = { version = "0.13.1", default-features = false, features = [
+  "channel",
+  "tls-aws-lc",
+  "tls-webpki-roots",
+] }
 toml = { version = "0.9.8", default-features = false, features = [
   "parse",
   "serde",
 ] }
-tracing = { version = "0.1.41", default-features = false, features = [
+tracing = { version = "0.1.43", default-features = false, features = [
   "std",
   "attributes",
 ] }
 # Disable default feature "tracing-log" since it interferes with custom logging
-tracing-subscriber = { version = "0.3.20", default-features = false, features = [
+tracing-subscriber = { version = "0.3.22", default-features = false, features = [
   "smallvec",
   "fmt",
   "ansi",
@@ -307,21 +328,21 @@ unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.7", default-features = false }
 urlencoding = "2.1.3"
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.18.1", features = ["v4", "serde"] }
+uuid = { version = "1.19.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.4"
 zeroize = { version = "1.8.2", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
 # Dev dependencies
 # -----------------------------------------------------------------------------
-axum = { version = "0.8.6", default-features = false, features = [
+axum = { version = "0.8.7", default-features = false, features = [
   "tokio",
   "http1",
   "json",
   "query",
   "ws",
 ] }
-criterion = "0.7.0"
+criterion = "0.8.0"
 http-body-util = "0.1.3"
 iai = "0.1.1"
 pretty_assertions = "1.4.1"
@@ -329,22 +350,29 @@ proptest = "1.9.0"
 rstest = "0.26.1"
 tempfile = "3.23.0"
 tracing-test = "0.2.5"
-turmoil = "0.6.6"
+turmoil = "0.7.0"
 
 # -----------------------------------------------------------------------------
 # Build dependencies
 # -----------------------------------------------------------------------------
+capnpc = "0.23.2"
 cbindgen = "0.29.2"
+walkdir = "2.5.0"
 
 # -----------------------------------------------------------------------------
 # Tools (for cargo install, used by Makefile and CI)
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
-cargo-audit = "0.21.2"
-cargo-deny = "0.18.5"
+cargo-audit = "0.22.0"
+cargo-deny = "0.18.7"
 cargo-llvm-cov = "0.6.21"
-cargo-nextest = "0.9.108"
+cargo-nextest = "0.9.114"
+cargo-vet = "0.10.1"
 lychee = "0.21.0"
+
+# cargo-vet supply chain security configuration
+[workspace.metadata.vet]
+store = { path = '.supply-chain' }
 
 # -----------------------------------------------------------------------------
 # Profiles
@@ -440,15 +468,51 @@ cloned_instead_of_copied = "warn"
 
 # Code simplification
 redundant_closure = "warn"
+# redundant_closure_for_method_calls = "warn" # Causes clippy ICE (rust-lang/rust-clippy#14756)
 needless_return = "warn"
+needless_bool = "warn"
+needless_collect = "warn"
 collapsible_if = "warn"
+collapsible_else_if = "warn"
 useless_conversion = "warn"
+from_iter_instead_of_collect = "warn"
+map_identity = "warn"
+if_same_then_else = "warn"
+get_first = "warn"
+single_char_pattern = "warn"
+identity_op = "warn"
+
+# Iterator simplifications
+manual_flatten = "warn"
+iter_kv_map = "warn"
+bytes_count_to_len = "warn"
+unnecessary_filter_map = "warn"
+
+# Option/Result simplifications
+unnecessary_lazy_evaluations = "warn"
+option_as_ref_deref = "warn"
+
+# Manual pattern simplifications
+manual_filter = "warn"
+manual_find = "warn"
+manual_while_let_some = "warn"
+range_plus_one = "warn"
+checked_conversions = "warn"
+manual_strip = "warn"
+manual_split_once = "warn"
+manual_is_ascii_check = "warn"
+manual_range_contains = "warn"
+manual_string_new = "warn"
+manual_instant_elapsed = "warn"
 
 # Style/idioms
 use_self = "warn"
 redundant_field_names = "warn"
 match_like_matches_macro = "warn"
 manual_map = "warn"
+bool_to_int_with_if = "warn"
+explicit_iter_loop = "warn"
+uninlined_format_args = "warn"
 
 # Pedantic (explicitness and clarity)
 semicolon_if_nothing_returned = "warn"
@@ -457,3 +521,21 @@ filter_map_next = "warn"
 flat_map_option = "warn"
 map_unwrap_or = "warn"
 implicit_clone = "warn"
+return_self_not_must_use = "warn"
+
+# Security and robustness
+suspicious_doc_comments = "warn"
+large_stack_arrays = "warn"
+panic_in_result_fn = "warn"
+
+# Explicitly allowed (opinionated lints we disagree with)
+redundant_else = "allow" # Sometimes explicit else blocks improve readability
+single_match_else = "allow" # Match can be clearer than if-let-else for some patterns
+manual_let_else = "allow" # Match can be clearer than let-else for some patterns
+or_fun_call = "allow" # Used consistently for display with map_or("None".to_string(), ...)
+option_if_let_else = "allow" # if-let can be clearer than map_or/map_or_else
+
+# TODO: Enable these incrementally (widespread usage in codebase)
+# unwrap_used = "warn"        # Forces explicit error handling instead of panics
+# expect_used = "warn"        # Forces explicit error handling instead of panics
+# indexing_slicing = "warn"   # Prevents panics from out-of-bounds access

@@ -129,12 +129,13 @@ pub fn init_tracing() -> anyhow::Result<()> {
     if let Ok(v) = env::var("RUST_LOG") {
         let env_filter = EnvFilter::new(v.clone());
 
-        tracing_subscriber::fmt()
+        if tracing_subscriber::fmt()
             .with_env_filter(env_filter)
             .try_init()
-            .map_err(|e| anyhow::anyhow!("Failed to initialize tracing subscriber: {e}"))?;
-
-        println!("Initialized tracing logs with RUST_LOG={v}");
+            .is_ok()
+        {
+            println!("Initialized tracing logs with RUST_LOG={v}");
+        }
     }
     Ok(())
 }
@@ -216,7 +217,7 @@ pub fn parse_component_levels(
                 let ustr_key = Ustr::from(&key);
                 let s = value.as_str().ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Component log level for '{key}' must be a string, got: {value}"
+                        "Component log level for '{key}' must be a string, was: {value}"
                     )
                 })?;
                 let lvl = parse_level_filter_str(s)?;

@@ -57,7 +57,7 @@ class TestUUID:
         # Act, Assert
         assert uuid.value == "2d89666b-1a1e-4a75-b193-4eb3b454c758"
         assert str(uuid) == "2d89666b-1a1e-4a75-b193-4eb3b454c758"
-        assert repr(uuid) == "UUID4('2d89666b-1a1e-4a75-b193-4eb3b454c758')"
+        assert repr(uuid) == "UUID4(2d89666b-1a1e-4a75-b193-4eb3b454c758)"
 
     def test_uuid4_produces_valid_uuid4(self):
         # Arrange, Act

@@ -17,6 +17,7 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
+    enums::OrderSide,
     identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
     python::instruments::pyobject_to_instrument_any,
 };
@@ -89,6 +90,13 @@ impl CancelBroadcaster {
         };
 
         Self::new(config).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+        let inst_any = pyobject_to_instrument_any(py, instrument)?;
+        self.cache_instrument(inst_any);
+        Ok(())
     }
 
     #[pyo3(name = "start")]
@@ -164,7 +172,7 @@ impl CancelBroadcaster {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        order_side: Option<nautilus_model::enums::OrderSide>,
+        order_side: Option<OrderSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let broadcaster = self.clone_for_async();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -214,12 +222,5 @@ impl CancelBroadcaster {
             list.append(dict)?;
         }
         Ok(list.into())
-    }
-
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
-        let inst_any = pyobject_to_instrument_any(py, instrument)?;
-        self.add_instrument(inst_any);
-        Ok(())
     }
 }

@@ -613,6 +613,18 @@ impl BarAggregation {
     fn py_month() -> Self {
         Self::Month
     }
+
+    #[classattr]
+    #[pyo3(name = "YEAR")]
+    fn py_year() -> Self {
+        Self::Year
+    }
+
+    #[classattr]
+    #[pyo3(name = "RENKO")]
+    fn py_renko() -> Self {
+        Self::Renko
+    }
 }
 
 #[pymethods]

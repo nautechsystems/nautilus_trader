@@ -39,12 +39,12 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
-@pytest.fixture()
+@pytest.fixture
 def contract_details():
     return IBTestContractStubs.aapl_equity_ib_contract_details()
 
 
-@pytest.fixture()
+@pytest.fixture
 def contract(contract_details):
     return IBTestContractStubs.aapl_equity_ib_contract()
 
@@ -52,7 +52,7 @@ def contract(contract_details):
 def instrument_setup(exec_client, cache, instrument=None, contract_details=None):
     instrument = instrument or IBTestContractStubs.aapl_instrument()
     contract_details = contract_details or IBTestContractStubs.aapl_equity_contract_details()
-    exec_client._instrument_provider.contract_details[instrument.id.value] = contract_details
+    exec_client._instrument_provider.contract_details[instrument.id] = contract_details
     exec_client._instrument_provider.contract_id_to_instrument_id[
         contract_details.contract.conId
     ] = instrument.id
@@ -120,7 +120,7 @@ def on_cancel_order_setup(client, status, order_id, manual_cancel_order_time):
     )
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_factory(exec_client_config, venue, loop, msgbus, cache, clock):
     # Act
     exec_client = InteractiveBrokersLiveExecClientFactory.create(
@@ -136,7 +136,7 @@ async def test_factory(exec_client_config, venue, loop, msgbus, cache, clock):
     assert exec_client is not None
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_connect(mocker, exec_client):
     # Arrange
     mocker.patch.object(
@@ -153,7 +153,7 @@ async def test_connect(mocker, exec_client):
     assert exec_client.is_connected
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_disconnect(mocker, exec_client):
     # Arrange
     mocker.patch.object(
@@ -173,7 +173,7 @@ async def test_disconnect(mocker, exec_client):
     assert not exec_client.is_connected
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_submit_order(
     mocker,
     exec_client,
@@ -219,7 +219,7 @@ async def test_submit_order(
     assert cache.order(client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_submit_order_what_if(
     mocker,
     exec_client,
@@ -258,7 +258,7 @@ async def test_submit_order_what_if(
     assert cache.order(client_order_id).status == OrderStatus.REJECTED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_submit_order_rejected(
     mocker,
     exec_client,
@@ -271,7 +271,7 @@ async def test_submit_order_rejected(
     pass
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_submit_order_list(
     mocker,
     exec_client,
@@ -322,7 +322,7 @@ async def test_submit_order_list(
     assert cache.order(sl_client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_modify_order(
     mocker,
     exec_client,
@@ -371,7 +371,7 @@ async def test_modify_order(
     assert cache.order(client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_modify_order_quantity(
     mocker,
     exec_client,
@@ -418,7 +418,7 @@ async def test_modify_order_quantity(
     assert cache.order(client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_modify_order_price(
     mocker,
     exec_client,
@@ -464,7 +464,7 @@ async def test_modify_order_price(
     assert cache.order(client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_cancel_order(
     mocker,
     exec_client,
@@ -511,7 +511,7 @@ async def test_cancel_order(
     assert cache.order(client_order_id).status == OrderStatus.CANCELED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_exec_details(
     mocker,
     exec_client,
@@ -564,7 +564,7 @@ async def test_on_exec_details(
     assert cache.order(client_order_id).status == OrderStatus.FILLED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_order_status_with_avg_px(
     mocker,
     exec_client,
@@ -612,7 +612,7 @@ async def test_on_order_status_with_avg_px(
     assert stored_avg_px == Price.from_str("125.50")
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_exec_details_uses_stored_avg_px(
     mocker,
     exec_client,
@@ -668,7 +668,7 @@ async def test_on_exec_details_uses_stored_avg_px(
     assert cache.order(client_order_id).status == OrderStatus.FILLED
 
 
-@pytest.mark.asyncio()
+@pytest.mark.asyncio
 async def test_on_account_update(mocker, exec_client):
     # TODO:
     pass

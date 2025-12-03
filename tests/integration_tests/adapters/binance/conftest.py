@@ -44,26 +44,26 @@ def binance_http_client(session_event_loop, live_clock):
     return client
 
 
-@pytest.fixture()
+@pytest.fixture
 def venue() -> Venue:
     raise BINANCE_VENUE
 
 
-@pytest.fixture()
+@pytest.fixture
 def data_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def exec_client():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def instrument():
     pass
 
 
-@pytest.fixture()
+@pytest.fixture
 def account_state():
     pass

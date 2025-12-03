@@ -33,7 +33,11 @@ CURRENCY_MAP: Final[dict[str, str]] = {
     "USD": "USDC",
 }
 
-ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE = 32
+
+GOOD_TILL_BLOCK_ERROR_CODE: Final[int] = 11
+ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODES: Final[tuple[int, int]] = (4, 32)
+
 DYDX_RETRY_ERRORS_GRPC: Final[list[int]] = [
-    32,  # Account sequence mismatch
+    GOOD_TILL_BLOCK_ERROR_CODE,
+    *ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODES,
 ]

@@ -63,7 +63,7 @@ impl PortfolioStatistic for CalmarRatio {
 
     fn calculate_from_returns(&self, returns: &BTreeMap<UnixNanos, f64>) -> Option<Self::Item> {
         if returns.is_empty() {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
         // Calculate CAGR
@@ -76,8 +76,9 @@ impl PortfolioStatistic for CalmarRatio {
 
         // Calmar = CAGR / |Max Drawdown|
         // Max Drawdown is already negative, so we use abs
+        // When no drawdown exists, the ratio is undefined
         if max_dd.abs() < f64::EPSILON {
-            return Some(0.0);
+            return Some(f64::NAN);
         }
 
         let calmar = cagr / max_dd.abs();
@@ -85,7 +86,7 @@ impl PortfolioStatistic for CalmarRatio {
         if calmar.is_finite() {
             Some(calmar)
         } else {
-            Some(0.0)
+            Some(f64::NAN)
         }
     }
 }
@@ -124,7 +125,8 @@ mod tests {
         let ratio = CalmarRatio::new(Some(252));
         let returns = BTreeMap::new();
         let result = ratio.calculate_from_returns(&returns);
-        assert_eq!(result, Some(0.0));
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]
@@ -134,8 +136,9 @@ mod tests {
         let returns = create_returns(vec![0.01; 252]);
         let result = ratio.calculate_from_returns(&returns);
 
-        // Should be 0.0 when no drawdown (division by zero case)
-        assert_eq!(result, Some(0.0));
+        // Should be NaN when no drawdown (undefined ratio)
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
     }
 
     #[rstest]

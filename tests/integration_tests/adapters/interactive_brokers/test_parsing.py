@@ -119,7 +119,7 @@ raw_symbology_params = [
 
 
 
-@pytest.mark.parametrize("contract, instrument_id", simplified_symbology_params)
+@pytest.mark.parametrize(("contract", "instrument_id"), simplified_symbology_params)
 def test_ib_contract_to_instrument_id_simplified_symbology(contract, instrument_id):
     # Arrange, Act
     instrument_id = InstrumentId.from_str(instrument_id)
@@ -129,7 +129,7 @@ def test_ib_contract_to_instrument_id_simplified_symbology(contract, instrument_
     assert result == instrument_id
 
 
-@pytest.mark.parametrize("contract, instrument_id", raw_symbology_params)
+@pytest.mark.parametrize(("contract", "instrument_id"), raw_symbology_params)
 def test_ib_contract_to_instrument_id_raw_symbology(contract, instrument_id):
     # Arrange, Act
     instrument_id_type = InstrumentId.from_str(instrument_id)
@@ -144,7 +144,7 @@ def test_ib_contract_to_instrument_id_raw_symbology(contract, instrument_id):
     assert result == expected
 
 
-@pytest.mark.parametrize("contract, instrument_id", simplified_symbology_params)
+@pytest.mark.parametrize(("contract", "instrument_id"), simplified_symbology_params)
 def test_instrument_id_to_ib_contract_simplified_symbology(instrument_id, contract):
     # Arrange, Act
     instrument_id_type = InstrumentId.from_str(instrument_id)
@@ -155,7 +155,7 @@ def test_instrument_id_to_ib_contract_simplified_symbology(instrument_id, contra
     assert result == expected
 
 
-@pytest.mark.parametrize("contract, instrument_id", raw_symbology_params)
+@pytest.mark.parametrize(("contract", "instrument_id"), raw_symbology_params)
 def test_instrument_id_to_ib_contract_raw_symbology(instrument_id, contract):
     # Arrange, Act
     instrument_id = InstrumentId.from_str(instrument_id)

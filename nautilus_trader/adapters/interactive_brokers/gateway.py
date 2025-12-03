@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import logging
 import os
+import sys
 from enum import IntEnum
 from time import sleep
 from typing import ClassVar
@@ -214,8 +214,8 @@ class DockerizedIBGateway:
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
             self.stop()
-        except Exception:
-            logging.exception("Error stopping container")
+        except Exception as e:
+            print(f"Error stopping container: {e}", file=sys.stderr)
 
 
 # -- Exceptions -----------------------------------------------------------------------------------

@@ -659,9 +659,8 @@ class BinanceWebSocketClient:
         self._streams.remove(stream)
 
         # Remove from client's streams list
-        if client_id in self._client_streams:
-            if stream in self._client_streams[client_id]:
-                self._client_streams[client_id].remove(stream)
+        if client_id in self._client_streams and stream in self._client_streams[client_id]:
+            self._client_streams[client_id].remove(stream)
 
         # Send unsubscribe message
         msg = self._create_unsubscribe_msg(streams=[stream])

@@ -22,8 +22,9 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
-    routing::get,
+    routing::{get, post},
 };
+use chrono::Utc;
 use nautilus_bybit::{
     common::enums::{BybitAccountType, BybitProductType},
     http::{
@@ -34,30 +35,34 @@ use nautilus_bybit::{
         },
     },
 };
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::{
+    enums::PositionSideSpecified,
+    identifiers::AccountId,
+    instruments::{CurrencyPair, InstrumentAny},
+    types::{Currency, Price, Quantity},
+};
 use rstest::rstest;
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
-type SettleCoinQueries = Arc<Mutex<Vec<(String, Option<String>)>>>;
+type SettleCoinQueries = Arc<tokio::sync::Mutex<Vec<(String, Option<String>)>>>;
 
 #[allow(dead_code)]
 #[derive(Clone)]
 struct TestServerState {
-    request_count: Arc<Mutex<usize>>,
+    request_count: Arc<tokio::sync::Mutex<usize>>,
     // (endpoint, settle_coin)
     settle_coin_queries: SettleCoinQueries,
-    realtime_requests: Arc<Mutex<usize>>,
-    history_requests: Arc<Mutex<usize>>,
+    realtime_requests: Arc<tokio::sync::Mutex<usize>>,
+    history_requests: Arc<tokio::sync::Mutex<usize>>,
 }
 
 impl Default for TestServerState {
     fn default() -> Self {
         Self {
-            request_count: Arc::new(Mutex::new(0)),
-            settle_coin_queries: Arc::new(Mutex::new(Vec::new())),
-            realtime_requests: Arc::new(Mutex::new(0)),
-            history_requests: Arc::new(Mutex::new(0)),
+            request_count: Arc::new(tokio::sync::Mutex::new(0)),
+            settle_coin_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            realtime_requests: Arc::new(tokio::sync::Mutex::new(0)),
+            history_requests: Arc::new(tokio::sync::Mutex::new(0)),
         }
     }
 }
@@ -65,7 +70,7 @@ impl Default for TestServerState {
 // Load test data from existing files
 #[allow(dead_code)]
 fn load_test_data(filename: &str) -> Value {
-    let path = format!("test_data/{}", filename);
+    let path = format!("test_data/{filename}");
     let content = std::fs::read_to_string(path).unwrap();
     serde_json::from_str(&content).unwrap()
 }
@@ -404,6 +409,72 @@ async fn handle_get_fee_rate(headers: axum::http::HeaderMap) -> Response {
 }
 
 #[allow(dead_code)]
+async fn handle_no_convert_repay(
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    // Check for authentication headers
+    if !headers.contains_key("X-BAPI-API-KEY")
+        || !headers.contains_key("X-BAPI-SIGN")
+        || !headers.contains_key("X-BAPI-TIMESTAMP")
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    // Parse JSON body
+    let Ok(repay_req): Result<Value, _> = serde_json::from_slice(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "retCode": 10001,
+                "retMsg": "Invalid JSON body",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    };
+
+    // Validate required fields
+    if repay_req.get("coin").is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "retCode": 10001,
+                "retMsg": "Missing required parameter: coin",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    // Return successful repay response
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "resultStatus": "SU"
+        },
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+    .into_response()
+}
+
+#[allow(dead_code)]
 async fn handle_get_orders_realtime(
     query: Query<HashMap<String, String>>,
     State(state): State<TestServerState>,
@@ -618,11 +689,15 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/market/recent-trade", get(handle_get_trades))
         .route("/v5/order/history", get(handle_get_orders))
         .route("/v5/order/realtime", get(handle_get_orders))
-        .route("/v5/order/create", axum::routing::post(handle_post_order))
-        .route("/v5/order/cancel", axum::routing::post(handle_cancel_order))
+        .route("/v5/order/create", post(handle_post_order))
+        .route("/v5/order/cancel", post(handle_cancel_order))
         .route("/v5/account/wallet-balance", get(handle_get_wallet_balance))
         .route("/v5/position/list", get(handle_get_positions))
         .route("/v5/account/fee-rate", get(handle_get_fee_rate))
+        .route(
+            "/v5/account/no-convert-repay",
+            post(handle_no_convert_repay),
+        )
         .with_state(state)
 }
 
@@ -711,7 +786,7 @@ async fn test_custom_base_url() {
 #[tokio::test]
 async fn test_get_server_time() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -725,7 +800,7 @@ async fn test_get_server_time() {
 #[tokio::test]
 async fn test_get_instruments_linear() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -743,7 +818,7 @@ async fn test_get_instruments_linear() {
 #[tokio::test]
 async fn test_get_instruments_spot() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -761,7 +836,7 @@ async fn test_get_instruments_spot() {
 #[tokio::test]
 async fn test_get_instruments_inverse() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -779,7 +854,7 @@ async fn test_get_instruments_inverse() {
 #[tokio::test]
 async fn test_get_instruments_option() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -797,7 +872,7 @@ async fn test_get_instruments_option() {
 #[tokio::test]
 async fn test_place_order() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -831,7 +906,7 @@ async fn test_place_order() {
 #[tokio::test]
 async fn test_authenticated_endpoint_requires_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     // Create client without credentials
     let client =
@@ -839,7 +914,18 @@ async fn test_authenticated_endpoint_requires_credentials() {
 
     // Should fail when trying to call authenticated endpoint without credentials
     let result = client
-        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(
+            BybitProductType::Linear,
+            Some("BTCUSDT".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await;
     assert!(result.is_err());
 }
@@ -848,7 +934,7 @@ async fn test_authenticated_endpoint_requires_credentials() {
 #[tokio::test]
 async fn test_rate_limiting_returns_error() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -867,7 +953,18 @@ async fn test_rate_limiting_returns_error() {
     let mut last_error = None;
     for _ in 0..10 {
         match client
-            .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+            .get_open_orders(
+                BybitProductType::Linear,
+                Some("BTCUSDT".to_owned()),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .await
         {
             Ok(_) => continue,
@@ -888,7 +985,7 @@ async fn test_rate_limiting_returns_error() {
 #[tokio::test]
 async fn test_get_open_orders_with_symbol() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -904,7 +1001,18 @@ async fn test_get_open_orders_with_symbol() {
     .unwrap();
 
     let response = client
-        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(
+            BybitProductType::Linear,
+            Some("BTCUSDT".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -916,7 +1024,7 @@ async fn test_get_open_orders_with_symbol() {
 #[tokio::test]
 async fn test_get_open_orders_without_symbol() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -932,7 +1040,18 @@ async fn test_get_open_orders_without_symbol() {
     .unwrap();
 
     let response = client
-        .get_open_orders(BybitProductType::Linear, None)
+        .get_open_orders(
+            BybitProductType::Linear,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -943,7 +1062,7 @@ async fn test_get_open_orders_without_symbol() {
 #[tokio::test]
 async fn test_get_wallet_balance_requires_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     // Create client without credentials
     let client =
@@ -963,7 +1082,7 @@ async fn test_get_wallet_balance_requires_credentials() {
 #[tokio::test]
 async fn test_get_wallet_balance_with_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -997,7 +1116,7 @@ async fn test_get_wallet_balance_with_credentials() {
 #[tokio::test]
 async fn test_get_positions_requires_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -1015,7 +1134,7 @@ async fn test_get_positions_requires_credentials() {
 #[tokio::test]
 async fn test_get_positions_with_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -1044,7 +1163,7 @@ async fn test_get_positions_with_credentials() {
 #[tokio::test]
 async fn test_get_fee_rate_requires_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client =
         BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
@@ -1063,7 +1182,7 @@ async fn test_get_fee_rate_requires_credentials() {
 #[tokio::test]
 async fn test_get_fee_rate_with_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -1124,7 +1243,7 @@ async fn start_reconciliation_test_server()
 #[tokio::test]
 async fn test_request_order_status_reports_calls_both_endpoints() {
     let (addr, _state) = start_reconciliation_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -1146,7 +1265,7 @@ async fn test_request_order_status_reports_calls_both_endpoints() {
         .unwrap();
 
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1160,6 +1279,8 @@ async fn test_request_order_status_reports_calls_both_endpoints() {
             BybitProductType::Linear,
             None,    // No specific instrument - will query both USDT and USDC
             false,   // open_only=false triggers dual endpoint call
+            None,    // start
+            None,    // end
             Some(3), // Limit to 3 to keep test focused on deduplication logic
         )
         .await
@@ -1188,7 +1309,7 @@ async fn test_request_order_status_reports_calls_both_endpoints() {
 #[tokio::test]
 async fn test_request_order_status_reports_requires_settle_coin_for_linear() {
     let (addr, _state) = start_reconciliation_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -1208,7 +1329,7 @@ async fn test_request_order_status_reports_requires_settle_coin_for_linear() {
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1220,7 +1341,9 @@ async fn test_request_order_status_reports_requires_settle_coin_for_linear() {
             BybitProductType::Linear,
             None, // No symbol - requires settleCoin
             true, // open_only=true
-            None,
+            None, // start
+            None, // end
+            None, // limit
         )
         .await;
 
@@ -1231,7 +1354,7 @@ async fn test_request_order_status_reports_requires_settle_coin_for_linear() {
 #[tokio::test]
 async fn test_order_deduplication_by_order_id() {
     let (addr, _state) = start_reconciliation_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -1251,7 +1374,7 @@ async fn test_order_deduplication_by_order_id() {
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1267,7 +1390,9 @@ async fn test_order_deduplication_by_order_id() {
             BybitProductType::Linear,
             Some(instrument_id), // Specify instrument to avoid settle coin iteration
             false,               // This will query both realtime and history endpoints
-            None,
+            None,                // start
+            None,                // end
+            None,                // limit
         )
         .await
         .unwrap();
@@ -1289,7 +1414,7 @@ async fn test_order_deduplication_by_order_id() {
 #[tokio::test]
 async fn test_request_order_status_reports_linear_queries_all_settle_coins() {
     let (addr, state) = start_reconciliation_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -1309,13 +1434,21 @@ async fn test_request_order_status_reports_linear_queries_all_settle_coins() {
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
 
     let _reports = client
-        .request_order_status_reports(account_id, BybitProductType::Linear, None, true, None)
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            None,
+            true,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -1345,7 +1478,7 @@ async fn test_request_order_status_reports_linear_queries_all_settle_coins() {
 #[tokio::test]
 async fn test_request_order_status_reports_respects_limit_across_settle_coins() {
     let (addr, state) = start_reconciliation_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -1365,7 +1498,7 @@ async fn test_request_order_status_reports_respects_limit_across_settle_coins() 
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
@@ -1373,32 +1506,39 @@ async fn test_request_order_status_reports_respects_limit_across_settle_coins() 
     // Test data has 2 orders per settle coin
     // With limit=3: expect 2 from USDT, 1 from USDC
     let reports = client
-        .request_order_status_reports(account_id, BybitProductType::Linear, None, true, Some(3))
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            None,
+            true,
+            None,
+            None,
+            Some(3),
+        )
         .await
         .unwrap();
 
     assert!(
         reports.len() <= 3,
-        "Should return at most 3 reports, got {}",
+        "Should return at most 3 reports, was {}",
         reports.len()
     );
 
     // Both settle coins should be queried
     let queries = state.settle_coin_queries.lock().await;
-    let realtime_queries: Vec<&Option<String>> = queries
+    let realtime_query_count = queries
         .iter()
         .filter(|(endpoint, _)| endpoint == "realtime")
-        .map(|(_, coin)| coin)
-        .collect();
+        .count();
 
-    assert_eq!(realtime_queries.len(), 2, "Should query both settle coins");
+    assert_eq!(realtime_query_count, 2, "Should query both settle coins");
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_request_order_status_reports_stops_before_next_coin() {
     let (addr, state) = start_reconciliation_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -1418,14 +1558,22 @@ async fn test_request_order_status_reports_stops_before_next_coin() {
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
 
     // Test data has 2 orders, limit=1 should stop after USDT
     let reports = client
-        .request_order_status_reports(account_id, BybitProductType::Linear, None, true, Some(1))
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            None,
+            true,
+            None,
+            None,
+            Some(1),
+        )
         .await
         .unwrap();
 
@@ -1455,7 +1603,7 @@ async fn test_request_order_status_reports_stops_before_next_coin() {
 #[tokio::test]
 async fn test_request_order_status_reports_combines_orders_from_each_settle_coin() {
     let (addr, state) = start_reconciliation_test_server().await.unwrap();
-    let base_url = format!("http://{}", addr);
+    let base_url = format!("http://{addr}");
 
     let client = BybitHttpClient::with_credentials(
         "test_api_key".to_string(),
@@ -1475,13 +1623,21 @@ async fn test_request_order_status_reports_combines_orders_from_each_settle_coin
         .await
         .unwrap();
     for instrument in instruments {
-        client.add_instrument(instrument);
+        client.cache_instrument(instrument);
     }
 
     let account_id = AccountId::from("BYBIT-UNIFIED");
 
     let reports = client
-        .request_order_status_reports(account_id, BybitProductType::Linear, None, true, None)
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            None,
+            true,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -1512,7 +1668,7 @@ async fn test_request_order_status_reports_combines_orders_from_each_settle_coin
     assert_eq!(
         reports.len(),
         4,
-        "Should get exactly 4 orders (2 from USDT + 2 from USDC), got {}",
+        "Should get exactly 4 orders (2 from USDT + 2 from USDC), was {}",
         reports.len()
     );
 
@@ -1533,4 +1689,492 @@ async fn test_request_order_status_reports_combines_orders_from_each_settle_coin
         order_ids.contains(&"open-order-2-USDC".to_string()),
         "Should contain open-order-2-USDC from USDC settle coin"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repay_spot_borrow_with_amount() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let amount = Quantity::new_checked(0.5, 8).unwrap();
+    let response = client.repay_spot_borrow("ETH", Some(amount)).await.unwrap();
+
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.ret_msg, "OK");
+    assert_eq!(response.result.result_status, "SU");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repay_spot_borrow_without_amount() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    // Test repaying all outstanding borrows by passing None for amount
+    let response = client.repay_spot_borrow("ETH", None).await.unwrap();
+
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.ret_msg, "OK");
+    assert_eq!(response.result.result_status, "SU");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repay_spot_borrow_requires_credentials() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
+
+    let amount = Quantity::new_checked(0.5, 8).unwrap();
+    let result = client.repay_spot_borrow("ETH", Some(amount)).await;
+    assert!(result.is_err(), "Should fail without credentials");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_spot_borrow_amount_returns_zero_when_no_borrow() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let borrow_amount = client.get_spot_borrow_amount("BTC").await.unwrap();
+
+    // BTC should have zero borrow in the test data
+    assert_eq!(borrow_amount, rust_decimal::Decimal::ZERO);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_spot_borrow_amount_returns_zero_when_coin_not_found() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let borrow_amount = client.get_spot_borrow_amount("UNKNOWN").await.unwrap();
+
+    // Should return zero when coin not found
+    assert_eq!(borrow_amount, rust_decimal::Decimal::ZERO);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_position_report_short_from_borrowed_balance() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    client.set_use_spot_position_reports(true);
+
+    let eth = Currency::from("ETH");
+    let usdt = Currency::from("USDT");
+    let ethusdt = CurrencyPair::new(
+        "ETHUSDT-SPOT.BYBIT".into(),
+        "ETHUSDT".into(),
+        eth,
+        usdt,
+        2,
+        5,
+        Price::from("0.01"),
+        Quantity::from("0.00001"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        0.into(),
+        0.into(),
+    );
+    client.cache_instrument(InstrumentAny::CurrencyPair(ethusdt));
+
+    let account_id = AccountId::new("BYBIT-UNIFIED");
+    let reports = client
+        .request_position_status_reports(account_id, BybitProductType::Spot, None)
+        .await
+        .unwrap();
+
+    let eth_report = reports
+        .iter()
+        .find(|r| r.instrument_id.symbol.as_str() == "ETHUSDT-SPOT")
+        .expect("ETH SPOT position report not found");
+
+    assert_eq!(eth_report.position_side, PositionSideSpecified::Short);
+    assert_eq!(eth_report.quantity, Quantity::new(0.06142, 5));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_with_time_filtering() {
+    let (addr, state) = start_reconciliation_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        Some(60),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None)
+        .await
+        .unwrap();
+
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+    let start_time = Utc::now() - chrono::Duration::days(7);
+    let end_time = Utc::now();
+
+    let _reports = client
+        .request_order_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            None,
+            false, // Query history
+            Some(start_time),
+            Some(end_time),
+            Some(10),
+        )
+        .await
+        .unwrap();
+
+    // The history endpoint should have been called with startTime and endTime
+    let queries = state.settle_coin_queries.lock().await;
+
+    // Should have called history endpoint for each settle coin (USDT, USDC)
+    assert!(
+        queries.len() >= 2,
+        "Should have called history endpoint at least twice (one per settle coin)"
+    );
+}
+
+// =====================================================
+// Tests for request_tickers
+// =====================================================
+
+#[tokio::test]
+#[ignore] // Requires real Bybit API access
+async fn test_request_tickers_spot_live() {
+    use nautilus_bybit::http::query::BybitTickersParamsBuilder;
+
+    let client = BybitHttpClient::new(None, None, None, None, None, None, None).unwrap();
+
+    let params = BybitTickersParamsBuilder::default()
+        .category(BybitProductType::Spot)
+        .build()
+        .unwrap();
+
+    let tickers = client.request_tickers(&params).await.unwrap();
+
+    // Verify we got data
+    assert!(!tickers.is_empty(), "Should receive at least one ticker");
+
+    // Verify data structure for spot tickers
+    for ticker in tickers.iter().take(5) {
+        // All tickers should have basic fields
+        assert!(!ticker.symbol.is_empty(), "Symbol should not be empty");
+        assert!(
+            !ticker.last_price.is_empty(),
+            "Last price should not be empty"
+        );
+        assert!(
+            !ticker.bid1_price.is_empty(),
+            "Bid price should not be empty"
+        );
+        assert!(
+            !ticker.ask1_price.is_empty(),
+            "Ask price should not be empty"
+        );
+        assert!(
+            !ticker.volume24h.is_empty(),
+            "Volume 24h should not be empty"
+        );
+        assert!(
+            !ticker.turnover24h.is_empty(),
+            "Turnover 24h should not be empty"
+        );
+
+        // Spot tickers should NOT have these fields
+        assert!(
+            ticker.open_interest.is_none(),
+            "Spot ticker should not have open_interest"
+        );
+        assert!(
+            ticker.funding_rate.is_none(),
+            "Spot ticker should not have funding_rate"
+        );
+        assert!(
+            ticker.next_funding_time.is_none(),
+            "Spot ticker should not have next_funding_time"
+        );
+        assert!(
+            ticker.mark_price.is_none(),
+            "Spot ticker should not have mark_price"
+        );
+        assert!(
+            ticker.index_price.is_none(),
+            "Spot ticker should not have index_price"
+        );
+    }
+
+    println!("[SUCCESS] Fetched {} spot tickers", tickers.len());
+}
+
+#[tokio::test]
+#[ignore] // Requires real Bybit API access
+async fn test_request_tickers_linear_live() {
+    use nautilus_bybit::http::query::BybitTickersParamsBuilder;
+
+    let client = BybitHttpClient::new(None, None, None, None, None, None, None).unwrap();
+
+    let params = BybitTickersParamsBuilder::default()
+        .category(BybitProductType::Linear)
+        .build()
+        .unwrap();
+
+    let tickers = client.request_tickers(&params).await.unwrap();
+
+    // Verify we got data
+    assert!(
+        !tickers.is_empty(),
+        "Should receive at least one linear ticker"
+    );
+
+    // Verify data structure for linear tickers
+    for ticker in tickers.iter().take(5) {
+        // All tickers should have basic fields
+        assert!(!ticker.symbol.is_empty(), "Symbol should not be empty");
+        assert!(
+            !ticker.last_price.is_empty(),
+            "Last price should not be empty"
+        );
+        assert!(
+            !ticker.bid1_price.is_empty(),
+            "Bid price should not be empty"
+        );
+        assert!(
+            !ticker.ask1_price.is_empty(),
+            "Ask price should not be empty"
+        );
+        assert!(
+            !ticker.volume24h.is_empty(),
+            "Volume 24h should not be empty"
+        );
+        assert!(
+            !ticker.turnover24h.is_empty(),
+            "Turnover 24h should not be empty"
+        );
+
+        // Linear tickers SHOULD have these fields
+        assert!(
+            ticker.open_interest.is_some(),
+            "Linear ticker should have open_interest"
+        );
+        assert!(
+            ticker.funding_rate.is_some(),
+            "Linear ticker should have funding_rate"
+        );
+        assert!(
+            ticker.next_funding_time.is_some(),
+            "Linear ticker should have next_funding_time"
+        );
+        assert!(
+            ticker.mark_price.is_some(),
+            "Linear ticker should have mark_price"
+        );
+        assert!(
+            ticker.index_price.is_some(),
+            "Linear ticker should have index_price"
+        );
+
+        // Verify fields are not empty
+        let open_interest = ticker.open_interest.as_ref().unwrap();
+        assert!(
+            !open_interest.is_empty(),
+            "Open interest should not be empty"
+        );
+
+        let funding_rate = ticker.funding_rate.as_ref().unwrap();
+        assert!(!funding_rate.is_empty(), "Funding rate should not be empty");
+
+        let next_funding_time = ticker.next_funding_time.as_ref().unwrap();
+        assert!(
+            !next_funding_time.is_empty(),
+            "Next funding time should not be empty"
+        );
+
+        let mark_price = ticker.mark_price.as_ref().unwrap();
+        assert!(!mark_price.is_empty(), "Mark price should not be empty");
+
+        let index_price = ticker.index_price.as_ref().unwrap();
+        assert!(!index_price.is_empty(), "Index price should not be empty");
+    }
+
+    println!("[SUCCESS] Fetched {} linear tickers", tickers.len());
+}
+
+#[tokio::test]
+#[ignore] // Requires real Bybit API access
+async fn test_request_tickers_inverse_live() {
+    use nautilus_bybit::http::query::BybitTickersParamsBuilder;
+
+    let client = BybitHttpClient::new(None, None, None, None, None, None, None).unwrap();
+
+    let params = BybitTickersParamsBuilder::default()
+        .category(BybitProductType::Inverse)
+        .build()
+        .unwrap();
+
+    let tickers = client.request_tickers(&params).await.unwrap();
+
+    // Verify we got data
+    assert!(
+        !tickers.is_empty(),
+        "Should receive at least one inverse ticker"
+    );
+
+    // Verify data structure for inverse tickers (similar to linear)
+    for ticker in tickers.iter().take(5) {
+        // All tickers should have basic fields
+        assert!(!ticker.symbol.is_empty(), "Symbol should not be empty");
+        assert!(
+            !ticker.last_price.is_empty(),
+            "Last price should not be empty"
+        );
+
+        // Inverse tickers SHOULD have these fields (similar to linear)
+        assert!(
+            ticker.open_interest.is_some(),
+            "Inverse ticker should have open_interest"
+        );
+        assert!(
+            ticker.funding_rate.is_some(),
+            "Inverse ticker should have funding_rate"
+        );
+        assert!(
+            ticker.mark_price.is_some(),
+            "Inverse ticker should have mark_price"
+        );
+        assert!(
+            ticker.index_price.is_some(),
+            "Inverse ticker should have index_price"
+        );
+    }
+
+    println!("[SUCCESS] Fetched {} inverse tickers", tickers.len());
+}
+
+#[tokio::test]
+#[ignore] // Requires real Bybit API access
+async fn test_request_tickers_with_symbol_filter() {
+    use nautilus_bybit::http::query::BybitTickersParamsBuilder;
+
+    let client = BybitHttpClient::new(None, None, None, None, None, None, None).unwrap();
+
+    // Test with specific symbol
+    let params = BybitTickersParamsBuilder::default()
+        .category(BybitProductType::Linear)
+        .symbol("BTCUSDT".to_string())
+        .build()
+        .unwrap();
+
+    let tickers = client.request_tickers(&params).await.unwrap();
+
+    // Should only get BTCUSDT ticker
+    assert_eq!(tickers.len(), 1, "Should receive exactly one ticker");
+    assert_eq!(
+        tickers[0].symbol.as_str(),
+        "BTCUSDT",
+        "Symbol should be BTCUSDT"
+    );
+
+    // Verify it has all linear ticker fields
+    let ticker = &tickers[0];
+    assert!(ticker.open_interest.is_some());
+    assert!(ticker.funding_rate.is_some());
+    assert!(ticker.next_funding_time.is_some());
+    assert!(ticker.mark_price.is_some());
+    assert!(ticker.index_price.is_some());
+
+    println!("[SUCCESS] Fetched ticker for BTCUSDT with all expected fields");
 }

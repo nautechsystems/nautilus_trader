@@ -507,6 +507,7 @@ impl OrderEmulator {
                 order.account_id(),
                 price,
                 trigger_price,
+                None,
             );
 
             self.manager.send_exec_event(OrderEventAny::Updated(event));
@@ -608,6 +609,7 @@ impl OrderEmulator {
             false,
             None,
             order.account_id(),
+            None,
             None,
             None,
         );
@@ -1168,6 +1170,7 @@ impl OrderEmulator {
             order.account_id(),
             new_limit_px,
             new_trigger_px,
+            None,
         );
         let wrapped = OrderEventAny::Updated(update);
         if let Err(e) = order.apply(wrapped.clone()) {

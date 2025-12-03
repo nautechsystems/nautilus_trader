@@ -16,17 +16,21 @@
 use std::sync::LazyLock;
 
 use alloy::primitives::Address;
-use hypersync_client::simple_types::Log;
 use nautilus_model::defi::{
+    PoolIdentifier,
     chain::chains,
     dex::{AmmType, Dex, DexType},
 };
+use ustr::Ustr;
 
 use crate::{
     events::pool_created::PoolCreatedEvent,
     exchanges::extended::DexExtended,
-    hypersync::helpers::{
-        extract_address_from_topic, extract_block_number, validate_event_signature_hash,
+    hypersync::{
+        HypersyncLog,
+        helpers::{
+            extract_address_from_topic, extract_block_number, validate_event_signature_hash,
+        },
     },
 };
 
@@ -47,11 +51,13 @@ pub static CAMELOT_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "",
         "",
     ));
-    dex.set_pool_created_event_parsing(parse_camelot_v3_pool_created_event);
+    dex.set_pool_created_event_hypersync_parsing(parse_camelot_v3_pool_created_event_hypersync);
     dex
 });
 
-fn parse_camelot_v3_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEvent> {
+fn parse_camelot_v3_pool_created_event_hypersync(
+    log: HypersyncLog,
+) -> anyhow::Result<PoolCreatedEvent> {
     validate_event_signature_hash("Pool", POOL_CREATED_EVENT_SIGNATURE_HASH, &log)?;
 
     let block_number = extract_block_number(&log)?;
@@ -63,12 +69,13 @@ fn parse_camelot_v3_pool_created_event(log: Log) -> anyhow::Result<PoolCreatedEv
 
         // Extract pool address (only 32 bytes)
         let pool_address = Address::from_slice(&data_bytes[12..32]);
-
+        let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
         Ok(PoolCreatedEvent::new(
             block_number,
             token,
             token1,
             pool_address,
+            pool_identifier,
             None,
             None,
         ))

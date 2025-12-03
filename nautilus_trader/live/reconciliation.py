@@ -35,6 +35,7 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
@@ -45,6 +46,65 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
+
+
+def is_within_single_unit_tolerance(
+    value1: Decimal,
+    value2: Decimal,
+    precision: int,
+) -> bool:
+    """
+    Check if two decimal values are within single unit tolerance based on precision.
+
+    Handles rounding discrepancies from venues (e.g., OKX fillSz vs accFillSz).
+
+    Parameters
+    ----------
+    value1 : Decimal
+        The first value to compare.
+    value2 : Decimal
+        The second value to compare.
+    precision : int
+        The decimal precision for tolerance calculation.
+
+    Returns
+    -------
+    bool
+
+    """
+    # Only apply tolerance for fractional quantities (precision > 0)
+    if precision == 0:
+        return value1 == value2  # Integer quantities require exact match
+
+    tolerance = Decimal(10) ** -precision
+
+    return abs(value1 - value2) <= tolerance
+
+
+def get_existing_fill_for_trade_id(
+    order: Order,
+    trade_id: TradeId,
+) -> OrderFilled | None:
+    """
+    Find an existing fill event for a trade ID in the order's event history.
+
+    Parameters
+    ----------
+    order : Order
+        The order to search.
+    trade_id : TradeId
+        The trade ID to find.
+
+    Returns
+    -------
+    OrderFilled or ``None``
+
+    """
+    for event in order.events:
+        if isinstance(event, OrderFilled) and event.trade_id == trade_id:
+            return event
+
+    return None
 
 
 def create_order_rejected_event(
@@ -505,12 +565,22 @@ def calculate_reconciliation_price(
 
     return instrument.make_price(result)
 
-
-def adjust_fills_for_partial_window(
+def adjust_fills_for_partial_window_single(
     mass_status: ExecutionMassStatus,
     instrument: Instrument,
     logger: Logger | None = None,
 ) -> tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]]:
+    """
+    Adjust fills to account for incomplete position lifecycle at window start.
+    """
+    return adjust_fills_for_partial_window(mass_status, [instrument], logger)[instrument.id]
+
+
+def adjust_fills_for_partial_window(
+    mass_status: ExecutionMassStatus,
+    instruments: list[Instrument],
+    logger: Logger | None = None,
+) -> dict[InstrumentId, tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]]]:
     """
     Adjust fills to account for incomplete position lifecycle at window start.
 
@@ -525,8 +595,8 @@ def adjust_fills_for_partial_window(
     ----------
     mass_status : ExecutionMassStatus
         The execution mass status containing order, fill, and position reports.
-    instrument : Instrument
-        The instrument to adjust fills for.
+    instruments : list[Instrument]
+        The instruments to adjust fills for (all instruments in the mass status).
     logger : Logger, optional
         The logger for diagnostic output.
 
@@ -543,36 +613,43 @@ def adjust_fills_for_partial_window(
             currency = fill.commission.currency
             if currency not in seen_currencies:
                 register_currency(currency)
+                if logger:
+                    logger.debug(f"Registered currency: {currency}")
                 seen_currencies.add(currency)
 
     pyo3_mass_status = mass_status.to_pyo3()
-    pyo3_instrument = transform_instrument_to_pyo3(instrument)
 
-    pyo3_orders, pyo3_fills = nautilus_pyo3.adjust_fills_for_partial_window(
-        pyo3_mass_status,
-        pyo3_instrument,
-    )
+    pyo3_instruments = [transform_instrument_to_pyo3(instrument) for instrument in instruments]
+    results: dict[InstrumentId, tuple[dict[VenueOrderId, OrderStatusReport], dict[VenueOrderId, list[FillReport]]]] = {}
 
-    orders: dict[VenueOrderId, OrderStatusReport] = {}
+    for instrument, pyo3_instrument in zip(instruments, pyo3_instruments, strict=False):
+        assert instrument.id.value == pyo3_instrument.id.value
+        pyo3_orders, pyo3_fills = nautilus_pyo3.adjust_fills_for_partial_window(
+            pyo3_mass_status,
+            pyo3_instrument,
+        )
+        orders: dict[VenueOrderId, OrderStatusReport] = {}
 
-    for venue_order_id_str, pyo3_order in pyo3_orders.items():
-        venue_order_id = VenueOrderId(venue_order_id_str)
-        order = OrderStatusReport.from_pyo3(pyo3_order)
-        orders[venue_order_id] = order
+        for venue_order_id_str, pyo3_order in pyo3_orders.items():
+            venue_order_id = VenueOrderId(venue_order_id_str)
+            order = OrderStatusReport.from_pyo3(pyo3_order)
+            orders[venue_order_id] = order
 
-    fills: dict[VenueOrderId, list[FillReport]] = {}
+        fills: dict[VenueOrderId, list[FillReport]] = {}
 
-    for venue_order_id_str, pyo3_reports in pyo3_fills.items():
-        venue_order_id = VenueOrderId(venue_order_id_str)
-        reports = []
+        for venue_order_id_str, pyo3_reports in pyo3_fills.items():
+            venue_order_id = VenueOrderId(venue_order_id_str)
+            reports = []
 
-        for pyo3_report in pyo3_reports:
-            report = FillReport.from_pyo3(pyo3_report)
-            reports.append(report)
+            for pyo3_report in pyo3_reports:
+                report = FillReport.from_pyo3(pyo3_report)
+                reports.append(report)
 
-        fills[venue_order_id] = reports
+            fills[venue_order_id] = reports
 
-    if logger:
-        logger.info(f"Adjusted fills for {instrument.id}: {len(orders)} orders, {len(fills)} fills")
+            if logger:
+                logger.debug(f"Adjusted fills for {instrument.id}: {len(orders)} orders, {len(fills)} fills")
 
-    return orders, fills
+        results[instrument.id] = (orders, fills)
+
+    return results

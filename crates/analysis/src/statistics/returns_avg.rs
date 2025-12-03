@@ -45,14 +45,8 @@ impl PortfolioStatistic for ReturnsAverage {
             return Some(f64::NAN);
         }
 
-        let negative_returns: Vec<f64> = returns.values().copied().filter(|&x| x != 0.0).collect();
-
-        if negative_returns.is_empty() {
-            return Some(f64::NAN);
-        }
-
-        let sum: f64 = negative_returns.iter().sum();
-        let count = negative_returns.len() as f64;
+        let sum: f64 = returns.values().sum();
+        let count = returns.len() as f64;
 
         Some(sum / count)
     }
@@ -101,17 +95,33 @@ mod tests {
         let returns = create_returns(vec![0.0, 0.0, 0.0]);
         let result = avg.calculate_from_returns(&returns);
         assert!(result.is_some());
-        assert!(result.unwrap().is_nan());
+        // Average of [0.0, 0.0, 0.0] = 0.0
+        assert!(approx_eq!(f64, result.unwrap(), 0.0, epsilon = 1e-9));
     }
 
     #[rstest]
-    fn test_mixed_non_zero() {
+    fn test_mixed_with_zeros() {
         let avg = ReturnsAverage {};
         let returns = create_returns(vec![10.0, -20.0, 0.0, 30.0, -40.0]);
         let result = avg.calculate_from_returns(&returns);
         assert!(result.is_some());
-        // Average of [10.0, -20.0, 30.0, -40.0] = (-20 + -40 + 10 + 30) / 4 = -5.0
-        assert!(approx_eq!(f64, result.unwrap(), -5.0, epsilon = 1e-9));
+        // Average of [10.0, -20.0, 0.0, 30.0, -40.0] = -20 / 5 = -4.0
+        assert!(approx_eq!(f64, result.unwrap(), -4.0, epsilon = 1e-9));
+    }
+
+    #[rstest]
+    fn test_zeros_included_in_average() {
+        let avg = ReturnsAverage {};
+        let returns = create_returns(vec![1.0, 0.0, 0.0]);
+        let result = avg.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        // Average of [1.0, 0.0, 0.0] = 1.0 / 3 = 0.333...
+        assert!(approx_eq!(
+            f64,
+            result.unwrap(),
+            0.3333333333333333,
+            epsilon = 1e-9
+        ));
     }
 
     #[rstest]

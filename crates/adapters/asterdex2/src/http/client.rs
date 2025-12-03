@@ -205,6 +205,7 @@ impl AsterdexHttpClient {
                 None,
                 None,
                 None,
+                None,
             )
             .await
             .map_err(|e| AsterdexHttpError::HttpClient(e.to_string()))?;
@@ -280,6 +281,7 @@ impl AsterdexHttpClient {
             .request(
                 reqwest::Method::GET,
                 full_url,
+                None,
                 Some(headers),
                 None,
                 None,

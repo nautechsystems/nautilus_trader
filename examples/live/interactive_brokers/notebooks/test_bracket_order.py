@@ -85,7 +85,7 @@ class Strat_mre(Strategy):
                 self.clock.set_time_alert(
                     "sl",
                     self.clock.utc_now() + pd.Timedelta(seconds=10),
-                    lambda event: self.modify_sl(instrument.id, instrument.make_price(6600)),
+                    lambda event, instrument=instrument: self.modify_sl(instrument.id, instrument.make_price(6600)),
                 )
 
     def buy_bracket(self, instrument_id, low):
@@ -174,7 +174,7 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         log_level_file="INFO",
         log_file_name=datetime.datetime.strftime(
-            datetime.datetime.now(datetime.UTC),
+            datetime.datetime.now(tz=datetime.UTC),
             "%Y-%m-%d_%H-%M",
         )
         + "_mre_modify_order.log",

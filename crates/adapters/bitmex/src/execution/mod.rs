@@ -18,15 +18,15 @@
 pub mod canceller;
 pub mod submitter;
 
-use std::{any::Any, cell::Ref, future::Future, sync::Mutex};
+use std::{any::Any, future::Future, sync::Mutex};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
-    clock::Clock,
+    live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::{
-        ExecutionEvent,
+        ExecutionEvent, ExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount,
@@ -34,18 +34,19 @@ use nautilus_common::{
         },
     },
     msgbus,
-    runner::get_exec_event_sender,
-    runtime::get_runtime,
 };
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_execution::client::{ExecutionClient, LiveExecutionClient, base::ExecutionClientCore};
-use nautilus_live::execution::LiveExecutionClientExt;
+use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
+use nautilus_live::execution::client::LiveExecutionClient;
 use nautilus_model::{
+    accounts::AccountAny,
+    enums::OmsType,
     events::{AccountState, OrderEventAny, OrderRejected},
-    identifiers::{AccountId, VenueOrderId},
+    identifiers::{AccountId, ClientId, Venue, VenueOrderId},
     instruments::Instrument,
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
+    types::{AccountBalance, MarginBalance},
 };
 use tokio::task::JoinHandle;
 
@@ -218,12 +219,12 @@ impl BitmexExecutionClient {
         instruments.sort_by_key(|instrument| instrument.id());
 
         for instrument in &instruments {
-            self.http_client.add_instrument(instrument.clone());
-            self._submitter.add_instrument(instrument.clone());
-            self._canceller.add_instrument(instrument.clone());
+            self.http_client.cache_instrument(instrument.clone());
+            self._submitter.cache_instrument(instrument.clone());
+            self._canceller.cache_instrument(instrument.clone());
         }
 
-        self.ws_client.initialize_instruments_cache(instruments);
+        self.ws_client.cache_instruments(instruments);
 
         self.instruments_initialized = true;
         Ok(())
@@ -260,6 +261,7 @@ impl BitmexExecutionClient {
         }
 
         let stream = self.ws_client.stream();
+
         let handle = tokio::spawn(async move {
             pin_mut!(stream);
             while let Some(message) = stream.next().await {
@@ -272,12 +274,13 @@ impl BitmexExecutionClient {
     }
 }
 
+#[async_trait(?Send)]
 impl ExecutionClient for BitmexExecutionClient {
     fn is_connected(&self) -> bool {
         self.connected
     }
 
-    fn client_id(&self) -> nautilus_model::identifiers::ClientId {
+    fn client_id(&self) -> ClientId {
         self.core.client_id
     }
 
@@ -285,22 +288,22 @@ impl ExecutionClient for BitmexExecutionClient {
         self.core.account_id
     }
 
-    fn venue(&self) -> nautilus_model::identifiers::Venue {
+    fn venue(&self) -> Venue {
         self.core.venue
     }
 
-    fn oms_type(&self) -> nautilus_model::enums::OmsType {
+    fn oms_type(&self) -> OmsType {
         self.core.oms_type
     }
 
-    fn get_account(&self) -> Option<nautilus_model::accounts::AccountAny> {
+    fn get_account(&self) -> Option<AccountAny> {
         self.core.get_account()
     }
 
     fn generate_account_state(
         &self,
-        balances: Vec<nautilus_model::types::AccountBalance>,
-        margins: Vec<nautilus_model::types::MarginBalance>,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
@@ -592,10 +595,7 @@ impl ExecutionClient for BitmexExecutionClient {
 
         Ok(())
     }
-}
 
-#[async_trait(?Send)]
-impl LiveExecutionClient for BitmexExecutionClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             return Ok(());
@@ -622,7 +622,7 @@ impl LiveExecutionClient for BitmexExecutionClient {
 
         self.connected = true;
         self.core.set_connected(true);
-        tracing::info!("BitMEX execution client {} connected", self.core.client_id);
+        tracing::info!(client_id = %self.core.client_id, "Connected");
         Ok(())
     }
 
@@ -646,13 +646,13 @@ impl LiveExecutionClient for BitmexExecutionClient {
         self.abort_pending_tasks();
         self.connected = false;
         self.core.set_connected(false);
-        tracing::info!(
-            "BitMEX execution client {} disconnected",
-            self.core.client_id
-        );
+        tracing::info!(client_id = %self.core.client_id, "Disconnected");
         Ok(())
     }
+}
 
+#[async_trait(?Send)]
+impl LiveExecutionClient for BitmexExecutionClient {
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
@@ -745,11 +745,16 @@ fn dispatch_ws_message(message: NautilusWsMessage) {
         NautilusWsMessage::OrderUpdated(event) => {
             dispatch_order_event(OrderEventAny::Updated(event));
         }
-        NautilusWsMessage::Data(_) | NautilusWsMessage::FundingRateUpdates(_) => {
+        NautilusWsMessage::Data(_)
+        | NautilusWsMessage::Instruments(_)
+        | NautilusWsMessage::FundingRateUpdates(_) => {
             tracing::debug!("Ignoring BitMEX data message on execution stream");
         }
         NautilusWsMessage::Reconnected => {
             tracing::info!("BitMEX execution websocket reconnected");
+        }
+        NautilusWsMessage::Authenticated => {
+            tracing::debug!("BitMEX execution websocket authenticated");
         }
     }
 }
@@ -760,7 +765,7 @@ fn dispatch_account_state(state: AccountState) {
 
 fn dispatch_order_status_report(report: OrderStatusReport) {
     let sender = get_exec_event_sender();
-    let exec_report = nautilus_common::messages::ExecutionReport::OrderStatus(Box::new(report));
+    let exec_report = ExecutionReport::OrderStatus(Box::new(report));
     if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
         tracing::warn!("Failed to send order status report: {e}");
     }
@@ -768,7 +773,7 @@ fn dispatch_order_status_report(report: OrderStatusReport) {
 
 fn dispatch_fill_report(report: FillReport) {
     let sender = get_exec_event_sender();
-    let exec_report = nautilus_common::messages::ExecutionReport::Fill(Box::new(report));
+    let exec_report = ExecutionReport::Fill(Box::new(report));
     if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
         tracing::warn!("Failed to send fill report: {e}");
     }
@@ -776,7 +781,7 @@ fn dispatch_fill_report(report: FillReport) {
 
 fn dispatch_position_status_report(report: PositionStatusReport) {
     let sender = get_exec_event_sender();
-    let exec_report = nautilus_common::messages::ExecutionReport::Position(Box::new(report));
+    let exec_report = ExecutionReport::Position(Box::new(report));
     if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
         tracing::warn!("Failed to send position status report: {e}");
     }
@@ -786,15 +791,5 @@ fn dispatch_order_event(event: OrderEventAny) {
     let sender = get_exec_event_sender();
     if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
         tracing::warn!("Failed to send order event: {e}");
-    }
-}
-
-impl LiveExecutionClientExt for BitmexExecutionClient {
-    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
-        get_exec_event_sender()
-    }
-
-    fn get_clock(&self) -> Ref<'_, dyn Clock> {
-        self.core.clock().borrow()
     }
 }

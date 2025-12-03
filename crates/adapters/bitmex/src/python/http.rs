@@ -102,6 +102,13 @@ impl BitmexHttpClient {
         self.api_key()
     }
 
+    #[getter]
+    #[pyo3(name = "api_key_masked")]
+    #[must_use]
+    pub fn py_api_key_masked(&self) -> Option<String> {
+        self.api_key_masked()
+    }
+
     #[pyo3(name = "update_position_leverage")]
     fn py_update_position_leverage<'py>(
         &self,
@@ -510,10 +517,10 @@ impl BitmexHttpClient {
         })
     }
 
-    #[pyo3(name = "add_instrument")]
-    fn py_add_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
+    #[pyo3(name = "cache_instrument")]
+    fn py_cache_instrument(&mut self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst_any = pyobject_to_instrument_any(py, instrument)?;
-        self.add_instrument(inst_any);
+        self.cache_instrument(inst_any);
         Ok(())
     }
 

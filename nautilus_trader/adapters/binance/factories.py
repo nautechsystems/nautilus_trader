@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.common.urls import get_http_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.config import BinanceInstrumentProviderConfig
 from nautilus_trader.adapters.binance.futures.data import BinanceFuturesDataClient
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
@@ -123,6 +124,7 @@ def get_cached_binance_http_client(
             (global_key, global_quota),
             ("binance:fapi/v1/order", Quota.rate_per_minute(1200)),
             ("binance:fapi/v1/allOrders", Quota.rate_per_minute(int(1200 / 20))),
+            ("binance:fapi/v1/commissionRate", Quota.rate_per_minute(int(2400 / 20))),
             ("binance:fapi/v1/klines", Quota.rate_per_minute(600)),
         ]
 
@@ -189,7 +191,7 @@ def get_cached_binance_futures_instrument_provider(
     client: BinanceHttpClient,
     clock: LiveClock,
     account_type: BinanceAccountType,
-    config: InstrumentProviderConfig,
+    config: InstrumentProviderConfig | BinanceInstrumentProviderConfig,
     venue: Venue,
 ) -> BinanceFuturesInstrumentProvider:
     """
@@ -205,7 +207,7 @@ def get_cached_binance_futures_instrument_provider(
         The clock for the instrument provider.
     account_type : BinanceAccountType
         The Binance account type for the instrument provider.
-    config : InstrumentProviderConfig
+    config : InstrumentProviderConfig | BinanceInstrumentProviderConfig
         The configuration for the instrument provider.
     venue : Venue
         The venue for the instrument provider.

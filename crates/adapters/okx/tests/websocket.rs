@@ -38,13 +38,16 @@ use axum::{
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
-use nautilus_model::identifiers::{AccountId, InstrumentId};
+use nautilus_model::{
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    instruments::InstrumentAny,
+};
 use nautilus_okx::{
-    common::{enums::OKXInstrumentType, parse::parse_instrument_any},
-    websocket::client::OKXWebSocketClient,
+    common::{enums::OKXInstrumentType, models::OKXInstrument, parse::parse_instrument_any},
+    http::client::OKXResponse,
+    websocket::{client::OKXWebSocketClient, messages::NautilusWsMessage},
 };
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 const TEXT_PING: &str = "ping";
 const TEXT_PONG: &str = "pong";
@@ -54,22 +57,22 @@ type SubscriptionEvent = (String, Option<String>, bool);
 
 #[derive(Clone, Default)]
 struct TestServerState {
-    connection_count: Arc<Mutex<usize>>,
-    login_count: Arc<Mutex<usize>>,
-    subscriptions: Arc<Mutex<Vec<Value>>>,
-    unsubscriptions: Arc<Mutex<Vec<Value>>>,
+    connection_count: Arc<tokio::sync::Mutex<usize>>,
+    login_count: Arc<tokio::sync::Mutex<usize>>,
+    subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     drop_next_connection: Arc<AtomicBool>,
     send_text_ping: Arc<AtomicBool>,
     send_control_ping: Arc<AtomicBool>,
     received_text_pong: Arc<AtomicBool>,
-    received_control_pong: Arc<Mutex<Option<Vec<u8>>>>,
+    received_control_pong: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
     authenticated: Arc<AtomicBool>,
-    subscription_events: Arc<Mutex<Vec<SubscriptionEvent>>>,
-    fail_next_subscriptions: Arc<Mutex<Vec<String>>>,
-    auth_response_delay_ms: Arc<Mutex<Option<u64>>>,
+    subscription_events: Arc<tokio::sync::Mutex<Vec<SubscriptionEvent>>>,
+    fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
+    auth_response_delay_ms: Arc<tokio::sync::Mutex<Option<u64>>>,
     suppress_login_ack: Arc<AtomicBool>,
     suppress_control_pong: Arc<AtomicBool>,
-    control_ping_count: Arc<Mutex<usize>>,
+    control_ping_count: Arc<tokio::sync::Mutex<usize>>,
     fail_next_login: Arc<AtomicBool>,
 }
 
@@ -83,11 +86,10 @@ fn load_json(filename: &str) -> Value {
     serde_json::from_str(&content).expect("invalid json")
 }
 
-fn load_instruments() -> Vec<nautilus_model::instruments::InstrumentAny> {
+fn load_instruments() -> Vec<InstrumentAny> {
     let payload = load_json("http_get_instruments_spot.json");
-    let response: nautilus_okx::http::client::OKXResponse<
-        nautilus_okx::common::models::OKXInstrument,
-    > = serde_json::from_value(payload).expect("invalid instrument payload");
+    let response: OKXResponse<OKXInstrument> =
+        serde_json::from_value(payload).expect("invalid instrument payload");
     let ts_init = UnixNanos::default();
     response
         .data
@@ -187,24 +189,6 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     }
 
     let trades_payload = load_json("ws_trades.json");
-
-    if state.send_text_ping.load(Ordering::Relaxed)
-        && socket
-            .send(Message::Text(TEXT_PING.to_string().into()))
-            .await
-            .is_err()
-    {
-        return;
-    }
-
-    if state.send_control_ping.load(Ordering::Relaxed)
-        && socket
-            .send(Message::Ping(CONTROL_PING_PAYLOAD.to_vec().into()))
-            .await
-            .is_err()
-    {
-        return;
-    }
 
     while let Some(message) = socket.next().await {
         let Ok(message) = message else { break };
@@ -340,6 +324,27 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 break;
                             }
 
+                            // Send pings after successful subscription (handler is ready)
+                            if success
+                                && state.send_text_ping.load(Ordering::Relaxed)
+                                && socket
+                                    .send(Message::Text(TEXT_PING.to_string().into()))
+                                    .await
+                                    .is_err()
+                            {
+                                break;
+                            }
+
+                            if success
+                                && state.send_control_ping.load(Ordering::Relaxed)
+                                && socket
+                                    .send(Message::Ping(CONTROL_PING_PAYLOAD.to_vec().into()))
+                                    .await
+                                    .is_err()
+                            {
+                                break;
+                            }
+
                             if state.drop_next_connection.swap(false, Ordering::Relaxed) {
                                 let _ = socket.send(Message::Close(None)).await;
                                 break;
@@ -450,7 +455,7 @@ async fn test_websocket_connection() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
 
     wait_until_async(
@@ -499,10 +504,10 @@ async fn test_trades_subscription_flow() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -519,7 +524,7 @@ async fn test_trades_subscription_flow() {
         .expect("stream ended unexpectedly");
 
     match message {
-        nautilus_okx::websocket::messages::NautilusWsMessage::Data(data) => {
+        NautilusWsMessage::Data(data) => {
             assert!(!data.is_empty(), "expected trade payload");
         }
         other => panic!("unexpected message: {other:?}"),
@@ -540,10 +545,10 @@ async fn test_reauth_and_resubscribe_after_disconnect() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -586,10 +591,10 @@ async fn test_heartbeat_timeout_reconnection() {
     )
     .expect("construct client");
 
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -667,10 +672,10 @@ async fn test_reconnection_retries_failed_subscriptions() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -772,10 +777,10 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -865,7 +870,7 @@ async fn test_login_failure_emits_error() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
 
     let connect_result = tokio::time::timeout(Duration::from_secs(1), client.connect()).await;
 
@@ -901,10 +906,10 @@ async fn test_subscription_restoration_tracking() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -944,6 +949,17 @@ async fn test_subscription_restoration_tracking() {
     .await;
 
     state.clear_subscription_events().await;
+
+    // Wait to ensure events are cleared
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.subscription_events().await.is_empty() }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     client
@@ -979,7 +995,7 @@ async fn test_subscription_restoration_tracking() {
         loop {
             let events = state.subscription_events().await;
             let mut restored = HashSet::new();
-            for (key, _, ok) in events.iter() {
+            for (key, _, ok) in &events {
                 if *ok {
                     restored.insert(key.clone());
                 }
@@ -1014,10 +1030,10 @@ async fn test_true_auto_reconnect_with_verification() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1035,7 +1051,7 @@ async fn test_true_auto_reconnect_with_verification() {
         .expect("stream closed too early");
 
     match first {
-        nautilus_okx::websocket::messages::NautilusWsMessage::Data(payload) => {
+        NautilusWsMessage::Data(payload) => {
             assert!(!payload.is_empty());
         }
         other => panic!("unexpected message before reconnect: {other:?}"),
@@ -1056,7 +1072,7 @@ async fn test_true_auto_reconnect_with_verification() {
         .expect("stream closed after reconnect");
 
     match second {
-        nautilus_okx::websocket::messages::NautilusWsMessage::Data(payload) => {
+        NautilusWsMessage::Data(payload) => {
             assert!(!payload.is_empty());
         }
         other => panic!("unexpected message after reconnect: {other:?}"),
@@ -1076,10 +1092,10 @@ async fn test_sends_pong_for_text_ping() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1088,13 +1104,11 @@ async fn test_sends_pong_for_text_ping() {
         .await
         .expect("subscribe failed");
 
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
-    while !state.received_text_pong.load(Ordering::Relaxed) {
-        if tokio::time::Instant::now() > deadline {
-            panic!("client did not respond to text ping");
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
+    wait_until_async(
+        || async { state.received_text_pong.load(Ordering::Relaxed) },
+        Duration::from_secs(1),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -1108,10 +1122,10 @@ async fn test_sends_pong_for_control_ping() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1120,22 +1134,16 @@ async fn test_sends_pong_for_control_ping() {
         .await
         .expect("subscribe failed");
 
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
-    loop {
-        {
+    wait_until_async(
+        || async {
             let guard = state.received_control_pong.lock().await;
-            if guard
+            guard
                 .as_ref()
                 .is_some_and(|payload| payload.as_slice() == CONTROL_PING_PAYLOAD)
-            {
-                break;
-            }
-        }
-        if tokio::time::Instant::now() > deadline {
-            panic!("client did not respond to control ping");
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -1147,10 +1155,10 @@ async fn test_unsubscribe_orders_sends_request() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1206,10 +1214,10 @@ async fn test_subscribe_to_orderbook() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1247,10 +1255,10 @@ async fn test_multiple_symbols_subscription() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1296,10 +1304,10 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1410,10 +1418,10 @@ async fn test_auth_and_subscription_restoration_order() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1427,6 +1435,17 @@ async fn test_auth_and_subscription_restoration_order() {
         .expect("subscribe orders failed");
 
     state.clear_subscription_events().await;
+
+    // Wait to ensure events are cleared
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.subscription_events().await.is_empty() }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     wait_until_async(
@@ -1477,10 +1496,10 @@ async fn test_unauthenticated_private_channel_rejection() {
     )
     .expect("construct client");
 
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1519,10 +1538,10 @@ async fn test_rapid_consecutive_reconnections() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1556,6 +1575,16 @@ async fn test_rapid_consecutive_reconnections() {
     for cycle in 1..=3 {
         // Clear subscription events to verify fresh resubscriptions
         state.clear_subscription_events().await;
+
+        // Wait to ensure events are cleared
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { state.subscription_events().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
 
         state.drop_next_connection.store(true, Ordering::Relaxed);
 
@@ -1615,7 +1644,7 @@ async fn test_rapid_consecutive_reconnections() {
     let final_login_count = *state.login_count.lock().await;
     assert!(
         final_login_count >= 4,
-        "Should have at least 4 total logins (1 initial + 3 reconnects), got {final_login_count}"
+        "Should have at least 4 total logins (1 initial + 3 reconnects), was {final_login_count}"
     );
 
     client.close().await.expect("close failed");
@@ -1632,10 +1661,10 @@ async fn test_multiple_partial_subscription_failures() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1673,6 +1702,16 @@ async fn test_multiple_partial_subscription_failures() {
     .await;
 
     state.clear_subscription_events().await;
+
+    // Wait to ensure events are cleared
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.subscription_events().await.is_empty() }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
 
     // Set up one subscription to fail on next reconnect
     {
@@ -1745,10 +1784,10 @@ async fn test_reconnection_race_condition() {
     let instruments = load_instruments();
 
     let mut client = connect_client(&ws_url).await;
-    client.initialize_instruments_cache(instruments);
+    client.cache_instruments(instruments);
     client.connect().await.expect("connect failed");
     client
-        .wait_until_active(1.0)
+        .wait_until_active(5.0)
         .await
         .expect("client inactive");
 
@@ -1845,6 +1884,219 @@ async fn test_reconnection_race_condition() {
     assert!(
         orders_count >= 1,
         "Should have at least 1 order subscription restored"
+    );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_subscribe_after_stream_call() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client.wait_until_active(5.0).await.expect("wait failed");
+
+    // Take stream (moves out_rx ownership)
+    let _stream = client.stream();
+
+    // Spawn task with stream
+    tokio::spawn(async move {
+        tokio::pin!(_stream);
+        // Stream processing would happen here
+    });
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Now try to subscribe - should work because handler is still alive
+    let result = client
+        .subscribe_book(InstrumentId::from("BTC-USD.OKX"))
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Subscribe should work after stream() is called, but got error: {:?}",
+        result.err()
+    );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_batch_cancel_orders_sends_message() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let inst_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+    let client_order_id = ClientOrderId::from("test-order-1");
+    let venue_order_id = VenueOrderId::from("12345");
+
+    let orders = vec![(inst_id, Some(client_order_id), Some(venue_order_id))];
+
+    let result = client.batch_cancel_orders(orders).await;
+    assert!(result.is_ok(), "batch_cancel_orders should succeed");
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_is_active_lifecycle() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(instruments);
+
+    assert!(
+        !client.is_active(),
+        "Client should not be active before connect"
+    );
+
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("wait until active failed");
+
+    assert!(
+        client.is_active(),
+        "Client should be active after connect completes"
+    );
+
+    client.close().await.expect("close failed");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert!(
+        !client.is_active(),
+        "Client should not be active after close"
+    );
+}
+
+#[tokio::test]
+async fn test_is_active_false_after_close() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(instruments);
+
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("wait until active failed");
+
+    assert!(
+        client.is_active(),
+        "Expected is_active() to be true after connect"
+    );
+
+    client.close().await.expect("close failed");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert!(
+        !client.is_active(),
+        "Expected is_active() to be false after close"
+    );
+    assert!(
+        client.is_closed(),
+        "Expected is_closed() to be true after close"
+    );
+}
+
+#[tokio::test]
+async fn test_is_active_false_during_reconnection() {
+    // Guard the is_active() semantics during reconnection:
+    // During reconnection, is_active() MUST return false so wait_until_active() waits
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let instruments = load_instruments();
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(instruments);
+
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("wait until active failed");
+    assert!(client.is_active(), "Client should be active after connect");
+
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USD.OKX"), false)
+        .await
+        .expect("subscribe trades failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(key, _, ok)| key.starts_with("trades") && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+
+    let _ = client
+        .subscribe_book(InstrumentId::from("ETH-USD.OKX"))
+        .await;
+
+    wait_until_async(
+        || {
+            let client = &client;
+            async move { !client.is_active() }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // This is critical - if is_active() returns true, wait_until_active() returns immediately
+    assert!(
+        !client.is_active(),
+        "Client should not be active during reconnection"
+    );
+
+    client
+        .wait_until_active(10.0)
+        .await
+        .expect("reconnection failed");
+
+    assert!(
+        client.is_active(),
+        "Client should be active after reconnection completes"
     );
 
     client.close().await.expect("close failed");

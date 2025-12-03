@@ -25,6 +25,9 @@ pub static BYBIT_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from
 
 pub const BYBIT_PONG: &str = "pong";
 
+pub const BYBIT_BASE_COIN: &str = "baseCoin";
+pub const BYBIT_QUOTE_COIN: &str = "quoteCoin";
+
 /// See <https://www.bybit.com/en/broker> for further details.
 pub const BYBIT_NAUTILUS_BROKER_ID: &str = "Qy000878";
 

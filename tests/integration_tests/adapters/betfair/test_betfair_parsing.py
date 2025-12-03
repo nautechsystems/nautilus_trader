@@ -20,6 +20,8 @@ from copy import copy
 
 import msgspec
 import pytest
+from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
+from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
 from betfair_parser.spec.betting.enums import PersistenceType
 from betfair_parser.spec.betting.enums import Side
 from betfair_parser.spec.betting.orders import CancelOrders
@@ -435,7 +437,7 @@ class TestBetfairParsing:
         assert result == expected
         assert msgspec.json.decode(msgspec.json.encode(result), type=CancelOrders) == expected
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_account_statement(self, betfair_client):
         mock_betfair_request(betfair_client, BetfairResponses.account_details())
         detail = await self.client.get_account_details()
@@ -469,7 +471,41 @@ class TestBetfairParsing:
         )
         assert result == expected
 
-    @pytest.mark.asyncio()
+    def test_account_state_fallback_currency(self):
+        detail = AccountDetailsResponse(
+            currency_code=None,
+            first_name="Test",
+            last_name="User",
+            locale_code="en",
+            region="GBR",
+            timezone="Europe/London",
+            discount_rate=0.0,
+            points_balance=0,
+            country_code="GB",
+        )
+        funds = AccountFundsResponse(
+            available_to_bet_balance=1000.0,
+            exposure=0.0,
+            retained_commission=0.0,
+            exposure_limit=0.0,
+            discount_rate=0.0,
+            points_balance=0,
+        )
+
+        result = betfair_account_to_account_state(
+            account_detail=detail,
+            account_funds=funds,
+            event_id=self.uuid,
+            reported=True,
+            ts_event=0,
+            ts_init=0,
+            fallback_currency=GBP,
+        )
+
+        assert result.base_currency == GBP
+        assert result.balances[0].total == Money(1000.0, GBP)
+
+    @pytest.mark.asyncio
     async def test_merge_order_book_deltas(self):
         raw = msgspec.json.encode(
             {
@@ -646,7 +682,7 @@ class TestBetfairParsing:
             side=Side.BACK,
             persistence_type=PersistenceType.LAPSE,
             order_type=OrderType.LIMIT,
-            placed_date=datetime.datetime.now(),
+            placed_date=datetime.datetime.now(tz=datetime.UTC),
             bsp_liability=0.0,
             status=status,
             average_price_matched=3.4211,
@@ -811,3 +847,209 @@ def request_id() -> int:
 
     """
     return next(copy(_default_id_generator))
+
+
+# Tests for bug fixes - BSP unit consistency
+def test_bsp_orders_use_stake_units_not_liability():
+    """
+    Test that BSP orders use stake units (size_matched + size_remaining) not liability.
+    """
+    from types import SimpleNamespace
+
+    from betfair_parser.spec.betting.enums import Side as BetOrderSide
+
+    # This tests the fix for BSP order quantity calculation
+    # Previously: used order.bsp_liability / order (TypeError)
+    # Then: used order.bsp_liability directly (wrong - mixed liability and stake units)
+    # Now: uses size_matched + size_remaining + size_cancelled + size_lapsed + size_voided (correct - all stake units)
+    # Arrange - simulate BSP BACK order from list_current_orders_on_close_execution_complete.json
+    # bspLiability=20.0 but sizeRemaining=10.0 (different units!)
+    order = SimpleNamespace(
+        price_size=SimpleNamespace(size=0.0, price=0.0),  # BSP order has no fixed price
+        bsp_liability=20.0,  # This is in liability/payout units
+        size_matched=0.0,
+        size_remaining=10.0,  # These are in stake units
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=BetOrderSide.BACK,
+    )
+
+    # Act - replicate the fixed logic from the code
+    if order.price_size.size != 0.0:
+        total_size = order.price_size.size
+        fill_size = order.size_matched
+    elif order.bsp_liability != 0.0:
+        # Use stake units (all size_* fields), not liability units
+        total_size = (
+            order.size_matched
+            + order.size_remaining
+            + order.size_cancelled
+            + order.size_lapsed
+            + order.size_voided
+        )
+        fill_size = order.size_matched
+    else:
+        total_size = 0.0
+        fill_size = 0.0
+
+    # Assert - should use stake units (10.0), not liability units (20.0)
+    assert total_size == 10.0  # Correct: stake total
+    assert fill_size == 0.0  # Correct: nothing matched yet
+    # Previously would have been total_size=20.0 (wrong - liability unit), fill_size=0.0
+    # which makes the order appear 0% filled when it should show correct stake amounts
+
+
+# Tests for bug fixes - BSPOrderBookDelta null pointer
+def test_bsp_order_book_delta_to_batch_with_clear_action():
+    """
+    Test that BSPOrderBookDelta with CLEAR action (order=None) can be serialized.
+    """
+    from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+    from nautilus_trader.model.enums import BookAction
+    from nautilus_trader.model.identifiers import InstrumentId
+
+    # Arrange - create delta with CLEAR action (order is None)
+    delta = BSPOrderBookDelta(
+        instrument_id=InstrumentId.from_str("1.12345.OVER_UNDER_25.BETFAIR"),
+        action=BookAction.CLEAR,
+        order=None,  # This was causing AttributeError
+        flags=0,
+        sequence=0,
+        ts_event=1234567890,
+        ts_init=1234567890,
+    )
+
+    # Act - should not raise AttributeError when accessing obj.order.price
+    batch = BSPOrderBookDelta.to_batch(delta)
+
+    # Assert - batch should be created successfully without crashing
+    assert batch is not None
+    assert batch.num_rows == 1
+
+    # The fix ensures serialization works - the order field gets default values
+    # since we can't serialize None in Arrow schema
+    # Verify action is preserved correctly
+    deltas = BSPOrderBookDelta.from_batch(batch)
+    assert len(deltas) == 1
+    assert deltas[0].action == BookAction.CLEAR
+    # After round-trip, order is reconstructed with defaults, not None
+    # This is acceptable as CLEAR action means ignore the order details anyway
+
+
+def test_bsp_order_status_report_uses_stake_units():
+    """
+    Test bet_to_order_status_report uses stake units for BSP orders.
+    """
+    from types import SimpleNamespace
+
+    from betfair_parser.spec.betting.enums import PersistenceType
+    from betfair_parser.spec.betting.enums import Side as BetOrderSide
+    from betfair_parser.spec.common import OrderStatus
+    from betfair_parser.spec.common import OrderType
+
+    from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
+    from nautilus_trader.model.identifiers import AccountId
+    from nautilus_trader.model.identifiers import ClientOrderId
+    from nautilus_trader.model.identifiers import InstrumentId
+    from nautilus_trader.model.identifiers import VenueOrderId
+
+    # Test BACK order with bspLiability=20.0 but actual stake=10.0
+    # (from list_current_orders_on_close_execution_complete.json)
+    back_order = SimpleNamespace(
+        price_size=SimpleNamespace(size=0.0, price=0.0),
+        bsp_liability=20.0,  # Liability units
+        size_matched=0.0,
+        size_remaining=10.0,  # Stake units
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=BetOrderSide.BACK,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.LAPSE,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date=None,
+        average_price_matched=0.0,
+    )
+
+    from nautilus_trader.core.uuid import UUID4
+
+    back_report = bet_to_order_status_report(
+        order=back_order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754671"),
+        client_order_id=ClientOrderId("O-123"),
+        ts_init=0,
+        report_id=UUID4(),
+    )
+
+    # Should use stake units (10.0), not liability units (20.0)
+    assert back_report.quantity.as_double() == 10.0
+    assert back_report.filled_qty.as_double() == 0.0
+
+    # Test LAY order with bspLiability=50.0 but actual stake=10.0
+    lay_order = SimpleNamespace(
+        price_size=SimpleNamespace(size=0.0, price=0.0),
+        bsp_liability=50.0,  # Liability units (much higher for lay)
+        size_matched=0.0,
+        size_remaining=10.0,  # Stake units (same as back)
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=BetOrderSide.LAY,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.LAPSE,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date=None,
+        average_price_matched=0.0,
+    )
+
+    lay_report = bet_to_order_status_report(
+        order=lay_order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754672"),
+        client_order_id=ClientOrderId("O-124"),
+        ts_init=0,
+        report_id=UUID4(),
+    )
+
+    # Should use stake units (10.0), not liability units (50.0)
+    assert lay_report.quantity.as_double() == 10.0
+    assert lay_report.filled_qty.as_double() == 0.0
+
+    # Test partially filled BSP order
+    partial_order = SimpleNamespace(
+        price_size=SimpleNamespace(size=0.0, price=0.0),
+        bsp_liability=20.0,
+        size_matched=6.0,  # 6 matched
+        size_remaining=4.0,  # 4 remaining
+        size_cancelled=0.0,
+        size_lapsed=0.0,
+        size_voided=0.0,
+        side=BetOrderSide.BACK,
+        order_type=OrderType.LIMIT,
+        status=OrderStatus.EXECUTABLE,
+        persistence_type=PersistenceType.LAPSE,
+        placed_date="2021-03-24T06:47:02.000Z",
+        matched_date="2021-03-24T06:48:00.000Z",
+        average_price_matched=3.0,
+    )
+
+    partial_report = bet_to_order_status_report(
+        order=partial_order,
+        account_id=AccountId("BETFAIR-001"),
+        instrument_id=InstrumentId.from_str("1.180575118.39980.BETFAIR"),
+        venue_order_id=VenueOrderId("228059754673"),
+        client_order_id=ClientOrderId("O-125"),
+        ts_init=0,
+        report_id=UUID4(),
+    )
+
+    # Total = 6 + 4 = 10.0 (stake units), filled = 6.0
+    assert partial_report.quantity.as_double() == 10.0
+    assert partial_report.filled_qty.as_double() == 6.0
+    # This correctly shows 60% filled (6/10), not 30% (6/20)

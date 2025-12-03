@@ -16,10 +16,8 @@
 use alloy::primitives::{Address, I256, U160};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    defi::{PoolSwap, SharedChain, SharedDex},
-    enums::OrderSide,
+    defi::{PoolIdentifier, PoolSwap, SharedChain, SharedDex},
     identifiers::InstrumentId,
-    types::{Price, Quantity},
 };
 
 /// Represents a token swap event from liquidity pools emitted from smart contract.
@@ -30,8 +28,8 @@ use nautilus_model::{
 pub struct SwapEvent {
     /// The decentralized exchange where the event happened.
     pub dex: SharedDex,
-    /// The address of the smart contract which emitted the event.
-    pub pool_address: Address,
+    /// The unique identifier for the pool.
+    pub pool_identifier: PoolIdentifier,
     /// The block number in which this swap transaction was included.
     pub block_number: u64,
     /// The unique hash identifier of the transaction containing this event.
@@ -63,9 +61,9 @@ impl SwapEvent {
     /// Creates a new [`SwapEvent`] instance with the specified parameters.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         dex: SharedDex,
-        pool_address: Address,
+        pool_identifier: PoolIdentifier,
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -80,7 +78,7 @@ impl SwapEvent {
     ) -> Self {
         Self {
             dex,
-            pool_address,
+            pool_identifier,
             block_number,
             transaction_hash,
             transaction_index,
@@ -102,17 +100,14 @@ impl SwapEvent {
         &self,
         chain: SharedChain,
         instrument_id: InstrumentId,
-        pool_address: Address,
-        normalized_side: Option<OrderSide>,
-        normalized_quantity: Option<Quantity>,
-        normalized_price: Option<Price>,
+        pool_identifier: PoolIdentifier,
         timestamp: Option<UnixNanos>,
     ) -> PoolSwap {
         PoolSwap::new(
             chain,
             self.dex.clone(),
             instrument_id,
-            pool_address,
+            pool_identifier,
             self.block_number,
             self.transaction_hash.clone(),
             self.transaction_index,
@@ -125,9 +120,6 @@ impl SwapEvent {
             self.sqrt_price_x96,
             self.liquidity,
             self.tick,
-            normalized_side,
-            normalized_quantity,
-            normalized_price,
         )
     }
 }

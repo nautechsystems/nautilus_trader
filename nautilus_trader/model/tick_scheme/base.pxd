@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.math cimport fabs
+from libc.math cimport fmax
+from libc.math cimport fmin
+
 from nautilus_trader.model.objects cimport Price
 
 
@@ -35,3 +39,15 @@ cpdef double round_up(double value, double base)
 
 cpdef void register_tick_scheme(TickScheme tick_scheme)
 cpdef TickScheme get_tick_scheme(str name)
+
+
+cdef inline bint is_close(double a, double b) noexcept nogil:
+    # Check if two floating point values are approximately equal:
+    # uses relative tolerance scaled with magnitude but capped to prevent
+    # treating values multiple ticks away as "on boundary".
+    cdef double diff = fabs(a - b)
+    cdef double largest = fmax(fabs(a), fabs(b))
+    cdef double rel_tol = 1e-12 * largest  # RELATIVE_TOLERANCE
+    cdef double tolerance = fmin(rel_tol, 0.001)  # MAX_TICK_DELTA
+    tolerance = fmax(tolerance, 1e-14)  # ABSOLUTE_TOLERANCE
+    return diff <= tolerance

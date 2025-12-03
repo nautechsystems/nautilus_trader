@@ -13,264 +13,93 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{env, error::Error, time::Duration};
+use std::{env, time::Duration};
 
 use nautilus_hyperliquid::{
-    common::{consts::ws_url, enums::HyperliquidBarInterval::OneMinute},
-    websocket::{
-        client::HyperliquidWebSocketInnerClient,
-        messages::{HyperliquidWsMessage, SubscriptionRequest},
-    },
+    common::{HyperliquidProductType, consts::ws_url},
+    http::HyperliquidHttpClient,
+    websocket::client::HyperliquidWebSocketClient,
 };
-use tokio::{pin, signal, time::sleep};
+use nautilus_model::instruments::{Instrument, InstrumentAny};
+use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
-use ustr::Ustr;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let log_level = env::var("LOG_LEVEL")
-        .unwrap_or_else(|_| "INFO".to_string())
-        .parse::<LevelFilter>()
-        .unwrap_or(LevelFilter::INFO);
-
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_max_level(log_level)
-        .with_target(false)
-        .compact()
+        .with_max_level(LevelFilter::DEBUG)
         .init();
 
     let args: Vec<String> = env::args().collect();
-    let subscription_type = args.get(1).map_or("all", String::as_str);
-    let symbol = args.get(2).map_or("BTC", String::as_str);
-    let testnet = args.get(3).is_some_and(|s| s == "testnet");
+    let testnet = args.get(1).is_some_and(|s| s == "testnet");
 
-    tracing::info!("Starting Hyperliquid WebSocket test");
-    tracing::info!("Subscription type: {subscription_type}");
-    tracing::info!("Symbol: {symbol}");
-    tracing::info!("Network: {}", if testnet { "testnet" } else { "mainnet" });
+    tracing::info!("Starting Hyperliquid WebSocket data example");
+    tracing::info!("Testnet: {testnet}");
 
-    let url = ws_url(testnet);
-    let mut client = HyperliquidWebSocketInnerClient::connect(url).await?;
+    // Load instruments first
+    let http_client = HyperliquidHttpClient::new(testnet, None, None)?;
+    let instruments = http_client.request_instruments().await?;
+    tracing::info!("Loaded {} instruments", instruments.len());
 
-    // Give the connection a moment to stabilize
-    sleep(Duration::from_millis(500)).await;
+    // Find BTC-USD-PERP instrument (raw_symbol is "BTC" for BTC-USD-PERP)
+    let btc_inst = instruments
+        .iter()
+        .find(|i| i.raw_symbol().as_str() == "BTC")
+        .ok_or("BTC-USD-PERP instrument not found")?;
+    let instrument_id = match btc_inst {
+        InstrumentAny::CryptoPerpetual(inst) => inst.id,
+        _ => return Err("Expected CryptoPerpetual instrument".into()),
+    };
+    tracing::info!("Using instrument: {}", instrument_id);
 
-    let coin = Ustr::from(symbol);
-    tracing::info!("Using symbol: {symbol}");
+    let ws_url = ws_url(testnet);
+    tracing::info!("WebSocket URL: {ws_url}");
 
-    match subscription_type {
-        "trades" => {
-            tracing::info!("Subscribing to trades for {symbol}");
-            let subscription = SubscriptionRequest::Trades { coin };
-            client.ws_subscribe(subscription).await?;
-        }
-        "book" | "l2book" | "orderbook" => {
-            tracing::info!("Subscribing to L2 book for {symbol}");
-            let subscription = SubscriptionRequest::L2Book {
-                coin,
-                n_sig_figs: None,
-                mantissa: None,
-            };
-            client.ws_subscribe(subscription).await?;
-        }
-        "candles" | "klines" => {
-            tracing::info!("Subscribing to candles for {symbol}");
-            let subscription = SubscriptionRequest::Candle {
-                coin,
-                interval: OneMinute,
-            };
-            client.ws_subscribe(subscription).await?;
-        }
-        "allmids" => {
-            tracing::info!("Subscribing to all mids");
-            let subscription = SubscriptionRequest::AllMids { dex: None };
-            client.ws_subscribe(subscription).await?;
-        }
-        "bbo" => {
-            tracing::info!("Subscribing to best bid/offer for {symbol}");
-            let subscription = SubscriptionRequest::Bbo { coin };
-            client.ws_subscribe(subscription).await?;
-        }
-        "all" => {
-            tracing::info!("Subscribing to all available data types for {symbol}");
+    let mut client = HyperliquidWebSocketClient::new(
+        Some(ws_url.to_string()),
+        testnet,
+        HyperliquidProductType::Perp,
+        None,
+    );
 
-            tracing::info!("- Subscribing to trades");
-            let subscription = SubscriptionRequest::Trades { coin };
-            if let Err(e) = client.ws_subscribe(subscription).await {
-                tracing::error!("Failed to subscribe to trades: {e}");
-            } else {
-                tracing::info!("  ✓ Trades subscription successful");
-            }
+    // Cache instruments before connecting
+    client.cache_instruments(instruments);
 
-            sleep(Duration::from_millis(100)).await;
+    client.connect().await?;
+    tracing::info!("Connected to Hyperliquid WebSocket");
 
-            tracing::info!("- Subscribing to L2 book");
-            let subscription = SubscriptionRequest::L2Book {
-                coin,
-                n_sig_figs: None,
-                mantissa: None,
-            };
-            if let Err(e) = client.ws_subscribe(subscription).await {
-                tracing::error!("Failed to subscribe to L2 book: {e}");
-            } else {
-                tracing::info!("  ✓ L2 book subscription successful");
-            }
+    // Wait for connection to be fully established
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
-            sleep(Duration::from_millis(100)).await;
+    tracing::info!("Subscribing to trades for {}", instrument_id);
+    client.subscribe_trades(instrument_id).await?;
 
-            tracing::info!("- Subscribing to best bid/offer");
-            let subscription = SubscriptionRequest::Bbo { coin };
-            if let Err(e) = client.ws_subscribe(subscription).await {
-                tracing::error!("Failed to subscribe to BBO: {e}");
-            } else {
-                tracing::info!("  ✓ BBO subscription successful");
-            }
+    tracing::info!("Subscribing to BBO for {}", instrument_id);
+    client.subscribe_quotes(instrument_id).await?;
 
-            sleep(Duration::from_millis(100)).await;
-
-            tracing::info!("- Subscribing to candles");
-            let subscription = SubscriptionRequest::Candle {
-                coin,
-                interval: OneMinute,
-            };
-            if let Err(e) = client.ws_subscribe(subscription).await {
-                tracing::error!("Failed to subscribe to candles: {e}");
-            } else {
-                tracing::info!("  ✓ Candles subscription successful");
-            }
-        }
-        _ => {
-            tracing::error!("Unknown subscription type: {subscription_type}");
-            tracing::info!("Available types: trades, book, candles, allmids, bbo, all");
-            tracing::info!("Usage: {} <subscription_type> <symbol> [testnet]", args[0]);
-            tracing::info!("Example: {} trades BTC testnet", args[0]);
-            return Ok(());
-        }
-    }
-
-    tracing::info!("Subscriptions completed, waiting for data...");
-    tracing::info!("Press CTRL+C to stop");
+    // Wait briefly to ensure subscriptions are processed
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Create a future that completes on CTRL+C
     let sigint = signal::ctrl_c();
     pin!(sigint);
 
-    // Use a flag to track if we should close
-    let mut should_close = false;
-    let mut message_count = 0u64;
-
+    let mut message_count = 0;
     loop {
         tokio::select! {
-            event = client.ws_next_event() => {
-                match event {
-                    Some(HyperliquidWsMessage::Trades { data }) => {
-                        message_count += 1;
-                        tracing::info!(
-                            "[Message #{message_count}] Trade update: {} trades",
-                            data.len()
-                        );
-                        for trade in &data {
-                            tracing::debug!(
-                                coin = %trade.coin,
-                                side = %trade.side,
-                                px = %trade.px,
-                                sz = %trade.sz,
-                                time = trade.time,
-                                tid = trade.tid,
-                                "trade"
-                            );
-                        }
-                    }
-                    Some(HyperliquidWsMessage::L2Book { data }) => {
-                        message_count += 1;
-                        tracing::info!(
-                            "[Message #{message_count}] L2 book update: coin={}, levels={}",
-                            data.coin,
-                            data.levels.len()
-                        );
-                        tracing::debug!(
-                            coin = %data.coin,
-                            time = data.time,
-                            bids = data.levels[0].len(),
-                            asks = data.levels[1].len(),
-                            "L2 book"
-                        );
-                    }
-                    Some(HyperliquidWsMessage::Bbo { data }) => {
-                        message_count += 1;
-                        tracing::info!(
-                            "[Message #{message_count}] BBO update: coin={}",
-                            data.coin
-                        );
-                        let bid = data.bbo[0].as_ref().map_or("None", |l| l.px.as_str());
-                        let ask = data.bbo[1].as_ref().map_or("None", |l| l.px.as_str());
-                        tracing::debug!(
-                            coin = %data.coin,
-                            bid = bid,
-                            ask = ask,
-                            time = data.time,
-                            "BBO"
-                        );
-                    }
-                    Some(HyperliquidWsMessage::AllMids { data }) => {
-                        message_count += 1;
-                        tracing::info!(
-                            "[Message #{message_count}] All mids update: {} coins",
-                            data.mids.len()
-                        );
-                        for (coin, mid) in &data.mids {
-                            tracing::debug!(coin = %coin, mid = %mid, "mid price");
-                        }
-                    }
-                    Some(HyperliquidWsMessage::Candle { data }) => {
-                        message_count += 1;
-                        tracing::info!("[Message #{message_count}] Candle update");
-                        tracing::debug!(
-                            symbol = %data.s,
-                            interval = %data.i,
-                            time = data.t,
-                            open = %data.o,
-                            high = %data.h,
-                            low = %data.l,
-                            close = %data.c,
-                            volume = %data.v,
-                            trades = data.n,
-                            "candle data"
-                        );
-                    }
-                    Some(HyperliquidWsMessage::SubscriptionResponse { data: sub_data }) => {
-                        tracing::info!(
-                            "Subscription response received: method={}, type={:?}",
-                            sub_data.method,
-                            sub_data.subscription
-                        );
-                    }
-                    Some(HyperliquidWsMessage::Pong) => {
-                        tracing::trace!("Received pong");
-                    }
-                    Some(event) => {
-                        message_count += 1;
-                        tracing::debug!("[Message #{message_count}] Other message: {event:?}");
-                    }
-                    None => {
-                        tracing::warn!("WebSocket stream ended unexpectedly");
-                        break;
-                    }
-                }
+            Some(message) = client.next_event() => {
+                message_count += 1;
+                tracing::info!("Message #{}: {:?}", message_count, message);
             }
             _ = &mut sigint => {
-                tracing::info!("Received CTRL+C, closing connection...");
-                should_close = true;
+                tracing::info!("Received SIGINT, closing connection...");
+                client.disconnect().await?;
                 break;
             }
+            else => break,
         }
     }
 
-    if should_close {
-        tracing::info!("Total messages received: {message_count}");
-        client.ws_disconnect().await?;
-        tracing::info!("Connection closed successfully");
-    }
-
+    tracing::info!("Received {} total messages", message_count);
     Ok(())
 }

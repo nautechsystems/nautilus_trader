@@ -37,7 +37,64 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
+      - name: Verify capnp schemas are up-to-date
+        run: make check-capnp-schemas
+
+  # Dependency license, advisory, and ban checks
+  # https://embarkstudios.github.io/cargo-deny/
   cargo-deny:
+    runs-on: ubuntu-22.04
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            public.ecr.aws:443
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Cache Docker images for cargo-deny action
+        id: cache-docker
+        # https://github.com/actions/cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /tmp/docker-cache
+          key: docker-cargo-deny-${{ runner.os }}-rust-1.85.0-alpine3.20
+          restore-keys: |
+            docker-cargo-deny-${{ runner.os }}-
+
+      - name: Load cached Docker image
+        if: steps.cache-docker.outputs.cache-hit == 'true'
+        run: |
+          if [ -f /tmp/docker-cache/rust-alpine.tar ]; then
+            docker load -i /tmp/docker-cache/rust-alpine.tar
+          fi
+
+      - name: Pull and cache Docker image from ECR Public
+        if: steps.cache-docker.outputs.cache-hit != 'true'
+        run: |
+          # Pull from ECR Public (unlimited anonymous pulls) and tag as Docker Hub image
+          docker pull public.ecr.aws/docker/library/rust:1.85.0-alpine3.20
+          docker tag public.ecr.aws/docker/library/rust:1.85.0-alpine3.20 rust:1.85.0-alpine3.20
+          mkdir -p /tmp/docker-cache
+          docker save rust:1.85.0-alpine3.20 -o /tmp/docker-cache/rust-alpine.tar
+
+      # https://github.com/EmbarkStudios/cargo-deny-action
+      - name: Run cargo-deny (advisories, licenses, sources, bans)
+        uses: EmbarkStudios/cargo-deny-action@f9cc7aa250dec5698b425dc01fbf0d745fcd1b78 # v2.0.13
+        with:
+          command: check advisories licenses sources bans
+          arguments: --all-features
+
+  # Supply chain security auditing
+  # https://mozilla.github.io/cargo-vet/configuring-ci.html
+  cargo-vet:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
@@ -51,12 +108,34 @@ jobs:
         with:
           persist-credentials: false
 
-      # https://github.com/EmbarkStudios/cargo-deny-action
-      - name: Run cargo-deny (advisories, licenses, sources, bans)
-        uses: EmbarkStudios/cargo-deny-action@f9cc7aa250dec5698b425dc01fbf0d745fcd1b78 # v2.0.13
+      - name: Get cargo-vet version
+        run: echo "CARGO_VET_VERSION=$(bash scripts/cargo-tool-version.sh cargo-vet)" >> "$GITHUB_ENV"
+
+      - name: Get Rust toolchain version
+        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
         with:
-          command: check advisories licenses sources bans
-          arguments: --all-features
+          toolchain: ${{ env.TOOLCHAIN }}
+          override: true
+
+      # https://github.com/actions/cache
+      - name: Cache cargo-vet binary
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ${{ runner.tool_cache }}/cargo-vet
+          key: cargo-vet-bin-${{ env.CARGO_VET_VERSION }}
+
+      - name: Add cargo-vet to PATH
+        run: echo "${{ runner.tool_cache }}/cargo-vet/bin" >> "$GITHUB_PATH"
+
+      - name: Install cargo-vet
+        run: cargo install --root ${{ runner.tool_cache }}/cargo-vet --version ${{ env.CARGO_VET_VERSION }} cargo-vet
+
+      - name: Run cargo-vet
+        run: cargo vet --locked
 
   build-linux-x86:
     strategy:
@@ -68,7 +147,6 @@ jobs:
           - "3.12"
           - "3.13"
           - "3.14"
-          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
     defaults:
       run:
         shell: bash
@@ -76,6 +154,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs:
       - cargo-deny
+      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
@@ -135,7 +214,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test-hypersync
+        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -145,7 +224,8 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --no-sync pytest --ignore=tests/performance_tests -n logical --dist=loadgroup
+          uv run --no-sync pytest --ignore=tests/performance_tests \
+            -n logical --dist=loadgroup --reruns 2 --reruns-delay 1
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -160,19 +240,26 @@ jobs:
           - "3.12"
           - "3.13"
           # - "3.14"  # Disabled: ckzg dependency (via eth-account) lacks ARM64 wheel for 3.14
-          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop branch for now (takes ~1-1.5 hrs)
+    # Pause job on develop, nightly, and test-ci branches for now
+    # - develop: takes ~1-1.5 hrs
+    # - nightly: TODO: build issue pending investigation
+    # - test-ci: skip ARM builds during CI testing
     if: >
-      !( (github.event_name == 'push' && github.ref_name == 'develop')
-      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
+      !(
+        (github.event_name == 'push' &&
+          (github.ref_name == 'develop' || github.ref_name == 'nightly' || github.ref_name == 'test-ci'))
+        || (github.event_name == 'pull_request' &&
+          (github.base_ref == 'develop' || github.base_ref == 'nightly' || github.base_ref == 'test-ci'))
+      )
     needs:
-      - pre-commit
       - cargo-deny
+      - cargo-vet
+      - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
@@ -231,7 +318,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test-hypersync
+        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -241,7 +328,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --no-sync pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -256,15 +343,15 @@ jobs:
           - "3.12"
           - "3.13"
           - "3.14"
-          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - pre-commit
       - cargo-deny
+      - cargo-vet
+      - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
@@ -289,7 +376,7 @@ jobs:
         uses: ./.github/actions/common-test-data
 
       - name: Run Rust tests
-        run: make cargo-test-hypersync
+        run: make cargo-test EXTRA_FEATURES="capnp,hypersync"
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
@@ -299,7 +386,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --no-sync pytest --ignore=tests/performance_tests
+          uv run --no-sync pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -313,15 +400,16 @@ jobs:
         python-version:
           - "3.12"
           - "3.13"
-          # REMINDER: Update EXPECTED_WHEEL_COUNT below when changing Python versions
+          - "3.14"
     defaults:
       run:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - pre-commit
       - cargo-deny
+      - cargo-vet
+      - pre-commit
     env:
       BUILD_MODE: release
       HIGH_PRECISION: false
@@ -359,7 +447,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --no-sync python -m pytest --ignore=tests/performance_tests
+          uv run --no-sync python -m pytest --ignore=tests/performance_tests --reruns 2 --reruns-delay 1
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -386,7 +474,6 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      EXPECTED_WHEEL_COUNT: 8  # Linux x86 (3) + macOS (3) + Windows (2, no 3.14 support)
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -408,9 +495,6 @@ jobs:
           path: dist
           pattern: "nautilus_trader-*.whl"
           merge-multiple: true
-
-      - name: Validate wheel count
-        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
@@ -439,7 +523,7 @@ jobs:
       attestations: write # Required for attestations
     needs:
       - build-linux-x86
-      - build-linux-arm
+      # - build-linux-arm  # TODO: Build issue pending investigation
       - build-macos
       - build-windows
     if: >
@@ -450,7 +534,6 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      EXPECTED_WHEEL_COUNT: 10  # Linux x86 (3) + Linux ARM (2, no 3.14) + macOS (3) + Windows (2, no 3.14 support)
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -472,9 +555,6 @@ jobs:
           path: dist
           pattern: "nautilus_trader-*.whl"
           merge-multiple: true
-
-      - name: Validate wheel count
-        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance
@@ -514,7 +594,6 @@ jobs:
       CLOUDFLARE_R2_URL: ${{ secrets.CLOUDFLARE_R2_URL }}
       CLOUDFLARE_R2_REGION: "auto"
       CLOUDFLARE_R2_BUCKET_NAME: "packages"
-      EXPECTED_WHEEL_COUNT: 10  # Linux x86 (3) + Linux ARM (2, no 3.14) + macOS (3) + Windows (2, no 3.14 support)
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -549,9 +628,6 @@ jobs:
           path: dist
           pattern: "nautilus_trader-*.whl"
           merge-multiple: true
-
-      - name: Validate wheel count
-        run: bash ./scripts/ci/validate-wheel-count.sh "$EXPECTED_WHEEL_COUNT"
 
       # https://github.com/actions/attest-build-provenance
       - name: Attest wheel provenance

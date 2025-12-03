@@ -30,6 +30,7 @@ from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_exec import ExecTester
@@ -49,7 +50,7 @@ if instrument_type == OKXInstrumentType.SPOT:
     contract_types: tuple[OKXContractType, ...] | None = None  # SPOT doesn't use contract types
     order_qty = Decimal("10.00")  # In quote currency for buying
     # order_qty = Decimal("0.01")  # In base currency for selling
-    enable_sells = False
+    enable_limit_sells = False
     use_spot_margin = False
     use_quote_quantity = True
 elif instrument_type == OKXInstrumentType.MARGIN:
@@ -57,14 +58,14 @@ elif instrument_type == OKXInstrumentType.MARGIN:
     contract_types = None  # MARGIN doesn't use contract types
     order_qty = Decimal("10.00")  # In quote currency for buying
     # order_qty = Decimal("0.01")  # In base currency for selling
-    enable_sells = False
+    enable_limit_sells = False
     use_spot_margin = True
     use_quote_quantity = True
 elif instrument_type == OKXInstrumentType.SWAP:
     symbol = f"{token}-USDT-SWAP"
     contract_types = (OKXContractType.LINEAR,)
     order_qty = Decimal("0.01")
-    enable_sells = True
+    enable_limit_sells = True
     use_spot_margin = False
     use_quote_quantity = False
 elif instrument_type == OKXInstrumentType.FUTURES:
@@ -72,7 +73,7 @@ elif instrument_type == OKXInstrumentType.FUTURES:
     symbol = f"{token}-USD-251226"  # ETH-USD futures expiring 2025-12-26
     contract_types = (OKXContractType.INVERSE,)  # ETH-USD futures are inverse contracts
     order_qty = Decimal(1)
-    enable_sells = True
+    enable_limit_sells = True
     use_spot_margin = False
     use_quote_quantity = False
 elif instrument_type == OKXInstrumentType.OPTION:
@@ -81,7 +82,7 @@ elif instrument_type == OKXInstrumentType.OPTION:
     )
     contract_types = None  # Options don't use contract types in the same way
     order_qty = Decimal(1)
-    enable_sells = True
+    enable_limit_sells = True
     use_spot_margin = False
     use_quote_quantity = False
 else:
@@ -216,10 +217,10 @@ config_tester = ExecTesterConfig(
     # subscribe_quotes=False,
     # subscribe_trades=False,
     # subscribe_book=True,
-    enable_buys=True,
-    enable_sells=enable_sells,
+    enable_limit_buys=True,
+    enable_limit_sells=enable_limit_sells,
     open_position_on_start_qty=order_qty,
-    # open_position_time_in_force=TimeInForce.FOK,
+    open_position_time_in_force=TimeInForce.IOC,
     tob_offset_ticks=100,
     # stop_offset_ticks=1,
     order_qty=order_qty,

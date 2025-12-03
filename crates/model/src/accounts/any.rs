@@ -19,8 +19,7 @@
 //! single collection (e.g. `Vec<AccountAny>`).  Each variant simply embeds one of the concrete
 //! account structs defined in this module.
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 
@@ -71,14 +70,14 @@ impl AccountAny {
         }
     }
 
-    pub fn balances(&self) -> HashMap<Currency, AccountBalance> {
+    pub fn balances(&self) -> AHashMap<Currency, AccountBalance> {
         match self {
             Self::Margin(margin) => margin.balances(),
             Self::Cash(cash) => cash.balances(),
         }
     }
 
-    pub fn balances_locked(&self) -> HashMap<Currency, Money> {
+    pub fn balances_locked(&self) -> AHashMap<Currency, Money> {
         match self {
             Self::Margin(margin) => margin.balances_locked(),
             Self::Cash(cash) => cash.balances_locked(),
@@ -170,6 +169,7 @@ impl From<AccountState> for AccountAny {
             AccountType::Margin => Self::Margin(MarginAccount::new(event, false)),
             AccountType::Cash => Self::Cash(CashAccount::new(event, false, false)),
             AccountType::Betting => panic!("Betting account not implemented"),
+            AccountType::Wallet => panic!("Wallet account not implemented"),
         }
     }
 }

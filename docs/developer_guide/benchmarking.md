@@ -152,7 +152,7 @@ sudo cargo flamegraph --bench matching -p nautilus-common --profile bench
 > owned by the `root` user. This can cause permission errors with subsequent
 > `cargo` commands.
 >
-> To fix this, you may need to remove the root-owned files manually, or simply
+> To fix this, you may need to remove the root-owned files manually, or
 > run `sudo cargo clean` to remove the entire `target/` directory.
 
 Because `[profile.bench]` keeps full debug symbols the SVG will show readable

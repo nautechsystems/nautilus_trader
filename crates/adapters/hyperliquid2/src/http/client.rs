@@ -99,6 +99,7 @@ impl Hyperliquid2HttpClient {
                 reqwest::Method::POST,
                 self.inner.urls.info.clone(),
                 None,
+                None,
                 Some(payload_str.into_bytes()),
                 None,
                 None,
@@ -142,6 +143,7 @@ impl Hyperliquid2HttpClient {
             .request(
                 reqwest::Method::POST,
                 self.inner.urls.exchange.clone(),
+                None,
                 None,
                 Some(payload_str.into_bytes()),
                 None,

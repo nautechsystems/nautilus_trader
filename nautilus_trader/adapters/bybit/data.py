@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Any
 
 import pandas as pd
 
@@ -123,7 +124,7 @@ class BybitDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        masked_key = self._http_client.masked_api_key()
+        masked_key = self._http_client.api_key_masked
         self._log.info(f"REST API key {masked_key}", LogColor.BLUE)
 
         # WebSocket API - create clients for each product type (public endpoints)
@@ -151,9 +152,13 @@ class BybitDataClient(LiveMarketDataClient):
             self._ws_clients[product_type] = ws_client
 
         self._depths: dict[nautilus_pyo3.InstrumentId, int] = {}
+        self._quote_depths: dict[nautilus_pyo3.InstrumentId, int] = {}
 
         # Reference counting for ticker channel
         self._ticker_subscriptions: dict[nautilus_pyo3.InstrumentId, set[str]] = {}
+
+        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
+        self._update_instruments_task: asyncio.Task | None = None
 
     @property
     def instrument_provider(self) -> BybitInstrumentProvider:
@@ -170,8 +175,18 @@ class BybitDataClient(LiveMarketDataClient):
             await ws_client.wait_until_active(timeout_secs=10.0)
             self._log.info(f"Connected to {product_type.name} websocket", LogColor.BLUE)
 
+        if self._update_instruments_interval_mins:
+            self._update_instruments_task = self.create_task(
+                self._update_instruments(self._update_instruments_interval_mins),
+            )
+
     async def _disconnect(self) -> None:
         self._http_client.cancel_all_requests()
+
+        if self._update_instruments_task:
+            self._log.debug("Canceling task 'update_instruments'")
+            self._update_instruments_task.cancel()
+            self._update_instruments_task = None
 
         # Delay to allow websocket to send any unsubscribe messages
         await asyncio.sleep(1.0)
@@ -197,10 +212,10 @@ class BybitDataClient(LiveMarketDataClient):
         instruments_pyo3 = self.instrument_provider.instruments_pyo3()
 
         for inst in instruments_pyo3:
-            self._http_client.add_instrument(inst)
-            # Also add instruments to all websocket clients
+            self._http_client.cache_instrument(inst)
+
             for ws_client in self._ws_clients.values():
-                ws_client.add_instrument(inst)
+                ws_client.cache_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
@@ -231,6 +246,55 @@ class BybitDataClient(LiveMarketDataClient):
             bar_spec.step,
         )
 
+    async def _update_instruments(self, interval_mins: int) -> None:
+        while True:
+            try:
+                await asyncio.sleep(interval_mins * 60)
+                await self._instrument_provider.initialize(reload=True)
+                self._cache_instruments()
+                self._send_all_instruments_to_data_engine()
+                self._log.info(
+                    f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
+                    LogColor.BLUE,
+                )
+            except asyncio.CancelledError:
+                self._log.debug("Canceled task 'update_instruments'")
+                return
+            except Exception as e:
+                self._log.error(f"Error updating instruments: {e}")
+
+    async def _subscribe_instruments(self, command) -> None:
+        if self._update_instruments_interval_mins:
+            self._log.info(
+                f"Bybit does not have an instruments channel, instrument updates are handled by "
+                f"polling task running every {self._update_instruments_interval_mins} minutes",
+                LogColor.BLUE,
+            )
+        else:
+            self._log.warning(
+                "Instruments subscription requested but update_instruments_interval_mins is not configured",
+            )
+
+    async def _subscribe_instrument(self, command) -> None:
+        if self._update_instruments_interval_mins:
+            self._log.info(
+                f"Bybit does not have an instruments channel, instrument updates are handled by "
+                f"polling task running every {self._update_instruments_interval_mins} minutes",
+                LogColor.BLUE,
+            )
+        else:
+            self._log.warning(
+                "Instrument subscription requested but update_instruments_interval_mins is not configured",
+            )
+
+    async def _unsubscribe_instruments(self, command) -> None:
+        # Instruments are updated via polling task, no WebSocket unsubscribe needed
+        pass
+
+    async def _unsubscribe_instrument(self, command) -> None:
+        # Instruments are updated via polling task, no WebSocket unsubscribe needed
+        pass
+
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
             self._log.warning(
@@ -253,13 +317,22 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
 
-        # Reference counting: only subscribe if first user of ticker channel
-        if pyo3_instrument_id not in self._ticker_subscriptions:
-            self._ticker_subscriptions[pyo3_instrument_id] = set()
-            await ws_client.subscribe_ticker(pyo3_instrument_id)
-        self._ticker_subscriptions[pyo3_instrument_id].add("quotes")
+        # SPOT ticker channel doesn't include bid/ask, use orderbook depth=1
+        if product_type == nautilus_pyo3.BybitProductType.SPOT:
+            depth = 1
+            self._quote_depths[pyo3_instrument_id] = depth
+            await ws_client.subscribe_orderbook(pyo3_instrument_id, depth)
+        else:
+            # Reference counting: only subscribe if first user of ticker channel
+            if pyo3_instrument_id not in self._ticker_subscriptions:
+                self._ticker_subscriptions[pyo3_instrument_id] = set()
+                await ws_client.subscribe_ticker(pyo3_instrument_id)
+            self._ticker_subscriptions[pyo3_instrument_id].add("quotes")
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -278,6 +351,16 @@ class BybitDataClient(LiveMarketDataClient):
         # Bybit doesn't have a separate funding rate subscription
         # Funding rate data comes through ticker subscriptions for perpetual instruments
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
+
+        if product_type == nautilus_pyo3.BybitProductType.SPOT:
+            self._log.warning(
+                f"Cannot subscribe to funding rates for SPOT instrument {command.instrument_id}",
+            )
+            return
+
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
 
         # Reference counting: only subscribe if first user of ticker channel
@@ -303,14 +386,22 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
 
-        # Reference counting: only unsubscribe if last user of ticker channel
-        if pyo3_instrument_id in self._ticker_subscriptions:
-            self._ticker_subscriptions[pyo3_instrument_id].discard("quotes")
-            if not self._ticker_subscriptions[pyo3_instrument_id]:
-                await ws_client.unsubscribe_ticker(pyo3_instrument_id)
-                del self._ticker_subscriptions[pyo3_instrument_id]
+        if product_type == nautilus_pyo3.BybitProductType.SPOT:
+            depth = self._quote_depths.get(pyo3_instrument_id, 1)
+            await ws_client.unsubscribe_orderbook(pyo3_instrument_id, depth)
+            self._quote_depths.pop(pyo3_instrument_id, None)
+        else:
+            # Reference counting: only unsubscribe if last user of ticker channel
+            if pyo3_instrument_id in self._ticker_subscriptions:
+                self._ticker_subscriptions[pyo3_instrument_id].discard("quotes")
+                if not self._ticker_subscriptions[pyo3_instrument_id]:
+                    await ws_client.unsubscribe_ticker(pyo3_instrument_id)
+                    del self._ticker_subscriptions[pyo3_instrument_id]
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -329,6 +420,13 @@ class BybitDataClient(LiveMarketDataClient):
         # Bybit doesn't have a separate funding rate subscription
         # Unsubscribe from ticker which includes funding rate updates
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        product_type = nautilus_pyo3.bybit_product_type_from_symbol(
+            pyo3_instrument_id.symbol.value,
+        )
+
+        if product_type == nautilus_pyo3.BybitProductType.SPOT:
+            return
+
         ws_client = self._get_ws_client_for_instrument(pyo3_instrument_id)
 
         # Reference counting: only unsubscribe if last user of ticker channel
@@ -337,27 +435,6 @@ class BybitDataClient(LiveMarketDataClient):
             if not self._ticker_subscriptions[pyo3_instrument_id]:
                 await ws_client.unsubscribe_ticker(pyo3_instrument_id)
                 del self._ticker_subscriptions[pyo3_instrument_id]
-
-    def _handle_msg(self, raw: object) -> None:
-        try:
-            # Handle pycapsule data from Rust (market data)
-            if nautilus_pyo3.is_pycapsule(raw):
-                # The capsule will fall out of scope at the end of this method,
-                # and eventually be garbage collected. The contained pointer
-                # to `Data` is still owned and managed by Rust.
-                data = capsule_to_data(raw)
-                self._handle_data(data)
-                return
-
-            if isinstance(raw, nautilus_pyo3.FundingRateUpdate):
-                self._handle_data(FundingRateUpdate.from_pyo3(raw))
-                return
-
-            msg_str = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
-            if msg_str:
-                self._log.debug(f"WebSocket message: {msg_str}")
-        except Exception as e:
-            self._log.error(f"Error handling websocket message: {e}")
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._log.error(
@@ -476,3 +553,25 @@ class BybitDataClient(LiveMarketDataClient):
             request.end,
             request.params,
         )
+
+    def _handle_msg(self, msg: Any) -> None:
+        try:
+            # Handle pycapsule data from Rust (market data)
+            if nautilus_pyo3.is_pycapsule(msg):
+                # The capsule will fall out of scope at the end of this method,
+                # and eventually be garbage collected. The contained pointer
+                # to `Data` is still owned and managed by Rust.
+                data = capsule_to_data(msg)
+                self._handle_data(data)
+                return
+
+            if isinstance(msg, nautilus_pyo3.FundingRateUpdate):
+                data = FundingRateUpdate.from_pyo3(msg)
+                self._handle_data(data)
+                return
+
+            msg_str = msg.decode("utf-8") if isinstance(msg, bytes) else str(msg)
+            if msg_str:
+                self._log.debug(f"WebSocket message: {msg_str}")
+        except Exception as e:
+            self._log.exception("Error handling websocket message", e)

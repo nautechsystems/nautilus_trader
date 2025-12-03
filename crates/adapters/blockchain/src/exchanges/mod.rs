@@ -24,7 +24,7 @@ pub mod arbitrum;
 pub mod base;
 pub mod ethereum;
 pub mod extended;
-mod parsing;
+pub mod parsing;
 
 /// Returns a map of all DEX names to Dex instances across all chains
 #[must_use]

@@ -62,8 +62,10 @@ from v4_proto.dydxprotocol.feetiers import query_pb2 as fee_tier_query
 from v4_proto.dydxprotocol.feetiers import query_pb2_grpc as fee_tier_query_grpc
 from v4_proto.dydxprotocol.subaccounts.subaccount_pb2 import SubaccountId
 
-from nautilus_trader.adapters.dydx.common.constants import ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE
+from nautilus_trader.adapters.dydx.common.constants import ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODES
+from nautilus_trader.adapters.dydx.common.constants import GOOD_TILL_BLOCK_ERROR_CODE
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
+from nautilus_trader.common.component import Logger
 
 
 DEFAULT_FEE = Fee(
@@ -249,6 +251,9 @@ class DYDXAccountGRPCAPI:
 
         self._transaction_builder = transaction_builder
         self._lock = asyncio.Lock()
+
+        self._log: Logger = Logger(type(self).__name__)
+
 
     def _get_channel(self) -> grpc.aio.Channel:
         if self._channel is None:
@@ -518,15 +523,22 @@ class DYDXAccountGRPCAPI:
         """
         async with self._lock:
             response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
-
             if response.tx_response.code == 0:
                 wallet.sequence += 1
 
             # The sequence number is not correct. Retrieve it from the gRPC channel.
             # The retry manager can retry the transaction.
-            elif response.tx_response.code == ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE:
+            elif response.tx_response.code in ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODES:
+                before = wallet.sequence
                 account = await self.get_account(wallet.address)
                 wallet.sequence = account.sequence
+                self._log.info(f"Account sequence mismatch, refreshing from chain. Current sequence {before}, after {wallet.sequence}")
+
+            elif response.tx_response.code == GOOD_TILL_BLOCK_ERROR_CODE:
+                self._log.info(f"Good till block error, likely the good_til_block has passed. Response: {response}")
+
+            else:
+                self._log.info(f"Broadcast response: {response}. Code {response.tx_response.code}, message: {response.tx_response.raw_log}")
 
             return response
 

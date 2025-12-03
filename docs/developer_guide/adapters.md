@@ -10,13 +10,13 @@ Adapters provide connectivity to trading venues and data providers—translating
 NautilusTrader adapters follow a layered architecture pattern with:
 
 - **Rust core** for networking clients and performance-critical operations.
-- **Python layer** (optional) for integrating into the legacy system.
+- **Python layer** for integrating Rust clients into the platform's data and execution engines.
 
 Good references for consistent patterns are currently:
 
+- OKX
 - BitMEX
 - Bybit
-- OKX
 
 ### Rust core (`crates/adapters/your_adapter/`)
 
@@ -32,26 +32,26 @@ Typical Rust structure:
 ```
 crates/adapters/your_adapter/
 ├── src/
-│   ├── common/           # Shared types and utilities
-│   │   ├── consts.rs     # Venue constants / broker IDs
-│   │   ├── credential.rs # API key storage and signing helpers
-│   │   ├── enums.rs      # Venue enums mirrored in REST/WS payloads
-│   │   ├── urls.rs       # Environment & product aware base-url resolvers
-│   │   ├── parse.rs      # Shared parsing helpers
-│   │   └── testing.rs    # Fixtures reused across unit tests
-│   ├── http/             # HTTP client implementation
-│   │   ├── client.rs     # HTTP client with authentication
-│   │   ├── models.rs     # Structs for REST payloads
-│   │   ├── query.rs      # Request and query builders
-│   │   └── parse.rs      # Response parsing functions
-│   ├── websocket/        # WebSocket implementation
-│   │   ├── client.rs     # WebSocket client
-│   │   ├── messages.rs   # Structs for stream payloads
-│   │   └── parse.rs      # Message parsing functions
-│   ├── python/           # PyO3 Python bindings
-│   ├── config.rs         # Configuration structures
-│   └── lib.rs            # Library entry point
-└── tests/                # Integration tests with mock servers
+│   ├── common/            # Shared types and utilities
+│   │   ├── consts.rs      # Venue constants / broker IDs
+│   │   ├── credential.rs  # API key storage and signing helpers
+│   │   ├── enums.rs       # Venue enums mirrored in REST/WS payloads
+│   │   ├── urls.rs        # Environment & product aware base-url resolvers
+│   │   ├── parse.rs       # Shared parsing helpers
+│   │   └── testing.rs     # Fixtures reused across unit tests
+│   ├── http/              # HTTP client implementation
+│   │   ├── client.rs      # HTTP client with authentication
+│   │   ├── models.rs      # Structs for REST payloads
+│   │   ├── query.rs       # Request and query builders
+│   │   └── parse.rs       # Response parsing functions
+│   ├── websocket/         # WebSocket implementation
+│   │   ├── client.rs      # WebSocket client
+│   │   ├── messages.rs    # Structs for stream payloads
+│   │   └── parse.rs       # Message parsing functions
+│   ├── python/            # PyO3 Python bindings
+│   ├── config.rs          # Configuration structures
+│   └── lib.rs             # Library entry point
+└── tests/                 # Integration tests with mock servers
 ```
 
 ### Python layer (`nautilus_trader/adapters/your_adapter`)
@@ -94,9 +94,10 @@ nautilus_trader/adapters/your_adapter/
 - **Configurations (`config.rs`)**: Expose typed config structs in `src/config.rs` so Python callers toggle venue-specific behaviour (see how OKX wires demo URLs, retries, and channel flags). Keep defaults minimal and delegate URL selection to helpers in `common::urls`.
 - **Error taxonomy (`error.rs`)**: Centralise HTTP/WebSocket failure handling in an adapter-specific error enum. BitMEX, for example, separates retryable, non-retryable, and fatal variants while embedding the original transport error—follow that shape so operational tooling can react consistently.
 - **Python exports (`python/mod.rs`)**: Mirror the Rust surface area through PyO3 modules by re-exporting clients, enums, and helper functions. When new functionality lands in Rust, add it to `python/mod.rs` so the Python layer stays in sync (the OKX adapter is a good reference).
-- **Python bindings (`python/`)**: Expose Rust functionality to Python through PyO3. Mark venue-specific structs that need Python access with `#[pyclass]` and implement `#[pymethods]` blocks with `#[getter]` attributes for field access. For async methods in the HTTP client, use `pyo3_async_runtimes::tokio::future_into_py` to convert Rust futures into Python awaitables. When returning lists of custom types, map each item with `Py::new(py, item)` before constructing the Python list. Register all exported classes and enums in `python/mod.rs` using `m.add_class::<YourType>()` so they're available to Python code. Follow the pattern established in other adapters: prefixing Python-facing methods with `py_*` in Rust while using `#[pyo3(name = "method_name")]` to expose them without the prefix.
+- **Python bindings (`python/`)**: Expose Rust functionality to Python through PyO3. Mark venue-specific structs that need Python access with `#[pyclass]` and implement `#[pymethods]` blocks with `#[getter]` attributes for field access. For async methods in the HTTP client, use `pyo3_async_runtimes::tokio::future_into_py` to convert Rust futures into Python awaitables. When returning lists of custom types, map each item with `Py::new(py, item)` before constructing the Python list. Register all exported classes and enums in `python/mod.rs` using `m.add_class::<YourType>()` so they're available to Python code. Follow the pattern established in other adapters: prefixing Python-facing methods with `py_*` in Rust while using `#[pyo3(name = "method_name")]` to expose them without the prefix. When delivering instruments from WebSocket to Python, use `instrument_any_to_pyobject()` which returns PyO3 types for caching. For the reverse direction (Python→Rust), use `pyobject_to_instrument_any()` in `cache_instrument()` methods. Never call `.into_py_any()` directly on `InstrumentAny` as it doesn't implement the required trait.
 - **Type qualification**: Adapter-specific types (enums, structs) and Nautilus domain types should not be fully qualified. Import them at the module level and use short names (e.g., `OKXContractType` instead of `crate::common::enums::OKXContractType`, `InstrumentId` instead of `nautilus_model::identifiers::InstrumentId`). This keeps code concise and readable. Only fully qualify types from `anyhow` and `tokio` to avoid ambiguity with similarly-named types from other crates.
 - **String interning**: Use `ustr::Ustr` for any non-unique strings the platform stores repeatedly (venues, symbols, instrument IDs) to minimise allocations and comparisons.
+- **Instrument cache standardization**: All clients that cache instruments must implement three methods with standardized names: `cache_instruments()` (plural, bulk replace), `cache_instrument()` (singular, upsert), and `get_instrument()` (retrieve by symbol). WebSocket clients should use the dual-tier cache architecture (outer `DashMap`, inner `AHashMap`, command channel sync) documented under WebSocket patterns.
 - **Testing helpers (`common/testing.rs`)**: Store shared fixtures and payload loaders in `src/common/testing.rs` for use across HTTP and WebSocket unit tests. This keeps `#[cfg(test)]` helpers out of production modules and encourages reuse.
 
 ## HTTP client patterns
@@ -107,8 +108,8 @@ Adapters use a standardized two-layer HTTP client architecture to separate low-l
 
 The architecture consists of two complementary clients:
 
-1. **Raw client** (`MyRawHttpClient`) - Low-level API methods matching venue endpoints
-2. **Domain client** (`MyHttpClient`) - High-level methods using Nautilus domain types
+1. **Raw client** (`MyRawHttpClient`) - Low-level API methods matching venue endpoints.
+2. **Domain client** (`MyHttpClient`) - High-level methods using Nautilus domain types.
 
 ```rust
 use std::sync::Arc;
@@ -204,7 +205,54 @@ impl Default for InstrumentsInfoParams {
 
 ### Request signing and authentication
 
-Keep signing logic in the inner client.
+Keep signing logic in a `Credential` struct under `common/credential.rs`:
+
+- Store API keys using `Ustr` for efficient comparison, secrets in `Box<[u8]>` with `#[zeroize]`.
+- Implement `sign()` and `sign_bytes()` methods that compute HMAC-SHA256 signatures.
+- Pass the credential to the raw HTTP client; the domain client delegates signing through the inner client.
+
+For WebSocket authentication, the handler constructs login messages using the same `Credential::sign()` method with a WebSocket-specific timestamp format.
+
+### Environment variable conventions
+
+Adapters support loading API credentials from environment variables when not provided directly. This enables secure credential management without hardcoding secrets.
+
+**Naming conventions:**
+
+| Environment  | API Key Variable          | API Secret Variable |
+|--------------|---------------------------|---------------------|
+| Mainnet/Live | `{VENUE}_API_KEY`         | `{VENUE}_API_SECRET` |
+| Testnet      | `{VENUE}_TESTNET_API_KEY` | `{VENUE}_TESTNET_API_SECRET` |
+| Demo         | `{VENUE}_DEMO_API_KEY`    | `{VENUE}_DEMO_API_SECRET` |
+
+Some venues require additional credentials:
+
+- OKX: `OKX_API_PASSPHRASE`
+- Coinbase INTX: `COINBASE_INTX_API_PASSPHRASE`, `COINBASE_INTX_PORTFOLIO_ID`
+
+**Implementation pattern:**
+
+Use `nautilus_core::env::get_or_env_var_opt` for optional credential resolution (returns `None` if missing) or `get_or_env_var` when credentials are required (returns error if missing):
+
+```rust
+use nautilus_core::env::get_or_env_var_opt;
+
+let (api_key_env, api_secret_env) = if testnet {
+    ("{VENUE}_TESTNET_API_KEY", "{VENUE}_TESTNET_API_SECRET")
+} else {
+    ("{VENUE}_API_KEY", "{VENUE}_API_SECRET")
+};
+
+let key = get_or_env_var_opt(api_key, api_key_env);
+let secret = get_or_env_var_opt(api_secret, api_secret_env);
+```
+
+**Key principles:**
+
+- Environment variable resolution should happen in core Rust code, not Python bindings.
+- Use `get_or_env_var_opt` for optional credentials (public-only clients).
+- Use `get_or_env_var` when credentials are required (returns error if missing).
+- Document supported environment variables in adapter README files.
 
 ### Error handling and retry logic
 
@@ -212,7 +260,40 @@ Use the `RetryManager` from `nautilus_network` for consistent retry behavior.
 
 ### Rate limiting
 
-Configure rate limiting through `HttpClient`.
+Configure rate limiting through `HttpClient` using `LazyLock<Quota>` static variables.
+
+**Naming conventions:**
+
+- REST quotas: `{VENUE}_REST_QUOTA` (e.g., `OKX_REST_QUOTA`, `BYBIT_REST_QUOTA`)
+- WebSocket quotas: `{VENUE}_WS_{OPERATION}_QUOTA` (e.g., `OKX_WS_CONNECTION_QUOTA`, `OKX_WS_ORDER_QUOTA`)
+- Rate limit keys: `{VENUE}_RATE_LIMIT_KEY_{OPERATION}` (e.g., `OKX_RATE_LIMIT_KEY_SUBSCRIPTION`, `OKX_RATE_LIMIT_KEY_ORDER`)
+
+**Standard rate limit keys for WebSocket:**
+
+| Key | Operations |
+|-----|------------|
+| `*_RATE_LIMIT_KEY_SUBSCRIPTION` | Subscribe, unsubscribe, login. |
+| `*_RATE_LIMIT_KEY_ORDER` | Place orders (regular and algo). |
+| `*_RATE_LIMIT_KEY_CANCEL` | Cancel orders, mass cancel. |
+| `*_RATE_LIMIT_KEY_AMEND` | Amend/modify orders. |
+
+**Example:**
+
+```rust
+pub static OKX_REST_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(250).unwrap()));
+
+pub static OKX_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::per_hour(NonZeroU32::new(480).unwrap()));
+
+pub const OKX_RATE_LIMIT_KEY_ORDER: &str = "order";
+```
+
+Pass rate limit keys when sending WebSocket messages to enforce per-operation quotas:
+
+```rust
+self.send_with_retry(payload, Some(vec![OKX_RATE_LIMIT_KEY_ORDER.to_string()])).await
+```
 
 ## WebSocket client patterns
 
@@ -220,13 +301,93 @@ WebSocket clients handle real-time streaming data and require careful management
 
 ### Client structure
 
-WebSocket clients typically don't need the inner/outer pattern since they're not frequently cloned. Use a single struct with clear state management.
+WebSocket adapters use a **two-layer architecture** to separate Python-accessible state from high-performance async I/O:
+
+#### Connection state tracking
+
+Track connection state using `Arc<ArcSwap<AtomicU8>>` to provide lock-free, race-free visibility across all clones:
+
+```rust
+use arc_swap::ArcSwap;
+
+pub struct MyWebSocketClient {
+    connection_mode: Arc<ArcSwap<AtomicU8>>,  // Shared connection state (lock-free)
+    signal: Arc<AtomicBool>,                   // Manual disconnect signal
+    // ...
+}
+```
+
+**Pattern breakdown:**
+
+- **Outer `Arc`**: Shared across all clones (Python bindings clone clients before async operations).
+- **`ArcSwap`**: Enables atomic pointer replacement via `.store()` without replacing the outer Arc.
+- **Inner `Arc<AtomicU8>`**: The actual connection state from `WebSocketClient::connection_mode_atomic()`.
+
+Initialize with a placeholder atomic (`ConnectionMode::Closed`), then in `connect()` call `.store(client.connection_mode_atomic())` to atomically swap to the underlying client's state. All clones see updates instantly through lock-free `.load()` calls in `is_active()`.
+
+The underlying `WebSocketClient` sends a `RECONNECTED` sentinel message when reconnection completes, triggering resubscription logic in the handler.
+
+**Outer client** (`{Venue}WebSocketClient`):
+
+- Orchestrates connection lifecycle, authentication, subscriptions.
+- Maintains state for Python access using `Arc<DashMap<K, V>>`.
+- Tracks subscription state for reconnection logic.
+- Stores instruments cache for replay on reconnect.
+- Sends commands to handler via `cmd_tx` channel.
+- Receives domain events via `out_rx` channel.
+
+**Inner handler** (`{Venue}WsFeedHandler`):
+
+- Runs in dedicated Tokio task as stateless I/O boundary.
+- Owns `WebSocketClient` exclusively (no `RwLock` needed).
+- Processes commands from `cmd_rx` → serializes to JSON → sends via WebSocket.
+- Receives raw WebSocket messages → deserializes → transforms to `NautilusWsMessage` → emits via `out_tx`.
+- Owns pending request state using `AHashMap<K, V>` (single-threaded, no locking).
+- Owns working instruments cache for transformations.
+
+**Communication pattern:**
+
+```
+Client (orchestrator)                Handler (I/O boundary)
+─────────────────────                ──────────────────────
+cmd_tx ──────────────────────────→ cmd_rx
+  ├─ Subscribe { args }                │
+  ├─ PlaceOrder { params }             ├─→ serialize → WebSocket
+  └─ MassCancel { id }                 │
+                                       │
+out_rx ←────────────────────────── out_tx
+         ← NautilusWsMessage           │
+         ← Authenticated               ├─← WebSocket → parse → transform
+         ← OrderAccepted               │
+```
+
+**Key principles:**
+
+- **No shared locks on hot path**: Handler owns `WebSocketClient`, client sends commands via lock-free mpsc channel.
+- **Command pattern for all sends**: Subscriptions, orders, cancellations all route through `HandlerCommand` enum.
+- **Event pattern for state**: Handler emits `NautilusWsMessage` events (including `Authenticated`), client maintains state from events.
+- **Pending state ownership**: Handler owns `AHashMap` for matching responses (no `Arc<DashMap>` between layers).
+- **Python constraint**: Client uses `Arc<DashMap>` only for state Python might query; handler uses `AHashMap` for internal matching.
 
 ### Authentication
 
-Handle authentication separately from subscriptions.
+Authentication state is managed through events:
+
+- Handler processes `Login` response → **returns** `NautilusWsMessage::Authenticated` immediately.
+- Client receives event → updates local auth state → proceeds with subscriptions.
+- `AuthTracker` may be shared via `Arc` for state queries, but handler returns events directly (no blocking).
+
+**Note**: The `Authenticated` message is consumed in the client's spawn loop for reconnection flow coordination and is not forwarded to downstream consumers (data/execution clients). Downstream consumers can query authentication state via `AuthTracker` if needed. The execution client's `Authenticated` handler only logs at debug level with no critical logic depending on this event.
 
 ### Subscription management
+
+#### Shared `SubscriptionState` pattern
+
+The `SubscriptionState` struct from `nautilus_network::websocket` is shared between client and handler using `Arc<DashMap<>>` internally for thread-safe access:
+
+- **`SubscriptionState` is shared via `Arc`**: Both client and handler receive `.clone()` of the same instance (shallow clone of Arc pointers).
+- **Responsibility split**: Client tracks user intent (`mark_subscribe`, `mark_unsubscribe`), handler tracks server confirmations (`confirm_subscribe`, `confirm_unsubscribe`, `mark_failure`).
+- **Why both need it**: Single source of truth with lock-free concurrent access, no synchronization overhead.
 
 #### Subscription lifecycle
 
@@ -234,18 +395,18 @@ A **subscription** represents any topic in one of two states:
 
 | State         | Description |
 |---------------|-------------|
-| **Pending**   | Subscription request sent to venue, awaiting acknowledgment |
-| **Confirmed** | Venue acknowledged subscription and is actively streaming data |
+| **Pending**   | Subscription request sent to venue, awaiting acknowledgment. |
+| **Confirmed** | Venue acknowledged subscription and is actively streaming data. |
 
 State transitions follow this lifecycle:
 
 | Trigger           | Method Called        | From State | To State  | Notes |
 |-------------------|----------------------|------------|-----------|-------|
-| User subscribes   | `mark_subscribe()`   | —          | Pending   | Topic added to pending set |
-| Venue confirms    | `confirm()`          | Pending    | Confirmed | Moved from pending to confirmed |
-| Venue rejects     | `mark_failure()`     | Pending    | Pending   | Stays pending for retry on reconnect |
-| User unsubscribes | `mark_unsubscribe()` | Confirmed  | Pending   | Temporarily pending until ack |
-| Unsubscribe ack   | `clear_pending()`    | Pending    | Removed   | Topic fully removed |
+| User subscribes   | `mark_subscribe()`   | —          | Pending   | Topic added to pending set. |
+| Venue confirms    | `confirm()`          | Pending    | Confirmed | Moved from pending to confirmed. |
+| Venue rejects     | `mark_failure()`     | Pending    | Pending   | Stays pending for retry on reconnect. |
+| User unsubscribes | `mark_unsubscribe()` | Confirmed  | Pending   | Temporarily pending until ack. |
+| Unsubscribe ack   | `clear_pending()`    | Pending    | Removed   | Topic fully removed. |
 
 **Key principles**:
 
@@ -268,44 +429,240 @@ Parse topics using `split_once()` with the appropriate delimiter to extract chan
 
 ### Reconnection logic
 
-On reconnection, restore authentication and public subscriptions, but skip private channels that were explicitly unsubscribed.
+On reconnection, restore authentication and subscriptions:
+
+1. **Track subscriptions**: Preserve original subscription arguments in collections (e.g., `Arc<DashMap>`) to avoid parsing topics back to arguments.
+
+2. **Reconnection flow**:
+   - Receive `NautilusWsMessage::Reconnected` from handler
+   - If authenticated: Re-authenticate and wait for confirmation
+   - Restore all tracked subscriptions via handler commands
 
 ### Ping/Pong handling
 
-Support both control frame pings and application-level pings.
+Support both WebSocket control frame pings and application-level text pings:
+
+- **Control frame pings**: Handled automatically by `WebSocketClient` via the `PingHandler` callback.
+- **Text pings**: Some venues (e.g., OKX) use `"ping"`/`"pong"` text messages. Configure `heartbeat_msg: Some(TEXT_PING.to_string())` in `WebSocketConfig` and respond to incoming `TEXT_PING` with `TEXT_PONG` in the handler.
+
+The handler should check for ping messages early in the message processing loop and respond immediately to maintain connection health.
+
+### Instrument cache architecture
+
+WebSocket clients that cache instruments use a **dual-tier pattern** for performance:
+
+- **Outer client**: `Arc<DashMap<Ustr, InstrumentAny>>` provides thread-safe cache for concurrent Python access.
+- **Inner handler**: `AHashMap<Ustr, InstrumentAny>` provides local cache for single-threaded hot path during message parsing.
+- **Command channel**: `tokio::sync::mpsc::unbounded_channel` synchronizes updates from outer to inner.
+
+**Command enum pattern:**
+
+- `HandlerCommand::InitializeInstruments(Vec<InstrumentAny>)` replays cache on connect.
+- `HandlerCommand::UpdateInstrument(InstrumentAny)` syncs individual updates post-connection.
+
+**Critical implementation detail:** When `cache_instrument()` is called after connection, it must send an `UpdateInstrument` command to the inner handler. Otherwise, instruments added dynamically (e.g., from WebSocket updates) won't be available for parsing market data.
 
 ### Message routing
 
-Route different message types to appropriate handlers.
+Define two message enums for the transformation pipeline:
+
+1. **`{Venue}WsMessage`**: Venue-specific message variants parsed directly from WebSocket JSON (login responses, subscriptions, channel data). Use `#[serde(untagged)]` or explicit tags based on venue format.
+
+2. **`NautilusWsMessage`**: Normalized domain messages emitted to the client (data, deltas, order events, errors, `Reconnected`, `Authenticated`). Include a `Raw(serde_json::Value)` variant for unhandled channels during development.
+
+The handler parses incoming JSON into `{Venue}WsMessage`, transforms to `NautilusWsMessage`, and sends via `out_tx`. The client receives from `out_rx` and routes to data/execution callbacks.
 
 ### Error handling
 
-Classify errors to determine retry behavior:
+#### Client-side error propagation
+
+Channel send failures (client → handler) should propagate loudly as `Result<(), Error>`:
 
 ```rust
-#[derive(Debug, thiserror::Error)]
-pub enum WebSocketError {
-    #[error("Connection failed: {0}")]
-    ConnectionFailed(String),
-
-    #[error("Authentication failed: {0}")]
-    AuthenticationFailed(String),
-
-    #[error("Subscription failed: {0}")]
-    SubscriptionFailed(String),
-
-    #[error("Message parse error: {0}")]
-    ParseError(String),
-}
-
 impl MyWebSocketClient {
-    fn should_reconnect(&self, error: &WebSocketError) -> bool {
-        matches!(
-            error,
-            WebSocketError::ConnectionFailed(_)
-        )
+    async fn send_cmd(&self, cmd: HandlerCommand) -> Result<(), Error> {
+        self.cmd_tx.read().await.send(cmd)
+            .map_err(|e| Error::ClientError(format!("Handler not available: {e}")))
+    }
+
+    pub async fn submit_order(...) -> Result<(), Error> {
+        let cmd = HandlerCommand::PlaceOrder { ... };
+        self.send_cmd(cmd).await  // Propagates channel failures
     }
 }
+```
+
+#### Handler-side retry logic
+
+WebSocket send failures (handler → network) should be retried by the handler using `RetryManager`:
+
+```rust
+pub struct FeedHandler {
+    inner: Option<WebSocketClient>,
+    retry_manager: RetryManager<MyWsError>,
+    // ...
+}
+
+impl FeedHandler {
+    async fn send_with_retry(&self, payload: String, rate_limit_keys: Option<Vec<String>>) -> Result<(), MyWsError> {
+        if let Some(client) = &self.inner {
+            self.retry_manager.execute_with_retry(
+                "websocket_send",
+                || async {
+                    client.send_text(payload.clone(), rate_limit_keys.clone())
+                        .await
+                        .map_err(|e| MyWsError::ClientError(format!("Send failed: {e}")))
+                },
+                should_retry_error,
+                create_timeout_error,
+            ).await
+        } else {
+            Err(MyWsError::ClientError("No active WebSocket client".to_string()))
+        }
+    }
+
+    async fn handle_place_order(...) -> anyhow::Result<()> {
+        let payload = serde_json::to_string(&request)?;
+
+        match self.send_with_retry(payload, Some(vec![RATE_LIMIT_KEY])).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                // Emit OrderRejected event after retries exhausted
+                let rejected = OrderRejected::new(...);
+                let _ = self.out_tx.send(NautilusWsMessage::OrderRejected(rejected));
+                Err(anyhow::anyhow!("Failed to send order: {e}"))
+            }
+        }
+    }
+}
+
+fn should_retry_error(error: &MyWsError) -> bool {
+    match error {
+        MyWsError::NetworkError(_) | MyWsError::Timeout(_) => true,
+        MyWsError::AuthenticationError(_) | MyWsError::ParseError(_) => false,
+    }
+}
+```
+
+**Key principles:**
+
+- Client propagates channel failures immediately (handler unavailable)
+- Handler retries transient WebSocket failures (network issues, timeouts)
+- Emit error events (OrderRejected, OrderCancelRejected) when retries exhausted
+- Use `RetryManager` from `nautilus_network::retry` for consistent backoff
+
+### Naming conventions
+
+Adapters follow standardized naming conventions for consistency across all venue integrations.
+
+#### Channel naming: `raw` → `msg` → `out`
+
+WebSocket message channels follow a three-stage transformation pipeline:
+
+| Stage | Type | Description | Example |
+|-------|------|-------------|---------|
+| `raw` | Raw WebSocket frames | Bytes/text from the network layer. | `raw_rx: UnboundedReceiver<Message>` |
+| `msg` | Venue-specific messages | Parsed venue message types. | `msg_rx: UnboundedReceiver<BybitWsMessage>` |
+| `out` | Nautilus domain messages | Normalized platform messages. | `out_tx: UnboundedSender<NautilusWsMessage>` |
+
+**Example flow:**
+
+```rust
+// Client creates venue message and output channels
+let (msg_tx, msg_rx) = tokio::sync::mpsc::unbounded_channel();  // Venue messages (BybitWsMessage)
+let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();  // Nautilus messages (NautilusWsMessage)
+
+// Handler receives venue messages, outputs Nautilus messages
+let handler = FeedHandler::new(
+    cmd_rx,
+    msg_rx,  // Input: BybitWsMessage
+    out_tx,  // Output: NautilusWsMessage
+    // ...
+);
+```
+
+Channel names reflect the data transformation stage, not the destination. Use `raw_*` only for raw WebSocket frames (`Message`), `msg_*` for venue-specific message types, and `out_*` for Nautilus domain messages.
+
+### Backpressure strategy
+
+WebSocket channels on latency-critical paths are intentionally **unbounded**. The platform is latency-first and prefers an explicit crash (OOM) over delaying or dropping data under pressure. Do not add bounded channels, buffering limits, or backpressure unless the latency requirement changes.
+
+#### Field naming: `inner` and command channels
+
+Structs holding references to lower-level components follow these conventions:
+
+| Field         | Type                                                | Description |
+|---------------|-----------------------------------------------------|-------------|
+| `inner`       | `Option<WebSocketClient>`                           | Network-level WebSocket client (handler only, exclusively owned). |
+| `cmd_tx`      | `Arc<tokio::sync::RwLock<UnboundedSender<...>>>`   | Command channel to handler (client side). |
+| `cmd_rx`      | `UnboundedReceiver<HandlerCommand>`                 | Command channel from client (handler side). |
+| `out_tx`      | `UnboundedSender<NautilusWsMessage>`                | Output channel to client (handler side). |
+| `out_rx`      | `Option<Arc<UnboundedReceiver<NautilusWsMessage>>>` | Output channel from handler (client side). |
+| `task_handle` | `Option<Arc<JoinHandle<()>>>`                       | Handler task handle. |
+
+**Example:**
+
+```rust
+// Client struct
+pub struct OKXWebSocketClient {
+    cmd_tx: Arc<tokio::sync::RwLock<UnboundedSender<HandlerCommand>>>,
+    out_rx: Option<Arc<UnboundedReceiver<NautilusWsMessage>>>,
+    task_handle: Option<Arc<JoinHandle<()>>>,
+    connection_mode: Arc<ArcSwap<AtomicU8>>,  // Lock-free connection state
+    // ...
+}
+
+impl OKXWebSocketClient {
+    async fn send_cmd(&self, cmd: HandlerCommand) -> Result<(), Error> {
+        self.cmd_tx.read().await.send(cmd)
+            .map_err(|e| Error::ClientError(format!("Handler not available: {e}")))
+    }
+}
+
+// Handler struct
+pub struct FeedHandler {
+    inner: Option<WebSocketClient>,  // Exclusively owned - no RwLock
+    cmd_rx: UnboundedReceiver<HandlerCommand>,
+    raw_rx: UnboundedReceiver<Message>,
+    out_tx: UnboundedSender<NautilusWsMessage>,
+    pending_requests: AHashMap<String, RequestData>,  // Single-threaded - no locks
+    // ...
+}
+```
+
+The handler exclusively owns `WebSocketClient` without locks. The client sends commands via `cmd_tx` (wrapped in `RwLock` to allow reconnection channel replacement) and receives events via `out_rx`. Use a `send_cmd()` helper to standardize command sending.
+
+#### Type naming: `{Venue}Ws{TypeSuffix}`
+
+All WebSocket-related types follow a standardized naming pattern: `{Venue}Ws{TypeSuffix}`
+
+- `{Venue}`: Capitalized venue name (e.g., `OKX`, `Bybit`, `Bitmex`, `Hyperliquid`).
+- `Ws`: Abbreviated "WebSocket" (not fully spelled out).
+- `{TypeSuffix}`: Full type descriptor (e.g., `Message`, `Error`, `Request`, `Response`).
+
+**Examples:**
+
+```rust
+// Correct - abbreviated Ws, full type suffix
+pub enum OKXWsMessage { ... }
+pub enum BybitWsError { ... }
+pub struct HyperliquidWsRequest { ... }
+```
+
+**Standard type suffixes:**
+
+- `Message`: WebSocket message enums.
+- `Error`: WebSocket error types.
+- `Request`: Request message types.
+- `Response`: Response message types.
+
+**Tokio channel qualification:**
+
+Always fully qualify tokio channel types as `tokio::sync::mpsc::` to avoid ambiguity with similarly-named types from other crates. Never import `mpsc` directly at module level.
+
+```rust
+// Correct
+let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<MyMessage>();
 ```
 
 ## Modeling venue payloads
@@ -339,17 +696,17 @@ Keep the suites deterministic and colocated with the production code they protec
 crates/adapters/your_adapter/
 ├── src/
 │   ├── http/
-│   │   ├── client.rs      # HTTP client + unit tests
-│   │   └── parse.rs       # REST payload parsers + unit tests
+│   │   ├── client.rs                  # HTTP client + unit tests
+│   │   └── parse.rs                   # REST payload parsers + unit tests
 │   └── websocket/
-│       ├── client.rs      # WebSocket client + unit tests
-│       └── parse.rs       # Streaming parsers + unit tests
+│       ├── client.rs                  # WebSocket client + unit tests
+│       └── parse.rs                   # Streaming parsers + unit tests
 ├── tests/
-│   ├── http.rs            # Mock HTTP integration tests
-│   └── websocket.rs       # Mock WebSocket integration tests
-└── test_data/             # Canonical venue payloads used by the suites
-    ├── http_get_{endpoint}.json  # Full venue responses with retCode/result/time
-    └── ws_{message_type}.json    # WebSocket message samples
+│   ├── http.rs                        # Mock HTTP integration tests
+│   └── websocket.rs                   # Mock WebSocket integration tests
+└── test_data/                         # Canonical venue payloads used by the suites
+    ├── http_{method}_{endpoint}.json  # Full venue responses with retCode/result/time
+    └── ws_{message_type}.json         # WebSocket message samples
 ```
 
 - Place unit tests next to the module they exercise (`#[cfg(test)]` blocks). Use `src/common/testing.rs` (or an equivalent helper module) for shared fixtures so production files stay tidy.

@@ -48,6 +48,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod config;
+pub mod constants;
 pub mod contracts;
 pub mod decode;
 pub mod events;
@@ -56,6 +57,9 @@ pub mod rpc;
 
 #[cfg(feature = "hypersync")]
 pub mod cache;
+
+#[cfg(feature = "hypersync")]
+pub mod execution;
 
 #[cfg(feature = "hypersync")]
 pub mod data;
@@ -68,6 +72,9 @@ pub mod factories;
 
 #[cfg(feature = "hypersync")]
 pub mod hypersync;
+
+#[cfg(feature = "hypersync")]
+pub mod services;
 
 #[cfg(feature = "python")]
 pub mod python;

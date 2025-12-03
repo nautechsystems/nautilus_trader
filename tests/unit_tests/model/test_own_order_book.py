@@ -80,7 +80,7 @@ def test_own_book_order_exposure():
 
 
 @pytest.mark.parametrize(
-    "side,expected",
+    ("side", "expected"),
     [
         (OrderSide.BUY, 10.0),
         (OrderSide.SELL, -10.0),
@@ -507,12 +507,12 @@ def test_own_order_book_bid_ask_quantity():
 
     bid_quantities = book.bid_quantity()
     assert len(bid_quantities) == 2
-    assert bid_quantities[Price(100.0, 2).as_decimal()] == Decimal("25")
-    assert bid_quantities[Price(99.5, 2).as_decimal()] == Decimal("20")
+    assert bid_quantities[Price(100.0, 2).as_decimal()] == Decimal(25)
+    assert bid_quantities[Price(99.5, 2).as_decimal()] == Decimal(20)
 
     ask_quantities = book.ask_quantity()
     assert len(ask_quantities) == 1
-    assert ask_quantities[Price(101.0, 2).as_decimal()] == Decimal("20")
+    assert ask_quantities[Price(101.0, 2).as_decimal()] == Decimal(20)
 
 
 def test_own_order_book_quantity_empty_levels():
@@ -528,7 +528,7 @@ def test_own_order_book_quantity_empty_levels():
 
 
 @pytest.mark.parametrize(
-    "orders,expected_bid_quantities,expected_ask_quantities",
+    ("orders", "expected_bid_quantities", "expected_ask_quantities"),
     [
         # Test case 1: Multiple orders at same price level
         (
@@ -537,8 +537,8 @@ def test_own_order_book_quantity_empty_levels():
                 (OrderSide.BUY, 100.0, 15.0),
                 (OrderSide.SELL, 101.0, 20.0),
             ],
-            {Decimal("100.00"): Decimal("25")},
-            {Decimal("101.00"): Decimal("20")},
+            {Decimal("100.00"): Decimal(25)},
+            {Decimal("101.00"): Decimal(20)},
         ),
         # Test case 2: Multiple price levels
         (
@@ -548,8 +548,8 @@ def test_own_order_book_quantity_empty_levels():
                 (OrderSide.SELL, 101.0, 7.0),
                 (OrderSide.SELL, 102.0, 3.0),
             ],
-            {Decimal("100.00"): Decimal("10"), Decimal("99.00"): Decimal("5")},
-            {Decimal("101.00"): Decimal("7"), Decimal("102.00"): Decimal("3")},
+            {Decimal("100.00"): Decimal(10), Decimal("99.00"): Decimal(5)},
+            {Decimal("101.00"): Decimal(7), Decimal("102.00"): Decimal(3)},
         ),
         # Test case 3: Only buy orders
         (
@@ -557,7 +557,7 @@ def test_own_order_book_quantity_empty_levels():
                 (OrderSide.BUY, 100.0, 10.0),
                 (OrderSide.BUY, 99.0, 5.0),
             ],
-            {Decimal("100.00"): Decimal("10"), Decimal("99.00"): Decimal("5")},
+            {Decimal("100.00"): Decimal(10), Decimal("99.00"): Decimal(5)},
             {},
         ),
         # Test case 4: Only sell orders
@@ -567,7 +567,7 @@ def test_own_order_book_quantity_empty_levels():
                 (OrderSide.SELL, 102.0, 3.0),
             ],
             {},
-            {Decimal("101.00"): Decimal("7"), Decimal("102.00"): Decimal("3")},
+            {Decimal("101.00"): Decimal(7), Decimal("102.00"): Decimal(3)},
         ),
     ],
 )
@@ -735,12 +735,12 @@ def test_bid_quantity_with_status_filter():
     # Test with no filter
     all_quantities = book.bid_quantity()
     assert len(all_quantities) == 1  # One price level
-    assert all_quantities[Price(100.0, 2).as_decimal()] == Decimal("25")  # 10 + 15
+    assert all_quantities[Price(100.0, 2).as_decimal()] == Decimal(25)  # 10 + 15
 
     # Test with status filter
     submitted_quantities = book.bid_quantity(status={OrderStatus.SUBMITTED})
     assert len(submitted_quantities) == 1
-    assert submitted_quantities[Price(100.0, 2).as_decimal()] == Decimal("10")
+    assert submitted_quantities[Price(100.0, 2).as_decimal()] == Decimal(10)
 
     # Test with non-existent status
     empty_quantities = book.bid_quantity(status={OrderStatus.FILLED})
@@ -863,10 +863,10 @@ def test_mixed_status_filtering():
     accepted_ask_qty = book.ask_quantity(status={OrderStatus.ACCEPTED})
 
     assert len(accepted_bid_qty) == 1
-    assert accepted_bid_qty[Price(100.0, 2).as_decimal()] == Decimal("20")
+    assert accepted_bid_qty[Price(100.0, 2).as_decimal()] == Decimal(20)
 
     assert len(accepted_ask_qty) == 1
-    assert accepted_ask_qty[Price(101.0, 2).as_decimal()] == Decimal("25")
+    assert accepted_ask_qty[Price(101.0, 2).as_decimal()] == Decimal(25)
 
 
 def test_bid_quantity_with_depth_limit():
@@ -907,13 +907,13 @@ def test_bid_quantity_with_depth_limit():
     assert len(limited_quantities) == 2
     # Should get the first 2 price levels in the IndexMap order
     quantities_list = list(limited_quantities.items())
-    assert quantities_list[0] == (Price(100.0, 2).as_decimal(), Decimal("10"))
-    assert quantities_list[1] == (Price(99.0, 2).as_decimal(), Decimal("15"))
+    assert quantities_list[0] == (Price(100.0, 2).as_decimal(), Decimal(10))
+    assert quantities_list[1] == (Price(99.0, 2).as_decimal(), Decimal(15))
 
     # Test with depth limit of 1
     single_quantity = book.bid_quantity(depth=1)
     assert len(single_quantity) == 1
-    assert single_quantity[Price(100.0, 2).as_decimal()] == Decimal("10")
+    assert single_quantity[Price(100.0, 2).as_decimal()] == Decimal(10)
 
     # Test with depth limit larger than available levels
     over_limit = book.bid_quantity(depth=10)
@@ -953,8 +953,8 @@ def test_ask_quantity_with_depth_limit():
     limited_quantities = book.ask_quantity(depth=2)
     assert len(limited_quantities) == 2
     quantities_list = list(limited_quantities.items())
-    assert quantities_list[0] == (Price(101.0, 2).as_decimal(), Decimal("8"))
-    assert quantities_list[1] == (Price(102.0, 2).as_decimal(), Decimal("12"))
+    assert quantities_list[0] == (Price(101.0, 2).as_decimal(), Decimal(8))
+    assert quantities_list[1] == (Price(102.0, 2).as_decimal(), Decimal(12))
 
 
 def test_bid_quantity_with_grouping():
@@ -996,9 +996,9 @@ def test_bid_quantity_with_grouping():
     grouped = book.bid_quantity(group_size=Decimal("1.0"))
 
     assert len(grouped) == 3
-    assert grouped[Decimal("100.00")] == Decimal("25")  # 10 + 15
-    assert grouped[Decimal("99.00")] == Decimal("13")  # 5 + 8
-    assert grouped[Decimal("98.00")] == Decimal("20")  # 20
+    assert grouped[Decimal("100.00")] == Decimal(25)  # 10 + 15
+    assert grouped[Decimal("99.00")] == Decimal(13)  # 5 + 8
+    assert grouped[Decimal("98.00")] == Decimal(20)  # 20
 
 
 def test_ask_quantity_with_grouping():
@@ -1039,9 +1039,9 @@ def test_ask_quantity_with_grouping():
     grouped = book.ask_quantity(group_size=Decimal("1.0"))
 
     assert len(grouped) == 3
-    assert grouped[Decimal("102.00")] == Decimal("20")  # 12 + 8
-    assert grouped[Decimal("103.00")] == Decimal("15")  # 15
-    assert grouped[Decimal("104.00")] == Decimal("5")  # 5
+    assert grouped[Decimal("102.00")] == Decimal(20)  # 12 + 8
+    assert grouped[Decimal("103.00")] == Decimal(15)  # 15
+    assert grouped[Decimal("104.00")] == Decimal(5)  # 5
 
 
 def test_bid_quantity_with_grouping_and_depth():
@@ -1087,9 +1087,9 @@ def test_bid_quantity_with_grouping_and_depth():
     assert len(grouped_limited) == 2
     levels = list(grouped_limited.items())
     assert levels[0][0] == Decimal("100.00")
-    assert levels[0][1] == Decimal("25")  # 10 + 15
+    assert levels[0][1] == Decimal(25)  # 10 + 15
     assert levels[1][0] == Decimal("99.00")
-    assert levels[1][1] == Decimal("13")  # 5 + 8
+    assert levels[1][1] == Decimal(13)  # 5 + 8
 
 
 def test_quantity_methods_with_status_and_grouping():
@@ -1133,8 +1133,8 @@ def test_quantity_methods_with_status_and_grouping():
     )
 
     assert len(grouped_accepted) == 2
-    assert grouped_accepted[Decimal("100.00")] == Decimal("10")  # Only accepted order
-    assert grouped_accepted[Decimal("99.00")] == Decimal("5")  # Only accepted order
+    assert grouped_accepted[Decimal("100.00")] == Decimal(10)  # Only accepted order
+    assert grouped_accepted[Decimal("99.00")] == Decimal(5)  # Only accepted order
 
     # Test grouping with SUBMITTED status filter
     grouped_submitted = book.bid_quantity(
@@ -1143,7 +1143,7 @@ def test_quantity_methods_with_status_and_grouping():
     )
 
     assert len(grouped_submitted) == 1
-    assert grouped_submitted[Decimal("100.00")] == Decimal("15")  # Only submitted order
+    assert grouped_submitted[Decimal("100.00")] == Decimal(15)  # Only submitted order
 
 
 def test_own_order_book_pprint():

@@ -197,8 +197,8 @@ def bypass_logging():
         bypass=True,  # Set this to False to see logging in tests
         # print_config=True,
     )
-    # Yield guard to keep it alive for the session lifetime, avoiding garbage collection
-    yield guard
+    # Return guard to keep it alive for the session lifetime, avoiding garbage collection
+    return guard
 
 
 @pytest.fixture

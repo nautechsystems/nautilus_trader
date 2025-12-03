@@ -94,11 +94,16 @@ class BetfairStreamClient:
     async def reconnect(self):
         try:
             if self._client is None:
-                self._log.warning("Cannot reconnect: not connected")
+                self._log.warning("Cannot reconnect: not connected, attempting fresh connection")
+                await self.connect()
                 return
 
             if not self._client.is_active():
-                self._log.warning(f"Cannot reconnect: client in {self._client.mode()} mode")
+                mode = self._client.mode()
+                self._log.warning(f"Client stuck in {mode} mode, forcing fresh connection")
+                await self._client.close()
+                self._client = None
+                await self.connect()
                 return
 
             self._log.info("Reconnecting...")
@@ -318,7 +323,13 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             country_codes,
             race_types,
         )
-        assert any(filters), "Must pass at least one filter"
+        # Betfair supports subscribing without filters (using only application credentials)
+        # but log a warning as it may be inefficient or unintended
+        if not any(filters):
+            self._log.warning(
+                "Subscribing to Betfair market stream without any filters - "
+                "this will receive updates for all available markets",
+            )
         assert any(
             (subscribe_book_updates, subscribe_trade_updates),
         ), "Must subscribe to either book updates or trades"

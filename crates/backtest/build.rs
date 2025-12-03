@@ -23,7 +23,10 @@
 #[cfg(feature = "ffi")]
 use std::env;
 
-#[allow(clippy::expect_used)]
+#[allow(
+    clippy::expect_used,
+    reason = "Build script may panic on misconfiguration"
+)]
 fn main() {
     // Skip file generation if we're in the docs.rs environment
     if std::env::var("DOCS_RS").is_ok() {

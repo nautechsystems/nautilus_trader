@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, sync::OnceLock};
 
 use ahash::AHashMap;
 use nautilus_model::{
@@ -26,466 +26,261 @@ use crate::msgbus::get_message_bus;
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
 
-#[must_use]
-pub fn get_custom_topic(data_type: &DataType) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_custom_topic(data_type)
-}
+////////////////////////////////////////////////////////////////////////////////
+// Built-in endpoint constants
+////////////////////////////////////////////////////////////////////////////////
+// These are static endpoint addresses.
+// They use OnceLock for thread-safe lazy initialization without instance state.
 
-#[must_use]
-pub fn get_instruments_topic(venue: Venue) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_instruments_topic(venue)
-}
+static DATA_QUEUE_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static DATA_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static DATA_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static DATA_RESPONSE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static EXEC_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static EXEC_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static EXEC_RECONCILE_REPORT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static EXEC_RECONCILE_MASS_STATUS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static RISK_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static RISK_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static PORTFOLIO_UPDATE_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 
-#[must_use]
-pub fn get_instrument_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_instrument_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_book_deltas_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_book_depth10_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_book_snapshots_topic(
-    instrument_id: InstrumentId,
-    interval_ms: NonZeroUsize,
-) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_book_snapshots_topic(instrument_id, interval_ms)
-}
-
-#[must_use]
-pub fn get_quotes_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_quotes_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_trades_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_trades_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_bars_topic(bar_type: BarType) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_bars_topic(bar_type)
-}
-
-#[must_use]
-pub fn get_mark_price_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_mark_price_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_index_price_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_index_price_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_funding_rate_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_funding_rate_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_instrument_status_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_instrument_close_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_order_fills_topic(instrument_id: InstrumentId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_order_fills_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_order_snapshots_topic(client_order_id: ClientOrderId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_order_snapshots_topic(client_order_id)
-}
-
-#[must_use]
-pub fn get_positions_snapshots_topic(position_id: PositionId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_positions_snapshots_topic(position_id)
-}
-
-#[must_use]
-pub fn get_event_orders_topic(strategy_id: StrategyId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_event_orders_topic(strategy_id)
-}
-
-#[must_use]
-pub fn get_event_positions_topic(strategy_id: StrategyId) -> MStr<Topic> {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_event_positions_topic(strategy_id)
-}
-
-/// Represents a switchboard of built-in messaging endpoint names.
-#[derive(Clone, Debug)]
-pub struct MessagingSwitchboard {
-    custom_topics: AHashMap<DataType, MStr<Topic>>,
-    instruments_topics: AHashMap<Venue, MStr<Topic>>,
-    instrument_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    book_deltas_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    book_depth10_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    book_snapshots_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    quote_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    trade_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    bar_topics: AHashMap<BarType, MStr<Topic>>,
-    mark_price_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    index_price_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    funding_rate_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    instrument_status_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    instrument_close_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    order_fills_topics: AHashMap<InstrumentId, MStr<Topic>>,
-    event_orders_topics: AHashMap<StrategyId, MStr<Topic>>,
-    event_positions_topics: AHashMap<StrategyId, MStr<Topic>>,
-    order_snapshots_topics: AHashMap<ClientOrderId, MStr<Topic>>,
-    positions_snapshots_topics: AHashMap<PositionId, MStr<Topic>>,
-    #[cfg(feature = "defi")]
-    pub(crate) defi: crate::defi::switchboard::DefiSwitchboard,
-}
-
-impl Default for MessagingSwitchboard {
-    /// Creates a new default [`MessagingSwitchboard`] instance.
-    fn default() -> Self {
-        Self {
-            custom_topics: AHashMap::new(),
-            instruments_topics: AHashMap::new(),
-            instrument_topics: AHashMap::new(),
-            book_deltas_topics: AHashMap::new(),
-            book_snapshots_topics: AHashMap::new(),
-            book_depth10_topics: AHashMap::new(),
-            quote_topics: AHashMap::new(),
-            trade_topics: AHashMap::new(),
-            mark_price_topics: AHashMap::new(),
-            index_price_topics: AHashMap::new(),
-            funding_rate_topics: AHashMap::new(),
-            bar_topics: AHashMap::new(),
-            instrument_status_topics: AHashMap::new(),
-            instrument_close_topics: AHashMap::new(),
-            order_fills_topics: AHashMap::new(),
-            order_snapshots_topics: AHashMap::new(),
-            event_orders_topics: AHashMap::new(),
-            event_positions_topics: AHashMap::new(),
-            positions_snapshots_topics: AHashMap::new(),
+macro_rules! define_switchboard {
+    ($(
+        $field:ident: $key_ty:ty,
+        $method:ident($($arg_name:ident: $arg_ty:ty),*) -> $key_expr:expr,
+        $val_fmt:expr,
+        $($val_args:expr),*
+    );* $(;)?) => {
+        /// Represents a switchboard of built-in messaging endpoint names.
+        #[derive(Clone, Debug)]
+        pub struct MessagingSwitchboard {
+            $(
+                $field: AHashMap<$key_ty, MStr<Topic>>,
+            )*
             #[cfg(feature = "defi")]
-            defi: crate::defi::switchboard::DefiSwitchboard::default(),
+            pub(crate) defi: crate::defi::switchboard::DefiSwitchboard,
         }
+
+        impl Default for MessagingSwitchboard {
+            /// Creates a new default [`MessagingSwitchboard`] instance.
+            fn default() -> Self {
+                Self {
+                    $(
+                        $field: AHashMap::new(),
+                    )*
+                    #[cfg(feature = "defi")]
+                    defi: crate::defi::switchboard::DefiSwitchboard::default(),
+                }
+            }
+        }
+
+        impl MessagingSwitchboard {
+            // Static endpoints
+            #[inline]
+            #[must_use]
+            pub fn data_engine_queue_execute() -> MStr<Endpoint> {
+                *DATA_QUEUE_EXECUTE_ENDPOINT.get_or_init(|| "DataEngine.queue_execute".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn data_engine_execute() -> MStr<Endpoint> {
+                *DATA_EXECUTE_ENDPOINT.get_or_init(|| "DataEngine.execute".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn data_engine_process() -> MStr<Endpoint> {
+                *DATA_PROCESS_ENDPOINT.get_or_init(|| "DataEngine.process".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn data_engine_response() -> MStr<Endpoint> {
+                *DATA_RESPONSE_ENDPOINT.get_or_init(|| "DataEngine.response".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn exec_engine_execute() -> MStr<Endpoint> {
+                *EXEC_EXECUTE_ENDPOINT.get_or_init(|| "ExecEngine.execute".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn exec_engine_process() -> MStr<Endpoint> {
+                *EXEC_PROCESS_ENDPOINT.get_or_init(|| "ExecEngine.process".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn exec_engine_reconcile_execution_report() -> MStr<Endpoint> {
+                *EXEC_RECONCILE_REPORT_ENDPOINT.get_or_init(|| "ExecEngine.reconcile_execution_report".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn exec_engine_reconcile_execution_mass_status() -> MStr<Endpoint> {
+                *EXEC_RECONCILE_MASS_STATUS_ENDPOINT
+                    .get_or_init(|| "ExecEngine.reconcile_execution_mass_status".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn risk_engine_execute() -> MStr<Endpoint> {
+                *RISK_EXECUTE_ENDPOINT.get_or_init(|| "RiskEngine.execute".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn risk_engine_process() -> MStr<Endpoint> {
+                *RISK_PROCESS_ENDPOINT.get_or_init(|| "RiskEngine.process".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn portfolio_update_account() -> MStr<Endpoint> {
+                *PORTFOLIO_UPDATE_ACCOUNT_ENDPOINT.get_or_init(|| "Portfolio.update_account".into())
+            }
+
+            // Dynamic topics
+            $(
+                #[must_use]
+                pub fn $method(&mut self, $($arg_name: $arg_ty),*) -> MStr<Topic> {
+                    let key = $key_expr;
+                    *self.$field
+                        .entry(key)
+                        .or_insert_with(|| format!($val_fmt, $($val_args),*).into())
+                }
+            )*
+        }
+    };
+}
+
+define_switchboard! {
+    custom_topics: DataType,
+    get_custom_topic(data_type: &DataType) -> data_type.clone(),
+    "data.{}", data_type.topic();
+
+    instruments_topics: Venue,
+    get_instruments_topic(venue: Venue) -> venue,
+    "data.instrument.{}", venue;
+
+    instrument_topics: InstrumentId,
+    get_instrument_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.instrument.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    book_deltas_topics: InstrumentId,
+    get_book_deltas_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.book.deltas.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    book_depth10_topics: InstrumentId,
+    get_book_depth10_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.book.depth10.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    book_snapshots_topics: (InstrumentId, NonZeroUsize),
+    get_book_snapshots_topic(instrument_id: InstrumentId, interval_ms: NonZeroUsize) -> (instrument_id, interval_ms),
+    "data.book.snapshots.{}.{}.{}", instrument_id.venue, instrument_id.symbol, interval_ms;
+
+    quote_topics: InstrumentId,
+    get_quotes_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.quotes.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    trade_topics: InstrumentId,
+    get_trades_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.trades.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    bar_topics: BarType,
+    get_bars_topic(bar_type: BarType) -> bar_type,
+    "data.bars.{}", bar_type;
+
+    mark_price_topics: InstrumentId,
+    get_mark_price_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.mark_prices.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    index_price_topics: InstrumentId,
+    get_index_price_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.index_prices.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    funding_rate_topics: InstrumentId,
+    get_funding_rate_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.funding_rates.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    instrument_status_topics: InstrumentId,
+    get_instrument_status_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.status.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    instrument_close_topics: InstrumentId,
+    get_instrument_close_topic(instrument_id: InstrumentId) -> instrument_id,
+    "data.close.{}.{}", instrument_id.venue, instrument_id.symbol;
+
+    order_fills_topics: InstrumentId,
+    get_order_fills_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.fills.{}", instrument_id;
+
+    order_snapshots_topics: ClientOrderId,
+    get_order_snapshots_topic(client_order_id: ClientOrderId) -> client_order_id,
+    "order.snapshots.{}", client_order_id;
+
+    positions_snapshots_topics: PositionId,
+    get_positions_snapshots_topic(position_id: PositionId) -> position_id,
+    "positions.snapshots.{}", position_id;
+
+    event_orders_topics: StrategyId,
+    get_event_orders_topic(strategy_id: StrategyId) -> strategy_id,
+    "events.order.{}", strategy_id;
+
+    event_positions_topics: StrategyId,
+    get_event_positions_topic(strategy_id: StrategyId) -> strategy_id,
+    "events.position.{}", strategy_id;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Topic wrapper functions
+////////////////////////////////////////////////////////////////////////////////
+// These wrapper functions provide convenient access to switchboard topic methods
+// by accessing the thread-local message bus instance.
+
+macro_rules! define_wrappers {
+    ($($method:ident($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty),* $(,)?) => {
+        $(
+            #[must_use]
+            pub fn $method($($arg_name: $arg_ty),*) -> $ret {
+                get_message_bus()
+                    .borrow_mut()
+                    .switchboard
+                    .$method($($arg_name),*)
+            }
+        )*
     }
 }
 
-impl MessagingSwitchboard {
-    #[must_use]
-    pub fn data_engine_queue_execute() -> MStr<Endpoint> {
-        "DataEngine.queue_execute".into()
-    }
-
-    #[must_use]
-    pub fn data_engine_execute() -> MStr<Endpoint> {
-        "DataEngine.execute".into()
-    }
-
-    #[must_use]
-    pub fn data_engine_process() -> MStr<Endpoint> {
-        "DataEngine.process".into()
-    }
-
-    #[must_use]
-    pub fn data_engine_response() -> MStr<Endpoint> {
-        "DataEngine.response".into()
-    }
-
-    #[must_use]
-    pub fn exec_engine_execute() -> MStr<Endpoint> {
-        "ExecEngine.execute".into()
-    }
-
-    #[must_use]
-    pub fn exec_engine_process() -> MStr<Endpoint> {
-        "ExecEngine.process".into()
-    }
-
-    #[must_use]
-    pub fn get_custom_topic(&mut self, data_type: &DataType) -> MStr<Topic> {
-        *self
-            .custom_topics
-            .entry(data_type.clone())
-            .or_insert_with(|| format!("data.{}", data_type.topic()).into())
-    }
-
-    #[must_use]
-    pub fn get_instruments_topic(&mut self, venue: Venue) -> MStr<Topic> {
-        *self
-            .instruments_topics
-            .entry(venue)
-            .or_insert_with(|| format!("data.instrument.{venue}").into())
-    }
-
-    #[must_use]
-    pub fn get_instrument_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .instrument_topics
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.instrument.{}.{}",
-                    instrument_id.venue, instrument_id.symbol
-                )
-                .into()
-            })
-    }
-
-    #[must_use]
-    pub fn get_book_deltas_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .book_deltas_topics
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.book.deltas.{}.{}",
-                    instrument_id.venue, instrument_id.symbol
-                )
-                .into()
-            })
-    }
-
-    #[must_use]
-    pub fn get_book_depth10_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .book_depth10_topics
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.book.depth10.{}.{}",
-                    instrument_id.venue, instrument_id.symbol
-                )
-                .into()
-            })
-    }
-
-    #[must_use]
-    pub fn get_book_snapshots_topic(
-        &mut self,
-        instrument_id: InstrumentId,
-        interval_ms: NonZeroUsize,
-    ) -> MStr<Topic> {
-        *self
-            .book_snapshots_topics
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.book.snapshots.{}.{}.{}",
-                    instrument_id.venue, instrument_id.symbol, interval_ms
-                )
-                .into()
-            })
-    }
-
-    #[must_use]
-    pub fn get_quotes_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self.quote_topics.entry(instrument_id).or_insert_with(|| {
-            format!(
-                "data.quotes.{}.{}",
-                instrument_id.venue, instrument_id.symbol
-            )
-            .into()
-        })
-    }
-
-    #[must_use]
-    pub fn get_trades_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self.trade_topics.entry(instrument_id).or_insert_with(|| {
-            format!(
-                "data.trades.{}.{}",
-                instrument_id.venue, instrument_id.symbol
-            )
-            .into()
-        })
-    }
-
-    #[must_use]
-    pub fn get_bars_topic(&mut self, bar_type: BarType) -> MStr<Topic> {
-        *self
-            .bar_topics
-            .entry(bar_type)
-            .or_insert_with(|| format!("data.bars.{bar_type}").into())
-    }
-
-    #[must_use]
-    pub fn get_mark_price_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .mark_price_topics
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.mark_prices.{}.{}",
-                    instrument_id.venue, instrument_id.symbol
-                )
-                .into()
-            })
-    }
-
-    #[must_use]
-    pub fn get_index_price_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .index_price_topics
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.index_prices.{}.{}",
-                    instrument_id.venue, instrument_id.symbol
-                )
-                .into()
-            })
-    }
-
-    pub fn get_funding_rate_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .funding_rate_topics
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.funding_rates.{}.{}",
-                    instrument_id.venue, instrument_id.symbol
-                )
-                .into()
-            })
-    }
-
-    #[must_use]
-    pub fn get_instrument_status_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .instrument_status_topics
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.status.{}.{}",
-                    instrument_id.venue, instrument_id.symbol
-                )
-                .into()
-            })
-    }
-
-    #[must_use]
-    pub fn get_instrument_close_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .instrument_close_topics
-            .entry(instrument_id)
-            .or_insert_with(|| {
-                format!(
-                    "data.close.{}.{}",
-                    instrument_id.venue, instrument_id.symbol
-                )
-                .into()
-            })
-    }
-
-    #[must_use]
-    pub fn get_order_fills_topic(&mut self, instrument_id: InstrumentId) -> MStr<Topic> {
-        *self
-            .order_fills_topics
-            .entry(instrument_id)
-            .or_insert_with(|| format!("events.fills.{instrument_id}").into())
-    }
-
-    #[must_use]
-    pub fn get_order_snapshots_topic(&mut self, client_order_id: ClientOrderId) -> MStr<Topic> {
-        *self
-            .order_snapshots_topics
-            .entry(client_order_id)
-            .or_insert_with(|| format!("order.snapshots.{client_order_id}").into())
-    }
-
-    #[must_use]
-    pub fn get_positions_snapshots_topic(&mut self, position_id: PositionId) -> MStr<Topic> {
-        *self
-            .positions_snapshots_topics
-            .entry(position_id)
-            .or_insert_with(|| format!("positions.snapshots.{position_id}").into())
-    }
-
-    #[must_use]
-    pub fn get_event_orders_topic(&mut self, strategy_id: StrategyId) -> MStr<Topic> {
-        *self
-            .event_orders_topics
-            .entry(strategy_id)
-            .or_insert_with(|| format!("events.order.{strategy_id}").into())
-    }
-
-    #[must_use]
-    pub fn get_event_positions_topic(&mut self, strategy_id: StrategyId) -> MStr<Topic> {
-        *self
-            .event_positions_topics
-            .entry(strategy_id)
-            .or_insert_with(|| format!("events.position.{strategy_id}").into())
-    }
+define_wrappers! {
+    get_custom_topic(data_type: &DataType) -> MStr<Topic>,
+    get_instruments_topic(venue: Venue) -> MStr<Topic>,
+    get_instrument_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_book_snapshots_topic(instrument_id: InstrumentId, interval_ms: NonZeroUsize) -> MStr<Topic>,
+    get_quotes_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_trades_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_bars_topic(bar_type: BarType) -> MStr<Topic>,
+    get_mark_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_index_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_funding_rate_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_fills_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_snapshots_topic(client_order_id: ClientOrderId) -> MStr<Topic>,
+    get_positions_snapshots_topic(position_id: PositionId) -> MStr<Topic>,
+    get_event_orders_topic(strategy_id: StrategyId) -> MStr<Topic>,
+    get_event_positions_topic(strategy_id: StrategyId) -> MStr<Topic>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -557,10 +352,11 @@ mod tests {
         let interval_ms = NonZeroUsize::new(1000).unwrap();
         let result = switchboard.get_book_snapshots_topic(instrument_id, interval_ms);
         assert_eq!(result, expected_topic);
+
         assert!(
             switchboard
                 .book_snapshots_topics
-                .contains_key(&instrument_id)
+                .contains_key(&(instrument_id, interval_ms))
         );
     }
 

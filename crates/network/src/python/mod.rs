@@ -91,7 +91,7 @@ impl Quota {
 ///
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
-pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn network(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::HttpClient>()?;
     m.add_class::<crate::http::HttpMethod>()?;
     m.add_class::<crate::http::HttpResponse>()?;
@@ -101,7 +101,6 @@ pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::socket::SocketClient>()?;
     m.add_class::<crate::socket::SocketConfig>()?;
 
-    // Add error classes
     m.add(
         "WebSocketClientError",
         m.py().get_type::<WebSocketClientError>(),
@@ -116,6 +115,12 @@ pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         "HttpClientBuildError",
         m.py().get_type::<HttpClientBuildError>(),
     )?;
+
+    m.add_function(wrap_pyfunction!(http::http_get, m)?)?;
+    m.add_function(wrap_pyfunction!(http::http_post, m)?)?;
+    m.add_function(wrap_pyfunction!(http::http_patch, m)?)?;
+    m.add_function(wrap_pyfunction!(http::http_delete, m)?)?;
+    m.add_function(wrap_pyfunction!(http::http_download, m)?)?;
 
     Ok(())
 }

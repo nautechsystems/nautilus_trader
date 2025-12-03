@@ -241,7 +241,7 @@ impl SubscriptionState {
         let mut topics = Vec::new();
         let marker = *CHANNEL_LEVEL_MARKER;
 
-        for entry in map.iter() {
+        for entry in map {
             let channel = entry.key();
             let symbols = entry.value();
 
@@ -251,7 +251,7 @@ impl SubscriptionState {
             }
 
             // Add symbol-level subscriptions (skip marker)
-            for symbol in symbols.iter() {
+            for symbol in symbols {
                 if *symbol != marker {
                     topics.push(format!(
                         "{}{}{}",
@@ -500,7 +500,7 @@ mod tests {
         // Stale unsubscribe ACK arrives - should be ignored (pending_unsubscribe already cleared)
         state.confirm_unsubscribe("tickers.BTCUSDT");
         assert!(state.pending_unsubscribe_topics().is_empty());
-        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]); // CRITICAL: Must still be pending
+        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]); // Must still be pending
 
         // Subscribe ACK confirms successfully
         state.confirm_subscribe("tickers.BTCUSDT");
@@ -542,11 +542,11 @@ mod tests {
         assert!(state.pending_subscribe_topics().is_empty());
 
         // NOW the stale unsubscribe ACK arrives
-        // CRITICAL: This must be ignored because topic is no longer in pending_unsubscribe
+        // This must be ignored because topic is no longer in pending_unsubscribe
         state.confirm_unsubscribe("tickers.BTCUSDT");
 
         // Topic should STILL be confirmed (not removed by stale ACK)
-        assert_eq!(state.len(), 1); // CRITICAL: Must remain confirmed
+        assert_eq!(state.len(), 1); // Must remain confirmed
         assert!(state.pending_unsubscribe_topics().is_empty());
         assert!(state.pending_subscribe_topics().is_empty());
 
@@ -1393,7 +1393,7 @@ mod tests {
         assert_eq!(
             state.len(),
             expected_len,
-            "{label}: len() mismatch. Expected {expected_len}, got {}",
+            "{label}: len() mismatch. Expected {expected_len}, was {}",
             state.len()
         );
 
@@ -1413,7 +1413,7 @@ mod tests {
             let count = entry.value().get();
             assert!(
                 count > 0,
-                "{label}: Reference count should be NonZeroUsize (> 0), got {count} for {:?}",
+                "{label}: Reference count should be NonZeroUsize (> 0), was {count} for {:?}",
                 entry.key()
             );
         }
@@ -1506,7 +1506,7 @@ mod tests {
             #![proptest_config(ProptestConfig::with_cases(500))]
 
             /// Property: Invariants hold after any sequence of operations.
-            #[test]
+            #[rstest]
             fn prop_invariants_hold_after_operations(
                 operations in prop::collection::vec(operation_strategy(), 1..50)
             ) {
@@ -1525,7 +1525,7 @@ mod tests {
             }
 
             /// Property: Reference counting is always consistent.
-            #[test]
+            #[rstest]
             fn prop_reference_counting_consistency(
                 ops in prop::collection::vec(
                     topic_strategy().prop_flat_map(|t| {
@@ -1550,7 +1550,7 @@ mod tests {
             }
 
             /// Property: all_topics() always equals confirmed ∪ pending_subscribe.
-            #[test]
+            #[rstest]
             fn prop_all_topics_is_union(
                 operations in prop::collection::vec(operation_strategy(), 1..50)
             ) {
@@ -1576,7 +1576,7 @@ mod tests {
             }
 
             /// Property: clear() resets to empty state.
-            #[test]
+            #[rstest]
             fn prop_clear_resets_completely(
                 operations in prop::collection::vec(operation_strategy(), 1..30)
             ) {
@@ -1602,7 +1602,7 @@ mod tests {
             }
 
             /// Property: Topics are mutually exclusive across states.
-            #[test]
+            #[rstest]
             fn prop_topic_mutual_exclusivity(
                 operations in prop::collection::vec(operation_strategy(), 1..50),
                 topic in topic_strategy()

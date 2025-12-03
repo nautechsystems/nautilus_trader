@@ -43,7 +43,7 @@ where
     serde_json::from_str(&content).expect("Failed to parse test data")
 }
 
-#[test]
+#[rstest]
 fn test_parse_perpetuals_metadata() {
     let meta: PerpMetadata = load_test_data("http_meta_perp_sample.json");
     // assertions...

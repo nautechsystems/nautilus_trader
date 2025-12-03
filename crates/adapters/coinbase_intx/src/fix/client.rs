@@ -140,6 +140,12 @@ impl CoinbaseIntxFixClient {
         self.api_key.as_str()
     }
 
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        nautilus_core::string::mask_api_key(&self.api_key)
+    }
+
     /// Returns the Coinbase International portfolio ID being used by the client.
     #[must_use]
     pub const fn portfolio_id(&self) -> &str {
@@ -303,6 +309,8 @@ impl CoinbaseIntxFixClient {
             reconnect_delay_max_ms: Some(30000),
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(500),
+            reconnect_max_attempts: None,
+            connection_max_retries: None,
             certs_dir: None,
         };
 

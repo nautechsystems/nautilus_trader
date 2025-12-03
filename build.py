@@ -70,6 +70,9 @@ else:
 ################################################################################
 
 USE_SCCACHE = "sccache" in os.environ.get("CC", "") or "sccache" in os.environ.get("CXX", "")
+if USE_SCCACHE:
+    os.environ["RUSTC_WRAPPER"] = "sccache"
+    os.environ["CARGO_INCREMENTAL"] = "0"
 
 if IS_LINUX:
     # Use clang as the default compiler
@@ -371,16 +374,16 @@ def _get_nautilus_version() -> str:
 def _get_clang_version() -> str:
     try:
         result = subprocess.run(
-            ["clang", "--version"],  # noqa
+            ["clang", "--version"],
             check=True,
             capture_output=True,
         )
         output = (
             result.stdout.decode()
             .splitlines()[0]
-            .lstrip("Apple ")
-            .lstrip("Ubuntu ")
-            .lstrip("clang version ")
+            .removeprefix("Apple ")
+            .removeprefix("Ubuntu ")
+            .removeprefix("clang version ")
         )
         return output
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
@@ -393,7 +396,7 @@ def _get_clang_version() -> str:
 def _get_rustc_version() -> str:
     try:
         result = subprocess.run(
-            ["rustc", "--version"],  # noqa
+            ["rustc", "--version"],
             check=True,
             capture_output=True,
         )
@@ -592,6 +595,8 @@ if __name__ == "__main__":
     print_env_var_if_exists("PYTHONHOME")
     print_env_var_if_exists("RUSTFLAGS")
     print_env_var_if_exists("DRY_RUN")
+    print_env_var_if_exists("RUSTC_WRAPPER")
+    print_env_var_if_exists("CARGO_INCREMENTAL")
 
     if DRY_RUN:
         show_rustanalyzer_settings()

@@ -169,7 +169,7 @@ def test_notional_value_inverse():
     notional = inverse.notional_value(quantity, price)
 
     assert notional.currency == Currency.from_str("BTC")
-    assert notional.as_decimal() == Decimal("2000")
+    assert notional.as_decimal() == Decimal(2000)
 
 
 def test_notional_value_inverse_with_quote_override():
@@ -183,4 +183,4 @@ def test_notional_value_inverse_with_quote_override():
 
     # Should return quantity directly in quote currency (not calculated)
     assert notional.currency == Currency.from_str("USD")
-    assert notional.as_decimal() == Decimal("100")
+    assert notional.as_decimal() == Decimal(100)

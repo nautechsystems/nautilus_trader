@@ -1,0 +1,43 @@
+{
+  "result": "success",
+  "serverTime": "2023-04-07T16:30:45.678Z",
+  "elements": [
+    {
+      "order_id": "c8a35168-8d52-4609-944f-3f32bb0d5c77",
+      "cli_ord_id": "order_123",
+      "type": "lmt",
+      "symbol": "PI_XBTUSD",
+      "side": "buy",
+      "quantity": 5000.0,
+      "filled": 5000.0,
+      "limitPrice": 27500.5,
+      "timestamp": "2023-04-07T14:15:30.250Z",
+      "lastUpdateTimestamp": "2023-04-07T14:20:45.500Z",
+      "reduce_only": false
+    },
+    {
+      "order_id": "d9b46279-9e63-5710-a55g-4g43cc1e6d88",
+      "type": "mkt",
+      "symbol": "PI_ETHUSD",
+      "side": "sell",
+      "quantity": 10000.0,
+      "filled": 10000.0,
+      "timestamp": "2023-04-07T15:00:00.000Z",
+      "lastUpdateTimestamp": "2023-04-07T15:00:02.250Z",
+      "reduce_only": false
+    },
+    {
+      "order_id": "e0c57380-0f74-6821-b66h-5h54dd2f7e99",
+      "cli_ord_id": "stop_order_456",
+      "type": "stp",
+      "symbol": "PI_XBTUSD",
+      "side": "sell",
+      "quantity": 2000.0,
+      "filled": 0.0,
+      "stopPrice": 26000.0,
+      "timestamp": "2023-04-07T13:00:00.000Z",
+      "lastUpdateTimestamp": "2023-04-07T16:00:00.000Z",
+      "reduce_only": true
+    }
+  ]
+}
