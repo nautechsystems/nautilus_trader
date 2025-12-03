@@ -33,7 +33,10 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use crate::{http::models::Order, schemas::ws::DydxWsOrderSubaccountMessageContents};
+use crate::{
+    http::models::{Fill, Order, PerpetualPosition},
+    schemas::ws::DydxWsOrderSubaccountMessageContents,
+};
 
 /// Parses a WebSocket order update into an OrderStatusReport.
 ///
@@ -263,8 +266,6 @@ pub fn parse_ws_fill_report(
 fn convert_ws_fill_to_http(
     ws_fill: &crate::schemas::ws::DydxWsFillSubaccountMessageContents,
 ) -> anyhow::Result<crate::http::models::Fill> {
-    use crate::http::models::Fill;
-
     // Parse numeric fields
     let price: Decimal = ws_fill.price.parse().context("Failed to parse price")?;
 
@@ -359,8 +360,6 @@ pub fn parse_ws_position_report(
 fn convert_ws_position_to_http(
     ws_position: &crate::schemas::ws::DydxPerpetualPosition,
 ) -> anyhow::Result<crate::http::models::PerpetualPosition> {
-    use crate::http::models::PerpetualPosition;
-
     // Parse numeric fields
     let size: Decimal = ws_position.size.parse().context("Failed to parse size")?;
 

@@ -215,7 +215,6 @@ impl PyDydxOrderSubmitter {
         trigger_price: &str,
         quantity: &str,
         reduce_only: bool,
-        block_height: u32,
         expire_time: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
@@ -236,7 +235,6 @@ impl PyDydxOrderSubmitter {
                     trigger_price,
                     quantity,
                     reduce_only,
-                    block_height,
                     expire_time,
                 )
                 .await
@@ -261,7 +259,6 @@ impl PyDydxOrderSubmitter {
         time_in_force: i64,
         post_only: bool,
         reduce_only: bool,
-        block_height: u32,
         expire_time: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
@@ -289,7 +286,6 @@ impl PyDydxOrderSubmitter {
                     time_in_force,
                     post_only,
                     reduce_only,
-                    block_height,
                     expire_time,
                 )
                 .await
@@ -311,7 +307,6 @@ impl PyDydxOrderSubmitter {
         trigger_price: &str,
         quantity: &str,
         reduce_only: bool,
-        block_height: u32,
         expire_time: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
@@ -332,7 +327,6 @@ impl PyDydxOrderSubmitter {
                     trigger_price,
                     quantity,
                     reduce_only,
-                    block_height,
                     expire_time,
                 )
                 .await
@@ -357,7 +351,6 @@ impl PyDydxOrderSubmitter {
         time_in_force: i64,
         post_only: bool,
         reduce_only: bool,
-        block_height: u32,
         expire_time: Option<i64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();
@@ -385,7 +378,6 @@ impl PyDydxOrderSubmitter {
                     time_in_force,
                     post_only,
                     reduce_only,
-                    block_height,
                     expire_time,
                 )
                 .await

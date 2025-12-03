@@ -60,6 +60,7 @@ use crate::{
     common::{consts::DYDX_VENUE, parse::extract_raw_symbol},
     config::DydxDataClientConfig,
     http::client::DydxHttpClient,
+    types::DydxOraclePrice,
     websocket::client::DydxWebSocketClient,
 };
 
@@ -2176,8 +2177,6 @@ impl DydxDataClient {
         instruments: &Arc<DashMap<Ustr, InstrumentAny>>,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     ) {
-        use crate::types::DydxOraclePrice;
-
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         for (symbol_str, oracle_market) in oracle_prices {

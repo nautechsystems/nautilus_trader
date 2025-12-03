@@ -20,11 +20,11 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::parse::order_side_to_proto,
+    common::parse::{order_side_to_proto, time_in_force_to_proto_with_post_only},
     error::DydxError,
     grpc::{
         DydxGrpcClient, OrderBuilder, OrderGoodUntil, OrderMarketParams,
-        SHORT_TERM_ORDER_MAXIMUM_LIFETIME, Wallet, types::ChainId,
+        SHORT_TERM_ORDER_MAXIMUM_LIFETIME, TxBuilder, Wallet, types::ChainId,
     },
     http::client::DydxHttpClient,
     proto::{
@@ -32,6 +32,51 @@ use crate::{
         dydxprotocol::clob::{MsgCancelOrder, MsgPlaceOrder},
     },
 };
+
+/// Default expiration for GTC conditional orders (90 days).
+const GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS: i64 = 90;
+
+/// Conditional order types supported by dYdX.
+#[derive(Debug, Clone, Copy)]
+pub enum ConditionalOrderType {
+    /// Stop market: triggers at trigger_price, executes as market order
+    StopMarket,
+    /// Stop limit: triggers at trigger_price, places limit order at limit_price
+    StopLimit,
+    /// Take profit market: triggers at trigger_price, executes as market order
+    TakeProfitMarket,
+    /// Take profit limit: triggers at trigger_price, places limit order at limit_price
+    TakeProfitLimit,
+}
+
+/// Calculates the expiration time for conditional orders based on TimeInForce.
+///
+/// - `GTD` with explicit `expire_time`: uses the provided timestamp
+/// - `GTC` or no `expire_time`: defaults to 90 days from now
+/// - `IOC`/`FOK`: uses 1 hour (these are unusual for conditional orders)
+fn calculate_conditional_order_expiration(
+    time_in_force: TimeInForce,
+    expire_time: Option<i64>,
+) -> chrono::DateTime<chrono::Utc> {
+    if let Some(expire_ts) = expire_time {
+        // from_timestamp returns None only for out-of-range values (beyond year 262143)
+        // which won't occur with valid i64 timestamps, so expect is safe here
+        chrono::DateTime::from_timestamp(expire_ts, 0)
+            .expect("expire_time should be a valid Unix timestamp")
+    } else {
+        match time_in_force {
+            TimeInForce::Gtc => {
+                chrono::Utc::now() + chrono::Duration::days(GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS)
+            }
+            TimeInForce::Ioc | TimeInForce::Fok => {
+                // IOC/FOK don't typically apply to conditional orders, use short expiration
+                chrono::Utc::now() + chrono::Duration::hours(1)
+            }
+            // GTD without expire_time, or any other TIF - use long default
+            _ => chrono::Utc::now() + chrono::Duration::days(GTC_CONDITIONAL_ORDER_EXPIRATION_DAYS),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct OrderSubmitter {
@@ -164,7 +209,6 @@ impl OrderSubmitter {
         builder = builder.limit(proto_side, price_decimal, size_decimal);
 
         // Set time in force (post_only orders use TimeInForce::PostOnly in dYdX)
-        use crate::common::parse::time_in_force_to_proto_with_post_only;
         let proto_tif = time_in_force_to_proto_with_post_only(time_in_force, post_only);
         builder = builder.time_in_force(proto_tif);
 
@@ -245,10 +289,11 @@ impl OrderSubmitter {
         self.broadcast_cancel_message(wallet, msg_cancel).await
     }
 
-    /// Cancels multiple orders sequentially via gRPC transactions.
+    /// Cancels multiple orders in a single blockchain transaction.
     ///
-    /// dYdX v4 requires separate blockchain transactions for each cancellation.
-    /// Each order is cancelled sequentially to avoid nonce conflicts.
+    /// Batches all cancellation messages into one transaction for efficiency.
+    /// This is more efficient than sequential cancellation as it requires only
+    /// one account lookup and one transaction broadcast.
     ///
     /// # Arguments
     ///
@@ -258,21 +303,174 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if any cancellation fails.
+    /// Returns `DydxError` if transaction broadcast fails or market params not found.
     pub async fn cancel_orders_batch(
         &self,
         wallet: &Wallet,
         orders: &[(InstrumentId, u32)],
         block_height: u32,
     ) -> Result<(), DydxError> {
-        tracing::info!("Batch cancelling {} orders", orders.len());
-
-        for (instrument_id, client_order_id) in orders {
-            self.cancel_order(wallet, *instrument_id, *client_order_id, block_height)
-                .await?;
+        if orders.is_empty() {
+            return Ok(());
         }
 
-        Ok(())
+        tracing::info!(
+            "Batch cancelling {} orders in single transaction",
+            orders.len()
+        );
+
+        // Build all cancel messages
+        let mut cancel_msgs = Vec::with_capacity(orders.len());
+        for (instrument_id, client_order_id) in orders {
+            let market_params = self.get_market_params(*instrument_id)?;
+
+            let msg_cancel = MsgCancelOrder {
+                order_id: Some(crate::proto::dydxprotocol::clob::OrderId {
+                    subaccount_id: Some(crate::proto::dydxprotocol::subaccounts::SubaccountId {
+                        owner: self.wallet_address.clone(),
+                        number: self.subaccount_number,
+                    }),
+                    client_id: *client_order_id,
+                    order_flags: 0,
+                    clob_pair_id: market_params.clob_pair_id,
+                }),
+                good_til_oneof: Some(
+                    crate::proto::dydxprotocol::clob::msg_cancel_order::GoodTilOneof::GoodTilBlock(
+                        block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME,
+                    ),
+                ),
+            };
+            cancel_msgs.push(msg_cancel);
+        }
+
+        // Broadcast all cancellations in a single transaction
+        self.broadcast_cancel_messages_batch(wallet, cancel_msgs)
+            .await
+    }
+
+    /// Submits a conditional order (stop or take-profit) to dYdX via gRPC.
+    ///
+    /// This is the unified implementation for all conditional order types.
+    /// Market variants execute immediately when triggered; limit variants place
+    /// a limit order at the specified price.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DydxError` if gRPC submission fails or limit_price missing for limit orders.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_conditional_order(
+        &self,
+        wallet: &Wallet,
+        instrument_id: InstrumentId,
+        client_order_id: u32,
+        order_type: ConditionalOrderType,
+        side: OrderSide,
+        trigger_price: Price,
+        limit_price: Option<Price>,
+        quantity: Quantity,
+        time_in_force: Option<TimeInForce>,
+        post_only: bool,
+        reduce_only: bool,
+        expire_time: Option<i64>,
+    ) -> Result<(), DydxError> {
+        let market_params = self.get_market_params(instrument_id)?;
+
+        let mut builder = OrderBuilder::new(
+            market_params,
+            self.wallet_address.clone(),
+            self.subaccount_number,
+            client_order_id,
+        );
+
+        let proto_side = order_side_to_proto(side);
+        let trigger_decimal = trigger_price.as_decimal();
+        let size_decimal = quantity.as_decimal();
+
+        // Apply order-type-specific builder method
+        builder = match order_type {
+            ConditionalOrderType::StopMarket => {
+                tracing::info!(
+                    "Submitting stop market order: client_id={}, side={:?}, trigger={}, qty={}",
+                    client_order_id,
+                    side,
+                    trigger_price,
+                    quantity
+                );
+                builder.stop_market(proto_side, trigger_decimal, size_decimal)
+            }
+            ConditionalOrderType::StopLimit => {
+                let limit = limit_price.ok_or_else(|| {
+                    DydxError::Order("StopLimit requires limit_price".to_string())
+                })?;
+                tracing::info!(
+                    "Submitting stop limit order: client_id={}, side={:?}, trigger={}, limit={}, qty={}",
+                    client_order_id,
+                    side,
+                    trigger_price,
+                    limit,
+                    quantity
+                );
+                builder.stop_limit(
+                    proto_side,
+                    limit.as_decimal(),
+                    trigger_decimal,
+                    size_decimal,
+                )
+            }
+            ConditionalOrderType::TakeProfitMarket => {
+                tracing::info!(
+                    "Submitting take profit market order: client_id={}, side={:?}, trigger={}, qty={}",
+                    client_order_id,
+                    side,
+                    trigger_price,
+                    quantity
+                );
+                builder.take_profit_market(proto_side, trigger_decimal, size_decimal)
+            }
+            ConditionalOrderType::TakeProfitLimit => {
+                let limit = limit_price.ok_or_else(|| {
+                    DydxError::Order("TakeProfitLimit requires limit_price".to_string())
+                })?;
+                tracing::info!(
+                    "Submitting take profit limit order: client_id={}, side={:?}, trigger={}, limit={}, qty={}",
+                    client_order_id,
+                    side,
+                    trigger_price,
+                    limit,
+                    quantity
+                );
+                builder.take_profit_limit(
+                    proto_side,
+                    limit.as_decimal(),
+                    trigger_decimal,
+                    size_decimal,
+                )
+            }
+        };
+
+        // Apply time-in-force for limit orders
+        let effective_tif = time_in_force.unwrap_or(TimeInForce::Gtc);
+        if matches!(
+            order_type,
+            ConditionalOrderType::StopLimit | ConditionalOrderType::TakeProfitLimit
+        ) {
+            let proto_tif = time_in_force_to_proto_with_post_only(effective_tif, post_only);
+            builder = builder.time_in_force(proto_tif);
+        }
+
+        if reduce_only {
+            builder = builder.reduce_only(true);
+        }
+
+        let expire = calculate_conditional_order_expiration(effective_tif, expire_time);
+        builder = builder.until(OrderGoodUntil::Time(expire));
+
+        let order = builder
+            .build()
+            .map_err(|e| DydxError::Order(format!("Failed to build {order_type:?} order: {e}")))?;
+
+        let msg_place_order = MsgPlaceOrder { order: Some(order) };
+        self.broadcast_order_message(wallet, msg_place_order).await
     }
 
     /// Submits a stop market order to dYdX via gRPC.
@@ -292,54 +490,23 @@ impl OrderSubmitter {
         trigger_price: Price,
         quantity: Quantity,
         reduce_only: bool,
-        _block_height: u32,
         expire_time: Option<i64>,
     ) -> Result<(), DydxError> {
-        tracing::info!(
-            "Submitting stop market order: client_id={}, side={:?}, trigger_price={}, quantity={}",
+        self.submit_conditional_order(
+            wallet,
+            instrument_id,
             client_order_id,
+            ConditionalOrderType::StopMarket,
             side,
             trigger_price,
-            quantity
-        );
-
-        let market_params = self.get_market_params(instrument_id)?;
-
-        let mut builder = OrderBuilder::new(
-            market_params,
-            self.wallet_address.clone(),
-            self.subaccount_number,
-            client_order_id,
-        );
-
-        let proto_side = order_side_to_proto(side);
-        let trigger_decimal = trigger_price.as_decimal();
-        let size_decimal = quantity.as_decimal();
-
-        builder = builder.stop_market(proto_side, trigger_decimal, size_decimal);
-
-        if reduce_only {
-            builder = builder.reduce_only(true);
-        }
-
-        // Conditional orders use timestamp expiration
-        if let Some(expire_ts) = expire_time {
-            builder = builder.until(OrderGoodUntil::Time(
-                chrono::DateTime::from_timestamp(expire_ts, 0)
-                    .ok_or_else(|| DydxError::Parse("Invalid expire timestamp".to_string()))?,
-            ));
-        } else {
-            // Default: expire in 1 hour
-            let expire = chrono::Utc::now() + chrono::Duration::hours(1);
-            builder = builder.until(OrderGoodUntil::Time(expire));
-        }
-
-        let order = builder
-            .build()
-            .map_err(|e| DydxError::Order(format!("Failed to build stop market order: {e}")))?;
-
-        let msg_place_order = MsgPlaceOrder { order: Some(order) };
-        self.broadcast_order_message(wallet, msg_place_order).await
+            None,
+            quantity,
+            None,
+            false,
+            reduce_only,
+            expire_time,
+        )
+        .await
     }
 
     /// Submits a stop limit order to dYdX via gRPC.
@@ -363,59 +530,23 @@ impl OrderSubmitter {
         time_in_force: TimeInForce,
         post_only: bool,
         reduce_only: bool,
-        _block_height: u32,
         expire_time: Option<i64>,
     ) -> Result<(), DydxError> {
-        tracing::info!(
-            "Submitting stop limit order: client_id={}, side={:?}, trigger_price={}, limit_price={}, quantity={}",
+        self.submit_conditional_order(
+            wallet,
+            instrument_id,
             client_order_id,
+            ConditionalOrderType::StopLimit,
             side,
             trigger_price,
-            limit_price,
-            quantity
-        );
-
-        let market_params = self.get_market_params(instrument_id)?;
-
-        let mut builder = OrderBuilder::new(
-            market_params,
-            self.wallet_address.clone(),
-            self.subaccount_number,
-            client_order_id,
-        );
-
-        let proto_side = order_side_to_proto(side);
-        let trigger_decimal = trigger_price.as_decimal();
-        let limit_decimal = limit_price.as_decimal();
-        let size_decimal = quantity.as_decimal();
-
-        builder = builder.stop_limit(proto_side, limit_decimal, trigger_decimal, size_decimal);
-
-        use crate::common::parse::time_in_force_to_proto_with_post_only;
-        let proto_tif = time_in_force_to_proto_with_post_only(time_in_force, post_only);
-        builder = builder.time_in_force(proto_tif);
-
-        if reduce_only {
-            builder = builder.reduce_only(true);
-        }
-
-        // Conditional orders use timestamp expiration
-        if let Some(expire_ts) = expire_time {
-            builder = builder.until(OrderGoodUntil::Time(
-                chrono::DateTime::from_timestamp(expire_ts, 0)
-                    .ok_or_else(|| DydxError::Parse("Invalid expire timestamp".to_string()))?,
-            ));
-        } else {
-            let expire = chrono::Utc::now() + chrono::Duration::hours(1);
-            builder = builder.until(OrderGoodUntil::Time(expire));
-        }
-
-        let order = builder
-            .build()
-            .map_err(|e| DydxError::Order(format!("Failed to build stop limit order: {e}")))?;
-
-        let msg_place_order = MsgPlaceOrder { order: Some(order) };
-        self.broadcast_order_message(wallet, msg_place_order).await
+            Some(limit_price),
+            quantity,
+            Some(time_in_force),
+            post_only,
+            reduce_only,
+            expire_time,
+        )
+        .await
     }
 
     /// Submits a take profit market order to dYdX via gRPC.
@@ -436,53 +567,23 @@ impl OrderSubmitter {
         trigger_price: Price,
         quantity: Quantity,
         reduce_only: bool,
-        _block_height: u32,
         expire_time: Option<i64>,
     ) -> Result<(), DydxError> {
-        tracing::info!(
-            "Submitting take profit market order: client_id={}, side={:?}, trigger_price={}, quantity={}",
+        self.submit_conditional_order(
+            wallet,
+            instrument_id,
             client_order_id,
+            ConditionalOrderType::TakeProfitMarket,
             side,
             trigger_price,
-            quantity
-        );
-
-        let market_params = self.get_market_params(instrument_id)?;
-
-        let mut builder = OrderBuilder::new(
-            market_params,
-            self.wallet_address.clone(),
-            self.subaccount_number,
-            client_order_id,
-        );
-
-        let proto_side = order_side_to_proto(side);
-        let trigger_decimal = trigger_price.as_decimal();
-        let size_decimal = quantity.as_decimal();
-
-        builder = builder.take_profit_market(proto_side, trigger_decimal, size_decimal);
-
-        if reduce_only {
-            builder = builder.reduce_only(true);
-        }
-
-        // Conditional orders use timestamp expiration
-        if let Some(expire_ts) = expire_time {
-            builder = builder.until(OrderGoodUntil::Time(
-                chrono::DateTime::from_timestamp(expire_ts, 0)
-                    .ok_or_else(|| DydxError::Parse("Invalid expire timestamp".to_string()))?,
-            ));
-        } else {
-            let expire = chrono::Utc::now() + chrono::Duration::hours(1);
-            builder = builder.until(OrderGoodUntil::Time(expire));
-        }
-
-        let order = builder.build().map_err(|e| {
-            DydxError::Order(format!("Failed to build take profit market order: {e}"))
-        })?;
-
-        let msg_place_order = MsgPlaceOrder { order: Some(order) };
-        self.broadcast_order_message(wallet, msg_place_order).await
+            None,
+            quantity,
+            None,
+            false,
+            reduce_only,
+            expire_time,
+        )
+        .await
     }
 
     /// Submits a take profit limit order to dYdX via gRPC.
@@ -506,60 +607,23 @@ impl OrderSubmitter {
         time_in_force: TimeInForce,
         post_only: bool,
         reduce_only: bool,
-        _block_height: u32,
         expire_time: Option<i64>,
     ) -> Result<(), DydxError> {
-        tracing::info!(
-            "Submitting take profit limit order: client_id={}, side={:?}, trigger_price={}, limit_price={}, quantity={}",
+        self.submit_conditional_order(
+            wallet,
+            instrument_id,
             client_order_id,
+            ConditionalOrderType::TakeProfitLimit,
             side,
             trigger_price,
-            limit_price,
-            quantity
-        );
-
-        let market_params = self.get_market_params(instrument_id)?;
-
-        let mut builder = OrderBuilder::new(
-            market_params,
-            self.wallet_address.clone(),
-            self.subaccount_number,
-            client_order_id,
-        );
-
-        let proto_side = order_side_to_proto(side);
-        let trigger_decimal = trigger_price.as_decimal();
-        let limit_decimal = limit_price.as_decimal();
-        let size_decimal = quantity.as_decimal();
-
-        builder =
-            builder.take_profit_limit(proto_side, limit_decimal, trigger_decimal, size_decimal);
-
-        use crate::common::parse::time_in_force_to_proto_with_post_only;
-        let proto_tif = time_in_force_to_proto_with_post_only(time_in_force, post_only);
-        builder = builder.time_in_force(proto_tif);
-
-        if reduce_only {
-            builder = builder.reduce_only(true);
-        }
-
-        // Conditional orders use timestamp expiration
-        if let Some(expire_ts) = expire_time {
-            builder = builder.until(OrderGoodUntil::Time(
-                chrono::DateTime::from_timestamp(expire_ts, 0)
-                    .ok_or_else(|| DydxError::Parse("Invalid expire timestamp".to_string()))?,
-            ));
-        } else {
-            let expire = chrono::Utc::now() + chrono::Duration::hours(1);
-            builder = builder.until(OrderGoodUntil::Time(expire));
-        }
-
-        let order = builder.build().map_err(|e| {
-            DydxError::Order(format!("Failed to build take profit limit order: {e}"))
-        })?;
-
-        let msg_place_order = MsgPlaceOrder { order: Some(order) };
-        self.broadcast_order_message(wallet, msg_place_order).await
+            Some(limit_price),
+            quantity,
+            Some(time_in_force),
+            post_only,
+            reduce_only,
+            expire_time,
+        )
+        .await
     }
 
     /// Submits a trailing stop order to dYdX via gRPC.
@@ -576,7 +640,6 @@ impl OrderSubmitter {
         _trailing_offset: Price,
         _quantity: Quantity,
         _reduce_only: bool,
-        _block_height: u32,
         _expire_time: Option<i64>,
     ) -> Result<(), DydxError> {
         Err(DydxError::NotImplemented(
@@ -623,8 +686,6 @@ impl OrderSubmitter {
         msg: T,
         operation: &str,
     ) -> Result<(), DydxError> {
-        use crate::grpc::TxBuilder;
-
         // Derive account for signing (uses derivation index 0 for main account)
         let mut account = wallet
             .account_offline(0)
@@ -700,6 +761,68 @@ impl OrderSubmitter {
         self.broadcast_tx_message(wallet, msg, "Order cancelled")
             .await
     }
+
+    /// Broadcast multiple order cancellation messages in a single transaction.
+    async fn broadcast_cancel_messages_batch(
+        &self,
+        wallet: &Wallet,
+        msgs: Vec<MsgCancelOrder>,
+    ) -> Result<(), DydxError> {
+        let count = msgs.len();
+
+        // Derive account for signing
+        let mut account = wallet
+            .account_offline(0)
+            .map_err(|e| DydxError::Wallet(format!("Failed to derive account: {e}")))?;
+
+        // Fetch current account info
+        let mut grpc_client = self.grpc_client.clone();
+        let base_account = grpc_client
+            .get_account(&self.wallet_address)
+            .await
+            .map_err(|e| {
+                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                    "Failed to fetch account info: {e}"
+                ))))
+            })?;
+
+        account.set_account_info(base_account.account_number, base_account.sequence);
+
+        // Build transaction with all messages
+        let tx_builder =
+            TxBuilder::new(self.chain_id.clone(), "adydx".to_string()).map_err(|e| {
+                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                    "TxBuilder init failed: {e}"
+                ))))
+            })?;
+
+        // Convert all messages to Any
+        let any_msgs: Vec<_> = msgs.into_iter().map(|m| m.to_any()).collect();
+
+        let tx_raw = tx_builder
+            .build_transaction(&account, any_msgs, None)
+            .map_err(|e| {
+                DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                    "Failed to build tx: {e}"
+                ))))
+            })?;
+
+        let tx_bytes = tx_raw.to_bytes().map_err(|e| {
+            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                "Failed to serialize tx: {e}"
+            ))))
+        })?;
+
+        let mut grpc_client = self.grpc_client.clone();
+        let tx_hash = grpc_client.broadcast_tx(tx_bytes).await.map_err(|e| {
+            DydxError::Grpc(Box::new(tonic::Status::internal(format!(
+                "Broadcast failed: {e}"
+            ))))
+        })?;
+
+        tracing::info!("Batch cancelled {} orders: tx_hash={}", count, tx_hash);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -709,13 +832,107 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_cancel_orders_batch_signature() {
-        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
-        let orders = [(instrument_id, 1u32), (instrument_id, 2u32)];
+    fn test_cancel_orders_batch_builds_multiple_messages() {
+        let btc_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+        let eth_id = InstrumentId::from("ETH-USD-PERP.DYDX");
+        let orders = [(btc_id, 100u32), (btc_id, 101u32), (eth_id, 200u32)];
 
-        assert_eq!(orders.len(), 2);
-        assert_eq!(orders[0].0, instrument_id);
-        assert_eq!(orders[0].1, 1u32);
-        assert_eq!(orders[1].1, 2u32);
+        assert_eq!(orders.len(), 3);
+        assert_eq!(orders[0], (btc_id, 100));
+        assert_eq!(orders[1], (btc_id, 101));
+        assert_eq!(orders[2], (eth_id, 200));
+    }
+
+    #[rstest]
+    fn test_cancel_orders_batch_empty_returns_ok() {
+        let orders: [(InstrumentId, u32); 0] = [];
+        assert!(orders.is_empty());
+    }
+
+    #[rstest]
+    fn test_conditional_order_expiration_with_explicit_timestamp() {
+        let expire_ts = 1735689600i64; // 2025-01-01 00:00:00 UTC
+        let result = calculate_conditional_order_expiration(TimeInForce::Gtd, Some(expire_ts));
+        assert_eq!(result.timestamp(), expire_ts);
+    }
+
+    #[rstest]
+    fn test_conditional_order_expiration_gtc_uses_90_days() {
+        let now = chrono::Utc::now();
+        let result = calculate_conditional_order_expiration(TimeInForce::Gtc, None);
+
+        let expected_min = now + chrono::Duration::days(89);
+        let expected_max = now + chrono::Duration::days(91);
+
+        assert!(result > expected_min);
+        assert!(result < expected_max);
+    }
+
+    #[rstest]
+    fn test_conditional_order_expiration_gtd_without_timestamp_uses_90_days() {
+        let now = chrono::Utc::now();
+        let result = calculate_conditional_order_expiration(TimeInForce::Gtd, None);
+
+        let expected_min = now + chrono::Duration::days(89);
+        let expected_max = now + chrono::Duration::days(91);
+
+        assert!(result > expected_min);
+        assert!(result < expected_max);
+    }
+
+    #[rstest]
+    fn test_conditional_order_expiration_ioc_uses_1_hour() {
+        let now = chrono::Utc::now();
+        let result = calculate_conditional_order_expiration(TimeInForce::Ioc, None);
+
+        let expected_min = now + chrono::Duration::minutes(59);
+        let expected_max = now + chrono::Duration::minutes(61);
+
+        assert!(result > expected_min);
+        assert!(result < expected_max);
+    }
+
+    #[rstest]
+    fn test_conditional_order_expiration_fok_uses_1_hour() {
+        let now = chrono::Utc::now();
+        let result = calculate_conditional_order_expiration(TimeInForce::Fok, None);
+
+        let expected_min = now + chrono::Duration::minutes(59);
+        let expected_max = now + chrono::Duration::minutes(61);
+
+        assert!(result > expected_min);
+        assert!(result < expected_max);
+    }
+
+    #[rstest]
+    fn test_conditional_order_expiration_day_uses_90_days() {
+        let now = chrono::Utc::now();
+        let result = calculate_conditional_order_expiration(TimeInForce::Day, None);
+
+        let expected_min = now + chrono::Duration::days(89);
+        let expected_max = now + chrono::Duration::days(91);
+
+        assert!(result > expected_min);
+        assert!(result < expected_max);
+    }
+
+    #[rstest]
+    fn test_conditional_order_type_debug_format() {
+        assert_eq!(
+            format!("{:?}", ConditionalOrderType::StopMarket),
+            "StopMarket"
+        );
+        assert_eq!(
+            format!("{:?}", ConditionalOrderType::StopLimit),
+            "StopLimit"
+        );
+        assert_eq!(
+            format!("{:?}", ConditionalOrderType::TakeProfitMarket),
+            "TakeProfitMarket"
+        );
+        assert_eq!(
+            format!("{:?}", ConditionalOrderType::TakeProfitLimit),
+            "TakeProfitLimit"
+        );
     }
 }

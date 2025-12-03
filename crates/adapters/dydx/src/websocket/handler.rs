@@ -59,6 +59,7 @@ use super::{
         DydxTradeContents,
     },
 };
+use crate::schemas::ws::{DydxWsSubaccountsChannelContents, DydxWsSubaccountsChannelData};
 
 /// Commands sent to the feed handler.
 #[derive(Debug, Clone)]
@@ -797,8 +798,6 @@ impl FeedHandler {
         &self,
         data: &DydxWsChannelDataMsg,
     ) -> DydxWsResult<Option<NautilusWsMessage>> {
-        use crate::schemas::ws::{DydxWsSubaccountsChannelContents, DydxWsSubaccountsChannelData};
-
         let contents: DydxWsSubaccountsChannelContents =
             serde_json::from_value(data.contents.clone()).map_err(|e| {
                 DydxWsError::Parse(format!("Failed to parse subaccounts contents: {e}"))
