@@ -1942,16 +1942,11 @@ cdef class BacktestDataIterator:
     - **Space complexity**: O(k) where k is the total number of active data points
       across all streams at any given time
 
-    Parameters
-    ----------
-    empty_data_callback : Callable[[str, int], None], optional
-        Called once per stream when it is exhausted. Arguments are the stream
-        name and the final ``ts_init`` timestamp observed.
-
     Notes
     -----
-    All data within each stream must be pre-sorted by ``ts_init`` in ascending order.
-    The iterator assumes this invariant and does not perform additional sorting.
+    When using ``add_data()`` with ``presorted=False`` (default), the data will be
+    sorted internally. When using ``presorted=True`` or ``init_data()``, the data
+    must be pre-sorted by ``ts_init`` in ascending order.
 
     See Also
     --------
@@ -1991,7 +1986,7 @@ cdef class BacktestDataIterator:
         bint presorted = False,
     ) -> None:
         """
-        Add (or replace) a named, pre-sorted data list for static data loading.
+        Add (or replace) a named data list for static data loading.
 
         If a stream with the same ``data_name`` already exists, it will be replaced
         with the new data.
@@ -2001,14 +1996,15 @@ cdef class BacktestDataIterator:
         data_name : str
             Unique identifier for the data stream.
         data : list[Data]
-            Data instances sorted ascending by `ts_init`.
+            Data instances to add. Must be pre-sorted by `ts_init` if ``presorted=True``.
         append_data : bool, default ``True``
             Controls stream priority for timestamp ties:
             ``True`` – lower priority (appended).
             ``False`` – higher priority (prepended).
         presorted : bool, default ``False``
-            If the data is guaranteed to be pre-sorted by `ts_init`.
-            When ``True``, skips internal sorting for better performance.
+            If ``True``, assumes the data is already sorted by `ts_init` and
+            skips internal sorting for better performance. If ``False`` (default),
+            the data will be sorted internally.
 
         Raises
         ------
