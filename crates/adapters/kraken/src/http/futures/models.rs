@@ -80,35 +80,48 @@ pub struct FuturesInstrumentsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct FuturesTicker {
     pub symbol: String,
-    pub last: f64,
-    pub last_time: String,
+    #[serde(default)]
+    pub last: Option<f64>,
+    #[serde(default)]
+    pub last_time: Option<String>,
     pub tag: String,
     pub pair: String,
-    pub mark_price: f64,
-    pub bid: f64,
-    pub bid_size: f64,
-    pub ask: f64,
-    pub ask_size: f64,
-    #[serde(rename = "vol24h")]
-    pub vol_24h: f64,
-    pub volume_quote: f64,
-    pub open_interest: f64,
-    #[serde(rename = "open24h")]
-    pub open_24h: f64,
-    #[serde(rename = "high24h")]
-    pub high_24h: f64,
-    #[serde(rename = "low24h")]
-    pub low_24h: f64,
-    pub last_size: f64,
+    #[serde(default)]
+    pub mark_price: Option<f64>,
+    #[serde(default)]
+    pub bid: Option<f64>,
+    #[serde(default)]
+    pub bid_size: Option<f64>,
+    #[serde(default)]
+    pub ask: Option<f64>,
+    #[serde(default)]
+    pub ask_size: Option<f64>,
+    #[serde(rename = "vol24h", default)]
+    pub vol_24h: Option<f64>,
+    #[serde(default)]
+    pub volume_quote: Option<f64>,
+    #[serde(default)]
+    pub open_interest: Option<f64>,
+    #[serde(rename = "open24h", default)]
+    pub open_24h: Option<f64>,
+    #[serde(rename = "high24h", default)]
+    pub high_24h: Option<f64>,
+    #[serde(rename = "low24h", default)]
+    pub low_24h: Option<f64>,
+    #[serde(default)]
+    pub last_size: Option<f64>,
     #[serde(default)]
     pub funding_rate: Option<f64>,
     #[serde(default)]
     pub funding_rate_prediction: Option<f64>,
+    #[serde(default)]
     pub suspended: bool,
-    pub index_price: f64,
+    #[serde(default)]
+    pub index_price: Option<f64>,
+    #[serde(default)]
     pub post_only: bool,
-    #[serde(rename = "change24h")]
-    pub change_24h: f64,
+    #[serde(rename = "change24h", default)]
+    pub change_24h: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -285,9 +298,91 @@ pub struct FuturesSendStatus {
     pub order_id: Option<String>,
     pub status: String,
     #[serde(default)]
-    pub order_events: Option<Vec<FuturesOrderEvent>>,
+    pub order_events: Option<Vec<FuturesSendOrderEvent>>,
     #[serde(rename = "cli_ord_id", default)]
     pub cli_ord_id: Option<String>,
+    #[serde(rename = "receivedTime", default)]
+    pub received_time: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesSendOrderEvent {
+    #[serde(rename = "type")]
+    pub event_type: KrakenFuturesOrderType,
+    #[serde(default)]
+    pub order: Option<FuturesOrderEventData>,
+    #[serde(default)]
+    pub order_trigger: Option<FuturesOrderTriggerData>,
+    #[serde(default)]
+    pub reduced_quantity: Option<f64>,
+    // Execution event fields
+    #[serde(rename = "executionId", default)]
+    pub execution_id: Option<String>,
+    #[serde(default)]
+    pub price: Option<f64>,
+    #[serde(default)]
+    pub amount: Option<f64>,
+    #[serde(rename = "orderPriorEdit", default)]
+    pub order_prior_edit: Option<Box<FuturesOrderEventData>>,
+    #[serde(rename = "orderPriorExecution", default)]
+    pub order_prior_execution: Option<Box<FuturesOrderEventData>>,
+    #[serde(rename = "takerReducedQuantity", default)]
+    pub taker_reduced_quantity: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesOrderEventData {
+    #[serde(rename = "orderId")]
+    pub order_id: String,
+    #[serde(rename = "cliOrdId", default)]
+    pub cli_ord_id: Option<String>,
+    #[serde(rename = "type")]
+    pub order_type: KrakenFuturesOrderType,
+    pub symbol: String,
+    pub side: KrakenOrderSide,
+    pub quantity: f64,
+    pub filled: f64,
+    #[serde(rename = "limitPrice", default)]
+    pub limit_price: Option<f64>,
+    #[serde(rename = "stopPrice", default)]
+    pub stop_price: Option<f64>,
+    pub timestamp: String,
+    #[serde(rename = "lastUpdateTimestamp")]
+    pub last_update_timestamp: String,
+    #[serde(rename = "reduceOnly", default)]
+    pub reduce_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesOrderTriggerData {
+    pub uid: String,
+    #[serde(rename = "clientId", default)]
+    pub client_id: Option<String>,
+    #[serde(rename = "type")]
+    pub order_type: KrakenFuturesOrderType,
+    pub symbol: String,
+    pub side: KrakenOrderSide,
+    pub quantity: f64,
+    #[serde(rename = "limitPrice", default)]
+    pub limit_price: Option<f64>,
+    #[serde(rename = "limitPriceOffsetValue", default)]
+    pub limit_price_offset_value: Option<f64>,
+    #[serde(rename = "limitPriceOffsetUnit", default)]
+    pub limit_price_offset_unit: Option<String>,
+    #[serde(rename = "triggerPrice")]
+    pub trigger_price: f64,
+    #[serde(rename = "triggerSide")]
+    pub trigger_side: String,
+    #[serde(rename = "triggerSignal")]
+    pub trigger_signal: String,
+    #[serde(rename = "reduceOnly", default)]
+    pub reduce_only: bool,
+    pub timestamp: String,
+    #[serde(rename = "lastUpdateTimestamp")]
+    pub last_update_timestamp: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

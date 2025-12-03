@@ -51,7 +51,6 @@ use ustr::Ustr;
 use super::{models::*, query::*};
 use crate::{
     common::{
-        consts::NAUTILUS_KRAKEN_BROKER_ID,
         credential::KrakenCredential,
         enums::{
             KrakenApiResult, KrakenEnvironment, KrakenFuturesOrderType, KrakenOrderSide,
@@ -482,7 +481,14 @@ impl KrakenFuturesRawHttpClient {
             KrakenHttpError::ParseError(format!("Failed to parse response as UTF-8: {e}"))
         })?;
 
+        tracing::debug!("Response from {}: {}", endpoint, response_text);
+
         serde_json::from_str(&response_text).map_err(|e| {
+            tracing::error!(
+                "Failed to parse response from {}: {}",
+                endpoint,
+                response_text
+            );
             KrakenHttpError::ParseError(format!("Failed to deserialize response: {e}"))
         })
     }
@@ -983,9 +989,15 @@ impl KrakenFuturesHttpClient {
             .tickers
             .iter()
             .find(|t| t.symbol == raw_symbol)
-            .map(|t| t.mark_price)
             .ok_or_else(|| {
                 KrakenHttpError::ParseError(format!("Symbol {raw_symbol} not found in tickers"))
+            })
+            .and_then(|t| {
+                t.mark_price.ok_or_else(|| {
+                    KrakenHttpError::ParseError(format!(
+                        "Mark price not available for {raw_symbol} (may not be available in testnet)"
+                    ))
+                })
             })
     }
 
@@ -1008,9 +1020,15 @@ impl KrakenFuturesHttpClient {
             .tickers
             .iter()
             .find(|t| t.symbol == raw_symbol)
-            .map(|t| t.index_price)
             .ok_or_else(|| {
                 KrakenHttpError::ParseError(format!("Symbol {raw_symbol} not found in tickers"))
+            })
+            .and_then(|t| {
+                t.index_price.ok_or_else(|| {
+                    KrakenHttpError::ParseError(format!(
+                        "Index price not available for {raw_symbol} (may not be available in testnet)"
+                    ))
+                })
             })
     }
 
@@ -1379,8 +1397,7 @@ impl KrakenFuturesHttpClient {
             .side(KrakenOrderSide::from(order_side))
             .order_type(kraken_order_type)
             .size(quantity.to_string())
-            .cli_ord_id(client_order_id.to_string())
-            .broker(NAUTILUS_KRAKEN_BROKER_ID.to_string());
+            .cli_ord_id(client_order_id.to_string());
 
         // Handle prices based on order type
         match order_type {
@@ -1392,6 +1409,15 @@ impl KrakenFuturesHttpClient {
             }
             OrderType::StopLimit => {
                 // Stop limit orders need both stop_price and limit_price
+                if let Some(trigger) = trigger_price {
+                    builder.stop_price(trigger.to_string());
+                }
+                if let Some(limit) = price {
+                    builder.limit_price(limit.to_string());
+                }
+            }
+            OrderType::MarketIfTouched => {
+                // Take-profit orders need stop_price (trigger price) and optionally limit_price
                 if let Some(trigger) = trigger_price {
                     builder.stop_price(trigger.to_string());
                 }
@@ -1447,10 +1473,62 @@ impl KrakenFuturesHttpClient {
         // Order not in open orders - may have filled immediately (market order or aggressive limit)
         // Try to use order_events from send_status first
         if let Some(order_events) = &send_status.order_events
-            && let Some(event) = order_events.first()
+            && let Some(send_event) = order_events.first()
         {
+            // Handle regular orders, trigger orders, and execution events
+            let event = if let Some(order_data) = &send_event.order {
+                FuturesOrderEvent {
+                    order_id: order_data.order_id.clone(),
+                    cli_ord_id: order_data.cli_ord_id.clone(),
+                    order_type: order_data.order_type,
+                    symbol: order_data.symbol.clone(),
+                    side: order_data.side,
+                    quantity: order_data.quantity,
+                    filled: order_data.filled,
+                    limit_price: order_data.limit_price,
+                    stop_price: order_data.stop_price,
+                    timestamp: order_data.timestamp.clone(),
+                    last_update_timestamp: order_data.last_update_timestamp.clone(),
+                    reduce_only: order_data.reduce_only,
+                }
+            } else if let Some(trigger_data) = &send_event.order_trigger {
+                FuturesOrderEvent {
+                    order_id: trigger_data.uid.clone(),
+                    cli_ord_id: trigger_data.client_id.clone(),
+                    order_type: trigger_data.order_type,
+                    symbol: trigger_data.symbol.clone(),
+                    side: trigger_data.side,
+                    quantity: trigger_data.quantity,
+                    filled: 0.0,
+                    limit_price: trigger_data.limit_price,
+                    stop_price: Some(trigger_data.trigger_price),
+                    timestamp: trigger_data.timestamp.clone(),
+                    last_update_timestamp: trigger_data.last_update_timestamp.clone(),
+                    reduce_only: trigger_data.reduce_only,
+                }
+            } else if let Some(prior_exec) = &send_event.order_prior_execution {
+                // EXECUTION event - use orderPriorExecution data
+                FuturesOrderEvent {
+                    order_id: prior_exec.order_id.clone(),
+                    cli_ord_id: prior_exec.cli_ord_id.clone(),
+                    order_type: prior_exec.order_type,
+                    symbol: prior_exec.symbol.clone(),
+                    side: prior_exec.side,
+                    quantity: prior_exec.quantity,
+                    filled: send_event.amount.unwrap_or(prior_exec.quantity), // Use execution amount
+                    limit_price: prior_exec.limit_price,
+                    stop_price: prior_exec.stop_price,
+                    timestamp: prior_exec.timestamp.clone(),
+                    last_update_timestamp: prior_exec.last_update_timestamp.clone(),
+                    reduce_only: prior_exec.reduce_only,
+                }
+            } else {
+                return Err(anyhow::anyhow!(
+                    "No order, orderTrigger, or orderPriorExecution data in event"
+                ));
+            };
             return parse_futures_order_event_status_report(
-                event,
+                &event,
                 &instrument,
                 account_id,
                 ts_init,

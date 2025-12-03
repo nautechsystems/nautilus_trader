@@ -1062,8 +1062,10 @@ async fn test_futures_raw_get_tickers() {
 
     let ticker = &response.tickers[0];
     assert_eq!(ticker.symbol, "PI_XBTUSD");
-    assert!(ticker.mark_price > 0.0);
-    assert!(ticker.index_price > 0.0);
+    assert!(ticker.mark_price.is_some());
+    assert!(ticker.mark_price.unwrap() > 0.0);
+    assert!(ticker.index_price.is_some());
+    assert!(ticker.index_price.unwrap() > 0.0);
 }
 
 #[rstest]

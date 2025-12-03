@@ -92,6 +92,10 @@ tracing-test = { workspace = true }
 url = { workspace = true }
 
 [[bin]]
+name = "kraken-futures-demo"
+path = "bin/futures-demo.rs"
+
+[[bin]]
 name = "kraken-http-spot-raw"
 path = "bin/http_spot_raw.rs"
 

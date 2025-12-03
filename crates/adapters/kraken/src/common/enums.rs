@@ -362,12 +362,21 @@ pub enum KrakenFuturesOrderType {
     #[serde(rename = "stp")]
     #[strum(serialize = "stp")]
     Stop,
+    #[serde(rename = "stop")]
+    #[strum(serialize = "stop")]
+    StopLower,
     #[serde(rename = "take_profit")]
     #[strum(serialize = "take_profit")]
     TakeProfit,
     #[serde(rename = "stop_loss")]
     #[strum(serialize = "stop_loss")]
     StopLoss,
+    #[serde(rename = "PLACE")]
+    #[strum(serialize = "PLACE")]
+    Place,
+    #[serde(rename = "EXECUTION")]
+    #[strum(serialize = "EXECUTION")]
+    Execution,
 }
 
 #[derive(
@@ -516,9 +525,11 @@ impl From<KrakenFuturesOrderType> for OrderType {
             | KrakenFuturesOrderType::Ioc
             | KrakenFuturesOrderType::Post => Self::Limit,
             KrakenFuturesOrderType::Market => Self::Market,
-            KrakenFuturesOrderType::Stop => Self::StopMarket,
+            KrakenFuturesOrderType::Stop | KrakenFuturesOrderType::StopLower => Self::StopMarket,
             KrakenFuturesOrderType::TakeProfit => Self::MarketIfTouched,
             KrakenFuturesOrderType::StopLoss => Self::StopMarket,
+            KrakenFuturesOrderType::Place => Self::Limit,
+            KrakenFuturesOrderType::Execution => Self::Market, // Order executed
         }
     }
 }
