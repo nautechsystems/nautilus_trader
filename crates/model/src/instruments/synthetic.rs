@@ -225,7 +225,7 @@ impl SyntheticInstrument {
     ///
     /// Returns an error if parsing the new formula fails.
     pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
-        let (safe_formula, variables, safe_to_original) =
+        let (safe_formula, _, _) =
             make_safe_formula_with_variables_and_mapping(&formula, &self.components);
         let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
         self.formula = safe_formula;
