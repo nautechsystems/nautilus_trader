@@ -66,8 +66,8 @@ async def main(
 
     bars = await client.request_bars(
         bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
-        start_date_time=datetime.datetime(2023, 11, 6, 9, 30),
-        end_date_time=datetime.datetime(2023, 11, 6, 16, 30),
+        start_date_time=datetime.datetime(2025, 11, 6, 9, 30),
+        end_date_time=datetime.datetime(2025, 11, 6, 16, 30),
         tz_name="America/New_York",
         contracts=[contract],
         instrument_ids=[instrument_id],
@@ -75,8 +75,8 @@ async def main(
 
     trade_ticks = await client.request_ticks(
         tick_type="TRADES",
-        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
-        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
+        start_date_time=datetime.datetime(2025, 11, 6, 10, 0),
+        end_date_time=datetime.datetime(2025, 11, 6, 10, 1),
         tz_name="America/New_York",
         contracts=[contract],
         instrument_ids=[instrument_id],
@@ -84,8 +84,8 @@ async def main(
 
     quote_ticks = await client.request_ticks(
         tick_type="BID_ASK",
-        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
-        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
+        start_date_time=datetime.datetime(2025, 11, 6, 10, 0),
+        end_date_time=datetime.datetime(2025, 11, 6, 10, 1),
         tz_name="America/New_York",
         contracts=[contract],
         instrument_ids=[instrument_id],
@@ -108,7 +108,6 @@ if __name__ == "__main__":
         trading_mode="paper",
     )
     asyncio.run(main(dockerized_gateway=gateway_config))
-    # asyncio.run(main(host="127.0.0.1", port=7497)) # when running with TWS already started
 
     # To connect to an existing TWS or Gateway instance without the use of automated dockerized gateway,
     # follow this format:

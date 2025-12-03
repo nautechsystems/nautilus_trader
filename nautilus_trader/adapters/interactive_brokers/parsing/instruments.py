@@ -205,22 +205,33 @@ FUTURES_CODE_TO_MONTH = dict(
     zip(FUTURES_MONTH_TO_CODE.values(), FUTURES_MONTH_TO_CODE.keys(), strict=False),
 )
 
+VENUES_FUT = [
+    "BELFOX",  # BE
+    "CBOT",  # US
+    "CFE",  # US
+    "CME",  # US
+    "COMEX",  # US
+    "DTB",  # DE
+    "EUREX",  # EU
+    "HKFE",  # HK
+    "ICEEU",  # UK
+    "ICEEUSOFT",  # UK
+    "IDEM",  # IT
+    "IPE",  # UK
+    "KCBT",  # US
+    "MEXDER",  # MX
+    "MGE",  # US
+    "NYBOT",  # US
+    "NYMEX",  # US
+    "OSE.JPN",  # JP
+    "SNFE",  # AU
+    "SOFFEX",  # CH
+    "VRTX",  # Global
+]
 VENUES_CASH = ["IDEALPRO"]
 VENUES_CRYPTO = ["PAXOS"]
 VENUES_OPT = ["SMART"]
-VENUES_FUT = [
-    "CBOT",  # US
-    "CME",  # US
-    "COMEX",  # US
-    "KCBT",  # US
-    "MGE",  # US
-    "NYMEX",  # US
-    "NYBOT",  # US
-    "SNFE",  # AU
-]
-VENUES_CFD = [
-    "IBCFD",  # self named, in fact mapping to "SMART" when parsing
-]
+VENUES_CFD = ["IBCFD"] # self named, in fact mapping to "SMART" when parsing
 VENUES_CMDTY = ["IBCMDTY"]  # self named, in fact mapping to "SMART" when parsing
 
 RE_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")  # "EUR/USD"

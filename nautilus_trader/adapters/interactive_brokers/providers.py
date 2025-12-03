@@ -633,7 +633,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         return option_details
 
-    def determine_venue_from_contract(self, contract: IBContract) -> str:
+    def determine_venue_from_contract(self, contract: IBContract) -> str: # noqa: C901
         """
         Determine the venue for a contract using the instrument provider configuration
         logic.
@@ -649,6 +649,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             The determined venue.
 
         """
+        if contract.secType == "CFD":
+            return "IBCFD"
+
+        if contract.secType == "CMDTY":
+            return "IBCMDTY"
+
         # Use the exchange from the contract
         exchange = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
         venue = None
