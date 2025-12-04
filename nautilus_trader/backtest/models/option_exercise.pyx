@@ -54,6 +54,7 @@ from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -126,7 +127,6 @@ cdef class OptionExerciseModule(SimulationModule):
 
         # Check if this is an option position
         instrument = self.exchange.cache.instrument(event.instrument_id)
-
         if not isinstance(instrument, (OptionContract, CryptoOption)):
             return
 
@@ -157,7 +157,6 @@ cdef class OptionExerciseModule(SimulationModule):
 
         # Check if any option positions exist for this expiry
         has_positions = False
-
         if self.exchange and self.exchange.cache:
             positions = self.exchange.cache.positions_open()
 
@@ -165,8 +164,8 @@ cdef class OptionExerciseModule(SimulationModule):
                 instrument = self.exchange.cache.instrument(position.instrument_id)
 
                 if (
-                        isinstance(instrument, (OptionContract, CryptoOption))
-                        and instrument.expiration_ns == expiry_ns
+                    isinstance(instrument, (OptionContract, CryptoOption))
+                    and instrument.expiration_ns == expiry_ns
                 ):
                     has_positions = True
                     break
@@ -236,18 +235,17 @@ cdef class OptionExerciseModule(SimulationModule):
 
         # Get underlying price for exercise decision
         underlying_price = self._get_underlying_price(option)
-
         if underlying_price is None:
             self._log.debug(f"Skipping exercise of {option.id}: no underlying price available")
             return
 
         # Process each position (both long and short)
         for position in positions:
-            # Check if option should be exercised (applies to both long and short positions)
             if self._should_exercise(option, underlying_price):
+                # Check if option should be exercised (applies to both long and short positions)
                 self._exercise(option, position, underlying_price, ts_now)
-            # If not exercised, option expires worthless and position is closed at zero value
             else:
+                # If not exercised, option expires worthless and position is closed at zero value
                 self._log.debug(
                     f"Expiring OTM {option.id}: {position.side} {position.quantity} @ strike {option.strike_price} "
                     f"(expires worthless)",
@@ -260,7 +258,6 @@ cdef class OptionExerciseModule(SimulationModule):
         """
         # Find underlying instrument
         underlying_instrument = self._get_underlying_instrument(option)
-
         if underlying_instrument is None:
             return None
 
@@ -275,7 +272,6 @@ cdef class OptionExerciseModule(SimulationModule):
         """
         strike = option.strike_price.as_double()
         spot = underlying_price.as_double()
-
         if option.option_kind == OptionKind.CALL:
             is_itm = spot > strike
         else:  # PUT
@@ -300,7 +296,6 @@ cdef class OptionExerciseModule(SimulationModule):
         """
         strike = option.strike_price.as_double()
         spot = underlying_price.as_double()
-
         if option.option_kind == OptionKind.CALL:
             intrinsic_value = max(0.0, spot - strike)
             is_itm = spot > strike
@@ -350,7 +345,6 @@ cdef class OptionExerciseModule(SimulationModule):
             f"Exercising {option.id}: {position.side} {position.quantity} @ strike {option.strike_price} "
             f"(underlying: {underlying_price}, settlement: {settlement_type})",
         )
-
         if is_cash_settled:
             # Cash settlement: close option at intrinsic value
             self._generate_cash_settlement_events(option, position, underlying_price, ts_now)
@@ -501,7 +495,6 @@ cdef class OptionExerciseModule(SimulationModule):
         """
         underlying_instrument = self._get_underlying_instrument(option)
         is_cash_settled = isinstance(underlying_instrument, IndexInstrument)
-
         if is_cash_settled:
             # Cash settlement: use intrinsic value
             if option.option_kind == OptionKind.CALL:

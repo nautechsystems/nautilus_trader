@@ -29,9 +29,9 @@ from nautilus_trader.analysis.config import TearsheetConfig
 from nautilus_trader.analysis.tearsheet import create_bars_with_fills
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import MarginModelConfig
+from nautilus_trader.backtest.models.option_exercise import OptionExerciseConfig
+from nautilus_trader.backtest.models.option_exercise import OptionExerciseModule
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
-from nautilus_trader.backtest.option_exercise import OptionExerciseModule
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig

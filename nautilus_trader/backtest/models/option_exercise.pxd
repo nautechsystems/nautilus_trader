@@ -18,12 +18,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.crypto_option cimport CryptoOption
-from nautilus_trader.model.instruments.option_contract cimport OptionContract
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.position cimport Position
 
 
 cdef class OptionExerciseModule(SimulationModule):

@@ -33,6 +33,8 @@ from nautilus_trader.backtest.models.fill import ThreeTierFillModel
 from nautilus_trader.backtest.models.fill import TwoTierFillModel
 from nautilus_trader.backtest.models.fill import VolumeSensitiveFillModel
 from nautilus_trader.backtest.models.latency import LatencyModel
+from nautilus_trader.backtest.models.option_exercise import OptionExerciseConfig
+from nautilus_trader.backtest.models.option_exercise import OptionExerciseModule
 
 
 __all__ = [
@@ -49,6 +51,8 @@ __all__ = [
     "MarginModel",
     "MarketHoursFillModel",
     "OneTickSlippageFillModel",
+    "OptionExerciseConfig",
+    "OptionExerciseModule",
     "PerContractFeeModel",
     "ProbabilisticFillModel",
     "SizeAwareFillModel",

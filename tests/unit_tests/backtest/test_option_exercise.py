@@ -26,8 +26,8 @@ from unittest.mock import Mock
 
 import pandas as pd
 
-from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
-from nautilus_trader.backtest.option_exercise import OptionExerciseModule
+from nautilus_trader.backtest.models.option_exercise import OptionExerciseConfig
+from nautilus_trader.backtest.models.option_exercise import OptionExerciseModule
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
