@@ -457,7 +457,7 @@ if not load_greeks:
     catalog.convert_stream_to_data(
         results[0].instance_id,
         Bar,
-        identifiers=("2-MINUTE",),
+        identifiers=["2-MINUTE"],
     )
 
     catalog.convert_stream_to_data(
