@@ -39,13 +39,18 @@ from nautilus_trader.config import msgspec_decoding_hook
 from nautilus_trader.config import msgspec_encoding_hook
 from nautilus_trader.config import tokenize_config
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -97,6 +102,267 @@ class TestBacktestConfig:
             "end": 1580504394501000000,
             "metadata": None,
         }
+
+    def test_backtest_data_config_query_bar_with_bar_types(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type = BarType(instrument.id, bar_spec)
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=Bar,
+            bar_types=[str(bar_type)],
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == Bar
+        assert result["identifiers"] == [str(bar_type)]
+        assert result["filter_expr"] is None
+        assert result["start"] is None
+        assert result["end"] is None
+        assert result["metadata"] is None
+
+    def test_backtest_data_config_query_bar_with_instrument_id_and_bar_spec(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        bar_spec_str = "1-MINUTE-BID"
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=Bar,
+            instrument_id=instrument.id,
+            bar_spec=bar_spec_str,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == Bar
+        assert result["identifiers"] == [f"{instrument.id}-{bar_spec_str}-EXTERNAL"]
+        assert result["filter_expr"] is None
+        assert result["start"] is None
+        assert result["end"] is None
+        assert result["metadata"] is None
+
+    def test_backtest_data_config_query_bar_with_instrument_ids_and_bar_spec(self):
+        # Arrange
+        instrument1 = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        instrument2 = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+        bar_spec_str = "1-MINUTE-BID"
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=Bar,
+            instrument_ids=[str(instrument1.id), str(instrument2.id)],
+            bar_spec=bar_spec_str,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == Bar
+        assert result["identifiers"] == [
+            f"{instrument1.id}-{bar_spec_str}-EXTERNAL",
+            f"{instrument2.id}-{bar_spec_str}-EXTERNAL",
+        ]
+        assert result["filter_expr"] is None
+        assert result["start"] is None
+        assert result["end"] is None
+        assert result["metadata"] is None
+
+    def test_backtest_data_config_query_non_bar_with_instrument_id(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=TradeTick,
+            instrument_id=instrument.id,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == TradeTick
+        assert result["identifiers"] == [instrument.id]
+        assert result["filter_expr"] is None
+        assert result["start"] is None
+        assert result["end"] is None
+        assert result["metadata"] is None
+
+    def test_backtest_data_config_query_non_bar_with_instrument_ids(self):
+        # Arrange
+        instrument1 = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        instrument2 = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=OrderBookDelta,
+            instrument_ids=[str(instrument1.id), str(instrument2.id)],
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == OrderBookDelta
+        assert result["identifiers"] == [str(instrument1.id), str(instrument2.id)]
+        assert result["filter_expr"] is None
+        assert result["start"] is None
+        assert result["end"] is None
+        assert result["metadata"] is None
+
+    def test_backtest_data_config_query_with_filter_expr(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        filter_expr = 'field("Currency") == "USD"'
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=QuoteTick,
+            instrument_id=instrument.id,
+            filter_expr=filter_expr,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == QuoteTick
+        assert result["identifiers"] == [instrument.id]
+        assert isinstance(result["filter_expr"], ds.Expression)
+        assert result["start"] is None
+        assert result["end"] is None
+        assert result["metadata"] is None
+
+    def test_backtest_data_config_query_with_metadata(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        metadata = {"source": "test", "version": "1.0"}
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=QuoteTick,
+            instrument_id=instrument.id,
+            metadata=metadata,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == QuoteTick
+        assert result["identifiers"] == [instrument.id]
+        assert result["filter_expr"] is None
+        assert result["start"] is None
+        assert result["end"] is None
+        assert result["metadata"] == metadata
+
+    def test_backtest_data_config_query_with_start_and_end_time(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        start_time = "2024-01-01T00:00:00Z"
+        end_time = "2024-01-02T00:00:00Z"
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=QuoteTick,
+            instrument_id=instrument.id,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == QuoteTick
+        assert result["identifiers"] == [instrument.id]
+        assert result["filter_expr"] is None
+        assert result["start"] == start_time
+        assert result["end"] == end_time
+        assert result["metadata"] is None
+
+    def test_backtest_data_config_query_bar_types_takes_precedence_over_bar_spec(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type = BarType(instrument.id, bar_spec)
+        bar_spec_str = "5-MINUTE-LAST"
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=Bar,
+            instrument_id=instrument.id,
+            bar_spec=bar_spec_str,
+            bar_types=[str(bar_type)],
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == Bar
+        # bar_types should take precedence
+        assert result["identifiers"] == [str(bar_type)]
+        assert result["filter_expr"] is None
+
+    def test_backtest_data_config_query_bar_with_no_identifiers(self):
+        # Arrange
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=Bar,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == Bar
+        assert result["identifiers"] == []
+        assert result["filter_expr"] is None
+        assert result["start"] is None
+        assert result["end"] is None
+        assert result["metadata"] is None
+
+    def test_backtest_data_config_query_complete_configuration(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type = BarType(instrument.id, bar_spec)
+        start_time = "2024-01-01T00:00:00Z"
+        end_time = "2024-01-02T00:00:00Z"
+        filter_expr = 'field("Currency") == "USD"'
+        metadata = {"source": "test"}
+        config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=Bar,
+            bar_types=[str(bar_type)],
+            start_time=start_time,
+            end_time=end_time,
+            filter_expr=filter_expr,
+            metadata=metadata,
+        )
+
+        # Act
+        result = config.query
+
+        # Assert
+        assert result["data_cls"] == Bar
+        assert result["identifiers"] == [str(bar_type)]
+        assert isinstance(result["filter_expr"], ds.Expression)
+        assert result["start"] == start_time
+        assert result["end"] == end_time
+        assert result["metadata"] == metadata
 
     def test_backtest_data_config_custom_data(self):
         # Arrange

@@ -36,7 +36,6 @@ from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.live.config import LiveDataClientConfig
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
@@ -228,7 +227,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         The end time for the data configuration.
         Can be an ISO 8601 format datetime string, or UNIX nanoseconds integer.
     filter_expr : str, optional
-        The additional filter expressions for the data catalog query.
+        The additional filter expressions for a data catalog query that uses pyarrow.
     client_id : str, optional
         The client ID for the data configuration.
     metadata : dict or callable, optional
@@ -276,7 +275,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             return self.data_cls
 
     @property
-    def query(self) -> dict[str, Any]:  # noqa: C901
+    def query(self) -> dict[str, Any]:
         """
         Return a catalog query object for the configuration.
 
@@ -285,47 +284,28 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         dict[str, Any]
 
         """
-        filter_expr: str | None = None
+        identifiers = []
 
         if self.data_cls is Bar:
-            used_bar_types = []
+            if self.bar_types:
+                identifiers = [str(bar_type) for bar_type in self.bar_types]
+            elif self.instrument_id and self.bar_spec:
+                identifiers = [f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"]
+            elif self.instrument_ids and self.bar_spec:
+                identifiers = [f"{instrument_id}-{self.bar_spec}-EXTERNAL" for instrument_id in self.instrument_ids]
 
-            if self.instrument_id is not None and self.bar_spec is not None:
-                bar_type = f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"
-                used_bar_types = [bar_type]
-            elif self.bar_types is not None:
-                used_bar_types = self.bar_types
-            elif self.instrument_ids is not None and self.bar_spec is not None:
-                for instrument_id in self.instrument_ids:
-                    used_bar_types.append(f"{instrument_id}-{self.bar_spec}-EXTERNAL")
-
-            if len(used_bar_types) > 0:
-                filter_expr = f'(field("bar_type") == "{used_bar_types[0]}")'
-
-                for bar_type in used_bar_types[1:]:
-                    filter_expr = f'{filter_expr} | (field("bar_type") == "{bar_type}")'
-        else:
-            filter_expr = self.filter_expr
-
-        used_identifiers = None
-
-        if self.instrument_id is not None:
-            used_identifiers = [self.instrument_id]
-        elif self.instrument_ids is not None:
-            used_identifiers = self.instrument_ids
-        elif self.bar_types is not None:
-            bar_types: list[BarType] = [
-                BarType.from_str(bar_type) if type(bar_type) is str else bar_type
-                for bar_type in self.bar_types
-            ]
-            used_identifiers = [bar_type.instrument_id for bar_type in bar_types]
+        if not identifiers:
+            if self.instrument_id:
+                identifiers = [self.instrument_id]
+            elif self.instrument_ids:
+                identifiers = self.instrument_ids
 
         return {
             "data_cls": self.data_type,
-            "identifiers": used_identifiers,
+            "identifiers": identifiers,
             "start": self.start_time,
             "end": self.end_time,
-            "filter_expr": parse_filters_expr(filter_expr),
+            "filter_expr": parse_filters_expr(self.filter_expr),
             "metadata": self.metadata,
         }
 
