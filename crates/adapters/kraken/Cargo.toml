@@ -106,3 +106,11 @@ path = "bin/http_spot_public.rs"
 [[bin]]
 name = "kraken-ws-spot-data"
 path = "bin/ws_spot_data.rs"
+
+[[bin]]
+name = "kraken-spot-order-rest"
+path = "bin/spot_order_rest.rs"
+
+[[bin]]
+name = "kraken-spot-order-ws"
+path = "bin/spot_order_ws.rs"

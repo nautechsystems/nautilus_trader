@@ -25,6 +25,7 @@ use crate::common::enums::{KrakenOrderSide, KrakenOrderType};
 ///
 /// # References
 /// - <https://docs.kraken.com/api/docs/rest-api/add-order>
+/// - <https://github.com/krakenfx/api-go/blob/main/pkg/spot/rest.go> (AddOrderRequest)
 #[derive(Clone, Debug, Serialize, Deserialize, Builder)]
 #[builder(setter(into, strip_option), build_fn(validate = "Self::validate"))]
 pub struct KrakenSpotAddOrderParams {
@@ -52,12 +53,19 @@ pub struct KrakenSpotAddOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price2: Option<String>,
 
-    /// Client order ID (must be UUID format).
+    /// Client order ID (free text, max 18 chars).
+    /// See: <https://docs.kraken.com/api/docs/rest-api/add-order#request> (cl_ord_id)
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
 
-    /// Order flags (comma-separated: post, ioc, fcib, fciq, nompp, viqc).
+    /// Time in force: "GTC" (default), "IOC", "GTD".
+    /// See: <https://github.com/krakenfx/api-go/blob/main/pkg/spot/rest.go> (TimeInForce)
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeinforce: Option<String>,
+
+    /// Order flags (comma-separated: post, fcib, fciq, nompp, viqc).
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oflags: Option<String>,

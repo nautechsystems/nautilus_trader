@@ -43,6 +43,15 @@ pub enum KrakenWsMethod {
     Unsubscribe,
     Ping,
     Pong,
+    #[serde(rename = "add_order")]
+    #[strum(serialize = "add_order")]
+    AddOrder,
+    #[serde(rename = "cancel_order")]
+    #[strum(serialize = "cancel_order")]
+    CancelOrder,
+    #[serde(rename = "cancel_all")]
+    #[strum(serialize = "cancel_all")]
+    CancelAll,
 }
 
 #[derive(

@@ -15,16 +15,14 @@
 
 //! Python bindings for the Kraken Futures HTTP client.
 
-use chrono::{DateTime, Utc};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
-use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
+use pyo3::{prelude::*, types::PyList};
 
 use crate::{common::enums::KrakenEnvironment, http::KrakenFuturesHttpClient};
 
@@ -133,35 +131,6 @@ impl KrakenFuturesHttpClient {
         })
     }
 
-    #[pyo3(name = "request_trades")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
-    fn py_request_trades<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        limit: Option<u64>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let trades = client
-                .request_trades(instrument_id, start, end, limit)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            Python::attach(|py| {
-                let py_trades: PyResult<Vec<_>> = trades
-                    .into_iter()
-                    .map(|trade| trade.into_py_any(py))
-                    .collect();
-                let pylist = PyList::new(py, py_trades?).unwrap().into_any().unbind();
-                Ok(pylist)
-            })
-        })
-    }
-
     #[pyo3(name = "request_mark_price")]
     fn py_request_mark_price<'py>(
         &self,
@@ -177,137 +146,6 @@ impl KrakenFuturesHttpClient {
                 .map_err(to_pyruntime_err)?;
 
             Ok(mark_price)
-        })
-    }
-
-    #[pyo3(name = "request_index_price")]
-    fn py_request_index_price<'py>(
-        &self,
-        py: Python<'py>,
-        instrument_id: InstrumentId,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let index_price = client
-                .request_index_price(instrument_id)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            Ok(index_price)
-        })
-    }
-
-    #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (bar_type, start=None, end=None, limit=None))]
-    fn py_request_bars<'py>(
-        &self,
-        py: Python<'py>,
-        bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        limit: Option<u64>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let bars = client
-                .request_bars(bar_type, start, end, limit)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            Python::attach(|py| {
-                let py_bars: PyResult<Vec<_>> =
-                    bars.into_iter().map(|bar| bar.into_py_any(py)).collect();
-                let pylist = PyList::new(py, py_bars?).unwrap().into_any().unbind();
-                Ok(pylist)
-            })
-        })
-    }
-
-    #[pyo3(name = "request_order_status_reports")]
-    #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None, open_only=false))]
-    fn py_request_order_status_reports<'py>(
-        &self,
-        py: Python<'py>,
-        account_id: AccountId,
-        instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        open_only: bool,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let reports = client
-                .request_order_status_reports(account_id, instrument_id, start, end, open_only)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            Python::attach(|py| {
-                let py_reports: PyResult<Vec<_>> = reports
-                    .into_iter()
-                    .map(|report| report.into_py_any(py))
-                    .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
-                Ok(pylist)
-            })
-        })
-    }
-
-    #[pyo3(name = "request_fill_reports")]
-    #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None))]
-    fn py_request_fill_reports<'py>(
-        &self,
-        py: Python<'py>,
-        account_id: AccountId,
-        instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let reports = client
-                .request_fill_reports(account_id, instrument_id, start, end)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            Python::attach(|py| {
-                let py_reports: PyResult<Vec<_>> = reports
-                    .into_iter()
-                    .map(|report| report.into_py_any(py))
-                    .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
-                Ok(pylist)
-            })
-        })
-    }
-
-    #[pyo3(name = "request_position_status_reports")]
-    #[pyo3(signature = (account_id, instrument_id=None))]
-    fn py_request_position_status_reports<'py>(
-        &self,
-        py: Python<'py>,
-        account_id: AccountId,
-        instrument_id: Option<InstrumentId>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let reports = client
-                .request_position_status_reports(account_id, instrument_id)
-                .await
-                .map_err(to_pyruntime_err)?;
-
-            Python::attach(|py| {
-                let py_reports: PyResult<Vec<_>> = reports
-                    .into_iter()
-                    .map(|report| report.into_py_any(py))
-                    .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
-                Ok(pylist)
-            })
         })
     }
 

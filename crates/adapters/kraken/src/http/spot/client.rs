@@ -1253,6 +1253,10 @@ impl KrakenSpotHttpClient {
     ///
     /// Returns the venue order ID on success. WebSocket handles all execution events.
     ///
+    /// # References
+    /// - <https://docs.kraken.com/api/docs/rest-api/add-order>
+    /// - <https://github.com/krakenfx/api-go/blob/main/pkg/spot/rest.go> (AddOrder)
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -1297,23 +1301,29 @@ impl KrakenSpotHttpClient {
             _ => anyhow::bail!("Unsupported order type: {order_type:?}"),
         };
 
-        // Build oflags based on time in force and order options
-        let mut oflags = Vec::new();
-
-        match time_in_force {
-            TimeInForce::Gtc => {} // Default, no flag needed
+        // Map time in force to Kraken API format
+        // Note: timeinforce only applies to limit orders, not market orders
+        let kraken_tif = match time_in_force {
+            TimeInForce::Gtc => None, // Default, no need to send
             TimeInForce::Ioc => {
-                oflags.push("ioc");
+                // IOC only applies to limit-type orders
+                if matches!(kraken_order_type, KrakenOrderType::Market) {
+                    None // Market orders are implicitly IOC
+                } else {
+                    Some("IOC")
+                }
             }
             TimeInForce::Fok => {
-                anyhow::bail!("FOK time in force not supported by Kraken Spot API");
+                anyhow::bail!("FOK time in force requires Kraken Pro account");
             }
             TimeInForce::Gtd => {
                 anyhow::bail!("GTD time in force requires expire_time parameter");
             }
             _ => anyhow::bail!("Unsupported time in force: {time_in_force:?}"),
-        }
+        };
 
+        // Build oflags for order options (post-only)
+        let mut oflags = Vec::new();
         if post_only {
             oflags.push("post");
         }
@@ -1322,9 +1332,19 @@ impl KrakenSpotHttpClient {
             tracing::warn!("reduce_only is not supported by Kraken Spot API, ignoring");
         }
 
+        // Truncate client_order_id to max 18 chars (Kraken limit for free text format)
+        let cl_ord_id = {
+            let id_str = client_order_id.to_string();
+            if id_str.len() > 18 {
+                id_str[..18].to_string()
+            } else {
+                id_str
+            }
+        };
+
         let mut builder = KrakenSpotAddOrderParamsBuilder::default();
         builder
-            .cl_ord_id(client_order_id.to_string())
+            .cl_ord_id(cl_ord_id)
             .broker(NAUTILUS_KRAKEN_BROKER_ID)
             .pair(raw_symbol)
             .side(kraken_side)
@@ -1333,6 +1353,10 @@ impl KrakenSpotHttpClient {
 
         if let Some(price) = price {
             builder.price(price.to_string());
+        }
+
+        if let Some(tif) = kraken_tif {
+            builder.timeinforce(tif);
         }
 
         if !oflags.is_empty() {

@@ -438,6 +438,72 @@ impl KrakenSpotWebSocketClient {
             Ok(())
         })
     }
+
+    /// Submit an order via WebSocket.
+    ///
+    /// Note: WebSocket API does NOT support broker_id (only REST API does).
+    /// For conditional orders (stop-loss, take-profit), provide trigger_price and trigger_reference.
+    ///
+    /// Parameters
+    /// ----------
+    /// order_type : str
+    ///     Order type: "market", "limit", "stop-loss", "stop-loss-limit", "take-profit", "take-profit-limit"
+    /// side : str
+    ///     Order side: "buy" or "sell"
+    /// order_qty : float
+    ///     Order quantity
+    /// symbol : str
+    ///     Trading symbol (e.g., "ATOM/USDC")
+    /// limit_price : float, optional
+    ///     Limit price for limit orders
+    /// trigger_price : float, optional
+    ///     Trigger price for conditional orders
+    /// trigger_reference : str, optional
+    ///     Trigger reference: "last" (default), "index"
+    /// cl_ord_id : str, optional
+    ///     Client order ID (max 18 chars for free text format)
+    /// time_in_force : str, optional
+    ///     Time in force: "gtc" (default), "ioc", "fok"
+    /// post_only : bool, optional
+    ///     Post-only flag for limit orders
+    #[pyo3(name = "add_order")]
+    #[pyo3(signature = (order_type, side, order_qty, symbol, limit_price=None, trigger_price=None, trigger_reference=None, cl_ord_id=None, time_in_force=None, post_only=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_add_order<'py>(
+        &self,
+        py: Python<'py>,
+        order_type: String,
+        side: String,
+        order_qty: f64,
+        symbol: String,
+        limit_price: Option<f64>,
+        trigger_price: Option<f64>,
+        trigger_reference: Option<String>,
+        cl_ord_id: Option<String>,
+        time_in_force: Option<String>,
+        post_only: Option<bool>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .add_order(
+                    &order_type,
+                    &side,
+                    order_qty,
+                    &symbol,
+                    limit_price,
+                    trigger_price,
+                    trigger_reference.as_deref(),
+                    cl_ord_id,
+                    time_in_force,
+                    post_only,
+                )
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
 }
 
 pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {

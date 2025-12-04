@@ -301,12 +301,30 @@ impl SpotFeedHandler {
                         KrakenWsResponse::Pong(pong) => {
                             tracing::trace!(req_id = ?pong.req_id, "Received pong");
                         }
+                        KrakenWsResponse::AddOrder(add_order) => {
+                            if add_order.success {
+                                if let Some(result) = &add_order.result {
+                                    tracing::info!(
+                                        order_id = %result.order_id,
+                                        cl_ord_id = ?result.cl_ord_id,
+                                        req_id = ?add_order.req_id,
+                                        "Order submitted successfully via WebSocket"
+                                    );
+                                }
+                            } else {
+                                tracing::warn!(
+                                    error = ?add_order.error,
+                                    req_id = ?add_order.req_id,
+                                    "Order submission failed via WebSocket"
+                                );
+                            }
+                        }
                         KrakenWsResponse::Other => {
                             tracing::debug!("Received unknown subscription response");
                         }
                     }
                 } else {
-                    tracing::debug!("Received subscription response (failed to parse details)");
+                    tracing::debug!(raw = ?text, "Received subscription response (failed to parse details)");
                 }
                 return None;
             }

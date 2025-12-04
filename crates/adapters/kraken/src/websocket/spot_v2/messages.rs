@@ -73,6 +73,8 @@ pub enum KrakenWsResponse {
     Subscribe(KrakenWsSubscribeResponse),
     #[serde(rename = "unsubscribe")]
     Unsubscribe(KrakenWsUnsubscribeResponse),
+    #[serde(rename = "add_order")]
+    AddOrder(KrakenWsAddOrderResponse),
     #[serde(other)]
     Other,
 }
@@ -260,6 +262,125 @@ pub struct KrakenWsFee {
     pub asset: String,
     /// Fee quantity.
     pub qty: f64,
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Order Request/Response Types
+////////////////////////////////////////////////////////////////////////////////
+
+/// Trigger parameters for conditional orders (stop-loss, take-profit).
+#[derive(Debug, Clone, Serialize)]
+pub struct KrakenWsOrderTriggers {
+    /// Trigger reference: "index" or "last".
+    pub reference: String,
+    /// Trigger price.
+    pub price: f64,
+    /// Price type: "static" (default) or "pct" for percentage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price_type: Option<String>,
+}
+
+/// WebSocket add_order request parameters.
+#[derive(Debug, Clone, Serialize)]
+pub struct KrakenWsAddOrderParams {
+    /// Order type: "market", "limit", "stop-loss", "take-profit", "stop-loss-limit", "take-profit-limit".
+    pub order_type: String,
+    /// Order side: "buy" or "sell".
+    pub side: String,
+    /// Order quantity in base currency.
+    pub order_qty: f64,
+    /// Trading pair symbol (e.g., "ATOM/USDC").
+    pub symbol: String,
+    /// Limit price (required for limit orders and limit variants of stop/take-profit).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_price: Option<f64>,
+    /// Trigger parameters for conditional orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triggers: Option<KrakenWsOrderTriggers>,
+    /// Client order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Time in force: "gtc", "ioc", "gtd".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_in_force: Option<String>,
+    /// Post-only flag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_only: Option<bool>,
+    /// Reduce-only flag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+    /// Order user reference.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_userref: Option<i64>,
+    /// Display quantity for iceberg orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_qty: Option<f64>,
+    /// Fee preference: "base" or "quote".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fee_preference: Option<String>,
+    /// Order flags.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oflags: Option<Vec<String>>,
+}
+
+/// WebSocket add_order request.
+#[derive(Debug, Clone, Serialize)]
+pub struct KrakenWsAddOrderRequest {
+    /// Method name.
+    pub method: String,
+    /// Request parameters.
+    pub params: KrakenWsAddOrderParams,
+    /// Request ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub req_id: Option<u64>,
+}
+
+impl KrakenWsAddOrderRequest {
+    pub fn new(params: KrakenWsAddOrderParams, req_id: Option<u64>) -> Self {
+        Self {
+            method: "add_order".to_string(),
+            params,
+            req_id,
+        }
+    }
+}
+
+/// WebSocket add_order response result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KrakenWsAddOrderResult {
+    /// Order ID assigned by Kraken.
+    pub order_id: String,
+    /// Client order ID (echoed back).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Order user reference.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_userref: Option<i64>,
+    /// Warnings if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warnings: Option<Vec<String>>,
+}
+
+/// WebSocket add_order response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KrakenWsAddOrderResponse {
+    /// Request ID (echoed back).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub req_id: Option<u64>,
+    /// Success flag.
+    pub success: bool,
+    /// Result on success.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<KrakenWsAddOrderResult>,
+    /// Error message on failure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Time in (ISO 8601).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_in: Option<String>,
+    /// Time out (ISO 8601).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_out: Option<String>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////

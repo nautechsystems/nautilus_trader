@@ -604,6 +604,85 @@ impl KrakenSpotWebSocketClient {
         Ok(())
     }
 
+    /// Place an order via WebSocket.
+    ///
+    /// Requires authentication - call `authenticate()` first.
+    /// Note: WebSocket API does not support broker_id (only REST API does).
+    ///
+    /// For conditional orders (stop-loss, take-profit), provide trigger_price and trigger_reference.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn add_order(
+        &self,
+        order_type: &str,
+        side: &str,
+        order_qty: f64,
+        symbol: &str,
+        limit_price: Option<f64>,
+        trigger_price: Option<f64>,
+        trigger_reference: Option<&str>,
+        cl_ord_id: Option<String>,
+        time_in_force: Option<String>,
+        post_only: Option<bool>,
+    ) -> Result<(), KrakenWsError> {
+        let req_id = self.get_next_req_id().await;
+
+        let token = self.auth_token.read().await.clone().ok_or_else(|| {
+            KrakenWsError::AuthenticationError(
+                "Authentication token required for add_order. Call authenticate() first"
+                    .to_string(),
+            )
+        })?;
+
+        let triggers = trigger_price.map(|price| super::messages::KrakenWsOrderTriggers {
+            reference: trigger_reference.unwrap_or("last").to_string(),
+            price,
+            price_type: None,
+        });
+
+        let request = super::messages::KrakenWsAddOrderRequest::new(
+            super::messages::KrakenWsAddOrderParams {
+                order_type: order_type.to_string(),
+                side: side.to_string(),
+                order_qty,
+                symbol: symbol.to_string(),
+                limit_price,
+                triggers,
+                cl_ord_id,
+                time_in_force,
+                post_only,
+                reduce_only: None,
+                order_userref: None,
+                display_qty: None,
+                fee_preference: None,
+                oflags: None,
+            },
+            Some(req_id),
+        );
+
+        // Inject token into params
+        let mut request_value =
+            serde_json::to_value(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+
+        if let Some(params) = request_value.get_mut("params") {
+            params["token"] = serde_json::Value::String(token);
+        }
+
+        let payload = serde_json::to_string(&request_value)
+            .map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+
+        tracing::trace!("Sending add_order: {payload}");
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(SpotHandlerCommand::SendText { payload })
+            .map_err(|e| {
+                KrakenWsError::ConnectionError(format!("Failed to send add_order request: {e}"))
+            })?;
+
+        Ok(())
+    }
+
     /// Unsubscribe from order book updates for the given instrument.
     ///
     /// Note: Will only actually unsubscribe if quotes are not also subscribed.

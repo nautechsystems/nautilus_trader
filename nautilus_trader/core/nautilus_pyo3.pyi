@@ -8117,6 +8117,19 @@ class KrakenSpotWebSocketClient:
     async def unsubscribe_trades(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_bars(self, bar_type: BarType) -> None: ...
     async def send_ping(self) -> None: ...
+    async def add_order(
+        self,
+        order_type: str,
+        side: str,
+        order_qty: float,
+        symbol: str,
+        limit_price: float | None = None,
+        trigger_price: float | None = None,
+        trigger_reference: str | None = None,
+        cl_ord_id: str | None = None,
+        time_in_force: str | None = None,
+        post_only: bool | None = None,
+    ) -> None: ...
 
 class KrakenFuturesWebSocketClient:
     def __init__(
