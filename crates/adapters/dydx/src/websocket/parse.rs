@@ -34,8 +34,15 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use crate::{
-    http::models::{Fill, Order, PerpetualPosition},
-    schemas::ws::DydxWsOrderSubaccountMessageContents,
+    common::enums::DydxOrderStatus,
+    http::{
+        models::{Fill, Order, PerpetualPosition},
+        parse::{parse_fill_report, parse_order_status_report, parse_position_status_report},
+    },
+    schemas::ws::{
+        DydxPerpetualPosition, DydxWsFillSubaccountMessageContents,
+        DydxWsOrderSubaccountMessageContents,
+    },
 };
 
 /// Parses a WebSocket order update into an OrderStatusReport.
@@ -87,21 +94,12 @@ pub fn parse_ws_order_report(
     let http_order = convert_ws_order_to_http(ws_order)?;
 
     // Delegate to existing HTTP parser
-    let mut report = crate::http::parse::parse_order_status_report(
-        &http_order,
-        &instrument,
-        account_id,
-        ts_init,
-    )?;
+    let mut report = parse_order_status_report(&http_order, &instrument, account_id, ts_init)?;
 
     // For untriggered conditional orders with an explicit trigger price we
     // surface `PendingUpdate` to match Nautilus semantics and existing dYdX
     // enum mapping.
-    if matches!(
-        ws_order.status,
-        crate::common::enums::DydxOrderStatus::Untriggered
-    ) && ws_order.trigger_price.is_some()
-    {
+    if matches!(ws_order.status, DydxOrderStatus::Untriggered) && ws_order.trigger_price.is_some() {
         report.order_status = OrderStatus::PendingUpdate;
     }
 
@@ -228,7 +226,7 @@ fn convert_ws_order_to_http(
 /// - Field parsing fails (price, size, fee, etc.)
 /// - HTTP parser fails
 pub fn parse_ws_fill_report(
-    ws_fill: &crate::schemas::ws::DydxWsFillSubaccountMessageContents,
+    ws_fill: &DydxWsFillSubaccountMessageContents,
     instruments: &DashMap<InstrumentId, InstrumentAny>,
     account_id: AccountId,
     ts_init: UnixNanos,
@@ -255,7 +253,7 @@ pub fn parse_ws_fill_report(
     let http_fill = convert_ws_fill_to_http(ws_fill)?;
 
     // Delegate to existing HTTP parser
-    crate::http::parse::parse_fill_report(&http_fill, &instrument, account_id, ts_init)
+    parse_fill_report(&http_fill, &instrument, account_id, ts_init)
 }
 
 /// Converts a WebSocket fill message to HTTP Fill format.
@@ -263,9 +261,7 @@ pub fn parse_ws_fill_report(
 /// # Errors
 ///
 /// Returns an error if any field parsing fails.
-fn convert_ws_fill_to_http(
-    ws_fill: &crate::schemas::ws::DydxWsFillSubaccountMessageContents,
-) -> anyhow::Result<crate::http::models::Fill> {
+fn convert_ws_fill_to_http(ws_fill: &DydxWsFillSubaccountMessageContents) -> anyhow::Result<Fill> {
     // Parse numeric fields
     let price: Decimal = ws_fill.price.parse().context("Failed to parse price")?;
 
@@ -317,7 +313,7 @@ fn convert_ws_fill_to_http(
 /// - Field parsing fails (size, prices, etc.)
 /// - HTTP parser fails
 pub fn parse_ws_position_report(
-    ws_position: &crate::schemas::ws::DydxPerpetualPosition,
+    ws_position: &DydxPerpetualPosition,
     instruments: &DashMap<InstrumentId, InstrumentAny>,
     account_id: AccountId,
     ts_init: UnixNanos,
@@ -344,12 +340,7 @@ pub fn parse_ws_position_report(
     let http_position = convert_ws_position_to_http(ws_position)?;
 
     // Delegate to existing HTTP parser
-    crate::http::parse::parse_position_status_report(
-        &http_position,
-        &instrument,
-        account_id,
-        ts_init,
-    )
+    parse_position_status_report(&http_position, &instrument, account_id, ts_init)
 }
 
 /// Converts a WebSocket position to HTTP PerpetualPosition format.
@@ -358,8 +349,8 @@ pub fn parse_ws_position_report(
 ///
 /// Returns an error if any field parsing fails.
 fn convert_ws_position_to_http(
-    ws_position: &crate::schemas::ws::DydxPerpetualPosition,
-) -> anyhow::Result<crate::http::models::PerpetualPosition> {
+    ws_position: &DydxPerpetualPosition,
+) -> anyhow::Result<PerpetualPosition> {
     // Parse numeric fields
     let size: Decimal = ws_position.size.parse().context("Failed to parse size")?;
 

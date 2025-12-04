@@ -42,14 +42,20 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
-use nautilus_network::{RECONNECTED, websocket::WebSocketClient};
+use nautilus_network::{
+    RECONNECTED,
+    retry::{RetryManager, create_websocket_retry_manager},
+    websocket::WebSocketClient,
+};
 use rust_decimal::Decimal;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::{
     DydxWsError, DydxWsResult,
+    client::DYDX_RATE_LIMIT_KEY_SUBSCRIPTION,
     enums::DydxWsChannel,
+    error::DydxWebSocketError,
     messages::{
         DydxWsChannelBatchDataMsg, DydxWsChannelDataMsg, DydxWsConnectedMsg, DydxWsGenericMsg,
         DydxWsMessage, DydxWsSubscriptionMsg, NautilusWsMessage,
@@ -59,7 +65,12 @@ use super::{
         DydxTradeContents,
     },
 };
-use crate::schemas::ws::{DydxWsSubaccountsChannelContents, DydxWsSubaccountsChannelData};
+use crate::{
+    common::parse::parse_instrument_id,
+    schemas::ws::{
+        DydxWsSubaccountsChannelContents, DydxWsSubaccountsChannelData, DydxWsSubaccountsSubscribed,
+    },
+};
 
 /// Commands sent to the feed handler.
 #[derive(Debug, Clone)]
@@ -93,6 +104,8 @@ pub struct FeedHandler {
     client: WebSocketClient,
     /// Manual disconnect signal.
     signal: Arc<AtomicBool>,
+    /// Retry manager for WebSocket send operations.
+    retry_manager: RetryManager<DydxWsError>,
     /// Cached instruments for parsing market data.
     instruments: AHashMap<Ustr, InstrumentAny>,
     /// Cached bar types by topic (e.g., "BTC-USD/1MIN").
@@ -127,9 +140,37 @@ impl FeedHandler {
             raw_rx,
             client,
             signal,
+            retry_manager: create_websocket_retry_manager(),
             instruments: AHashMap::new(),
             bar_types: AHashMap::new(),
         }
+    }
+
+    /// Sends a WebSocket message with retry logic.
+    ///
+    /// Uses the configured [`RetryManager`] to handle transient failures.
+    async fn send_with_retry(
+        &self,
+        payload: String,
+        rate_limit_keys: Option<Vec<String>>,
+    ) -> Result<(), DydxWsError> {
+        self.retry_manager
+            .execute_with_retry(
+                "websocket_send",
+                || {
+                    let payload = payload.clone();
+                    let keys = rate_limit_keys.clone();
+                    async move {
+                        self.client
+                            .send_text(payload, keys)
+                            .await
+                            .map_err(|e| DydxWsError::ClientError(format!("Send failed: {e}")))
+                    }
+                },
+                should_retry_dydx_error,
+                create_dydx_timeout_error,
+            )
+            .await
     }
 
     /// Main processing loop for the handler.
@@ -188,9 +229,9 @@ impl FeedHandler {
                                     {
                                         if sub_msg.channel == DydxWsChannel::Subaccounts {
                                             // Parse as subaccounts-specific subscription message
-                                            serde_json::from_value::<
-                                                crate::schemas::ws::DydxWsSubaccountsSubscribed,
-                                            >(val)
+                                            serde_json::from_value::<DydxWsSubaccountsSubscribed>(
+                                                val,
+                                            )
                                             .map(DydxWsMessage::SubaccountsSubscribed)
                                         } else {
                                             Ok(DydxWsMessage::Subscribed(sub_msg))
@@ -209,10 +250,8 @@ impl FeedHandler {
                                     serde_json::from_value::<DydxWsChannelBatchDataMsg>(val)
                                         .map(DydxWsMessage::ChannelBatchData)
                                 } else if meta.is_error() {
-                                    serde_json::from_value::<
-                                        crate::websocket::error::DydxWebSocketError,
-                                    >(val)
-                                    .map(DydxWsMessage::Error)
+                                    serde_json::from_value::<DydxWebSocketError>(val)
+                                        .map(DydxWsMessage::Error)
                                 } else {
                                     Ok(DydxWsMessage::Raw(val))
                                 };
@@ -220,9 +259,7 @@ impl FeedHandler {
                                 match result {
                                     Ok(dydx_msg) => self.handle_dydx_message(dydx_msg),
                                     Err(e) => {
-                                        let err = crate::websocket::error::DydxWebSocketError::from_message(
-                                            e.to_string(),
-                                        );
+                                        let err = DydxWebSocketError::from_message(e.to_string());
                                         Some(NautilusWsMessage::Error(err))
                                     }
                                 }
@@ -234,9 +271,7 @@ impl FeedHandler {
                         }
                     }
                     Err(e) => {
-                        let err = crate::websocket::error::DydxWebSocketError::from_message(
-                            e.to_string(),
-                        );
+                        let err = DydxWebSocketError::from_message(e.to_string());
                         Some(NautilusWsMessage::Error(err))
                     }
                 }
@@ -283,8 +318,14 @@ impl FeedHandler {
                 self.bar_types.remove(&topic);
             }
             HandlerCommand::SendText(text) => {
-                if let Err(e) = self.client.send_text(text, None).await {
-                    tracing::error!("Failed to send WebSocket text: {e}");
+                if let Err(e) = self
+                    .send_with_retry(
+                        text,
+                        Some(vec![DYDX_RATE_LIMIT_KEY_SUBSCRIPTION.to_string()]),
+                    )
+                    .await
+                {
+                    tracing::error!("Failed to send WebSocket text after retries: {e}");
                 }
             }
         }
@@ -836,7 +877,7 @@ impl FeedHandler {
 
     fn parse_subaccounts_subscribed(
         &self,
-        msg: &crate::schemas::ws::DydxWsSubaccountsSubscribed,
+        msg: &DydxWsSubaccountsSubscribed,
     ) -> DydxWsResult<Option<NautilusWsMessage>> {
         // Pass raw subaccount subscription to execution client for parsing
         // The execution client has access to instruments and oracle prices needed for margin calculations
@@ -850,7 +891,7 @@ impl FeedHandler {
         // dYdX WS uses raw symbols (e.g., "BTC-USD")
         // Need to append "-PERP" to match Nautilus instrument IDs
         let symbol_with_perp = format!("{symbol}-PERP");
-        Ok(crate::common::parse::parse_instrument_id(&symbol_with_perp))
+        Ok(parse_instrument_id(&symbol_with_perp))
     }
 
     fn get_instrument(&self, instrument_id: &InstrumentId) -> DydxWsResult<&InstrumentAny> {
@@ -858,4 +899,30 @@ impl FeedHandler {
             .get(&instrument_id.symbol.inner())
             .ok_or_else(|| DydxWsError::Parse(format!("No instrument cached for {instrument_id}")))
     }
+}
+
+/// Determines if a dYdX WebSocket error should trigger a retry.
+fn should_retry_dydx_error(error: &DydxWsError) -> bool {
+    match error {
+        DydxWsError::Transport(_) => true,
+        DydxWsError::Send(_) => true,
+        DydxWsError::ClientError(msg) => {
+            let msg_lower = msg.to_lowercase();
+            msg_lower.contains("timeout")
+                || msg_lower.contains("timed out")
+                || msg_lower.contains("connection")
+                || msg_lower.contains("network")
+        }
+        DydxWsError::NotConnected
+        | DydxWsError::Json(_)
+        | DydxWsError::Parse(_)
+        | DydxWsError::Authentication(_)
+        | DydxWsError::Subscription(_)
+        | DydxWsError::Venue(_) => false,
+    }
+}
+
+/// Creates a timeout error for the retry manager.
+fn create_dydx_timeout_error(msg: String) -> DydxWsError {
+    DydxWsError::ClientError(msg)
 }

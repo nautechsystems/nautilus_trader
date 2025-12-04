@@ -29,6 +29,12 @@
 //!
 //! <https://docs.dydx.trade/developers/indexer/websockets>
 
+/// Rate limit key for subscription operations (subscribe/unsubscribe).
+///
+/// dYdX allows up to 2 subscription messages per second per connection.
+/// See: <https://docs.dydx.trade/developers/indexer/websockets#rate-limits>
+pub const DYDX_RATE_LIMIT_KEY_SUBSCRIPTION: &str = "subscription";
+
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU8, Ordering},
