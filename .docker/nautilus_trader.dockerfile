@@ -49,3 +49,10 @@ FROM base AS application
 
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
+
+# Install redis client for bot-folio trading engine
+RUN pip install --no-cache-dir redis
+
+# Default entrypoint for bot-folio trading engine
+# Runs the strategy fetcher/executor from the botfolio module
+CMD ["python", "-m", "nautilus_trader.botfolio.run_strategy"]
