@@ -52,6 +52,7 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderPendingCancel
@@ -2765,6 +2766,46 @@ class TestSimulatedExchangeMarginAccount:
         # Assert
         assert order.status == OrderStatus.EXPIRED
         assert len(self.exchange.get_open_orders()) == 0
+
+    def test_expire_order_generates_event_with_correct_account_id(self) -> None:
+        # Arrange: Prepare market
+        tick1 = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick1)
+        self.exchange.process_quote_tick(tick1)
+
+        order = self.strategy.order_factory.stop_market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            _USDJPY_SIM.make_price(96.711),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        tick2 = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=96.709,
+            ask_price=96.710,
+            ts_event=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_init=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+        )
+
+        # Act
+        self.exchange.process_quote_tick(tick2)
+
+        # Assert
+        assert order.status == OrderStatus.EXPIRED
+        # Verify the OrderExpired event has correct account_id (regression test for GH-3272)
+        expired_event = order.last_event
+        assert isinstance(expired_event, OrderExpired)
+        assert expired_event.account_id == self.exchange.get_account().id
 
     def test_process_quote_tick_fills_buy_stop_order(self) -> None:
         # Arrange: Prepare market

@@ -46,9 +46,12 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::models::PerpetualMarket;
-use crate::common::{
-    enums::{DydxMarketStatus, DydxOrderExecution, DydxOrderType, DydxTimeInForce},
-    parse::{get_currency, parse_decimal, parse_instrument_id, parse_price, parse_quantity},
+use crate::{
+    common::{
+        enums::{DydxMarketStatus, DydxOrderExecution, DydxOrderType, DydxTimeInForce},
+        parse::{get_currency, parse_decimal, parse_instrument_id, parse_price, parse_quantity},
+    },
+    schemas::ws::DydxSubaccountInfo,
 };
 
 /// Validates that a ticker has the correct format (BASE-QUOTE).
@@ -950,7 +953,7 @@ pub fn parse_position_status_report(
 ///
 /// Returns an error if balance fields cannot be parsed.
 pub fn parse_account_state(
-    subaccount: &crate::schemas::ws::DydxSubaccountInfo,
+    subaccount: &DydxSubaccountInfo,
     account_id: AccountId,
     instruments: &std::collections::HashMap<InstrumentId, InstrumentAny>,
     oracle_prices: &std::collections::HashMap<InstrumentId, Decimal>,

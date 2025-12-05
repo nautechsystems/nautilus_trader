@@ -27,6 +27,34 @@ use crate::{
     identifiers::{InstrumentId, Symbol, Venue},
     types::Price,
 };
+
+/// Given a formula and component instrument IDs, produce:
+///   * a "safe" formula string (with any hyphenated instrument IDs replaced by underscore variants)
+///   * the corresponding list of safe variable names (one per component, in order)
+///   * a mapping from safe variable names to original instrument ID strings
+fn make_safe_formula_with_variables_and_mapping(
+    formula: &str,
+    components: &[InstrumentId],
+) -> (String, Vec<String>, HashMap<String, String>) {
+    let mut safe_formula = formula.to_string();
+    let mut variables = Vec::with_capacity(components.len());
+    let mut safe_to_original = HashMap::new();
+
+    for component in components {
+        let original = component.to_string();
+        let safe = original.replace('-', "_");
+        safe_to_original.insert(safe.clone(), original.clone());
+        if original != safe {
+            // Replace all occurrences of the instrument ID token with its safe variant.
+            safe_formula = safe_formula.replace(&original, &safe);
+        }
+
+        variables.push(safe);
+    }
+
+    (safe_formula, variables, safe_to_original)
+}
+
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
 ///
@@ -46,6 +74,10 @@ pub struct SyntheticInstrument {
     /// The component instruments for the synthetic instrument.
     pub components: Vec<InstrumentId>,
     /// The derivation formula for the synthetic instrument.
+    ///
+    /// NOTE: internally this is always stored in its *safe* form, i.e.
+    /// any component `InstrumentId` which contains `-` in its string
+    /// representation will appear here with `_` instead.
     pub formula: String,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -53,6 +85,7 @@ pub struct SyntheticInstrument {
     pub ts_init: UnixNanos,
     context: HashMapContext,
     variables: Vec<String>,
+    safe_to_original: HashMap<String, String>,
     operator_tree: Node,
 }
 
@@ -92,21 +125,23 @@ impl<'de> Deserialize<'de> for SyntheticInstrument {
 
         let fields = Fields::deserialize(deserializer)?;
 
-        let variables = fields.components.iter().map(ToString::to_string).collect();
+        let (safe_formula, variables, safe_to_original) =
+            make_safe_formula_with_variables_and_mapping(&fields.formula, &fields.components);
 
         let operator_tree =
-            evalexpr::build_operator_tree(&fields.formula).map_err(serde::de::Error::custom)?;
+            evalexpr::build_operator_tree(&safe_formula).map_err(serde::de::Error::custom)?;
 
         Ok(Self {
             id: fields.id,
             price_precision: fields.price_precision,
             price_increment: fields.price_increment,
             components: fields.components,
-            formula: fields.formula,
+            formula: safe_formula,
             ts_event: fields.ts_event,
             ts_init: fields.ts_init,
             context: HashMapContext::new(),
             variables,
+            safe_to_original,
             operator_tree,
         })
     }
@@ -131,23 +166,30 @@ impl SyntheticInstrument {
     ) -> anyhow::Result<Self> {
         let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
 
-        // Extract variables from the component instruments
-        let variables: Vec<String> = components.iter().map(ToString::to_string).collect();
-
-        let operator_tree = evalexpr::build_operator_tree(&formula)?;
+        // Build a safe version of the formula and the corresponding safe variable names.
+        let (safe_formula, variables, safe_to_original) =
+            make_safe_formula_with_variables_and_mapping(&formula, &components);
+        let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
 
         Ok(Self {
             id: InstrumentId::new(symbol, Venue::synthetic()),
             price_precision,
             price_increment,
             components,
-            formula,
+            formula: safe_formula,
             context: HashMapContext::new(),
             variables,
+            safe_to_original,
             operator_tree,
             ts_event,
             ts_init,
         })
+    }
+
+    pub fn is_valid_formula_for_components(formula: &str, components: &[InstrumentId]) -> bool {
+        let (safe_formula, _, _) =
+            make_safe_formula_with_variables_and_mapping(formula, components);
+        evalexpr::build_operator_tree(&safe_formula).is_ok()
     }
 
     /// Creates a new [`SyntheticInstrument`] instance, parsing the given formula.
@@ -176,15 +218,17 @@ impl SyntheticInstrument {
 
     #[must_use]
     pub fn is_valid_formula(&self, formula: &str) -> bool {
-        evalexpr::build_operator_tree(formula).is_ok()
+        Self::is_valid_formula_for_components(formula, &self.components)
     }
 
     /// # Errors
     ///
     /// Returns an error if parsing the new formula fails.
     pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
-        let operator_tree = evalexpr::build_operator_tree(&formula)?;
-        self.formula = formula;
+        let (safe_formula, _, _) =
+            make_safe_formula_with_variables_and_mapping(&formula, &self.components);
+        let operator_tree = evalexpr::build_operator_tree(&safe_formula)?;
+        self.formula = safe_formula;
         self.operator_tree = operator_tree;
         Ok(())
     }
@@ -199,16 +243,21 @@ impl SyntheticInstrument {
         let mut input_values = Vec::new();
 
         for variable in &self.variables {
-            if let Some(&value) = inputs.get(variable) {
-                input_values.push(value);
-                self.context
-                    .set_value(variable.clone(), Value::Float(value))
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to set value for variable {variable}: {e}")
-                    })?;
-            } else {
-                anyhow::bail!("Missing price for component: {variable}");
-            }
+            let original = self
+                .safe_to_original
+                .get(variable)
+                .ok_or_else(|| anyhow::anyhow!("Variable not found in mapping: {variable}"))?;
+
+            let value = inputs
+                .get(original)
+                .copied()
+                .ok_or_else(|| anyhow::anyhow!("Missing price for component: {original}"))?;
+
+            input_values.push(value);
+
+            self.context
+                .set_value(variable.clone(), Value::Float(value))
+                .map_err(|e| anyhow::anyhow!("Failed to set value for variable {variable}: {e}"))?;
         }
 
         self.calculate(&input_values)
@@ -257,6 +306,8 @@ impl Hash for SyntheticInstrument {
 ///////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rstest::rstest;
 
     use super::*;
@@ -297,5 +348,103 @@ mod tests {
 
         assert_eq!(price, Price::from("75.0"));
         assert_eq!(synth.formula, new_formula);
+    }
+
+    #[rstest]
+    fn test_hyphenated_instrument_ids_are_sanitized_and_backward_compatible_calculate() {
+        let comp1 = InstrumentId::from_str("ETHUSDC-PERP.BINANCE_FUTURES").unwrap();
+        let comp2 = InstrumentId::from_str("ETH_USDC-PERP.HYPERLIQUID").unwrap();
+
+        let components = vec![comp1, comp2];
+
+        // External formula uses the *raw* InstrumentId strings with '-'
+        let raw_formula = format!("({comp1} + {comp2}) / 2.0");
+
+        let symbol = Symbol::from("ETH-USDC");
+
+        let mut synth = SyntheticInstrument::new(
+            symbol,
+            2,
+            components.clone(),
+            raw_formula,
+            0.into(),
+            0.into(),
+        );
+
+        let mut inputs = HashMap::new();
+        inputs.insert(components[0].to_string(), 100.0);
+        inputs.insert(components[1].to_string(), 200.0);
+
+        let price = synth.calculate_from_map(&inputs).unwrap();
+
+        assert_eq!(price, Price::from("150.0"));
+    }
+
+    #[rstest]
+    fn test_hyphenated_instrument_ids_are_sanitized_calculate() {
+        let comp1 = InstrumentId::from_str("ETH-USDT-SWAP.OKX").unwrap();
+        let comp2 = InstrumentId::from_str("ETH-USDC-PERP.HYPERLIQUID").unwrap();
+
+        let components = vec![comp1, comp2];
+
+        // External formula uses the *raw* InstrumentId strings with '-'
+        let raw_formula = format!("({comp1} + {comp2}) / 2.0");
+
+        let symbol = Symbol::from("ETH-USD");
+
+        let mut synth =
+            SyntheticInstrument::new(symbol, 2, components, raw_formula, 0.into(), 0.into());
+
+        let inputs = vec![100.0, 200.0];
+        let price = synth.calculate(&inputs).unwrap();
+        assert_eq!(price, Price::from("150.0"));
+    }
+
+    #[rstest]
+    fn test_hyphenated_instrument_ids_are_sanitized_calculate_from_map() {
+        let comp1 = InstrumentId::from_str("ETH-USDT-SWAP.OKX").unwrap();
+        let comp2 = InstrumentId::from_str("ETH-USDC-PERP.HYPERLIQUID").unwrap();
+
+        let components = vec![comp1, comp2];
+
+        // External formula uses the *raw* InstrumentId strings with '-'
+        let raw_formula = format!("({comp1} + {comp2}) / 2.0");
+
+        let symbol = Symbol::from("ETH-USD");
+
+        let mut synth = SyntheticInstrument::new(
+            symbol,
+            2,
+            components.clone(),
+            raw_formula,
+            0.into(),
+            0.into(),
+        );
+
+        // Internally, the stored formula should NOT contain the hyphenated IDs anymore,
+        // but instead the underscore-safe variants.
+        for c in &components {
+            let original = c.to_string();
+            let safe = original.replace('-', "_");
+
+            assert!(
+                !synth.formula.contains(&original),
+                "internal formula should not contain hyphenated identifier {original}"
+            );
+            assert!(
+                synth.formula.contains(&safe),
+                "internal formula should contain safe identifier {safe}"
+            );
+        }
+
+        // When calling `calculate_from_map`, we should still be able to use
+        // the external/original InstrumentId strings as keys.
+        let mut inputs = HashMap::new();
+        inputs.insert(components[0].to_string(), 100.0);
+        inputs.insert(components[1].to_string(), 200.0);
+
+        let price = synth.calculate_from_map(&inputs).unwrap();
+
+        assert_eq!(price, Price::from("150.0"));
     }
 }

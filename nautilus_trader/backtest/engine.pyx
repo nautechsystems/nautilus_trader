@@ -6441,7 +6441,7 @@ cdef class OrderMatchingEngine:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            account_id=order.account_id or self._account_ids[order.client_order_id],
+            account_id=order.account_id or self._account_ids[order.trader_id],
             event_id=UUID4(),
             ts_event=ts_now,
             ts_init=ts_now,

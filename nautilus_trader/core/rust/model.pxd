@@ -1995,8 +1995,8 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # Assumes `formula_ptr` is a valid C string pointer.
-    uint8_t synthetic_instrument_is_valid_formula(const SyntheticInstrument_API *synth,
-                                                  const char *formula_ptr);
+    uint8_t synthetic_instrument_is_valid_formula(const char *formula_ptr,
+                                                  const char *components_ptr);
 
     # # Safety
     #

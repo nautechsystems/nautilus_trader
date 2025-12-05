@@ -20,7 +20,6 @@ import os
 import platform
 import re
 from collections import defaultdict
-from collections.abc import Callable
 from collections.abc import Generator
 from itertools import groupby
 from os import PathLike
@@ -38,7 +37,6 @@ import pyarrow.parquet as pq
 from fsspec.implementations.local import make_path_posix
 from fsspec.implementations.memory import MemoryFileSystem
 from fsspec.utils import infer_storage_options
-from pyarrow import ArrowInvalid
 
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
@@ -1474,7 +1472,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         base_cls: type,
         identifiers: list[str] | None = None,
-        filter_expr: Callable | None = None,
         **kwargs: Any,
     ) -> list[Data]:
         subclasses = [base_cls, *base_cls.__subclasses__()]
@@ -1484,7 +1481,6 @@ class ParquetDataCatalog(BaseDataCatalog):
             try:
                 data_list = self.query(
                     data_cls=cls,
-                    filter_expr=filter_expr,
                     identifiers=identifiers,
                     raise_on_empty=False,
                     **kwargs,
@@ -1495,14 +1491,6 @@ class ParquetDataCatalog(BaseDataCatalog):
                     continue
 
                 raise
-            except ArrowInvalid as e:
-                # If we're using a `filter_expr` here, there's a good chance
-                # this error is using a filter that is specific to one set of
-                # instruments and not to others, so we ignore it (if not; raise).
-                if filter_expr is not None:
-                    continue
-                else:
-                    raise e
 
         non_empty_data_lists = [data_list for data_list in data_lists if data_list is not None]
         objects = [o for objs in non_empty_data_lists for o in objs]  # flatten of list of lists

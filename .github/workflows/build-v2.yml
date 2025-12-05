@@ -51,12 +51,41 @@ jobs:
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
+          allowed-endpoints: |
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            public.ecr.aws:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false
+
+      - name: Cache Docker images for cargo-deny action
+        id: cache-docker
+        # https://github.com/actions/cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /tmp/docker-cache
+          key: docker-cargo-deny-${{ runner.os }}-rust-1.85.0-alpine3.20
+          restore-keys: |
+            docker-cargo-deny-${{ runner.os }}-
+
+      - name: Load cached Docker image
+        if: steps.cache-docker.outputs.cache-hit == 'true'
+        run: |
+          if [ -f /tmp/docker-cache/rust-alpine.tar ]; then
+            docker load -i /tmp/docker-cache/rust-alpine.tar
+          fi
+
+      - name: Pull and cache Docker image from ECR Public
+        if: steps.cache-docker.outputs.cache-hit != 'true'
+        run: |
+          # Pull from ECR Public (unlimited anonymous pulls) and tag as Docker Hub image
+          docker pull public.ecr.aws/docker/library/rust:1.85.0-alpine3.20
+          docker tag public.ecr.aws/docker/library/rust:1.85.0-alpine3.20 rust:1.85.0-alpine3.20
+          mkdir -p /tmp/docker-cache
+          docker save rust:1.85.0-alpine3.20 -o /tmp/docker-cache/rust-alpine.tar
 
       # https://github.com/EmbarkStudios/cargo-deny-action
       - name: Run cargo-deny (advisories, licenses, sources, bans)
