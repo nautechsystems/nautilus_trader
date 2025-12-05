@@ -1,0 +1,861 @@
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_____________ ERROR at setup of TestDatetimeFunctions.test_as_utc_index_given_empty_dataframe_returns_empty_dataframe ______________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 431
+      def test_as_utc_index_given_empty_dataframe_returns_empty_dataframe(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+______________________ ERROR at setup of TestDatetimeFunctions.test_with_utc_index_given_tz_unaware_dataframe ______________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 441
+      def test_with_utc_index_given_tz_unaware_dataframe(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_______________________ ERROR at setup of TestDatetimeFunctions.test_with_utc_index_given_tz_aware_dataframe _______________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 455
+      def test_with_utc_index_given_tz_aware_dataframe(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_____________ ERROR at setup of TestDatetimeFunctions.test_with_utc_index_given_tz_aware_different_timezone_dataframe ______________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 469
+      def test_with_utc_index_given_tz_aware_different_timezone_dataframe(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+____________________ ERROR at setup of TestDatetimeFunctions.test_ensure_pydatetime_utc_given_none_returns_none ____________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 494
+      def test_ensure_pydatetime_utc_given_none_returns_none(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+__________________________ ERROR at setup of TestDatetimeFunctions.test_ensure_pydatetime_utc_unix_epoch ___________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 501
+      def test_ensure_pydatetime_utc_unix_epoch(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+____________ ERROR at setup of TestDatetimeFunctions.test_ensure_pydatetime_utc_given_utc_timestamp_returns_pydatetime _____________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 518
+      def test_ensure_pydatetime_utc_given_utc_timestamp_returns_pydatetime(self, tzinfo=UTC):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+____________ ERROR at setup of TestDatetimeFunctions.test_ensure_pydatetime_utc_given_non_utc_timestamp_converts_to_utc ____________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 535
+      def test_ensure_pydatetime_utc_given_non_utc_timestamp_converts_to_utc(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+______________ ERROR at setup of TestDatetimeFunctions.test_ensure_pydatetime_utc_given_naive_timestamp_raises_error _______________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 550
+      def test_ensure_pydatetime_utc_given_naive_timestamp_raises_error(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+__________________ ERROR at setup of TestDatetimeFunctions.test_ensure_pydatetime_utc_timezone_conversion[UTC-12] __________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 558
+      @pytest.mark.parametrize(
+          ("timezone", "expected_hour"),
+          [
+              ("UTC", 12),
+              ("US/Pacific", 20),  # UTC-8, so 12:00 PST becomes 20:00 UTC
+              ("Europe/London", 12),  # UTC+0 in winter
+              ("Asia/Tokyo", 3),  # UTC+9, so 12:00 JST becomes 03:00 UTC (next day)
+          ],
+      )
+      def test_ensure_pydatetime_utc_timezone_conversion(self, timezone, expected_hour):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+______________ ERROR at setup of TestDatetimeFunctions.test_ensure_pydatetime_utc_timezone_conversion[US/Pacific-20] _______________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 558
+      @pytest.mark.parametrize(
+          ("timezone", "expected_hour"),
+          [
+              ("UTC", 12),
+              ("US/Pacific", 20),  # UTC-8, so 12:00 PST becomes 20:00 UTC
+              ("Europe/London", 12),  # UTC+0 in winter
+              ("Asia/Tokyo", 3),  # UTC+9, so 12:00 JST becomes 03:00 UTC (next day)
+          ],
+      )
+      def test_ensure_pydatetime_utc_timezone_conversion(self, timezone, expected_hour):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_____________ ERROR at setup of TestDatetimeFunctions.test_ensure_pydatetime_utc_timezone_conversion[Europe/London-12] _____________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 558
+      @pytest.mark.parametrize(
+          ("timezone", "expected_hour"),
+          [
+              ("UTC", 12),
+              ("US/Pacific", 20),  # UTC-8, so 12:00 PST becomes 20:00 UTC
+              ("Europe/London", 12),  # UTC+0 in winter
+              ("Asia/Tokyo", 3),  # UTC+9, so 12:00 JST becomes 03:00 UTC (next day)
+          ],
+      )
+      def test_ensure_pydatetime_utc_timezone_conversion(self, timezone, expected_hour):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_______________ ERROR at setup of TestDatetimeFunctions.test_ensure_pydatetime_utc_timezone_conversion[Asia/Tokyo-3] _______________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_datetime.py, line 558
+      @pytest.mark.parametrize(
+          ("timezone", "expected_hour"),
+          [
+              ("UTC", 12),
+              ("US/Pacific", 20),  # UTC-8, so 12:00 PST becomes 20:00 UTC
+              ("Europe/London", 12),  # UTC+0 in winter
+              ("Asia/Tokyo", 3),  # UTC+9, so 12:00 JST becomes 03:00 UTC (next day)
+          ],
+      )
+      def test_ensure_pydatetime_utc_timezone_conversion(self, timezone, expected_hour):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_________________________________ ERROR at setup of TestFiniteStateMachine.test_fsm_initialization _________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_fsm.py, line 35
+      def test_fsm_initialization(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: _xunit_setup_method_fixture_TestFiniteStateMachine, audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+__________________ ERROR at setup of TestFiniteStateMachine.test_trigger_with_invalid_transition_raises_exception __________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_fsm.py, line 40
+      def test_trigger_with_invalid_transition_raises_exception(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: _xunit_setup_method_fixture_TestFiniteStateMachine, audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+______________ ERROR at setup of TestFiniteStateMachine.test_trigger_with_valid_transition_results_in_expected_state _______________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_fsm.py, line 53
+      def test_trigger_with_valid_transition_results_in_expected_state(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: _xunit_setup_method_fixture_TestFiniteStateMachine, audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+__________________________________ ERROR at setup of test_is_nautilus_class[OrderBookDelta-True] ___________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_inspect.py, line 27
+  @pytest.mark.parametrize(
+      ("cls", "is_nautilus"),
+      [
+          (OrderBookDelta, True),
+          (TradeTick, True),
+          (OrderAccepted, True),
+          (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type
+          (BetfairTicker, False),  # BetfairTicker is an adapter specific type
+          (pd.DataFrame, False),
+      ],
+  )
+  def test_is_nautilus_class(cls, is_nautilus):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_____________________________________ ERROR at setup of test_is_nautilus_class[TradeTick-True] _____________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_inspect.py, line 27
+  @pytest.mark.parametrize(
+      ("cls", "is_nautilus"),
+      [
+          (OrderBookDelta, True),
+          (TradeTick, True),
+          (OrderAccepted, True),
+          (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type
+          (BetfairTicker, False),  # BetfairTicker is an adapter specific type
+          (pd.DataFrame, False),
+      ],
+  )
+  def test_is_nautilus_class(cls, is_nautilus):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+___________________________________ ERROR at setup of test_is_nautilus_class[OrderAccepted-True] ___________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_inspect.py, line 27
+  @pytest.mark.parametrize(
+      ("cls", "is_nautilus"),
+      [
+          (OrderBookDelta, True),
+          (TradeTick, True),
+          (OrderAccepted, True),
+          (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type
+          (BetfairTicker, False),  # BetfairTicker is an adapter specific type
+          (pd.DataFrame, False),
+      ],
+  )
+  def test_is_nautilus_class(cls, is_nautilus):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_______________________________ ERROR at setup of test_is_nautilus_class[BetfairStartingPrice-False] _______________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_inspect.py, line 27
+  @pytest.mark.parametrize(
+      ("cls", "is_nautilus"),
+      [
+          (OrderBookDelta, True),
+          (TradeTick, True),
+          (OrderAccepted, True),
+          (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type
+          (BetfairTicker, False),  # BetfairTicker is an adapter specific type
+          (pd.DataFrame, False),
+      ],
+  )
+  def test_is_nautilus_class(cls, is_nautilus):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+__________________________________ ERROR at setup of test_is_nautilus_class[BetfairTicker-False] ___________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_inspect.py, line 27
+  @pytest.mark.parametrize(
+      ("cls", "is_nautilus"),
+      [
+          (OrderBookDelta, True),
+          (TradeTick, True),
+          (OrderAccepted, True),
+          (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type
+          (BetfairTicker, False),  # BetfairTicker is an adapter specific type
+          (pd.DataFrame, False),
+      ],
+  )
+  def test_is_nautilus_class(cls, is_nautilus):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+____________________________________ ERROR at setup of test_is_nautilus_class[DataFrame-False] _____________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_inspect.py, line 27
+  @pytest.mark.parametrize(
+      ("cls", "is_nautilus"),
+      [
+          (OrderBookDelta, True),
+          (TradeTick, True),
+          (OrderAccepted, True),
+          (BetfairStartingPrice, False),  # BetfairStartingPrice is an adapter specific type
+          (BetfairTicker, False),  # BetfairTicker is an adapter specific type
+          (pd.DataFrame, False),
+      ],
+  )
+  def test_is_nautilus_class(cls, is_nautilus):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+____________________________________ ERROR at setup of TestMessage.test_command_message_picking ____________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_message.py, line 26
+      def test_command_message_picking(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+___________________________________ ERROR at setup of TestMessage.test_document_message_picking ____________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_message.py, line 40
+      def test_document_message_picking(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+___________________________________ ERROR at setup of TestMessage.test_request_message_pickling ____________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_message.py, line 54
+      def test_request_message_pickling(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+___________________________________ ERROR at setup of TestMessage.test_response_message_pickling ___________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_message.py, line 69
+      def test_response_message_pickling(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_____________________________________ ERROR at setup of TestMessage.test_document_message_hash _____________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_message.py, line 84
+      def test_document_message_hash(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_________________________________ ERROR at setup of TestMessage.test_document_message_str_and_repr _________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_message.py, line 94
+      def test_document_message_str_and_repr(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_________________________________ ERROR at setup of TestMessage.test_response_message_str_and_repr _________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_message.py, line 106
+      def test_response_message_str_and_repr(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_____________________________ ERROR at setup of TestStats.test_fast_mean_with_empty_list_returns_zero ______________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_stats.py, line 28
+      def test_fast_mean_with_empty_list_returns_zero(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+______________________________________ ERROR at setup of TestStats.test_fast_mean_with_values ______________________________________
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_stats.py, line 38
+      def test_fast_mean_with_values(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_________________________ ERROR at setup of TestStats.test_fast_mean_iterated_with_empty_list_returns_zero _________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_stats.py, line 49
+      def test_fast_mean_iterated_with_empty_list_returns_zero(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_________________________________ ERROR at setup of TestStats.test_fast_mean_iterated_with_values __________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_stats.py, line 59
+      def test_fast_mean_iterated_with_values(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+________________________________________ ERROR at setup of TestStats.test_std_dev_with_mean ________________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_stats.py, line 72
+      def test_std_dev_with_mean(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+________________________________ ERROR at setup of TestStats.test_mean_absolute_deviation_with_mean ________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_stats.py, line 87
+      def test_mean_absolute_deviation_with_mean(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+___________________________________ ERROR at setup of TestStats.test_basis_points_as_percentage ____________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_stats.py, line 101
+      def test_basis_points_as_percentage(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_ ERROR at setup of TestUUID.test_invalid_uuid4_values[6ba7b810-9dad-11d1-80b4-00c04fd430c8000001f5-8fa9-21d1-9df3-00e098032b8c3d813cbb-47fb-32ba-91df-831e1593ac29fb4f37c1-4ba3-5173-9812-2b90e76a06f7550e8400-e29b-41d4-0000-446655440000] _
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid.py, line 25
+      @pytest.mark.parametrize(
+          ("value"),
+          [
+              "6ba7b810-9dad-11d1-80b4-00c04fd430c8"  # v1 (time-based)
+              "000001f5-8fa9-21d1-9df3-00e098032b8c"  # v2 (DCE Security)
+              "3d813cbb-47fb-32ba-91df-831e1593ac29"  # v3 (MD5 hash)
+              "fb4f37c1-4ba3-5173-9812-2b90e76a06f7"  # v5 (SHA-1 hash)
+              "550e8400-e29b-41d4-0000-446655440000",  # v4 but not RFC 4122
+          ],
+      )
+      def test_invalid_uuid4_values(self, value: str):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_______________________________________ ERROR at setup of TestUUID.test_pickling_round_trip ________________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid.py, line 40
+      def test_pickling_round_trip(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_____________________________________________ ERROR at setup of TestUUID.test_equality _____________________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid.py, line 51
+      def test_equality(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_______________________________________________ ERROR at setup of TestUUID.test_hash _______________________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid.py, line 62
+      def test_hash(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+___________________________________________ ERROR at setup of TestUUID.test_str_and_repr ___________________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid.py, line 71
+      def test_str_and_repr(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+____________________________________ ERROR at setup of TestUUID.test_uuid4_produces_valid_uuid4 ____________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid.py, line 80
+      def test_uuid4_produces_valid_uuid4(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_______________________________________ ERROR at setup of TestUUID.test_pickling_round_trip ________________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid_pyo3.py, line 22
+      def test_pickling_round_trip(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_____________________________________________ ERROR at setup of TestUUID.test_equality _____________________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid_pyo3.py, line 33
+      def test_equality(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+_______________________________________________ ERROR at setup of TestUUID.test_hash _______________________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid_pyo3.py, line 44
+      def test_hash(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+___________________________________________ ERROR at setup of TestUUID.test_str_and_repr ___________________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid_pyo3.py, line 53
+      def test_str_and_repr(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+____________________________________ ERROR at setup of TestUUID.test_uuid4_produces_valid_uuid4 ____________________________________ 
+file C:\projects\nautilus_trader\tests\unit_tests\core\test_uuid_pyo3.py, line 62
+      def test_uuid4_produces_valid_uuid4(self):
+file C:\projects\nautilus_trader\tests\conftest.py, line 237
+  @pytest.fixture(autouse=True)
+  def cleanup_event_loop_tasks(event_loop):
+E       fixture 'event_loop' not found
+>       available fixtures: audusd_instrument, audusd_quote_ticks, bypass_logging, cache, capfd, capfdbinary, caplog, capsys, capsysbinary, cleanup_event_loop_tasks, data_provider, doctest_namespace, event_loop_for_setup, event_loop_policy, monkeypatch, pytestconfig, record_property, record_testsuite_property, record_xml_attribute, recwarn, session_event_loop, tmp_path, tmp_path_factory, tmpdir, tmpdir_factory, verify_test_parquet_integrity
+>       use 'pytest --fixtures [testpath]' for help on them.
+
+C:\projects\nautilus_trader\tests\conftest.py:237
+===================================================== short test summary info ====================================================== 
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[SomePascalCase-some_pascal_case]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[AnotherExample-another_example]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[someCamelCase-some_camel_case]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[yetAnotherExample-yet_another_example]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[some-kebab-case-some_kebab_case]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[dashed-word-example-dashed_word_example]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[already_snake_case-already_snake_case]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[no_change_needed-no_change_needed]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[UPPER_CASE_EXAMPLE-upper_case_example]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[ANOTHER_UPPER_CASE-another_upper_case]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[MiXeD_CaseExample-mi_xe_d_case_example]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[Another-OneHere-another_one_here]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[BSPOrderBookDelta-bsp_order_book_delta]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[OrderBookDelta-order_book_delta]
+ERROR tests/unit_tests/core/test_core_pyo3.py::test_convert_to_snake_case[TradeTick-trade_tick]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_raises_custom_exception
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_true_when_predicate_false_raises_value_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_true_when_predicate_true_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_false_when_predicate_true_raises_value_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_false_when_predicate_false_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_is_none_when_arg_not_none_raises_type_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_is_none_when_arg_is_none_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_none_when_arg_none_raises_type_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_none_when_arg_not_none_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_type_when_type_is_incorrect_raises_type_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_type_when_type_is_correct_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_type_or_none_when_type_is_incorrect_raises_type_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_type_or_none_when_type_is_correct_or_none_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_callable_when_arg_not_callable_raises_type_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_callable_when_arg_is_callable_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_callable_or_none_when_arg_not_callable_raises_type_error        
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_callable_or_none_when_arg_is_callable_or_none_does_nothing[append]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_callable_or_none_when_arg_is_callable_or_none_does_nothing[None]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_equal_when_args_not_equal_raises_value_error[O-123456-O-123]    
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_equal_when_args_not_equal_raises_value_error[O-123456-P-123456] 
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_equal_when_args_are_equal_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_equal_when_args_not_equal_raises_value_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_equal_when_args_are_not_equal_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_list_type_when_contains_incorrect_types_raises_type_error       
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_list_type_when_contains_correct_types_or_none_does_nothing[value0-str]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_list_type_when_contains_correct_types_or_none_does_nothing[value1-None]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_dict_types_when_contains_incorrect_types_raises_type_error[value0]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_dict_types_when_contains_incorrect_types_raises_type_error[value1]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_dict_types_when_contains_incorrect_types_raises_type_error[value2]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_dict_types_when_contains_correct_types_or_none_does_nothing[value0]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_dict_types_when_contains_correct_types_or_none_does_nothing[value1]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_is_in_when_item_not_in_list_raises_type_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_is_in_when_item_is_in_list_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_in_when_item_is_in_list_raises_value_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_in_when_item_not_in_list_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_key_is_in_when_key_not_in_dictionary_raises_key_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_key_is_in_when_key_is_in_dictionary_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_key_not_in_when_key_is_in_dictionary_raises_key_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_key_not_in_when_key_not_in_dictionary_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_empty_when_collection_empty_raises_value_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_empty_when_collection_not_empty_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_empty_when_collection_not_empty_raises_value_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_empty_when_collection_empty_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_negative_when_arg_negative_raises_value_error[-inf]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_negative_when_arg_negative_raises_value_error[-1e+23]       
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_negative_when_args_zero_or_positive_does_nothing[-0.0]      
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_negative_when_args_zero_or_positive_does_nothing[inf]       
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_negative_int_when_arg_negative_raises_value_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_negative_int_when_args_zero_or_positive_does_nothing[0]     
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_not_negative_int_when_args_zero_or_positive_does_nothing[1]     
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_negative_or_zero_raises_value_error[value0]  
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_negative_or_zero_raises_value_error[-inf]    
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_negative_or_zero_raises_value_error[-1e-10]  
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_negative_or_zero_raises_value_error[0]       
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_negative_or_zero_raises_value_error[0.0]     
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_positive_does_nothing[value0]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_positive_does_nothing[inf]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_positive_does_nothing[1e-22]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_positive_does_nothing[1]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_when_args_positive_does_nothing[1.0]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_int_when_args_negative_or_zero_raises_value_error[0]   
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_int_when_args_negative_or_zero_raises_value_error[-1]  
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_positive_int_when_args_positive_does_nothing
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_in_range_when_arg_out_of_range_raises_value_error[-1e+16-0.0-1.0]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_in_range_when_arg_out_of_range_raises_value_error[1e+16-0.0-1.0]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_in_range_when_args_in_range_does_nothing[0.0-0.0-1.0]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_in_range_when_args_in_range_does_nothing[1.0-0.0-1.0]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_in_range_int_when_arg_out_of_range_raises_value_error[-1-0-1]   
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_in_range_int_when_arg_out_of_range_raises_value_error[2-0-1]    
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_in_range_int_when_args_in_range_does_nothing[0-0-1]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_in_range_int_when_args_in_range_does_nothing[1-0-1]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_valid_string_given_none_raises_type_error
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_valid_string_with_various_invalid_strings_raises_correct_exception[]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_valid_string_with_various_invalid_strings_raises_correct_exception[ ]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_valid_string_with_various_invalid_strings_raises_correct_exception[  ]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_valid_string_with_various_invalid_strings_raises_correct_exception[   ]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_valid_string_with_valid_string_does_nothing[123]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_valid_string_with_valid_string_does_nothing[ 123]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_valid_string_with_valid_string_does_nothing[abc  ]
+ERROR tests/unit_tests/core/test_correctness.py::TestCondition::test_valid_string_with_valid_string_does_nothing[ xyz ]
+ERROR tests/unit_tests/core/test_data.py::TestCoreData::test_fully_qualified_name_returns_expected
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_nanos[0-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_nanos[1-1000000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_nanos[1.1-1100000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_nanos[42-42000000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_nanos[0.0001235-123500]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_nanos[1e-08-10]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_nanos[1e-09-1]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_nanos[9.999999999-9999999999]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_millis[0-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_millis[1-1000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_millis[1.1-1100]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_millis[42-42000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_millis[0.01234-12]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_secs_to_millis[0.001-1]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_millis_to_nanos[0-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_millis_to_nanos[1-1000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_millis_to_nanos[1.1-1100000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_millis_to_nanos[42-42000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_millis_to_nanos[0.0001234-123]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_millis_to_nanos[1e-05-10]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_millis_to_nanos[1e-06-1]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_millis_to_nanos[9.999999-9999999]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_micros_to_nanos[0-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_micros_to_nanos[1-1000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_micros_to_nanos[1.1-1100]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_micros_to_nanos[42-42000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_micros_to_nanos[0.1234-123]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_micros_to_nanos[0.01-10]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_micros_to_nanos[0.001-1]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_micros_to_nanos[9.999-9999]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_secs[0-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_secs[1-1e-09]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_secs[1000000000-1]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_secs[42897123111-42.897123111]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_millis[0-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_millis[1000000-1]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_millis[1000000000-1000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_millis[42897123111-42897]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_micros[0-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_micros[1000-1]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_micros[1000000000-1000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_nanos_to_micros[42897123-42897]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_unix_nanos_to_dt[0-expected0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_unix_nanos_to_dt[1000-expected1]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_unix_nanos_to_dt[1000000000-expected2]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_unix_nanos_to_dt[None-None]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_unix_nanos_to_dt[0-expected1]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_unix_nanos_to_dt[1000-expected2]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_unix_nanos_to_dt[1000000000-expected3]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_dt_to_unix_nanos[value0-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_dt_to_unix_nanos[value1-100000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_dt_to_unix_nanos[value2-1000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_dt_to_unix_nanos[value3-3000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_dt_to_unix_nanos[value4-43200000000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_dt_to_unix_nanos[value5-1620394867930000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_dt_to_unix_nanos[None-None]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_dt_to_unix_nanos[value1-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_dt_to_unix_nanos[value2-100000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_dt_to_unix_nanos[value3-1000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_dt_to_unix_nanos[value4-3000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_dt_to_unix_nanos[value5-43200000000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_maybe_dt_to_unix_nanos[value6-1620394867930000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_iso8601_to_unix_nanos_given_iso8601_datetime_string[1970-01-01T00:00:00+00:00-0]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_iso8601_to_unix_nanos_given_iso8601_datetime_string[2013-01-01T01:00:00+00:00-1357002000000000000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_iso8601_to_unix_nanos_given_iso8601_datetime_string[2020-01-02T03:02:00.000333+00:00-1577934120003330000]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_is_datetime_utc_given_tz_naive_datetime_returns_false      
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_is_datetime_utc_given_utc_datetime_returns_true
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_is_tz_awareness_given_unrecognized_type_raises_exception   
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_is_tz_awareness_with_various_aware_objects_returns_true    
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_is_tz_awareness_with_various_objects_returns_false
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_format_iso8601
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_format_optional_iso8601[None-None]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_format_optional_iso8601[value1-1970-01-01T00:00:00.000000000Z]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_datetime_and_pd_timestamp_equality
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_as_utc_timestamp_given_tz_naive_datetime
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_as_utc_timestamp_given_tz_naive_pandas_timestamp
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_as_utc_timestamp_given_tz_aware_datetime
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_as_utc_timestamp_given_tz_aware_pandas
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_as_utc_timestamp_equality
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_as_utc_index_given_empty_dataframe_returns_empty_dataframe 
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_with_utc_index_given_tz_unaware_dataframe
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_with_utc_index_given_tz_aware_dataframe
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_with_utc_index_given_tz_aware_different_timezone_dataframe 
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_ensure_pydatetime_utc_given_none_returns_none
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_ensure_pydatetime_utc_unix_epoch
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_ensure_pydatetime_utc_given_utc_timestamp_returns_pydatetime
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_ensure_pydatetime_utc_given_non_utc_timestamp_converts_to_utc
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_ensure_pydatetime_utc_given_naive_timestamp_raises_error   
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_ensure_pydatetime_utc_timezone_conversion[UTC-12]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_ensure_pydatetime_utc_timezone_conversion[US/Pacific-20]   
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_ensure_pydatetime_utc_timezone_conversion[Europe/London-12]
+ERROR tests/unit_tests/core/test_datetime.py::TestDatetimeFunctions::test_ensure_pydatetime_utc_timezone_conversion[Asia/Tokyo-3]    
+ERROR tests/unit_tests/core/test_fsm.py::TestFiniteStateMachine::test_fsm_initialization
+ERROR tests/unit_tests/core/test_fsm.py::TestFiniteStateMachine::test_trigger_with_invalid_transition_raises_exception
+ERROR tests/unit_tests/core/test_fsm.py::TestFiniteStateMachine::test_trigger_with_valid_transition_results_in_expected_state        
+ERROR tests/unit_tests/core/test_inspect.py::test_is_nautilus_class[OrderBookDelta-True]
+ERROR tests/unit_tests/core/test_inspect.py::test_is_nautilus_class[TradeTick-True]
+ERROR tests/unit_tests/core/test_inspect.py::test_is_nautilus_class[OrderAccepted-True]
+ERROR tests/unit_tests/core/test_inspect.py::test_is_nautilus_class[BetfairStartingPrice-False]
+ERROR tests/unit_tests/core/test_inspect.py::test_is_nautilus_class[BetfairTicker-False]
+ERROR tests/unit_tests/core/test_inspect.py::test_is_nautilus_class[DataFrame-False]
+ERROR tests/unit_tests/core/test_message.py::TestMessage::test_command_message_picking
+ERROR tests/unit_tests/core/test_message.py::TestMessage::test_document_message_picking
+ERROR tests/unit_tests/core/test_message.py::TestMessage::test_request_message_pickling
+ERROR tests/unit_tests/core/test_message.py::TestMessage::test_response_message_pickling
+ERROR tests/unit_tests/core/test_message.py::TestMessage::test_document_message_hash
+ERROR tests/unit_tests/core/test_message.py::TestMessage::test_document_message_str_and_repr
+ERROR tests/unit_tests/core/test_message.py::TestMessage::test_response_message_str_and_repr
+ERROR tests/unit_tests/core/test_stats.py::TestStats::test_fast_mean_with_empty_list_returns_zero
+ERROR tests/unit_tests/core/test_stats.py::TestStats::test_fast_mean_with_values
+ERROR tests/unit_tests/core/test_stats.py::TestStats::test_fast_mean_iterated_with_empty_list_returns_zero
+ERROR tests/unit_tests/core/test_stats.py::TestStats::test_fast_mean_iterated_with_values
+ERROR tests/unit_tests/core/test_stats.py::TestStats::test_std_dev_with_mean
+ERROR tests/unit_tests/core/test_stats.py::TestStats::test_mean_absolute_deviation_with_mean
+ERROR tests/unit_tests/core/test_stats.py::TestStats::test_basis_points_as_percentage
+ERROR tests/unit_tests/core/test_uuid.py::TestUUID::test_invalid_uuid4_values[6ba7b810-9dad-11d1-80b4-00c04fd430c8000001f5-8fa9-21d1-9df3-00e098032b8c3d813cbb-47fb-32ba-91df-831e1593ac29fb4f37c1-4ba3-5173-9812-2b90e76a06f7550e8400-e29b-41d4-0000-446655440000]       
+ERROR tests/unit_tests/core/test_uuid.py::TestUUID::test_pickling_round_trip
+ERROR tests/unit_tests/core/test_uuid.py::TestUUID::test_equality
+ERROR tests/unit_tests/core/test_uuid.py::TestUUID::test_hash
+ERROR tests/unit_tests/core/test_uuid.py::TestUUID::test_str_and_repr
+ERROR tests/unit_tests/core/test_uuid.py::TestUUID::test_uuid4_produces_valid_uuid4
+ERROR tests/unit_tests/core/test_uuid_pyo3.py::TestUUID::test_pickling_round_trip
+ERROR tests/unit_tests/core/test_uuid_pyo3.py::TestUUID::test_equality
+ERROR tests/unit_tests/core/test_uuid_pyo3.py::TestUUID::test_hash
+ERROR tests/unit_tests/core/test_uuid_pyo3.py::TestUUID::test_str_and_repr
+ERROR tests/unit_tests/core/test_uuid_pyo3.py::TestUUID::test_uuid4_produces_valid_uuid4
+======================================================= 222 errors in 1.59s ======================================================== 
+(nautilus_trader) PS C:\projects\nautilus_trader> 

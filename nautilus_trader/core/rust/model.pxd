@@ -3,7 +3,7 @@
 from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t, uintptr_t, int32_t, int64_t
 from nautilus_trader.core.rust.core cimport CVec, UUID4_t
 
-DEF HIGH_PRECISION = True  # or False
+DEF HIGH_PRECISION = False  # or True
 
 cdef extern from "../includes/model.h":
     ctypedef unsigned long long uint128_t
