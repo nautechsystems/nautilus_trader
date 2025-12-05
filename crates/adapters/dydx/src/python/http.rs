@@ -17,9 +17,12 @@
 
 use std::str::FromStr;
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::python::instruments::instrument_any_to_pyobject;
-use pyo3::prelude::*;
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_model::{
+    identifiers::{AccountId, InstrumentId},
+    python::instruments::instrument_any_to_pyobject,
+};
+use pyo3::{prelude::*, types::PyList};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -160,6 +163,170 @@ impl DydxHttpClient {
         self.cache_instruments(instruments);
         Ok(())
     }
+
+    /// Fetches orders for a subaccount.
+    ///
+    /// Returns a JSON string containing the orders response.
+    #[pyo3(name = "get_orders")]
+    #[pyo3(signature = (address, subaccount_number, market=None, limit=None))]
+    fn py_get_orders<'py>(
+        &self,
+        py: Python<'py>,
+        address: String,
+        subaccount_number: u32,
+        market: Option<String>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client
+                .inner
+                .get_orders(&address, subaccount_number, market.as_deref(), limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+            serde_json::to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Fetches fills for a subaccount.
+    ///
+    /// Returns a JSON string containing the fills response.
+    #[pyo3(name = "get_fills")]
+    #[pyo3(signature = (address, subaccount_number, market=None, limit=None))]
+    fn py_get_fills<'py>(
+        &self,
+        py: Python<'py>,
+        address: String,
+        subaccount_number: u32,
+        market: Option<String>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client
+                .inner
+                .get_fills(&address, subaccount_number, market.as_deref(), limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+            serde_json::to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Fetches subaccount info including positions.
+    ///
+    /// Returns a JSON string containing the subaccount response.
+    #[pyo3(name = "get_subaccount")]
+    fn py_get_subaccount<'py>(
+        &self,
+        py: Python<'py>,
+        address: String,
+        subaccount_number: u32,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client
+                .inner
+                .get_subaccount(&address, subaccount_number)
+                .await
+                .map_err(to_pyvalue_err)?;
+            serde_json::to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Requests order status reports for a subaccount.
+    ///
+    /// Returns Nautilus `OrderStatusReport` objects.
+    #[pyo3(name = "request_order_status_reports")]
+    #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
+    fn py_request_order_status_reports<'py>(
+        &self,
+        py: Python<'py>,
+        address: String,
+        subaccount_number: u32,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let reports = client
+                .request_order_status_reports(
+                    &address,
+                    subaccount_number,
+                    account_id,
+                    instrument_id,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist =
+                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Requests fill reports for a subaccount.
+    ///
+    /// Returns Nautilus `FillReport` objects.
+    #[pyo3(name = "request_fill_reports")]
+    #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
+    fn py_request_fill_reports<'py>(
+        &self,
+        py: Python<'py>,
+        address: String,
+        subaccount_number: u32,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let reports = client
+                .request_fill_reports(&address, subaccount_number, account_id, instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist =
+                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Requests position status reports for a subaccount.
+    ///
+    /// Returns Nautilus `PositionStatusReport` objects.
+    #[pyo3(name = "request_position_status_reports")]
+    #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
+    fn py_request_position_status_reports<'py>(
+        &self,
+        py: Python<'py>,
+        address: String,
+        subaccount_number: u32,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let reports = client
+                .request_position_status_reports(
+                    &address,
+                    subaccount_number,
+                    account_id,
+                    instrument_id,
+                )
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist =
+                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "DydxHttpClient(base_url='{}', is_testnet={}, cached_instruments={})",

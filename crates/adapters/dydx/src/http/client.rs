@@ -64,8 +64,9 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
 use nautilus_model::{
-    identifiers::InstrumentId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_network::{
     http::HttpClient,
@@ -995,6 +996,189 @@ impl DydxHttpClient {
     #[must_use]
     pub fn clob_pair_id_mapping(&self) -> &Arc<DashMap<u32, InstrumentId>> {
         &self.clob_pair_id_to_instrument
+    }
+
+    /// Requests order status reports for a subaccount.
+    ///
+    /// Fetches orders from the dYdX Indexer API and converts them to Nautilus
+    /// `OrderStatusReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_order_status_reports(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+        // Convert instrument_id to market filter
+        let market = instrument_id.map(|id| {
+            let symbol = id.symbol.to_string();
+            // Remove -PERP suffix if present to get the dYdX market format (e.g., ETH-USD)
+            symbol.trim_end_matches("-PERP").to_string()
+        });
+
+        let orders = self
+            .inner
+            .get_orders(address, subaccount_number, market.as_deref(), None)
+            .await?;
+
+        let mut reports = Vec::new();
+
+        for order in orders {
+            // Get instrument by clob_pair_id
+            let instrument = match self.get_instrument_by_clob_id(order.clob_pair_id) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Skipping order {}: no cached instrument for clob_pair_id {}",
+                        order.id,
+                        order.clob_pair_id
+                    );
+                    continue;
+                }
+            };
+
+            // Filter by instrument_id if specified
+            if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
+                continue;
+            }
+
+            match super::parse::parse_order_status_report(&order, &instrument, account_id, ts_init)
+            {
+                Ok(report) => reports.push(report),
+                Err(e) => {
+                    tracing::warn!("Failed to parse order {}: {e}", order.id);
+                }
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Requests fill reports for a subaccount.
+    ///
+    /// Fetches fills from the dYdX Indexer API and converts them to Nautilus
+    /// `FillReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_fill_reports(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+        // Convert instrument_id to market filter
+        let market = instrument_id.map(|id| {
+            let symbol = id.symbol.to_string();
+            symbol.trim_end_matches("-PERP").to_string()
+        });
+
+        let fills_response = self
+            .inner
+            .get_fills(address, subaccount_number, market.as_deref(), None)
+            .await?;
+
+        let mut reports = Vec::new();
+
+        for fill in fills_response.fills {
+            // Get instrument by market ticker
+            let market = &fill.market;
+            let symbol = ustr::Ustr::from(&format!("{market}-PERP"));
+            let instrument = match self.get_instrument(&symbol) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Skipping fill {}: no cached instrument for market {}",
+                        fill.id,
+                        fill.market
+                    );
+                    continue;
+                }
+            };
+
+            // Filter by instrument_id if specified
+            if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
+                continue;
+            }
+
+            match super::parse::parse_fill_report(&fill, &instrument, account_id, ts_init) {
+                Ok(report) => reports.push(report),
+                Err(e) => {
+                    tracing::warn!("Failed to parse fill {}: {e}", fill.id);
+                }
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Requests position status reports for a subaccount.
+    ///
+    /// Fetches positions from the dYdX Indexer API and converts them to Nautilus
+    /// `PositionStatusReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_position_status_reports(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+        let subaccount_response = self
+            .inner
+            .get_subaccount(address, subaccount_number)
+            .await?;
+
+        let mut reports = Vec::new();
+
+        for (market, position) in subaccount_response.subaccount.open_perpetual_positions {
+            // Get instrument by market ticker
+            let symbol = ustr::Ustr::from(&format!("{market}-PERP"));
+            let instrument = match self.get_instrument(&symbol) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Skipping position: no cached instrument for market {}",
+                        market
+                    );
+                    continue;
+                }
+            };
+
+            // Filter by instrument_id if specified
+            if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
+                continue;
+            }
+
+            match super::parse::parse_position_status_report(
+                &position,
+                &instrument,
+                account_id,
+                ts_init,
+            ) {
+                Ok(report) => reports.push(report),
+                Err(e) => {
+                    tracing::warn!("Failed to parse position for {}: {e}", market);
+                }
+            }
+        }
+
+        Ok(reports)
     }
 }
 

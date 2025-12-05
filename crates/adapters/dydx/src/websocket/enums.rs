@@ -88,22 +88,36 @@ pub enum DydxWsChannel {
     #[serde(rename = "v4_subaccounts")]
     #[strum(serialize = "v4_subaccounts")]
     Subaccounts,
+    /// Parent subaccount updates (for isolated positions).
+    #[serde(rename = "v4_parent_subaccounts")]
+    #[strum(serialize = "v4_parent_subaccounts")]
+    ParentSubaccounts,
     /// Block height updates from chain.
     #[serde(rename = "v4_block_height")]
     #[strum(serialize = "v4_block_height")]
     BlockHeight,
+    /// Unknown/unrecognized channel type.
+    #[serde(other)]
+    #[strum(to_string = "unknown")]
+    Unknown,
 }
 
 impl DydxWsChannel {
     /// Returns `true` if this is a private channel requiring authentication.
     #[must_use]
     pub const fn is_private(&self) -> bool {
-        matches!(self, Self::Subaccounts)
+        matches!(self, Self::Subaccounts | Self::ParentSubaccounts)
     }
 
     /// Returns `true` if this is a public channel.
     #[must_use]
     pub const fn is_public(&self) -> bool {
         !self.is_private()
+    }
+
+    /// Returns `true` if this is an unknown/unrecognized channel type.
+    #[must_use]
+    pub const fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown)
     }
 }

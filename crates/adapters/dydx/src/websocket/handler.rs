@@ -252,6 +252,9 @@ impl FeedHandler {
                                 } else if meta.is_error() {
                                     serde_json::from_value::<DydxWebSocketError>(val)
                                         .map(DydxWsMessage::Error)
+                                } else if meta.is_unknown() {
+                                    tracing::debug!("Received unknown WebSocket message type");
+                                    Ok(DydxWsMessage::Raw(val))
                                 } else {
                                     Ok(DydxWsMessage::Raw(val))
                                 };
@@ -259,8 +262,8 @@ impl FeedHandler {
                                 match result {
                                     Ok(dydx_msg) => self.handle_dydx_message(dydx_msg),
                                     Err(e) => {
-                                        let err = DydxWebSocketError::from_message(e.to_string());
-                                        Some(NautilusWsMessage::Error(err))
+                                        tracing::warn!("Failed to parse WebSocket message: {e}");
+                                        None
                                     }
                                 }
                             }
@@ -384,8 +387,16 @@ impl FeedHandler {
             DydxWsChannel::Candles => self.parse_candles(&data),
             DydxWsChannel::Markets => self.parse_markets(&data),
             DydxWsChannel::Subaccounts => self.parse_subaccounts(&data),
+            DydxWsChannel::ParentSubaccounts => {
+                tracing::debug!("Parent subaccounts channel data received (not yet implemented)");
+                Ok(None)
+            }
             DydxWsChannel::BlockHeight => {
                 tracing::debug!("Block height update received");
+                Ok(None)
+            }
+            DydxWsChannel::Unknown => {
+                tracing::debug!("Unknown channel data received");
                 Ok(None)
             }
         }

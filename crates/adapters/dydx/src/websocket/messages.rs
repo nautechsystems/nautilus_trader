@@ -238,4 +238,10 @@ impl DydxWsGenericMsg {
     pub fn is_channel_batch_data(&self) -> bool {
         self.msg_type == DydxWsMessageType::ChannelBatchData
     }
+
+    /// Returns `true` if this message is an unknown/unrecognized type.
+    #[must_use]
+    pub fn is_unknown(&self) -> bool {
+        self.msg_type == DydxWsMessageType::Unknown
+    }
 }

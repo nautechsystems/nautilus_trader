@@ -62,6 +62,10 @@ pub enum DydxWsMessageType {
     ChannelBatchData,
     /// Error message.
     Error,
+    /// Unknown/unrecognized message type.
+    #[serde(other)]
+    #[strum(to_string = "unknown")]
+    Unknown,
 }
 
 /// General WebSocket message structure for routing.
