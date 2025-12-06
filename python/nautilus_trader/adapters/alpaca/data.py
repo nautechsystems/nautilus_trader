@@ -130,6 +130,9 @@ class AlpacaDataClient(LiveMarketDataClient):
         self._stocks_ws_connected = False
         self._crypto_ws_connected = False
 
+        # Track subscribed bar types by symbol for proper bar handling
+        self._subscribed_bar_types: dict[str, BarType] = {}
+
     def _is_crypto_symbol(self, symbol: str) -> bool:
         """Check if a symbol is a crypto pair (e.g., BTC/USD)."""
         return "/" in symbol
@@ -192,7 +195,9 @@ class AlpacaDataClient(LiveMarketDataClient):
         await self._ensure_ws_connected(symbol)
         ws_client = self._get_ws_client(symbol)
         await ws_client.subscribe_bars([symbol])
-        self._log.debug(f"Subscribed to bars for {symbol}")
+        # Track the bar type for this symbol so we can create proper Bar objects
+        self._subscribed_bar_types[symbol] = command.bar_type
+        self._log.info(f"Subscribed {command.bar_type} bars")
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         """Unsubscribe from quote ticks for an instrument."""
@@ -211,6 +216,8 @@ class AlpacaDataClient(LiveMarketDataClient):
         symbol = command.bar_type.instrument_id.symbol.value
         ws_client = self._get_ws_client(symbol)
         await ws_client.unsubscribe_bars([symbol])
+        # Remove from tracked bar types
+        self._subscribed_bar_types.pop(symbol, None)
 
     # -- Request handlers ----
 
@@ -344,9 +351,15 @@ class AlpacaDataClient(LiveMarketDataClient):
             if not symbol:
                 return
 
-            # For streaming bars, we'd need to know the bar type
-            # This is a simplified implementation
-            self._log.debug(f"Received bar for {symbol}: {data}")
+            # Look up the subscribed bar type for this symbol
+            bar_type = self._subscribed_bar_types.get(symbol)
+            if bar_type is None:
+                self._log.warning(f"Received bar for unsubscribed symbol: {symbol}")
+                return
+
+            # Parse the bar using the known bar type
+            bar = self._parse_bar(data, bar_type)
+            self._handle_data(bar)
 
         except Exception as e:
             self._log.error(f"Error handling bar: {e}")
