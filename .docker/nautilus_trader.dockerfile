@@ -44,6 +44,9 @@ RUN uv build --wheel
 RUN uv pip install --system dist/*.whl
 RUN find /usr/local/lib/python3.13/site-packages -name "*.pyc" -exec rm -f {} \;
 
+# Copy bot-folio custom module into installed package
+COPY python/nautilus_trader/botfolio /usr/local/lib/python3.13/site-packages/nautilus_trader/botfolio
+
 # Final application image
 FROM base AS application
 

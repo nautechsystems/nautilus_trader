@@ -42,6 +42,10 @@ ignore = [
   # Only affects MySQL connections using RSA authentication, not a risk for our PostgreSQL usage
   # TODO: Monitor https://github.com/RustCrypto/RSA for fix
   { id = "RUSTSEC-2023-0071", reason = "rsa timing sidechannel via sqlx-mysql, only affects MySQL RSA auth (we use PostgreSQL)" },
+
+  # rustls-pemfile is unmaintained, functionality merged into rustls-pki-types
+  # TODO: Monitor upstream nautilus_trader for migration to rustls-pki-types pem feature
+  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, awaiting upstream migration to rustls-pki-types" },
 ]
 
 # =============================================================================
