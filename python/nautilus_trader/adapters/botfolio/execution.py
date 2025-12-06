@@ -41,6 +41,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -128,6 +129,37 @@ class BotfolioExecutionClient(LiveExecutionClient):
         """Return the account ID."""
         return self._account_id
 
+    def _parse_starting_balance(self) -> list[AccountBalance]:
+        """Parse the starting_balance config string into AccountBalance objects."""
+        # Format: "100000 USD" or "100000 USD, 1.5 BTC"
+        balances = []
+        parts = self._config.starting_balance.split(",")
+        
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            tokens = part.split()
+            if len(tokens) != 2:
+                self._log.warning(f"Invalid balance format: {part}, expected 'AMOUNT CURRENCY'")
+                continue
+            
+            amount_str, currency_str = tokens
+            try:
+                currency = Currency.from_str(currency_str.upper())
+                money = Money.from_str(f"{amount_str} {currency_str.upper()}")
+                balances.append(
+                    AccountBalance(
+                        total=money,
+                        locked=Money(0, currency),
+                        free=money,
+                    )
+                )
+            except Exception as e:
+                self._log.warning(f"Failed to parse balance '{part}': {e}")
+        
+        return balances
+
     async def _connect(self) -> None:
         """Connect the execution client."""
         self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
@@ -135,6 +167,17 @@ class BotfolioExecutionClient(LiveExecutionClient):
 
         # Start listening for price updates
         self._listen_task = asyncio.create_task(self._listen_loop())
+
+        # Initialize account state with starting balance
+        balances = self._parse_starting_balance()
+        if balances:
+            self.generate_account_state(
+                balances=balances,
+                margins=[],
+                reported=True,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            self._log.info(f"Initialized account with balances: {self._config.starting_balance}")
 
         self._log.info(
             f"Botfolio execution client connected (account: {self._account_id})",

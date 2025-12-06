@@ -47,6 +47,10 @@ class AlpacaDataClient(LiveMarketDataClient):
     """
     Provides a data client for Alpaca market data.
 
+    Automatically routes subscriptions to the correct WebSocket endpoint:
+    - Crypto symbols (containing "/") -> crypto WebSocket
+    - Stock symbols -> stocks WebSocket (iex or sip feed)
+
     Parameters
     ----------
     loop : asyncio.AbstractEventLoop
@@ -93,30 +97,74 @@ class AlpacaDataClient(LiveMarketDataClient):
         self._http_client = client
         self._config = config
 
-        # Create WebSocket client for streaming
-        self._ws_client = AlpacaDataWebSocketClient(
+        # Create WebSocket clients for both stocks and crypto
+        # Alpaca uses different endpoints for each asset class
+        self._stocks_ws_client = AlpacaDataWebSocketClient(
             api_key=config.api_key,
             api_secret=config.api_secret,
             access_token=config.access_token,
-            feed=config.data_feed,
+            feed=config.data_feed if config.data_feed != "crypto" else "iex",
             logger=self._log,
         )
 
-        # Set up callbacks
-        self._ws_client.set_on_quote(self._handle_quote)
-        self._ws_client.set_on_trade(self._handle_trade)
-        self._ws_client.set_on_bar(self._handle_bar)
-        self._ws_client.set_on_error(self._handle_ws_error)
+        self._crypto_ws_client = AlpacaDataWebSocketClient(
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            access_token=config.access_token,
+            feed="crypto",
+            logger=self._log,
+        )
+
+        # Set up callbacks for both clients
+        self._stocks_ws_client.set_on_quote(self._handle_quote)
+        self._stocks_ws_client.set_on_trade(self._handle_trade)
+        self._stocks_ws_client.set_on_bar(self._handle_bar)
+        self._stocks_ws_client.set_on_error(self._handle_ws_error)
+
+        self._crypto_ws_client.set_on_quote(self._handle_quote)
+        self._crypto_ws_client.set_on_trade(self._handle_trade)
+        self._crypto_ws_client.set_on_bar(self._handle_bar)
+        self._crypto_ws_client.set_on_error(self._handle_ws_error)
+
+        # Track which clients are connected
+        self._stocks_ws_connected = False
+        self._crypto_ws_connected = False
+
+    def _is_crypto_symbol(self, symbol: str) -> bool:
+        """Check if a symbol is a crypto pair (e.g., BTC/USD)."""
+        return "/" in symbol
+
+    def _get_ws_client(self, symbol: str) -> AlpacaDataWebSocketClient:
+        """Get the appropriate WebSocket client for a symbol."""
+        return self._crypto_ws_client if self._is_crypto_symbol(symbol) else self._stocks_ws_client
+
+    async def _ensure_ws_connected(self, symbol: str) -> None:
+        """Ensure the appropriate WebSocket client is connected."""
+        if self._is_crypto_symbol(symbol):
+            if not self._crypto_ws_connected:
+                await self._crypto_ws_client.connect()
+                self._crypto_ws_connected = True
+                self._log.info("Alpaca crypto WebSocket connected", LogColor.GREEN)
+        else:
+            if not self._stocks_ws_connected:
+                await self._stocks_ws_client.connect()
+                self._stocks_ws_connected = True
+                self._log.info("Alpaca stocks WebSocket connected", LogColor.GREEN)
 
     async def _connect(self) -> None:
         """Connect the data client."""
         await self._http_client.connect()
-        await self._ws_client.connect()
+        # WebSocket clients are connected lazily when first subscription is made
         self._log.info("Alpaca data client connected", LogColor.GREEN)
 
     async def _disconnect(self) -> None:
         """Disconnect the data client."""
-        await self._ws_client.disconnect()
+        if self._stocks_ws_connected:
+            await self._stocks_ws_client.disconnect()
+            self._stocks_ws_connected = False
+        if self._crypto_ws_connected:
+            await self._crypto_ws_client.disconnect()
+            self._crypto_ws_connected = False
         await self._http_client.disconnect()
         self._log.info("Alpaca data client disconnected")
 
@@ -125,35 +173,44 @@ class AlpacaDataClient(LiveMarketDataClient):
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         """Subscribe to quote ticks for an instrument."""
         symbol = command.instrument_id.symbol.value
-        await self._ws_client.subscribe_quotes([symbol])
+        await self._ensure_ws_connected(symbol)
+        ws_client = self._get_ws_client(symbol)
+        await ws_client.subscribe_quotes([symbol])
         self._log.debug(f"Subscribed to quotes for {symbol}")
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         """Subscribe to trade ticks for an instrument."""
         symbol = command.instrument_id.symbol.value
-        await self._ws_client.subscribe_trades([symbol])
+        await self._ensure_ws_connected(symbol)
+        ws_client = self._get_ws_client(symbol)
+        await ws_client.subscribe_trades([symbol])
         self._log.debug(f"Subscribed to trades for {symbol}")
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         """Subscribe to bars for an instrument."""
         symbol = command.bar_type.instrument_id.symbol.value
-        await self._ws_client.subscribe_bars([symbol])
+        await self._ensure_ws_connected(symbol)
+        ws_client = self._get_ws_client(symbol)
+        await ws_client.subscribe_bars([symbol])
         self._log.debug(f"Subscribed to bars for {symbol}")
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         """Unsubscribe from quote ticks for an instrument."""
         symbol = command.instrument_id.symbol.value
-        await self._ws_client.unsubscribe_quotes([symbol])
+        ws_client = self._get_ws_client(symbol)
+        await ws_client.unsubscribe_quotes([symbol])
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         """Unsubscribe from trade ticks for an instrument."""
         symbol = command.instrument_id.symbol.value
-        await self._ws_client.unsubscribe_trades([symbol])
+        ws_client = self._get_ws_client(symbol)
+        await ws_client.unsubscribe_trades([symbol])
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         """Unsubscribe from bars for an instrument."""
         symbol = command.bar_type.instrument_id.symbol.value
-        await self._ws_client.unsubscribe_bars([symbol])
+        ws_client = self._get_ws_client(symbol)
+        await ws_client.unsubscribe_bars([symbol])
 
     # -- Request handlers ----
 
@@ -174,6 +231,9 @@ class AlpacaDataClient(LiveMarketDataClient):
         start_str = start.isoformat() if start else None
         end_str = end.isoformat() if end else None
 
+        # Use correct feed for the symbol type
+        feed = "crypto" if self._is_crypto_symbol(symbol) else self._config.data_feed
+
         try:
             response = await self._http_client.get_bars(
                 symbol=symbol,
@@ -181,7 +241,7 @@ class AlpacaDataClient(LiveMarketDataClient):
                 start=start_str,
                 end=end_str,
                 limit=limit,
-                feed=self._config.data_feed,
+                feed=feed,
             )
 
             bars = []
