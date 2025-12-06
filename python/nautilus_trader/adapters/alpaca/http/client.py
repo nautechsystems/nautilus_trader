@@ -163,7 +163,7 @@ class AlpacaHttpClient:
             "status": status,
             "limit": limit,
             "direction": direction,
-            "nested": nested,
+            "nested": "true" if nested else "false",
         }
         if after:
             params["after"] = after
