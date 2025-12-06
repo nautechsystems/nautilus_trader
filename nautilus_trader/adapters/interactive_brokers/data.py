@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import asyncio
-from operator import attrgetter
 
 import pandas as pd
 
@@ -28,6 +27,9 @@ from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBr
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import time_object_to_dt
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
@@ -54,6 +56,7 @@ from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
@@ -447,7 +450,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             request.start,
             request.end,
         )
-
         if not ticks:
             self._log.warning(f"No trades received for {request.instrument_id}")
             return
@@ -467,41 +469,144 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         contract: IBContract,
         tick_type: str,
         limit: int,
-        start: pd.Timestamp | None = None,
+        start: pd.Timestamp,
         end: pd.Timestamp | None = None,
     ) -> list[QuoteTick | TradeTick]:
-        if not start:
-            limit = self._cache.tick_capacity
-
         if not end:
             end = pd.Timestamp.utcnow()
 
-        ticks: list[QuoteTick | TradeTick] = []
+        ticks = await self.get_historical_ticks_paged(
+            instrument_id=instrument_id,
+            contract=contract,
+            tick_type=tick_type,
+            start_date_time=start,
+            end_date_time=end,
+            use_rth=self._use_regular_trading_hours,
+            timeout=self._request_timeout,
+        )
 
-        while (start and end > start) or (len(ticks) < limit > 0):
-            await self._client.wait_until_ready()
-            ticks_part = await self._client.get_historical_ticks(
-                instrument_id,
-                contract,
-                tick_type,
-                end_date_time=end,
-                use_rth=self._use_regular_trading_hours,
-                timeout=self._request_timeout,
-            )
-
-            if not ticks_part:
-                break
-
-            end = pd.Timestamp(min(ticks_part, key=attrgetter("ts_init")).ts_init, tz="UTC")
-            ticks.extend(ticks_part)
-
-        ticks.sort(key=lambda x: x.ts_init)
+        # Apply limit if specified
+        if limit > 0 and len(ticks) > limit:
+            ticks = ticks[-limit:]
 
         return ticks
 
+    async def get_historical_ticks_paged(
+        self,
+        instrument_id: InstrumentId,
+        contract: IBContract,
+        tick_type: str,
+        start_date_time: pd.Timestamp,
+        end_date_time: pd.Timestamp,
+        use_rth: bool = True,
+        timeout: int = 60,
+    ) -> list[TradeTick | QuoteTick]:
+        """
+        Retrieve historical ticks using pagination to handle large time ranges.
+
+        This method iterates forward from the start_date_time, requesting batches of ticks
+        until the end_date_time is reached.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to retrieve ticks.
+        contract : IBContract
+            The Interactive Brokers contract details for the instrument.
+        tick_type : str
+            The type of ticks to retrieve ("TRADES" or "BID_ASK").
+        start_date_time : pd.Timestamp
+            The start date time for the ticks.
+        end_date_time : pd.Timestamp
+            The end date time for the ticks.
+        use_rth : bool, default True
+            Whether to use regular trading hours.
+        timeout : int, default 60
+             The timeout (seconds) for each individual request.
+
+        Returns
+        -------
+        list[TradeTick | QuoteTick]
+            A list of aggregated ticks sorted by initialization timestamp.
+
+        """
+        data: list[TradeTick | QuoteTick] = []
+        current_start_date_time = start_date_time
+
+        # Ensure UTC
+        current_start_date_time = time_object_to_dt(current_start_date_time)
+        end_date_time = time_object_to_dt(end_date_time)
+
+        while True:
+            self._log.info(
+                f"{instrument_id}: Requesting {tick_type} ticks from {current_start_date_time}",
+            )
+
+            # Using get_historical_ticks which serves as the "batch" request
+            # Note: client.reqHistoricalTicks takes string/Timestamp.
+            # We pass current_start_date_time as start.
+
+            ticks = await self._client.get_historical_ticks(
+                instrument_id=instrument_id,
+                contract=contract,
+                tick_type=tick_type,
+                start_date_time=current_start_date_time,
+                use_rth=use_rth,
+                timeout=timeout,
+            )
+            if not ticks:
+                break
+
+            self._log.info(
+                f"{instrument_id}: Number of {tick_type} ticks retrieved in batch: {len(ticks)}",
+            )
+
+            current_start_date_time, should_continue = self._handle_timestamp_iteration(
+                ticks,
+                end_date_time,
+            )
+
+            if not should_continue:
+                # Filter out ticks that are after the end_date_time
+                ticks = [
+                    tick for tick in ticks if tick.ts_event <= dt_to_unix_nanos(end_date_time)
+                ]
+                data.extend(ticks)
+                self._log.info(f"Total number of {tick_type} ticks in data: {len(data)}")
+                break
+
+            data.extend(ticks)
+            self._log.info(f"Total number of {tick_type} ticks in data: {len(data)}")
+
+        return sorted(data, key=lambda x: x.ts_init)
+
+    def _handle_timestamp_iteration(
+        self,
+        ticks: list[TradeTick | QuoteTick],
+        end_date_time: pd.Timestamp,
+    ) -> tuple[pd.Timestamp | None, bool]:
+        # Return the max timestamp from the given ticks and whether to continue iterating.
+        # If all timestamps occur in the same second, the max timestamp will be
+        # incremented by 1 second.
+
+        if not ticks:
+            return None, False
+
+        timestamps = [unix_nanos_to_dt(tick.ts_event) for tick in ticks]
+        max_timestamp = max(timestamps)
+
+        next_start = max_timestamp + pd.Timedelta(seconds=1)
+
+        # Ensure UTC comparison
+        next_start = time_object_to_dt(next_start)
+        end_date_time = time_object_to_dt(end_date_time)
+        if next_start >= end_date_time:
+            return None, False
+
+        return next_start, True
+
     async def _request_bars(self, request: RequestBars) -> None:
         contract = self.instrument_provider.contract.get(request.bar_type.instrument_id)
-
         if not contract:
             self._log.error(f"Cannot request {request.bar_type} bars: instrument not found")
             return
@@ -514,19 +619,25 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         duration = request.end - request.start
         duration_str = timedelta_to_duration_str(duration)
-        bars: list[Bar] = []
-        bars = await self._client.get_historical_bars(
+        bars = await self.get_historical_bars_chunked(
             bar_type=request.bar_type,
             contract=contract,
-            use_rth=self._use_regular_trading_hours,
+            start_date_time=request.start,
             end_date_time=request.end,
             duration=duration_str,
+            use_rth=self._use_regular_trading_hours,
             timeout=self._request_timeout,
         )
 
         if bars:
             bars = list(set(bars))
             bars.sort(key=lambda x: x.ts_init)
+
+            # Apply limit if specified
+            limit = request.limit
+            if limit > 0 and len(bars) > limit:
+                bars = bars[-limit:]
+
             self._handle_bars(
                 request.bar_type,
                 bars,
@@ -545,3 +656,148 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             topic=f"requests.{request.id}",
             msg=status_msg,
         )
+
+    async def get_historical_bars_chunked(
+        self,
+        bar_type: BarType,
+        contract: IBContract,
+        start_date_time: pd.Timestamp | None = None,
+        end_date_time: pd.Timestamp | None = None,
+        duration: str | None = None,
+        use_rth: bool = True,
+        timeout: int = 60,
+    ) -> list[Bar]:
+        """
+        Retrieve historical bars in chunks to handle large duration requests.
+
+        This method breaks down a large historical data request into smaller segments
+        (years, days, seconds) to comply with IB API limits and avoid timeouts. It iterates
+        through these segments and aggregates the results.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The type of bar to retrieve.
+        contract : IBContract
+             The Interactive Brokers contract details for the instrument.
+        start_date_time : datetime.datetime
+             The start date time for the bars. If provided, duration is derived.
+        end_date_time : datetime.datetime
+             The end date time for the bars.
+        duration : str
+             The amount of time to go back from the end_date_time.
+        use_rth : bool, default True
+             Whether to use regular trading hours.
+        timeout : int, default 60
+             The timeout (seconds) for each individual request segment.
+
+        Returns
+        -------
+        list[Bar]
+             A list of aggregated Bar objects sorted by initialization timestamp.
+
+        """
+        # Adjust start and end time based on the timezone
+        if start_date_time:
+            start_date_time = time_object_to_dt(start_date_time)
+
+        if end_date_time:
+            end_date_time = time_object_to_dt(end_date_time)
+
+        data: list[Bar] = []
+
+        # We need to calculate duration segments based on start/end or duration
+        segments = self._calculate_duration_segments(
+            start_date_time,
+            end_date_time,
+            duration,
+        )
+
+        for segment_end_date_time, segment_duration in segments:
+            self._log.info(
+                f"{bar_type.instrument_id}: Requesting historical bars: {bar_type} ending on '{segment_end_date_time}' "
+                f"with duration '{segment_duration}'",
+            )
+
+            bars = await self._client.get_historical_bars( # Changed self.get_historical_bars to self._client.get_historical_bars
+                bar_type,
+                contract,
+                use_rth,
+                segment_end_date_time,
+                segment_duration,
+                timeout=timeout,
+            )
+            if bars:
+                self._log.info(
+                    f"{bar_type.instrument_id}: Number of bars retrieved in batch: {len(bars)}",
+                )
+                data.extend(bars)
+                self._log.info(f"Total number of bars in data: {len(data)}")
+            else:
+                self._log.info(f"{bar_type.instrument_id}: No bars retrieved for: {bar_type}")
+
+        return sorted(data, key=lambda x: x.ts_init)
+
+    def _calculate_duration_segments(
+        self,
+        start_date: pd.Timestamp | None,
+        end_date: pd.Timestamp,
+        duration: str | None,
+    ) -> list[tuple[pd.Timestamp, str]]:
+        # Calculate the difference in years, days, and seconds between two dates for the
+        # purpose of requesting specific date ranges for historical bars.
+        #
+        # This function breaks down the time difference between two provided dates (start_date
+        # and end_date) into separate components: years, days, and seconds. It accounts for leap
+        # years in its calculation of years and considers detailed time components (hours, minutes,
+        # seconds) for precise calculation of seconds.
+        #
+        # Each component of the time difference (years, days, seconds) is represented as a
+        # tuple in the returned list.
+        # The first element is the date that indicates the end point of that time segment
+        # when moving from start_date to end_date. For example, if the function calculates 1
+        # year, the date for the year entry will be the end date after 1 year has passed
+        # from start_date. This helps in understanding the progression of time from start_date
+        # to end_date in segmented intervals.
+
+        if duration:
+            return [(end_date, duration)]
+
+        total_delta = end_date - start_date
+
+        # Calculate full years in the time delta
+        years = total_delta.days // 365
+        minus_years_date = end_date - pd.Timedelta(days=365 * years)
+
+        # Calculate remaining days after subtracting full years
+        days = (minus_years_date - start_date).days
+        minus_days_date = minus_years_date - pd.Timedelta(days=days)
+
+        # Calculate remaining time in seconds
+        delta = minus_days_date - start_date
+        subsecond = (
+            1
+            if delta.components.milliseconds > 0
+               or delta.components.microseconds > 0
+               or delta.components.nanoseconds > 0
+            else 0
+        )
+        seconds = (
+                delta.components.hours * 3600
+                + delta.components.minutes * 60
+                + delta.components.seconds
+                + subsecond
+        )
+
+        results = []
+
+        if years:
+            results.append((end_date, f"{years} Y"))
+
+        if days:
+            results.append((minus_years_date, f"{days} D"))
+
+        if seconds:
+            results.append((minus_days_date, f"{seconds} S"))
+
+        return results
