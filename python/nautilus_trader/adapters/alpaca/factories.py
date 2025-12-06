@@ -10,6 +10,7 @@ from functools import lru_cache
 
 from nautilus_trader.adapters.alpaca.config import AlpacaDataClientConfig
 from nautilus_trader.adapters.alpaca.config import AlpacaExecClientConfig
+from nautilus_trader.adapters.alpaca.config import AlpacaInstrumentProviderConfig
 from nautilus_trader.adapters.alpaca.credentials import resolve_credentials
 from nautilus_trader.adapters.alpaca.data import AlpacaDataClient
 from nautilus_trader.adapters.alpaca.execution import AlpacaExecutionClient
@@ -145,11 +146,17 @@ class AlpacaLiveDataClientFactory(LiveDataClientFactory):
             paper=config.paper,
         )
 
+        # Get instrument provider config - use Alpaca default if not specified
+        instrument_provider_config = config.instrument_provider
+        if instrument_provider_config is None or type(instrument_provider_config) is InstrumentProviderConfig:
+            # Use Alpaca-specific config with load_all=True default
+            instrument_provider_config = AlpacaInstrumentProviderConfig()
+
         # Get instrument provider singleton
         provider = get_cached_alpaca_instrument_provider(
             client=client,
             clock=clock,
-            config=config.instrument_provider,
+            config=instrument_provider_config,
         )
 
         return AlpacaDataClient(
@@ -210,11 +217,17 @@ class AlpacaLiveExecClientFactory(LiveExecClientFactory):
             paper=config.paper,
         )
 
+        # Get instrument provider config - use Alpaca default if not specified
+        instrument_provider_config = config.instrument_provider
+        if instrument_provider_config is None or type(instrument_provider_config) is InstrumentProviderConfig:
+            # Use Alpaca-specific config with load_all=True default
+            instrument_provider_config = AlpacaInstrumentProviderConfig()
+
         # Get instrument provider singleton
         provider = get_cached_alpaca_instrument_provider(
             client=client,
             clock=clock,
-            config=config.instrument_provider,
+            config=instrument_provider_config,
         )
 
         return AlpacaExecutionClient(

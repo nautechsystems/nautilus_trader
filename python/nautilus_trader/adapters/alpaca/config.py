@@ -11,6 +11,27 @@ from nautilus_trader.config import PositiveInt
 from nautilus_trader.model.identifiers import Venue
 
 
+class AlpacaInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
+    """
+    Configuration for ``AlpacaInstrumentProvider`` instances.
+
+    Parameters
+    ----------
+    load_all : bool, default True
+        If all venue instruments should be loaded on start.
+        For Alpaca, this loads both US equities and crypto assets.
+    load_ids : frozenset[InstrumentId], optional
+        The list of instrument IDs to be loaded on start (if `load_all` is False).
+    filters : frozendict or dict[str, Any], optional
+        The venue specific instrument loading filters to apply.
+    log_warnings : bool, default True
+        If parser warnings should be logged.
+
+    """
+
+    load_all: bool = True  # Default to True for Alpaca
+
+
 class AlpacaDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for ``AlpacaDataClient`` instances.
