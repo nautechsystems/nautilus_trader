@@ -156,7 +156,16 @@ class AlpacaDataClient(LiveMarketDataClient):
 
     async def _connect(self) -> None:
         """Connect the data client."""
+        # Initialize instrument provider first (follows Nautilus convention)
+        await self._instrument_provider.initialize()
+
+        # Connect HTTP client
         await self._http_client.connect()
+
+        # Log configuration
+        self._log.info(f"Data feed: {self._config.data_feed}", LogColor.BLUE)
+        self._log.info(f"Paper trading: {self._config.paper}", LogColor.BLUE)
+
         # WebSocket clients are connected lazily when first subscription is made
         self._log.info("Alpaca data client connected", LogColor.GREEN)
 

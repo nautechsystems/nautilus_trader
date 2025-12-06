@@ -50,27 +50,24 @@ class AlpacaInstrumentProvider(InstrumentProvider):
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         """Load all available instruments from Alpaca."""
-        await self._client.connect()
+        filters_str = "..." if not filters else f" with filters {filters}..."
+        self._log.info(f"Loading all instruments{filters_str}")
 
-        try:
-            # Fetch active US equity assets
-            assets = await self._client.get_assets(status="active", asset_class="us_equity")
+        # Fetch active US equity assets
+        assets = await self._client.get_assets(status="active", asset_class="us_equity")
 
-            for asset_data in assets:
-                if not asset_data.get("tradable"):
-                    continue
+        for asset_data in assets:
+            if not asset_data.get("tradable"):
+                continue
 
-                try:
-                    instrument = self._parse_equity(asset_data)
-                    self.add(instrument)
-                except Exception as e:
-                    if self._log_warnings:
-                        self._log.warning(f"Failed to parse asset {asset_data.get('symbol')}: {e}")
+            try:
+                instrument = self._parse_equity(asset_data)
+                self.add(instrument)
+            except Exception as e:
+                if self._log_warnings:
+                    self._log.warning(f"Failed to parse asset {asset_data.get('symbol')}: {e}")
 
-            self._log.info(f"Loaded {len(self._instruments)} Alpaca instruments")
-
-        finally:
-            await self._client.disconnect()
+        self._log.info(f"Loaded {len(self._instruments)} Alpaca instruments")
 
     async def load_ids_async(
         self,
@@ -78,29 +75,23 @@ class AlpacaInstrumentProvider(InstrumentProvider):
         filters: dict | None = None,
     ) -> None:
         """Load specific instruments by ID."""
-        await self._client.connect()
+        for instrument_id in instrument_ids:
+            symbol = instrument_id.symbol.value
 
-        try:
-            for instrument_id in instrument_ids:
-                symbol = instrument_id.symbol.value
+            try:
+                asset_data = await self._client.get_asset(symbol)
 
-                try:
-                    asset_data = await self._client.get_asset(symbol)
-
-                    if not asset_data.get("tradable"):
-                        if self._log_warnings:
-                            self._log.warning(f"Asset {symbol} is not tradable")
-                        continue
-
-                    instrument = self._parse_equity(asset_data)
-                    self.add(instrument)
-
-                except Exception as e:
+                if not asset_data.get("tradable"):
                     if self._log_warnings:
-                        self._log.warning(f"Failed to load instrument {symbol}: {e}")
+                        self._log.warning(f"Asset {symbol} is not tradable")
+                    continue
 
-        finally:
-            await self._client.disconnect()
+                instrument = self._parse_equity(asset_data)
+                self.add(instrument)
+
+            except Exception as e:
+                if self._log_warnings:
+                    self._log.warning(f"Failed to load instrument {symbol}: {e}")
 
     async def load_async(
         self,

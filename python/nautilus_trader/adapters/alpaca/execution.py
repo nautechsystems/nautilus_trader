@@ -51,6 +51,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -110,6 +111,9 @@ class AlpacaExecutionClient(LiveExecutionClient):
         self._http_client = client
         self._config = config
 
+        # Log configuration
+        self._log.info(f"Paper trading: {config.paper}", LogColor.BLUE)
+
         # Create WebSocket client for order updates
         self._ws_client = AlpacaTradingWebSocketClient(
             api_key=config.api_key,
@@ -123,21 +127,30 @@ class AlpacaExecutionClient(LiveExecutionClient):
         self._ws_client.set_on_trade_update(self._handle_trade_update)
         self._ws_client.set_on_error(self._handle_ws_error)
 
-        # Account ID will be set on connect
+        # Alpaca account number (set on connect)
         self._alpaca_account_id: str | None = None
-
-    @property
-    def account_id(self) -> AccountId:
-        """Return the account ID."""
-        return AccountId(f"ALPACA-{self._alpaca_account_id or 'UNKNOWN'}")
 
     async def _connect(self) -> None:
         """Connect the execution client."""
+        # Initialize instrument provider first (follows Nautilus convention)
+        await self._instrument_provider.initialize()
+
+        # Connect HTTP client
         await self._http_client.connect()
 
-        # Get account info
+        # Get account info and set account ID
         account_info = await self._http_client.get_account()
         self._alpaca_account_id = account_info.get("account_number")
+
+        # Set the account ID (must be done before generating account state)
+        account_id = AccountId(f"ALPACA-{self._alpaca_account_id}")
+        self._set_account_id(account_id)
+
+        # Generate initial account state to register with portfolio
+        await self._update_account_state(account_info)
+
+        # Wait for account to be registered with portfolio (follows Nautilus convention)
+        await self._await_account_registered()
 
         # Connect WebSocket for order updates
         await self._ws_client.connect()
@@ -146,6 +159,34 @@ class AlpacaExecutionClient(LiveExecutionClient):
             f"Alpaca execution client connected (account: {self._alpaca_account_id})",
             LogColor.GREEN,
         )
+
+    async def _update_account_state(self, account_info: dict[str, Any] | None = None) -> None:
+        """Update account state from Alpaca account info."""
+        if account_info is None:
+            account_info = await self._http_client.get_account()
+
+        # Parse account balances from Alpaca response
+        # Alpaca returns: cash, buying_power, equity, etc.
+        cash = Decimal(str(account_info.get("cash", "0")))
+        
+        # Create account balance for USD
+        usd = Currency.from_str("USD")
+        balances = [
+            AccountBalance(
+                total=Money(cash, usd),
+                locked=Money(0, usd),
+                free=Money(cash, usd),
+            )
+        ]
+
+        self.generate_account_state(
+            balances=balances,
+            margins=[],
+            reported=True,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        self._log.info(f"Account state updated: cash={cash} USD")
 
     async def _disconnect(self) -> None:
         """Disconnect the execution client."""
