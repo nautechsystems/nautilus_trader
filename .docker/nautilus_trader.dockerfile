@@ -44,8 +44,9 @@ RUN uv build --wheel
 RUN uv pip install --system dist/*.whl
 RUN find /usr/local/lib/python3.13/site-packages -name "*.pyc" -exec rm -f {} \;
 
-# Copy bot-folio custom module into installed package
+# Copy bot-folio custom modules into installed package
 COPY python/nautilus_trader/botfolio /usr/local/lib/python3.13/site-packages/nautilus_trader/botfolio
+COPY python/nautilus_trader/adapters/alpaca /usr/local/lib/python3.13/site-packages/nautilus_trader/adapters/alpaca
 
 # Final application image
 FROM base AS application
@@ -53,8 +54,10 @@ FROM base AS application
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
-# Install redis client for bot-folio trading engine
-RUN pip install --no-cache-dir redis
+# Install dependencies for bot-folio trading engine
+# - redis: for config/code fetching
+# - aiohttp, websockets: for Alpaca adapter
+RUN pip install --no-cache-dir redis aiohttp websockets
 
 # Default entrypoint for bot-folio trading engine
 # Runs the strategy fetcher/executor from the botfolio module
