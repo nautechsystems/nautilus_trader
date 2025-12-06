@@ -27,6 +27,11 @@ class AlpacaInstrumentProvider(InstrumentProvider):
     """
     Provides instruments from Alpaca.
 
+    Supports three loading modes:
+    - load_all=True: Load all instruments on startup (slow, thousands of instruments)
+    - load_ids=[...]: Load specific instruments on startup
+    - Neither (default): Load instruments on-demand when subscribed/requested
+
     Parameters
     ----------
     client : AlpacaHttpClient
@@ -48,6 +53,35 @@ class AlpacaInstrumentProvider(InstrumentProvider):
         self._client = client
         self._clock = clock
         self._log_warnings = config.log_warnings
+
+    async def initialize(self, reload: bool = False) -> None:
+        """
+        Initialize the instrument provider.
+
+        For Alpaca, if neither load_all nor load_ids is configured,
+        instruments are loaded on-demand when subscribed. This is the
+        recommended mode for faster startup.
+        """
+        if not reload and self._loaded:
+            return
+
+        if self._load_all_on_start:
+            self._log.info("Loading all Alpaca instruments (this may take a while)...")
+            await self.load_all_async(self._filters)
+            self._log.info(f"Loaded {self.count} instruments")
+        elif self._load_ids_on_start:
+            instrument_ids = [
+                i if isinstance(i, InstrumentId) else InstrumentId.from_str(i)
+                for i in self._load_ids_on_start
+            ]
+            self._log.info(f"Loading {len(instrument_ids)} instruments...")
+            await self.load_ids_async(instrument_ids, self._filters)
+            self._log.info(f"Loaded {self.count} instruments")
+        else:
+            # On-demand mode - no warning, this is intentional
+            self._log.info("Alpaca instruments will be loaded on-demand when subscribed")
+
+        self._loaded = True
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         """Load all available instruments from Alpaca."""
