@@ -156,11 +156,11 @@ class AlpacaDataClient(LiveMarketDataClient):
 
     async def _connect(self) -> None:
         """Connect the data client."""
-        # Initialize instrument provider first (follows Nautilus convention)
-        await self._instrument_provider.initialize()
-
-        # Connect HTTP client
+        # Connect HTTP client first (needed for instrument provider)
         await self._http_client.connect()
+
+        # Initialize instrument provider (follows Nautilus convention)
+        await self._instrument_provider.initialize()
 
         # Log configuration
         self._log.info(f"Data feed: {self._config.data_feed}", LogColor.BLUE)
@@ -261,7 +261,19 @@ class AlpacaDataClient(LiveMarketDataClient):
             )
 
             bars = []
-            for bar_data in response.get("bars", []):
+            bars_data = response.get("bars", {})
+            
+            # Handle different response formats:
+            # - Stocks: {"bars": [...]} (list)
+            # - Crypto: {"bars": {"BTC/USD": [...]}} (dict keyed by symbol)
+            if isinstance(bars_data, dict):
+                # Crypto format - extract bars for this symbol
+                symbol_bars = bars_data.get(symbol, [])
+            else:
+                # Stocks format - bars is already a list
+                symbol_bars = bars_data
+                
+            for bar_data in symbol_bars:
                 bar = self._parse_bar(bar_data, bar_type)
                 bars.append(bar)
 

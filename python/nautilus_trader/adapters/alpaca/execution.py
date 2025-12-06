@@ -132,11 +132,11 @@ class AlpacaExecutionClient(LiveExecutionClient):
 
     async def _connect(self) -> None:
         """Connect the execution client."""
-        # Initialize instrument provider first (follows Nautilus convention)
-        await self._instrument_provider.initialize()
-
-        # Connect HTTP client
+        # Connect HTTP client first (needed for instrument provider)
         await self._http_client.connect()
+
+        # Initialize instrument provider (follows Nautilus convention)
+        await self._instrument_provider.initialize()
 
         # Get account info and set account ID
         account_info = await self._http_client.get_account()

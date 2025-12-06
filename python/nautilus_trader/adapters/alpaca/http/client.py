@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
@@ -293,9 +294,37 @@ class AlpacaHttpClient:
 
     async def get_asset(self, symbol_or_id: str) -> dict[str, Any]:
         """Get a specific asset by symbol or ID."""
-        return await self._request("GET", f"{self._trading_base_url}/v2/assets/{symbol_or_id}")
+        # URL-encode the symbol to handle crypto pairs with "/" (e.g., "BTC/USD" -> "BTC%2FUSD")
+        encoded_symbol = quote(symbol_or_id, safe="")
+        return await self._request("GET", f"{self._trading_base_url}/v2/assets/{encoded_symbol}")
 
     # ---- Data API Methods ----
+
+    def _is_crypto_symbol(self, symbol: str) -> bool:
+        """Check if a symbol is a crypto pair (e.g., BTC/USD)."""
+        return "/" in symbol
+
+    def _get_data_endpoint(self, symbol: str, data_type: str) -> str:
+        """Get the appropriate data endpoint for a symbol.
+        
+        Parameters
+        ----------
+        symbol : str
+            The symbol (e.g., "AAPL" for stocks, "BTC/USD" for crypto).
+        data_type : str
+            The data type: "bars", "quotes", "trades".
+            
+        Returns
+        -------
+        str
+            The full endpoint URL.
+        """
+        if self._is_crypto_symbol(symbol):
+            # Crypto uses v1beta3 endpoint
+            return f"{self._data_base_url}/v1beta3/crypto/us/{data_type}"
+        else:
+            # Stocks use v2 endpoint
+            return f"{self._data_base_url}/v2/stocks/{symbol}/{data_type}"
 
     async def get_bars(
         self,
@@ -308,20 +337,28 @@ class AlpacaHttpClient:
         feed: str = "iex",
     ) -> dict[str, Any]:
         """Get historical bars for a symbol."""
+        is_crypto = self._is_crypto_symbol(symbol)
+        
         params: dict[str, Any] = {
             "timeframe": timeframe,
             "limit": limit,
-            "adjustment": adjustment,
-            "feed": feed,
         }
+        
+        if is_crypto:
+            # Crypto endpoint uses "symbols" parameter
+            params["symbols"] = symbol
+        else:
+            # Stocks endpoint uses path parameter and additional options
+            params["adjustment"] = adjustment
+            params["feed"] = feed
+            
         if start:
             params["start"] = start
         if end:
             params["end"] = end
 
-        return await self._request(
-            "GET", f"{self._data_base_url}/v2/stocks/{symbol}/bars", params=params
-        )
+        endpoint = self._get_data_endpoint(symbol, "bars")
+        return await self._request("GET", endpoint, params=params)
 
     async def get_quotes(
         self,
@@ -332,18 +369,24 @@ class AlpacaHttpClient:
         feed: str = "iex",
     ) -> dict[str, Any]:
         """Get historical quotes for a symbol."""
+        is_crypto = self._is_crypto_symbol(symbol)
+        
         params: dict[str, Any] = {
             "limit": limit,
-            "feed": feed,
         }
+        
+        if is_crypto:
+            params["symbols"] = symbol
+        else:
+            params["feed"] = feed
+            
         if start:
             params["start"] = start
         if end:
             params["end"] = end
 
-        return await self._request(
-            "GET", f"{self._data_base_url}/v2/stocks/{symbol}/quotes", params=params
-        )
+        endpoint = self._get_data_endpoint(symbol, "quotes")
+        return await self._request("GET", endpoint, params=params)
 
     async def get_trades(
         self,
@@ -354,32 +397,56 @@ class AlpacaHttpClient:
         feed: str = "iex",
     ) -> dict[str, Any]:
         """Get historical trades for a symbol."""
+        is_crypto = self._is_crypto_symbol(symbol)
+        
         params: dict[str, Any] = {
             "limit": limit,
-            "feed": feed,
         }
+        
+        if is_crypto:
+            params["symbols"] = symbol
+        else:
+            params["feed"] = feed
+            
         if start:
             params["start"] = start
         if end:
             params["end"] = end
 
-        return await self._request(
-            "GET", f"{self._data_base_url}/v2/stocks/{symbol}/trades", params=params
-        )
+        endpoint = self._get_data_endpoint(symbol, "trades")
+        return await self._request("GET", endpoint, params=params)
 
     async def get_latest_quote(self, symbol: str, feed: str = "iex") -> dict[str, Any]:
         """Get latest quote for a symbol."""
-        return await self._request(
-            "GET",
-            f"{self._data_base_url}/v2/stocks/{symbol}/quotes/latest",
-            params={"feed": feed},
-        )
+        is_crypto = self._is_crypto_symbol(symbol)
+        
+        if is_crypto:
+            return await self._request(
+                "GET",
+                f"{self._data_base_url}/v1beta3/crypto/us/latest/quotes",
+                params={"symbols": symbol},
+            )
+        else:
+            return await self._request(
+                "GET",
+                f"{self._data_base_url}/v2/stocks/{symbol}/quotes/latest",
+                params={"feed": feed},
+            )
 
     async def get_latest_trade(self, symbol: str, feed: str = "iex") -> dict[str, Any]:
         """Get latest trade for a symbol."""
-        return await self._request(
-            "GET",
-            f"{self._data_base_url}/v2/stocks/{symbol}/trades/latest",
-            params={"feed": feed},
-        )
+        is_crypto = self._is_crypto_symbol(symbol)
+        
+        if is_crypto:
+            return await self._request(
+                "GET",
+                f"{self._data_base_url}/v1beta3/crypto/us/latest/trades",
+                params={"symbols": symbol},
+            )
+        else:
+            return await self._request(
+                "GET",
+                f"{self._data_base_url}/v2/stocks/{symbol}/trades/latest",
+                params={"feed": feed},
+            )
 
