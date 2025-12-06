@@ -98,7 +98,7 @@ class EventEmitter(Actor):
 
         try:
             self._redis.publish(self._channel, json.dumps(envelope, default=self._json_default))
-            self._log.debug(f"Published {event_type} event")
+            self._log.info(f"Published {event_type} event to {self._channel}")
         except Exception as e:
             self._log.error(f"Failed to publish event: {e}")
 
@@ -115,6 +115,7 @@ class EventEmitter(Actor):
 
     def _handle_order_event(self, event: Any) -> None:
         """Handle order events from the message bus."""
+        self._log.info(f"Received order event: {type(event).__name__}")
         if isinstance(event, OrderFilled):
             self._on_order_filled(event)
         elif isinstance(event, OrderAccepted):

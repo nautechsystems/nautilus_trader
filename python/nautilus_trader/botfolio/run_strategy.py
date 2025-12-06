@@ -120,6 +120,13 @@ def setup_credentials_env(config: dict) -> None:
     os.environ["BOTFOLIO_INITIAL_CAPITAL"] = str(config.get("initialCapital", 100000))
     os.environ["BOTFOLIO_VIRTUAL_CASH"] = str(config.get("virtualCash", 100000))
 
+    # Position isolation: Store bot's positions for restoration on startup
+    # This ensures each bot only sees its own positions, even when sharing an Alpaca account
+    positions = config.get("positions", [])
+    os.environ["BOTFOLIO_POSITIONS"] = json.dumps(positions)
+    if positions:
+        log(f"Position isolation: {len(positions)} position(s) to restore")
+
 
 def main():
     global _redis_client, _bot_id

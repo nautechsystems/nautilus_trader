@@ -161,14 +161,45 @@ class AlpacaExecutionClient(LiveExecutionClient):
         )
 
     async def _update_account_state(self, account_info: dict[str, Any] | None = None) -> None:
-        """Update account state from Alpaca account info."""
-        if account_info is None:
-            account_info = await self._http_client.get_account()
+        """
+        Update account state.
 
-        # Parse account balances from Alpaca response
-        # Alpaca returns: cash, buying_power, equity, etc.
-        cash = Decimal(str(account_info.get("cash", "0")))
-        
+        POSITION ISOLATION: Uses bot's virtual cash from BOTFOLIO_VIRTUAL_CASH
+        environment variable instead of the full Alpaca account balance. This
+        ensures each bot only sees its allocated capital, preventing bots from
+        accidentally trading with capital allocated to other bots.
+        """
+        import os
+
+        # Position Isolation: Use bot's virtual cash instead of Alpaca account balance
+        # This prevents bots from seeing/using capital allocated to other bots
+        virtual_cash_str = os.environ.get("BOTFOLIO_VIRTUAL_CASH")
+        initial_capital_str = os.environ.get("BOTFOLIO_INITIAL_CAPITAL")
+
+        if virtual_cash_str:
+            # Use bot's tracked virtual cash (updated as trades execute)
+            cash = Decimal(virtual_cash_str)
+            self._log.info(
+                f"Position isolation: using bot virtual cash={cash} USD "
+                f"(ignoring Alpaca account balance)"
+            )
+        elif initial_capital_str:
+            # Fallback to initial capital if virtual cash not set
+            cash = Decimal(initial_capital_str)
+            self._log.info(
+                f"Position isolation: using bot initial capital={cash} USD "
+                f"(ignoring Alpaca account balance)"
+            )
+        else:
+            # No isolation configured - use Alpaca balance (legacy behavior)
+            if account_info is None:
+                account_info = await self._http_client.get_account()
+            cash = Decimal(str(account_info.get("cash", "0")))
+            self._log.warning(
+                f"Position isolation NOT configured - using Alpaca account cash={cash} USD. "
+                f"Set BOTFOLIO_VIRTUAL_CASH for proper bot isolation."
+            )
+
         # Create account balance for USD
         usd = Currency.from_str("USD")
         balances = [
@@ -375,23 +406,19 @@ class AlpacaExecutionClient(LiveExecutionClient):
         self,
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
-        """Generate position status reports."""
-        reports = []
+        """
+        Generate position status reports.
 
-        try:
-            if command.instrument_id:
-                positions = [await self._http_client.get_position(command.instrument_id.symbol.value)]
-            else:
-                positions = await self._http_client.get_positions()
-
-            for pos_data in positions:
-                report = self._parse_position_status_report(pos_data)
-                reports.append(report)
-
-        except Exception as e:
-            self._log.error(f"Failed to generate position status reports: {e}")
-
-        return reports
+        POSITION ISOLATION: Returns empty list to prevent Alpaca's aggregate
+        account positions from polluting per-bot position tracking. Each bot
+        manages its own positions via the backend database, which are restored
+        on startup. This ensures bots sharing the same Alpaca account never
+        see or interact with each other's positions.
+        """
+        self._log.info(
+            "Position reconciliation disabled - using backend-managed positions for bot isolation"
+        )
+        return []
 
     # -- WebSocket handlers ----
 
