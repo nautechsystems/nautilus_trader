@@ -26,6 +26,9 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
@@ -267,17 +270,14 @@ class AlpacaExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: datetime | None = None,
-        end: datetime | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         """Generate order status reports."""
         reports = []
 
         try:
-            status = "open" if open_only else "all"
-            symbols = [instrument_id.symbol.value] if instrument_id else None
+            status = "open" if command.open_only else "all"
+            symbols = [command.instrument_id.symbol.value] if command.instrument_id else None
 
             orders = await self._http_client.get_orders(
                 status=status,
@@ -295,10 +295,7 @@ class AlpacaExecutionClient(LiveExecutionClient):
 
     async def generate_fill_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: datetime | None = None,
-        end: datetime | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         """Generate fill reports."""
         # Alpaca doesn't have a separate fills endpoint
@@ -307,16 +304,14 @@ class AlpacaExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: datetime | None = None,
-        end: datetime | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         """Generate position status reports."""
         reports = []
 
         try:
-            if instrument_id:
-                positions = [await self._http_client.get_position(instrument_id.symbol.value)]
+            if command.instrument_id:
+                positions = [await self._http_client.get_position(command.instrument_id.symbol.value)]
             else:
                 positions = await self._http_client.get_positions()
 

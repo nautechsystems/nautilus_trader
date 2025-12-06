@@ -22,6 +22,12 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
@@ -116,37 +122,37 @@ class AlpacaDataClient(LiveMarketDataClient):
 
     # -- Subscriptions ----
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         """Subscribe to quote ticks for an instrument."""
-        symbol = instrument_id.symbol.value
+        symbol = command.instrument_id.symbol.value
         await self._ws_client.subscribe_quotes([symbol])
         self._log.debug(f"Subscribed to quotes for {symbol}")
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         """Subscribe to trade ticks for an instrument."""
-        symbol = instrument_id.symbol.value
+        symbol = command.instrument_id.symbol.value
         await self._ws_client.subscribe_trades([symbol])
         self._log.debug(f"Subscribed to trades for {symbol}")
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
         """Subscribe to bars for an instrument."""
-        symbol = bar_type.instrument_id.symbol.value
+        symbol = command.bar_type.instrument_id.symbol.value
         await self._ws_client.subscribe_bars([symbol])
         self._log.debug(f"Subscribed to bars for {symbol}")
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         """Unsubscribe from quote ticks for an instrument."""
-        symbol = instrument_id.symbol.value
+        symbol = command.instrument_id.symbol.value
         await self._ws_client.unsubscribe_quotes([symbol])
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         """Unsubscribe from trade ticks for an instrument."""
-        symbol = instrument_id.symbol.value
+        symbol = command.instrument_id.symbol.value
         await self._ws_client.unsubscribe_trades([symbol])
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         """Unsubscribe from bars for an instrument."""
-        symbol = bar_type.instrument_id.symbol.value
+        symbol = command.bar_type.instrument_id.symbol.value
         await self._ws_client.unsubscribe_bars([symbol])
 
     # -- Request handlers ----
