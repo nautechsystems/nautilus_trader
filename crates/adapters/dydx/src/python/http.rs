@@ -327,6 +327,74 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests historical bars for a symbol.
+    ///
+    /// Fetches candle data and converts to Nautilus `Bar` objects.
+    /// Results are ordered by timestamp ascending (oldest first).
+    ///
+    /// Parameters
+    /// ----------
+    /// bar_type : str
+    ///     The bar type string (e.g., "ETH-USD-PERP.DYDX-1-MINUTE-LAST-EXTERNAL").
+    /// resolution : str
+    ///     The dYdX candle resolution (e.g., "1MIN", "5MINS", "1HOUR", "1DAY").
+    /// limit : int, optional
+    ///     Maximum number of bars to fetch.
+    /// start : str, optional
+    ///     Start time in ISO 8601 format.
+    /// end : str, optional
+    ///     End time in ISO 8601 format.
+    ///
+    /// Returns
+    /// -------
+    /// list[Bar]
+    ///     List of Nautilus Bar objects.
+    #[pyo3(name = "request_bars")]
+    #[pyo3(signature = (bar_type, resolution, limit=None, start=None, end=None))]
+    fn py_request_bars<'py>(
+        &self,
+        py: Python<'py>,
+        bar_type: String,
+        resolution: String,
+        limit: Option<u32>,
+        start: Option<String>,
+        end: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        use std::str::FromStr;
+
+        use chrono::DateTime;
+        use nautilus_model::data::BarType;
+
+        use crate::common::enums::DydxCandleResolution;
+
+        let bar_type = BarType::from_str(&bar_type).map_err(to_pyvalue_err)?;
+        let resolution = DydxCandleResolution::from_str(&resolution).map_err(to_pyvalue_err)?;
+
+        let from_iso = start
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
+        let to_iso = end
+            .map(|s| DateTime::parse_from_rfc3339(&s).map(|dt| dt.with_timezone(&chrono::Utc)))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let bars = client
+                .request_bars(bar_type, resolution, limit, from_iso, to_iso)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist = PyList::new(py, bars.into_iter().map(|b| b.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "DydxHttpClient(base_url='{}', is_testnet={}, cached_instruments={})",

@@ -62,11 +62,13 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
+    data::{Bar, BarType, bar::get_bar_interval_ns},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Price, Quantity},
 };
 use nautilus_network::{
     http::HttpClient,
@@ -82,6 +84,7 @@ use super::error::DydxHttpError;
 use crate::common::{
     consts::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL},
     enums::DydxCandleResolution,
+    parse::extract_raw_symbol,
 };
 
 /// Default dYdX Indexer REST API rate limit.
@@ -947,6 +950,66 @@ impl DydxHttpClient {
             .get_candles(symbol, resolution, limit, from_iso, to_iso)
             .await
             .map_err(Into::into)
+    }
+
+    /// Requests historical bars for a symbol and converts to Nautilus Bar objects.
+    ///
+    /// Fetches candle data and converts to Nautilus `Bar` objects using the
+    /// provided `BarType`. Results are ordered by timestamp ascending (oldest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
+    pub async fn request_bars(
+        &self,
+        bar_type: BarType,
+        resolution: DydxCandleResolution,
+        limit: Option<u32>,
+        from_iso: Option<DateTime<Utc>>,
+        to_iso: Option<DateTime<Utc>>,
+    ) -> anyhow::Result<Vec<Bar>> {
+        let instrument_id = bar_type.instrument_id();
+        let symbol = instrument_id.symbol;
+
+        // Get instrument for precision info
+        let instrument = self
+            .get_instrument(&symbol.inner())
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
+
+        // dYdX API expects ticker format "BTC-USD", not "BTC-USD-PERP"
+        let ticker = extract_raw_symbol(symbol.as_str());
+        let response = self
+            .request_candles(ticker, resolution, limit, from_iso, to_iso)
+            .await?;
+
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let interval_ns = get_bar_interval_ns(&bar_type);
+
+        let mut bars = Vec::with_capacity(response.candles.len());
+
+        for candle in response.candles {
+            // Calculate ts_event: startedAt + interval (end of bar)
+            let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {
+                anyhow::anyhow!("Timestamp out of range for candle at {}", candle.started_at)
+            })?;
+            let ts_event = UnixNanos::from(started_at_nanos as u64) + interval_ns;
+
+            let bar = Bar::new(
+                bar_type,
+                Price::from_decimal_dp(candle.open, instrument.price_precision())?,
+                Price::from_decimal_dp(candle.high, instrument.price_precision())?,
+                Price::from_decimal_dp(candle.low, instrument.price_precision())?,
+                Price::from_decimal_dp(candle.close, instrument.price_precision())?,
+                Quantity::from_decimal_dp(candle.base_token_volume, instrument.size_precision())?,
+                ts_event,
+                ts_init,
+            );
+
+            bars.push(bar);
+        }
+
+        Ok(bars)
     }
 
     /// Exposes raw HTTP client for testing and advanced use cases.

@@ -22,6 +22,7 @@ use std::{
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
+    data::BarType,
     identifiers::{AccountId, InstrumentId},
     python::instruments::pyobject_to_instrument_any,
 };
@@ -29,8 +30,8 @@ use nautilus_network::mode::ConnectionMode;
 use pyo3::prelude::*;
 
 use crate::{
-    common::credential::DydxCredential,
-    websocket::{client::DydxWebSocketClient, error::DydxWsError},
+    common::{credential::DydxCredential, parse::extract_raw_symbol},
+    websocket::{client::DydxWebSocketClient, error::DydxWsError, handler::HandlerCommand},
 };
 
 fn to_pyvalue_err_dydx(e: DydxWsError) -> PyErr {
@@ -307,11 +308,25 @@ impl DydxWebSocketClient {
     fn py_subscribe_bars<'py>(
         &self,
         py: Python<'py>,
-        instrument_id: InstrumentId,
+        bar_type: BarType,
         resolution: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let instrument_id = bar_type.instrument_id();
+
+        // Build topic for bar type registration (e.g., "ETH-USD/1MIN")
+        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
+        let topic = format!("{ticker}/{resolution}");
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Register bar type in handler before subscribing
+            client
+                .send_command(HandlerCommand::RegisterBarType { topic, bar_type })
+                .map_err(to_pyvalue_err_dydx)?;
+
+            // Brief delay to ensure handler processes registration
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
             client
                 .subscribe_candles(instrument_id, &resolution)
                 .await
@@ -325,15 +340,27 @@ impl DydxWebSocketClient {
     fn py_unsubscribe_bars<'py>(
         &self,
         py: Python<'py>,
-        instrument_id: InstrumentId,
+        bar_type: BarType,
         resolution: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let instrument_id = bar_type.instrument_id();
+
+        // Build topic for unregistration
+        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
+        let topic = format!("{ticker}/{resolution}");
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .unsubscribe_candles(instrument_id, &resolution)
                 .await
                 .map_err(to_pyvalue_err_dydx)?;
+
+            // Unregister bar type after unsubscribing
+            client
+                .send_command(HandlerCommand::UnregisterBarType { topic })
+                .map_err(to_pyvalue_err_dydx)?;
+
             Ok(())
         })
     }

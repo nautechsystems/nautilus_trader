@@ -63,6 +63,7 @@ from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 
@@ -258,18 +259,19 @@ class DYDXv4DataClient(LiveMarketDataClient):
         spec = bar_type.spec
 
         # Map to dYdX resolution
-        key = (spec.step, spec.aggregation.name)
+        aggregation_str = bar_aggregation_to_str(spec.aggregation)
+        key = (spec.step, aggregation_str)
         resolution = BAR_RESOLUTION_MAP.get(key)
 
         if resolution is None:
             self._log.error(
                 f"Cannot subscribe to bars: unsupported aggregation "
-                f"step={spec.step} aggregation={spec.aggregation.name}",
+                f"step={spec.step} aggregation={aggregation_str}",
             )
             return
 
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(bar_type.instrument_id.value)
-        await self._ws_client.subscribe_bars(pyo3_instrument_id, resolution)
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+        await self._ws_client.subscribe_bars(pyo3_bar_type, resolution)
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -291,14 +293,15 @@ class DYDXv4DataClient(LiveMarketDataClient):
         bar_type = command.bar_type
         spec = bar_type.spec
 
-        key = (spec.step, spec.aggregation.name)
+        aggregation_str = bar_aggregation_to_str(spec.aggregation)
+        key = (spec.step, aggregation_str)
         resolution = BAR_RESOLUTION_MAP.get(key)
 
         if resolution is None:
             return
 
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(bar_type.instrument_id.value)
-        await self._ws_client.unsubscribe_bars(pyo3_instrument_id, resolution)
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+        await self._ws_client.unsubscribe_bars(pyo3_bar_type, resolution)
 
     async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
         # Markets channel is always subscribed, no unsubscription needed
@@ -370,9 +373,54 @@ class DYDXv4DataClient(LiveMarketDataClient):
         pass
 
     async def _request_bars(self, request: RequestBars) -> None:
-        # Historical bar requests via HTTP API
-        # TODO: Implement when HTTP client exposes historical candles endpoint
-        self._log.warning("Historical bar requests not yet implemented for dYdX v4")
+        bar_type = request.bar_type
+        spec = bar_type.spec
+
+        # Map to dYdX resolution
+        aggregation_str = bar_aggregation_to_str(spec.aggregation)
+        key = (spec.step, aggregation_str)
+        resolution = BAR_RESOLUTION_MAP.get(key)
+
+        if resolution is None:
+            self._log.error(
+                f"Cannot request bars: unsupported aggregation "
+                f"step={spec.step} aggregation={aggregation_str}",
+            )
+            return
+
+        # Format timestamps for dYdX API
+        start_iso = request.start.isoformat() if request.start else None
+        end_iso = request.end.isoformat() if request.end else None
+
+        # Determine limit
+        limit = request.limit if request.limit > 0 else None
+
+        self._log.info(
+            f"Request {bar_type} bars from {start_iso or 'start'} to {end_iso or 'end'}",
+        )
+
+        try:
+            bars = await self._http_client.request_bars(
+                bar_type=str(bar_type),
+                resolution=resolution,
+                limit=limit,
+                start=start_iso,
+                end=end_iso,
+            )
+
+            self._log.info(f"Received {len(bars)} bars for {bar_type}")
+
+            self._handle_bars(
+                bar_type,
+                bars,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
+
+        except Exception as e:
+            self._log.error(f"Error requesting bars for {bar_type}: {e}")
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         # Historical quote tick requests

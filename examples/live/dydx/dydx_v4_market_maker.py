@@ -71,7 +71,7 @@ config_node = TradingNodeConfig(
         "DYDX": DYDXv4DataClientConfig(
             wallet_address=None,  # 'DYDX_WALLET_ADDRESS' or 'DYDX_TESTNET_WALLET_ADDRESS' env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=True,  # Testnet by default for safety
+            is_testnet=False,  # Mainnet
         ),
     },
     exec_clients={
@@ -83,7 +83,7 @@ config_node = TradingNodeConfig(
             base_url_ws=None,  # Override with custom endpoint
             base_url_grpc=None,  # Override with custom gRPC endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=True,  # Testnet by default for safety
+            is_testnet=False,  # Mainnet
         ),
     },
     timeout_connection=20.0,
