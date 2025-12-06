@@ -96,8 +96,15 @@ class AlpacaDataWebSocketClient:
         auth_msg = self._build_auth_message()
         await self._ws.send_json(auth_msg)
 
-        # Wait for auth response
-        response = await self._ws.receive_json()
+        # Wait for auth response (handle both TEXT and BINARY messages)
+        msg = await self._ws.receive()
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            response = json.loads(msg.data)
+        elif msg.type == aiohttp.WSMsgType.BINARY:
+            response = json.loads(msg.data.decode("utf-8"))
+        else:
+            raise RuntimeError(f"Unexpected WS message type during auth: {msg.type}")
+
         if self._logger:
             self._logger.debug(f"Alpaca data WS auth response: {response}")
 
@@ -157,6 +164,9 @@ class AlpacaDataWebSocketClient:
 
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     data = json.loads(msg.data)
+                    await self._handle_messages(data)
+                elif msg.type == aiohttp.WSMsgType.BINARY:
+                    data = json.loads(msg.data.decode("utf-8"))
                     await self._handle_messages(data)
                 elif msg.type == aiohttp.WSMsgType.CLOSED:
                     if self._logger:

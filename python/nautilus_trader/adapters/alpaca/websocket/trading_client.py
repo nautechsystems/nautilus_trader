@@ -80,8 +80,15 @@ class AlpacaTradingWebSocketClient:
         auth_msg = self._build_auth_message()
         await self._ws.send_json(auth_msg)
 
-        # Wait for auth response
-        response = await self._ws.receive_json()
+        # Wait for auth response (handle both TEXT and BINARY messages)
+        msg = await self._ws.receive()
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            response = json.loads(msg.data)
+        elif msg.type == aiohttp.WSMsgType.BINARY:
+            response = json.loads(msg.data.decode("utf-8"))
+        else:
+            raise RuntimeError(f"Unexpected WS message type during auth: {msg.type}")
+
         if self._logger:
             self._logger.debug(f"Alpaca trading WS auth response: {response}")
 
@@ -125,18 +132,17 @@ class AlpacaTradingWebSocketClient:
             self._logger.info("Alpaca trading WebSocket disconnected")
 
     def _build_auth_message(self) -> dict[str, Any]:
-        """Build authentication message."""
+        """Build authentication message using Alpaca's current format."""
         if self._access_token:
             return {
                 "action": "auth",
                 "data": {"oauth_token": self._access_token},
             }
+        # Use new format: {"action": "auth", "key": "...", "secret": "..."}
         return {
             "action": "auth",
-            "data": {
-                "key_id": self._api_key,
-                "secret_key": self._api_secret,
-            },
+            "key": self._api_key,
+            "secret": self._api_secret,
         }
 
     async def _subscribe_trade_updates(self) -> None:
@@ -160,6 +166,9 @@ class AlpacaTradingWebSocketClient:
 
                 if msg.type == aiohttp.WSMsgType.TEXT:
                     data = json.loads(msg.data)
+                    await self._handle_message(data)
+                elif msg.type == aiohttp.WSMsgType.BINARY:
+                    data = json.loads(msg.data.decode("utf-8"))
                     await self._handle_message(data)
                 elif msg.type == aiohttp.WSMsgType.CLOSED:
                     if self._logger:
