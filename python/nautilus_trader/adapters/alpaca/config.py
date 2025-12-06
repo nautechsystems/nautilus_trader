@@ -32,7 +32,7 @@ class AlpacaDataClientConfig(LiveDataClientConfig, frozen=True):
     paper : bool, default True
         If the client is connecting to paper trading.
     data_feed : str, default "iex"
-        The data feed to use: "iex" (free) or "sip" (paid, more comprehensive).
+        The data feed to use: "iex" (free stocks), "sip" (paid stocks), or "crypto".
     update_instruments_interval_mins : PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
 

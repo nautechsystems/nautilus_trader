@@ -83,7 +83,7 @@ def setup_credentials_env(config: dict) -> None:
     """
     credentials = config.get("credentials", {})
 
-    # Provider (e.g., 'alpaca')
+    # Provider (e.g., 'alpaca', 'botfolio')
     provider = credentials.get("provider", "")
     os.environ["BOTFOLIO_PROVIDER"] = provider
 
@@ -91,8 +91,17 @@ def setup_credentials_env(config: dict) -> None:
     trading_mode = credentials.get("tradingMode", "paper")
     os.environ["BOTFOLIO_TRADING_MODE"] = trading_mode
 
-    # Alpaca-specific credentials
-    if provider == "alpaca":
+    if provider == "botfolio":
+        # Local paper trading with bot-folio adapter
+        # No external credentials needed - uses Redis for market data
+        os.environ["BOTFOLIO_ADAPTER"] = "local"
+        os.environ["BOTFOLIO_REDIS_URL"] = os.environ.get("REDIS_URL", "redis://localhost:6379")
+        log("Using bot-folio local adapter for paper trading")
+
+    elif provider == "alpaca":
+        # Alpaca external broker
+        os.environ["BOTFOLIO_ADAPTER"] = "alpaca"
+
         # API Key authentication
         if "apiKey" in credentials:
             os.environ["APCA_API_KEY_ID"] = credentials["apiKey"]

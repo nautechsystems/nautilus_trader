@@ -20,6 +20,7 @@ ALPACA_DATA_API_URL = "https://data.alpaca.markets"
 
 # WebSocket URLs
 ALPACA_DATA_WS_URL = "wss://stream.data.alpaca.markets/v2"
+ALPACA_CRYPTO_DATA_WS_URL = "wss://stream.data.alpaca.markets/v1beta3/crypto/us"
 ALPACA_PAPER_TRADING_WS_URL = "wss://paper-api.alpaca.markets/stream"
 ALPACA_LIVE_TRADING_WS_URL = "wss://api.alpaca.markets/stream"
 
@@ -98,6 +99,15 @@ def get_trading_ws_url(paper: bool) -> str:
 
 
 def get_data_ws_url(feed: str) -> str:
-    """Get the data WebSocket URL for the given feed."""
+    """Get the data WebSocket URL for the given feed.
+
+    Parameters
+    ----------
+    feed : str
+        The data feed: "iex", "sip" for stocks, or "crypto" for crypto.
+
+    """
+    if feed == "crypto":
+        return ALPACA_CRYPTO_DATA_WS_URL
     return f"{ALPACA_DATA_WS_URL}/{feed}"
 
