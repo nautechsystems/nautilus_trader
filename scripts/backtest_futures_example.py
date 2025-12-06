@@ -21,7 +21,11 @@ from nautilus_trader.model.enums import AccountType, OmsType
 from nautilus_trader.model.identifiers import InstrumentId, Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.trading.strategy import Strategy, StrategyConfig
+
+from nautilus_trader.examples.strategies.orderflow_strategy import (
+    OrderFlowStrategy,
+    OrderFlowStrategyConfig,
+)
 
 # Catalog path
 CATALOG_PATH = Path("C:/projects/nautilus_trader/catalog")
@@ -30,35 +34,7 @@ CATALOG_PATH = Path("C:/projects/nautilus_trader/catalog")
 ETHUSDT_PERP_ID = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 
 
-class SimpleStrategyConfig(StrategyConfig):
-    """Configuration for simple strategy."""
-    instrument_id: str = "ETHUSDT-PERP.BINANCE"
 
-
-class SimpleStrategy(Strategy):
-    """
-    A simple example strategy that just logs trades.
-    Replace this with your actual trading logic.
-    """
-    
-    def __init__(self, config: SimpleStrategyConfig):
-        super().__init__(config)
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.trade_count = 0
-    
-    def on_start(self):
-        self.subscribe_trade_ticks(self.instrument_id)
-        self.log.info(f"Strategy started, subscribed to {self.instrument_id}")
-    
-    def on_trade_tick(self, tick):
-        self.trade_count += 1
-        if self.trade_count <= 5:
-            self.log.info(f"Trade #{self.trade_count}: {tick.price} @ {tick.size}")
-        elif self.trade_count == 6:
-            self.log.info("... (suppressing further trade logs)")
-    
-    def on_stop(self):
-        self.log.info(f"Strategy stopped. Total trades received: {self.trade_count:,}")
 
 
 def main():
@@ -79,10 +55,15 @@ def main():
     instrument = instruments[0]
     print(f"✓ Found instrument: {instrument.id}")
     
-    # Load trade ticks from catalog
+    # Load trade ticks from catalog (first week for testing)
     print("\n📊 Loading trade ticks from catalog...")
-    ticks = catalog.trade_ticks(instrument_ids=[str(instrument.id)])
-    print(f"✓ Loaded {len(ticks):,} trade ticks")
+    import pandas as pd
+    ticks = catalog.trade_ticks(
+        instrument_ids=[str(instrument.id)],
+        start=pd.Timestamp('2025-03-01', tz='UTC'),
+        end=pd.Timestamp('2025-03-02', tz='UTC'),  # First week
+    )
+    print(f"✓ Loaded {len(ticks):,} trade ticks (March 1-7)")
     
     if not ticks:
         print("❌ No trade ticks found! Run convert_to_parquet.py first.")
@@ -90,7 +71,7 @@ def main():
     
     # Configure backtest engine
     config = BacktestEngineConfig(
-        logging=LoggingConfig(log_level="INFO"),
+        logging=LoggingConfig(log_level="ERROR"),  # ERROR to avoid logging spam (millions of POI checks)
     )
     engine = BacktestEngine(config=config)
     
@@ -101,7 +82,8 @@ def main():
         account_type=AccountType.MARGIN,  # Margin account for futures
         base_currency=USDT,
         starting_balances=[Money(100_000, USDT)],  # 100k USDT starting balance
-        leverage=Decimal("20"),  # 20x leverage
+        default_leverage=Decimal("20"),  # 20x leverage
+        trade_execution=True,  # CRITICAL: Fast tick processing for L1_MBP book
     )
     print("✓ Added BINANCE venue (Futures: Netting, Margin, 20x leverage)")
     
@@ -109,23 +91,62 @@ def main():
     engine.add_instrument(instrument)
     engine.add_data(ticks)
     print("✓ Added instrument and trade tick data")
-    
-    # Add strategy
-    strategy = SimpleStrategy(SimpleStrategyConfig())
+
+    # Get tick size from instrument
+    tick_size = float(instrument.price_increment)
+
+    # Configure the Order Flow Strategy
+    # POI-based trading with orderflow confirmation
+    strategy_config = OrderFlowStrategyConfig(
+        instrument_id=instrument.id,
+        tick_size=tick_size,
+        trade_size=Decimal("10.0"),        # 10 ETH position (~$22k notional)
+        poi_tolerance=5.0,                 # Within 5 ticks of POI to trigger
+        warmup_ticks=1000,                 # Wait 1000 ticks for indicator warmup
+        # Risk Management
+        tp_pct=0.30,                       # 0.3% take profit
+        sl_pct=0.30,                       # 0.3% stop loss
+        trailing_activation_pct=0.25,      # 0.25% to activate trailing stop
+        trailing_offset_pct=0.10,          # 0.1% trailing offset
+        use_emulated_orders=True,          # Required for backtest
+    )
+
+    # Instantiate and add the strategy
+    strategy = OrderFlowStrategy(config=strategy_config)
     engine.add_strategy(strategy)
-    print("✓ Added strategy")
+    print("✓ Added OrderFlow strategy")
     
     # Run backtest
     print("\n🚀 Running backtest...")
     print("-" * 60)
     engine.run()
     print("-" * 60)
-    
+
     # Print results
     print("\n📈 Backtest Results:")
-    print(f"  - Total trades processed: {strategy.trade_count:,}")
-    
+    print(f"  - Total ticks processed: {strategy._tick_count:,}")
+    print(f"  - Total trades executed: {strategy._trade_count:,}")
+
+    # Generate tearsheet
+    try:
+        from nautilus_trader.analysis import TearsheetConfig
+        from nautilus_trader.analysis.tearsheet import create_tearsheet
+
+        print("\n📊 Generating tearsheet...")
+
+        tearsheet_config = TearsheetConfig(theme="plotly_white")
+
+        create_tearsheet(
+            engine=engine,
+            output_path="ethusdt_backtest_tearsheet.html",
+            config=tearsheet_config,
+        )
+        print("✓ Tearsheet saved to: ethusdt_backtest_tearsheet.html")
+    except ImportError:
+        print("\n⚠️ Plotly not installed. Install with: pip install plotly>=6.3.1")
+
     # Cleanup
+    engine.reset()
     engine.dispose()
     print("\n✅ Backtest complete!")
 
