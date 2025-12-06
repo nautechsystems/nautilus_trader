@@ -17,9 +17,10 @@ class AlpacaInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
 
     Parameters
     ----------
-    load_all : bool, default True
+    load_all : bool, default False
         If all venue instruments should be loaded on start.
         For Alpaca, this loads both US equities and crypto assets.
+        WARNING: This loads thousands of instruments and is slow - prefer using load_ids.
     load_ids : frozenset[InstrumentId], optional
         The list of instrument IDs to be loaded on start (if `load_all` is False).
     filters : frozendict or dict[str, Any], optional
@@ -29,7 +30,7 @@ class AlpacaInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
 
     """
 
-    load_all: bool = True  # Default to True for Alpaca
+    load_all: bool = False  # Default to False - strategies should specify what they need
 
 
 class AlpacaDataClientConfig(LiveDataClientConfig, frozen=True):

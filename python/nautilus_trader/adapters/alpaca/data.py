@@ -154,6 +154,33 @@ class AlpacaDataClient(LiveMarketDataClient):
                 self._stocks_ws_connected = True
                 self._log.info("Alpaca stocks WebSocket connected", LogColor.GREEN)
 
+    async def _ensure_instrument_loaded(self, instrument_id: InstrumentId) -> None:
+        """Ensure an instrument is loaded, loading on-demand if needed."""
+        # Check if already in cache
+        if self._cache.instrument(instrument_id) is not None:
+            return
+
+        # Check if already in provider
+        if self._instrument_provider.find(instrument_id) is not None:
+            # Add to cache
+            instrument = self._instrument_provider.find(instrument_id)
+            self._cache.add_instrument(instrument)
+            self._handle_data(instrument)
+            return
+
+        # Load on-demand from Alpaca
+        self._log.info(f"Loading instrument on-demand: {instrument_id}")
+        await self._instrument_provider.load_async(instrument_id)
+
+        # Add to cache if successfully loaded
+        instrument = self._instrument_provider.find(instrument_id)
+        if instrument is not None:
+            self._cache.add_instrument(instrument)
+            self._handle_data(instrument)
+            self._log.info(f"Loaded instrument: {instrument_id}", LogColor.GREEN)
+        else:
+            self._log.warning(f"Failed to load instrument: {instrument_id}")
+
     async def _connect(self) -> None:
         """Connect the data client."""
         # Connect HTTP client first (needed for instrument provider)
@@ -184,7 +211,12 @@ class AlpacaDataClient(LiveMarketDataClient):
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         """Subscribe to quote ticks for an instrument."""
-        symbol = command.instrument_id.symbol.value
+        instrument_id = command.instrument_id
+        symbol = instrument_id.symbol.value
+
+        # Ensure instrument is loaded (load on-demand if needed)
+        await self._ensure_instrument_loaded(instrument_id)
+
         await self._ensure_ws_connected(symbol)
         ws_client = self._get_ws_client(symbol)
         await ws_client.subscribe_quotes([symbol])
@@ -192,7 +224,12 @@ class AlpacaDataClient(LiveMarketDataClient):
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         """Subscribe to trade ticks for an instrument."""
-        symbol = command.instrument_id.symbol.value
+        instrument_id = command.instrument_id
+        symbol = instrument_id.symbol.value
+
+        # Ensure instrument is loaded (load on-demand if needed)
+        await self._ensure_instrument_loaded(instrument_id)
+
         await self._ensure_ws_connected(symbol)
         ws_client = self._get_ws_client(symbol)
         await ws_client.subscribe_trades([symbol])
@@ -200,7 +237,12 @@ class AlpacaDataClient(LiveMarketDataClient):
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         """Subscribe to bars for an instrument."""
-        symbol = command.bar_type.instrument_id.symbol.value
+        instrument_id = command.bar_type.instrument_id
+        symbol = instrument_id.symbol.value
+
+        # Ensure instrument is loaded (load on-demand if needed)
+        await self._ensure_instrument_loaded(instrument_id)
+
         await self._ensure_ws_connected(symbol)
         ws_client = self._get_ws_client(symbol)
         await ws_client.subscribe_bars([symbol])

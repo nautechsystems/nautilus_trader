@@ -146,10 +146,10 @@ class AlpacaLiveDataClientFactory(LiveDataClientFactory):
             paper=config.paper,
         )
 
-        # Get instrument provider config - use Alpaca default if not specified
+        # Get instrument provider config
+        # Default: load_all=False, instruments are loaded on-demand when subscribed
         instrument_provider_config = config.instrument_provider
-        if instrument_provider_config is None or type(instrument_provider_config) is InstrumentProviderConfig:
-            # Use Alpaca-specific config with load_all=True default
+        if instrument_provider_config is None:
             instrument_provider_config = AlpacaInstrumentProviderConfig()
 
         # Get instrument provider singleton
@@ -217,10 +217,10 @@ class AlpacaLiveExecClientFactory(LiveExecClientFactory):
             paper=config.paper,
         )
 
-        # Get instrument provider config - use Alpaca default if not specified
+        # Get instrument provider config
+        # Default: load_all=False, instruments are loaded on-demand when subscribed
         instrument_provider_config = config.instrument_provider
-        if instrument_provider_config is None or type(instrument_provider_config) is InstrumentProviderConfig:
-            # Use Alpaca-specific config with load_all=True default
+        if instrument_provider_config is None:
             instrument_provider_config = AlpacaInstrumentProviderConfig()
 
         # Get instrument provider singleton

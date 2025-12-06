@@ -129,14 +129,12 @@ class AlpacaInstrumentProvider(InstrumentProvider):
             venue=ALPACA_VENUE,
         )
 
-        # Alpaca doesn't provide lot size info, default to 1
         # Price precision is typically 2 decimals for USD
         price_precision = 2
-        size_precision = 0  # Whole shares (fractional handled separately)
 
         # Default tick size for US equities
         price_increment = Price.from_str("0.01")
-        size_increment = Quantity.from_str("1")
+        lot_size = Quantity.from_str("1")
 
         return Equity(
             instrument_id=instrument_id,
@@ -144,17 +142,15 @@ class AlpacaInstrumentProvider(InstrumentProvider):
             currency=Currency.from_str("USD"),
             price_precision=price_precision,
             price_increment=price_increment,
-            lot_size=size_increment,
+            lot_size=lot_size,
+            ts_event=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
             max_quantity=None,
             min_quantity=Quantity.from_str("1"),
-            max_price=None,
-            min_price=Price.from_str("0.01"),
             margin_init=Decimal("0"),
             margin_maint=Decimal("0"),
             maker_fee=Decimal("0"),
             taker_fee=Decimal("0"),
-            ts_event=self._clock.timestamp_ns(),
-            ts_init=self._clock.timestamp_ns(),
             info=data,  # Store raw data for reference
         )
 

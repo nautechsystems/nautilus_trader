@@ -188,6 +188,30 @@ class AlpacaExecutionClient(LiveExecutionClient):
 
         self._log.info(f"Account state updated: cash={cash} USD")
 
+    async def _ensure_instrument_loaded(self, instrument_id: InstrumentId) -> None:
+        """Ensure an instrument is loaded, loading on-demand if needed."""
+        # Check if already in cache
+        if self._cache.instrument(instrument_id) is not None:
+            return
+
+        # Check if already in provider
+        if self._instrument_provider.find(instrument_id) is not None:
+            instrument = self._instrument_provider.find(instrument_id)
+            self._cache.add_instrument(instrument)
+            return
+
+        # Load on-demand from Alpaca
+        self._log.info(f"Loading instrument on-demand: {instrument_id}")
+        await self._instrument_provider.load_async(instrument_id)
+
+        # Add to cache if successfully loaded
+        instrument = self._instrument_provider.find(instrument_id)
+        if instrument is not None:
+            self._cache.add_instrument(instrument)
+            self._log.info(f"Loaded instrument: {instrument_id}", LogColor.GREEN)
+        else:
+            self._log.warning(f"Failed to load instrument: {instrument_id}")
+
     async def _disconnect(self) -> None:
         """Disconnect the execution client."""
         await self._ws_client.disconnect()
@@ -199,7 +223,11 @@ class AlpacaExecutionClient(LiveExecutionClient):
     async def _submit_order(self, command: SubmitOrder) -> None:
         """Submit an order to Alpaca."""
         order = command.order
-        symbol = order.instrument_id.symbol.value
+        instrument_id = order.instrument_id
+        symbol = instrument_id.symbol.value
+
+        # Ensure instrument is loaded (defensive - should already be loaded by data client)
+        await self._ensure_instrument_loaded(instrument_id)
 
         try:
             # Map order parameters
