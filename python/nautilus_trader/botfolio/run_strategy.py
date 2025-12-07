@@ -56,13 +56,13 @@ def _persist_logs():
         _redis_client.setex(f"bot:{_bot_id}:logs", 86400, log_entry)
     except Exception as e:
         # Last resort - print to original stderr
-        sys.__stderr__.write(f"[TradingEngine] Failed to persist logs: {e}\n")
+        sys.__stderr__.write(f"[Trading Node] Failed to persist logs: {e}\n")
 
 
 def log(message: str):
     """Log a message with timestamp."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    print(f"{ts} [TradingEngine] {message}")
+    print(f"{ts} [Trading Node] {message}")
 
 
 def fetch_from_redis(r: redis.Redis, key: str, max_attempts: int = 10) -> str | None:
