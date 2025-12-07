@@ -18,6 +18,17 @@
 //! This module provides utilities for building and signing Cosmos SDK transactions
 //! for the dYdX v4 protocol, including support for permissioned key trading via
 //! authenticators.
+//!
+//! # Permissioned Keys
+//!
+//! dYdX supports permissioned keys (authenticators) that allow an account to add
+//! custom logic for verifying and confirming transactions. This enables features like:
+//!
+//! - Delegated signing keys for sub-accounts
+//! - Separated hot/cold wallet architectures
+//! - Trading key separation from withdrawal keys
+//!
+//! See <https://docs.dydx.xyz/concepts/trading/authenticators> for details.
 
 use std::fmt::{Debug, Formatter};
 

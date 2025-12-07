@@ -15,11 +15,19 @@
 
 //! [NautilusTrader](http://nautilustrader.io) adapter for the [dYdX](https://dydx.trade/) decentralized derivatives exchange.
 //!
-//! The `nautilus-dydx` crate provides client bindings (HTTP & WebSocket), data
+//! The `nautilus-dydx` crate provides client bindings (HTTP, WebSocket & gRPC), data
 //! models, and helper utilities that wrap the official **dYdX v4 API**.
 //!
-//! The official dYdX v4 documentation can be found at <https://docs.dydx.trade/>.
-//! All public links inside this crate reference the official documentation.
+//! # Official Documentation
+//!
+//! | Resource                             | Reference                                              |
+//! |--------------------------------------|--------------------------------------------------------|
+//! | Main documentation                   | <https://docs.dydx.xyz>                                |
+//! | Indexer HTTP API                     | <https://docs.dydx.exchange/api_integration-indexer/indexer_api> |
+//! | Indexer WebSocket API                | <https://docs.dydx.trade/developers/indexer/websockets> |
+//! | Order types                          | <https://docs.dydx.xyz/concepts/trading/orders>        |
+//! | Permissioned keys                    | <https://docs.dydx.xyz/concepts/trading/authenticators> |
+//! | Validator client (gRPC)              | <https://docs.dydx.exchange/api_integration-clients/validator_client> |
 //!
 //! # Platform
 //!

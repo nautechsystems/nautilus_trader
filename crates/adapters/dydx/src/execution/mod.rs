@@ -14,6 +14,29 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Live execution client implementation for the dYdX adapter.
+//!
+//! This module provides the execution client for submitting orders, cancellations,
+//! and managing positions on dYdX v4.
+//!
+//! # Order Types
+//!
+//! dYdX supports the following order types:
+//!
+//! - **Market**: Execute immediately at best available price
+//! - **Limit**: Execute at specified price or better
+//! - **Stop Market**: Triggered when price crosses stop price, then executes as market order
+//! - **Stop Limit**: Triggered when price crosses stop price, then places limit order
+//! - **Take Profit Market**: Close position at profit target, executes as market order
+//! - **Take Profit Limit**: Close position at profit target, places limit order
+//!
+//! See <https://docs.dydx.xyz/concepts/trading/orders#types> for details.
+//!
+//! # Order Lifetimes
+//!
+//! Orders can be short-term (expire by block height) or long-term/stateful (expire by timestamp).
+//! Conditional orders (Stop/TakeProfit) are always stateful.
+//!
+//! See <https://docs.dydx.xyz/concepts/trading/orders#short-term-vs-long-term> for details.
 
 use std::sync::{
     Arc, Mutex,

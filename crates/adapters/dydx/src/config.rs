@@ -74,6 +74,9 @@ pub struct DydxAdapterConfig {
     /// When provided, transactions will include a TxExtension to enable trading
     /// via sub-accounts using delegated signing keys. This is an advanced feature
     /// for institutional setups with separated hot/cold wallet architectures.
+    ///
+    /// See <https://docs.dydx.xyz/concepts/trading/authenticators> for details on
+    /// permissioned keys and authenticator configuration.
     #[serde(default)]
     pub authenticator_ids: Vec<u64>,
     /// Maximum number of retries for failed requests (default: 3).

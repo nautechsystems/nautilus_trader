@@ -57,6 +57,9 @@ pub enum OrderGoodUntil {
 }
 
 /// Order flags indicating order lifetime and execution type.
+///
+/// See <https://docs.dydx.xyz/concepts/trading/orders#short-term-vs-long-term> for details
+/// on short-term vs long-term (stateful) orders.
 #[derive(Clone, Debug)]
 pub enum OrderFlags {
     /// Short-term order (expires by block height).
@@ -64,6 +67,9 @@ pub enum OrderFlags {
     /// Long-term order (expires by timestamp).
     LongTerm,
     /// Conditional order (triggered by trigger price).
+    ///
+    /// Conditional orders include Stop Market, Stop Limit, Take Profit Market, and Take Profit Limit.
+    /// See <https://docs.dydx.xyz/concepts/trading/orders#types> for details.
     Conditional,
 }
 
