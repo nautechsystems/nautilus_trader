@@ -75,12 +75,20 @@ class VolumeProfile(Indicator):
         self._volume_at_price: dict[float, float] = defaultdict(float)
         self._last_reset_day: int = -1
 
-        # Computed values
-        self.poc: float = 0.0  # Point of Control
-        self.vah: float = 0.0  # Value Area High
-        self.val: float = 0.0  # Value Area Low
-        self.hvn_levels: list[float] = []  # High Volume Nodes
-        self.lvn_levels: list[float] = []  # Low Volume Nodes
+        # Incremental POC tracking (O(1) updates)
+        self._poc_price: float = 0.0
+        self._poc_volume: float = 0.0
+
+        # Cached computed values (lazy evaluation)
+        self._cached_vah: float = 0.0
+        self._cached_val: float = 0.0
+        self._cached_hvn_levels: list[float] = []
+        self._cached_lvn_levels: list[float] = []
+
+        # Dirty flags for lazy evaluation
+        self._value_area_dirty: bool = True
+        self._volume_nodes_dirty: bool = True
+
         self.total_volume: float = 0.0
 
     def _round_to_tick(self, price: float) -> float:
@@ -104,11 +112,14 @@ class VolumeProfile(Indicator):
         """Reset the volume profile data."""
         self._volume_at_price.clear()
         self.total_volume = 0.0
-        self.poc = 0.0
-        self.vah = 0.0
-        self.val = 0.0
-        self.hvn_levels = []
-        self.lvn_levels = []
+        self._poc_price = 0.0
+        self._poc_volume = 0.0
+        self._cached_vah = 0.0
+        self._cached_val = 0.0
+        self._cached_hvn_levels = []
+        self._cached_lvn_levels = []
+        self._value_area_dirty = True
+        self._volume_nodes_dirty = True
 
     def handle_trade_tick(self, tick: TradeTick) -> None:
         """Update the indicator with a trade tick."""
@@ -123,7 +134,14 @@ class VolumeProfile(Indicator):
         self._volume_at_price[price] += volume
         self.total_volume += volume
 
-        self._update_calculations()
+        # Incremental POC update (O(1) instead of O(n))
+        if self._volume_at_price[price] > self._poc_volume:
+            self._poc_price = price
+            self._poc_volume = self._volume_at_price[price]
+
+        # Mark cached values as dirty (lazy evaluation)
+        self._value_area_dirty = True
+        self._volume_nodes_dirty = True
 
         if not self.initialized:
             self._set_has_inputs(True)
@@ -144,40 +162,78 @@ class VolumeProfile(Indicator):
         self._volume_at_price[price] += volume
         self.total_volume += volume
 
-        self._update_calculations()
+        # Incremental POC update (O(1) instead of O(n))
+        if self._volume_at_price[price] > self._poc_volume:
+            self._poc_price = price
+            self._poc_volume = self._volume_at_price[price]
+
+        # Mark cached values as dirty (lazy evaluation)
+        self._value_area_dirty = True
+        self._volume_nodes_dirty = True
 
         if not self.initialized:
             self._set_has_inputs(True)
             self._set_initialized(True)
 
-    def _update_calculations(self) -> None:
-        """Recalculate POC, VAH, VAL, HVN, and LVN."""
-        if not self._volume_at_price:
-            return
+    # Properties with lazy evaluation
+    @property
+    def poc(self) -> float:
+        """Point of Control (price with highest volume) - computed incrementally."""
+        return self._poc_price
 
-        # Find POC (price with highest volume)
-        self.poc = max(self._volume_at_price, key=self._volume_at_price.get)
+    @property
+    def vah(self) -> float:
+        """Value Area High - computed lazily when accessed."""
+        if self._value_area_dirty:
+            self._calculate_value_area()
+        return self._cached_vah
 
-        # Calculate Value Area (VAH/VAL)
-        self._calculate_value_area()
+    @property
+    def val(self) -> float:
+        """Value Area Low - computed lazily when accessed."""
+        if self._value_area_dirty:
+            self._calculate_value_area()
+        return self._cached_val
 
-        # Calculate HVN and LVN
-        self._calculate_volume_nodes()
+    @property
+    def hvn_levels(self) -> list[float]:
+        """High Volume Nodes - computed lazily when accessed."""
+        if self._volume_nodes_dirty:
+            self._calculate_volume_nodes()
+        return self._cached_hvn_levels
+
+    @property
+    def lvn_levels(self) -> list[float]:
+        """Low Volume Nodes - computed lazily when accessed."""
+        if self._volume_nodes_dirty:
+            self._calculate_volume_nodes()
+        return self._cached_lvn_levels
 
     def _calculate_value_area(self) -> None:
-        """Calculate Value Area High and Low."""
+        """Calculate Value Area High and Low (lazy evaluation)."""
         if self.total_volume == 0:
+            self._cached_vah = 0.0
+            self._cached_val = 0.0
+            self._value_area_dirty = False
             return
 
         target_volume = self.total_volume * self.value_area_pct
         sorted_prices = sorted(self._volume_at_price.keys())
 
         if not sorted_prices:
+            self._cached_vah = 0.0
+            self._cached_val = 0.0
+            self._value_area_dirty = False
             return
 
         # Start from POC and expand outward
-        poc_idx = sorted_prices.index(self.poc)
-        accumulated_volume = self._volume_at_price[self.poc]
+        try:
+            poc_idx = sorted_prices.index(self._poc_price)
+        except ValueError:
+            # POC not in sorted prices (shouldn't happen, but handle gracefully)
+            poc_idx = 0
+
+        accumulated_volume = self._volume_at_price[sorted_prices[poc_idx]]
 
         low_idx = poc_idx
         high_idx = poc_idx
@@ -203,25 +259,31 @@ class VolumeProfile(Indicator):
             else:
                 break
 
-        self.val = sorted_prices[low_idx]
-        self.vah = sorted_prices[high_idx]
+        self._cached_val = sorted_prices[low_idx]
+        self._cached_vah = sorted_prices[high_idx]
+        self._value_area_dirty = False
 
     def _calculate_volume_nodes(self) -> None:
-        """Calculate High Volume Nodes and Low Volume Nodes."""
+        """Calculate High Volume Nodes and Low Volume Nodes (lazy evaluation)."""
         if not self._volume_at_price:
+            self._cached_hvn_levels = []
+            self._cached_lvn_levels = []
+            self._volume_nodes_dirty = False
             return
 
         avg_volume = self.total_volume / len(self._volume_at_price)
 
-        self.hvn_levels = [
+        self._cached_hvn_levels = [
             price for price, volume in self._volume_at_price.items()
             if volume >= avg_volume * self.hvn_threshold
         ]
 
-        self.lvn_levels = [
+        self._cached_lvn_levels = [
             price for price, volume in self._volume_at_price.items()
             if volume <= avg_volume * self.lvn_threshold
         ]
+
+        self._volume_nodes_dirty = False
 
     def get_volume_at_price(self, price: float) -> float:
         """Get volume at a specific price level."""

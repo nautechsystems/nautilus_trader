@@ -86,13 +86,14 @@ class StackedImbalanceDetector(Indicator):
         self._bid_volume: dict[float, float] = defaultdict(float)
         self._ask_volume: dict[float, float] = defaultdict(float)
 
-        # Current detected stacked imbalances
-        self.stacked_ask_imbalances: list[StackedImbalance] = []
-        self.stacked_bid_imbalances: list[StackedImbalance] = []
+        # Cached detected stacked imbalances (lazy evaluation)
+        self._cached_stacked_ask_imbalances: list[StackedImbalance] = []
+        self._cached_stacked_bid_imbalances: list[StackedImbalance] = []
+        self._cached_last_signal: ImbalanceType = ImbalanceType.NONE
+        self._cached_last_stacked_imbalance: Optional[StackedImbalance] = None
 
-        # Latest signal
-        self.last_signal: ImbalanceType = ImbalanceType.NONE
-        self.last_stacked_imbalance: Optional[StackedImbalance] = None
+        # Dirty flag for lazy evaluation
+        self._stacked_imbalances_dirty: bool = True
 
     def _round_to_tick(self, price: float) -> float:
         """Round price to nearest tick size."""
@@ -117,8 +118,8 @@ class StackedImbalanceDetector(Indicator):
         elif tick.aggressor_side == AggressorSide.SELLER:
             self._bid_volume[price] += volume
 
-        # Detect stacked imbalances after each update
-        self._detect_stacked_imbalances()
+        # Mark stacked imbalances as dirty (lazy evaluation - only detect when accessed)
+        self._stacked_imbalances_dirty = True
 
         if not self.initialized:
             self._set_has_inputs(True)
@@ -149,12 +150,41 @@ class StackedImbalanceDetector(Indicator):
 
         return ImbalanceType.NONE
 
+    # Properties with lazy evaluation
+    @property
+    def stacked_ask_imbalances(self) -> list[StackedImbalance]:
+        """Stacked ask imbalances - computed lazily when accessed."""
+        if self._stacked_imbalances_dirty:
+            self._detect_stacked_imbalances()
+        return self._cached_stacked_ask_imbalances
+
+    @property
+    def stacked_bid_imbalances(self) -> list[StackedImbalance]:
+        """Stacked bid imbalances - computed lazily when accessed."""
+        if self._stacked_imbalances_dirty:
+            self._detect_stacked_imbalances()
+        return self._cached_stacked_bid_imbalances
+
+    @property
+    def last_signal(self) -> ImbalanceType:
+        """Last signal - computed lazily when accessed."""
+        if self._stacked_imbalances_dirty:
+            self._detect_stacked_imbalances()
+        return self._cached_last_signal
+
+    @property
+    def last_stacked_imbalance(self) -> Optional[StackedImbalance]:
+        """Last stacked imbalance - computed lazily when accessed."""
+        if self._stacked_imbalances_dirty:
+            self._detect_stacked_imbalances()
+        return self._cached_last_stacked_imbalance
+
     def _detect_stacked_imbalances(self) -> None:
-        """Detect stacked imbalances across consecutive price levels."""
-        self.stacked_ask_imbalances.clear()
-        self.stacked_bid_imbalances.clear()
-        self.last_signal = ImbalanceType.NONE
-        self.last_stacked_imbalance = None
+        """Detect stacked imbalances across consecutive price levels (lazy evaluation)."""
+        self._cached_stacked_ask_imbalances.clear()
+        self._cached_stacked_bid_imbalances.clear()
+        self._cached_last_signal = ImbalanceType.NONE
+        self._cached_last_stacked_imbalance = None
 
         # Get all price levels and sort them
         all_prices = sorted(set(self._bid_volume.keys()) | set(self._ask_volume.keys()))
@@ -191,12 +221,12 @@ class StackedImbalanceDetector(Indicator):
                         total_delta=stack_delta,
                     )
                     if current_type == ImbalanceType.ASK_IMBALANCE:
-                        self.stacked_ask_imbalances.append(stacked)
+                        self._cached_stacked_ask_imbalances.append(stacked)
                     else:
-                        self.stacked_bid_imbalances.append(stacked)
+                        self._cached_stacked_bid_imbalances.append(stacked)
 
-                    self.last_signal = current_type
-                    self.last_stacked_imbalance = stacked
+                    self._cached_last_signal = current_type
+                    self._cached_last_stacked_imbalance = stacked
 
                 # Start new stack
                 if imb_type != ImbalanceType.NONE:
@@ -219,12 +249,15 @@ class StackedImbalanceDetector(Indicator):
                 total_delta=stack_delta,
             )
             if current_type == ImbalanceType.ASK_IMBALANCE:
-                self.stacked_ask_imbalances.append(stacked)
+                self._cached_stacked_ask_imbalances.append(stacked)
             else:
-                self.stacked_bid_imbalances.append(stacked)
+                self._cached_stacked_bid_imbalances.append(stacked)
 
-            self.last_signal = current_type
-            self.last_stacked_imbalance = stacked
+            self._cached_last_signal = current_type
+            self._cached_last_stacked_imbalance = stacked
+
+        # Mark as clean
+        self._stacked_imbalances_dirty = False
 
     @property
     def has_bullish_signal(self) -> bool:
@@ -240,10 +273,11 @@ class StackedImbalanceDetector(Indicator):
         """Clear all volume data and signals."""
         self._bid_volume.clear()
         self._ask_volume.clear()
-        self.stacked_ask_imbalances.clear()
-        self.stacked_bid_imbalances.clear()
-        self.last_signal = ImbalanceType.NONE
-        self.last_stacked_imbalance = None
+        self._cached_stacked_ask_imbalances.clear()
+        self._cached_stacked_bid_imbalances.clear()
+        self._cached_last_signal = ImbalanceType.NONE
+        self._cached_last_stacked_imbalance = None
+        self._stacked_imbalances_dirty = True
 
     def _reset(self) -> None:
         """Reset the indicator."""

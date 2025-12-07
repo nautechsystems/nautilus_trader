@@ -103,9 +103,13 @@ class FootprintAggregator(Indicator):
         self.buy_volume: float = 0.0
         self.sell_volume: float = 0.0
 
-        # POC for current footprint
+        # POC for current footprint (incremental tracking - already optimized)
         self.poc_price: float = 0.0
         self.poc_volume: float = 0.0
+
+        # Cached imbalanced levels (lazy evaluation)
+        self._cached_imbalanced_levels: dict[float, str] = {}
+        self._imbalanced_levels_dirty: bool = True
 
     def _round_to_tick(self, price: float) -> float:
         """Round price to nearest tick size."""
@@ -151,10 +155,13 @@ class FootprintAggregator(Indicator):
 
         self.total_volume += volume
 
-        # Update POC
+        # Update POC (incremental - O(1))
         if level.total_volume > self.poc_volume:
             self.poc_volume = level.total_volume
             self.poc_price = rounded_price
+
+        # Mark imbalanced levels as dirty (lazy evaluation)
+        self._imbalanced_levels_dirty = True
 
         if not self.initialized:
             self._set_has_inputs(True)
@@ -167,13 +174,19 @@ class FootprintAggregator(Indicator):
 
     def get_imbalanced_levels(self) -> dict[float, str]:
         """
-        Get all price levels with significant imbalance.
+        Get all price levels with significant imbalance (lazy evaluation).
 
         Returns
         -------
         dict[float, str]
             Price -> 'BID' or 'ASK' indicating which side dominates.
         """
+        if self._imbalanced_levels_dirty:
+            self._calculate_imbalanced_levels()
+        return self._cached_imbalanced_levels
+
+    def _calculate_imbalanced_levels(self) -> None:
+        """Calculate imbalanced levels (only when needed)."""
         imbalances = {}
         for price, level in self._levels.items():
             if level.ask_volume > 0 and level.bid_volume > 0:
@@ -186,7 +199,9 @@ class FootprintAggregator(Indicator):
                 imbalances[price] = 'ASK'
             elif level.bid_volume > 0 and level.ask_volume == 0:
                 imbalances[price] = 'BID'
-        return imbalances
+
+        self._cached_imbalanced_levels = imbalances
+        self._imbalanced_levels_dirty = False
 
     def get_all_levels(self) -> dict[float, FootprintLevel]:
         """Return a copy of all footprint levels."""
@@ -205,6 +220,8 @@ class FootprintAggregator(Indicator):
         self.sell_volume = 0.0
         self.poc_price = 0.0
         self.poc_volume = 0.0
+        self._cached_imbalanced_levels = {}
+        self._imbalanced_levels_dirty = True
 
     def _reset(self) -> None:
         """Reset the indicator."""
