@@ -29,12 +29,12 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     api_key : str, optional
         The Kraken API public key.
         If ``None`` then will source from environment variables:
-        - Spot: `KRAKEN_SPOT_API_KEY`
+        - Spot: `KRAKEN_SPOT_API_KEY` or `KRAKEN_SPOT_TESTNET_API_KEY`
         - Futures: `KRAKEN_FUTURES_API_KEY` or `KRAKEN_FUTURES_TESTNET_API_KEY`
     api_secret : str, optional
         The Kraken API secret key.
         If ``None`` then will source from environment variables:
-        - Spot: `KRAKEN_SPOT_API_SECRET`
+        - Spot: `KRAKEN_SPOT_API_SECRET` or `KRAKEN_SPOT_TESTNET_API_SECRET`
         - Futures: `KRAKEN_FUTURES_API_SECRET` or `KRAKEN_FUTURES_TESTNET_API_SECRET`
     environment : KrakenEnvironment, optional
         The Kraken environment to connect to.
@@ -97,12 +97,12 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
     api_key : str, optional
         The Kraken API public key.
         If ``None`` then will source from environment variables:
-        - Spot: `KRAKEN_SPOT_API_KEY`
+        - Spot: `KRAKEN_SPOT_API_KEY` or `KRAKEN_SPOT_TESTNET_API_KEY`
         - Futures: `KRAKEN_FUTURES_API_KEY` or `KRAKEN_FUTURES_TESTNET_API_KEY`
     api_secret : str, optional
         The Kraken API secret key.
         If ``None`` then will source from environment variables:
-        - Spot: `KRAKEN_SPOT_API_SECRET`
+        - Spot: `KRAKEN_SPOT_API_SECRET` or `KRAKEN_SPOT_TESTNET_API_SECRET`
         - Futures: `KRAKEN_FUTURES_API_SECRET` or `KRAKEN_FUTURES_TESTNET_API_SECRET`
     environment : KrakenEnvironment, optional
         The Kraken environment to connect to.

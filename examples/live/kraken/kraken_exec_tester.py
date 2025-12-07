@@ -39,12 +39,12 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 
 # Configuration - Change product_type to switch between trading modes
 product_type = KrakenProductType.SPOT  # SPOT or FUTURES
-token = "ETH"
+token = "ATOM"
 
 # Symbol and settings based on product type
 if product_type == KrakenProductType.SPOT:
-    symbol = f"{token}/USDT"
-    order_qty = Decimal("0.001")
+    symbol = f"{token}/USDC"
+    order_qty = Decimal("0.5")
     enable_sells = False  # May not own base token when starting fresh
     reduce_only_on_stop = False  # Not supported on spot
     use_spot_position_reports = True
@@ -90,8 +90,8 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         KRAKEN: KrakenDataClientConfig(
-            api_key=None,  # 'KRAKEN_API_KEY' env var
-            api_secret=None,  # 'KRAKEN_API_SECRET' env var
+            api_key=None,  # 'KRAKEN_SPOT_API_KEY' env var
+            api_secret=None,  # 'KRAKEN_SPOT_API_SECRET' env var
             environment=environment,
             product_types=product_types,
             instrument_provider=InstrumentProviderConfig(load_all=True),
@@ -99,13 +99,13 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         KRAKEN: KrakenExecClientConfig(
-            api_key=None,  # 'KRAKEN_API_KEY' env var
-            api_secret=None,  # 'KRAKEN_API_SECRET' env var
+            api_key=None,  # 'KRAKEN_SPOT_API_KEY' env var
+            api_secret=None,  # 'KRAKEN_SPOT_API_SECRET' env var
             environment=environment,
             product_types=product_types,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             use_spot_position_reports=use_spot_position_reports,
-            spot_positions_quote_currency="USDT",
+            spot_positions_quote_currency="USDC",
         ),
     },
     timeout_connection=30.0,

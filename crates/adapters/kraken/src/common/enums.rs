@@ -108,10 +108,10 @@ pub enum KrakenProductType {
 pub enum KrakenOrderType {
     Market,
     Limit,
-    #[serde(rename = "stop-loss")]
+    #[serde(rename = "stop-loss", alias = "stop market")]
     #[strum(serialize = "stop-loss")]
     StopLoss,
-    #[serde(rename = "take-profit")]
+    #[serde(rename = "take-profit", alias = "take profit")]
     #[strum(serialize = "take-profit")]
     TakeProfit,
     #[serde(rename = "stop-loss-limit")]

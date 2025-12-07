@@ -48,8 +48,8 @@ def get_cached_kraken_spot_http_client(
     Cache and return a Kraken Spot HTTP client.
 
     If ``api_key`` and ``api_secret`` are ``None``, then they will be sourced from the
-    environment variables ``KRAKEN_API_KEY`` and ``KRAKEN_API_SECRET`` (or
-    ``KRAKEN_TESTNET_API_KEY`` and ``KRAKEN_TESTNET_API_SECRET`` if testnet is True).
+    environment variables ``KRAKEN_SPOT_API_KEY`` and ``KRAKEN_SPOT_API_SECRET`` (or
+    ``KRAKEN_SPOT_TESTNET_API_KEY`` and ``KRAKEN_SPOT_TESTNET_API_SECRET`` if testnet is True).
 
     If a cached client with matching parameters already exists, the cached client will be returned.
 
