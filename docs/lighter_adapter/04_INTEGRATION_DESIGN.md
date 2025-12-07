@@ -2,6 +2,12 @@
 
 ## Integration Design: Nautilus ↔ Lighter Mapping
 
+### Validation notes
+- Signing algorithm + payload hashing are **unknown**; do not implement `sendTx`/`sendTxBatch` until testnet captures confirm curve/hash/encoding.
+- Auth token requirement for private REST + WS is **unsettled**; plan for token support and feature-flag until validated.
+- WS channel naming/schemas need confirmation (`order_book/0` vs `order_book:0`, field names, snapshot vs delta behavior).
+- Fee schedule differs across sources; avoid hardcoded maker/taker until verified from live responses.
+
 ### Concept Mapping Matrix
 
 #### Instruments
@@ -47,7 +53,7 @@
 
 | Nautilus Type | Lighter Source | Channel |
 |--------------|----------------|---------|
-| `OrderBookDelta` | order_book WS | `order_book/{market_index}` |
+| `OrderBookDelta` | order_book WS | `order_book/{market_index}` *(channel name TBD: `/` vs `:`)* |
 | `TradeTick` | trade WS | `trade/{market_index}` |
 | `QuoteTick` | Derived from order_book | Best bid/ask from book |
 | `Bar` | candlesticks REST | `/api/v1/candlesticks` |
@@ -81,8 +87,8 @@ sequenceDiagram
     Strategy->>DataClient: subscribe_order_book(BTCUSD-PERP)
     DataClient->>DataClient: REST: GET /orderBookDetails
     DataClient->>DataClient: Build initial book snapshot
-    DataClient->>WSClient: subscribe("order_book/0")
-    WSClient->>Lighter: {"type":"subscribe","channel":"order_book/0"}
+    DataClient->>WSClient: subscribe("order_book/0")  %% channel delimiter to confirm
+    WSClient->>Lighter: {"type":"subscribe","channel":"order_book/0"}  %% payload schema to confirm
     
     loop Order Book Updates
         Lighter-->>WSClient: {"type":"update/order_book",...}
@@ -107,7 +113,7 @@ sequenceDiagram
 
     Strategy->>ExecClient: submit_order(LimitOrder)
     ExecClient->>ExecClient: Map to Lighter format
-    ExecClient->>ExecClient: Get/increment nonce
+    ExecClient->>ExecClient: Get/increment nonce  %% signing + payload hashing TBD
     ExecClient->>HTTPClient: POST /sendTx (signed)
     HTTPClient->>Lighter: Submit transaction
     Lighter-->>HTTPClient: {"tx_hash": "..."}

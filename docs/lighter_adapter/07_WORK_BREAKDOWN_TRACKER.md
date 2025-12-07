@@ -23,7 +23,7 @@
 
 ### Milestone 2: Market Data (Week 2)
 
-**Definition of Done**: Live order book and trade feeds working
+**Definition of Done**: Live order book and trade feeds working (public)
 
 - [ ] **PR2: WebSocket + Data Client**
   - [ ] WebSocket client with reconnect
@@ -33,11 +33,21 @@
   - [ ] Offset sequencing
   - [ ] Snapshot fetch + delta sync
   - [ ] Data client implementation
-  - [ ] Integration test: order book sync
+  - [ ] Integration test: order book sync (fixture-backed)
+
+### Milestone 2.5: Validation Spike (Week 2)
+
+**Definition of Done**: Signing/auth/WS schema questions answered with real captures
+
+- [ ] Capture successful `sendTx` request/response (hashing + signing recipe)
+- [ ] Confirm whether auth token is required for private REST + WS
+- [ ] Record WS payloads to lock channel names and snapshot/delta semantics
+- [ ] Store redacted fixtures under `tests/test_data/lighter/{http,ws}/`
+- [ ] Write doc update summarizing validated behaviors
 
 ### Milestone 3: Execution (Week 3)
 
-**Definition of Done**: Can place and cancel orders
+**Definition of Done**: Can place and cancel orders (gated on Validation Spike)
 
 - [ ] **PR3: Execution Client**
   - [ ] Nonce manager
@@ -79,12 +89,12 @@
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
+| Signing algorithm unknown | High | High | Validation spike to capture real `sendTx` requests |
+| Auth token requirement unclear | High | Medium | Implement token path; test both token/no-token during validation |
+| WS schema/channel mismatch | Medium | Medium | Record payloads and adjust parsers before releasing |
+| Fee schedule inconsistency | Medium | Medium | Avoid hardcoding; prefer exchange-reported fees once confirmed |
 | Standard rate limits too restrictive | High | Medium | Recommend Premium accounts; implement strict throttling |
-| Missing error code docs | Medium | High | Build error catalog through testing; contact Lighter support |
-| Nonce race conditions | High | Medium | Implement mutex on nonce access; persist atomically |
-| WS no snapshot | Medium | Certain | Always fetch REST snapshot first |
-| Auth token expiry | Medium | Medium | Proactive refresh at 7 hours |
-| Testnet != Mainnet behavior | Medium | Low | Test on mainnet with small amounts |
+| Testnet != Mainnet behavior | Medium | Low | Test on mainnet with minimal size post-validation |
 
 ---
 
@@ -92,16 +102,16 @@
 
 | # | Question | Priority | Validation Method |
 |---|----------|----------|-------------------|
-| 1 | Complete error code enumeration | High | Contact Lighter support; test all error paths |
-| 2 | WebSocket ping/pong requirements | High | Monitor connection stability; test without keepalive |
-| 3 | Can WS deliver initial snapshot? | Medium | Test subscription without prior REST fetch |
-| 4 | Nonce behavior on API key rotation | Medium | Test with new key after old key used |
-| 5 | Batch transaction limits | Medium | Test sendTxBatch with &gt;50 txs |
-| 6 | Premium account upgrade time | Low | Check if immediate or delayed |
-| 7 | Testnet reliability SLA | Medium | Monitor testnet availability |
-| 8 | Funding payment timing precision | Medium | Observe funding events timing |
-| 9 | Self-trade prevention details | Low | Test crossing own orders |
-| 10 | Maximum orders per account | Medium | Check accountLimits endpoint |
+| 1 | Signing algorithm + payload hashing for `sendTx` | High | Capture successful tx and reproduce signature |
+| 2 | Are auth tokens required for private REST/WS? | High | Attempt with/without token on testnet |
+| 3 | Exact WS channel names and payload schemas | High | Subscribe and record messages (`order_book/0` vs `order_book:0`) |
+| 4 | Do WS channels emit snapshots on subscribe? | High | Observe initial messages and compare to REST snapshot |
+| 5 | Fee schedule (Standard vs Premium) | Medium | Confirm via support or live fills; prefer exchange-reported fees |
+| 6 | Nonce persistence/recovery rules | Medium | Force mismatch and use `nextNonce` (or equivalent) to reconcile |
+| 7 | Batch transaction limits and error behavior | Medium | Test `sendTxBatch` with varying sizes |
+| 8 | Funding payment timing/precision | Medium | Observe funding events and compare to docs |
+| 9 | WS ping/pong expectations | Low | Monitor keepalive needs; add client-side ping if required |
+| 10 | Max orders per account / throttling | Low | Probe limits on testnet and document behavior |
 
 ---
 

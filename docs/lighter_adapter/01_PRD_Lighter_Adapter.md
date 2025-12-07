@@ -4,13 +4,14 @@
 
 ### Background & Goals
 
-**Background**: Nautilus Trader is a high-performance algorithmic trading platform supporting multiple venues. Lighter Exchange is an emerging zk-rollup-based perpetual DEX offering low fees (0% maker/taker for Standard accounts) and cryptographic trade settlement. Adding Lighter expands Nautilus's DEX coverage alongside existing dYdX and Hyperliquid adapters.
+**Background**: Nautilus Trader is a high-performance algorithmic trading platform supporting multiple venues. Lighter Exchange is an emerging zk-rollup-based perpetual DEX with on-chain order book matching and cryptographic settlement. Fee levels remain **TBD** (docs conflict on maker/taker rates). Adding Lighter expands Nautilus's DEX coverage alongside existing dYdX and Hyperliquid adapters.
 
 **Goals**:
 - Enable Nautilus users to trade perpetual futures on Lighter Exchange
 - Maintain Nautilus's high code quality standards (strong typing, deterministic state, testability)
 - Support both live trading and backtesting workflows
 - Achieve sub-second order round-trip latency on Premium accounts
+- Follow the Rust-first blueprint: Rust adapter crate + PyO3 bindings with a thin Python layer for configs/factories/tests
 
 ### Non-Goals (Explicitly Excluded from v1)
 
@@ -85,6 +86,8 @@
 
 ### Acceptance Criteria
 
+- [ ] Validation spike completed: signing algorithm, auth token requirement, WS schemas documented with fixtures
+- [ ] Fixtures stored under `tests/test_data/lighter/{http,ws}/` for public/private flows
 - [ ] Can load all Lighter perpetual instruments
 - [ ] Order book stays synchronized within 100ms of exchange state
 - [ ] Can submit and cancel limit orders successfully
@@ -95,12 +98,12 @@
 
 ### Dependencies
 
-| Dependency | Purpose | Version |
-|------------|---------|---------|
-| `websockets` | WebSocket client | &gt;=12.0 |
-| `aiohttp` | Async HTTP client | &gt;=3.9 |
-| `msgspec` | Fast JSON parsing | &gt;=0.18 |
-| `lighter-sdk` (optional) | Reference for signing | latest |
+| Dependency | Purpose | Notes |
+|------------|---------|-------|
+| `crates/lighter` (new) | Rust adapter crate | Core client logic + WS/REST, designed for reuse from Python |
+| `PyO3` | Python bindings | Expose Rust adapter to Python entry points |
+| Python layer | Configs/factories/tests | Keep dependencies minimal; reuse existing Nautilus infra |
+| Test fixtures | Captured HTTP/WS JSON | Store under `tests/test_data/lighter/` for reproducibility |
 
 ### Rollout Plan
 
@@ -109,5 +112,13 @@
 | **Alpha** | Internal testing | Basic order flow works on testnet |
 | **Beta** | Limited users | Market data + execution stable for 1 week |
 | **GA** | Public release | Full test coverage, docs complete |
+
+### Validation Gates (must resolve before execution/private flows)
+
+- Confirm signing algorithm + payload hashing for `sendTx` (ECDSA vs EdDSA, message structure)
+- Confirm whether auth tokens are required for `/api/v1/account`, private WS, and `sendTx`
+- Capture real WS payloads to lock channel naming, schemas, and snapshot/delta semantics
+- Verify fee schedule (Standard vs Premium) from live responses or support
+- Validate `orderBooks` metadata maps cleanly to `CryptoPerpetual` instruments
 
 ---

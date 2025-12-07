@@ -2,6 +2,16 @@
 
 ## Testing Plan
 
+### Validation Spike (must precede execution/private work)
+
+- Run on testnet with throwaway keys to capture:
+  - Successful `sendTx` (and/or `sendTxBatch`) request/response to confirm signing, hashing, and
+    nonce behavior.
+  - Private REST/WS access patterns (whether tokens are required) and channel naming/payload schemas.
+  - Public WS snapshot/delta behavior and offset gap rules.
+- Store redacted captures under `tests/test_data/lighter/{http,ws}/`; drive contract/integration
+  tests from these fixtures rather than live endpoints.
+
 ### Unit Tests
 
 **Coverage Target**: &gt;80% for parsers, mappers, state machines
@@ -53,18 +63,19 @@ async def test_orderbooks_response_schema():
 
 ### Integration Tests
 
-**Environment**: Lighter Testnet (`https://testnet.zklighter.elliot.ai`)
+**Environment**: Prefer fixture-driven tests; use testnet only for the validation spike and periodic
+drift checks.
 
-| Test Case | Description |
-|-----------|-------------|
-| `test_load_instruments` | Load all instruments successfully |
-| `test_subscribe_order_book` | Receive order book updates |
-| `test_subscribe_trades` | Receive trade events |
-| `test_submit_limit_order` | Place and verify limit order |
-| `test_cancel_order` | Cancel and verify cancellation |
-| `test_full_fill` | Order fills completely |
-| `test_partial_fill` | Order fills partially |
-| `test_account_balance` | Balance updates correctly |
+| Phase | Test Case | Description |
+|-------|-----------|-------------|
+| Public (pre-validation) | `test_load_instruments` | Load all instruments successfully |
+|  | `test_subscribe_order_book` | Receive order book updates (using captured snapshot/deltas) |
+|  | `test_subscribe_trades` | Receive trade events |
+| Private (post-validation) | `test_submit_limit_order` | Place and verify limit order (fixture or gated env) |
+|  | `test_cancel_order` | Cancel and verify cancellation |
+|  | `test_full_fill` | Order fills completely |
+|  | `test_partial_fill` | Order fills partially |
+|  | `test_account_balance` | Balance updates correctly |
 
 ### Failure Mode Tests
 

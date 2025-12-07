@@ -16,6 +16,9 @@
 
 **Secondary Reference**: **Hyperliquid** — Most recent DEX adapter (v1.220.0), similar architecture
 
+**Implementation Approach**: Rust-first adapter crate with PyO3 bindings; Python layer is kept thin
+(configs/factories/tests). Avoid new Python networking deps unless proven necessary.
+
 ### Adapter Surface Area Components
 
 ```
@@ -235,5 +238,8 @@ tests/test_data/lighter/
 ├── ws_trade_update.json
 └── ws_account_orders_update.json
 ```
+
+**Fixture-first**: After the validation spike, prefer recorded HTTP/WS fixtures for both Rust and
+Python tests to avoid brittle live dependencies.
 
 ---

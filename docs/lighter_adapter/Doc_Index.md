@@ -2,7 +2,7 @@
 
 ## Document Index
 
-This engineering discovery pack contains all documentation required to implement a Lighter Exchange perpetual DEX adapter for the Nautilus Trader framework. All documents are ready to drop into `/docs/lighter_adapter/`.
+This engineering discovery pack contains all documentation required to implement a Lighter Exchange perpetual DEX adapter for the Nautilus Trader framework. The markdown files are the blueprint (Rust core + PyO3) and day-to-day runbook/checklist. All documents are ready to drop into `/docs/lighter_adapter/`.
 
 ## Reading Order
 
@@ -19,16 +19,16 @@ This engineering discovery pack contains all documentation required to implement
 
 | Priority | Unknown | Resolution Method |
 |----------|---------|-------------------|
-| 1 | **Testnet credentials working** | Obtain credentials, test auth flow |
-| 2 | **Complete error code list** | Contact Lighter support; catalog through testing |
-| 3 | **WebSocket keepalive requirements** | Test connection stability without ping |
-| 4 | **Order book snapshot strategy** | Confirm REST-first approach works |
-| 5 | **Nonce persistence strategy** | Decide: file-based vs in-memory with fetch |
-| 6 | **Standard vs Premium rate limits impact** | Benchmark with Standard account |
-| 7 | **Auth token refresh timing** | Test refresh at various intervals |
-| 8 | **Offset gap detection reliability** | Artificially induce gaps, verify detection |
-| 9 | **sendTxBatch error handling** | Test with intentionally invalid transactions |
-| 10 | **Funding payment precision** | Observe actual funding events vs docs |
+| 1 | **Signing algorithm + tx serialization** | Capture real `sendTx` requests on testnet; confirm curve/hash/encoding with successful submission |
+| 2 | **Auth token necessity** | Attempt private REST + WS + `sendTx` with/without token; align on requirement based on captures |
+| 3 | **WS channel naming + schema** | Subscribe on testnet and record payloads (`order_book/0` vs `order_book:0`, field naming) |
+| 4 | **Snapshot/delta semantics** | Validate whether WS ever sends snapshots, and the exact offset/gap recovery rules |
+| 5 | **Instrument mapping correctness** | Verify `orderBooks` fields map cleanly to `CryptoPerpetual` (price/size decimals, min sizes) |
+| 6 | **Fee schedule (standard vs premium)** | Confirm maker/taker rates from live responses or support; avoid hardcoding until verified |
+| 7 | **Rate limit behavior** | Benchmark Standard vs Premium throttling; set client defaults accordingly |
+| 8 | **Nonce fetch/update semantics** | Exercise `nextNonce` (or equivalent) across multiple submissions and restarts |
+| 9 | **Error code taxonomy** | Build catalog from live failures; reconcile with any official docs/support replies |
+| 10 | **Funding timing/precision** | Observe funding events vs documented schedule to ensure correct accrual + reporting |
 
 ## Key Source Links
 

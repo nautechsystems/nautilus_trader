@@ -2,39 +2,51 @@
 
 ## Executive Summary: Lighter Exchange Adapter for Nautilus Trader
 
-**What We're Building**: A complete perpetual futures adapter enabling Nautilus Trader to trade on Lighter Exchange—a zk-rollup-based decentralized perpetual DEX with on-chain order book matching and cryptographic settlement verification.
+**Source of truth**: This markdown is the implementation blueprint (Rust core + PyO3/Python layer)
+and quick-start/runbook distilled from the latest discovery notes.
 
-**Scope**: Full integration covering market data (order books, trades, funding rates), execution (limit/market/stop orders), and account management (positions, margin, PnL reconciliation). Initial release targets Python-first implementation with optional Rust core components for performance-critical paths.
+**What we're building**: A perpetual futures adapter for Lighter Exchange (zk-rollup DEX) that
+follows the standard Nautilus pattern: Rust adapter crate + PyO3 bindings + thin Python wrapper
+for configs/factories/tests.
 
-**Key Architecture Decision**: Use **dYdX** and **Hyperliquid** adapters as primary reference implementations—both are perp DEX adapters with similar wallet-based authentication patterns and funding rate streams.
+**Scope we can start now**: scaffolding, instrument discovery from public REST, and public market
+data with offset tracking. Execution/private streams require validation first.
 
 ### Critical Technical Facts
 
-| Aspect | Lighter Specification |
-|--------|----------------------|
-| **Auth Model** | API key private key signing (not traditional API key/secret) |
+| Aspect | Status |
+|--------|--------|
+| **Architecture** | Rust-first adapter crate with PyO3 bindings; Python layer only for configs/tests |
+| **Auth Model** | Wallet-style signing; exact algorithm + payload hashing **TBD (must validate)** |
+| **Auth Token** | Current assumption: token required for private REST/WS/sendTx, but some notes claimed otherwise |
 | **Base URLs** | Mainnet: `https://mainnet.zklighter.elliot.ai/` / Testnet: `https://testnet.zklighter.elliot.ai/` |
-| **WebSocket** | `wss://mainnet.zklighter.elliot.ai/stream` |
-| **Rate Limits** | Standard: 60 req/min; Premium: 24,000 weighted req/min |
-| **Order Types** | Limit, Market, Stop Loss, Take Profit, TWAP |
-| **Funding** | Hourly, clamped ±0.5% |
+| **WebSocket** | `wss://mainnet.zklighter.elliot.ai/stream` (channel naming/schema still needs confirmation) |
+| **Market Data** | Public order books/trades available; snapshot vs delta semantics unverified |
+| **Fees** | Conflicting sources (premium maker/taker 0.002%/0.02% vs 0.02%/0.2%); must verify |
 
-### Top 5 Risks
+### MUST VALIDATE before execution/private streams
 
-1. **No WS Order Book Snapshot** — Must fetch REST snapshot first, then apply deltas (offset sequencing critical)
-2. **Nonce Management Complexity** — Per-API-key nonce tracking required; race conditions possible
-3. **Standard Account Rate Limits** — 60 req/min severely limits trading frequency without Premium
-4. **Auth Token Expiry** — 8-hour max validity; must implement refresh logic
-5. **Missing Error Code Documentation** — Incomplete error taxonomy in official docs
+1. **Signing algorithm + tx serialization** — ECDSA vs EdDSA, hashing, encoding, and how nonces are
+   bound to the payload.
+2. **Auth token necessity** — Whether `/api/v1/account`, private WS, and `sendTx` require a token or
+   only signature; discovery notes conflict and must be resolved.
+3. **WS schemas** — Channel names and payloads (e.g., `order_book/0` vs `order_book:0`), and whether
+   snapshots are ever emitted on subscribe.
+4. **Order book semantics** — Confirm REST snapshot + WS delta behavior and offset gap handling rules.
+5. **Instrument mapping** — Validate perp metadata fields and precision rules from `orderBooks` before
+   locking in `CryptoPerpetual` construction.
 
 ### Recommended Next Steps
 
-1. **Immediate**: Obtain testnet credentials and validate auth flow end-to-end
-2. **Week 1**: Implement instrument provider and basic REST client
-3. **Week 2**: Build WebSocket client with order book synchronization
-4. **Week 3**: Add execution client and order lifecycle handling
-5. **Week 4**: Account reconciliation and hardening
+1. Kick off **PR0 scaffolding** (Rust crate, PyO3 bindings, Python configs/constants, CI skeleton).
+2. Implement **PR1 instrument provider** using `orderBooks` (public REST) with fixture-backed tests.
+3. Build **public WS market data** with offset tracking; capture real snapshots/deltas into fixtures.
+4. Run a **short validation spike on testnet** to answer the MUST VALIDATE items above before coding
+   execution/private flows.
+5. Proceed to **execution + account** only after signing/auth/WS schemas are proven with captured
+   traffic.
 
-**Estimated Effort**: 4-6 weeks for production-ready v1 with single senior developer.
+**Effort target**: ~4–6 weeks to production-ready v1 with a single senior, assuming validation
+questions are closed early.
 
 ---
