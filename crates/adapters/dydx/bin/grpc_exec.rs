@@ -297,7 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let any_msg = msg_place_order.to_any();
 
     let tx_raw = tx_builder
-        .build_transaction(&account, vec![any_msg], None)
+        .build_transaction(&account, vec![any_msg], None, None)
         .map_err(|e| format!("Failed to build tx: {e}"))?;
 
     let tx_bytes = tx_raw
@@ -360,7 +360,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let any_cancel = msg_cancel.to_any();
             account.increment_sequence();
             let tx_raw = tx_builder
-                .build_transaction(&account, vec![any_cancel], None)
+                .build_transaction(&account, vec![any_cancel], None, None)
                 .map_err(|e| format!("Failed to build cancel tx: {e}"))?;
             let tx_bytes = tx_raw
                 .to_bytes()
@@ -783,7 +783,8 @@ async fn test_batch_cancel(
         ChainId::Testnet4
     };
     let tx_builder = TxBuilder::new(chain_id, "adydx".to_string())?;
-    let tx_raw = tx_builder.build_transaction(account, vec![msg_batch_cancel.to_any()], None)?;
+    let tx_raw =
+        tx_builder.build_transaction(account, vec![msg_batch_cancel.to_any()], None, None)?;
     let tx_hash = grpc.broadcast_tx(tx_raw.to_bytes()?).await?;
 
     tracing::info!(
@@ -862,7 +863,7 @@ async fn place_edge_test_order(
         ChainId::Testnet4
     };
     let tx_builder = TxBuilder::new(chain_id, "adydx".to_string())?;
-    let tx_raw = tx_builder.build_transaction(account, vec![msg.to_any()], None)?;
+    let tx_raw = tx_builder.build_transaction(account, vec![msg.to_any()], None, None)?;
     let tx_hash = grpc.broadcast_tx(tx_raw.to_bytes()?).await?;
 
     Ok(tx_hash)
@@ -905,7 +906,7 @@ async fn cancel_order_by_client_id(
         ChainId::Testnet4
     };
     let tx_builder = TxBuilder::new(chain_id, "adydx".to_string())?;
-    let tx_raw = tx_builder.build_transaction(account, vec![msg_cancel.to_any()], None)?;
+    let tx_raw = tx_builder.build_transaction(account, vec![msg_cancel.to_any()], None, None)?;
     let tx_hash = grpc.broadcast_tx(tx_raw.to_bytes()?).await?;
 
     Ok(tx_hash)

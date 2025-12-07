@@ -40,6 +40,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -84,6 +85,19 @@ def _client_order_id_to_u32(client_order_id: ClientOrderId) -> int:
     """
     digest = hashlib.sha256(client_order_id.value.encode()).digest()
     return int.from_bytes(digest[:4], byteorder="big")
+
+
+def _get_expire_time_secs(order: Order) -> int | None:
+    """
+    Extract expire_time from an order and convert to seconds.
+
+    dYdX conditional orders require expire_time in Unix seconds. Returns None if the
+    order has no expiry time set.
+
+    """
+    if hasattr(order, "expire_time_ns") and order.expire_time_ns:
+        return int(nanos_to_secs(order.expire_time_ns))
+    return None
 
 
 class DYDXv4ExecutionClient(LiveExecutionClient):
@@ -378,7 +392,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             post_only=order.is_post_only,
             reduce_only=order.is_reduce_only,
             block_height=self._block_height,
-            expire_time=None,  # TODO: Support expire_time from order
+            expire_time=_get_expire_time_secs(order),
         )
 
     async def _submit_stop_market_order(
@@ -396,7 +410,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             trigger_price=str(order.trigger_price),
             quantity=str(order.quantity),
             reduce_only=order.is_reduce_only,
-            expire_time=None,  # TODO: Support expire_time from order
+            expire_time=_get_expire_time_secs(order),
         )
 
     async def _submit_stop_limit_order(
@@ -419,7 +433,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             time_in_force=tif_value,
             post_only=order.is_post_only,
             reduce_only=order.is_reduce_only,
-            expire_time=None,  # TODO: Support expire_time from order
+            expire_time=_get_expire_time_secs(order),
         )
 
     async def _submit_take_profit_market_order(
@@ -437,7 +451,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             trigger_price=str(order.trigger_price),
             quantity=str(order.quantity),
             reduce_only=order.is_reduce_only,
-            expire_time=None,  # TODO: Support expire_time from order
+            expire_time=_get_expire_time_secs(order),
         )
 
     async def _submit_take_profit_limit_order(
@@ -460,7 +474,7 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             time_in_force=tif_value,
             post_only=order.is_post_only,
             reduce_only=order.is_reduce_only,
-            expire_time=None,  # TODO: Support expire_time from order
+            expire_time=_get_expire_time_secs(order),
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
@@ -553,9 +567,40 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             self._log.error(f"Cancel all orders failed: {e}")
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        # Cancel each order individually
+        if self._order_submitter is None or self._wallet is None:
+            self._log.error("Order submitter not initialized - connect first")
+            return
+
+        if not command.cancels:
+            self._log.info("No orders to cancel in batch")
+            return
+
+        # Build batch cancel list: (instrument_id, client_order_id_u32)
+        cancel_list = []
         for cancel in command.cancels:
-            await self._cancel_order(cancel)
+            # Get the order from cache to get instrument_id
+            order = self._cache.order(cancel.client_order_id)
+            if order is None:
+                self._log.warning(
+                    f"Order {cancel.client_order_id} not found in cache, skipping",
+                )
+                continue
+            client_order_id_u32 = _client_order_id_to_u32(cancel.client_order_id)
+            cancel_list.append((str(order.instrument_id), client_order_id_u32))
+
+        if not cancel_list:
+            self._log.warning("No valid orders to cancel in batch")
+            return
+
+        try:
+            await self._order_submitter.cancel_orders_batch(
+                wallet=self._wallet,
+                orders=cancel_list,
+                block_height=self._block_height,
+            )
+            self._log.debug(f"Batch cancelled {len(cancel_list)} orders")
+        except Exception as e:
+            self._log.error(f"Batch cancel orders failed: {e}")
 
     # -- REPORTS ----------------------------------------------------------------------------------
 

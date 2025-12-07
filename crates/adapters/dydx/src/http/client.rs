@@ -64,8 +64,12 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::{Bar, BarType, bar::get_bar_interval_ns},
-    identifiers::{AccountId, InstrumentId},
+    data::{
+        Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick,
+        bar::get_bar_interval_ns,
+    },
+    enums::{AggressorSide, BookAction, OrderSide as NautilusOrderSide, RecordFlag},
+    identifiers::{AccountId, InstrumentId, TradeId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
@@ -1010,6 +1014,137 @@ impl DydxHttpClient {
         }
 
         Ok(bars)
+    }
+
+    /// Requests historical trade ticks for a symbol.
+    ///
+    /// Fetches trade data from the dYdX Indexer API and converts them to Nautilus
+    /// `TradeTick` objects. Results are ordered by timestamp descending (newest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
+    pub async fn request_trade_ticks(
+        &self,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        let symbol = instrument_id.symbol;
+
+        let instrument = self
+            .get_instrument(&symbol.inner())
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
+
+        let ticker = extract_raw_symbol(symbol.as_str());
+        let response = self.request_trades(ticker, limit).await?;
+
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        let mut trades = Vec::with_capacity(response.trades.len());
+
+        for trade in response.trades {
+            let ts_event_nanos = trade.created_at.timestamp_nanos_opt().ok_or_else(|| {
+                anyhow::anyhow!("Timestamp out of range for trade at {}", trade.created_at)
+            })?;
+            let ts_event = UnixNanos::from(ts_event_nanos as u64);
+
+            let aggressor_side = match trade.side {
+                NautilusOrderSide::Buy => AggressorSide::Buyer,
+                NautilusOrderSide::Sell => AggressorSide::Seller,
+                NautilusOrderSide::NoOrderSide => AggressorSide::NoAggressor,
+            };
+
+            let trade_tick = TradeTick::new(
+                instrument_id,
+                Price::from_decimal_dp(trade.price, instrument.price_precision())?,
+                Quantity::from_decimal_dp(trade.size, instrument.size_precision())?,
+                aggressor_side,
+                TradeId::new(&trade.id),
+                ts_event,
+                ts_init,
+            );
+
+            trades.push(trade_tick);
+        }
+
+        Ok(trades)
+    }
+
+    /// Requests an order book snapshot for a symbol.
+    ///
+    /// Fetches order book data from the dYdX Indexer API and converts it to Nautilus
+    /// `OrderBookDeltas`. The snapshot is represented as a sequence of deltas starting
+    /// with a CLEAR action followed by ADD actions for each level.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
+    pub async fn request_orderbook_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<OrderBookDeltas> {
+        let symbol = instrument_id.symbol;
+
+        let instrument = self
+            .get_instrument(&symbol.inner())
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
+
+        let ticker = extract_raw_symbol(symbol.as_str());
+        let response = self.inner.get_orderbook(ticker).await?;
+
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        let mut deltas = Vec::with_capacity(1 + response.bids.len() + response.asks.len());
+
+        deltas.push(OrderBookDelta::clear(instrument_id, 0, ts_init, ts_init));
+
+        for (i, level) in response.bids.iter().enumerate() {
+            let is_last = i == response.bids.len() - 1 && response.asks.is_empty();
+            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+
+            let order = BookOrder::new(
+                NautilusOrderSide::Buy,
+                Price::from_decimal_dp(level.price, instrument.price_precision())?,
+                Quantity::from_decimal_dp(level.size, instrument.size_precision())?,
+                0,
+            );
+
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                order,
+                flags,
+                0,
+                ts_init,
+                ts_init,
+            ));
+        }
+
+        for (i, level) in response.asks.iter().enumerate() {
+            let is_last = i == response.asks.len() - 1;
+            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+
+            let order = BookOrder::new(
+                NautilusOrderSide::Sell,
+                Price::from_decimal_dp(level.price, instrument.price_precision())?,
+                Quantity::from_decimal_dp(level.size, instrument.size_precision())?,
+                0,
+            );
+
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                order,
+                flags,
+                0,
+                ts_init,
+                ts_init,
+            ));
+        }
+
+        Ok(OrderBookDeltas::new(instrument_id, deltas))
     }
 
     /// Exposes raw HTTP client for testing and advanced use cases.

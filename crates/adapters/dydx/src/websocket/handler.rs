@@ -386,10 +386,8 @@ impl FeedHandler {
             DydxWsChannel::Orderbook => self.parse_orderbook(&data, false),
             DydxWsChannel::Candles => self.parse_candles(&data),
             DydxWsChannel::Markets => self.parse_markets(&data),
-            DydxWsChannel::Subaccounts => self.parse_subaccounts(&data),
-            DydxWsChannel::ParentSubaccounts => {
-                tracing::debug!("Parent subaccounts channel data received (not yet implemented)");
-                Ok(None)
+            DydxWsChannel::Subaccounts | DydxWsChannel::ParentSubaccounts => {
+                self.parse_subaccounts(&data)
             }
             DydxWsChannel::BlockHeight => {
                 tracing::debug!("Block height update received");

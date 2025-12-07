@@ -69,6 +69,13 @@ pub struct DydxAdapterConfig {
     /// Mnemonic phrase for wallet (optional, loaded from environment if not provided).
     #[serde(default)]
     pub mnemonic: Option<String>,
+    /// Authenticator IDs for permissioned key trading.
+    ///
+    /// When provided, transactions will include a TxExtension to enable trading
+    /// via sub-accounts using delegated signing keys. This is an advanced feature
+    /// for institutional setups with separated hot/cold wallet architectures.
+    #[serde(default)]
+    pub authenticator_ids: Vec<u64>,
     /// Maximum number of retries for failed requests (default: 3).
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
@@ -146,6 +153,7 @@ impl Default for DydxAdapterConfig {
             subaccount: 0,
             is_testnet,
             mnemonic: None,
+            authenticator_ids: Vec::new(),
             max_retries: default_max_retries(),
             retry_delay_initial_ms: default_retry_delay_initial_ms(),
             retry_delay_max_ms: default_retry_delay_max_ms(),

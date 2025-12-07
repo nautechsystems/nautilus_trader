@@ -87,6 +87,7 @@ pub struct OrderSubmitter {
     wallet_address: String,
     subaccount_number: u32,
     chain_id: ChainId,
+    authenticator_ids: Vec<u64>,
 }
 
 impl OrderSubmitter {
@@ -96,6 +97,7 @@ impl OrderSubmitter {
         wallet_address: String,
         subaccount_number: u32,
         chain_id: ChainId,
+        authenticator_ids: Vec<u64>,
     ) -> Self {
         Self {
             grpc_client,
@@ -103,6 +105,7 @@ impl OrderSubmitter {
             wallet_address,
             subaccount_number,
             chain_id,
+            authenticator_ids,
         }
     }
 
@@ -628,27 +631,6 @@ impl OrderSubmitter {
         .await
     }
 
-    /// Submits a trailing stop order to dYdX via gRPC.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DydxError::NotImplemented` - trailing stops not yet supported by dYdX v4 protocol.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn submit_trailing_stop_order(
-        &self,
-        _wallet: &Wallet,
-        _client_order_id: u32,
-        _side: OrderSide,
-        _trailing_offset: Price,
-        _quantity: Quantity,
-        _reduce_only: bool,
-        _expire_time: Option<i64>,
-    ) -> Result<(), DydxError> {
-        Err(DydxError::NotImplemented(
-            "Trailing stop orders not yet supported by dYdX v4 protocol".to_string(),
-        ))
-    }
-
     /// Get market params from instrument cache.
     ///
     /// # Errors
@@ -719,8 +701,13 @@ impl OrderSubmitter {
         let any_msg = msg.to_any();
 
         // Build and sign transaction
+        let auth_ids = if self.authenticator_ids.is_empty() {
+            None
+        } else {
+            Some(self.authenticator_ids.as_slice())
+        };
         let tx_raw = tx_builder
-            .build_transaction(&account, vec![any_msg], None)
+            .build_transaction(&account, vec![any_msg], None, auth_ids)
             .map_err(|e| {
                 DydxError::Grpc(Box::new(tonic::Status::internal(format!(
                     "Failed to build tx: {e}"
@@ -801,8 +788,13 @@ impl OrderSubmitter {
         // Convert all messages to Any
         let any_msgs: Vec<_> = msgs.into_iter().map(|m| m.to_any()).collect();
 
+        let auth_ids = if self.authenticator_ids.is_empty() {
+            None
+        } else {
+            Some(self.authenticator_ids.as_slice())
+        };
         let tx_raw = tx_builder
-            .build_transaction(&account, any_msgs, None)
+            .build_transaction(&account, any_msgs, None, auth_ids)
             .map_err(|e| {
                 DydxError::Grpc(Box::new(tonic::Status::internal(format!(
                     "Failed to build tx: {e}"

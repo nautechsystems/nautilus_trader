@@ -81,6 +81,11 @@ class DYDXv4ExecClientConfig(LiveExecClientConfig, frozen=True):
         The private key is used to sign transactions like submitting orders.
         If ``None`` then will source `DYDX_MNEMONIC` or
         `DYDX_TESTNET_MNEMONIC` environment variables.
+    authenticator_ids : list[int], optional
+        List of authenticator IDs for permissioned key trading.
+        When provided, transactions will include a TxExtension to enable trading
+        via sub-accounts using delegated signing keys. This is an advanced feature
+        for institutional setups with separated hot/cold wallet architectures.
     is_testnet : bool, default False
         If the client is connecting to the dYdX testnet API.
     base_url_http : str, optional
@@ -104,6 +109,7 @@ class DYDXv4ExecClientConfig(LiveExecClientConfig, frozen=True):
     wallet_address: str | None = None
     subaccount: int = 0
     mnemonic: str | None = None
+    authenticator_ids: list[int] | None = None
     is_testnet: bool = False
     base_url_http: str | None = None
     base_url_ws: str | None = None

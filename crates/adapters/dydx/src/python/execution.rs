@@ -17,6 +17,7 @@
 
 use std::{str::FromStr, sync::Arc};
 
+use nautilus_core::python::IntoPyObjectNautilusExt;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::InstrumentId,
@@ -88,13 +89,14 @@ impl PyDydxOrderSubmitter {
     ///
     /// Returns an error if chain_id is invalid.
     #[new]
-    #[pyo3(signature = (grpc_client, http_client, wallet_address, subaccount_number=0, chain_id=None))]
+    #[pyo3(signature = (grpc_client, http_client, wallet_address, subaccount_number=0, chain_id=None, authenticator_ids=None))]
     pub fn py_new(
         grpc_client: PyDydxGrpcClient,
         http_client: DydxHttpClient,
         wallet_address: String,
         subaccount_number: u32,
         chain_id: Option<&str>,
+        authenticator_ids: Option<Vec<u64>>,
     ) -> PyResult<Self> {
         let chain_id = if let Some(chain_str) = chain_id {
             ChainId::from_str(chain_str)
@@ -109,6 +111,7 @@ impl PyDydxOrderSubmitter {
             wallet_address,
             subaccount_number,
             chain_id,
+            authenticator_ids.unwrap_or_default(),
         );
 
         Ok(Self {
@@ -589,6 +592,82 @@ impl PyDydxGrpcClient {
                     (p.asset_id.to_string(), quantums_str)
                 })
                 .collect();
+            Ok(result)
+        })
+    }
+
+    /// Get node information from the gRPC endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the gRPC request fails.
+    #[pyo3(name = "get_node_info")]
+    pub fn py_get_node_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut client = (*client).clone();
+            let info = client
+                .get_node_info()
+                .await
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
+
+            // Return node info as a dict
+            Python::attach(|py| {
+                use pyo3::types::PyDict;
+                let dict = PyDict::new(py);
+                if let Some(default_node_info) = info.default_node_info {
+                    dict.set_item("network", default_node_info.network)?;
+                    dict.set_item("moniker", default_node_info.moniker)?;
+                    dict.set_item("version", default_node_info.version)?;
+                }
+                if let Some(app_info) = info.application_version {
+                    dict.set_item("app_name", app_info.name)?;
+                    dict.set_item("app_version", app_info.version)?;
+                }
+                Ok(dict.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Simulate a transaction to estimate gas.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the gRPC request fails.
+    #[pyo3(name = "simulate_tx")]
+    pub fn py_simulate_tx<'py>(
+        &self,
+        py: Python<'py>,
+        tx_bytes: Vec<u8>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut client = (*client).clone();
+            let gas_used = client
+                .simulate_tx(tx_bytes)
+                .await
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
+            Ok(gas_used)
+        })
+    }
+
+    /// Get transaction details by hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the gRPC request fails.
+    #[pyo3(name = "get_tx")]
+    pub fn py_get_tx<'py>(&self, py: Python<'py>, hash: String) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut client = (*client).clone();
+            let tx = client
+                .get_tx(&hash)
+                .await
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
+
+            // Return tx as JSON string
+            let result = format!("Tx(body_bytes_len={})", tx.body.messages.len());
             Ok(result)
         })
     }

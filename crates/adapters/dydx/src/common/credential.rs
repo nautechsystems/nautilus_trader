@@ -30,6 +30,8 @@ use crate::common::consts::DYDX_BECH32_PREFIX;
 /// dYdX wallet credentials for signing blockchain transactions.
 ///
 /// Uses secp256k1 for signing as per Cosmos SDK specifications.
+/// The underlying `SigningKey` from `cosmrs` (backed by `k256`) implements
+/// `Zeroize`, ensuring private key material is securely cleared from memory on drop.
 pub struct DydxCredential {
     /// The secp256k1 signing key.
     signing_key: SigningKey,
@@ -37,13 +39,6 @@ pub struct DydxCredential {
     pub address: String,
     /// Optional authenticator IDs for permissioned key trading.
     pub authenticator_ids: Vec<u64>,
-}
-
-impl Drop for DydxCredential {
-    fn drop(&mut self) {
-        // Note: SigningKey doesn't implement Zeroize directly
-        // Its memory will be securely cleared by cosmrs on drop
-    }
 }
 
 impl Debug for DydxCredential {

@@ -395,6 +395,142 @@ impl DydxHttpClient {
         })
     }
 
+    /// Requests historical trade ticks for a symbol.
+    ///
+    /// Fetches trade data and converts to Nautilus `TradeTick` objects.
+    /// Results are ordered by timestamp descending (newest first).
+    ///
+    /// Parameters
+    /// ----------
+    /// instrument_id : InstrumentId
+    ///     The instrument ID to fetch trades for.
+    /// limit : int, optional
+    ///     Maximum number of trades to fetch.
+    ///
+    /// Returns
+    /// -------
+    /// list[TradeTick]
+    ///     List of Nautilus TradeTick objects.
+    #[pyo3(name = "request_trade_ticks")]
+    #[pyo3(signature = (instrument_id, limit=None))]
+    fn py_request_trade_ticks<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let trades = client
+                .request_trade_ticks(instrument_id, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Requests an order book snapshot for a symbol.
+    ///
+    /// Fetches order book data and converts to Nautilus `OrderBookDeltas`.
+    /// The snapshot is represented as deltas starting with CLEAR followed by ADD actions.
+    ///
+    /// Parameters
+    /// ----------
+    /// instrument_id : InstrumentId
+    ///     The instrument ID to fetch the order book for.
+    ///
+    /// Returns
+    /// -------
+    /// OrderBookDeltas
+    ///     The order book snapshot as deltas.
+    #[pyo3(name = "request_orderbook_snapshot")]
+    fn py_request_orderbook_snapshot<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let deltas = client
+                .request_orderbook_snapshot(instrument_id)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(deltas.into_py_any_unwrap(py)))
+        })
+    }
+
+    /// Get current server time from the dYdX Indexer.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     Dictionary containing 'iso' (ISO 8601 string) and 'epoch' (Unix timestamp float).
+    #[pyo3(name = "get_time")]
+    fn py_get_time<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client.inner.get_time().await.map_err(to_pyvalue_err)?;
+            Python::attach(|py| {
+                use pyo3::types::PyDict;
+                let dict = PyDict::new(py);
+                dict.set_item("iso", response.iso.to_string())?;
+                dict.set_item("epoch", response.epoch_ms)?;
+                Ok(dict.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Get current blockchain height from the dYdX Indexer.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     Dictionary containing 'height' (block number) and 'time' (ISO 8601 string).
+    #[pyo3(name = "get_height")]
+    fn py_get_height<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client.inner.get_height().await.map_err(to_pyvalue_err)?;
+            Python::attach(|py| {
+                use pyo3::types::PyDict;
+                let dict = PyDict::new(py);
+                dict.set_item("height", response.height)?;
+                dict.set_item("time", response.time)?;
+                Ok(dict.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Fetches transfer history for a subaccount.
+    ///
+    /// Returns a JSON string containing the transfers response.
+    #[pyo3(name = "get_transfers")]
+    #[pyo3(signature = (address, subaccount_number, limit=None))]
+    fn py_get_transfers<'py>(
+        &self,
+        py: Python<'py>,
+        address: String,
+        subaccount_number: u32,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client
+                .inner
+                .get_transfers(&address, subaccount_number, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+            serde_json::to_string(&response).map_err(to_pyvalue_err)
+        })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "DydxHttpClient(base_url='{}', is_testnet={}, cached_instruments={})",
