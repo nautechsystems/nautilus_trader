@@ -215,7 +215,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         """
         if "://" not in uri:
             # Assume a local path
-            uri = "file://" + uri
+            # .resolve() will return absolute path in case relative one is provided, and .as_uri() will return path that follows RFC3986
+            uri = Path(uri).resolve().as_uri()
 
         parsed = infer_storage_options(uri)
         path = parsed.pop("path")
