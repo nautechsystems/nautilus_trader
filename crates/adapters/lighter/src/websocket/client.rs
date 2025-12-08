@@ -194,34 +194,34 @@ impl LighterWebSocketClient {
 
     /// Subscribe to order book updates for the given market index.
     pub async fn subscribe_order_book(&self, market_index: u32) -> Result<()> {
-        let channel = format!("order_book:{market_index}");
+        let channel = format!("order_book/{market_index}");
         self.send_subscribe(&channel).await
     }
 
     /// Subscribe to trades for the given market index.
     pub async fn subscribe_trades(&self, market_index: u32) -> Result<()> {
-        let channel = format!("trade:{market_index}");
+        let channel = format!("trade/{market_index}");
         self.send_subscribe(&channel).await
     }
 
     /// Subscribe to market stats for the given market index.
     pub async fn subscribe_market_stats(&self, market_index: u32) -> Result<()> {
-        let channel = format!("market_stats:{market_index}");
+        let channel = format!("market_stats/{market_index}");
         self.send_subscribe(&channel).await
     }
 
     pub async fn unsubscribe_order_book(&self, market_index: u32) -> Result<()> {
-        let channel = format!("order_book:{market_index}");
+        let channel = format!("order_book/{market_index}");
         self.send_unsubscribe(&channel).await
     }
 
     pub async fn unsubscribe_trades(&self, market_index: u32) -> Result<()> {
-        let channel = format!("trade:{market_index}");
+        let channel = format!("trade/{market_index}");
         self.send_unsubscribe(&channel).await
     }
 
     pub async fn unsubscribe_market_stats(&self, market_index: u32) -> Result<()> {
-        let channel = format!("market_stats:{market_index}");
+        let channel = format!("market_stats/{market_index}");
         self.send_unsubscribe(&channel).await
     }
 

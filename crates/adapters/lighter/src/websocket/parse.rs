@@ -304,4 +304,11 @@ mod tests {
             "expected mark price update",
         );
     }
+
+    #[test]
+    fn parse_market_index_supports_slash_and_colon() {
+        assert_eq!(parse_market_index("order_book/42"), Some(42));
+        assert_eq!(parse_market_index("trade:7"), Some(7));
+        assert_eq!(parse_market_index("market_stats/0"), Some(0));
+    }
 }
