@@ -40,8 +40,8 @@
 
 **Definition of Done**: Signing/auth/WS schema questions answered with real captures
 
-- [ ] Capture successful `sendTx` request/response (hashing + signing recipe)
-- [ ] Confirm whether auth token is required for private REST + WS
+- [x] Capture successful `sendTx` request/response (hashing + signing recipe)
+- [x] Confirm whether auth token is required for private REST + WS
 - [x] Record WS payloads to lock channel names and snapshot/delta semantics
 - [x] Store redacted fixtures under `tests/test_data/lighter/{http,ws}/`
 - [x] Write doc update summarizing validated behaviors
