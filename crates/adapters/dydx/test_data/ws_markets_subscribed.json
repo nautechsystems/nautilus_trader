@@ -1,0 +1,44 @@
+{
+  "type": "subscribed",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 1,
+  "channel": "v4_markets",
+  "contents": {
+    "markets": {
+      "BTC-USD": {
+        "clobPairId": "0",
+        "ticker": "BTC-USD",
+        "status": "ACTIVE",
+        "oraclePrice": "43250.00",
+        "priceChange24H": "1250.50",
+        "nextFundingRate": "0.0001",
+        "initialMarginFraction": "0.05",
+        "maintenanceMarginFraction": "0.03",
+        "openInterest": "987654321.0",
+        "atomicResolution": -10,
+        "quantumConversionExponent": -9,
+        "tickSize": "1",
+        "stepSize": "0.001",
+        "stepBaseQuantums": 1000000,
+        "subticksPerTick": 100000
+      },
+      "ETH-USD": {
+        "clobPairId": "1",
+        "ticker": "ETH-USD",
+        "status": "ACTIVE",
+        "oraclePrice": "2250.00",
+        "priceChange24H": "50.25",
+        "nextFundingRate": "0.00008",
+        "initialMarginFraction": "0.05",
+        "maintenanceMarginFraction": "0.03",
+        "openInterest": "123456789.0",
+        "atomicResolution": -9,
+        "quantumConversionExponent": -9,
+        "tickSize": "0.1",
+        "stepSize": "0.01",
+        "stepBaseQuantums": 1000000,
+        "subticksPerTick": 10000
+      }
+    }
+  }
+}

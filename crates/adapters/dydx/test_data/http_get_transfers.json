@@ -1,0 +1,26 @@
+{
+  "requestId": "http_get_transfers-req",
+  "status": "success",
+  "isoTimestamp": "2025-12-08T16:12:00.000Z",
+  "result": {
+    "transfers": [
+      {
+        "id": "0ca37a48-0aba-55bc-96c3-aacf3dcf0663",
+        "sender": {
+          "address": "dydx1n56z5fhmemtffzkt2eqyf9kuc7ycjfs86mvqy7",
+          "subaccountNumber": 0
+        },
+        "recipient": {
+          "address": "dydx1n56z5fhmemtffzkt2eqyf9kuc7ycjfs86mvqy7",
+          "subaccountNumber": 0
+        },
+        "amount": "45.334703",
+        "createdAt": "2025-10-20T11:42:26.405Z",
+        "createdAtHeight": "59813965",
+        "asset": "USDC",
+        "type": "DEPOSIT",
+        "transactionHash": "D892E75F27AE7EBD24548865BB81E58F69EE045F7364BC21A66AFAB206DD0648"
+      }
+    ]
+  }
+}

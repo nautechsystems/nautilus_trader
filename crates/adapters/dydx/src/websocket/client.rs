@@ -310,6 +310,9 @@ impl DydxWebSocketClient {
             return Ok(());
         }
 
+        // Reset stop signal from any previous disconnect
+        self.signal.store(false, Ordering::Relaxed);
+
         let (message_handler, raw_rx) = channel_message_handler();
 
         let cfg = WebSocketConfig {
@@ -382,6 +385,11 @@ impl DydxWebSocketClient {
     pub async fn disconnect(&mut self) -> DydxWsResult<()> {
         // Set stop signal
         self.signal.store(true, Ordering::Relaxed);
+
+        // Reset connection mode to Closed so is_connected() returns false
+        // and subsequent connect() calls will create new channels
+        self.connection_mode
+            .store(Arc::new(AtomicU8::new(ConnectionMode::Closed as u8)));
 
         // Abort handler task if it exists
         if let Some(handle) = self.handler_task.take() {

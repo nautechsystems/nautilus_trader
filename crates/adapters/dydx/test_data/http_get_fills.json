@@ -1,0 +1,60 @@
+{
+  "requestId": "http_get_fills-req",
+  "status": "success",
+  "isoTimestamp": "2025-12-08T16:12:00.000Z",
+  "result": {
+    "fills": [
+      {
+        "id": "6450e369-1dc3-5229-8dc2-fb3b5d1cf2ab",
+        "side": "BUY",
+        "liquidity": "TAKER",
+        "type": "LIMIT",
+        "market": "BTC-USD",
+        "marketType": "PERPETUAL",
+        "price": "105117",
+        "size": "0.0001",
+        "fee": "0",
+        "affiliateRevShare": "0",
+        "createdAt": "2025-11-12T11:19:52.470Z",
+        "createdAtHeight": "63049869",
+        "orderId": "0f0981cb-152e-57d3-bea9-4d8e0dd5ed35",
+        "clientMetadata": "1",
+        "subaccountNumber": 0
+      },
+      {
+        "id": "ef7ad6fb-ed77-50c7-b592-73ab5b32d42a",
+        "side": "SELL",
+        "liquidity": "TAKER",
+        "type": "LIMIT",
+        "market": "BTC-USD",
+        "marketType": "PERPETUAL",
+        "price": "104746",
+        "size": "0.0001",
+        "fee": "0",
+        "affiliateRevShare": "0",
+        "createdAt": "2025-11-12T10:29:47.082Z",
+        "createdAtHeight": "63045110",
+        "orderId": "47077318-e213-572f-9af1-c17b3fe1a784",
+        "clientMetadata": "1",
+        "subaccountNumber": 0
+      },
+      {
+        "id": "c9dc5ed7-d2b7-5aae-9027-988d93676068",
+        "side": "SELL",
+        "liquidity": "TAKER",
+        "type": "LIMIT",
+        "market": "BTC-USD",
+        "marketType": "PERPETUAL",
+        "price": "104746",
+        "size": "0.0001",
+        "fee": "0",
+        "affiliateRevShare": "0",
+        "createdAt": "2025-11-12T10:29:47.082Z",
+        "createdAtHeight": "63045110",
+        "orderId": "8e2be4a2-86c6-5a32-a081-b223778c3e33",
+        "clientMetadata": "1",
+        "subaccountNumber": 0
+      }
+    ]
+  }
+}

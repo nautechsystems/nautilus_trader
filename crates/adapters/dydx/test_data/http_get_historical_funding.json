@@ -1,0 +1,30 @@
+{
+  "requestId": "http_get_historical_funding-req",
+  "status": "success",
+  "isoTimestamp": "2025-12-08T16:12:00.000Z",
+  "result": {
+    "historicalFunding": [
+      {
+        "ticker": "BTC-USD",
+        "rate": "0.000002375",
+        "price": "89993.8",
+        "effectiveAtHeight": "66622979",
+        "effectiveAt": "2025-12-08T16:00:00.219Z"
+      },
+      {
+        "ticker": "BTC-USD",
+        "rate": "0.000000375",
+        "price": "90860.48604",
+        "effectiveAtHeight": "66617413",
+        "effectiveAt": "2025-12-08T15:00:00.586Z"
+      },
+      {
+        "ticker": "BTC-USD",
+        "rate": "0.000000625",
+        "price": "91459.59191",
+        "effectiveAtHeight": "66611773",
+        "effectiveAt": "2025-12-08T14:00:00.112Z"
+      }
+    ]
+  }
+}

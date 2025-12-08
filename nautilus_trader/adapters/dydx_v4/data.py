@@ -169,10 +169,8 @@ class DYDXv4DataClient(LiveMarketDataClient):
         await self._ws_client.wait_until_active(timeout_secs=30.0)
         self._log.info(f"Connected to WebSocket {self._ws_client.py_url}", LogColor.BLUE)
 
-        # NOTE: subscribe_markets() is not called here because the Rust WebSocket
-        # Python bindings have a bug where the command channel is not properly
-        # shared after connect(). The markets data will still flow through the
-        # initial connection subscriptions.
+        # Subscribe to markets channel for instrument updates (mark prices, funding rates, etc.)
+        await self._ws_client.subscribe_markets()
 
     async def _disconnect(self) -> None:
         # Delay to allow websocket to send any unsubscribe messages
