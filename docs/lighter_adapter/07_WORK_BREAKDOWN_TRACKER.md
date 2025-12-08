@@ -26,7 +26,7 @@
 
 **Definition of Done**: Live order book and trade feeds working (public)
 
-- [ ] **PR2: WebSocket + Data Client**
+- [x] **PR2: WebSocket + Data Client**
   - [x] WebSocket client with reconnect
   - [x] Order book subscription
   - [x] Trade subscription
@@ -42,9 +42,9 @@
 
 - [ ] Capture successful `sendTx` request/response (hashing + signing recipe)
 - [ ] Confirm whether auth token is required for private REST + WS
-- [ ] Record WS payloads to lock channel names and snapshot/delta semantics
-- [ ] Store redacted fixtures under `tests/test_data/lighter/{http,ws}/`
-- [ ] Write doc update summarizing validated behaviors
+- [x] Record WS payloads to lock channel names and snapshot/delta semantics
+- [x] Store redacted fixtures under `tests/test_data/lighter/{http,ws}/`
+- [x] Write doc update summarizing validated behaviors
 
 ### Milestone 3: Execution (Week 3)
 
