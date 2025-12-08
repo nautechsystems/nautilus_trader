@@ -14,12 +14,13 @@
   - [x] Add credential utilities
   - [x] Unit tests for config
 
-- [ ] **PR1: Instruments**
-  - [ ] HTTP client with auth
-  - [ ] orderBooks endpoint
-  - [ ] Parse to CryptoPerpetual
-  - [ ] InstrumentProvider implementation
-  - [ ] Integration test: load instruments
+- [x] **PR1: Instruments**
+  - [x] HTTP client with auth
+  - [x] orderBooks endpoint
+  - [x] Parse to CryptoPerpetual
+  - [x] InstrumentProvider implementation
+  - [x] Integration test: load instruments
+  - [ ] Python unit tests executed (blocked on extension build environment)
 
 ### Milestone 2: Market Data (Week 2)
 

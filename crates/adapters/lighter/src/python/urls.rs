@@ -21,11 +21,17 @@ use crate::urls::{get_http_base_url, get_ws_url};
 #[pyfunction]
 #[pyo3(name = "get_lighter_http_base_url")]
 pub fn py_get_lighter_http_base_url(is_testnet: bool, base_url_override: Option<String>) -> String {
-    get_http_base_url(LighterNetwork::from(is_testnet), base_url_override.as_deref())
+    get_http_base_url(
+        LighterNetwork::from(is_testnet),
+        base_url_override.as_deref(),
+    )
 }
 
 #[pyfunction]
 #[pyo3(name = "get_lighter_ws_url")]
 pub fn py_get_lighter_ws_url(is_testnet: bool, base_url_override: Option<String>) -> String {
-    get_ws_url(LighterNetwork::from(is_testnet), base_url_override.as_deref())
+    get_ws_url(
+        LighterNetwork::from(is_testnet),
+        base_url_override.as_deref(),
+    )
 }

@@ -15,6 +15,7 @@
 
 //! Python bindings from `pyo3` for the Lighter adapter.
 
+pub mod http;
 pub mod urls;
 
 use pyo3::prelude::*;
@@ -24,5 +25,6 @@ use pyo3::prelude::*;
 pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(urls::py_get_lighter_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_lighter_ws_url, m)?)?;
+    m.add_class::<http::PyLighterHttpClient>()?;
     Ok(())
 }

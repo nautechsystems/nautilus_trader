@@ -13,4 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! HTTP client implementation for Lighter (to be added in later PRs).
+//! HTTP client implementation for Lighter public APIs.
+
+pub mod client;
+pub mod models;
+pub mod parse;
+
+pub use client::{LighterHttpClient, LighterInstrumentMeta};

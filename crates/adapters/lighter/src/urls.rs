@@ -15,11 +15,11 @@
 
 //! Helpers for resolving HTTP/WebSocket base URLs.
 
+use crate::common::LighterNetwork;
 use crate::common::constants::{
     LIGHTER_MAINNET_HTTP_BASE, LIGHTER_MAINNET_WS_BASE, LIGHTER_TESTNET_HTTP_BASE,
     LIGHTER_TESTNET_WS_BASE,
 };
-use crate::common::LighterNetwork;
 
 #[must_use]
 pub fn get_http_base_url(network: LighterNetwork, override_url: Option<&str>) -> String {
