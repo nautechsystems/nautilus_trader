@@ -7,12 +7,12 @@
 
 **Definition of Done**: Can load all instruments and subscribe to market data
 
-- [ ] **PR0: Scaffolding**
-  - [ ] Create package structure
-  - [ ] Implement config classes
-  - [ ] Define enums and constants
-  - [ ] Add credential utilities
-  - [ ] Unit tests for config
+- [x] **PR0: Scaffolding**
+  - [x] Create package structure
+  - [x] Implement config classes
+  - [x] Define enums and constants
+  - [x] Add credential utilities
+  - [x] Unit tests for config
 
 - [ ] **PR1: Instruments**
   - [ ] HTTP client with auth
@@ -112,6 +112,13 @@
 | 8 | Funding payment timing/precision | Medium | Observe funding events and compare to docs |
 | 9 | WS ping/pong expectations | Low | Monitor keepalive needs; add client-side ping if required |
 | 10 | Max orders per account / throttling | Low | Probe limits on testnet and document behavior |
+
+---
+
+### How to Test (PR0)
+
+- Command: `python -m pytest tests/unit_tests/adapters/lighter/test_config.py -q`
+- Expected: All tests pass (env resolution for API key/account index, invalid env raises ValueError).
 
 ---
 

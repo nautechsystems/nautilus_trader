@@ -5502,6 +5502,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-lighter"
+version = "0.52.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "futures-util",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-data",
+ "nautilus-execution",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-serialization",
+ "nautilus-testkit",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "reqwest",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
+ "tracing-test",
+ "url",
+ "ustr",
+]
+
+[[package]]
 name = "nautilus-live"
 version = "0.52.0"
 dependencies = [
@@ -5737,6 +5775,7 @@ dependencies = [
  "nautilus-indicators",
  "nautilus-infrastructure",
  "nautilus-kraken",
+ "nautilus-lighter",
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
