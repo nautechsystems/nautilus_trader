@@ -1,0 +1,52 @@
+[
+  {
+    "session_id": "ab7aa411-76fb-4387-9d52-d1d8452cf3e0",
+    "type": "connected"
+  },
+  {
+    "channel": "market_stats:1",
+    "market_stats": {
+      "symbol": "BTC",
+      "market_id": 1,
+      "index_price": "90565.6",
+      "mark_price": "90528.9",
+      "open_interest": "254682552.638283",
+      "open_interest_limit": "72057594037927936.000000",
+      "funding_clamp_small": "0.0500",
+      "funding_clamp_big": "4.0000",
+      "last_trade_price": "90530.6",
+      "current_funding_rate": "0.0008",
+      "funding_rate": "0.0012",
+      "funding_timestamp": 1765152000006,
+      "daily_base_token_volume": 44372.683469999996,
+      "daily_quote_token_volume": 3981842013.878986,
+      "daily_price_low": 87664.1,
+      "daily_price_high": 91757.5,
+      "daily_price_change": 1.4279664055357366
+    },
+    "type": "subscribed/market_stats"
+  },
+  {
+    "channel": "market_stats:1",
+    "market_stats": {
+      "symbol": "BTC",
+      "market_id": 1,
+      "index_price": "90563.5",
+      "mark_price": "90526.2",
+      "open_interest": "254674956.799914",
+      "open_interest_limit": "72057594037927936.000000",
+      "funding_clamp_small": "0.0500",
+      "funding_clamp_big": "4.0000",
+      "last_trade_price": "90529.0",
+      "current_funding_rate": "0.0008",
+      "funding_rate": "0.0012",
+      "funding_timestamp": 1765152000006,
+      "daily_base_token_volume": 44372.683469999996,
+      "daily_quote_token_volume": 3981842013.878986,
+      "daily_price_low": 87664.1,
+      "daily_price_high": 91757.5,
+      "daily_price_change": 1.4279664055357366
+    },
+    "type": "update/market_stats"
+  }
+]

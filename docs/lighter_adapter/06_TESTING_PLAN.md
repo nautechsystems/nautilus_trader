@@ -12,6 +12,14 @@
 - Store redacted captures under `tests/test_data/lighter/{http,ws}/`; drive contract/integration
   tests from these fixtures rather than live endpoints.
 
+**Captured (mainnet) fixtures available**:
+- Public WS: `tests/test_data/lighter/public_order_book_1.json`, `public_trade_1.json`,
+  `public_market_stats_1.json`
+- Private WS (auth token from signer): `tests/test_data/lighter/private_account_all_orders.json`,
+  `private_account_positions.json`, `private_account_transfers.json`
+- Private REST (with auth header): `tests/test_data/lighter/account.json`,
+  `account_active_orders.json`
+
 ### Unit Tests
 
 **Coverage Target**: &gt;80% for parsers, mappers, state machines

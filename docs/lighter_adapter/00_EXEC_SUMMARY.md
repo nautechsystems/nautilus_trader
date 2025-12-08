@@ -23,6 +23,7 @@ data with offset tracking. Execution/private streams require validation first.
 | **WebSocket** | `wss://mainnet.zklighter.elliot.ai/stream` (channel naming/schema still needs confirmation) |
 | **Market Data** | Public order books/trades available; snapshot vs delta semantics unverified |
 | **Fees** | Conflicting sources (premium maker/taker 0.002%/0.02% vs 0.02%/0.2%); must verify |
+| **Captured fixtures** | Public WS + private WS/REST samples stored under `tests/test_data/lighter/` |
 
 ### MUST VALIDATE before execution/private streams
 

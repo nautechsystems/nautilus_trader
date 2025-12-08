@@ -44,3 +44,4 @@ This engineering discovery pack contains all documentation required to implement
 | Lighter Testnet App | https://testnet.app.lighter.xyz/ |
 | dYdX Adapter (Reference) | nautilus_trader/adapters/dydx/ |
 | Hyperliquid Adapter (Reference) | nautilus_trader/adapters/hyperliquid/ |
+| Captured Fixtures (mainnet) | `tests/test_data/lighter/` (public + private WS/REST samples) |

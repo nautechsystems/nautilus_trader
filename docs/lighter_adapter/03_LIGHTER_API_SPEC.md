@@ -5,6 +5,14 @@
 This markdown summarizes the actionable interface checklist and flags uncertainties to resolve
 during the validation spike.
 
+### Latest captures (mainnet)
+- WS connects at `wss://mainnet.zklighter.elliot.ai/stream`
+- Channels observed: `order_book:1` (snapshot on subscribe + deltas with `offset` and `nonce`),
+  `trade:1`, `market_stats:1`
+- Private WS requires auth token from signer (`create_auth_token_with_expiry`) plus API key private
+  key; wallet key not needed for order flow
+- Fixtures stored under `tests/test_data/lighter/` (public + private samples)
+
 ### REST Endpoints (to validate)
 
 | Endpoint | Scope | Auth | Notes/TBD |
