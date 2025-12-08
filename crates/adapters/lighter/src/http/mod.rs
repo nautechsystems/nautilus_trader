@@ -20,3 +20,4 @@ pub mod models;
 pub mod parse;
 
 pub use client::{LighterHttpClient, LighterInstrumentMeta};
+pub use models::OrderBookSnapshotResponse;

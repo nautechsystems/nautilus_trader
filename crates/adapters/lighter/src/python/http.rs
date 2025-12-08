@@ -13,18 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{identifiers::InstrumentId, python::instruments::instrument_any_to_pyobject};
+use anyhow::anyhow;
+use nautilus_core::{python::to_pyvalue_err, time::get_atomic_clock_realtime};
+use nautilus_model::{
+    data::{Data, OrderBookDeltas_API},
+    identifiers::InstrumentId,
+    python::{
+        data::data_to_pycapsule,
+        instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
+    },
+};
 use pyo3::{prelude::*, types::PyList};
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use crate::data::order_book::depth_to_deltas_and_quote;
 use crate::{common::LighterNetwork, http::client::LighterHttpClient};
 
 /// PyO3 wrapper for the Lighter HTTP client.
 #[pyclass(name = "LighterHttpClient", module = "nautilus_pyo3.lighter")]
 #[derive(Clone)]
 pub struct PyLighterHttpClient {
-    inner: LighterHttpClient,
+    pub(crate) inner: LighterHttpClient,
 }
 
 #[pymethods]
@@ -79,5 +88,36 @@ impl PyLighterHttpClient {
     #[pyo3(name = "get_market_index")]
     fn py_get_market_index(&self, instrument_id: InstrumentId) -> Option<u32> {
         self.inner.get_market_index(&instrument_id)
+    }
+
+    #[pyo3(name = "get_order_book_snapshot")]
+    fn py_get_order_book_snapshot<'py>(
+        &self,
+        py: Python<'py>,
+        instrument: Py<PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let instrument = pyobject_to_instrument_any(py, instrument)?;
+        let client = self.inner.clone();
+
+        future_into_py(py, async move {
+            let market_index = client
+                .get_market_index(&instrument.id())
+                .ok_or_else(|| to_pyvalue_err(anyhow!("missing market index for instrument")))?;
+
+            let depth = client
+                .get_order_book_snapshot(market_index)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let ts_init = get_atomic_clock_realtime().get_time_ns();
+            let (deltas, _) = depth_to_deltas_and_quote(&depth, &instrument, ts_init, ts_init)
+                .map_err(to_pyvalue_err)?;
+
+            Python::with_gil(|py| {
+                let capsule =
+                    data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(deltas)))?;
+                Ok(capsule.into_any().unbind())
+            })
+        })
     }
 }

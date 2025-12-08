@@ -18,6 +18,8 @@ use std::{collections::HashMap, str::FromStr};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::data::models::LighterOrderBookDepth;
+
 /// Response envelope for `GET /orderBooks`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -139,5 +141,23 @@ where
         Some(other) => Err(serde::de::Error::custom(format!(
             "expected decimal-compatible value, found {other}"
         ))),
+    }
+}
+
+/// Response envelope for depth snapshots (REST or WS-compatible).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum OrderBookSnapshotResponse {
+    Wrapped { order_book: LighterOrderBookDepth },
+    Depth(LighterOrderBookDepth),
+}
+
+impl OrderBookSnapshotResponse {
+    #[must_use]
+    pub fn into_depth(self) -> LighterOrderBookDepth {
+        match self {
+            Self::Wrapped { order_book } => order_book,
+            Self::Depth(depth) => depth,
+        }
     }
 }

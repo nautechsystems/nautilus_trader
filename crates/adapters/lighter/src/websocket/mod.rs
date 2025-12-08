@@ -13,4 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! WebSocket client implementation for Lighter (to be added in later PRs).
+//! WebSocket client implementation for Lighter public market data.
+
+pub mod client;
+pub mod messages;
+pub mod parse;
+
+pub use client::LighterWebSocketClient;
+pub use messages::NautilusWsMessage;

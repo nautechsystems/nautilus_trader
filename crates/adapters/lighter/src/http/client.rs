@@ -27,9 +27,10 @@ use reqwest::{Client, Proxy};
 use tracing::{debug, trace, warn};
 
 use crate::common::LighterNetwork;
+use crate::data::models::LighterOrderBookDepth;
 use crate::urls::get_http_base_url;
 
-use super::models::{LighterOrderBook, OrderBooksResponse};
+use super::models::{LighterOrderBook, OrderBookSnapshotResponse, OrderBooksResponse};
 use super::parse::{LighterInstrumentDef, ParseReport};
 use super::parse::{instruments_from_defs, parse_instrument_defs};
 
@@ -43,7 +44,7 @@ pub struct LighterInstrumentMeta {
 }
 
 /// HTTP client for Lighter public endpoints.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LighterHttpClient {
     http: Client,
     base_url: String,
@@ -112,6 +113,42 @@ impl LighterHttpClient {
             serde_json::from_str(&body).context("failed to deserialize orderBooks response")?;
 
         Ok(parsed.into_books())
+    }
+
+    /// Fetch a full depth snapshot for the given market index.
+    ///
+    /// # Errors
+    /// Returns an error on request failure or invalid JSON.
+    pub async fn get_order_book_snapshot(
+        &self,
+        market_index: u32,
+    ) -> Result<LighterOrderBookDepth> {
+        let url = format!("{}/orderBookDetails?marketId={market_index}", self.base_url);
+        trace!(%url, "Requesting Lighter orderBookDetails");
+
+        let response = self
+            .http
+            .get(url)
+            .send()
+            .await
+            .context("failed to send orderBookDetails request")?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("failed to read orderBookDetails response body")?;
+
+        if !status.is_success() {
+            return Err(anyhow::anyhow!(
+                "orderBookDetails request failed ({status}): {body}"
+            ));
+        }
+
+        let parsed: OrderBookSnapshotResponse = serde_json::from_str(&body)
+            .context("failed to deserialize orderBookDetails response")?;
+
+        Ok(parsed.into_depth())
     }
 
     /// Load instrument definitions and convert them into Nautilus instrument types.

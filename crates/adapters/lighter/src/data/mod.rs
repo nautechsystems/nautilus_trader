@@ -13,4 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Live market data client for Lighter (scaffolding only).
+//! Market data utilities for the Lighter adapter.
+
+pub mod models;
+pub mod order_book;

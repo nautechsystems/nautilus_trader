@@ -27,14 +27,14 @@
 **Definition of Done**: Live order book and trade feeds working (public)
 
 - [ ] **PR2: WebSocket + Data Client**
-  - [ ] WebSocket client with reconnect
-  - [ ] Order book subscription
-  - [ ] Trade subscription
-  - [ ] Market stats subscription
-  - [ ] Offset sequencing
-  - [ ] Snapshot fetch + delta sync
-  - [ ] Data client implementation
-  - [ ] Integration test: order book sync (fixture-backed)
+  - [x] WebSocket client with reconnect
+  - [x] Order book subscription
+  - [x] Trade subscription
+  - [x] Market stats subscription
+  - [x] Offset sequencing
+  - [x] Snapshot fetch + delta sync
+  - [x] Data client implementation
+  - [x] Integration test: order book sync (fixture-backed)
 
 ### Milestone 2.5: Validation Spike (Week 2)
 
