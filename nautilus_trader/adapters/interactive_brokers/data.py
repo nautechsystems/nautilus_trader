@@ -407,15 +407,18 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        ticks = await self._handle_ticks_request(
-            request.instrument_id,
-            IBContract(**instrument.info["contract"]),
-            "BID_ASK",
-            request.limit,
-            request.start,
-            request.end,
-        )
+        end = request.end if request.end else pd.Timestamp.utcnow()
 
+        ticks = await self.get_historical_ticks_paged(
+            instrument_id=request.instrument_id,
+            contract=IBContract(**instrument.info["contract"]),
+            tick_type="BID_ASK",
+            start_date_time=request.start,
+            end_date_time=end,
+            limit=request.limit,
+            use_rth=self._use_regular_trading_hours,
+            timeout=self._request_timeout,
+        )
         if not ticks:
             self._log.warning(f"No quote tick data received for {request.instrument_id}")
             return
@@ -442,13 +445,17 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        ticks = await self._handle_ticks_request(
-            request.instrument_id,
-            IBContract(**instrument.info["contract"]),
-            "TRADES",
-            request.limit,
-            request.start,
-            request.end,
+        end = request.end if request.end else pd.Timestamp.utcnow()
+
+        ticks = await self.get_historical_ticks_paged(
+            instrument_id=request.instrument_id,
+            contract=IBContract(**instrument.info["contract"]),
+            tick_type="TRADES",
+            start_date_time=request.start,
+            end_date_time=end,
+            limit=request.limit,
+            use_rth=self._use_regular_trading_hours,
+            timeout=self._request_timeout,
         )
         if not ticks:
             self._log.warning(f"No trades received for {request.instrument_id}")
@@ -463,34 +470,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             request.params,
         )
 
-    async def _handle_ticks_request(
-        self,
-        instrument_id: InstrumentId,
-        contract: IBContract,
-        tick_type: str,
-        limit: int,
-        start: pd.Timestamp,
-        end: pd.Timestamp | None = None,
-    ) -> list[QuoteTick | TradeTick]:
-        if not end:
-            end = pd.Timestamp.utcnow()
-
-        ticks = await self.get_historical_ticks_paged(
-            instrument_id=instrument_id,
-            contract=contract,
-            tick_type=tick_type,
-            start_date_time=start,
-            end_date_time=end,
-            use_rth=self._use_regular_trading_hours,
-            timeout=self._request_timeout,
-        )
-
-        # Apply limit if specified
-        if limit > 0 and len(ticks) > limit:
-            ticks = ticks[-limit:]
-
-        return ticks
-
     async def get_historical_ticks_paged(
         self,
         instrument_id: InstrumentId,
@@ -500,12 +479,18 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         end_date_time: pd.Timestamp,
         use_rth: bool = True,
         timeout: int = 60,
+        limit: int = 0,
     ) -> list[TradeTick | QuoteTick]:
         """
         Retrieve historical ticks using pagination to handle large time ranges.
 
-        This method iterates forward from the start_date_time, requesting batches of ticks
-        until the end_date_time is reached.
+        This method iterates backward from the end_date_time, requesting batches of ticks
+        until the start_date_time is reached or the limit is satisfied.
+
+        When both a time range and limit are specified, the method will stop when either
+        the start_date_time is reached or the limit is satisfied, whichever comes first.
+        If a limit is specified without a start_date_time boundary, pagination will
+        continue until the limit is reached or no more data is available.
 
         Parameters
         ----------
@@ -519,6 +504,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             The start date time for the ticks.
         end_date_time : pd.Timestamp
             The end date time for the ticks.
+        limit : int, default 0
+            Maximum number of ticks to retrieve. If 0, no limit is applied.
         use_rth : bool, default True
             Whether to use regular trading hours.
         timeout : int, default 60
@@ -527,33 +514,38 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         Returns
         -------
         list[TradeTick | QuoteTick]
-            A list of aggregated ticks sorted by initialization timestamp.
+            A list of aggregated ticks sorted by initialization timestamp, filtered to
+            the requested time range and limited to the specified count if provided.
 
         """
         data: list[TradeTick | QuoteTick] = []
-        current_start_date_time = start_date_time
 
         # Ensure UTC
-        current_start_date_time = time_object_to_dt(current_start_date_time)
-        end_date_time = time_object_to_dt(end_date_time)
+        start_date_time = time_object_to_dt(start_date_time)
+        current_end_date_time = time_object_to_dt(end_date_time)
+        start_date_time_nanos = dt_to_unix_nanos(start_date_time)
+        end_date_time_nanos = dt_to_unix_nanos(end_date_time)
 
-        while True:
+        # Use 1 millisecond decrement to avoid duplicate/skipped ticks in high-frequency data
+        TIMESTAMP_DECREMENT_NS = 1_000_000
+
+        await self._client.wait_until_ready()
+
+        while current_end_date_time > start_date_time and (limit == 0 or len(data) < limit):
             self._log.info(
-                f"{instrument_id}: Requesting {tick_type} ticks from {current_start_date_time}",
+                f"{instrument_id}: Requesting {tick_type} ticks ending at {current_end_date_time}",
             )
-
-            # Using get_historical_ticks which serves as the "batch" request
-            # Note: client.reqHistoricalTicks takes string/Timestamp.
-            # We pass current_start_date_time as start.
 
             ticks = await self._client.get_historical_ticks(
                 instrument_id=instrument_id,
                 contract=contract,
                 tick_type=tick_type,
-                start_date_time=current_start_date_time,
+                end_date_time=current_end_date_time,
                 use_rth=use_rth,
                 timeout=timeout,
             )
+
+            # Break early if no ticks returned (reached beginning of available data)
             if not ticks:
                 break
 
@@ -561,49 +553,38 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 f"{instrument_id}: Number of {tick_type} ticks retrieved in batch: {len(ticks)}",
             )
 
-            current_start_date_time, should_continue = self._handle_timestamp_iteration(
-                ticks,
-                end_date_time,
-            )
+            # Filter ticks to ensure they're within the requested time range
+            # When iterating backward, filter ticks before start_date_time
+            filtered_ticks = [
+                tick
+                for tick in ticks
+                if start_date_time_nanos <= tick.ts_init <= end_date_time_nanos
+            ]
 
-            if not should_continue:
-                # Filter out ticks that are after the end_date_time
-                ticks = [
-                    tick for tick in ticks if tick.ts_event <= dt_to_unix_nanos(end_date_time)
-                ]
-                data.extend(ticks)
-                self._log.info(f"Total number of {tick_type} ticks in data: {len(data)}")
+            if not filtered_ticks:
+                # No ticks in this batch are within range, break to avoid infinite loop
                 break
 
-            data.extend(ticks)
+            # Find minimum timestamp from filtered ticks
+            min_timestamp_nanos = min(tick.ts_init for tick in filtered_ticks)
+
+            # Update end_date_time to 1ms before the minimum timestamp to avoid duplicates
+            current_end_date_time = unix_nanos_to_dt(min_timestamp_nanos - TIMESTAMP_DECREMENT_NS)
+
+            data.extend(filtered_ticks)
             self._log.info(f"Total number of {tick_type} ticks in data: {len(data)}")
 
-        return sorted(data, key=lambda x: x.ts_init)
+            # Break early if limit is reached
+            if limit > 0 and len(data) >= limit:
+                break
 
-    def _handle_timestamp_iteration(
-        self,
-        ticks: list[TradeTick | QuoteTick],
-        end_date_time: pd.Timestamp,
-    ) -> tuple[pd.Timestamp | None, bool]:
-        # Return the max timestamp from the given ticks and whether to continue iterating.
-        # If all timestamps occur in the same second, the max timestamp will be
-        # incremented by 1 second.
+        sorted_data = sorted(data, key=lambda x: x.ts_init)
 
-        if not ticks:
-            return None, False
+        # Apply limit if specified (trim to most recent ticks)
+        if limit > 0 and len(sorted_data) > limit:
+            sorted_data = sorted_data[-limit:]
 
-        timestamps = [unix_nanos_to_dt(tick.ts_event) for tick in ticks]
-        max_timestamp = max(timestamps)
-
-        next_start = max_timestamp + pd.Timedelta(seconds=1)
-
-        # Ensure UTC comparison
-        next_start = time_object_to_dt(next_start)
-        end_date_time = time_object_to_dt(end_date_time)
-        if next_start >= end_date_time:
-            return None, False
-
-        return next_start, True
+        return sorted_data
 
     async def _request_bars(self, request: RequestBars) -> None:
         contract = self.instrument_provider.contract.get(request.bar_type.instrument_id)
@@ -783,10 +764,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             else 0
         )
         seconds = (
-                delta.components.hours * 3600
-                + delta.components.minutes * 60
-                + delta.components.seconds
-                + subsecond
+            delta.components.hours * 3600
+            + delta.components.minutes * 60
+            + delta.components.seconds
+            + subsecond
         )
 
         results = []

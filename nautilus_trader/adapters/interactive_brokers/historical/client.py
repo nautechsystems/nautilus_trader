@@ -296,6 +296,7 @@ class HistoricInteractiveBrokersClient:
         instrument_ids: list[str | InstrumentId] | None = None,
         use_rth: bool = True,
         timeout: int = 60,
+        limit: int = 0,
     ) -> list[TradeTick | QuoteTick]:
         """
         Return TradeTicks or QuoteTicks for one or more bar specifications for a list of
@@ -320,6 +321,8 @@ class HistoricInteractiveBrokersClient:
             Whether to use regular trading hours.
         timeout : int, default 60
             The timeout (seconds) for each request.
+        limit : int, default 0
+            Maximum number of ticks to retrieve. If 0, no limit is applied.
 
         Returns
         -------
@@ -377,6 +380,7 @@ class HistoricInteractiveBrokersClient:
                 tick_type=tick_type,
                 start_date_time=start_date_time,
                 end_date_time=end_date_time,
+                limit=limit,
                 use_rth=use_rth,
                 timeout=timeout,
             )
@@ -385,8 +389,6 @@ class HistoricInteractiveBrokersClient:
                 data.extend(ticks)
 
         return sorted(data, key=lambda x: x.ts_init)
-
-
 
     async def _fetch_instruments_if_not_cached(
         self,
