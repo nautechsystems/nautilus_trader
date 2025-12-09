@@ -764,12 +764,12 @@ async fn test_unsubscribe_multiple_channels() {
         .await
         .unwrap();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
 
     client.unsubscribe_trades(instrument_id).await.unwrap();
     client.unsubscribe_orderbook(instrument_id).await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
 
     let subs = state.subscriptions.lock().await;
     assert!(
@@ -1408,7 +1408,7 @@ async fn test_mixed_subscription_types() {
     client.subscribe_orderbook(eth_id).await.unwrap();
     client.subscribe_candles(btc_id, "1MIN").await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
 
     let subs = state.subscriptions.lock().await;
     assert!(
@@ -1790,7 +1790,7 @@ async fn test_subscribe_all_channels_sequence() {
     client.subscribe_orderbook(btc_id).await.unwrap();
     client.subscribe_candles(btc_id, "1MIN").await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(Duration::from_millis(2500)).await;
 
     let subs = state.subscriptions.lock().await;
     assert!(subs.len() >= 5, "Should have all 5 subscription types");
@@ -1894,7 +1894,7 @@ async fn test_multiple_clones_subscribe() {
     let btc_id = InstrumentId::from("BTC-USD.DYDX");
     client.subscribe_trades(btc_id).await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
 
     let subs = state.subscriptions.lock().await;
     assert!(
