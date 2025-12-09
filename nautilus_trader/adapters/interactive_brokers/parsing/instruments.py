@@ -326,7 +326,7 @@ def parse_instrument(  # noqa: C901
     elif security_type == "CMDTY":
         return parse_commodity_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type == "BAG":
-        if has_futures(contract_details.contract, contract_details_map):
+        if _has_futures(contract_details.contract, contract_details_map):
             return parse_futures_spread(details=contract_details, instrument_id=instrument_id)
         else:
             return parse_option_spread(details=contract_details, instrument_id=instrument_id)
@@ -775,7 +775,7 @@ def parse_option_spread_instrument_id(
         raise ValueError(f"Failed to parse spread instrument ID {instrument_id}: {e}") from e
 
 
-def has_futures(
+def _has_futures(
     contract: IBContract,
     contract_details_map: dict[int, IBContractDetails] | None = None,
 ) -> bool:

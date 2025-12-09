@@ -5589,7 +5589,7 @@ cdef class OrderMatchingEngine:
             return
 
         # Generate leg fills for spread orders after normal combo fill processing
-        if instrument.is_spread() and order.is_closed_c():
+        if instrument.is_spread() and len(instrument.legs()) > 1:
             self._generate_spread_leg_fills(order, fills, liquidity_side)
 
     cdef void _generate_spread_leg_fills(
@@ -5615,9 +5615,6 @@ cdef class OrderMatchingEngine:
 
         # Parse spread legs from instrument
         leg_tuples = instrument.legs()
-        if len(leg_tuples) == 1:
-            return
-
         spread_instrument_ids = [leg[0] for leg in leg_tuples]
 
         spread_fill_px = fills[0][0]
