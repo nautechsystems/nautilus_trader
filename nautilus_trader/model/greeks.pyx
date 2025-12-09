@@ -157,10 +157,9 @@ cdef class GreeksCalculator:
         if instrument.instrument_class is not InstrumentClass.OPTION:
             multiplier = float(instrument.multiplier)
             underlying_instrument_id = instrument.id
-            underlying_price_obj = self._cache.price(underlying_instrument_id, PriceType.LAST)
 
+            underlying_price_obj = self._get_price(underlying_instrument_id)
             if underlying_price_obj is None:
-                self._log.warning(f"No last price available for {underlying_instrument_id}")
                 return None
 
             underlying_price = float(underlying_price_obj)
@@ -180,7 +179,6 @@ cdef class GreeksCalculator:
 
         if use_cached_greeks and (greeks_data := self._cache.greeks(instrument_id)) is not None:
             self._log.debug(f"Using cached greeks for {instrument_id=}")
-            pass
         else:
             utc_now_ns = ts_event if ts_event is not None else self._clock.timestamp_ns()
             utc_now = unix_nanos_to_dt(utc_now_ns)
@@ -211,22 +209,19 @@ cdef class GreeksCalculator:
             is_call = instrument.option_kind is OptionKind.CALL
             strike = float(instrument.strike_price)
 
-            option_mid_price_obj = self._cache.price(instrument_id, PriceType.MID)
-            underlying_price_obj = self._cache.price(underlying_instrument_id, PriceType.LAST)
+            option_price_obj = self._get_price(instrument_id)
+            if option_price_obj is None:
+                return None
 
-            if option_mid_price_obj is None:
-                self._log.warning(f"No mid price available for option {instrument_id}")
-                return
-
+            underlying_price_obj = self._get_price(underlying_instrument_id)
             if underlying_price_obj is None:
-                self._log.warning(f"No last price available for underlying {underlying_instrument_id}")
-                return
+                return None
 
-            option_mid_price = float(option_mid_price_obj)
+            option_price = float(option_price_obj)
             underlying_price = float(underlying_price_obj)
 
             greeks = imply_vol_and_greeks(underlying_price, interest_rate, cost_of_carry, is_call, strike,
-                                          expiry_in_years, option_mid_price, multiplier)
+                                          expiry_in_years, option_price, multiplier)
             delta, gamma, vega = self.modify_greeks(greeks.delta, greeks.gamma, underlying_instrument_id, underlying_price,
                                                      underlying_price, percent_greeks, index_instrument_id, beta_weights,
                                                      greeks.vega, greeks.vol, expiry_in_days, vega_time_weight_base)
@@ -266,6 +261,17 @@ cdef class GreeksCalculator:
             greeks_data.pnl = greeks_data.price - greeks_data.multiplier * position.avg_px_open
 
         return greeks_data
+
+    cdef object _get_price(self, InstrumentId instrument_id):
+        # Try MID price first, then LAST price as fallback
+        price_obj = self._cache.price(instrument_id, PriceType.MID)
+        if price_obj is None:
+            price_obj = self._cache.price(instrument_id, PriceType.LAST)
+            if price_obj is None:
+                self._log.warning(f"No price available for {instrument_id}")
+                return None
+
+        return price_obj
 
     def modify_greeks(
         self,
@@ -503,8 +509,8 @@ cdef class GreeksCalculator:
             )
 
             if instrument_greeks is None:
-                self._log.error(f"No greeks available for underlying {position_instrument_id}")
-                return
+                self._log.warning(f"No greeks available for underlying {position_instrument_id}")
+                continue
 
             position_greeks = quantity * instrument_greeks
 

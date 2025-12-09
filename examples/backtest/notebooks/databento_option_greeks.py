@@ -52,6 +52,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.greeks_data import GreeksData
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -93,7 +94,7 @@ register_tick_scheme(ES_OPTIONS_TICK_SCHEME)
 catalog_folder = "options_catalog"
 catalog = load_catalog(catalog_folder)
 
-future_symbols = ["ESM4"]
+future_symbols = ["ESM4", "NQM4"]
 option_symbols = ["ESM4 P5230", "ESM4 P5250"]
 
 # small amount of data to download for testing, very cheap
@@ -106,6 +107,14 @@ end_time = "2024-05-09T10:05"
 # db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
 # https://databento.com/docs/schemas-and-data-formats/whats-a-schema
+futures_data_bbo = databento_data(
+    future_symbols,
+    start_time,
+    end_time,
+    "bbo-1m",
+    "futures",
+    catalog_folder,
+)
 futures_data = databento_data(
     future_symbols,
     start_time,
@@ -131,9 +140,11 @@ options_data = databento_data(
 # %%
 class OptionConfig(StrategyConfig, frozen=True):
     future_id: InstrumentId
+    future_id2: InstrumentId
     option_id: InstrumentId
     option_id2: InstrumentId
     spread_id: InstrumentId
+    spread_id2: InstrumentId
     load_greeks: bool = False
 
 
@@ -166,7 +177,8 @@ class OptionStrategy(Strategy):
 
         self.request_instrument(self.config.option_id)
         self.request_instrument(self.config.option_id2)
-        self.request_instrument(self.bar_type.instrument_id)
+        self.request_instrument(self.config.future_id)
+        self.request_instrument(self.config.future_id2)
 
         # Subscribe to individual option quotes
         self.subscribe_quote_ticks(self.config.option_id)
@@ -184,6 +196,13 @@ class OptionStrategy(Strategy):
             },
         )
         self.subscribe_quote_ticks(self.config.spread_id)
+
+        self.subscribe_quote_ticks(self.config.future_id)
+        self.subscribe_quote_ticks(self.config.future_id2)
+        self.request_instrument(
+            instrument_id=self.config.spread_id2,
+        )
+        self.subscribe_quote_ticks(self.config.spread_id2)
 
         # Subscribing to custom greeks data if it's already stored
         self.subscribe_data(
@@ -213,13 +232,17 @@ class OptionStrategy(Strategy):
         self.start_orders_done = True
 
     def on_quote_tick(self, tick):
+        self.user_log(f"Quote received: {tick}")
+
         # Submit spread order when we have spread quotes available
         if tick.instrument_id == self.config.spread_id and not self.spread_order_submitted:
-            self.user_log(f"Spread quote received: {tick}")
-
             # Try submitting order immediately - the exchange should have processed the quote by now
             self.user_log(f"Submitting spread order for {self.config.spread_id}")
             self.submit_market_order(instrument_id=self.config.spread_id, quantity=5)
+
+            self.user_log(f"Submitting spread order for {self.config.spread_id2}")
+            self.submit_market_order(instrument_id=self.config.spread_id2, quantity=5)
+
             self.spread_order_submitted = True
 
     # def on_data(self, greeks):
@@ -246,8 +269,8 @@ class OptionStrategy(Strategy):
             # spot_shock=10.,
             # vol_shock=0.0,
             # percent_greeks=True,
-            # index_instrument_id=self.config.future_id,
-            # beta_weights={self.config.future_id: 2.}
+            index_instrument_id=self.config.future_id,
+            beta_weights={self.config.future_id2: 1.5},
         )
         self.user_log(f"{portfolio_greeks=}")
 
@@ -303,12 +326,19 @@ actors = [
 ]
 
 future_instrument_id = InstrumentId.from_str(f"{future_symbols[0]}.XCME")
+future_instrument_id2 = InstrumentId.from_str(f"{future_symbols[1]}.XCME")
 option1_id = InstrumentId.from_str(f"{option_symbols[0]}.XCME")
 option2_id = InstrumentId.from_str(f"{option_symbols[1]}.XCME")
-spread_instrument_id = InstrumentId.new_spread(
+spread_instrument_id = new_generic_spread_id(
     [
         (option1_id, -1),  # Short ESM4 P5230
         (option2_id, 1),  # Long ESM4 P5250
+    ],
+)
+spread_instrument_id2 = new_generic_spread_id(
+    [
+        (future_instrument_id, -1),  # Short ESM4
+        (future_instrument_id2, 1),  # Long ESZ4
     ],
 )
 
@@ -318,9 +348,11 @@ strategies = [
         config_path=OptionConfig.fully_qualified_name(),
         config={
             "future_id": future_instrument_id,
+            "future_id2": future_instrument_id2,
             "option_id": option1_id,
             "option_id2": option2_id,
             "spread_id": spread_instrument_id,
+            "spread_id2": spread_instrument_id2,
             "load_greeks": load_greeks,
         },
     ),

@@ -65,7 +65,6 @@ cdef class InstrumentId(Identifier):
     cdef InstrumentId from_str_c(str value)
     cpdef bint is_synthetic(self)
     cpdef object to_pyo3(self)
-    cpdef bint is_spread(self)
 
 
 cdef class ComponentId(Identifier):
@@ -152,3 +151,10 @@ cdef class TradeId(Identifier):
 
     @staticmethod
     cdef TradeId from_mem_c(TradeId_t mem)
+
+
+# Generic spread ID functions
+cpdef InstrumentId new_generic_spread_id(list instrument_ratios)
+cpdef list generic_spread_id_to_list(InstrumentId instrument_id)
+cpdef bint is_generic_spread_id(InstrumentId instrument_id)
+cpdef int generic_spread_id_n_legs(InstrumentId instrument_id)

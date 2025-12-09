@@ -4420,7 +4420,8 @@ cdef class Cache(CacheFacade):
         if not client_order_ids:
             return []
 
-        return [self._orders[client_order_id] for client_order_id in client_order_ids]
+        # An order can be missing when a position indexed by a virtual client_order_id has been created after a spread order fill
+        return [self._orders[client_order_id] for client_order_id in client_order_ids if client_order_id in self._orders]
 
     cpdef bint order_exists(self, ClientOrderId client_order_id):
         """

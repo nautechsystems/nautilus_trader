@@ -78,6 +78,7 @@ from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.greeks_data import GreeksData
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -911,10 +912,10 @@ class TestBacktestNodeWithBacktestDataIterator:
         assert len(portfolio_greeks_messages) > 0, "No portfolio greeks messages found"
 
         # The last portfolio greeks message should match the expected values (adjusted for spread execution)
-        # Now includes both individual leg orders and spread orders
+        # Now includes both individual leg orders and spread orders (option spread and future spread)
         last_greeks = portfolio_greeks_messages[-1]
         assert (
-            "portfolio_greeks=PortfolioGreeks(pnl=-350.00, price=7,937.50" in last_greeks
+            "portfolio_greeks=PortfolioGreeks(pnl=-355.05, price=7,927.45" in last_greeks
         ), f"Unexpected portfolio greeks: {last_greeks}"
         assert messages_with_data == messages_without_data
 
@@ -930,7 +931,11 @@ class TestBacktestNodeWithBacktestDataIterator:
         run_backtest(messages.append, with_data=True)
 
         # Extract relevant messages
-        spread_quotes = [msg for msg in messages if "Spread quote received:" in msg]
+        # Look for option spread quotes (format: "((1))ESM4 P5230___(1)ESM4 P5250.XCME")
+        spread_quotes = [
+            msg for msg in messages
+            if "Quote received:" in msg and ("((1))ESM4 P5230" in msg or "((1))ESM4___(1)" in msg)
+        ]
         combo_fills = [msg for msg in messages if "COMBO FILL:" in msg]
         all_leg_fills = [msg for msg in messages if "LEG FILL:" in msg]
 
@@ -1022,15 +1027,15 @@ class TestBacktestNodeWithBacktestDataIterator:
         Validate that spread quotes have the correct format.
         """
         for quote_msg in spread_quotes:
-            # Extract quote part: "Spread quote received: ((1))ESM4 P5230_(1)ESM4 P5250.XCME,10.61,10.64,113,62,1715248860000000000"
-            quote_part = quote_msg.split("Spread quote received: ")[1]
-
-            # Validate spread instrument ID format
+            # Validate spread instrument ID format (option spread)
             assert (
-                "((1))ESM4 P5230_(1)ESM4 P5250.XCME" in quote_part
-            ), f"Spread instrument ID not found in correct format: {quote_part}"
+                "((1))ESM4 P5230___(1)ESM4 P5250.XCME" in quote_msg or
+                ("ESM4 P5230" in quote_msg and "ESM4 P5250" in quote_msg) or
+                "((1))ESM4___(1)NQM4.XCME" in quote_msg  # Future spread
+            ), f"Spread instrument ID not found in correct format: {quote_msg}"
 
-            # Validate that quote has bid/ask prices
+            # Validate that quote has bid/ask prices (comma-separated format: instrument,bid,ask,...)
+            quote_part = quote_msg.split("Quote received: ")[1] if "Quote received: " in quote_msg else quote_msg
             quote_data = quote_part.split(",")
             assert (
                 len(quote_data) >= 3
@@ -1051,12 +1056,20 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
     catalog_folder = "options_catalog"
     catalog = load_catalog(catalog_folder)
 
-    future_symbols = ["ESM4"]
+    future_symbols = ["ESM4", "NQM4"]
     option_symbols = ["ESM4 P5230", "ESM4 P5250"]
 
     start_time = "2024-05-09T10:00"
     end_time = "2024-05-09T10:05"
 
+    _ = databento_data(
+        future_symbols,
+        start_time,
+        end_time,
+        "bbo-1m",
+        "futures",
+        catalog_folder,
+    )
     _ = databento_data(
         future_symbols,
         start_time,
@@ -1091,12 +1104,20 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
     # ]
 
     # Create spread instrument ID for testing spread execution
+    future_instrument_id = InstrumentId.from_str(f"{future_symbols[0]}.XCME")
+    future_instrument_id2 = InstrumentId.from_str(f"{future_symbols[1]}.XCME")
     option1_id = InstrumentId.from_str(f"{option_symbols[0]}.XCME")
     option2_id = InstrumentId.from_str(f"{option_symbols[1]}.XCME")
-    spread_instrument_id = InstrumentId.new_spread(
+    spread_instrument_id = new_generic_spread_id(
         [
             (option1_id, -1),  # Short ESM4 P5230
             (option2_id, 1),  # Long ESM4 P5250
+        ],
+    )
+    spread_instrument_id2 = new_generic_spread_id(
+        [
+            (future_instrument_id, -1),  # Short ESM4
+            (future_instrument_id2, 1),  # Long NQM4
         ],
     )
 
@@ -1107,10 +1128,12 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
             strategy_path=OptionStrategy.fully_qualified_name(),
             config_path=OptionConfig.fully_qualified_name(),
             config={
-                "future_id": InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+                "future_id": future_instrument_id,
+                "future_id2": future_instrument_id2,
                 "option_id": option1_id,
                 "option_id2": option2_id,
                 "spread_id": spread_instrument_id,
+                "spread_id2": spread_instrument_id2,
                 "load_greeks": load_greeks,
             },
         ),
@@ -1165,6 +1188,16 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
             catalog_path=catalog.path,
             instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
             bar_spec="1-MINUTE-LAST",
+        ),
+        BacktestDataConfig(
+            data_cls=QuoteTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+        ),
+        BacktestDataConfig(
+            data_cls=QuoteTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{future_symbols[1]}.XCME"),
         ),
     ]
 
@@ -1224,9 +1257,11 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
 
 class OptionConfig(StrategyConfig, frozen=True):
     future_id: InstrumentId
+    future_id2: InstrumentId
     option_id: InstrumentId
     option_id2: InstrumentId
     spread_id: InstrumentId
+    spread_id2: InstrumentId
     load_greeks: bool = False
 
 
@@ -1236,6 +1271,7 @@ class OptionStrategy(Strategy):
         self.start_orders_done = False
         self.spread_order_submitted = False
         self.spread_quotes_received = 0
+        self.future_spread_quotes_received = 0
         self.combo_fills: list[str] = []
         self.leg_fills: list[str] = []
 
@@ -1244,7 +1280,8 @@ class OptionStrategy(Strategy):
 
         self.request_instrument(self.config.option_id)
         self.request_instrument(self.config.option_id2)
-        self.request_instrument(self.bar_type.instrument_id)
+        self.request_instrument(self.config.future_id)
+        self.request_instrument(self.config.future_id2)
 
         # Subscribe to individual option quotes
         self.subscribe_quote_ticks(
@@ -1263,6 +1300,13 @@ class OptionStrategy(Strategy):
         # Request and subscribe to spread instrument
         self.request_instrument(self.config.spread_id)
         self.subscribe_quote_ticks(self.config.spread_id)
+
+        self.subscribe_quote_ticks(self.config.future_id)
+        self.subscribe_quote_ticks(self.config.future_id2)
+        self.request_instrument(
+            instrument_id=self.config.spread_id2,
+        )
+        self.subscribe_quote_ticks(self.config.spread_id2)
 
         self.subscribe_data(
             DataType(GreeksData),
@@ -1285,17 +1329,29 @@ class OptionStrategy(Strategy):
     #     self.cache.add_greeks(greeks)
 
     def on_quote_tick(self, tick):
-        # Submit spread order when we have spread quotes available
-        if tick.instrument_id == self.config.spread_id and not self.spread_order_submitted:
-            self.user_log(f"Spread quote received: {tick}")
-            self.spread_quotes_received += 1
+        self.user_log(f"Quote received: {tick}")
 
-            # Try submitting order immediately - the exchange should have processed the quote by now
+        # Track quotes for both spreads
+        if tick.instrument_id == self.config.spread_id:
+            self.spread_quotes_received += 1
+        elif tick.instrument_id == self.config.spread_id2:
+            self.future_spread_quotes_received += 1
+
+        # Submit spread orders when we have quotes for both spreads available
+        if (
+            (tick.instrument_id == self.config.spread_id or tick.instrument_id == self.config.spread_id2)
+            and not self.spread_order_submitted
+            and self.spread_quotes_received > 0
+            and self.future_spread_quotes_received > 0
+        ):
+            # Both spreads have quotes, submit orders
             self.user_log(f"Submitting spread order for {self.config.spread_id}")
             self.submit_market_order(instrument_id=self.config.spread_id, quantity=5)
+
+            self.user_log(f"Submitting spread order for {self.config.spread_id2}")
+            self.submit_market_order(instrument_id=self.config.spread_id2, quantity=5)
+
             self.spread_order_submitted = True
-        else:
-            self.user_log(f"Quote: {tick}")
 
     def on_order_filled(self, event):
         """
@@ -1349,6 +1405,8 @@ class OptionStrategy(Strategy):
         portfolio_greeks = self.greeks.portfolio_greeks(
             use_cached_greeks=self.config.load_greeks,
             publish_greeks=(not self.config.load_greeks),
+            index_instrument_id=self.config.future_id,
+            beta_weights={self.config.future_id2: 1.5},
         )
         self.user_log(f"{portfolio_greeks=}")
 
@@ -1386,6 +1444,7 @@ class OptionStrategy(Strategy):
         self.unsubscribe_quote_ticks(self.config.option_id2)
         self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
         self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
+        self.unsubscribe_quote_ticks(self.config.spread_id)
 
     def user_log(self, msg, color=LogColor.GREEN):
         self.log.warning(f"[SpreadTest] {msg!s}", color=color)
@@ -2152,12 +2211,20 @@ def run_backtest_and_return_engine(with_data=True):
     catalog_folder = "options_catalog"
     catalog = load_catalog(catalog_folder)
 
-    future_symbols = ["ESM4"]
+    future_symbols = ["ESM4", "NQM4"]
     option_symbols = ["ESM4 P5230", "ESM4 P5250"]
 
     start_time = "2024-05-09T10:00"
     end_time = "2024-05-09T10:05"
 
+    _ = databento_data(
+        future_symbols,
+        start_time,
+        end_time,
+        "bbo-1m",
+        "futures",
+        catalog_folder,
+    )
     _ = databento_data(
         future_symbols,
         start_time,
@@ -2177,12 +2244,20 @@ def run_backtest_and_return_engine(with_data=True):
 
     load_greeks = not with_data
 
+    future_instrument_id = InstrumentId.from_str(f"{future_symbols[0]}.XCME")
+    future_instrument_id2 = InstrumentId.from_str(f"{future_symbols[1]}.XCME")
     option1_id = InstrumentId.from_str(f"{option_symbols[0]}.XCME")
     option2_id = InstrumentId.from_str(f"{option_symbols[1]}.XCME")
-    spread_instrument_id = InstrumentId.new_spread(
+    spread_instrument_id = new_generic_spread_id(
         [
             (option1_id, -1),
             (option2_id, 1),
+        ],
+    )
+    spread_instrument_id2 = new_generic_spread_id(
+        [
+            (future_instrument_id, -1),  # Short ESM4
+            (future_instrument_id2, 1),  # Long NQM4
         ],
     )
 
@@ -2193,10 +2268,12 @@ def run_backtest_and_return_engine(with_data=True):
             strategy_path=OptionStrategy.fully_qualified_name(),
             config_path=OptionConfig.fully_qualified_name(),
             config={
-                "future_id": InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+                "future_id": future_instrument_id,
+                "future_id2": future_instrument_id2,
                 "option_id": option1_id,
                 "option_id2": option2_id,
                 "spread_id": spread_instrument_id,
+                "spread_id2": spread_instrument_id2,
                 "load_greeks": load_greeks,
             },
         ),
@@ -2230,6 +2307,16 @@ def run_backtest_and_return_engine(with_data=True):
             catalog_path=catalog.path,
             instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
             bar_spec="1-MINUTE-LAST",
+        ),
+        BacktestDataConfig(
+            data_cls=QuoteTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+        ),
+        BacktestDataConfig(
+            data_cls=QuoteTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{future_symbols[1]}.XCME"),
         ),
     ]
 

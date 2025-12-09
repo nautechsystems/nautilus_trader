@@ -33,6 +33,8 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.identifiers import generic_spread_id_to_list
+from nautilus_trader.model.identifiers import is_generic_spread_id
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -224,7 +226,7 @@ class TestSpreadFillCreation:
         Test creating combo fill from basic spread leg fill.
         """
         leg_fill = self.create_test_leg_fill(
-            "(1)SPY C400_((1))SPY C410.SMART",
+            "(1)SPY C400___((1))SPY C410.SMART",
             OrderSide.SELL,
             3,
             5.25,
@@ -244,7 +246,7 @@ class TestSpreadFillCreation:
         Test creating combo fill from ratio spread leg fill.
         """
         leg_fill = self.create_test_leg_fill(
-            "(1)E4DN5 P6350_((2))E4DN5 P6355.XCME",
+            "(1)E4DN5 P6350___((2))E4DN5 P6355.XCME",
             OrderSide.SELL,
             6,  # 3 spreads x 2 ratio = 6 contracts
             2.50,
@@ -262,7 +264,7 @@ class TestSpreadFillCreation:
         Test creating individual leg fill from spread execution.
         """
         leg_fill = self.create_test_leg_fill(
-            "(1)SPY C400_((1))SPY C410.SMART",
+            "(1)SPY C400___((1))SPY C410.SMART",
             OrderSide.SELL,
             3,
             5.25,
@@ -286,7 +288,7 @@ class TestSpreadFillCreation:
         Test creating individual leg fill from ratio spread execution.
         """
         leg_fill = self.create_test_leg_fill(
-            "(1)E4DN5 P6350_((2))E4DN5 P6355.XCME",
+            "(1)E4DN5 P6350___((2))E4DN5 P6355.XCME",
             OrderSide.SELL,
             6,
             2.50,
@@ -306,9 +308,9 @@ class TestSpreadFillCreation:
         try:
             # For testing, use simple 1:1 ratio unless we can parse the spread
             ratio = 1
-            if leg_fill.instrument_id.is_spread():
+            if is_generic_spread_id(leg_fill.instrument_id):
                 try:
-                    leg_tuples = leg_fill.instrument_id.to_list()
+                    leg_tuples = generic_spread_id_to_list(leg_fill.instrument_id)
                     if leg_tuples:
                         # For testing, find the leg with the highest absolute ratio
                         # This simulates finding the executed leg
@@ -415,8 +417,8 @@ class TestSpreadFillCreation:
         Test implementation of leg instrument ID extraction with ratio.
         """
         try:
-            if leg_fill.instrument_id.is_spread():
-                leg_tuples = leg_fill.instrument_id.to_list()
+            if is_generic_spread_id(leg_fill.instrument_id):
+                leg_tuples = generic_spread_id_to_list(leg_fill.instrument_id)
                 if leg_tuples:
                     # Return the first leg for testing
                     return leg_tuples[0]

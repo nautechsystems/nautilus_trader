@@ -200,6 +200,9 @@ class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
         False  # True = cancel order when condition met, False = transmit order
     )
 
+    # Smart combo routing parameters (for combo orders)
+    NonGuaranteed: bool = False  # True = non-guaranteed combo order, False = guaranteed combo order
+
     @property
     def value(self):
         return f"IBOrderTags:{self.json().decode()}"

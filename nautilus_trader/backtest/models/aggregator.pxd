@@ -13,11 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport TimeEvent
+from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class SpreadQuoteAggregator(Component):
@@ -30,13 +34,21 @@ cdef class SpreadQuoteAggregator(Component):
     cdef readonly int _update_interval_seconds
     cdef readonly str _timer_name
     cdef readonly list _component_ids
+    cdef readonly int _n_components
     cdef readonly object _ratios
     cdef readonly object _mid_prices
+    cdef readonly object _bid_prices
+    cdef readonly object _ask_prices
     cdef readonly object _vegas
     cdef readonly object _deltas
     cdef readonly object _bid_ask_spreads
     cdef readonly object _bid_sizes
     cdef readonly object _ask_sizes
+    cdef readonly Instrument _spread_instrument
+    cdef readonly bint _is_futures_spread
 
     cdef void _set_build_timer(self)
     cdef void _build_quote(self, TimeEvent event)
+    cdef tuple _create_option_spread_prices(self)
+    cdef tuple _create_futures_spread_prices(self)
+    cdef QuoteTick _create_quote_tick_from_raw_prices(self, double raw_bid_price, double raw_ask_price, uint64_t ts_event)

@@ -33,6 +33,7 @@ cdef class OptionSpread(Instrument):
     """UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
 
     cpdef bint is_spread(self)
+    cpdef list legs(self)
 
     @staticmethod
     cdef OptionSpread from_dict_c(dict values)

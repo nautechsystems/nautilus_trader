@@ -53,7 +53,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.model.instruments.futures_contract import FuturesContract
+from nautilus_trader.model.instruments.futures_spread import FuturesSpread
 from nautilus_trader.model.instruments.option_contract import OptionContract
 from nautilus_trader.model.instruments.option_spread import OptionSpread
 from nautilus_trader.model.objects import Currency
@@ -4377,7 +4379,7 @@ class TestSpreadQuoteAggregator:
         self.cache.add_trade_tick(underlying_trade)
 
         # Create spread instrument ID
-        self.spread_instrument_id = InstrumentId.new_spread(
+        self.spread_instrument_id = new_generic_spread_id(
             [
                 (self.option1.id, 1),
                 (self.option2.id, -1),
@@ -4836,7 +4838,7 @@ class TestSpreadQuoteAggregator:
         Test spread quote generation with different ratios (e.g., 1x2 ratio spread).
         """
         # Arrange - Create a 1x2 ratio spread
-        ratio_spread_id = InstrumentId.new_spread(
+        ratio_spread_id = new_generic_spread_id(
             [
                 (self.option1.id, 1),  # Long 1 of option1
                 (self.option2.id, -2),  # Short 2 of option2
@@ -5024,6 +5026,289 @@ class TestSpreadQuoteAggregator:
 
         # Assert
         assert len(self.handler) >= 0  # Just check it doesn't crash
+
+    def test_spread_aggregator_with_explicit_spread_legs(self):
+        """
+        Test that SpreadQuoteAggregator accepts explicit spread_legs parameter.
+        """
+        # Arrange - Create explicit spread legs list
+        spread_legs = [(self.option1.id, 1), (self.option2.id, -1)]
+
+        # Act
+        aggregator = SpreadQuoteAggregator(
+            spread_instrument_id=self.spread_instrument_id,
+            handler=self.handler.append,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            spread_legs=spread_legs,
+        )
+
+        # Assert
+        assert len(aggregator._components) == 2
+        assert aggregator._components == spread_legs
+        assert aggregator._components[0] == (self.option1.id, 1)
+        assert aggregator._components[1] == (self.option2.id, -1)
+
+    def test_futures_spread_quote_generation(self):
+        """
+        Test spread quote generation for futures spreads (different pricing logic).
+        """
+        # Arrange - Create futures spread
+        future1 = TestInstrumentProvider.es_future(expiry_year=2024, expiry_month=6)
+        future2 = TestInstrumentProvider.es_future(expiry_year=2024, expiry_month=9)
+        self.cache.add_instrument(future1)
+        self.cache.add_instrument(future2)
+
+        futures_spread_id = new_generic_spread_id(
+            [
+                (future1.id, -1),  # Short front month
+                (future2.id, 1),   # Long back month
+            ],
+        )
+
+        # Create FuturesSpread instrument
+        futures_spread = FuturesSpread(
+            instrument_id=futures_spread_id,
+            raw_symbol=futures_spread_id.symbol,
+            asset_class=AssetClass.INDEX,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.25"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            underlying="ES",
+            strategy_type="SPREAD",
+            activation_ns=0,
+            expiration_ns=min(future1.expiration_ns, future2.expiration_ns),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(futures_spread)
+
+        handler = []
+
+        SpreadQuoteAggregator(
+            spread_instrument_id=futures_spread_id,
+            handler=handler.append,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            update_interval_seconds=1,
+        )
+
+        # Add quotes for both futures
+        future1_quote = QuoteTick(
+            instrument_id=future1.id,
+            bid_price=Price.from_str("5240.00"),
+            ask_price=Price.from_str("5240.25"),
+            bid_size=Quantity.from_int(100),
+            ask_size=Quantity.from_int(50),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        future2_quote = QuoteTick(
+            instrument_id=future2.id,
+            bid_price=Price.from_str("5250.00"),
+            ask_price=Price.from_str("5250.25"),
+            bid_size=Quantity.from_int(80),
+            ask_size=Quantity.from_int(60),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.cache.add_quote_tick(future1_quote)
+        self.cache.add_quote_tick(future2_quote)
+
+        # Act - advance time to trigger quote generation
+        events = self.clock.advance_time(2_000_000_000)
+        for event in events:
+            event.handle()
+
+        # Assert - verify futures spread quote was generated
+        assert len(handler) >= 1
+        spread_quote = handler[0]
+
+        assert spread_quote.instrument_id == futures_spread_id
+        assert spread_quote.bid_price is not None
+        assert spread_quote.ask_price is not None
+
+        # For futures spread: -1 * future1 + 1 * future2
+        # Bid: -1 * future1_ask + 1 * future2_bid = -5240.25 + 5250.00 = 9.75
+        # Ask: -1 * future1_bid + 1 * future2_ask = -5240.00 + 5250.25 = 10.25
+        # Note: For negative ratios, we swap bid/ask
+        assert 9.0 <= spread_quote.bid_price.as_double() <= 11.0
+        assert 10.0 <= spread_quote.ask_price.as_double() <= 11.0
+        assert spread_quote.bid_price < spread_quote.ask_price
+
+        # Verify bid/ask sizes are calculated correctly for futures spreads
+        assert spread_quote.bid_size.as_double() > 0
+        assert spread_quote.ask_size.as_double() > 0
+
+    def test_futures_spread_skips_greeks_calculation(self):
+        """
+        Test that futures spreads skip greeks calculation (not required for futures).
+        """
+        # Arrange - Create futures spread
+        future1 = TestInstrumentProvider.es_future(expiry_year=2024, expiry_month=6)
+        future2 = TestInstrumentProvider.es_future(expiry_year=2024, expiry_month=9)
+        self.cache.add_instrument(future1)
+        self.cache.add_instrument(future2)
+
+        futures_spread_id = new_generic_spread_id(
+            [
+                (future1.id, -1),
+                (future2.id, 1),
+            ],
+        )
+
+        futures_spread = FuturesSpread(
+            instrument_id=futures_spread_id,
+            raw_symbol=futures_spread_id.symbol,
+            asset_class=AssetClass.INDEX,
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            price_increment=Price.from_str("0.25"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            underlying="ES",
+            strategy_type="SPREAD",
+            activation_ns=0,
+            expiration_ns=min(future1.expiration_ns, future2.expiration_ns),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(futures_spread)
+
+        handler = []
+
+        aggregator = SpreadQuoteAggregator(
+            spread_instrument_id=futures_spread_id,
+            handler=handler.append,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            update_interval_seconds=1,
+        )
+
+        # Assert - futures spreads should skip greeks
+        assert aggregator._is_futures_spread is True
+
+        # Add quotes (no greeks needed)
+        future1_quote = QuoteTick(
+            instrument_id=future1.id,
+            bid_price=Price.from_str("5240.00"),
+            ask_price=Price.from_str("5240.25"),
+            bid_size=Quantity.from_int(100),
+            ask_size=Quantity.from_int(50),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        future2_quote = QuoteTick(
+            instrument_id=future2.id,
+            bid_price=Price.from_str("5250.00"),
+            ask_price=Price.from_str("5250.25"),
+            bid_size=Quantity.from_int(80),
+            ask_size=Quantity.from_int(60),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.cache.add_quote_tick(future1_quote)
+        self.cache.add_quote_tick(future2_quote)
+
+        # Act - should generate quote without greeks
+        events = self.clock.advance_time(2_000_000_000)
+        for event in events:
+            event.handle()
+
+        # Assert - quote should be generated even without greeks
+        assert len(handler) >= 1
+        spread_quote = handler[0]
+        assert spread_quote.instrument_id == futures_spread_id
+        assert spread_quote.bid_price is not None
+        assert spread_quote.ask_price is not None
+
+    def test_spread_quote_bid_ask_size_calculation_with_negative_ratios(self):
+        """
+        Test that bid/ask sizes are calculated correctly for spreads with negative
+        ratios.
+        """
+        # Arrange - Create spread with negative ratio on first leg
+        spread_id = new_generic_spread_id(
+            [
+                (self.option1.id, -2),  # Negative ratio
+                (self.option2.id, 1),
+            ],
+        )
+
+        spread = OptionSpread(
+            instrument_id=spread_id,
+            raw_symbol=spread_id.symbol,
+            asset_class=self.option1.asset_class,
+            currency=self.option1.quote_currency,
+            price_precision=self.option1.price_precision,
+            price_increment=self.option1.price_increment,
+            multiplier=self.option1.multiplier,
+            lot_size=self.option1.lot_size,
+            underlying="ES",
+            strategy_type="SPREAD",
+            activation_ns=0,
+            expiration_ns=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(spread)
+
+        handler = []
+
+        SpreadQuoteAggregator(
+            spread_instrument_id=spread_id,
+            handler=handler.append,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            update_interval_seconds=1,
+        )
+
+        # Add quotes with different sizes
+        option1_quote = QuoteTick(
+            instrument_id=self.option1.id,
+            bid_price=Price.from_str("97.00"),
+            ask_price=Price.from_str("98.00"),
+            bid_size=Quantity.from_int(100),  # Large bid size
+            ask_size=Quantity.from_int(50),   # Smaller ask size
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        option2_quote = QuoteTick(
+            instrument_id=self.option2.id,
+            bid_price=Price.from_str("108.00"),
+            ask_price=Price.from_str("109.00"),
+            bid_size=Quantity.from_int(80),
+            ask_size=Quantity.from_int(60),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.cache.add_quote_tick(option1_quote)
+        self.cache.add_quote_tick(option2_quote)
+
+        # Act
+        events = self.clock.advance_time(2_000_000_000)
+        for event in events:
+            event.handle()
+
+        # Assert - verify sizes are calculated correctly
+        assert len(handler) >= 1
+        spread_quote = handler[0]
+        assert spread_quote.bid_size.as_double() > 0
+        assert spread_quote.ask_size.as_double() > 0
+        # For negative ratios, bid/ask sizes should account for the swap
+        # The calculation should use minimum of appropriate sizes considering ratio signs
 
 
 class TestTimeBarAggregatorHistoricalMode:

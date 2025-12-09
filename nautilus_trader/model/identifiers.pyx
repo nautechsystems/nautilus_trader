@@ -16,6 +16,7 @@
 from libc.string cimport strcmp
 
 from nautilus_trader.core import nautilus_pyo3
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport account_id_new
 from nautilus_trader.core.rust.model cimport client_id_new
@@ -27,7 +28,6 @@ from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_is_synthetic
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
-from nautilus_trader.core.rust.model cimport interned_string_stats
 from nautilus_trader.core.rust.model cimport order_list_id_new
 from nautilus_trader.core.rust.model cimport position_id_new
 from nautilus_trader.core.rust.model cimport strategy_id_new
@@ -46,6 +46,22 @@ from nautilus_trader.core.rust.model cimport venue_order_id_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.string cimport ustr_to_pystr
+
+import re
+
+
+GENERIC_SPREAD_ID_SEPARATOR = "___"
+
+
+# Helper functions for sorting (to avoid lambdas in cpdef functions)
+cdef str _get_symbol_value(tuple x):
+    cdef InstrumentId instrument_id = x[0]
+    return instrument_id.symbol.value
+
+
+cdef str _get_symbol_value_from_tuple(tuple x):
+    cdef InstrumentId instrument_id = x[0]
+    return instrument_id.symbol.value
 
 
 cdef class Identifier:
@@ -402,17 +418,6 @@ cdef class InstrumentId(Identifier):
         """
         return <bint>instrument_id_is_synthetic(&self._mem)
 
-    cpdef bint is_spread(self):
-        """
-        Return whether the instrument ID is a spread instrument (symbol contains '_' separator).
-
-        Returns
-        -------
-        bool
-
-        """
-        return "_" in self.symbol.value
-
     @staticmethod
     def from_pyo3(pyo3_instrument_id) -> InstrumentId:
         """
@@ -441,137 +446,158 @@ cdef class InstrumentId(Identifier):
         """
         return nautilus_pyo3.InstrumentId.from_str(self.to_str())
 
-    @staticmethod
-    def new_spread(instrument_ratios: list[tuple[InstrumentId, int]]) -> InstrumentId:
-        """
-        Create a spread InstrumentId from a list of (instrument_id, ratio) tuples.
 
-        The resulting symbol will be in the format: (ratio1)symbol1_(ratio2)symbol2_...
-        where positive ratios are shown as (ratio) and negative ratios as ((ratio)).
-        All instrument IDs must have the same venue. The instrument IDs are sorted
-        alphabetically by symbol before creating the spread symbol.
+cpdef InstrumentId new_generic_spread_id(list instrument_ratios):
+    """
+    Create a spread InstrumentId from a list of (instrument_id, ratio) tuples.
 
-        Parameters
-        ----------
-        instrument_ratios : list[tuple[InstrumentId, int]]
-            List of tuples containing (instrument_id, ratio) where ratio cannot be 0.
+    The resulting symbol will be in the format: (ratio1)symbol1_(ratio2)symbol2_...
+    where positive ratios are shown as (ratio) and negative ratios as ((ratio)).
+    All instrument IDs must have the same venue. The instrument IDs are sorted
+    alphabetically by symbol before creating the spread symbol.
 
-        Returns
-        -------
-        InstrumentId
-            The spread instrument ID.
+    Parameters
+    ----------
+    instrument_ratios : list[tuple[InstrumentId, int]]
+        List of tuples containing (instrument_id, ratio) where ratio cannot be 0.
 
-        Raises
-        ------
-        ValueError
-            If the list is empty, ratios are zero, or venues don't match.
+    Returns
+    -------
+    InstrumentId
+        The spread instrument ID.
 
-        Examples
-        --------
-        >>> from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
-        >>> id1 = InstrumentId(Symbol("MSFT"), Venue("NASDAQ"))
-        >>> id2 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
-        >>> spread = InstrumentId.new_spread([(id1, 1), (id2, -2)])
-        >>> print(spread.symbol.value)
-        ((2))AAPL_(1)MSFT
+    Raises
+    ------
+    ValueError
+        If the list is empty, ratios are zero, or venues don't match.
 
-        """
-        if len(instrument_ratios) <= 1:
-            raise ValueError("instrument_ratios list needs to have at least 2 legs")
+    Examples
+    --------
+    >>> from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue, new_generic_spread_id
+    >>> id1 = InstrumentId(Symbol("MSFT"), Venue("NASDAQ"))
+    >>> id2 = InstrumentId(Symbol("AAPL"), Venue("NASDAQ"))
+    >>> spread = new_generic_spread_id([(id1, 1), (id2, -2)])
+    >>> print(spread.symbol.value)
+    ((2))AAPL___(1)MSFT
 
-        # Validate all ratios are non-zero and venues match
-        first_venue = instrument_ratios[0][0].venue
+    """
+    if len(instrument_ratios) <= 1:
+        raise ValueError("instrument_ratios list needs to have at least 2 legs")
 
-        for instrument_id, ratio in instrument_ratios:
-            if ratio == 0:
-                raise ValueError("ratio cannot be zero")
+    # Validate all ratios are non-zero and venues match
+    first_venue = instrument_ratios[0][0].venue
 
-            if instrument_id.venue != first_venue:
-                raise ValueError(f"All venues must match. Expected {first_venue}, was {instrument_id.venue}")
+    for instrument_id, ratio in instrument_ratios:
+        if ratio == 0:
+            raise ValueError("ratio cannot be zero")
 
-        # Sort instrument ratios alphabetically by symbol
-        sorted_ratios = sorted(instrument_ratios, key=lambda x: x[0].symbol.value)
+        if instrument_id.venue != first_venue:
+            raise ValueError(f"All venues must match. Expected {first_venue}, was {instrument_id.venue}")
 
-        # Build the composite symbol
-        symbol_parts = []
+    # Sort instrument ratios alphabetically by symbol
+    cdef list sorted_ratios = sorted(instrument_ratios, key=_get_symbol_value)
 
-        for instrument_id, ratio in sorted_ratios:
-            if ratio > 0:
-                symbol_part = f"({ratio}){instrument_id.symbol.value}"
-            else:
-                symbol_part = f"(({abs(ratio)})){instrument_id.symbol.value}"
+    # Build the composite symbol
+    symbol_parts = []
 
-            symbol_parts.append(symbol_part)
+    for instrument_id, ratio in sorted_ratios:
+        if ratio > 0:
+            symbol_part = f"({ratio}){instrument_id.symbol.value}"
+        else:
+            symbol_part = f"(({abs(ratio)})){instrument_id.symbol.value}"
 
-        composite_symbol = "_".join(symbol_parts)
+        symbol_parts.append(symbol_part)
 
-        return InstrumentId(Symbol(composite_symbol), first_venue)
+    composite_symbol = GENERIC_SPREAD_ID_SEPARATOR.join(symbol_parts)
 
-    def to_list(self) -> list[tuple[InstrumentId, int]]:
-        """
-        Parse this InstrumentId back into a list of (instrument_id, ratio) tuples.
+    return InstrumentId(Symbol(composite_symbol), first_venue)
 
-        This is the inverse operation of new_spread(). The symbol must be in the format
-        created by new_spread(): (ratio1)symbol1_(ratio2)symbol2_...
-        The returned list is sorted alphabetically by symbol.
 
-        Returns
-        -------
-        list[tuple[InstrumentId, int]]
-            List of tuples containing (instrument_id, ratio), sorted alphabetically by symbol.
+cpdef list generic_spread_id_to_list(InstrumentId instrument_id):
+    """
+    Parse this InstrumentId back into a list of (instrument_id, ratio) tuples.
 
-        Raises
-        ------
-        ValueError
-            If the symbol format is not compatible with new_spread() format.
+    This is the inverse operation of new_generic_spread_id(). The symbol must be in the format
+    created by new_generic_spread_id(): (ratio1)symbol1___(ratio2)symbol2___...
+    The returned list is sorted alphabetically by symbol.
 
-        Examples
-        --------
-        >>> from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
-        >>> spread = InstrumentId(Symbol("(1)AAPL_((2))MSFT"), Venue("NASDAQ"))
-        >>> result = spread.to_list()
-        >>> print(result)
-        [(InstrumentId('AAPL.NASDAQ'), 1), (InstrumentId('MSFT.NASDAQ'), -2)]
+    Returns
+    -------
+    list[tuple[InstrumentId, int]]
+        List of tuples containing (instrument_id, ratio), sorted alphabetically by symbol.
 
-        """
-        import re
+    Raises
+    ------
+    ValueError
+        If the symbol format is not compatible with new_generic_spread_id() format.
 
-        symbol_str = self.symbol.value
-        venue = self.venue
+    Examples
+    --------
+    >>> from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue, generic_spread_id_to_list
+    >>> spread = InstrumentId(Symbol("(1)AAPL___((2))MSFT"), Venue("NASDAQ"))
+    >>> result = generic_spread_id_to_list(spread)
+    >>> print(result)
+    [(InstrumentId('AAPL.NASDAQ'), 1), (InstrumentId('MSFT.NASDAQ'), -2)]
 
-        # Split by underscore to get individual components
-        components = symbol_str.split("_")
-        result = []
+    """
+    symbol_str = instrument_id.symbol.value
+    venue = instrument_id.venue
 
-        # Pattern to match (ratio)symbol or ((ratio))symbol
-        pattern = r'^\(\((\d+)\)\)(.+)$|^\((\d+)\)(.+)$'
+    # Split by underscore to get individual components
+    components = symbol_str.split(GENERIC_SPREAD_ID_SEPARATOR)
+    result = []
 
-        for component in components:
-            match = re.match(pattern, component)
+    # Pattern to match (ratio)symbol or ((ratio))symbol
+    pattern = r'^\(\((\d+)\)\)(.+)$|^\((\d+)\)(.+)$'
+    for component in components:
+        match = re.match(pattern, component)
+        if not match:
+            raise ValueError(f"Invalid symbol format for component: {component}")
 
-            if not match:
-                raise ValueError(f"Invalid symbol format for component: {component}")
+        if match.group(1) is not None:  # Negative ratio: ((ratio))symbol
+            ratio = -int(match.group(1))
+            symbol_value = match.group(2)
+        else:  # Positive ratio: (ratio)symbol
+            ratio = int(match.group(3))
+            symbol_value = match.group(4)
 
-            if match.group(1) is not None:  # Negative ratio: ((ratio))symbol
-                ratio = -int(match.group(1))
-                symbol_value = match.group(2)
-            else:  # Positive ratio: (ratio)symbol
-                ratio = int(match.group(3))
-                symbol_value = match.group(4)
+        instrument_id = InstrumentId(Symbol(symbol_value), venue)
+        result.append((instrument_id, ratio))
 
-            instrument_id = InstrumentId(Symbol(symbol_value), venue)
-            result.append((instrument_id, ratio))
+    # Sort result alphabetically by symbol
+    result.sort(key=_get_symbol_value_from_tuple)
 
-        # Sort result alphabetically by symbol
-        result.sort(key=lambda x: x[0].symbol.value)
+    return result
 
-        return result
 
-    def n_legs(self):
-        if not self.is_spread():
-            return 1
+cpdef bint is_generic_spread_id(InstrumentId instrument_id):
+    """
+    Return whether the instrument ID is a spread instrument (symbol contains '_' separator).
 
-        return sum([abs(component[1]) for component in self.to_list()])
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID to check.
+
+    Returns
+    -------
+    bool
+        True if the instrument ID is a spread, False otherwise.
+
+    """
+    return GENERIC_SPREAD_ID_SEPARATOR in instrument_id.symbol.value
+
+
+cpdef int generic_spread_id_n_legs(InstrumentId instrument_id):
+    if not is_generic_spread_id(instrument_id):
+        return 1
+
+    cdef list components = generic_spread_id_to_list(instrument_id)
+    cdef int total = 0
+    cdef tuple component
+    for component in components:
+        total += abs(component[1])
+    return total
 
 
 cdef class ComponentId(Identifier):

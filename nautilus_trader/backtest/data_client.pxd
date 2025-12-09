@@ -29,7 +29,9 @@ cdef class BacktestDataClient(DataClient):
 cdef class BacktestMarketDataClient(MarketDataClient):
     cdef dict[InstrumentId, SpreadQuoteAggregator] _spread_quote_aggregators
 
-    cdef Instrument _create_option_spread_from_components(self, InstrumentId spread_instrument_id)
+    cdef bint _has_futures(self, list components)
+    cdef Instrument _create_option_spread_from_components(self, InstrumentId spread_instrument_id, list spread_legs)
+    cdef Instrument _create_futures_spread_from_components(self, InstrumentId spread_instrument_id, list spread_legs)
     cpdef void _start_spread_quote_aggregator(self, SubscribeQuoteTicks command)
     cpdef void _stop_spread_quote_aggregator(self, UnsubscribeQuoteTicks command)
     cdef void _handle_spread_quote(self, quote)

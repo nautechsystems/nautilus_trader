@@ -17,23 +17,6 @@
 # Note: Use the jupytext python extension to be able to open this python file in jupyter as a notebook
 
 # %%
-"""
-Test 1x2 Ratio Spread with Quantity 3.
-
-This test places a market order for 3 units of a 1x2 ratio spread:
-- Long 1 E4DN5 P6350 per spread unit
-- Long 2 E4DN5 P6355 per spread unit
-- Total order: 3 spread units = Long 3 P6350, Long 6 P6355
-
-This will test the new spread execution functionality and verify:
-1. Proper spread instrument creation
-2. Order submission and acceptance
-3. Fill event handling for ratio spreads
-4. Portfolio position tracking
-
-"""
-
-# %%
 
 import os
 import threading
@@ -60,26 +43,23 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.trading.config import StrategyConfig
 from nautilus_trader.trading.strategy import Strategy
 
 
 # %%
-class RatioSpreadTestConfig(StrategyConfig, frozen=True):
-    """
-    Configuration for 1x2 ratio spread test.
-    """
-
+class SpreadTestConfig(StrategyConfig, frozen=True):
     spread_instrument_id: InstrumentId
 
 
 # %%
-class RatioSpreadTestStrategy(Strategy):
+class SpreadTestStrategy(Strategy):
     """
     Strategy to test 1x2 ratio spread execution with quantity 3.
     """
 
-    def __init__(self, config: RatioSpreadTestConfig):
+    def __init__(self, config: SpreadTestConfig):
         super().__init__(config=config)
         self.order_placed = False
         self.execution_events: list[OrderFilled] = []
@@ -93,16 +73,10 @@ class RatioSpreadTestStrategy(Strategy):
         """
         self.log.info("=" * 80, color=LogColor.BLUE)
         self.log.info(
-            "1x2 RATIO SPREAD TEST (Quantity 3) - DYNAMIC LOADING",
+            "SPREAD INSTRUMENT - DYNAMIC LOADING",
             color=LogColor.BLUE,
         )
         self.log.info("=" * 80, color=LogColor.BLUE)
-
-        self.log.info(f"Testing spread: {self.config.spread_instrument_id}")
-        self.log.info("Expected execution:")
-        self.log.info("  - 3 spread units")
-        self.log.info("  - Long 3 contracts of E1AQ5 C6400")
-        self.log.info("  - Long 6 contracts of E1AQ5 P6440")
 
         # Request the spread instrument dynamically (not pre-loaded)
         self.log.info("Requesting spread instrument dynamically...")
@@ -126,10 +100,10 @@ class RatioSpreadTestStrategy(Strategy):
 
     def _place_ratio_spread_order(self, instrument):
         """
-        Place a market order for the 1x2 ratio spread.
+        Place a market order for the futures calendar spread.
         """
         self.log.info("=" * 60, color=LogColor.GREEN)
-        self.log.info("PLACING 1x2 RATIO SPREAD MARKET ORDER (DAY)", color=LogColor.GREEN)
+        self.log.info("PLACING SPREAD MARKET ORDER (DAY)", color=LogColor.GREEN)
         self.log.info("=" * 60, color=LogColor.GREEN)
 
         # Create market order for 3 spread units (DAY required for combo orders)
@@ -152,7 +126,7 @@ class RatioSpreadTestStrategy(Strategy):
         self.order_placed = True
 
         self.log.info(
-            "Market order submitted for 1x2 ratio spread",
+            "Market order submitted for futures calendar spread",
             color=LogColor.GREEN,
         )
 
@@ -247,7 +221,7 @@ class RatioSpreadTestStrategy(Strategy):
             self.log.info("   Expected: 1 contract per spread unit", color=LogColor.CYAN)
         elif event.order_side == OrderSide.SELL:
             self.log.info(f"   SHORT leg fill: {fill_qty} contracts", color=LogColor.CYAN)
-            self.log.info("   Expected: 2 contracts per spread unit", color=LogColor.CYAN)
+            self.log.info("   Expected: 1 contract per spread unit (ESH6)", color=LogColor.CYAN)
 
         # Check if this is spread-level or leg-level fill
         if str(event.instrument_id) == str(self.config.spread_instrument_id):
@@ -299,10 +273,10 @@ class RatioSpreadTestStrategy(Strategy):
             self.log.info(f"BUY fills: {len(buy_fills)} (total qty: {buy_qty})")
             self.log.info(f"SELL fills: {len(sell_fills)} (total qty: {sell_qty})")
 
-            # Expected: 3 long, 6 short for 3 spread units
-            self.log.info("Expected for 3 spread units: 3 long, 6 short")
+            # Expected: 3 long (ESZ5), 3 short (ESH6) for 3 spread units
+            self.log.info("Expected for 3 spread units: 3 long (ESZ5), 3 short (ESH6)")
 
-            if buy_qty == 3 and sell_qty == 6:
+            if buy_qty == 3 and sell_qty == 3:
                 self.log.info("EXECUTION MATCHES EXPECTED RATIOS", color=LogColor.GREEN)
             else:
                 self.log.info("EXECUTION PATTERN UNCLEAR", color=LogColor.YELLOW)
@@ -311,20 +285,22 @@ class RatioSpreadTestStrategy(Strategy):
 
 
 # %%
-# Create 1x2 ratio spread
-leg1_id = InstrumentId.from_str("E1CU5 P6440.XCME")  # Long put
-leg2_id = InstrumentId.from_str("E1CU5 P6450.XCME")  # Short put
+leg1_id = InstrumentId.from_str("ESZ5.XCME")
+leg2_id = InstrumentId.from_str("ESH6.XCME")
 
-spread_id = InstrumentId.new_spread(
+# leg1_id = InstrumentId.from_str("ESZ5 P6800.XCME")
+# leg2_id = InstrumentId.from_str("ESZ5 P6790.XCME")
+
+spread_id = new_generic_spread_id(
     [
-        (leg1_id, 1),
-        (leg2_id, -1),
+        (leg1_id, 1),   # Long 1 ESZ5 per spread unit
+        (leg2_id, -1),  # Short 1 ESH6 per spread unit
     ],
 )
 
-print(f"Testing 1x2 ratio spread: {spread_id}")
+print(f"Testing spread: {spread_id}")
 print("Order: 3 spread units")
-print("Expected execution: Long 3 P6350, Long 6 P6355")
+print("Expected execution: Long 3 ESZ5, Short 3 ESH6")
 print()
 
 # Configure instrument provider (no pre-loaded spread IDs)
@@ -340,7 +316,7 @@ instrument_provider = InteractiveBrokersInstrumentProviderConfig(
 
 # Configure the trading node
 config_node = TradingNodeConfig(
-    trader_id="RATIO-SPREAD-TEST",
+    trader_id="SPREAD-TEST",
     logging=LoggingConfig(log_level="INFO"),
     data_clients={
         IB: InteractiveBrokersDataClientConfig(
@@ -366,8 +342,8 @@ config_node = TradingNodeConfig(
 
 # Create and configure node
 node = TradingNode(config=config_node)
-strategy_config = RatioSpreadTestConfig(spread_instrument_id=spread_id)
-strategy = RatioSpreadTestStrategy(config=strategy_config)
+strategy_config = SpreadTestConfig(spread_instrument_id=spread_id)
+strategy = SpreadTestStrategy(config=strategy_config)
 
 node.trader.add_strategy(strategy)
 node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
@@ -375,14 +351,15 @@ node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
 
 # %%
-print("Starting 1x2 Ratio Spread Test (Dynamic Loading + Quote Ticks)...")
+print("Starting Futures Spread Test (Dynamic Loading + Quote Ticks)...")
 print("This will:")
 print("1. Connect to Interactive Brokers")
-print("2. Dynamically request the 1x2 ratio spread instrument (not pre-loaded)")
-print("3. Subscribe to quote ticks for the spread")
-print("4. Place a market order for 3 spread units")
-print("5. Monitor execution events and quote ticks for 60 seconds")
-print("6. Auto-stop and analyze results")
+print("2. Dynamically request the futures calendar spread instrument (not pre-loaded)")
+print("3. Request market data to get tick size from tickReqParams (for futures spreads)")
+print("4. Subscribe to quote ticks for the spread")
+print("5. Place a market order for 3 spread units")
+print("6. Monitor execution events and quote ticks for 60 seconds")
+print("7. Auto-stop and analyze results")
 print()
 print("IMPORTANT: Make sure TWS/IB Gateway is running!")
 print("IMPORTANT: This will place a REAL market order in paper trading!")
@@ -405,8 +382,8 @@ def auto_stop_node(node, delay_seconds=15):
 
 
 # %%
-# Start auto-stop timer
-auto_stop_node(node, delay_seconds=60)
+# Start auto-stop timer (10 seconds to observe tickReqParams behavior)
+auto_stop_node(node, delay_seconds=10)
 
 try:
     node.run()

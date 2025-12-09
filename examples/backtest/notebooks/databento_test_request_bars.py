@@ -163,6 +163,7 @@ class TestHistoricalAggStrategy(Strategy):
             )
 
             # Test request_join
+            # from nautilus_trader.core.datetime import unix_nanos_to_dt
             # self.external_bar_type_2 = BarType.from_str("NQU4.XCME-1-MINUTE-LAST-EXTERNAL")
             # uuid_1 = self.request_bars(
             #     self.external_bar_type,

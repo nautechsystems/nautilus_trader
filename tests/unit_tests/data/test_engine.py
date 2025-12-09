@@ -86,6 +86,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.option_contract import OptionContract
@@ -4396,7 +4397,7 @@ class TestDataEngine:
         self.data_engine.process(option2)
 
         # Create spread instrument ID
-        spread_instrument_id = InstrumentId.new_spread(
+        spread_instrument_id = new_generic_spread_id(
             [
                 (option1.id, 1),
                 (option2.id, -1),
@@ -4473,7 +4474,7 @@ class TestDataEngine:
         self.data_engine.process(option2)
 
         # Create spread instrument ID
-        spread_instrument_id = InstrumentId.new_spread(
+        spread_instrument_id = new_generic_spread_id(
             [
                 (option1.id, 1),
                 (option2.id, -1),
@@ -4562,7 +4563,7 @@ class TestDataEngine:
         self.data_engine.process(option2)
 
         # Create spread instrument ID
-        spread_instrument_id = InstrumentId.new_spread(
+        spread_instrument_id = new_generic_spread_id(
             [
                 (option1.id, 1),
                 (option2.id, -1),

@@ -129,9 +129,7 @@ from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
-from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
-from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
@@ -5586,8 +5584,12 @@ cdef class OrderMatchingEngine:
                 position=position,
             )
 
+        cdef Instrument instrument = self.cache.instrument(order.instrument_id)
+        if instrument is None:
+            return
+
         # Generate leg fills for spread orders after normal combo fill processing
-        if order.instrument_id.is_spread() and order.is_closed_c():
+        if instrument.is_spread() and order.is_closed_c():
             self._generate_spread_leg_fills(order, fills, liquidity_side)
 
     cdef void _generate_spread_leg_fills(
@@ -5605,8 +5607,17 @@ cdef class OrderMatchingEngine:
         if not fills:
             return
 
-        # Parse spread legs from instrument ID
-        leg_tuples = order.instrument_id.to_list()
+        # Get the spread instrument
+        cdef Instrument instrument = self.cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(f"Spread instrument not found in cache: {order.instrument_id}")
+            return
+
+        # Parse spread legs from instrument
+        leg_tuples = instrument.legs()
+        if len(leg_tuples) == 1:
+            return
+
         spread_instrument_ids = [leg[0] for leg in leg_tuples]
 
         spread_fill_px = fills[0][0]

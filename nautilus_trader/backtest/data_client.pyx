@@ -24,6 +24,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport RequestBars
@@ -61,7 +62,10 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport generic_spread_id_to_list
+from nautilus_trader.model.identifiers cimport is_generic_spread_id
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.futures_spread cimport FuturesSpread
 from nautilus_trader.model.instruments.option_spread cimport OptionSpread
 
 
@@ -282,7 +286,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(command.instrument_id, "instrument_id")
 
         # Handle spread instruments
-        if command.instrument_id.is_spread():
+        if is_generic_spread_id(command.instrument_id) or "spread_legs" in command.params:
             self._start_spread_quote_aggregator(command)
             return
 
@@ -405,7 +409,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(command.instrument_id, "instrument_id")
 
         # Handle spread instruments
-        if command.instrument_id.is_spread():
+        if is_generic_spread_id(command.instrument_id) or "spread_legs" in command.params:
             self._stop_spread_quote_aggregator(command)
             return
 
@@ -457,19 +461,32 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 # -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request_instrument(self, RequestInstrument request):
-        cdef Instrument instrument = self._cache.instrument(request.instrument_id)
+        cdef str spread_type = ""
 
+        cdef Instrument instrument = self._cache.instrument(request.instrument_id)
         if instrument is None:
             # Check if this is a spread instrument - we're already in backtest context
-            if request.instrument_id.is_spread():
-                # Create OptionSpread from component instruments
-                instrument = self._create_option_spread_from_components(request.instrument_id)
+            if is_generic_spread_id(request.instrument_id) or "spread_legs" in request.params:
+                # Get spread_legs from request params, fallback to parsing from instrument_id
+                spread_legs = None
+                if request.params and "spread_legs" in request.params:
+                    spread_legs = request.params["spread_legs"]
+                else:
+                    spread_legs = generic_spread_id_to_list(request.instrument_id)
+
+                if len(spread_legs) <= 4:
+                    if self._has_futures(spread_legs):
+                        spread_type = "FuturesSpread"
+                        instrument = self._create_futures_spread_from_components(request.instrument_id, spread_legs)
+                    else:
+                        spread_type = "OptionSpread"
+                        instrument = self._create_option_spread_from_components(request.instrument_id, spread_legs)
 
                 if instrument is not None:
                     self._cache.add_instrument(instrument)
-                    self._log.info(f"Created OptionSpread instrument {request.instrument_id} from components")
+                    self._log.info(f"Created {spread_type} instrument {request.instrument_id} from components")
                 else:
-                    self._log.error(f"Failed to create OptionSpread instrument {request.instrument_id} from components")
+                    self._log.error(f"Failed to create {spread_type} instrument {request.instrument_id} from components")
                     return
             else:
                 self._log.error(f"Cannot find instrument for {request.instrument_id}")
@@ -477,29 +494,34 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
-    cdef Instrument _create_option_spread_from_components(self, InstrumentId spread_instrument_id):
+    cdef bint _has_futures(self, list components):
+        cdef Instrument component
+        for component_id, ratio in components:
+            component = self._cache.instrument(component_id)
+            if component is not None and component.instrument_class == InstrumentClass.FUTURE:
+                return True
+
+        return False
+
+    cdef Instrument _create_option_spread_from_components(self, InstrumentId spread_instrument_id, list spread_legs):
         min_expiration_ns = 0
 
         try:
-            # Parse component instruments from spread ID
-            components = spread_instrument_id.to_list()
-
-            if not components:
-                self._log.error(f"No components found in spread instrument ID {spread_instrument_id}")
+            # Use provided spread_legs list
+            if not spread_legs:
+                self._log.error(f"No spread legs provided for spread instrument ID {spread_instrument_id}")
                 return None
 
             # Get the first component instrument to use as template
-            first_component_id = components[0][0]
+            first_component_id = spread_legs[0][0]
             first_component = self._cache.instrument(first_component_id)
-
             if first_component is None:
                 self._log.error(f"Cannot find first component instrument {first_component_id} for spread {spread_instrument_id}")
                 return None
 
             # Validate all components exist and find minimum expiration
-            for component_id, ratio in components:
+            for component_id, ratio in spread_legs:
                 component = self._cache.instrument(component_id)
-
                 if component is None:
                     self._log.error(f"Cannot find component instrument {component_id} for spread {spread_instrument_id}")
                     return None
@@ -535,6 +557,73 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
         except Exception as e:
             self._log.error(f"Failed to create OptionSpread from components: {e}")
+            return
+
+    cdef Instrument _create_futures_spread_from_components(self, InstrumentId spread_instrument_id, list spread_legs):
+        min_expiration_ns = 0
+        min_price_increment = None
+        min_price_precision = 0
+
+        try:
+            # Use provided spread_legs list
+            if not spread_legs:
+                self._log.error(f"No spread legs provided for spread instrument ID {spread_instrument_id}")
+                return None
+
+            # Get the first component instrument to use as template
+            first_component_id = spread_legs[0][0]
+            first_component = self._cache.instrument(first_component_id)
+            if first_component is None:
+                self._log.error(f"Cannot find first component instrument {first_component_id} for spread {spread_instrument_id}")
+                return None
+
+            # Initialize min_price_increment with first component
+            min_price_increment = first_component.price_increment
+            min_price_precision = first_component.price_precision
+
+            # Validate all components exist and find minimum expiration and minimum tick size
+            for component_id, ratio in spread_legs:
+                component = self._cache.instrument(component_id)
+                if component is None:
+                    self._log.error(f"Cannot find component instrument {component_id} for spread {spread_instrument_id}")
+                    return None
+
+                if min_expiration_ns == 0 or component.expiration_ns < min_expiration_ns:
+                    min_expiration_ns = component.expiration_ns
+
+                # Find minimum tick size (price_increment)
+                if component.price_increment < min_price_increment:
+                    min_price_increment = component.price_increment
+                    min_price_precision = component.price_precision
+
+            # Create timestamp
+            ts_event = self._clock.timestamp_ns()
+
+            # Create the FuturesSpread instrument
+            return FuturesSpread(
+                instrument_id=spread_instrument_id,
+                raw_symbol=Symbol(spread_instrument_id.symbol.value),
+                asset_class=first_component.asset_class,
+                currency=first_component.quote_currency,
+                price_precision=min_price_precision,
+                price_increment=min_price_increment,
+                multiplier=first_component.multiplier,
+                lot_size=first_component.lot_size,
+                underlying="",
+                strategy_type="SPREAD",
+                activation_ns=0,
+                expiration_ns=min_expiration_ns,
+                ts_event=ts_event,
+                ts_init=ts_event,
+                margin_init=first_component.margin_init,
+                margin_maint=first_component.margin_maint,
+                maker_fee=first_component.maker_fee,
+                taker_fee=first_component.taker_fee,
+                exchange=first_component.exchange,
+                tick_scheme_name=first_component.tick_scheme_name,
+            )
+        except Exception as e:
+            self._log.error(f"Failed to create FuturesSpread from components: {e}")
             return
 
     cpdef void request_instruments(self, RequestInstruments request):
@@ -575,6 +664,14 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             return
 
         update_interval_seconds = command.params.get("update_interval_seconds", 60)
+
+        # Get spread_legs from command params if available, otherwise parse from instrument_id
+        spread_legs = None
+        if command.params and "spread_legs" in command.params:
+            spread_legs = command.params["spread_legs"]
+        else:
+            spread_legs = generic_spread_id_to_list(spread_instrument_id)
+
         aggregator = SpreadQuoteAggregator(
             spread_instrument_id=spread_instrument_id,
             handler=self._handle_spread_quote,
@@ -582,15 +679,14 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             cache=self._cache,
             clock=self._clock,
             update_interval_seconds=update_interval_seconds,
+            spread_legs=spread_legs,
         )
         self._spread_quote_aggregators[spread_instrument_id] = aggregator
 
-        # Subscribe to quotes for component instruments
-        components = spread_instrument_id.to_list()
-
-        for component_id, _ in components:
+        # Subscribe to quotes for leg instruments
+        for leg_id, _ in spread_legs:
             subscribe = SubscribeQuoteTicks(
-                instrument_id=component_id,
+                instrument_id=leg_id,
                 client_id=command.client_id,
                 venue=command.venue,
                 command_id=UUID4(),
@@ -610,6 +706,13 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             self._spread_quote_aggregators = {}
             return
 
+        # Get spread_legs from command params if available, otherwise parse from instrument_id
+        spread_legs = None
+        if command.params and "spread_legs" in command.params:
+            spread_legs = command.params["spread_legs"]
+        else:
+            spread_legs = generic_spread_id_to_list(spread_instrument_id)
+
         aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
 
         if aggregator is None:
@@ -621,11 +724,9 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         aggregator.stop()
 
         # Unsubscribe from component instruments
-        components = spread_instrument_id.to_list()
-
-        for component_id, _ in components:
+        for leg_id, _ in spread_legs:
             unsubscribe = UnsubscribeQuoteTicks(
-                instrument_id=component_id,
+                instrument_id=leg_id,
                 client_id=command.client_id,
                 venue=command.venue,
                 command_id=command.id,
