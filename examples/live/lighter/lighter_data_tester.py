@@ -67,21 +67,25 @@ def build_node(args: argparse.Namespace) -> TradingNode:
 
     filters: dict[str, list[str]] | None = None
     if not args.load_all and instruments:
-        symbols = []
+        bases = []
         quotes = []
         for instrument_id in instruments:
             symbol_part = instrument_id.value.split(".")[0]
             parts = symbol_part.split("-")
-            symbols.append(parts[0])
+            bases.append(parts[0])
             if len(parts) > 1:
                 quotes.append(parts[1])
 
-        filters = {"symbols": symbols}
+        # Use "bases" filter to match base_currency.code (e.g., "BTC")
+        # Not "symbols" which matches the full symbol (e.g., "BTC-USD-PERP")
+        filters = {"bases": bases}
         if quotes:
             filters["quotes"] = quotes
 
+    # When using filters, we still need load_all=True to actually load instruments.
+    # The filters will narrow down which instruments are kept after loading.
     instrument_provider = InstrumentProviderConfig(
-        load_all=args.load_all,
+        load_all=True,  # Must be True to load instruments (filters narrow the result)
         filters=filters,
     )
 

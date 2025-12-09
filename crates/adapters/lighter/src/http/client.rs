@@ -123,30 +123,45 @@ impl LighterHttpClient {
         &self,
         market_index: u32,
     ) -> Result<LighterOrderBookDepth> {
-        let url = format!("{}/orderBookDetails?marketId={market_index}", self.base_url);
-        trace!(%url, "Requesting Lighter orderBookDetails");
+        self.get_order_book_snapshot_with_limit(market_index, 100).await
+    }
+
+    /// Fetch a depth snapshot with a custom limit for the given market index.
+    ///
+    /// # Errors
+    /// Returns an error on request failure or invalid JSON.
+    pub async fn get_order_book_snapshot_with_limit(
+        &self,
+        market_index: u32,
+        limit: u32,
+    ) -> Result<LighterOrderBookDepth> {
+        let url = format!(
+            "{}/orderBookOrders?market_id={market_index}&limit={limit}",
+            self.base_url
+        );
+        trace!(%url, "Requesting Lighter orderBookOrders");
 
         let response = self
             .http
             .get(url)
             .send()
             .await
-            .context("failed to send orderBookDetails request")?;
+            .context("failed to send orderBookOrders request")?;
 
         let status = response.status();
         let body = response
             .text()
             .await
-            .context("failed to read orderBookDetails response body")?;
+            .context("failed to read orderBookOrders response body")?;
 
         if !status.is_success() {
             return Err(anyhow::anyhow!(
-                "orderBookDetails request failed ({status}): {body}"
+                "orderBookOrders request failed ({status}): {body}"
             ));
         }
 
         let parsed: OrderBookSnapshotResponse = serde_json::from_str(&body)
-            .context("failed to deserialize orderBookDetails response")?;
+            .context("failed to deserialize orderBookOrders response")?;
 
         Ok(parsed.into_depth())
     }

@@ -23,7 +23,12 @@ use serde::{Deserialize, Deserializer};
 pub struct LighterBookLevel {
     #[serde(deserialize_with = "deserialize_decimal")]
     pub price: Decimal,
-    #[serde(deserialize_with = "deserialize_decimal")]
+    /// Size field - API returns `remaining_base_amount` for REST, `size` for WebSocket.
+    #[serde(
+        alias = "remaining_base_amount",
+        alias = "remainingBaseAmount",
+        deserialize_with = "deserialize_decimal"
+    )]
     pub size: Decimal,
 }
 

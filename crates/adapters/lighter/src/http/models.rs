@@ -144,20 +144,30 @@ where
     }
 }
 
-/// Response envelope for depth snapshots (REST or WS-compatible).
+/// Response envelope for depth snapshots from `/orderBookOrders` endpoint.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum OrderBookSnapshotResponse {
-    Wrapped { order_book: LighterOrderBookDepth },
-    Depth(LighterOrderBookDepth),
+pub struct OrderBookSnapshotResponse {
+    #[serde(default)]
+    pub code: Option<i32>,
+    #[serde(default)]
+    pub asks: Vec<crate::data::models::LighterBookLevel>,
+    #[serde(default)]
+    pub bids: Vec<crate::data::models::LighterBookLevel>,
+    #[serde(default)]
+    pub total_asks: Option<u64>,
+    #[serde(default)]
+    pub total_bids: Option<u64>,
 }
 
 impl OrderBookSnapshotResponse {
     #[must_use]
     pub fn into_depth(self) -> LighterOrderBookDepth {
-        match self {
-            Self::Wrapped { order_book } => order_book,
-            Self::Depth(depth) => depth,
+        LighterOrderBookDepth {
+            code: self.code,
+            asks: self.asks,
+            bids: self.bids,
+            offset: None,
+            nonce: None,
         }
     }
 }

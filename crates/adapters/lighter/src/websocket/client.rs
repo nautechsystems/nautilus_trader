@@ -17,16 +17,13 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, RwLock, atomic::AtomicU8},
+    sync::{Arc, RwLock},
 };
 
 use anyhow::{Context, Result, anyhow};
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
-use nautilus_network::{
-    mode::ConnectionMode,
-    websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
-};
+use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
 use serde_json::json;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -45,8 +42,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct LighterWebSocketClient {
     url: String,
-    client: Option<Arc<WebSocketClient>>,
-    connection_mode: Arc<AtomicU8>,
+    client: Arc<RwLock<Option<Arc<WebSocketClient>>>>,
     instruments: Arc<RwLock<HashMap<u32, InstrumentAny>>>,
     subscriptions: Arc<RwLock<HashSet<String>>>,
     out_rx: Arc<RwLock<Option<mpsc::UnboundedReceiver<NautilusWsMessage>>>>,
@@ -63,8 +59,7 @@ impl LighterWebSocketClient {
     ) -> Self {
         Self {
             url: get_ws_url(network, base_url_override),
-            client: None,
-            connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Closed as u8)),
+            client: Arc::new(RwLock::new(None)),
             instruments: Arc::new(RwLock::new(HashMap::new())),
             subscriptions: Arc::new(RwLock::new(HashSet::new())),
             out_rx: Arc::new(RwLock::new(None)),
@@ -123,9 +118,10 @@ impl LighterWebSocketClient {
         let client = WebSocketClient::connect(cfg, None, vec![], None)
             .await
             .context("failed to connect Lighter WebSocket")?;
-        self.connection_mode = client.connection_mode_atomic();
         let client = Arc::new(client);
-        self.client = Some(Arc::clone(&client));
+        if let Ok(mut guard) = self.client.write() {
+            *guard = Some(Arc::clone(&client));
+        }
 
         let (out_tx, out_rx) = mpsc::unbounded_channel::<NautilusWsMessage>();
         if let Ok(mut guard) = self.out_rx.write() {
@@ -165,7 +161,15 @@ impl LighterWebSocketClient {
 
     /// Gracefully disconnect the client.
     pub async fn close(&self) {
-        if let Some(client) = self.client.as_ref() {
+        // Clone the Arc out of the lock so we can await without holding the guard
+        let client = {
+            if let Ok(guard) = self.client.read() {
+                guard.clone()
+            } else {
+                None
+            }
+        };
+        if let Some(client) = client {
             client.disconnect().await;
         }
         if let Ok(mut guard) = self.out_rx.write() {
@@ -189,7 +193,13 @@ impl LighterWebSocketClient {
 
     #[must_use]
     pub fn is_active(&self) -> bool {
-        ConnectionMode::from_atomic(&self.connection_mode).is_active()
+        // Delegate to the underlying WebSocket client if connected
+        if let Ok(guard) = self.client.read() {
+            if let Some(client) = guard.as_ref() {
+                return client.is_active();
+            }
+        }
+        false
     }
 
     /// Subscribe to order book updates for the given market index.
@@ -264,7 +274,14 @@ impl LighterWebSocketClient {
             "type": msg_type,
             "channel": channel,
         });
-        let Some(client) = self.client.as_ref() else {
+        let client = {
+            let guard = self
+                .client
+                .read()
+                .map_err(|_| anyhow!("client lock poisoned"))?;
+            guard.clone()
+        };
+        let Some(client) = client else {
             return Err(anyhow!("WebSocket client is not connected"));
         };
         client

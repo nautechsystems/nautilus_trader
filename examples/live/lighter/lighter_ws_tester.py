@@ -76,16 +76,18 @@ def filter_config(instruments: list[InstrumentId], load_all: bool) -> Instrument
     if load_all or not instruments:
         return InstrumentProviderConfig(load_all=True)
 
-    symbols = []
+    bases = []
     quotes = []
     for instrument_id in instruments:
         symbol_part = instrument_id.value.split(".")[0]
         parts = symbol_part.split("-")
-        symbols.append(parts[0])
+        bases.append(parts[0])
         if len(parts) > 1:
             quotes.append(parts[1])
 
-    filters: dict[str, list[str]] = {"symbols": symbols}
+    # Use "bases" filter to match base_currency.code (e.g., "BTC")
+    # Not "symbols" which matches the full symbol (e.g., "BTC-USD-PERP")
+    filters: dict[str, list[str]] = {"bases": bases}
     if quotes:
         filters["quotes"] = quotes
 

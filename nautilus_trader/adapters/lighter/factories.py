@@ -32,32 +32,79 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
+# Module-level cache for shared instrument provider instance
+# (avoids lru_cache issues with unhashable InstrumentProviderConfig.filters)
+_INSTRUMENT_PROVIDER: LighterInstrumentProvider | None = None
+
+
+@lru_cache(1)
+def get_lighter_http_client(
+    testnet: bool,
+    base_url_http: str | None,
+    http_timeout_secs: int,
+    proxy_url: str | None,
+) -> Any:
+    """
+    Cache and return a Lighter HTTP client.
+
+    If a cached client with matching parameters already exists, the cached client will be returned.
+
+    Parameters
+    ----------
+    testnet : bool
+        If the client is connecting to the testnet API.
+    base_url_http : str, optional
+        The base URL for the API endpoints.
+    http_timeout_secs : int
+        The timeout in seconds for HTTP requests.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
+
+    Returns
+    -------
+    LighterHttpClient
+
+    """
+    lighter_mod = getattr(nautilus_pyo3, "lighter")
+    return lighter_mod.LighterHttpClient(
+        is_testnet=testnet,
+        base_url_override=base_url_http,
+        timeout_secs=http_timeout_secs,
+        proxy_url=proxy_url,
+    )
+
+
+def get_lighter_instrument_provider(
+    client: Any,
+    config: InstrumentProviderConfig,
+) -> LighterInstrumentProvider:
+    """
+    Cache and return a Lighter instrument provider.
+
+    If a cached provider already exists, then that provider will be returned.
+
+    Parameters
+    ----------
+    client : LighterHttpClient
+        The client for the instrument provider.
+    config : InstrumentProviderConfig
+        The configuration for the instrument provider.
+
+    Returns
+    -------
+    LighterInstrumentProvider
+
+    """
+    global _INSTRUMENT_PROVIDER
+    if _INSTRUMENT_PROVIDER is None:
+        _INSTRUMENT_PROVIDER = LighterInstrumentProvider(client, config)
+    return _INSTRUMENT_PROVIDER
+
 
 class LighterLiveDataClientFactory(LiveDataClientFactory):
     """
     Factory for creating Lighter data clients.
     """
-
-    @staticmethod
-    @lru_cache(1)
-    def _http_client(
-        testnet: bool,
-        base_url_http: str | None,
-        http_timeout_secs: int,
-        proxy_url: str | None,
-    ) -> Any:
-        lighter_mod = getattr(nautilus_pyo3, "lighter")
-        return lighter_mod.LighterHttpClient(
-            is_testnet=testnet,
-            base_url_override=base_url_http,
-            timeout_secs=http_timeout_secs,
-            proxy_url=proxy_url,
-        )
-
-    @staticmethod
-    @lru_cache(1)
-    def _instrument_provider(client: Any, config: InstrumentProviderConfig | None) -> LighterInstrumentProvider:
-        return LighterInstrumentProvider(client, config or InstrumentProviderConfig())
 
     @staticmethod
     def create(  # type: ignore[override]
@@ -68,16 +115,39 @@ class LighterLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
     ) -> LighterDataClient:
+        """
+        Create a new Lighter data client.
+
+        Parameters
+        ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
+        name : str
+            The custom client ID.
+        config : LighterDataClientConfig
+            The client configuration.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
+        clock : LiveClock
+            The clock for the client.
+
+        Returns
+        -------
+        LighterDataClient
+
+        """
         lighter_mod = getattr(nautilus_pyo3, "lighter")
-        http_client = LighterLiveDataClientFactory._http_client(
+        http_client = get_lighter_http_client(
             testnet=config.testnet,
             base_url_http=config.base_url_http,
             http_timeout_secs=config.http_timeout_secs,
             proxy_url=config.http_proxy_url,
         )
-        instrument_provider = LighterLiveDataClientFactory._instrument_provider(
+        instrument_provider = get_lighter_instrument_provider(
             http_client,
-            InstrumentProviderConfig(),
+            config.instrument_provider,
         )
         ws_client = lighter_mod.LighterWebSocketClient(
             is_testnet=config.testnet,

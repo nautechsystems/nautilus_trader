@@ -63,22 +63,35 @@ async def fetch_snapshot(client: Any, instrument_pyo3: Any) -> None:
         return
 
     print(f"\nRequesting order book snapshot for {instrument_pyo3.id}...")
-    capsule = await client.get_order_book_snapshot(instrument_pyo3)
     try:
-        deltas = nautilus_pyo3.OrderBookDeltas.from_pycapsule(capsule)
-        # The snapshot is represented as a batch of deltas. Show first bid/ask entries if present.
-        first = deltas.deltas[0] if deltas.deltas else None
-        if first and first.bids and first.asks:
-            best_bid = first.bids[0]
-            best_ask = first.asks[0]
+        deltas = await client.get_order_book_snapshot(instrument_pyo3)
+        # The snapshot is represented as a batch of deltas (CLEAR + ADD entries).
+        num_deltas = len(deltas.deltas) if deltas.deltas else 0
+        print(f"Snapshot received with {num_deltas} deltas")
+
+        # Find best bid and ask from the deltas
+        best_bid = None
+        best_ask = None
+        for delta in deltas.deltas:
+            if delta.action.name == "ADD":
+                if delta.order.side.name == "BUY":
+                    if best_bid is None or delta.order.price > best_bid.price:
+                        best_bid = delta.order
+                elif delta.order.side.name == "SELL":
+                    if best_ask is None or delta.order.price < best_ask.price:
+                        best_ask = delta.order
+
+        if best_bid and best_ask:
             print(
-                f"Snapshot received: bid={best_bid.price} x {best_bid.size}, "
+                f"Best bid={best_bid.price} x {best_bid.size}, "
                 f"ask={best_ask.price} x {best_ask.size}",
             )
+        elif num_deltas > 1:
+            print("Snapshot has deltas but no bid/ask levels found.")
         else:
-            print("Snapshot capsule received (no book levels parsed).")
+            print("Snapshot has no book levels.")
     except Exception as exc:  # pragma: no cover - example script
-        print(f"Snapshot fetch succeeded but could not parse capsule: {exc}")
+        print(f"Snapshot fetch failed: {exc}")
 
 
 async def load_via_adapter(args: argparse.Namespace) -> None:
