@@ -32,9 +32,9 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
-# Module-level cache for shared instrument provider instance
-# (avoids lru_cache issues with unhashable InstrumentProviderConfig.filters)
-_INSTRUMENT_PROVIDER: LighterInstrumentProvider | None = None
+# Module-level cache for instrument providers keyed by network parameters.
+# Uses dict instead of lru_cache to avoid issues with unhashable InstrumentProviderConfig.filters.
+_INSTRUMENT_PROVIDERS: dict[tuple[bool, str | None], LighterInstrumentProvider] = {}
 
 
 @lru_cache(1)
@@ -77,11 +77,14 @@ def get_lighter_http_client(
 def get_lighter_instrument_provider(
     client: Any,
     config: InstrumentProviderConfig,
+    testnet: bool,
+    base_url_http: str | None,
 ) -> LighterInstrumentProvider:
     """
     Cache and return a Lighter instrument provider.
 
-    If a cached provider already exists, then that provider will be returned.
+    If a cached provider with matching network parameters exists, it will be returned.
+    Different filter configurations on the same network share a provider.
 
     Parameters
     ----------
@@ -89,16 +92,20 @@ def get_lighter_instrument_provider(
         The client for the instrument provider.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
+    testnet : bool
+        If the provider is for the testnet environment.
+    base_url_http : str, optional
+        The base URL for HTTP endpoints (used as part of cache key).
 
     Returns
     -------
     LighterInstrumentProvider
 
     """
-    global _INSTRUMENT_PROVIDER
-    if _INSTRUMENT_PROVIDER is None:
-        _INSTRUMENT_PROVIDER = LighterInstrumentProvider(client, config)
-    return _INSTRUMENT_PROVIDER
+    cache_key = (testnet, base_url_http)
+    if cache_key not in _INSTRUMENT_PROVIDERS:
+        _INSTRUMENT_PROVIDERS[cache_key] = LighterInstrumentProvider(client, config)
+    return _INSTRUMENT_PROVIDERS[cache_key]
 
 
 class LighterLiveDataClientFactory(LiveDataClientFactory):
@@ -148,6 +155,8 @@ class LighterLiveDataClientFactory(LiveDataClientFactory):
         instrument_provider = get_lighter_instrument_provider(
             http_client,
             config.instrument_provider,
+            testnet=config.testnet,
+            base_url_http=config.base_url_http,
         )
         ws_client = lighter_mod.LighterWebSocketClient(
             is_testnet=config.testnet,
