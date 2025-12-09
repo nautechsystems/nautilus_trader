@@ -44,7 +44,7 @@ class LighterInstrumentProvider(InstrumentProvider):
         super().__init__(config=config or InstrumentProviderConfig())
         self._client = client
         self._instruments_pyo3: list[Any] = []
-        self._market_index_by_instrument: dict[InstrumentId, int] = {}
+        self._market_index_by_instrument: dict[str, int] = {}
         self._loaded_instruments: dict[InstrumentId, Instrument] = {}
 
     # ---------------------------------------------------------------------
@@ -63,7 +63,24 @@ class LighterInstrumentProvider(InstrumentProvider):
         Return the cached market index for the given instrument ID.
         """
 
-        return self._market_index_by_instrument.get(instrument_id)
+        key = getattr(instrument_id, "value", str(instrument_id))
+        return self._market_index_by_instrument.get(key)
+
+    def find(self, instrument_id: InstrumentId) -> Instrument | None:  # type: ignore[override]
+        """
+        Return the instrument for the given instrument ID (if found), accepting either Python or
+        PyO3 instrument IDs.
+        """
+
+        if isinstance(instrument_id, InstrumentId):
+            return super().find(instrument_id)
+
+        try:
+            python_id = InstrumentId.from_str(getattr(instrument_id, "value", str(instrument_id)))
+        except Exception:  # pragma: no cover - defensive
+            return None
+
+        return super().find(python_id)
 
     # ---------------------------------------------------------------------
     # InstrumentProvider interface
@@ -160,8 +177,12 @@ class LighterInstrumentProvider(InstrumentProvider):
         allowed_ids = {instrument_id.value: instrument_id for instrument_id in self._instruments}
 
         for instrument in self._instruments_pyo3:
+            instrument_id_attr = getattr(instrument, "id", None)
+            if instrument_id_attr is None:
+                continue
+
             try:
-                instrument_id: InstrumentId = instrument.id()
+                instrument_id: InstrumentId = instrument_id_attr() if callable(instrument_id_attr) else instrument_id_attr
             except Exception:  # pragma: no cover - defensive
                 continue
 
@@ -172,7 +193,7 @@ class LighterInstrumentProvider(InstrumentProvider):
 
             market_index = self._client.get_market_index(instrument_id)
             if market_index is not None:
-                self._market_index_by_instrument[python_id] = market_index
+                self._market_index_by_instrument[id_value] = market_index
 
     def _accept_instrument(self, instrument: Instrument, filters: dict | None) -> bool:
         if not filters:
