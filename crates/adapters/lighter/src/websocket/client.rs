@@ -227,9 +227,20 @@ impl LighterWebSocketClient {
 
     /// Receive the next parsed WebSocket event (if connected).
     pub async fn next_event(&self) -> Option<NautilusWsMessage> {
-        let mut guard = self.out_rx.write().ok()?;
-        let rx = guard.as_mut()?;
-        rx.recv().await
+        // Move the receiver out of the lock before awaiting to keep the future `Send`.
+        let mut rx = {
+            let mut guard = self.out_rx.write().ok()?;
+            guard.take()?
+        };
+
+        let event = rx.recv().await;
+
+        // Put the receiver back for subsequent calls.
+        if let Ok(mut guard) = self.out_rx.write() {
+            *guard = Some(rx);
+        }
+
+        event
     }
 
     async fn send_subscribe(&self, channel: &str) -> Result<()> {

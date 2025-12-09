@@ -18,6 +18,7 @@ use nautilus_core::{python::to_pyvalue_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
     identifiers::InstrumentId,
+    instruments::Instrument,
     python::{
         data::data_to_pycapsule,
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
@@ -113,11 +114,10 @@ impl PyLighterHttpClient {
             let (deltas, _) = depth_to_deltas_and_quote(&depth, &instrument, ts_init, ts_init)
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
-                let capsule =
-                    data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(deltas)))?;
-                Ok(capsule.into_any().unbind())
-            })
+            let capsule: Py<PyAny> =
+                Python::with_gil(|py| data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(deltas))));
+
+            Ok(capsule)
         })
     }
 }

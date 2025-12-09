@@ -20,7 +20,7 @@ use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
-use pyo3::prelude::*;
+use pyo3::{prelude::*, IntoPyObjectExt};
 use pyo3_async_runtimes::tokio::future_into_py;
 
 use crate::{
@@ -81,14 +81,15 @@ impl PyLighterWebSocketClient {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
             client.inner.cache_instrument(inst_any, None);
         }
+        let callback_ref = callback.clone_ref(py);
 
         future_into_py(py, async move {
             client.inner.connect().await.map_err(to_pyvalue_err)?;
 
-            let callback_ref = callback.clone();
             tokio::spawn(async move {
+                let cb = callback_ref;
                 while let Some(event) = client.inner.next_event().await {
-                    dispatch_event(&callback_ref, event);
+                    dispatch_event(&cb, event);
                 }
             });
 
@@ -217,9 +218,7 @@ fn dispatch_event(callback: &Py<PyAny>, event: NautilusWsMessage) {
         NautilusWsMessage::Deltas(deltas) => {
             Python::with_gil(|py| {
                 let capsule = data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(deltas)));
-                if let Err(err) = capsule
-                    .map(|c| callback.call1(py, (c,)))
-                    .unwrap_or_else(|e| Err(e))
+                if let Err(err) = callback.call1(py, (capsule,))
                 {
                     tracing::error!("Error invoking Lighter WS callback for deltas: {err}");
                 }
@@ -228,9 +227,7 @@ fn dispatch_event(callback: &Py<PyAny>, event: NautilusWsMessage) {
         NautilusWsMessage::Quote(quote) => {
             Python::with_gil(|py| {
                 let capsule = data_to_pycapsule(py, Data::Quote(quote));
-                if let Err(err) = capsule
-                    .map(|c| callback.call1(py, (c,)))
-                    .unwrap_or_else(|e| Err(e))
+                if let Err(err) = callback.call1(py, (capsule,))
                 {
                     tracing::error!("Error invoking Lighter WS callback for quote: {err}");
                 }
@@ -240,9 +237,7 @@ fn dispatch_event(callback: &Py<PyAny>, event: NautilusWsMessage) {
             Python::with_gil(|py| {
                 for tick in trades {
                     let capsule = data_to_pycapsule(py, Data::Trade(tick));
-                    if let Err(err) = capsule
-                        .map(|c| callback.call1(py, (c,)))
-                        .unwrap_or_else(|e| Err(e))
+                    if let Err(err) = callback.call1(py, (capsule,))
                     {
                         tracing::error!("Error invoking Lighter WS callback for trade: {err}");
                     }
@@ -252,9 +247,7 @@ fn dispatch_event(callback: &Py<PyAny>, event: NautilusWsMessage) {
         NautilusWsMessage::MarkPrice(mark_price) => {
             Python::with_gil(|py| {
                 let capsule = data_to_pycapsule(py, Data::MarkPriceUpdate(mark_price));
-                if let Err(err) = capsule
-                    .map(|c| callback.call1(py, (c,)))
-                    .unwrap_or_else(|e| Err(e))
+                if let Err(err) = callback.call1(py, (capsule,))
                 {
                     tracing::error!("Error invoking Lighter WS callback for mark price: {err}");
                 }
@@ -263,9 +256,7 @@ fn dispatch_event(callback: &Py<PyAny>, event: NautilusWsMessage) {
         NautilusWsMessage::IndexPrice(index_price) => {
             Python::with_gil(|py| {
                 let capsule = data_to_pycapsule(py, Data::IndexPriceUpdate(index_price));
-                if let Err(err) = capsule
-                    .map(|c| callback.call1(py, (c,)))
-                    .unwrap_or_else(|e| Err(e))
+                if let Err(err) = callback.call1(py, (capsule,))
                 {
                     tracing::error!("Error invoking Lighter WS callback for index price: {err}");
                 }
