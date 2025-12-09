@@ -44,10 +44,10 @@ from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 try:
     # Prefer the PyO3 HTTP client if the extension is built with Lighter bindings.
-    import nautilus_pyo3.lighter as lighter_mod  # type: ignore[import-not-found]
+    from nautilus_trader.core import nautilus_pyo3
+    from nautilus_trader.core.nautilus_pyo3 import lighter as lighter_mod
 
     LighterHttpClient = getattr(lighter_mod, "LighterHttpClient", None)
-    from nautilus_trader.core import nautilus_pyo3
 except Exception:  # pragma: no cover - runtime resolution
     LighterHttpClient = None  # type: ignore
     nautilus_pyo3 = None  # type: ignore
