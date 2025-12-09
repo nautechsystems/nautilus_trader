@@ -20,7 +20,7 @@
   - [x] Parse to CryptoPerpetual
   - [x] InstrumentProvider implementation
   - [x] Integration test: load instruments
-  - [ ] Python unit tests executed (blocked on extension build environment)
+  - [x] Python unit tests executed (aligned venv + pytest-asyncio)
 
 ### Milestone 2: Market Data (Week 2)
 
