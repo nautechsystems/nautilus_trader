@@ -149,7 +149,10 @@ class LighterDataClient(LiveMarketDataClient):
 
         try:
             snapshot = await self._http_client.get_order_book_snapshot(instrument)
-            if nautilus_pyo3.is_pycapsule(snapshot):
+            if isinstance(snapshot, OrderBookDeltas):
+                self._handle_data(snapshot)
+                self._last_book_offsets.pop(key, None)
+            elif nautilus_pyo3.is_pycapsule(snapshot):  # pragma: no cover
                 self._handle_data(capsule_to_data(snapshot))
                 self._last_book_offsets.pop(key, None)
             else:  # pragma: no cover - defensive
@@ -256,7 +259,10 @@ class LighterDataClient(LiveMarketDataClient):
 
         try:
             snapshot = await self._http_client.get_order_book_snapshot(instrument)
-            if nautilus_pyo3.is_pycapsule(snapshot):
+            if isinstance(snapshot, OrderBookDeltas):
+                self._handle_data(snapshot)
+                self._last_book_offsets.pop(key, None)
+            elif nautilus_pyo3.is_pycapsule(snapshot):  # pragma: no cover
                 self._handle_data(capsule_to_data(snapshot))
                 self._last_book_offsets.pop(key, None)
             else:  # pragma: no cover - defensive
