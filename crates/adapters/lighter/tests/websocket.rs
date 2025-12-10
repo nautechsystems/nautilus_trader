@@ -194,19 +194,18 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                         }
                                         state.messages_sent.fetch_add(1, Ordering::SeqCst);
                                     }
-                                } else if ch.starts_with("market_stats") {
-                                    if let Some(snapshot) =
+                                } else if ch.starts_with("market_stats")
+                                    && let Some(snapshot) =
                                         market_stats_fixture.as_array().and_then(|arr| arr.get(1))
+                                {
+                                    if socket
+                                        .send(Message::Text(snapshot.to_string().into()))
+                                        .await
+                                        .is_err()
                                     {
-                                        if socket
-                                            .send(Message::Text(snapshot.to_string().into()))
-                                            .await
-                                            .is_err()
-                                        {
-                                            break;
-                                        }
-                                        state.messages_sent.fetch_add(1, Ordering::SeqCst);
+                                        break;
                                     }
+                                    state.messages_sent.fetch_add(1, Ordering::SeqCst);
                                 }
 
                                 // Check if we should drop the connection
@@ -532,8 +531,7 @@ async fn test_resubscribe_after_reconnect() {
         .collect();
     assert!(
         order_book_subs.len() >= 2,
-        "expected at least 2 order_book subscriptions (initial + resub), got {:?}",
-        order_book_subs
+        "expected at least 2 order_book subscriptions (initial + resub), got {order_book_subs:?}",
     );
 
     client.close().await;

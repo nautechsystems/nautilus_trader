@@ -45,7 +45,7 @@ impl PyLighterWebSocketClient {
         http_client: Option<PyLighterHttpClient>,
     ) -> PyResult<Self> {
         let network = LighterNetwork::from(is_testnet);
-        let meta = http_client.map(|c| c.inner.clone());
+        let meta = http_client.map(|c| c.inner);
 
         Ok(Self {
             inner: LighterWebSocketClient::new(network, base_url_override.as_deref(), meta),
