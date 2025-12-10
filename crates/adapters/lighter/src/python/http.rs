@@ -133,7 +133,7 @@ impl PyLighterHttpClient {
                 .next_nonce(account_index, api_key_index, auth_token.as_deref())
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| to_py_json(py, &resp).map(|obj| obj.into_any().unbind()))
+            Python::attach(|py| to_py_json(py, &resp))
         })
     }
 
@@ -151,7 +151,7 @@ impl PyLighterHttpClient {
                 .send_tx(tx_type, &tx_info, price_protection)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| to_py_json(py, &resp).map(|obj| obj.into_any().unbind()))
+            Python::attach(|py| to_py_json(py, &resp))
         })
     }
 
@@ -169,7 +169,7 @@ impl PyLighterHttpClient {
                 .account_active_orders(account_index, market_id, &auth_token)
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| to_py_json(py, &resp).map(|obj| obj.into_any().unbind()))
+            Python::attach(|py| to_py_json(py, &resp))
         })
     }
 
@@ -186,7 +186,7 @@ impl PyLighterHttpClient {
                 .account_by_index(account_index, auth_token.as_deref())
                 .await
                 .map_err(to_pyvalue_err)?;
-            Python::with_gil(|py| to_py_json(py, &resp).map(|obj| obj.into_any().unbind()))
+            Python::attach(|py| to_py_json(py, &resp))
         })
     }
 }
