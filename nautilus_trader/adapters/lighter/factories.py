@@ -21,9 +21,12 @@ from typing import Any
 
 from nautilus_trader.adapters.lighter.config import LighterDataClientConfig
 from nautilus_trader.adapters.lighter.config import LighterExecClientConfig
+from nautilus_trader.adapters.lighter.constants import LIGHTER_MAINNET_HTTP_BASE
+from nautilus_trader.adapters.lighter.constants import LIGHTER_TESTNET_HTTP_BASE
 from nautilus_trader.adapters.lighter.data import LighterDataClient
 from nautilus_trader.adapters.lighter.execution import LighterExecutionClient
 from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
+from nautilus_trader.adapters.lighter.signer import LighterSigner
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -192,4 +195,56 @@ class LighterLiveExecClientFactory(LiveExecClientFactory):
         cache: Cache,
         clock: LiveClock,
     ) -> LighterExecutionClient:
-        raise NotImplementedError("Execution client wiring will be implemented in PR3.")
+        lighter_mod = nautilus_pyo3.lighter  # type: ignore[attr-defined]
+        http_client = get_lighter_http_client(
+            testnet=config.testnet,
+            base_url_http=config.base_url_http,
+            http_timeout_secs=config.http_timeout_secs,
+            proxy_url=config.http_proxy_url,
+        )
+        instrument_provider = get_lighter_instrument_provider(
+            http_client,
+            config.instrument_provider,
+            testnet=config.testnet,
+            base_url_http=config.base_url_http,
+        )
+
+        account_index = config.resolved_account_index
+        if account_index is None:
+            raise ValueError("LighterExecClientConfig.account_index must be set")
+        api_key = config.resolved_api_key_private_key
+        if not api_key:
+            raise ValueError("LighterExecClientConfig.api_key_private_key must be set")
+
+        signer_base = config.base_url_http or (
+            LIGHTER_TESTNET_HTTP_BASE if config.testnet else LIGHTER_MAINNET_HTTP_BASE
+        )
+        # signer expects host without `/api/v1`
+        signer_base = signer_base.removesuffix("/api/v1")
+
+        signer = LighterSigner(
+            base_url=signer_base,
+            account_index=account_index,
+            api_key_index=config.api_key_index,
+            api_key_private=api_key.removeprefix("0x"),
+            chain_id=304 if not config.testnet else 300,
+        )
+
+        ws_client = lighter_mod.LighterWebSocketClient(
+            is_testnet=config.testnet,
+            base_url_override=config.base_url_ws,
+            http_client=http_client,
+        )
+
+        return LighterExecutionClient(
+            loop=loop,
+            http_client=http_client,
+            ws_client=ws_client,
+            signer=signer,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            instrument_provider=instrument_provider,
+            config=config,
+            name=name,
+        )

@@ -50,10 +50,10 @@
 
 **Definition of Done**: Can place and cancel orders (gated on Validation Spike)
 
-- [ ] **PR3: Execution Client** (in progress)
-  - [ ] Nonce manager
-  - [ ] Order submission (sendTx)
-  - [ ] Order cancellation
+- [ ] **PR3: Execution Client** (in progress; signer + HTTP plumbing started)
+  - [x] Nonce manager (HTTP `/nextNonce` wrapper + Python bindings)
+  - [x] Order submission (sendTx) via signer-generated tx_info
+  - [x] Order cancellation (sendTx cancel) via signer-generated tx_info
   - [ ] User order stream (WS)
   - [ ] Status event mapping
   - [ ] Execution client implementation
