@@ -5507,6 +5507,7 @@ version = "0.52.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "bytes",
  "chrono",
  "futures-util",

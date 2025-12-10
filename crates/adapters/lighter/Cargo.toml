@@ -85,3 +85,5 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 nautilus-testkit = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
+axum = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
