@@ -54,7 +54,7 @@
   - [x] Nonce manager (HTTP `/nextNonce` wrapper + Python bindings)
   - [x] Order submission (sendTx) via signer-generated tx_info
   - [x] Order cancellation (sendTx cancel) via signer-generated tx_info
-  - [ ] User order stream (WS)
+  - [x] User order stream (WS)
   - [x] Status/fill mapping via REST reconciliation
   - [x] Execution client implementation (retries, token refresh, reconciliation)
   - [ ] Integration test: order lifecycle

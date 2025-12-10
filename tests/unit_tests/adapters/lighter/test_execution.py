@@ -131,6 +131,12 @@ def active_orders():
     return fixture["response"]["body"]["orders"]
 
 
+@pytest.fixture
+def private_ws_messages():
+    with open("tests/test_data/lighter/ws/private_mainnet_orders.json", "r") as f:
+        return json.load(f)
+
+
 def test_client_order_index_hashing(exec_client: LighterExecutionClient):
     numeric = exec_client._client_order_index("12345")
     hashed = exec_client._client_order_index("client-abc")
@@ -176,3 +182,17 @@ def test_fill_price_uses_executed_quote(exec_client: LighterExecutionClient, btc
     fill = fills[0]
     # executed price = 25 / 0.00030 = 83333.333... -> precision 1 => 83333.3
     assert fill.last_px == Price.from_str("83333.3")
+
+
+def test_private_ws_order_update(exec_client: LighterExecutionClient, private_ws_messages):
+    reports: list = []
+    fills: list = []
+    exec_client._send_order_status_report = MagicMock(side_effect=reports.append)
+    exec_client._send_fill_report = MagicMock(side_effect=fills.append)
+
+    update = next(m for m in private_ws_messages if m["type"] == "update/account_all_orders")
+    exec_client._handle_user_stream_message(update)
+
+    assert len(reports) == 1
+    assert reports[0].order_status == OrderStatus.CANCELED
+    assert not fills

@@ -17,17 +17,23 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from nautilus_trader.adapters.lighter.config import LighterExecClientConfig
-from nautilus_trader.adapters.lighter.constants import LIGHTER_VENUE
+from nautilus_trader.adapters.lighter.constants import (
+    LIGHTER_MAINNET_WS_BASE,
+    LIGHTER_TESTNET_WS_BASE,
+    LIGHTER_VENUE,
+)
 from nautilus_trader.adapters.lighter.signer import LighterSigner, SignerError
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.core.nautilus_pyo3 import WebSocketClient, WebSocketClientError, WebSocketConfig
 from nautilus_trader.execution.messages import (
     CancelOrder,
     CancelAllOrders,
@@ -45,7 +51,14 @@ from nautilus_trader.model.enums import (
     OrderType,
     TimeInForce,
 )
-from nautilus_trader.model.identifiers import ClientId, ClientOrderId, TradeId, Venue, VenueOrderId
+from nautilus_trader.model.identifiers import (
+    ClientId,
+    ClientOrderId,
+    InstrumentId,
+    TradeId,
+    Venue,
+    VenueOrderId,
+)
 from nautilus_trader.model.objects import Money, Price, Quantity
 from nautilus_trader.model.orders import Order
 
@@ -54,6 +67,85 @@ from nautilus_trader.core.uuid import UUID4
 
 if TYPE_CHECKING:
     from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
+
+
+class _LighterUserStream:
+    """
+    Minimal private WebSocket client for account order updates.
+    """
+
+    def __init__(
+        self,
+        *,
+        clock: LiveClock,
+        loop: asyncio.AbstractEventLoop,
+        url: str,
+        account_index: int,
+        auth_provider: Callable[[], str | None],
+        handler: Callable[[dict[str, Any]], None],
+        on_reconnect: Callable[[], None] | None = None,
+    ) -> None:
+        self._clock = clock
+        self._loop = loop
+        self._url = url
+        self._account_index = account_index
+        self._auth_provider = auth_provider
+        self._handler = handler
+        self._on_reconnect = on_reconnect
+        self._client: WebSocketClient | None = None
+
+    async def connect(self) -> None:
+        config = WebSocketConfig(
+            url=self._url,
+            handler=self._on_message,
+            heartbeat=15,
+            headers=[],
+        )
+        self._client = await WebSocketClient.connect(
+            config=config,
+            post_reconnection=self._handle_reconnect,
+        )
+        await self._subscribe()
+
+    async def close(self) -> None:
+        if self._client is None:
+            return
+        await self._client.disconnect()
+        self._client = None
+
+    def _handle_reconnect(self) -> None:
+        if self._client is None:
+            return
+        self._loop.create_task(self._subscribe())
+        if self._on_reconnect:
+            self._on_reconnect()
+
+    async def _subscribe(self) -> None:
+        if self._client is None:
+            return
+
+        token = self._auth_provider()
+        if not token:
+            return
+
+        msg = {
+            "type": "subscribe",
+            "channel": f"account_all_orders/{self._account_index}",
+            "auth": token,
+        }
+        try:
+            await self._client.send_text(json.dumps(msg).encode("utf-8"))
+        except WebSocketClientError:
+            return
+
+    def _on_message(self, payload: bytes) -> None:
+        try:
+            message = json.loads(payload)
+        except Exception:
+            return
+
+        if isinstance(message, dict):
+            self._handler(message)
 
 
 class LighterExecutionClient(LiveExecutionClient):
@@ -88,6 +180,7 @@ class LighterExecutionClient(LiveExecutionClient):
         self._filled_quote_cache: dict[str, Decimal] = {}
         self._auth_token: Optional[str] = None
         self._auth_token_expiry_ns: int = 0
+        self._user_stream: _LighterUserStream | None = None
 
         super().__init__(
             loop=loop,
@@ -110,9 +203,11 @@ class LighterExecutionClient(LiveExecutionClient):
         # Ensure auth token is primed for reconciliation calls.
         self._ensure_auth_token()
         await self._reconcile_open_orders()
+        await self._start_user_stream()
 
     async def _disconnect(self) -> None:
-        return
+        if self._user_stream is not None:
+            await self._user_stream.close()
 
     # ---------------------------------------------------------------------------------------------
     # Command handlers
@@ -538,9 +633,87 @@ class LighterExecutionClient(LiveExecutionClient):
 
     async def _reconcile_open_orders(self) -> None:
         reports, fills = await self._build_reports()
-        if not reports and not fills:
+        for report in reports:
+            self._send_order_status_report(report)
+        for fill in fills:
+            self._send_fill_report(fill)
+        if reports or fills:
+            self._log.info("Reconciled %d open orders (fills=%d)", len(reports), len(fills))
+
+    # ---------------------------------------------------------------------------------------------
+    # WebSocket handling
+    # ---------------------------------------------------------------------------------------------
+
+    async def _start_user_stream(self) -> None:
+        if self._user_stream is not None:
             return
-        self._log.info("Reconciled %d open orders (fills=%d)", len(reports), len(fills))
+
+        base_url = (
+            self._config.base_url_ws
+            or (LIGHTER_TESTNET_WS_BASE if self._config.testnet else LIGHTER_MAINNET_WS_BASE)
+        )
+        account_index = self._config.resolved_account_index
+        if account_index is None:
+            self._log.warning("Cannot start user stream without account index")
+            return
+
+        self._user_stream = _LighterUserStream(
+            clock=self._clock,
+            loop=self._loop,
+            url=base_url,
+            account_index=account_index,
+            auth_provider=self._ensure_auth_token,
+            handler=self._handle_user_stream_message,
+            on_reconnect=lambda: self._loop.create_task(self._reconcile_open_orders()),
+        )
+        try:
+            await self._user_stream.connect()
+        except Exception as exc:  # pragma: no cover - defensive
+            self._log.exception("Failed to connect user stream", exc)
+            self._user_stream = None
+
+    def _handle_user_stream_message(self, message: dict[str, Any]) -> None:
+        msg_type = message.get("type")
+        if msg_type not in {"update/account_all_orders", "update/account_orders"}:
+            return
+
+        orders_by_market = message.get("orders") or {}
+        if not isinstance(orders_by_market, dict):
+            return
+
+        for market_index_str, orders in orders_by_market.items():
+            try:
+                market_index = int(market_index_str)
+            except Exception:
+                continue
+
+            instrument = self._instrument_for_market_index(market_index)
+            if instrument is None:
+                self._log.warning("Skipping WS order update for unknown market %s", market_index)
+                continue
+
+            if not isinstance(orders, list):
+                continue
+
+            reports, fills = self._parse_active_orders(orders, instrument=instrument)
+            for report in reports:
+                self._send_order_status_report(report)
+            for fill in fills:
+                self._send_fill_report(fill)
+
+    def _instrument_for_market_index(self, market_index: int):
+        lookup = getattr(self._instrument_provider, "_market_index_by_instrument", {})  # type: ignore[attr-defined]
+        for instrument_key, idx in lookup.items():
+            if idx == market_index:
+                try:
+                    instrument_id = InstrumentId.from_str(instrument_key)
+                except Exception:
+                    continue
+
+                instrument = self._instrument_provider.find(instrument_id)
+                if instrument:
+                    return instrument
+        return None
 
 
 def _get(order: Any, *keys: str, default=None):
