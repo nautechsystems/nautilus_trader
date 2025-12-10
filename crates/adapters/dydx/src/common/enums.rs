@@ -166,6 +166,7 @@ impl From<DydxOrderSide> for OrderSide {
     Deserialize,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", eq, eq_int)
