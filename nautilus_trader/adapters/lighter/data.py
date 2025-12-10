@@ -29,6 +29,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
@@ -111,7 +112,7 @@ class LighterDataClient(LiveMarketDataClient):
                 else:
                     self._handle_data(data)
             elif isinstance(msg, nautilus_pyo3.FundingRateUpdate):
-                data = nautilus_pyo3.FundingRateUpdate.from_pyo3(msg)
+                data = FundingRateUpdate.from_pyo3(msg)
                 self._handle_data(data)
             else:
                 self._log.warning(f"Unhandled websocket message type: {type(msg)}")
