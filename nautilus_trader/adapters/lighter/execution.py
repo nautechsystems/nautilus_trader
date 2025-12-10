@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Optional
 
 from nautilus_trader.adapters.lighter.config import LighterExecClientConfig
@@ -27,6 +28,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.execution.messages import (
     CancelOrder,
+    CancelAllOrders,
     GenerateOrderStatusReport,
     GenerateOrderStatusReports,
     SubmitOrder,
@@ -69,6 +71,7 @@ class LighterExecutionClient(LiveExecutionClient):
         self._config = config
         self._instrument_provider = instrument_provider
         self._client_order_indices: dict[str, int] = {}
+        self._strategy_order_ids: dict[str, set[str]] = defaultdict(set)
 
         super().__init__(
             loop=loop,
@@ -122,6 +125,7 @@ class LighterExecutionClient(LiveExecutionClient):
             nonce=nonce,
         )
 
+        self._strategy_order_ids[order.strategy_id.value].add(order.client_order_id.value)
         await self._post_send_tx(signed.tx_type, signed.tx_info)
         self._log.info(f"Submitted order {order.client_order_id} tx={signed.tx_hash}")
 
@@ -141,6 +145,7 @@ class LighterExecutionClient(LiveExecutionClient):
         )
 
         await self._post_send_tx(signed.tx_type, signed.tx_info)
+        self._strategy_order_ids[order_id.strategy_id.value].discard(order_id.client_order_id.value)
         self._log.info(f"Canceled order {order_id.client_order_id} tx={signed.tx_hash}")
 
     # ---------------------------------------------------------------------------------------------
@@ -159,8 +164,66 @@ class LighterExecutionClient(LiveExecutionClient):
     async def generate_position_status_reports(self, command):  # pragma: no cover - stub
         return []
 
-    async def _cancel_all_orders(self, command):  # pragma: no cover - stub
-        raise NotImplementedError
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        # Placeholder: loop through active orders via REST until WS schema is known.
+        token = self._maybe_auth_token()
+        if not token:
+            self._log.warning("Cannot cancel all orders without auth token")
+            return
+
+        strategy_id = command.strategy_id.value if command.strategy_id else None
+        strategy_orders = self._strategy_order_ids.get(strategy_id, set()) if strategy_id else None
+        if strategy_orders is not None and not strategy_orders:
+            # After restart we may not have local state; fall back to canceling all for the instrument.
+            self._log.warning("No tracked orders for strategy; cancel-all will not filter by strategy")
+            strategy_orders = None
+        instrument_ids = [command.instrument_id] if command.instrument_id else []
+        if not instrument_ids:
+            # Fallback: cancel per loaded instrument.
+            instrument_ids = list(self._instrument_provider._market_index_by_instrument.keys())  # type: ignore[attr-defined]
+
+        for instrument_id in instrument_ids:
+            market_index = self._instrument_provider.market_index_for(instrument_id)  # type: ignore[arg-type]
+            if market_index is None:
+                continue
+
+            resp = await self._http_client.account_active_orders(  # type: ignore[attr-defined]
+                account_index=self._config.resolved_account_index or 0,
+                market_id=market_index,
+                auth_token=token,
+            )
+            orders = resp["orders"] if isinstance(resp, dict) else resp.orders
+            for order in orders or []:
+                client_order_id = None
+                try:
+                    is_ask = order.get("is_ask") if isinstance(order, dict) else getattr(order, "is_ask", None)
+                    if command.order_side and is_ask is not None:
+                        if command.order_side == OrderSide.BUY and is_ask is True:
+                            continue
+                        if command.order_side == OrderSide.SELL and is_ask is False:
+                            continue
+
+                    client_order_id = str(
+                        order.get("client_order_id")
+                        if isinstance(order, dict)
+                        else getattr(order, "client_order_id", "")
+                    )
+                    if not client_order_id:
+                        continue
+                    if strategy_orders is not None and client_order_id not in strategy_orders:
+                        # Respect per-strategy scope; skip untracked orders.
+                        continue
+                    coi = self._client_order_index(client_order_id)
+                    nonce = await self._fetch_nonce()
+                    signed = self._signer.sign_cancel_order(
+                        market_index=market_index,
+                        order_index=coi,
+                        nonce=nonce,
+                    )
+                    await self._post_send_tx(signed.tx_type, signed.tx_info)
+                except Exception as exc:  # pragma: no cover - best-effort
+                    cid = client_order_id or "<unknown>"
+                    self._log.warning(f"cancel_all_orders failed for {cid}: {exc}")
 
     # ---------------------------------------------------------------------------------------------
     # Helpers
