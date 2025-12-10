@@ -29,7 +29,10 @@ use crate::common::LighterNetwork;
 use crate::data::models::LighterOrderBookDepth;
 use crate::urls::get_http_base_url;
 
-use super::models::{LighterOrderBook, OrderBookSnapshotResponse, OrderBooksResponse};
+use super::models::{
+    AccountActiveOrdersResponse, AccountResponse, LighterOrderBook, NextNonceResponse,
+    OrderBookSnapshotResponse, OrderBooksResponse, SendTxResponse,
+};
 use super::parse::{LighterInstrumentDef, ParseReport};
 use super::parse::{instruments_from_defs, parse_instrument_defs};
 
@@ -187,6 +190,177 @@ impl LighterHttpClient {
             .and_then(|map| map.get(instrument_id).map(|meta| meta.market_index))
     }
 
+    /// Fetch the next nonce for the given account/api key.
+    ///
+    /// # Errors
+    /// Returns an error on request failure or invalid JSON.
+    pub async fn next_nonce(
+        &self,
+        account_index: i64,
+        api_key_index: i32,
+        auth_token: Option<&str>,
+    ) -> anyhow::Result<NextNonceResponse> {
+        let url = format!("{}/nextNonce", self.base_url);
+        tracing::trace!(%url, account_index, api_key_index, "Requesting nextNonce");
+
+        let mut request = self.http.get(url).query(&[
+            ("account_index", account_index.to_string()),
+            ("api_key_index", api_key_index.to_string()),
+        ]);
+
+        if let Some(token) = auth_token {
+            request = request.header("Authorization", token);
+        }
+
+        let response = request
+            .send()
+            .await
+            .context("failed to send nextNonce request")?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("failed to read nextNonce response body")?;
+
+        if !status.is_success() {
+            anyhow::bail!("nextNonce request failed ({status}): {body}");
+        }
+
+        let parsed: NextNonceResponse =
+            serde_json::from_str(&body).context("failed to deserialize nextNonce response")?;
+
+        Ok(parsed)
+    }
+
+    /// Submit a transaction via `/sendTx`.
+    ///
+    /// # Errors
+    /// Returns an error on request failure or invalid JSON.
+    pub async fn send_tx(
+        &self,
+        tx_type: u8,
+        tx_info: &str,
+        price_protection: Option<bool>,
+    ) -> anyhow::Result<SendTxResponse> {
+        let url = format!("{}/sendTx", self.base_url);
+        tracing::trace!(%url, tx_type, "Submitting sendTx");
+
+        let mut form: Vec<(&str, String)> = vec![
+            ("tx_type", tx_type.to_string()),
+            ("tx_info", tx_info.to_string()),
+        ];
+        if let Some(protection) = price_protection {
+            form.push(("price_protection", protection.to_string()));
+        }
+
+        let response = self
+            .http
+            .post(url)
+            .form(&form)
+            .send()
+            .await
+            .context("failed to send sendTx request")?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("failed to read sendTx response body")?;
+
+        if !status.is_success() {
+            anyhow::bail!("sendTx request failed ({status}): {body}");
+        }
+
+        let parsed: SendTxResponse =
+            serde_json::from_str(&body).context("failed to deserialize sendTx response")?;
+
+        Ok(parsed)
+    }
+
+    /// Fetch account active orders for the given market.
+    ///
+    /// # Errors
+    /// Returns an error on request failure or invalid JSON.
+    pub async fn account_active_orders(
+        &self,
+        account_index: i64,
+        market_id: u32,
+        auth_token: &str,
+    ) -> anyhow::Result<AccountActiveOrdersResponse> {
+        let url = format!("{}/accountActiveOrders", self.base_url);
+        tracing::trace!(%url, account_index, market_id, "Requesting active orders");
+
+        let response = self
+            .http
+            .get(url)
+            .query(&[
+                ("account_index", account_index.to_string()),
+                ("market_id", market_id.to_string()),
+            ])
+            .header("Authorization", auth_token)
+            .send()
+            .await
+            .context("failed to send accountActiveOrders request")?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("failed to read accountActiveOrders response body")?;
+
+        if !status.is_success() {
+            anyhow::bail!("accountActiveOrders request failed ({status}): {body}");
+        }
+
+        let parsed: AccountActiveOrdersResponse = serde_json::from_str(&body)
+            .context("failed to deserialize accountActiveOrders response")?;
+
+        Ok(parsed)
+    }
+
+    /// Fetch account details by index.
+    ///
+    /// # Errors
+    /// Returns an error on request failure or invalid JSON.
+    pub async fn account_by_index(
+        &self,
+        account_index: i64,
+        auth_token: Option<&str>,
+    ) -> anyhow::Result<AccountResponse> {
+        let url = format!("{}/account", self.base_url);
+        tracing::trace!(%url, account_index, "Requesting account by index");
+
+        let mut request = self
+            .http
+            .get(url)
+            .query(&[("by", "index"), ("value", &account_index.to_string())]);
+
+        if let Some(token) = auth_token {
+            request = request.header("Authorization", token);
+        }
+
+        let response = request
+            .send()
+            .await
+            .context("failed to send account request")?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("failed to read account response body")?;
+
+        if !status.is_success() {
+            anyhow::bail!("account request failed ({status}): {body}");
+        }
+
+        let parsed: AccountResponse =
+            serde_json::from_str(&body).context("failed to deserialize account response")?;
+
+        Ok(parsed)
+    }
+
     fn cache_instrument_meta(&self, defs: &[LighterInstrumentDef]) {
         if let Ok(mut map) = self.instrument_meta.write() {
             map.clear();
@@ -223,6 +397,7 @@ mod tests {
     use std::path::PathBuf;
 
     use nautilus_core::time::get_atomic_clock_realtime;
+    use serde_json::Value;
 
     #[rstest::rstest]
     fn parses_and_caches_market_indices() {
@@ -255,8 +430,51 @@ mod tests {
         assert_eq!(client.instrument_meta.read().unwrap().len(), 1);
     }
 
+    #[test]
+    fn parses_next_nonce_fixture() {
+        let value: Value = serde_json::from_str(
+            &std::fs::read_to_string(fixture("mainnet_next_nonce.json")).unwrap(),
+        )
+        .unwrap();
+        let body = value["response"]["body"].clone();
+        let resp: NextNonceResponse = serde_json::from_value(body).unwrap();
+        assert_eq!(resp.code, 200);
+        assert_eq!(resp.nonce, 13);
+    }
+
+    #[test]
+    fn parses_send_tx_fixture() {
+        let value: Value = serde_json::from_str(
+            &std::fs::read_to_string(fixture("mainnet_sendtx_create_btc.json")).unwrap(),
+        )
+        .unwrap();
+        let body = value["response"]["body"].clone();
+        let resp: SendTxResponse = serde_json::from_value(body).unwrap();
+        assert_eq!(resp.code, 200);
+        assert!(resp.tx_hash.is_some());
+    }
+
+    #[test]
+    fn parses_account_active_orders_fixture() {
+        let value: Value = serde_json::from_str(
+            &std::fs::read_to_string(fixture("mainnet_account_active_orders_market1.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        let body = value["response"]["body"].clone();
+        let resp: AccountActiveOrdersResponse = serde_json::from_value(body).unwrap();
+        assert_eq!(resp.code, 200);
+        assert_eq!(resp.orders.len(), 2);
+    }
+
     fn fixture_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../../tests/test_data/lighter/http/orderbooks.json")
+    }
+
+    fn fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../tests/test_data/lighter/http")
+            .join(name)
     }
 }

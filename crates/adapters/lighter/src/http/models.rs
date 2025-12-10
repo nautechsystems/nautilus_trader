@@ -18,6 +18,134 @@ use std::{collections::HashMap, str::FromStr};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
+/// Response for `/nextNonce`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NextNonceResponse {
+    /// Result code (200 on success).
+    pub code: i32,
+    /// The next nonce value for the given account/key.
+    pub nonce: i64,
+    /// Optional message field returned by the API.
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// Response for `/sendTx`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SendTxResponse {
+    /// Result code (200 on success).
+    pub code: i32,
+    /// Optional message (e.g., rate-limit hints).
+    #[serde(default)]
+    pub message: Option<String>,
+    /// Transaction hash returned by the API.
+    #[serde(default)]
+    pub tx_hash: Option<String>,
+    /// Optional predicted execution time in milliseconds.
+    #[serde(default)]
+    pub predicted_execution_time_ms: Option<i64>,
+}
+
+/// Account order entry returned by `/accountActiveOrders`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LighterActiveOrder {
+    #[serde(default)]
+    pub order_index: Option<i64>,
+    #[serde(default)]
+    pub client_order_index: Option<i64>,
+    #[serde(default)]
+    pub order_id: Option<String>,
+    #[serde(default)]
+    pub client_order_id: Option<String>,
+    #[serde(default)]
+    pub market_index: Option<u32>,
+    #[serde(default)]
+    pub owner_account_index: Option<i64>,
+    #[serde(default)]
+    pub initial_base_amount: Option<String>,
+    #[serde(default)]
+    pub price: Option<String>,
+    #[serde(default)]
+    pub nonce: Option<i64>,
+    #[serde(default)]
+    pub remaining_base_amount: Option<String>,
+    #[serde(default)]
+    pub is_ask: Option<bool>,
+    #[serde(default)]
+    pub base_size: Option<i64>,
+    #[serde(default)]
+    pub base_price: Option<i64>,
+    #[serde(default)]
+    pub filled_base_amount: Option<String>,
+    #[serde(default)]
+    pub filled_quote_amount: Option<String>,
+    #[serde(default)]
+    pub side: Option<String>,
+    #[serde(default)]
+    pub r#type: Option<String>,
+    #[serde(default)]
+    pub time_in_force: Option<String>,
+    #[serde(default)]
+    pub reduce_only: Option<bool>,
+    #[serde(default)]
+    pub trigger_price: Option<String>,
+    #[serde(default)]
+    pub order_expiry: Option<i64>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub trigger_status: Option<String>,
+    #[serde(default)]
+    pub trigger_time: Option<i64>,
+    #[serde(default)]
+    pub parent_order_index: Option<i64>,
+    #[serde(default)]
+    pub parent_order_id: Option<String>,
+    #[serde(default)]
+    pub to_trigger_order_id_0: Option<String>,
+    #[serde(default)]
+    pub to_trigger_order_id_1: Option<String>,
+    #[serde(default)]
+    pub to_cancel_order_id_0: Option<String>,
+    #[serde(default)]
+    pub block_height: Option<i64>,
+    #[serde(default)]
+    pub timestamp: Option<i64>,
+    #[serde(default)]
+    pub created_at: Option<i64>,
+    #[serde(default)]
+    pub updated_at: Option<i64>,
+}
+
+/// Response for `/accountActiveOrders`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AccountActiveOrdersResponse {
+    /// Result code (200 on success).
+    pub code: i32,
+    /// Order entries currently active for the account/market.
+    #[serde(default)]
+    pub orders: Vec<LighterActiveOrder>,
+    /// Optional message field returned by the API.
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// Response for `/account` (simplified for PR3 reconciliation).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AccountResponse {
+    /// Result code (200 on success).
+    pub code: i32,
+    /// Optional total accounts count.
+    #[serde(default)]
+    pub total: Option<i64>,
+    /// Raw accounts payload (left as JSON values for future mapping).
+    #[serde(default)]
+    pub accounts: Vec<serde_json::Value>,
+    /// Optional message field returned by the API.
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
 use crate::data::models::LighterOrderBookDepth;
 
 /// Response envelope for `GET /orderBooks`.

@@ -50,7 +50,7 @@
 
 **Definition of Done**: Can place and cancel orders (gated on Validation Spike)
 
-- [ ] **PR3: Execution Client** (in progress; branch creation blocked by ref permissions, see notes)
+- [ ] **PR3: Execution Client** (in progress)
   - [ ] Nonce manager
   - [ ] Order submission (sendTx)
   - [ ] Order cancellation

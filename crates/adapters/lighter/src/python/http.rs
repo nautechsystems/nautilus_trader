@@ -19,8 +19,13 @@ use nautilus_model::{
     instruments::Instrument,
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
-use pyo3::{prelude::*, types::PyList};
+use pyo3::{
+    prelude::*,
+    types::{PyList, PyModule},
+};
 use pyo3_async_runtimes::tokio::future_into_py;
+use serde::Serialize;
+use serde_json;
 
 use crate::data::order_book::depth_to_deltas_and_quote;
 use crate::{common::LighterNetwork, http::client::LighterHttpClient};
@@ -113,4 +118,85 @@ impl PyLighterHttpClient {
             Ok(deltas)
         })
     }
+
+    #[pyo3(name = "next_nonce")]
+    fn py_next_nonce<'py>(
+        &self,
+        py: Python<'py>,
+        account_index: i64,
+        api_key_index: i32,
+        auth_token: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.inner.clone();
+        future_into_py(py, async move {
+            let resp = client
+                .next_nonce(account_index, api_key_index, auth_token.as_deref())
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::with_gil(|py| to_py_json(py, &resp).map(|obj| obj.into_any().unbind()))
+        })
+    }
+
+    #[pyo3(name = "send_tx")]
+    fn py_send_tx<'py>(
+        &self,
+        py: Python<'py>,
+        tx_type: u8,
+        tx_info: String,
+        price_protection: Option<bool>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.inner.clone();
+        future_into_py(py, async move {
+            let resp = client
+                .send_tx(tx_type, &tx_info, price_protection)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::with_gil(|py| to_py_json(py, &resp).map(|obj| obj.into_any().unbind()))
+        })
+    }
+
+    #[pyo3(name = "account_active_orders")]
+    fn py_account_active_orders<'py>(
+        &self,
+        py: Python<'py>,
+        account_index: i64,
+        market_id: u32,
+        auth_token: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.inner.clone();
+        future_into_py(py, async move {
+            let resp = client
+                .account_active_orders(account_index, market_id, &auth_token)
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::with_gil(|py| to_py_json(py, &resp).map(|obj| obj.into_any().unbind()))
+        })
+    }
+
+    #[pyo3(name = "account_by_index")]
+    fn py_account_by_index<'py>(
+        &self,
+        py: Python<'py>,
+        account_index: i64,
+        auth_token: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.inner.clone();
+        future_into_py(py, async move {
+            let resp = client
+                .account_by_index(account_index, auth_token.as_deref())
+                .await
+                .map_err(to_pyvalue_err)?;
+            Python::with_gil(|py| to_py_json(py, &resp).map(|obj| obj.into_any().unbind()))
+        })
+    }
+}
+
+fn to_py_json<'py, T>(py: Python<'py>, value: &T) -> PyResult<PyObject>
+where
+    T: Serialize,
+{
+    let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
+    let json_mod = PyModule::import(py, "json")?;
+    let loads = json_mod.getattr("loads")?;
+    loads.call1((json_str,)).map(|obj| obj.into())
 }
