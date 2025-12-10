@@ -1,6 +1,7 @@
 # Validation Spike Notes (Public WS)
 
 ## Findings (Mainnet, 2025-12-08)
+
 - **WS endpoint:** `wss://mainnet.zklighter.elliot.ai/stream`
 - **Channel format (public):** slash-delimited
   - Order books: `{"type":"subscribe","channel":"order_book/{market_id}"}`
@@ -10,16 +11,19 @@
 - **REST orderBooks:** Captured mainnet response at `tests/test_data/lighter/http/orderbooks_mainnet.json` (119 markets; `market_id` populated, includes fee fields and `status`).
 
 ## Actions taken
+
 - Updated WS client to use slash channels (backward-compatible parsing still supports colon).
 - Added parsing test to confirm slash/colon channel parsing.
 - Added new fixtures under `tests/test_data/lighter/{http,ws}/`.
 
 ## Still open (private/auth)
+
 - Private WS/REST (`sendTx`, `account`, `accountActiveOrders`, `nextNonce`) not validated here.
 - Need the signing/auth recipe for `LIGHTER_API_KEY`/`LIGHTER_API_SECRET` to derive auth tokens/headers.
 - Once provided, capture private REST/WS payloads and update fixtures/parsers accordingly.
 
 ## How to reproduce public WS capture
+
 ```bash
 python - <<'PY'
 import asyncio, json, websockets

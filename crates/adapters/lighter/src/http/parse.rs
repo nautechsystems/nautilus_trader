@@ -81,9 +81,9 @@ pub fn parse_instrument_defs(
     for book in books {
         match parse_single_def(book) {
             Ok(def) => defs.push(def),
-            Err(err) => {
+            Err(e) => {
                 report.skipped += 1;
-                report.errors.insert(book.market_index, err.to_string());
+                report.errors.insert(book.market_index, e.to_string());
             }
         }
     }
@@ -221,8 +221,8 @@ fn pow10_neg(decimals: u32) -> Decimal {
 fn get_currency(code: &str) -> Currency {
     Currency::try_from_str(code).unwrap_or_else(|| {
         let currency = Currency::new(code, 8, 0, code, CurrencyType::Crypto);
-        if let Err(err) = Currency::register(currency, false) {
-            warn!(%code, %err, "Failed to register currency");
+        if let Err(e) = Currency::register(currency, false) {
+            warn!(%code, %e, "Failed to register currency");
         }
         currency
     })

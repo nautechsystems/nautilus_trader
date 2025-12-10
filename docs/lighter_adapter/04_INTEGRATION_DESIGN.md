@@ -3,6 +3,7 @@
 ## Integration Design: Nautilus ↔ Lighter Mapping
 
 ### Validation notes
+
 - Signing algorithm + payload hashing are **unknown**; do not implement `sendTx`/`sendTxBatch` until testnet captures confirm curve/hash/encoding.
 - Auth token requirement for private REST + WS is **unsettled**; plan for token support and feature-flag until validated.
 - WS channel naming confirmed: subscribe uses slashes (`order_book/{idx}`), responses use colons (`order_book:1`). See [API docs](https://apidocs.lighter.xyz/docs/websocket-reference).
@@ -173,6 +174,7 @@ sequenceDiagram
 | Batch Cancel | `order_indices[]` | Idempotent by design |
 
 **Nonce Management**:
+
 - Track nonce locally per `api_key_index`
 - Increment after successful `sendTx`
 - On nonce mismatch error: fetch via `/nextNonce` and retry

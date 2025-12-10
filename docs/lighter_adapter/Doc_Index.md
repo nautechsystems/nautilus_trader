@@ -34,16 +34,16 @@ This engineering discovery pack contains all documentation required to implement
 
 | Resource | URL |
 |----------|-----|
-| Nautilus Trader Repo | https://github.com/nautechsystems/nautilus_trader |
-| Nautilus Adapters Guide | https://nautilustrader.io/docs/nightly/developer_guide/adapters/ |
-| Lighter API Docs | https://apidocs.lighter.xyz/docs/get-started-for-programmers-1 |
-| Lighter API Reference | https://apidocs.lighter.xyz/reference/account-1 |
-| Lighter Rate Limits | https://apidocs.lighter.xyz/docs/rate-limits |
-| Lighter WebSocket Docs | https://apidocs.lighter.xyz/docs/websocket-reference |
-| Lighter Python SDK | https://github.com/elliottech/lighter-python |
+| Nautilus Trader Repo | <https://github.com/nautechsystems/nautilus_trader> |
+| Nautilus Adapters Guide | <https://nautilustrader.io/docs/nightly/developer_guide/adapters/> |
+| Lighter API Docs | <https://apidocs.lighter.xyz/docs/get-started-for-programmers-1> |
+| Lighter API Reference | <https://apidocs.lighter.xyz/reference/account-1> |
+| Lighter Rate Limits | <https://apidocs.lighter.xyz/docs/rate-limits> |
+| Lighter WebSocket Docs | <https://apidocs.lighter.xyz/docs/websocket-reference> |
+| Lighter Python SDK | <https://github.com/elliottech/lighter-python> |
 | Lighter Auth Validation Notes | docs/lighter_adapter/PR_NOTES_AUTH_VALIDATION.md |
 | Lighter Public WS Validation Notes | docs/lighter_adapter/PR_NOTES_VALIDATION_SPIKE.md |
-| Lighter Testnet App | https://testnet.app.lighter.xyz/ |
+| Lighter Testnet App | <https://testnet.app.lighter.xyz/> |
 | dYdX Adapter (Reference) | nautilus_trader/adapters/dydx/ |
 | Hyperliquid Adapter (Reference) | nautilus_trader/adapters/hyperliquid/ |
 | Captured Fixtures (mainnet) | `tests/test_data/lighter/` (public + private WS/REST samples) |

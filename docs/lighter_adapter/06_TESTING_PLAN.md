@@ -13,6 +13,7 @@
   tests from these fixtures rather than live endpoints.
 
 **Captured (mainnet) fixtures available**:
+
 - Public WS: `tests/test_data/lighter/public_order_book_1.json`, `public_trade_1.json`,
   `public_market_stats_1.json`
 - Private WS (auth token from signer): `tests/test_data/lighter/private_account_all_orders.json`,
@@ -33,6 +34,7 @@
 | Symbol | `test_symbol.py` | Normalization, round-trip |
 
 **Example Unit Test**:
+
 ```python
 def test_parse_order_book_delta():
     raw = {
@@ -97,6 +99,7 @@ drift checks.
 | Insufficient margin | `test_insufficient_margin` | Reject with reason |
 
 **Disconnect Test Example**:
+
 ```python
 async def test_ws_reconnect(lighter_client, mock_ws):
     await lighter_client.connect()

@@ -135,7 +135,7 @@ impl LighterWebSocketClient {
             while let Some(msg) = raw_rx.recv().await {
                 match msg.into_text() {
                     Ok(text) => {
-                        if let Err(err) = handle_text_message(
+                        if let Err(e) = handle_text_message(
                             &text,
                             &out_tx,
                             &client,
@@ -145,11 +145,11 @@ impl LighterWebSocketClient {
                         )
                         .await
                         {
-                            warn!(%err, "Failed to handle Lighter WebSocket message");
+                            warn!(%e, "Failed to handle Lighter WebSocket message");
                         }
                     }
-                    Err(err) => {
-                        warn!(%err, "Ignoring non-text WebSocket message");
+                    Err(e) => {
+                        warn!(%e, "Ignoring non-text WebSocket message");
                     }
                 }
             }
@@ -304,8 +304,8 @@ impl LighterWebSocketClient {
                 "type": "subscribe",
                 "channel": channel,
             });
-            if let Err(err) = client.send_text(payload.to_string(), None).await {
-                warn!(%err, "Failed to resubscribe to {channel}");
+            if let Err(e) = client.send_text(payload.to_string(), None).await {
+                warn!(%e, "Failed to resubscribe to {channel}");
             } else {
                 debug!(%channel, "Resubscribed to Lighter channel");
             }
@@ -336,8 +336,8 @@ async fn handle_text_message(
     let events = parse_ws_message(message, &instruments_guard, ts_init)?;
 
     for event in events {
-        if let Err(err) = out_tx.send(event) {
-            error!(%err, "Failed to enqueue WebSocket event");
+        if let Err(e) = out_tx.send(event) {
+            error!(%e, "Failed to enqueue WebSocket event");
         }
     }
 

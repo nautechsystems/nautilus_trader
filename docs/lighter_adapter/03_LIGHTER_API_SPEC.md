@@ -6,6 +6,7 @@ This markdown summarizes the actionable interface checklist and flags uncertaint
 during the validation spike.
 
 ### Latest captures (mainnet)
+
 - WS connects at `wss://mainnet.zklighter.elliot.ai/stream`
 - Channels observed: `order_book:1` (snapshot on subscribe + deltas with `offset` and `nonce`),
   `trade:1`, `market_stats:1`
@@ -32,6 +33,7 @@ during the validation spike.
 > **IMPORTANT: Channel Delimiter Convention (Verified)**
 >
 > The Lighter API uses **different delimiters** for requests vs responses:
+>
 > - **Subscribe requests** use **slashes**: `order_book/{market_index}`
 > - **Server responses** use **colons**: `order_book:1`
 >

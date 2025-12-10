@@ -211,6 +211,7 @@ class LighterExecClientConfig(LiveExecClientConfig):
 ### Testing Patterns
 
 **Unit Tests**: Use `pytest` with fixtures for parsing/mapping logic
+
 ```python
 # tests/unit_tests/adapters/lighter/test_parsing.py
 def test_parse_order_book_update():
@@ -220,6 +221,7 @@ def test_parse_order_book_update():
 ```
 
 **Integration Tests**: Use Axum mock servers (Rust) or `aioresponses` (Python)
+
 ```python
 # tests/integration_tests/adapters/lighter/test_http_client.py
 @pytest.fixture
@@ -230,6 +232,7 @@ def mock_lighter_api():
 ```
 
 **Test Data Convention**:
+
 ```
 tests/test_data/lighter/
 ├── http_get_orderbooks.json

@@ -119,26 +119,31 @@
 ### How to Test (Full Suite)
 
 **Rust Tests**:
+
 ```bash
 cargo test -p nautilus-lighter
 ```
 
 **Python Unit Tests**:
+
 ```bash
 uv run pytest tests/unit_tests/adapters/lighter/ -v
 ```
 
 **Python Integration Tests**:
+
 ```bash
 uv run pytest tests/integration_tests/adapters/lighter/ -v
 ```
 
 **All Python Tests**:
+
 ```bash
 uv run pytest tests/unit_tests/adapters/lighter/ tests/integration_tests/adapters/lighter/ -v
 ```
 
 **Individual Test Files**:
+
 ```bash
 # Config tests (PR0)
 uv run pytest tests/unit_tests/adapters/lighter/test_config.py -v
@@ -158,6 +163,7 @@ uv run pytest tests/integration_tests/adapters/lighter/test_parsing.py -v
 ### GitHub Issue Templates
 
 **Bug Report**:
+
 ```markdown
 ## Bug Report: Lighter Adapter
 
@@ -180,7 +186,9 @@ uv run pytest tests/integration_tests/adapters/lighter/test_parsing.py -v
 
 ### Logs
 ```
+
 [Relevant log output]
+
 ```
 
 ### Environment
@@ -191,6 +199,7 @@ uv run pytest tests/integration_tests/adapters/lighter/test_parsing.py -v
 ```
 
 **Feature Request**:
+
 ```markdown
 ## Feature Request: Lighter Adapter
 
@@ -211,6 +220,7 @@ As a [persona], I want [feature] so that [benefit].
 ```
 
 **Investigation Task**:
+
 ```markdown
 ## Investigation: [Topic]
 

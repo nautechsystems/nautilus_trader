@@ -7,6 +7,7 @@
 **Background**: Nautilus Trader is a high-performance algorithmic trading platform supporting multiple venues. Lighter Exchange is an emerging zk-rollup-based perpetual DEX with on-chain order book matching and cryptographic settlement. Fee levels remain **TBD** (docs conflict on maker/taker rates). Adding Lighter expands Nautilus's DEX coverage alongside existing dYdX and Hyperliquid adapters.
 
 **Goals**:
+
 - Enable Nautilus users to trade perpetual futures on Lighter Exchange
 - Maintain Nautilus's high code quality standards (strong typing, deterministic state, testability)
 - Support both live trading and backtesting workflows
@@ -25,17 +26,21 @@
 ### User Personas & Stories
 
 **Persona 1: Quantitative Trader**
+
 - *As a quant trader, I want to deploy my existing Nautilus strategies on Lighter so I can access DeFi liquidity with minimal code changes*
 
 **Persona 2: Market Maker**
+
 - *As a market maker, I need real-time order book updates and fast order placement to maintain tight spreads on Lighter markets*
 
 **Persona 3: Strategy Developer**
+
 - *As a strategy developer, I want to backtest against historical Lighter data and seamlessly transition to live trading*
 
 ### Functional Requirements
 
 #### FR-1: Instrument Discovery
+
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-1.1 | Load all perpetual markets from `orderBooks` endpoint | P0 |
@@ -44,6 +49,7 @@
 | FR-1.4 | Support filtering by market_index | P1 |
 
 #### FR-2: Market Data
+
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-2.1 | Subscribe to order book deltas via WebSocket | P0 |
@@ -54,6 +60,7 @@
 | FR-2.6 | Request historical candlesticks via REST | P1 |
 
 #### FR-3: Order Execution
+
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-3.1 | Submit limit orders | P0 |
@@ -65,6 +72,7 @@
 | FR-3.7 | Handle reduce-only orders | P1 |
 
 #### FR-4: Account Management
+
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-4.1 | Query account balances and collateral | P0 |

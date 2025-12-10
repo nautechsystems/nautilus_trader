@@ -1,14 +1,17 @@
 # PR Notes — Private Auth/Signing Validation
 
 ## What we validated
+
 - **Auth token**: `SignerClient.create_auth_token_with_expiry(deadline_seconds, api_key_index, account_index)` returns a token for private REST/WS. Pass it as `Authorization: <token>` header *or* `auth=<token>` query param. No HMAC headers.
 - **Nonce**: Per API key. Fetch with `TransactionApi.next_nonce(account_index, api_key_index)`. Retry on `"invalid nonce"` by refreshing the nonce.
 - **sendTx**: No auth header needed. Body is multipart form with `tx_type` and `tx_info` where `tx_info` already contains the signature from the signer binary.
 - **Account/accountActiveOrders/nextNonce**: Require auth token as above. Header and query both work in the SDK (`authorization` header is accepted).
 
 ## Working recipe (mainnet)
+
 1. Install SDK in the repo venv: `.venv/bin/python -m pip install git+https://github.com/elliottech/lighter-python.git`
 2. Construct signer:
+
    ```python
    signer = SignerClient(
        url="https://mainnet.zklighter.elliot.ai",
@@ -16,16 +19,19 @@
        api_private_keys={<API_KEY_INDEX>: "<API_KEY_PRIVATE_KEY_NO_0x>"},
    )
    ```
+
 3. Get nonce: `TransactionApi(ApiClient(Configuration(host=url))).next_nonce(account_index, api_key_index)`
 4. Sign order: `signer.sign_create_order(...)` using venue ints (price_int, base_amount_int).
 5. Submit: `TransactionApi.send_tx(tx_type, tx_info)`
 6. Cancel: `signer.cancel_order(market_index, order_index=client_order_index)`
 
 Notes:
+
 - Price scale is `10 ** price_decimals`, size scale is `10 ** size_decimals`.
 - BTC perp (market_id=1 on mainnet): `price_decimals=1`, `size_decimals=5`, `min_base_amount=0.00020`.
 
 ## Live probe (2025-02-05, mainnet)
+
 - Order placed: limit **buy** BTC perp, ~10% below last.
   - last_price ≈ 90,410.8; target_price ≈ 81,369.7 → `price_int=813697`
   - size for ~$50 notional → `base_amount_int=61` (scaled with size_decimals=5)
@@ -36,6 +42,7 @@ Notes:
 - Both calls returned `{"ratelimit": "didn't use volume quota"}`.
 
 ## One-file place-and-cancel snippet (mainnet)
+
 ```python
 import asyncio, os, time, json
 from lighter import SignerClient
@@ -78,6 +85,7 @@ asyncio.run(main())
 ```
 
 ## Open items
+
 - Capture private REST (`account`, `accountActiveOrders`, `nextNonce`) responses with auth token for fixtures.
 - Add token refresh logic (deadline-based) and retry on auth failures.
 - Confirm private WS auth flow (token in subscribe payload vs header) and message schemas.
