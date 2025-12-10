@@ -93,7 +93,7 @@ def btc_instrument() -> CryptoPerpetual:
 @pytest.fixture
 def instrument(btc_instrument) -> CryptoPerpetual:
     """
-    Default instrument fixture required by parent conftest.
+    Return default instrument fixture required by parent conftest.
     """
     return btc_instrument
 
@@ -179,19 +179,23 @@ def mock_instrument_provider(btc_instrument):
 
 @pytest.fixture
 def data_client():
-    """Required by parent conftest - returns None as we build via data_client_builder."""
+    """
+    Return None as we build via data_client_builder (required by parent conftest).
+    """
     return None
 
 
 @pytest.fixture
 def exec_client():
-    """Required by parent conftest - returns None as execution is not yet implemented."""
+    """
+    Return None as execution is not yet implemented (required by parent conftest).
+    """
     return None
 
 
 @pytest.fixture
 def instrument_provider(mock_instrument_provider):
     """
-    Required by parent conftest.
+    Return mock instrument provider (required by parent conftest).
     """
     return mock_instrument_provider

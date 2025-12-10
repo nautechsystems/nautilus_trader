@@ -42,12 +42,12 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from nautilus_trader.adapters.lighter import LIGHTER
-from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.model.data import capsule_to_data
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.adapters.lighter import LIGHTER  # noqa: E402
+from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider  # noqa: E402
+from nautilus_trader.config import InstrumentProviderConfig  # noqa: E402
+from nautilus_trader.core import nautilus_pyo3  # noqa: E402
+from nautilus_trader.model.data import capsule_to_data  # noqa: E402
+from nautilus_trader.model.identifiers import InstrumentId  # noqa: E402
 
 
 try:
@@ -135,7 +135,7 @@ def select_pyo3_instruments(
         instrument_id_attr = getattr(instrument, "id", None)
         try:
             instrument_id = instrument_id_attr() if callable(instrument_id_attr) else instrument_id_attr
-        except Exception:  # pragma: no cover - defensive
+        except Exception:  # noqa: S112  # pragma: no cover - defensive
             continue
 
         key = getattr(instrument_id, "value", str(instrument_id))

@@ -183,7 +183,7 @@ mod tests {
     use super::*;
     use nautilus_model::{
         enums::CurrencyType,
-        identifiers::{InstrumentId, Symbol},
+        identifiers::{InstrumentId, Symbol, Venue},
         instruments::CryptoPerpetual,
         types::Currency,
     };
@@ -196,10 +196,7 @@ mod tests {
     fn create_test_instrument() -> InstrumentAny {
         let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
         let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat);
-        let instrument_id = InstrumentId::new(
-            Symbol::new("BTC-USD-PERP"),
-            nautilus_model::identifiers::Venue::new("LIGHTER"),
-        );
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("LIGHTER"));
 
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             instrument_id,
@@ -249,7 +246,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_depth_to_deltas_starts_with_clear() {
         let instrument = create_test_instrument();
         let depth = create_test_depth(
@@ -272,7 +269,7 @@ mod tests {
         assert_eq!(deltas.deltas[0].sequence, 100);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_depth_to_deltas_creates_bids_and_asks() {
         let instrument = create_test_instrument();
         let depth = create_test_depth(
@@ -301,7 +298,7 @@ mod tests {
         assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_depth_to_deltas_zero_size_is_delete() {
         let instrument = create_test_instrument();
         let depth = create_test_depth(
@@ -324,7 +321,7 @@ mod tests {
         assert_eq!(deltas.deltas[2].action, BookAction::Delete);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_depth_to_deltas_generates_quote() {
         let instrument = create_test_instrument();
         let depth = create_test_depth(
@@ -349,7 +346,7 @@ mod tests {
         assert_eq!(quote.ask_size, Quantity::from("0.5"));
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_depth_to_deltas_no_quote_without_both_sides() {
         let instrument = create_test_instrument();
 
@@ -368,7 +365,7 @@ mod tests {
         assert!(quote.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_depth_to_deltas_empty_book() {
         let instrument = create_test_instrument();
         let depth = create_test_depth(vec![], vec![], Some(100));
@@ -389,7 +386,7 @@ mod tests {
         assert!(quote.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_depth_to_deltas_default_offset() {
         let instrument = create_test_instrument();
         let depth = create_test_depth(

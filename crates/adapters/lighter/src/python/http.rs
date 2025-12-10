@@ -96,9 +96,9 @@ impl PyLighterHttpClient {
         let client = self.inner.clone();
 
         future_into_py(py, async move {
-            let market_index = client
-                .get_market_index(&instrument.id())
-                .ok_or_else(|| to_pyvalue_err(anyhow::anyhow!("missing market index for instrument")))?;
+            let market_index = client.get_market_index(&instrument.id()).ok_or_else(|| {
+                to_pyvalue_err(anyhow::anyhow!("missing market index for instrument"))
+            })?;
 
             let depth = client
                 .get_order_book_snapshot(market_index)

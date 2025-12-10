@@ -43,8 +43,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
-from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider  # noqa: E402
+from nautilus_trader.config import InstrumentProviderConfig  # noqa: E402
 
 
 try:
@@ -58,7 +58,7 @@ except Exception:  # pragma: no cover - runtime resolution
     nautilus_pyo3 = None
 
 
-async def fetch_snapshot(client: Any, instrument_pyo3: Any) -> None:
+async def fetch_snapshot(client: Any, instrument_pyo3: Any) -> None:  # noqa: C901
     """
     Fetch a single order book snapshot and print best bid/ask if convertible.
     """
@@ -81,7 +81,7 @@ async def fetch_snapshot(client: Any, instrument_pyo3: Any) -> None:
                 if delta.order.side.name == "BUY":
                     if best_bid is None or delta.order.price > best_bid.price:
                         best_bid = delta.order
-                elif delta.order.side.name == "SELL":
+                elif delta.order.side.name == "SELL":  # noqa: SIM102
                     if best_ask is None or delta.order.price < best_ask.price:
                         best_ask = delta.order
 

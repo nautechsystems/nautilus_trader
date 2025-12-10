@@ -172,7 +172,7 @@ async def test_handle_deltas_detects_gap(data_client_for_sync_tests, btc_instrum
         deltas2 = create_mock_deltas(instrument_id, sequence=105)
 
         # Act: should detect gap
-        with patch.object(client, "_resync_order_book", new_callable=AsyncMock) as mock_resync:
+        with patch.object(client, "_resync_order_book", new_callable=AsyncMock):
             client._handle_order_book_deltas(deltas2)
 
             # Wait for async task to be created
@@ -202,7 +202,6 @@ async def test_handle_deltas_triggers_resync_on_gap(data_client_for_sync_tests, 
 
         # Track if resync was called
         resync_called = False
-        original_resync = client._resync_order_book
 
         async def mock_resync(inst_id):
             nonlocal resync_called

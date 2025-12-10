@@ -90,7 +90,7 @@ class LighterDataClient(LiveMarketDataClient):
                 inst_id = inst.id()
                 key = getattr(inst_id, "value", str(inst_id))
                 self._pyo3_instruments[key] = inst
-            except Exception:  # pragma: no cover - defensive
+            except Exception:  # noqa: S112  # pragma: no cover - defensive
                 continue
 
         await self._ws_client.connect(instruments_pyo3, self._handle_msg)

@@ -21,12 +21,11 @@ use std::{
 };
 
 use anyhow::Context;
+use nautilus_core::nanos::UnixNanos;
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
 use serde_json::json;
-use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
 
 use crate::{
     common::LighterNetwork,
@@ -45,8 +44,8 @@ pub struct LighterWebSocketClient {
     client: Arc<RwLock<Option<Arc<WebSocketClient>>>>,
     instruments: Arc<RwLock<HashMap<u32, InstrumentAny>>>,
     subscriptions: Arc<RwLock<HashSet<String>>>,
-    out_rx: Arc<RwLock<Option<mpsc::UnboundedReceiver<NautilusWsMessage>>>>,
-    ts_init: nautilus_core::nanos::UnixNanos,
+    out_rx: Arc<RwLock<Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>>,
+    ts_init: UnixNanos,
     meta_client: Option<LighterHttpClient>,
 }
 
@@ -86,7 +85,7 @@ impl LighterWebSocketClient {
                 map.insert(index, instrument);
             }
         } else {
-            warn!(
+            tracing::warn!(
                 instrument_id = %instrument.id(),
                 "Unable to cache instrument without market index",
             );
@@ -123,7 +122,7 @@ impl LighterWebSocketClient {
             *guard = Some(Arc::clone(&client));
         }
 
-        let (out_tx, out_rx) = mpsc::unbounded_channel::<NautilusWsMessage>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         if let Ok(mut guard) = self.out_rx.write() {
             *guard = Some(out_rx);
         }
@@ -145,17 +144,17 @@ impl LighterWebSocketClient {
                         )
                         .await
                         {
-                            warn!(%e, "Failed to handle Lighter WebSocket message");
+                            tracing::warn!(%e, "Failed to handle Lighter WebSocket message");
                         }
                     }
                     Err(e) => {
-                        warn!(%e, "Ignoring non-text WebSocket message");
+                        tracing::warn!(%e, "Ignoring non-text WebSocket message");
                     }
                 }
             }
         });
 
-        info!("Connected to Lighter WebSocket {}", self.url);
+        tracing::info!("Connected to Lighter WebSocket {}", self.url);
         Ok(())
     }
 
@@ -305,9 +304,9 @@ impl LighterWebSocketClient {
                 "channel": channel,
             });
             if let Err(e) = client.send_text(payload.to_string(), None).await {
-                warn!(%e, "Failed to resubscribe to {channel}");
+                tracing::warn!(%e, "Failed to resubscribe to {channel}");
             } else {
-                debug!(%channel, "Resubscribed to Lighter channel");
+                tracing::debug!(%channel, "Resubscribed to Lighter channel");
             }
         }
     }
@@ -315,17 +314,17 @@ impl LighterWebSocketClient {
 
 async fn handle_text_message(
     text: &str,
-    out_tx: &mpsc::UnboundedSender<NautilusWsMessage>,
+    out_tx: &tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     client: &Arc<WebSocketClient>,
     instruments: &Arc<RwLock<HashMap<u32, InstrumentAny>>>,
     subscriptions: &Arc<RwLock<HashSet<String>>>,
-    ts_init: nautilus_core::nanos::UnixNanos,
+    ts_init: UnixNanos,
 ) -> anyhow::Result<()> {
     let message: WsMessage =
         serde_json::from_str(text).context("failed to deserialize WS message")?;
 
     if matches!(message, WsMessage::Connected { .. }) {
-        info!("Lighter WebSocket connected, resubscribing active channels");
+        tracing::info!("Lighter WebSocket connected, resubscribing active channels");
         LighterWebSocketClient::resubscribe_all(client, subscriptions).await;
         return Ok(());
     }
@@ -337,7 +336,7 @@ async fn handle_text_message(
 
     for event in events {
         if let Err(e) = out_tx.send(event) {
-            error!(%e, "Failed to enqueue WebSocket event");
+            tracing::error!(%e, "Failed to enqueue WebSocket event");
         }
     }
 

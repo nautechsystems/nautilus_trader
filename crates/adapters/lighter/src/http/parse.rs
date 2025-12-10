@@ -23,7 +23,6 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
-use tracing::warn;
 use ustr::Ustr;
 
 use crate::common::constants::LIGHTER_VENUE;
@@ -145,7 +144,7 @@ pub fn instruments_from_defs(
 
     for def in defs {
         if !def.active {
-            warn!(
+            tracing::warn!(
                 market_index = def.market_index,
                 symbol = %def.venue_symbol,
                 "Skipping inactive Lighter market",
@@ -221,7 +220,7 @@ fn get_currency(code: &str) -> Currency {
     Currency::try_from_str(code).unwrap_or_else(|| {
         let currency = Currency::new(code, 8, 0, code, CurrencyType::Crypto);
         if let Err(e) = Currency::register(currency, false) {
-            warn!(%code, %e, "Failed to register currency");
+            tracing::warn!(%code, %e, "Failed to register currency");
         }
         currency
     })
@@ -241,7 +240,7 @@ mod tests {
             .join("../../../tests/test_data/lighter/http/orderbooks.json")
     }
 
-    #[test]
+    #[rstest::rstest]
     fn parse_orderbooks_fixture() {
         let data = std::fs::read_to_string(fixture_path()).unwrap();
         let resp: super::super::models::OrderBooksResponse =
@@ -261,7 +260,7 @@ mod tests {
         assert_eq!(defs[0].lot_size, Decimal::from_i128_with_scale(1, 4));
     }
 
-    #[test]
+    #[rstest::rstest]
     fn build_instruments_from_defs() {
         let data = std::fs::read_to_string(fixture_path()).unwrap();
         let resp: super::super::models::OrderBooksResponse =

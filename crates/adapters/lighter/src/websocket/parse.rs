@@ -199,7 +199,11 @@ fn parse_price(value: Decimal, instrument: &InstrumentAny, field: &str) -> anyho
     Ok(Price::new(f, instrument.price_precision()))
 }
 
-fn parse_quantity(value: Decimal, instrument: &InstrumentAny, field: &str) -> anyhow::Result<Quantity> {
+fn parse_quantity(
+    value: Decimal,
+    instrument: &InstrumentAny,
+    field: &str,
+) -> anyhow::Result<Quantity> {
     let f = value
         .abs()
         .to_f64()
@@ -244,7 +248,7 @@ mod tests {
         (map, ts_init)
     }
 
-    #[test]
+    #[rstest::rstest]
     fn parses_order_book_snapshot() {
         let (instruments, ts_init) = bootstrap_instrument();
         let data = std::fs::read_to_string(ws_fixture("public_order_book_1.json")).unwrap();
@@ -267,7 +271,7 @@ mod tests {
         assert_eq!(deltas.deltas[0].sequence, 2760693);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn parses_trade_snapshot() {
         let (instruments, ts_init) = bootstrap_instrument();
         let data = std::fs::read_to_string(ws_fixture("public_trade_1.json")).unwrap();
@@ -287,7 +291,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest::rstest]
     fn parses_market_stats() {
         let (instruments, ts_init) = bootstrap_instrument();
         let data = std::fs::read_to_string(ws_fixture("public_market_stats_1.json")).unwrap();
@@ -304,7 +308,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest::rstest]
     fn parse_market_index_supports_slash_and_colon() {
         assert_eq!(parse_market_index("order_book/42"), Some(42));
         assert_eq!(parse_market_index("trade:7"), Some(7));

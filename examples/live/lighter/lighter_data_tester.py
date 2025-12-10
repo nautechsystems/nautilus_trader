@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-"""
+r"""
 Mainnet-oriented market data smoke test for the Lighter adapter (PR2).
 
 - Loads a filtered set of instruments (or all instruments if requested).

@@ -115,7 +115,6 @@ async def test_handle_msg_order_book_deltas_via_capsule(
 
         # Track if _handle_order_book_deltas was called
         handle_deltas_called = False
-        original_handler = client._handle_order_book_deltas
 
         def mock_handler(data):
             nonlocal handle_deltas_called
@@ -125,14 +124,15 @@ async def test_handle_msg_order_book_deltas_via_capsule(
         client._handle_order_book_deltas = mock_handler
 
         # Mock is_pycapsule to return True
-        with patch.object(nautilus_pyo3, "is_pycapsule", return_value=True):
-            # Mock capsule_to_data to return our deltas
-            with patch(
+        with (
+            patch.object(nautilus_pyo3, "is_pycapsule", return_value=True),
+            patch(
                 "nautilus_trader.adapters.lighter.data.capsule_to_data",
                 return_value=deltas,
-            ):
-                # Act
-                client._handle_msg(MagicMock())
+            ),
+        ):
+            # Act
+            client._handle_msg(MagicMock())
 
         # Assert
         assert handle_deltas_called, "OrderBookDeltas should route to _handle_order_book_deltas"
@@ -168,7 +168,6 @@ async def test_handle_msg_trade_tick_via_capsule(
 
         # Track if _handle_data was called
         handle_data_called = False
-        original_handler = client._handle_data
 
         def mock_handler(data):
             nonlocal handle_data_called
@@ -177,14 +176,15 @@ async def test_handle_msg_trade_tick_via_capsule(
         client._handle_data = mock_handler
 
         # Mock is_pycapsule to return True
-        with patch.object(nautilus_pyo3, "is_pycapsule", return_value=True):
-            # Mock capsule_to_data to return our trade
-            with patch(
+        with (
+            patch.object(nautilus_pyo3, "is_pycapsule", return_value=True),
+            patch(
                 "nautilus_trader.adapters.lighter.data.capsule_to_data",
                 return_value=trade,
-            ):
-                # Act
-                client._handle_msg(MagicMock())
+            ),
+        ):
+            # Act
+            client._handle_msg(MagicMock())
 
         # Assert
         assert handle_data_called, "TradeTick should route to _handle_data"
@@ -282,14 +282,15 @@ async def test_handle_msg_capsule_extraction_error(
     await client._connect()
     try:
         # Mock is_pycapsule to return True
-        with patch.object(nautilus_pyo3, "is_pycapsule", return_value=True):
-            # Mock capsule_to_data to raise exception
-            with patch(
+        with (
+            patch.object(nautilus_pyo3, "is_pycapsule", return_value=True),
+            patch(
                 "nautilus_trader.adapters.lighter.data.capsule_to_data",
                 side_effect=Exception("Capsule error"),
-            ):
-                # Act: should NOT raise
-                client._handle_msg(MagicMock())
+            ),
+        ):
+            # Act: should NOT raise
+            client._handle_msg(MagicMock())
 
         # Assert: no exception raised
 

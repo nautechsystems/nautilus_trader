@@ -182,7 +182,7 @@ class LighterInstrumentProvider(InstrumentProvider):
 
             try:
                 instrument_id: InstrumentId = instrument_id_attr() if callable(instrument_id_attr) else instrument_id_attr
-            except Exception:  # pragma: no cover - defensive
+            except Exception:  # noqa: S112  # pragma: no cover - defensive
                 continue
 
             id_value = getattr(instrument_id, "value", str(instrument_id))

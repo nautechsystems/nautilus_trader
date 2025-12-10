@@ -37,7 +37,7 @@ def data_client_builder(
     btc_instrument,
 ):
     """
-    Factory to build LighterDataClient with mocked dependencies.
+    Build LighterDataClient with mocked dependencies.
     """
 
     def builder(monkeypatch, *, config_kwargs: dict | None = None):

@@ -24,7 +24,6 @@ use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::instruments::InstrumentAny;
 use reqwest::{Client, Proxy};
-use tracing::{debug, trace, warn};
 
 use crate::common::LighterNetwork;
 use crate::data::models::LighterOrderBookDepth;
@@ -88,7 +87,7 @@ impl LighterHttpClient {
     /// Returns an error on request failure or invalid JSON.
     pub async fn get_order_books(&self) -> anyhow::Result<Vec<LighterOrderBook>> {
         let url = format!("{}/orderBooks", self.base_url);
-        trace!(%url, "Requesting Lighter orderBooks");
+        tracing::trace!(%url, "Requesting Lighter orderBooks");
 
         let response = self
             .http
@@ -138,7 +137,7 @@ impl LighterHttpClient {
             "{}/orderBookOrders?market_id={market_index}&limit={limit}",
             self.base_url
         );
-        trace!(%url, "Requesting Lighter orderBookOrders");
+        tracing::trace!(%url, "Requesting Lighter orderBookOrders");
 
         let response = self
             .http
@@ -206,11 +205,11 @@ impl LighterHttpClient {
 
 fn log_parse_report(report: &ParseReport) {
     if report.skipped == 0 {
-        debug!("Parsed Lighter instrument definitions");
+        tracing::debug!("Parsed Lighter instrument definitions");
         return;
     }
 
-    warn!(
+    tracing::warn!(
         skipped = report.skipped,
         errors = ?report.errors,
         "Some Lighter instrument definitions were skipped"
@@ -225,7 +224,7 @@ mod tests {
 
     use nautilus_core::time::get_atomic_clock_realtime;
 
-    #[test]
+    #[rstest::rstest]
     fn parses_and_caches_market_indices() {
         let client = LighterHttpClient::new(
             LighterNetwork::Testnet,
@@ -247,7 +246,7 @@ mod tests {
 
         assert_eq!(instruments.len(), 1);
         let id = match &instruments[0] {
-            nautilus_model::instruments::InstrumentAny::CryptoPerpetual(cp) => cp.id,
+            InstrumentAny::CryptoPerpetual(cp) => cp.id,
             _ => panic!("expected crypto perpetual"),
         };
         assert_eq!(client.get_market_index(&id), Some(1));
