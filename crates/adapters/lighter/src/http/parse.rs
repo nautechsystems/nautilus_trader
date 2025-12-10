@@ -15,7 +15,6 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Result, anyhow};
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     enums::CurrencyType,
@@ -74,7 +73,7 @@ pub struct ParseReport {
 /// Returns an error if required fields are missing or invalid.
 pub fn parse_instrument_defs(
     books: &[LighterOrderBook],
-) -> Result<(Vec<LighterInstrumentDef>, ParseReport)> {
+) -> anyhow::Result<(Vec<LighterInstrumentDef>, ParseReport)> {
     let mut defs = Vec::with_capacity(books.len());
     let mut report = ParseReport::default();
 
@@ -91,13 +90,13 @@ pub fn parse_instrument_defs(
     Ok((defs, report))
 }
 
-fn parse_single_def(book: &LighterOrderBook) -> Result<LighterInstrumentDef> {
+fn parse_single_def(book: &LighterOrderBook) -> anyhow::Result<LighterInstrumentDef> {
     let price_decimals = book
         .supported_price_decimals
-        .ok_or_else(|| anyhow!("missing supported_price_decimals"))?;
+        .ok_or_else(|| anyhow::anyhow!("missing supported_price_decimals"))?;
     let size_decimals = book
         .supported_size_decimals
-        .ok_or_else(|| anyhow!("missing supported_size_decimals"))?;
+        .ok_or_else(|| anyhow::anyhow!("missing supported_size_decimals"))?;
 
     let tick_size = book.tick_size.unwrap_or_else(|| pow10_neg(price_decimals));
     let lot_size = book.lot_size.unwrap_or_else(|| pow10_neg(size_decimals));
@@ -109,7 +108,7 @@ fn parse_single_def(book: &LighterOrderBook) -> Result<LighterInstrumentDef> {
         .base_token
         .as_deref()
         .or(book.symbol.as_deref())
-        .ok_or_else(|| anyhow!("missing base token/symbol"))?;
+        .ok_or_else(|| anyhow::anyhow!("missing base token/symbol"))?;
     let quote = book.quote_token.as_deref().unwrap_or("USD");
     let venue_symbol = book.symbol.as_deref().unwrap_or(base);
     let symbol = Symbol::new(format!("{base}-{quote}-PERP"));
@@ -140,7 +139,7 @@ fn parse_single_def(book: &LighterOrderBook) -> Result<LighterInstrumentDef> {
 pub fn instruments_from_defs(
     defs: &[LighterInstrumentDef],
     ts_init: UnixNanos,
-) -> Result<Vec<InstrumentAny>> {
+) -> anyhow::Result<Vec<InstrumentAny>> {
     let mut instruments = Vec::with_capacity(defs.len());
     let ts_event = ts_init;
 
@@ -164,7 +163,7 @@ fn create_instrument_from_def(
     def: &LighterInstrumentDef,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<InstrumentAny> {
+) -> anyhow::Result<InstrumentAny> {
     let base_currency = get_currency(&def.base);
     let quote_currency = get_currency(&def.quote);
     let settlement_currency = quote_currency;
@@ -176,11 +175,11 @@ fn create_instrument_from_def(
     let price_precision: u8 = def
         .price_decimals
         .to_u8()
-        .ok_or_else(|| anyhow!("price_decimals too large"))?;
+        .ok_or_else(|| anyhow::anyhow!("price_decimals too large"))?;
     let size_precision: u8 = def
         .size_decimals
         .to_u8()
-        .ok_or_else(|| anyhow!("size_decimals too large"))?;
+        .ok_or_else(|| anyhow::anyhow!("size_decimals too large"))?;
 
     Ok(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
         def.instrument_id,

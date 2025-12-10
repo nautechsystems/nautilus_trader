@@ -25,12 +25,13 @@ Usage:
     uv run python examples/live/lighter/lighter_data_tester.py \\
         --instrument-ids BTC-USD-PERP.LIGHTER ETH-USD-PERP.LIGHTER
     uv run python examples/live/lighter/lighter_data_tester.py --testnet
+
 """
 
 from __future__ import annotations
 
 import argparse
-from typing import Sequence
+from collections.abc import Sequence
 
 from nautilus_trader.adapters.lighter import LIGHTER
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
@@ -54,7 +55,6 @@ def parse_instrument_ids(
     """
     Build instrument IDs from explicit values or base symbols.
     """
-
     if instrument_ids:
         return [InstrumentId.from_str(value) for value in instrument_ids]
 

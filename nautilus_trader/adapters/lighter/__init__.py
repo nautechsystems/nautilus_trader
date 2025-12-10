@@ -15,8 +15,9 @@
 """
 Lighter Exchange integration adapter.
 
-This subpackage hosts configuration, factories, and constants for the Lighter adapter. Functional
-clients will be delivered incrementally per the implementation plan.
+This subpackage hosts configuration, factories, and constants for the Lighter adapter.
+Functional clients will be delivered incrementally per the implementation plan.
+
 """
 
 from nautilus_trader.adapters.lighter.config import LighterDataClientConfig
@@ -31,14 +32,15 @@ from nautilus_trader.adapters.lighter.factories import LighterLiveDataClientFact
 from nautilus_trader.adapters.lighter.factories import LighterLiveExecClientFactory
 from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
 
+
 __all__ = [
     "LIGHTER",
     "LIGHTER_CLIENT_ID",
     "LIGHTER_VENUE",
     "LighterDataClient",
     "LighterDataClientConfig",
-    "LighterExecutionClient",
     "LighterExecClientConfig",
+    "LighterExecutionClient",
     "LighterInstrumentProvider",
     "LighterLiveDataClientFactory",
     "LighterLiveExecClientFactory",

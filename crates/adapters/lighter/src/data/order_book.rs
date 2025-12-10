@@ -15,7 +15,7 @@
 
 //! Order book utilities shared by REST + WebSocket code paths.
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick},
@@ -36,7 +36,7 @@ pub fn depth_to_deltas_and_quote(
     instrument: &InstrumentAny,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> Result<(OrderBookDeltas, Option<QuoteTick>)> {
+) -> anyhow::Result<(OrderBookDeltas, Option<QuoteTick>)> {
     let sequence = depth.offset.unwrap_or_default();
     let mut deltas = Vec::with_capacity(depth.bids.len() + depth.asks.len() + 1);
     deltas.push(OrderBookDelta::clear(
@@ -140,7 +140,7 @@ fn parse_level(
     size: Decimal,
     instrument: &InstrumentAny,
     field: &str,
-) -> Result<(Price, Quantity)> {
+) -> anyhow::Result<(Price, Quantity)> {
     let price_f64 = price
         .to_f64()
         .with_context(|| format!("invalid {field} price {price}"))?;

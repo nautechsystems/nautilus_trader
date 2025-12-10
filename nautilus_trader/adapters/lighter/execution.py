@@ -24,6 +24,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.live.execution_client import LiveExecutionClient
 
+
 if TYPE_CHECKING:
     from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
 
@@ -33,6 +34,7 @@ class LighterExecutionClient(LiveExecutionClient):
     Placeholder Lighter execution client.
 
     The full implementation will be added in PR3 after signing/auth flows are validated.
+
     """
 
     def __init__(
@@ -46,5 +48,4 @@ class LighterExecutionClient(LiveExecutionClient):
         config: LighterExecClientConfig,
         name: str,
     ) -> None:
-        super().__init__(loop=loop, name=name, config=config, msgbus=msgbus, cache=cache)
         raise NotImplementedError("LighterExecutionClient will be implemented in PR3.")

@@ -125,6 +125,7 @@ InstrumentId.from_str("ETH-USD-PERP.LIGHTER")
 **Cause:** Either the extension wasn't built, or it was built without the Lighter module.
 
 **Solution:**
+
 1. Ensure you're using the project's virtual environment: `source .venv/bin/activate`
 2. Rebuild with: `make build-debug`
 3. Verify with: `nm -gU nautilus_trader/core/nautilus_pyo3.*.so | grep lighter`

@@ -36,7 +36,9 @@ def data_client_builder(
     mock_instrument_provider,
     btc_instrument,
 ):
-    """Factory to build LighterDataClient with mocked dependencies."""
+    """
+    Factory to build LighterDataClient with mocked dependencies.
+    """
 
     def builder(monkeypatch, *, config_kwargs: dict | None = None):
         ws_client = _create_ws_mock()
@@ -75,7 +77,9 @@ def data_client_builder(
 
 @pytest.mark.asyncio
 async def test_connect_initializes_provider(data_client_builder, monkeypatch):
-    """Test that _connect() initializes the instrument provider."""
+    """
+    Test that _connect() initializes the instrument provider.
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 
@@ -91,7 +95,9 @@ async def test_connect_initializes_provider(data_client_builder, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_connect_caches_instruments(data_client_builder, monkeypatch, btc_instrument, cache):
-    """Test that _connect() caches instruments."""
+    """
+    Test that _connect() caches instruments.
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 
@@ -109,7 +115,9 @@ async def test_connect_caches_instruments(data_client_builder, monkeypatch, btc_
 
 @pytest.mark.asyncio
 async def test_connect_starts_websocket(data_client_builder, monkeypatch):
-    """Test that _connect() starts the WebSocket client."""
+    """
+    Test that _connect() starts the WebSocket client.
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 
@@ -126,7 +134,9 @@ async def test_connect_starts_websocket(data_client_builder, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_disconnect_closes_websocket(data_client_builder, monkeypatch):
-    """Test that _disconnect() closes the WebSocket client."""
+    """
+    Test that _disconnect() closes the WebSocket client.
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 
@@ -141,7 +151,9 @@ async def test_disconnect_closes_websocket(data_client_builder, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_subscribe_order_book_deltas(data_client_builder, monkeypatch):
-    """Test subscription to order book deltas."""
+    """
+    Test subscription to order book deltas.
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 
@@ -164,7 +176,9 @@ async def test_subscribe_order_book_deltas(data_client_builder, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_subscribe_trade_ticks(data_client_builder, monkeypatch):
-    """Test subscription to trade ticks."""
+    """
+    Test subscription to trade ticks.
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 
@@ -187,7 +201,9 @@ async def test_subscribe_trade_ticks(data_client_builder, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_subscribe_mark_prices(data_client_builder, monkeypatch):
-    """Test subscription to mark prices (via market_stats)."""
+    """
+    Test subscription to mark prices (via market_stats).
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 
@@ -210,7 +226,9 @@ async def test_subscribe_mark_prices(data_client_builder, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_subscribe_funding_rates(data_client_builder, monkeypatch):
-    """Test subscription to funding rates (via market_stats)."""
+    """
+    Test subscription to funding rates (via market_stats).
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 
@@ -233,7 +251,9 @@ async def test_subscribe_funding_rates(data_client_builder, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_unsubscribe_order_book_deltas(data_client_builder, monkeypatch):
-    """Test unsubscription from order book deltas."""
+    """
+    Test unsubscription from order book deltas.
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 
@@ -262,7 +282,9 @@ async def test_subscribe_with_missing_market_index_logs_warning(
     monkeypatch,
     caplog,
 ):
-    """Test that subscribing with unknown instrument logs warning."""
+    """
+    Test that subscribing with unknown instrument logs warning.
+    """
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
 

@@ -218,16 +218,16 @@ fn dispatch_event(callback: &Py<PyAny>, event: NautilusWsMessage) {
         NautilusWsMessage::Deltas(deltas) => {
             Python::attach(|py| {
                 let capsule = data_to_pycapsule(py, Data::Deltas(OrderBookDeltas_API::new(deltas)));
-                if let Err(err) = callback.call1(py, (capsule,)) {
-                    tracing::error!("Error invoking Lighter WS callback for deltas: {err}");
+                if let Err(e) = callback.call1(py, (capsule,)) {
+                    tracing::error!("Error invoking Lighter WS callback for deltas: {e}");
                 }
             });
         }
         NautilusWsMessage::Quote(quote) => {
             Python::attach(|py| {
                 let capsule = data_to_pycapsule(py, Data::Quote(quote));
-                if let Err(err) = callback.call1(py, (capsule,)) {
-                    tracing::error!("Error invoking Lighter WS callback for quote: {err}");
+                if let Err(e) = callback.call1(py, (capsule,)) {
+                    tracing::error!("Error invoking Lighter WS callback for quote: {e}");
                 }
             });
         }
@@ -235,8 +235,8 @@ fn dispatch_event(callback: &Py<PyAny>, event: NautilusWsMessage) {
             Python::attach(|py| {
                 for tick in trades {
                     let capsule = data_to_pycapsule(py, Data::Trade(tick));
-                    if let Err(err) = callback.call1(py, (capsule,)) {
-                        tracing::error!("Error invoking Lighter WS callback for trade: {err}");
+                    if let Err(e) = callback.call1(py, (capsule,)) {
+                        tracing::error!("Error invoking Lighter WS callback for trade: {e}");
                     }
                 }
             });
@@ -244,26 +244,26 @@ fn dispatch_event(callback: &Py<PyAny>, event: NautilusWsMessage) {
         NautilusWsMessage::MarkPrice(mark_price) => {
             Python::attach(|py| {
                 let capsule = data_to_pycapsule(py, Data::MarkPriceUpdate(mark_price));
-                if let Err(err) = callback.call1(py, (capsule,)) {
-                    tracing::error!("Error invoking Lighter WS callback for mark price: {err}");
+                if let Err(e) = callback.call1(py, (capsule,)) {
+                    tracing::error!("Error invoking Lighter WS callback for mark price: {e}");
                 }
             });
         }
         NautilusWsMessage::IndexPrice(index_price) => {
             Python::attach(|py| {
                 let capsule = data_to_pycapsule(py, Data::IndexPriceUpdate(index_price));
-                if let Err(err) = callback.call1(py, (capsule,)) {
-                    tracing::error!("Error invoking Lighter WS callback for index price: {err}");
+                if let Err(e) = callback.call1(py, (capsule,)) {
+                    tracing::error!("Error invoking Lighter WS callback for index price: {e}");
                 }
             });
         }
         NautilusWsMessage::FundingRate(funding_rate) => {
             Python::attach(|py| {
-                if let Err(err) = funding_rate
+                if let Err(e) = funding_rate
                     .into_py_any(py)
                     .and_then(|obj| callback.call1(py, (obj,)))
                 {
-                    tracing::error!("Error invoking Lighter WS callback for funding rate: {err}");
+                    tracing::error!("Error invoking Lighter WS callback for funding rate: {e}");
                 }
             });
         }

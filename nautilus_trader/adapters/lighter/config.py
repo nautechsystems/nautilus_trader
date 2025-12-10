@@ -55,6 +55,7 @@ class LighterDataClientConfig(LiveDataClientConfig, frozen=True):
         Interval (milliseconds) between refreshing instrument metadata.
     http_timeout_secs : PositiveInt, default 10
         Timeout (seconds) for HTTP requests.
+
     """
 
     api_key_private_key: str | None = None
@@ -110,6 +111,7 @@ class LighterExecClientConfig(LiveExecClientConfig, frozen=True):
         Delay (milliseconds) between retries.
     http_timeout_secs : PositiveInt, default 10
         Timeout (seconds) for HTTP requests.
+
     """
 
     api_key_private_key: str | None = None

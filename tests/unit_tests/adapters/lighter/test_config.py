@@ -19,12 +19,10 @@ import pytest
 
 from nautilus_trader.adapters.lighter.config import LighterDataClientConfig
 from nautilus_trader.adapters.lighter.config import LighterExecClientConfig
-from nautilus_trader.adapters.lighter.constants import (
-    ENV_ACCOUNT_INDEX,
-    ENV_ACCOUNT_INDEX_TESTNET,
-    ENV_API_KEY_PRIVATE_KEY,
-    ENV_API_KEY_PRIVATE_KEY_TESTNET,
-)
+from nautilus_trader.adapters.lighter.constants import ENV_ACCOUNT_INDEX
+from nautilus_trader.adapters.lighter.constants import ENV_ACCOUNT_INDEX_TESTNET
+from nautilus_trader.adapters.lighter.constants import ENV_API_KEY_PRIVATE_KEY
+from nautilus_trader.adapters.lighter.constants import ENV_API_KEY_PRIVATE_KEY_TESTNET
 
 
 def test_resolved_api_key_prefers_explicit() -> None:

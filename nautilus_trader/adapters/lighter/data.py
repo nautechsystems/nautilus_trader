@@ -51,7 +51,7 @@ class LighterDataClient(LiveMarketDataClient):
         clock: LiveClock,
         instrument_provider: LighterInstrumentProvider,
         config: LighterDataClientConfig,
-        name: str,
+        name: str | None,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -116,8 +116,8 @@ class LighterDataClient(LiveMarketDataClient):
                 self._handle_data(data)
             else:
                 self._log.warning(f"Unhandled websocket message type: {type(msg)}")
-        except Exception as exc:  # pragma: no cover - defensive
-            self._log.exception("Error handling websocket message", exc)
+        except Exception as e:  # pragma: no cover - defensive
+            self._log.exception("Error handling websocket message", e)
 
     def _handle_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         instrument_id = deltas.instrument_id
@@ -160,8 +160,8 @@ class LighterDataClient(LiveMarketDataClient):
                     "Unexpected snapshot payload type during resync "
                     f"for {instrument_id}: {type(snapshot)}",
                 )
-        except Exception as exc:  # pragma: no cover - defensive
-            self._log.exception(f"Failed resync for {instrument_id}", exc)
+        except Exception as e:  # pragma: no cover - defensive
+            self._log.exception(f"Failed resync for {instrument_id}", e)
 
     # ---------------------------------------------------------------------
     # Subscription handlers
@@ -269,8 +269,8 @@ class LighterDataClient(LiveMarketDataClient):
                 self._log.warning(
                     f"Unexpected snapshot payload for {instrument_id}: {type(snapshot)}",
                 )
-        except Exception as exc:  # pragma: no cover - defensive
-            self._log.exception(f"Failed order book snapshot request for {instrument_id}", exc)
+        except Exception as e:  # pragma: no cover - defensive
+            self._log.exception(f"Failed order book snapshot request for {instrument_id}", e)
 
     async def _request_trade_ticks(self, request) -> None:
         self._log.warning("Historical trades not supported for Lighter")

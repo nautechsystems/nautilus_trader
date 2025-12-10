@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 Tests for order book gap detection and resync logic in LighterDataClient.
 
@@ -21,6 +20,7 @@ These tests verify the critical path in _handle_order_book_deltas():
 - Detecting gaps when sequence != last + 1
 - Triggering HTTP snapshot resync on gap detection
 - Clearing offset tracking after resync
+
 """
 
 import asyncio
@@ -31,7 +31,6 @@ from unittest.mock import patch
 import pytest
 
 from nautilus_trader.adapters.lighter.config import LighterDataClientConfig
-from nautilus_trader.adapters.lighter.constants import LIGHTER_VENUE
 from nautilus_trader.adapters.lighter.data import LighterDataClient
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
@@ -39,7 +38,6 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.lighter.conftest import _create_http_mock
@@ -47,7 +45,9 @@ from tests.integration_tests.adapters.lighter.conftest import _create_ws_mock
 
 
 def create_mock_deltas(instrument_id: InstrumentId, sequence: int) -> OrderBookDeltas:
-    """Create mock OrderBookDeltas with a specific sequence number."""
+    """
+    Create mock OrderBookDeltas with a specific sequence number.
+    """
     order = BookOrder(
         side=OrderSide.BUY,
         price=Price.from_str("50000.0"),
@@ -76,7 +76,9 @@ def data_client_for_sync_tests(
     mock_instrument_provider,
     btc_instrument,
 ):
-    """Create a LighterDataClient configured for sync tests."""
+    """
+    Create a LighterDataClient configured for sync tests.
+    """
     ws_client = _create_ws_mock()
     http_client = _create_http_mock()
 
@@ -104,7 +106,9 @@ def data_client_for_sync_tests(
 
 @pytest.mark.asyncio
 async def test_handle_deltas_updates_offset(data_client_for_sync_tests, btc_instrument):
-    """Test that _handle_order_book_deltas updates _last_book_offsets correctly."""
+    """
+    Test that _handle_order_book_deltas updates _last_book_offsets correctly.
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()
@@ -127,7 +131,9 @@ async def test_handle_deltas_updates_offset(data_client_for_sync_tests, btc_inst
 
 @pytest.mark.asyncio
 async def test_handle_deltas_sequential_updates(data_client_for_sync_tests, btc_instrument):
-    """Test that sequential updates (100, 101, 102) are handled correctly."""
+    """
+    Test that sequential updates (100, 101, 102) are handled correctly.
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()
@@ -148,7 +154,9 @@ async def test_handle_deltas_sequential_updates(data_client_for_sync_tests, btc_
 
 @pytest.mark.asyncio
 async def test_handle_deltas_detects_gap(data_client_for_sync_tests, btc_instrument, caplog):
-    """Test that gap detection logs warning when sequence != last + 1."""
+    """
+    Test that gap detection logs warning when sequence != last + 1.
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()
@@ -179,7 +187,9 @@ async def test_handle_deltas_detects_gap(data_client_for_sync_tests, btc_instrum
 
 @pytest.mark.asyncio
 async def test_handle_deltas_triggers_resync_on_gap(data_client_for_sync_tests, btc_instrument):
-    """Test that gap detection triggers _resync_order_book()."""
+    """
+    Test that gap detection triggers _resync_order_book().
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()
@@ -216,7 +226,9 @@ async def test_handle_deltas_triggers_resync_on_gap(data_client_for_sync_tests, 
 
 @pytest.mark.asyncio
 async def test_resync_fetches_http_snapshot(data_client_for_sync_tests, btc_instrument):
-    """Test that _resync_order_book() calls HTTP client for snapshot."""
+    """
+    Test that _resync_order_book() calls HTTP client for snapshot.
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()
@@ -244,7 +256,9 @@ async def test_resync_fetches_http_snapshot(data_client_for_sync_tests, btc_inst
 
 @pytest.mark.asyncio
 async def test_resync_clears_offset_tracking(data_client_for_sync_tests, btc_instrument):
-    """Test that _resync_order_book() clears the offset after successful resync."""
+    """
+    Test that _resync_order_book() clears the offset after successful resync.
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()
@@ -275,7 +289,9 @@ async def test_resync_clears_offset_tracking(data_client_for_sync_tests, btc_ins
 
 @pytest.mark.asyncio
 async def test_resync_handles_missing_instrument(data_client_for_sync_tests, btc_instrument, caplog):
-    """Test that _resync_order_book() handles missing PyO3 instrument gracefully."""
+    """
+    Test that _resync_order_book() handles missing PyO3 instrument gracefully.
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()
@@ -297,7 +313,9 @@ async def test_resync_handles_missing_instrument(data_client_for_sync_tests, btc
 
 @pytest.mark.asyncio
 async def test_resync_handles_http_exception(data_client_for_sync_tests, btc_instrument, caplog):
-    """Test that _resync_order_book() handles HTTP exceptions gracefully."""
+    """
+    Test that _resync_order_book() handles HTTP exceptions gracefully.
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()
@@ -329,7 +347,9 @@ async def test_resync_handles_http_exception(data_client_for_sync_tests, btc_ins
 
 @pytest.mark.asyncio
 async def test_first_delta_without_prior_offset(data_client_for_sync_tests, btc_instrument):
-    """Test that first delta (no prior offset) doesn't trigger resync."""
+    """
+    Test that first delta (no prior offset) doesn't trigger resync.
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()
@@ -367,7 +387,9 @@ async def test_deltas_without_sequence_are_passed_through(
     data_client_for_sync_tests,
     btc_instrument,
 ):
-    """Test that deltas without sequence attribute are passed through without gap check."""
+    """
+    Test that deltas without sequence attribute are passed through without gap check.
+    """
     client, ws_client, http_client, provider = data_client_for_sync_tests
 
     await client._connect()

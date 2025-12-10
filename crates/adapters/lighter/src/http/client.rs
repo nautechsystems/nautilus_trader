@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::instruments::InstrumentAny;
@@ -61,7 +61,7 @@ impl LighterHttpClient {
         base_url_override: Option<&str>,
         timeout_secs: Option<u64>,
         proxy_url: Option<&str>,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         let mut builder = Client::builder().user_agent("nautilus-lighter");
 
         if let Some(timeout) = timeout_secs {
@@ -86,7 +86,7 @@ impl LighterHttpClient {
     ///
     /// # Errors
     /// Returns an error on request failure or invalid JSON.
-    pub async fn get_order_books(&self) -> Result<Vec<LighterOrderBook>> {
+    pub async fn get_order_books(&self) -> anyhow::Result<Vec<LighterOrderBook>> {
         let url = format!("{}/orderBooks", self.base_url);
         trace!(%url, "Requesting Lighter orderBooks");
 
@@ -104,9 +104,7 @@ impl LighterHttpClient {
             .context("failed to read orderBooks response body")?;
 
         if !status.is_success() {
-            return Err(anyhow::anyhow!(
-                "orderBooks request failed ({status}): {body}"
-            ));
+            anyhow::bail!("orderBooks request failed ({status}): {body}");
         }
 
         let parsed: OrderBooksResponse =
@@ -122,7 +120,7 @@ impl LighterHttpClient {
     pub async fn get_order_book_snapshot(
         &self,
         market_index: u32,
-    ) -> Result<LighterOrderBookDepth> {
+    ) -> anyhow::Result<LighterOrderBookDepth> {
         self.get_order_book_snapshot_with_limit(market_index, 100)
             .await
     }
@@ -135,7 +133,7 @@ impl LighterHttpClient {
         &self,
         market_index: u32,
         limit: u32,
-    ) -> Result<LighterOrderBookDepth> {
+    ) -> anyhow::Result<LighterOrderBookDepth> {
         let url = format!(
             "{}/orderBookOrders?market_id={market_index}&limit={limit}",
             self.base_url
@@ -156,9 +154,7 @@ impl LighterHttpClient {
             .context("failed to read orderBookOrders response body")?;
 
         if !status.is_success() {
-            return Err(anyhow::anyhow!(
-                "orderBookOrders request failed ({status}): {body}"
-            ));
+            anyhow::bail!("orderBookOrders request failed ({status}): {body}");
         }
 
         let parsed: OrderBookSnapshotResponse = serde_json::from_str(&body)
@@ -171,7 +167,7 @@ impl LighterHttpClient {
     ///
     /// # Errors
     /// Returns an error on request failure or parse failure.
-    pub async fn load_instrument_definitions(&self) -> Result<Vec<InstrumentAny>> {
+    pub async fn load_instrument_definitions(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let books = self.get_order_books().await?;
         let (defs, report) = parse_instrument_defs(&books)?;
         log_parse_report(&report);

@@ -174,9 +174,9 @@ uv run pytest tests/integration_tests/adapters/lighter/test_parsing.py -v
 [Clear description of the bug]
 
 ### Steps to Reproduce
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ### Expected Behavior
 [What should happen]
@@ -192,8 +192,8 @@ uv run pytest tests/integration_tests/adapters/lighter/test_parsing.py -v
 ```
 
 ### Environment
-- Nautilus version: 
-- Python version: 
+- Nautilus version:
+- Python version:
 - Lighter account type: [Standard/Premium]
 - Network: [Testnet/Mainnet]
 ```
@@ -227,8 +227,8 @@ As a [persona], I want [feature] so that [benefit].
 **Goal**: [What we're trying to learn]
 
 ### Questions to Answer
-1. 
-2. 
+1.
+2.
 
 ### Approach
 [How to investigate]

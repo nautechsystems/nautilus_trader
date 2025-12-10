@@ -20,7 +20,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::Context;
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::websocket::{WebSocketClient, WebSocketConfig, channel_message_handler};
@@ -94,7 +94,7 @@ impl LighterWebSocketClient {
     }
 
     /// Establish the WebSocket connection and spawn the reader loop.
-    pub async fn connect(&mut self) -> Result<()> {
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
         if self.is_active() {
             return Ok(());
         }
@@ -178,7 +178,7 @@ impl LighterWebSocketClient {
     }
 
     /// Wait for the connection to reach `ACTIVE` state (or timeout).
-    pub async fn wait_until_active(&self, timeout_ms: u64) -> Result<()> {
+    pub async fn wait_until_active(&self, timeout_ms: u64) -> anyhow::Result<()> {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
         loop {
             if self.is_active() {
@@ -203,34 +203,34 @@ impl LighterWebSocketClient {
     }
 
     /// Subscribe to order book updates for the given market index.
-    pub async fn subscribe_order_book(&self, market_index: u32) -> Result<()> {
+    pub async fn subscribe_order_book(&self, market_index: u32) -> anyhow::Result<()> {
         let channel = format!("order_book/{market_index}");
         self.send_subscribe(&channel).await
     }
 
     /// Subscribe to trades for the given market index.
-    pub async fn subscribe_trades(&self, market_index: u32) -> Result<()> {
+    pub async fn subscribe_trades(&self, market_index: u32) -> anyhow::Result<()> {
         let channel = format!("trade/{market_index}");
         self.send_subscribe(&channel).await
     }
 
     /// Subscribe to market stats for the given market index.
-    pub async fn subscribe_market_stats(&self, market_index: u32) -> Result<()> {
+    pub async fn subscribe_market_stats(&self, market_index: u32) -> anyhow::Result<()> {
         let channel = format!("market_stats/{market_index}");
         self.send_subscribe(&channel).await
     }
 
-    pub async fn unsubscribe_order_book(&self, market_index: u32) -> Result<()> {
+    pub async fn unsubscribe_order_book(&self, market_index: u32) -> anyhow::Result<()> {
         let channel = format!("order_book/{market_index}");
         self.send_unsubscribe(&channel).await
     }
 
-    pub async fn unsubscribe_trades(&self, market_index: u32) -> Result<()> {
+    pub async fn unsubscribe_trades(&self, market_index: u32) -> anyhow::Result<()> {
         let channel = format!("trade/{market_index}");
         self.send_unsubscribe(&channel).await
     }
 
-    pub async fn unsubscribe_market_stats(&self, market_index: u32) -> Result<()> {
+    pub async fn unsubscribe_market_stats(&self, market_index: u32) -> anyhow::Result<()> {
         let channel = format!("market_stats/{market_index}");
         self.send_unsubscribe(&channel).await
     }
@@ -253,7 +253,7 @@ impl LighterWebSocketClient {
         event
     }
 
-    async fn send_subscribe(&self, channel: &str) -> Result<()> {
+    async fn send_subscribe(&self, channel: &str) -> anyhow::Result<()> {
         self.send_message(channel, "subscribe").await?;
         if let Ok(mut guard) = self.subscriptions.write() {
             guard.insert(channel.to_string());
@@ -261,7 +261,7 @@ impl LighterWebSocketClient {
         Ok(())
     }
 
-    async fn send_unsubscribe(&self, channel: &str) -> Result<()> {
+    async fn send_unsubscribe(&self, channel: &str) -> anyhow::Result<()> {
         self.send_message(channel, "unsubscribe").await?;
         if let Ok(mut guard) = self.subscriptions.write() {
             guard.remove(channel);
@@ -269,7 +269,7 @@ impl LighterWebSocketClient {
         Ok(())
     }
 
-    async fn send_message(&self, channel: &str, msg_type: &str) -> Result<()> {
+    async fn send_message(&self, channel: &str, msg_type: &str) -> anyhow::Result<()> {
         let payload = json!({
             "type": msg_type,
             "channel": channel,
@@ -278,11 +278,11 @@ impl LighterWebSocketClient {
             let guard = self
                 .client
                 .read()
-                .map_err(|_| anyhow!("client lock poisoned"))?;
+                .map_err(|_| anyhow::anyhow!("client lock poisoned"))?;
             guard.clone()
         };
         let Some(client) = client else {
-            return Err(anyhow!("WebSocket client is not connected"));
+            anyhow::bail!("WebSocket client is not connected");
         };
         client
             .send_text(payload.to_string(), None)
@@ -320,7 +320,7 @@ async fn handle_text_message(
     instruments: &Arc<RwLock<HashMap<u32, InstrumentAny>>>,
     subscriptions: &Arc<RwLock<HashSet<String>>>,
     ts_init: nautilus_core::nanos::UnixNanos,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let message: WsMessage =
         serde_json::from_str(text).context("failed to deserialize WS message")?;
 
@@ -332,7 +332,7 @@ async fn handle_text_message(
 
     let instruments_guard = instruments
         .read()
-        .map_err(|_| anyhow!("instrument cache poisoned"))?;
+        .map_err(|_| anyhow::anyhow!("instrument cache poisoned"))?;
     let events = parse_ws_message(message, &instruments_guard, ts_init)?;
 
     for event in events {

@@ -32,6 +32,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
+
 # Module-level cache for instrument providers keyed by network parameters.
 # Uses dict instead of lru_cache to avoid issues with unhashable InstrumentProviderConfig.filters.
 _INSTRUMENT_PROVIDERS: dict[tuple[bool, str | None], LighterInstrumentProvider] = {}
@@ -65,7 +66,7 @@ def get_lighter_http_client(
     LighterHttpClient
 
     """
-    lighter_mod = getattr(nautilus_pyo3, "lighter")
+    lighter_mod = nautilus_pyo3.lighter  # type: ignore[attr-defined]
     return lighter_mod.LighterHttpClient(
         is_testnet=testnet,
         base_url_override=base_url_http,
@@ -145,7 +146,7 @@ class LighterLiveDataClientFactory(LiveDataClientFactory):
         LighterDataClient
 
         """
-        lighter_mod = getattr(nautilus_pyo3, "lighter")
+        lighter_mod = nautilus_pyo3.lighter  # type: ignore[attr-defined]
         http_client = get_lighter_http_client(
             testnet=config.testnet,
             base_url_http=config.base_url_http,

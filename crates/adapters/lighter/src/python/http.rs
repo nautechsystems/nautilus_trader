@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use anyhow::anyhow;
 use nautilus_core::{python::to_pyvalue_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
     identifiers::InstrumentId,
@@ -99,7 +98,7 @@ impl PyLighterHttpClient {
         future_into_py(py, async move {
             let market_index = client
                 .get_market_index(&instrument.id())
-                .ok_or_else(|| to_pyvalue_err(anyhow!("missing market index for instrument")))?;
+                .ok_or_else(|| to_pyvalue_err(anyhow::anyhow!("missing market index for instrument")))?;
 
             let depth = client
                 .get_order_book_snapshot(market_index)

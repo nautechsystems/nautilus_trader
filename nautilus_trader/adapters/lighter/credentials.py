@@ -25,9 +25,9 @@ from nautilus_trader.adapters.lighter.constants import ENV_API_KEY_PRIVATE_KEY_T
 
 def resolve_api_key_private_key(value: str | None, *, testnet: bool) -> str | None:
     """
-    Resolve the API key private key, preferring an explicit value over environment variables.
+    Resolve the API key private key, preferring an explicit value over environment
+    variables.
     """
-
     if value:
         return value
 
@@ -43,8 +43,8 @@ def resolve_account_index(value: int | None, *, testnet: bool) -> int | None:
     ------
     ValueError
         If the environment variable is set but not an integer.
-    """
 
+    """
     if value is not None:
         return value
 

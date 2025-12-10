@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 Tests for message handling in LighterDataClient.
 
@@ -20,6 +19,7 @@ These tests verify the _handle_msg() dispatcher:
 - Handling OrderBookDeltas via pycapsule
 - Handling FundingRateUpdate via PyO3 conversion
 - Exception handling and logging
+
 """
 
 from unittest.mock import MagicMock
@@ -53,7 +53,9 @@ def data_client_for_parsing_tests(
     mock_instrument_provider,
     btc_instrument,
 ):
-    """Create a LighterDataClient configured for parsing tests."""
+    """
+    Create a LighterDataClient configured for parsing tests.
+    """
     ws_client = _create_ws_mock()
     http_client = _create_http_mock()
 
@@ -83,7 +85,9 @@ async def test_handle_msg_order_book_deltas_via_capsule(
     data_client_for_parsing_tests,
     btc_instrument,
 ):
-    """Test that OrderBookDeltas from pycapsule are routed to _handle_order_book_deltas."""
+    """
+    Test that OrderBookDeltas from pycapsule are routed to _handle_order_book_deltas.
+    """
     client, ws_client, http_client = data_client_for_parsing_tests
 
     await client._connect()
@@ -142,7 +146,9 @@ async def test_handle_msg_trade_tick_via_capsule(
     data_client_for_parsing_tests,
     btc_instrument,
 ):
-    """Test that TradeTick from pycapsule is routed to _handle_data."""
+    """
+    Test that TradeTick from pycapsule is routed to _handle_data.
+    """
     client, ws_client, http_client = data_client_for_parsing_tests
 
     await client._connect()
@@ -192,7 +198,9 @@ async def test_handle_msg_non_capsule_non_funding_rate(
     data_client_for_parsing_tests,
     btc_instrument,
 ):
-    """Test that non-capsule, non-FundingRateUpdate messages log warning."""
+    """
+    Test that non-capsule, non-FundingRateUpdate messages log warning.
+    """
     client, ws_client, http_client = data_client_for_parsing_tests
 
     await client._connect()
@@ -216,7 +224,9 @@ async def test_handle_msg_logs_warning_for_unknown_type(
     data_client_for_parsing_tests,
     caplog,
 ):
-    """Test that unknown message types log a warning."""
+    """
+    Test that unknown message types log a warning.
+    """
     client, ws_client, http_client = data_client_for_parsing_tests
 
     await client._connect()
@@ -241,7 +251,9 @@ async def test_handle_msg_catches_exceptions(
     data_client_for_parsing_tests,
     caplog,
 ):
-    """Test that exceptions in _handle_msg are caught and logged."""
+    """
+    Test that exceptions in _handle_msg are caught and logged.
+    """
     client, ws_client, http_client = data_client_for_parsing_tests
 
     await client._connect()
@@ -262,7 +274,9 @@ async def test_handle_msg_capsule_extraction_error(
     data_client_for_parsing_tests,
     caplog,
 ):
-    """Test that capsule extraction errors are caught."""
+    """
+    Test that capsule extraction errors are caught.
+    """
     client, ws_client, http_client = data_client_for_parsing_tests
 
     await client._connect()

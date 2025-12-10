@@ -16,4 +16,5 @@
 from nautilus_trader._libnautilus.lighter import *  # noqa: F403 (undefined-local-with-import-star)
 from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
 
+
 __all__ = [*globals().get("__all__", []), "LighterInstrumentProvider"]

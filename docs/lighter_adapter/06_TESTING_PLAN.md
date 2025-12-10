@@ -42,9 +42,9 @@ def test_parse_order_book_delta():
         "bids": [{"price": "3326.00", "size": "0"}],  # Removal
         "offset": 12345
     }
-    
+
     delta = parse_order_book_delta(raw, instrument_id)
-    
+
     assert len(delta.asks) == 1
     assert delta.asks[0].price == Price.from_str("3327.46")
     assert len(delta.bids) == 1
@@ -61,7 +61,7 @@ async def test_orderbooks_response_schema():
     """Verify orderBooks endpoint response matches expected schema."""
     async with LighterHttpClient(testnet=True) as client:
         response = await client.get_order_books()
-        
+
         # Validate structure
         assert "order_books" in response
         for market in response["order_books"]:
@@ -104,13 +104,13 @@ drift checks.
 async def test_ws_reconnect(lighter_client, mock_ws):
     await lighter_client.connect()
     await lighter_client.subscribe_order_book("BTCUSD-PERP")
-    
+
     # Simulate disconnect
     await mock_ws.close()
-    
+
     # Wait for reconnect
     await asyncio.sleep(5)
-    
+
     assert lighter_client.is_connected
     assert "order_book/0" in lighter_client.subscriptions
 ```

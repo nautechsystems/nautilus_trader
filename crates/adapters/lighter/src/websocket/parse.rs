@@ -17,7 +17,7 @@
 
 use std::{collections::HashMap, str::FromStr};
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     data::{FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, TradeTick},
@@ -38,7 +38,7 @@ pub fn parse_ws_message(
     message: WsMessage,
     instruments: &HashMap<u32, InstrumentAny>,
     ts_init: UnixNanos,
-) -> Result<Vec<NautilusWsMessage>> {
+) -> anyhow::Result<Vec<NautilusWsMessage>> {
     match message {
         WsMessage::Connected { .. } => Ok(Vec::new()),
         WsMessage::OrderBookSnapshot(msg) | WsMessage::OrderBookUpdate(msg) => {
@@ -55,7 +55,7 @@ fn parse_order_book(
     msg: crate::websocket::messages::WsOrderBookMessage,
     instruments: &HashMap<u32, InstrumentAny>,
     ts_init: UnixNanos,
-) -> Result<Vec<NautilusWsMessage>> {
+) -> anyhow::Result<Vec<NautilusWsMessage>> {
     let market_index = parse_market_index(&msg.channel)
         .with_context(|| format!("missing market index in channel {}", msg.channel))?;
     let instrument = instruments
@@ -79,7 +79,7 @@ fn parse_trades(
     msg: crate::websocket::messages::WsTradesMessage,
     instruments: &HashMap<u32, InstrumentAny>,
     ts_init: UnixNanos,
-) -> Result<Vec<NautilusWsMessage>> {
+) -> anyhow::Result<Vec<NautilusWsMessage>> {
     let market_index = parse_market_index(&msg.channel)
         .with_context(|| format!("missing market index in channel {}", msg.channel))?;
     let instrument = instruments
@@ -98,7 +98,7 @@ fn parse_trade(
     trade: &LighterTrade,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> Result<TradeTick> {
+) -> anyhow::Result<TradeTick> {
     let price = parse_price(trade.price, instrument, "trade.price")?;
     let size = parse_quantity(trade.size, instrument, "trade.size")?;
     let aggressor = if trade.is_maker_ask {
@@ -126,7 +126,7 @@ fn parse_market_stats(
     msg: WsMarketStatsMessage,
     instruments: &HashMap<u32, InstrumentAny>,
     ts_init: UnixNanos,
-) -> Result<Vec<NautilusWsMessage>> {
+) -> anyhow::Result<Vec<NautilusWsMessage>> {
     let market_index = parse_market_index(&msg.channel)
         .with_context(|| format!("missing market index in channel {}", msg.channel))?;
     let instrument = instruments
@@ -192,14 +192,14 @@ fn parse_timestamp(ts_ms: Option<i64>, ts_init: UnixNanos) -> UnixNanos {
     }
 }
 
-fn parse_price(value: Decimal, instrument: &InstrumentAny, field: &str) -> Result<Price> {
+fn parse_price(value: Decimal, instrument: &InstrumentAny, field: &str) -> anyhow::Result<Price> {
     let f = value
         .to_f64()
         .with_context(|| format!("invalid price for {field}: {value}"))?;
     Ok(Price::new(f, instrument.price_precision()))
 }
 
-fn parse_quantity(value: Decimal, instrument: &InstrumentAny, field: &str) -> Result<Quantity> {
+fn parse_quantity(value: Decimal, instrument: &InstrumentAny, field: &str) -> anyhow::Result<Quantity> {
     let f = value
         .abs()
         .to_f64()

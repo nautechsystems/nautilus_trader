@@ -90,7 +90,7 @@ sequenceDiagram
     DataClient->>DataClient: Build initial book snapshot
     DataClient->>WSClient: subscribe("order_book/0")  %% channel delimiter to confirm
     WSClient->>Lighter: {"type":"subscribe","channel":"order_book/0"}  %% payload schema to confirm
-    
+
     loop Order Book Updates
         Lighter-->>WSClient: {"type":"update/order_book",...}
         WSClient->>DataClient: parse_order_book_delta()
@@ -120,7 +120,7 @@ sequenceDiagram
     Lighter-->>HTTPClient: {"tx_hash": "..."}
     HTTPClient->>ExecClient: OrderSubmitted
     ExecClient->>Strategy: OrderAccepted event
-    
+
     loop Order Updates (WS)
         Lighter-->>WSClient: account_all_orders update
         WSClient->>ExecClient: parse_order_update()

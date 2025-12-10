@@ -60,16 +60,16 @@ from nautilus_trader.model.identifiers import InstrumentId
 class LighterInstrumentProvider(InstrumentProvider):
     async def load_all_async(self, filters: dict | None = None) -> None:
         """Load all Lighter perpetual instruments."""
-        
+
     async def load_ids_async(
-        self, 
+        self,
         instrument_ids: list[InstrumentId],
         filters: dict | None = None
     ) -> None:
         """Load specific instruments by ID."""
-        
+
     async def load_async(
-        self, 
+        self,
         instrument_id: InstrumentId,
         filters: dict | None = None
     ) -> None:
@@ -85,21 +85,21 @@ class LighterDataClient(LiveMarketDataClient):
     # Connection lifecycle
     async def _connect(self) -> None: ...
     async def _disconnect(self) -> None: ...
-    
+
     # Order book subscriptions
     async def _subscribe_order_book_deltas(self, command) -> None: ...
     async def _subscribe_order_book_snapshots(self, command) -> None: ...
     async def _unsubscribe_order_book_deltas(self, command) -> None: ...
-    
+
     # Trade subscriptions
     async def _subscribe_trade_ticks(self, command) -> None: ...
     async def _unsubscribe_trade_ticks(self, command) -> None: ...
-    
+
     # Perp-specific subscriptions
     async def _subscribe_mark_prices(self, command) -> None: ...
     async def _subscribe_funding_rates(self, command) -> None: ...
     async def _subscribe_index_prices(self, command) -> None: ...
-    
+
     # Historical requests
     async def _request_bars(self, request) -> None: ...
     async def _request_order_book_snapshot(self, request) -> None: ...
@@ -114,26 +114,26 @@ class LighterExecutionClient(LiveExecutionClient):
     # Connection
     async def _connect(self) -> None: ...
     async def _disconnect(self) -> None: ...
-    
+
     # Order management
     async def _submit_order(self, command: SubmitOrder) -> None: ...
     async def _cancel_order(self, command: CancelOrder) -> None: ...
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None: ...
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None: ...
-    
+
     # Reconciliation reports
     async def generate_order_status_report(
         self, command
     ) -> OrderStatusReport | None: ...
-    
+
     async def generate_order_status_reports(
         self, command
     ) -> list[OrderStatusReport]: ...
-    
+
     async def generate_fill_reports(
         self, command
     ) -> list[FillReport]: ...
-    
+
     async def generate_position_status_reports(
         self, command
     ) -> list[PositionStatusReport]: ...
@@ -175,34 +175,34 @@ from nautilus_trader.config import LiveDataClientConfig, LiveExecClientConfig
 
 class LighterDataClientConfig(LiveDataClientConfig):
     """Configuration for Lighter data client."""
-    
+
     # Credentials (can use env vars: LIGHTER_API_KEY_PRIVATE_KEY)
     api_key_private_key: str | None = None
     account_index: int | None = None
     api_key_index: int = 2  # Default to first user key slot
-    
+
     # Endpoints
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    
+
     # Environment
     testnet: bool = False
-    
+
     # Adapter options
     update_instrument_interval_ms: int = 3600000  # 1 hour
 
 class LighterExecClientConfig(LiveExecClientConfig):
     """Configuration for Lighter execution client."""
-    
+
     api_key_private_key: str | None = None
     account_index: int | None = None
     api_key_index: int = 2
-    
+
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    
+
     testnet: bool = False
-    
+
     # Execution options
     max_retries: int = 3
     retry_delay_ms: int = 1000

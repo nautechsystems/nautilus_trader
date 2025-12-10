@@ -16,7 +16,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 
 from nautilus_trader.adapters.lighter.constants import LIGHTER_VENUE
 from nautilus_trader.common.providers import InstrumentProvider
@@ -25,6 +26,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import instruments_from_pyo3
+
 
 if TYPE_CHECKING:
     LighterHttpClient = Any  # nautilus_pyo3.lighter.LighterHttpClient
@@ -55,23 +57,20 @@ class LighterInstrumentProvider(InstrumentProvider):
         """
         Return the cached PyO3 instruments.
         """
-
         return self._instruments_pyo3
 
     def market_index_for(self, instrument_id: InstrumentId) -> int | None:
         """
         Return the cached market index for the given instrument ID.
         """
-
         key = getattr(instrument_id, "value", str(instrument_id))
         return self._market_index_by_instrument.get(key)
 
-    def find(self, instrument_id: InstrumentId) -> Instrument | None:  # type: ignore[override]
+    def find(self, instrument_id: InstrumentId) -> Instrument | None:
         """
-        Return the instrument for the given instrument ID (if found), accepting either Python or
-        PyO3 instrument IDs.
+        Return the instrument for the given instrument ID (if found), accepting either
+        Python or PyO3 instrument IDs.
         """
-
         if isinstance(instrument_id, InstrumentId):
             return super().find(instrument_id)
 
@@ -202,7 +201,7 @@ class LighterInstrumentProvider(InstrumentProvider):
         def normalize(value: Any, *, to_lower: bool = False) -> set[str]:
             if value is None:
                 return set()
-            values: Iterable[str] = value if isinstance(value, Iterable) and not isinstance(value, str) else [value]  # type: ignore[assignment]
+            values: Iterable[str] = value if isinstance(value, Iterable) and not isinstance(value, str) else [value]
             return {
                 (item.lower() if to_lower else item.upper())
                 for item in values

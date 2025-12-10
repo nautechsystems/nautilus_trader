@@ -24,6 +24,7 @@ Usage:
     uv run python examples/live/lighter/lighter_ws_tester.py --symbols BTC ETH
     uv run python examples/live/lighter/lighter_ws_tester.py --duration 60 --no-stats
     uv run python examples/live/lighter/lighter_ws_tester.py --testnet
+
 """
 
 from __future__ import annotations
@@ -33,8 +34,9 @@ import asyncio
 import pathlib
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from typing import Any
-from typing import Iterable
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
@@ -47,13 +49,14 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import InstrumentId
 
+
 try:
-    from nautilus_trader.core.nautilus_pyo3 import lighter as lighter_mod
-except Exception as exc:  # pragma: no cover - runtime guard for missing bindings
+    from nautilus_trader.core.nautilus_pyo3 import lighter as lighter_mod  # type: ignore[attr-defined]
+except Exception as e:  # pragma: no cover - runtime guard for missing bindings
     raise SystemExit(
         "Lighter PyO3 bindings are unavailable. Build extensions with `make build-debug` "
         "before running this tester.",
-    ) from exc
+    ) from e
 
 
 def parse_instrument_ids(
@@ -64,7 +67,6 @@ def parse_instrument_ids(
     """
     Build instrument IDs from explicit values or base symbols.
     """
-
     if instrument_ids:
         return [InstrumentId.from_str(value) for value in instrument_ids]
 
@@ -102,7 +104,6 @@ def select_python_instruments(
     """
     Resolve Python instruments that were loaded and requested.
     """
-
     selected = []
     lookup = provider.get_all()
 
@@ -127,7 +128,6 @@ def select_pyo3_instruments(
     """
     Match PyO3 instrument handles to the selected Python instruments.
     """
-
     allowed = {instrument.id.value for instrument in python_instruments}
     resolved: list[Any] = []
 

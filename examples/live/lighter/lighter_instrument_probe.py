@@ -25,6 +25,7 @@ Usage:
     python examples/live/lighter/lighter_instrument_probe.py --mainnet    # mainnet
     python examples/live/lighter/lighter_instrument_probe.py --limit 10
     python examples/live/lighter/lighter_instrument_probe.py --snapshot
+
 """
 
 from __future__ import annotations
@@ -34,7 +35,9 @@ import asyncio
 import pathlib
 import sys
 from typing import Any
+
 import aiohttp
+
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
@@ -42,22 +45,23 @@ if str(REPO_ROOT) not in sys.path:
 
 from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+
+
 try:
     # Prefer the PyO3 HTTP client if the extension is built with Lighter bindings.
     from nautilus_trader.core import nautilus_pyo3
-    from nautilus_trader.core.nautilus_pyo3 import lighter as lighter_mod
+    from nautilus_trader.core.nautilus_pyo3 import lighter as lighter_mod  # type: ignore[attr-defined]
 
     LighterHttpClient = getattr(lighter_mod, "LighterHttpClient", None)
 except Exception:  # pragma: no cover - runtime resolution
-    LighterHttpClient = None  # type: ignore
-    nautilus_pyo3 = None  # type: ignore
+    LighterHttpClient = None
+    nautilus_pyo3 = None
 
 
 async def fetch_snapshot(client: Any, instrument_pyo3: Any) -> None:
     """
     Fetch a single order book snapshot and print best bid/ask if convertible.
     """
-
     if nautilus_pyo3 is None:
         print("Snapshot not attempted (PyO3 bindings unavailable).")
         return
@@ -90,8 +94,8 @@ async def fetch_snapshot(client: Any, instrument_pyo3: Any) -> None:
             print("Snapshot has deltas but no bid/ask levels found.")
         else:
             print("Snapshot has no book levels.")
-    except Exception as exc:  # pragma: no cover - example script
-        print(f"Snapshot fetch failed: {exc}")
+    except Exception as e:  # pragma: no cover - example script
+        print(f"Snapshot fetch failed: {e}")
 
 
 async def load_via_adapter(args: argparse.Namespace) -> None:
@@ -128,10 +132,9 @@ async def load_via_http(args: argparse.Namespace) -> None:
     )
     url = f"{base_url}/api/v1/orderBooks"
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=10) as resp:
-            resp.raise_for_status()
-            payload = await resp.json()
+    async with aiohttp.ClientSession() as session, session.get(url, timeout=10) as resp:
+        resp.raise_for_status()
+        payload = await resp.json()
 
     books = payload.get("order_books") or payload.get("orderBooks") or []
     print(f"Loaded {len(books)} markets from {url}")

@@ -19,7 +19,9 @@ import enum
 
 
 class LighterNetwork(enum.Enum):
-    """Environment selector for Lighter Exchange."""
+    """
+    Environment selector for Lighter Exchange.
+    """
 
     MAINNET = "mainnet"
     TESTNET = "testnet"

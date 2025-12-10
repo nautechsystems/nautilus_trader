@@ -61,7 +61,9 @@ def account_id(venue) -> AccountId:
 
 @pytest.fixture
 def btc_instrument() -> CryptoPerpetual:
-    """BTC-USD-PERP instrument matching the fixture data."""
+    """
+    BTC-USD-PERP instrument matching the fixture data.
+    """
     return CryptoPerpetual(
         instrument_id=InstrumentId(Symbol("BTC-USD-PERP"), LIGHTER_VENUE),
         raw_symbol=Symbol("BTC"),
@@ -90,7 +92,9 @@ def btc_instrument() -> CryptoPerpetual:
 
 @pytest.fixture
 def instrument(btc_instrument) -> CryptoPerpetual:
-    """Default instrument fixture required by parent conftest."""
+    """
+    Default instrument fixture required by parent conftest.
+    """
     return btc_instrument
 
 
@@ -117,7 +121,9 @@ def account_state(account_id) -> AccountState:
 
 
 def _create_ws_mock() -> MagicMock:
-    """Create a mocked LighterWebSocketClient."""
+    """
+    Create a mocked LighterWebSocketClient.
+    """
     mock = MagicMock()
     mock.url = "wss://test.lighter.xyz/ws"
     mock.is_closed = MagicMock(return_value=False)
@@ -135,7 +141,9 @@ def _create_ws_mock() -> MagicMock:
 
 
 def _create_http_mock() -> MagicMock:
-    """Create a mocked LighterHttpClient."""
+    """
+    Create a mocked LighterHttpClient.
+    """
     mock = MagicMock()
     mock.load_instrument_definitions = AsyncMock(return_value=[])
     mock.get_market_index = MagicMock(return_value=1)
@@ -156,7 +164,9 @@ def mock_http_client():
 
 @pytest.fixture
 def mock_instrument_provider(btc_instrument):
-    """Create a mocked LighterInstrumentProvider."""
+    """
+    Create a mocked LighterInstrumentProvider.
+    """
     provider = MagicMock(spec=LighterInstrumentProvider)
     provider.initialize = AsyncMock()
     provider.instruments_pyo3 = MagicMock(return_value=[])
@@ -181,5 +191,7 @@ def exec_client():
 
 @pytest.fixture
 def instrument_provider(mock_instrument_provider):
-    """Required by parent conftest."""
+    """
+    Required by parent conftest.
+    """
     return mock_instrument_provider
