@@ -27,13 +27,23 @@ during the validation spike.
 | `POST /api/v1/sendTxBatch` | Private | Signature + Token? | Batch limits + error behavior **TBD** |
 | `GET /api/v1/nextNonce` (or equivalent) | Private | Token? | Confirm path/name and behavior after failed tx |
 
-### WebSocket Channels (to validate)
+### WebSocket Channels
 
-| Channel | Scope | Notes/TBD |
-|---------|-------|-----------|
-| `order_book/{market_index}` | Public | Channel delimiter uncertain (`/` vs `:`); confirm snapshot vs delta behavior |
+> **IMPORTANT: Channel Delimiter Convention (Verified)**
+>
+> The Lighter API uses **different delimiters** for requests vs responses:
+> - **Subscribe requests** use **slashes**: `order_book/{market_index}`
+> - **Server responses** use **colons**: `order_book:1`
+>
+> This is confirmed in the [Lighter WebSocket Reference](https://apidocs.lighter.xyz/docs/websocket-reference).
+> The test fixtures (`tests/test_data/lighter/ws/`) contain server responses (colon format),
+> which may mislead reviewers into thinking subscriptions should also use colons. They should not.
+
+| Channel | Scope | Notes |
+|---------|-------|-------|
+| `order_book/{market_index}` | Public | Snapshot on subscribe + deltas with `offset` and `nonce` |
 | `trade/{market_index}` | Public | Trade tick feed |
-| `market_stats/{market_index}` | Public | Mark/index/funding updates; confirm field names |
+| `market_stats/{market_index}` | Public | Mark/index/funding updates |
 | `account_all_orders` (or similar) | Private | Order lifecycle events; payload schema + auth requirement TBD |
 | `account_positions` (or similar) | Private | Position/funding events; confirm channel name and fields |
 

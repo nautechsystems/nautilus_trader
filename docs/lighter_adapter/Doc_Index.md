@@ -21,7 +21,7 @@ This engineering discovery pack contains all documentation required to implement
 |----------|---------|-------------------|
 | 1 | **Signing algorithm + tx serialization** | Capture real `sendTx` requests on testnet; confirm curve/hash/encoding with successful submission |
 | 2 | **Auth token necessity** | Attempt private REST + WS + `sendTx` with/without token; align on requirement based on captures |
-| 3 | **WS channel naming + schema** | Subscribe on testnet and record payloads (`order_book/0` vs `order_book:0`, field naming) |
+| 3 | ~~**WS channel naming + schema**~~ | **RESOLVED**: Subscribe uses slashes (`order_book/{idx}`), responses use colons (`order_book:1`). See [API docs](https://apidocs.lighter.xyz/docs/websocket-reference). |
 | 4 | **Snapshot/delta semantics** | Validate whether WS ever sends snapshots, and the exact offset/gap recovery rules |
 | 5 | **Instrument mapping correctness** | Verify `orderBooks` fields map cleanly to `CryptoPerpetual` (price/size decimals, min sizes) |
 | 6 | **Fee schedule (standard vs premium)** | Confirm maker/taker rates from live responses or support; avoid hardcoding until verified |

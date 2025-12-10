@@ -105,7 +105,7 @@
 |---|----------|----------|-------------------|
 | 1 | Signing algorithm + payload hashing for `sendTx` | High | Capture successful tx and reproduce signature |
 | 2 | Are auth tokens required for private REST/WS? | High | Attempt with/without token on testnet |
-| 3 | Exact WS channel names and payload schemas | High | Subscribe and record messages (`order_book/0` vs `order_book:0`) |
+| 3 | ~~Exact WS channel names and payload schemas~~ | ~~High~~ | **RESOLVED**: Subscribe uses slashes (`order_book/{idx}`), responses use colons (`order_book:1`). See `03_LIGHTER_API_SPEC.md`. |
 | 4 | Do WS channels emit snapshots on subscribe? | High | Observe initial messages and compare to REST snapshot |
 | 5 | Fee schedule (Standard vs Premium) | Medium | Confirm via support or live fills; prefer exchange-reported fees |
 | 6 | Nonce persistence/recovery rules | Medium | Force mismatch and use `nextNonce` (or equivalent) to reconcile |

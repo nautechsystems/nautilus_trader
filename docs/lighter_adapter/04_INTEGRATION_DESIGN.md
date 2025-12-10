@@ -5,7 +5,7 @@
 ### Validation notes
 - Signing algorithm + payload hashing are **unknown**; do not implement `sendTx`/`sendTxBatch` until testnet captures confirm curve/hash/encoding.
 - Auth token requirement for private REST + WS is **unsettled**; plan for token support and feature-flag until validated.
-- WS channel naming/schemas need confirmation (`order_book/0` vs `order_book:0`, field names, snapshot vs delta behavior).
+- WS channel naming confirmed: subscribe uses slashes (`order_book/{idx}`), responses use colons (`order_book:1`). See [API docs](https://apidocs.lighter.xyz/docs/websocket-reference).
 - Fee schedule differs across sources; avoid hardcoded maker/taker until verified from live responses.
 
 ### Concept Mapping Matrix
