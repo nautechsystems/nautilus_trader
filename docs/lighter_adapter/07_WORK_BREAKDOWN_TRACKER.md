@@ -58,6 +58,7 @@
   - [ ] Status event mapping
   - [ ] Execution client implementation
   - [ ] Integration test: order lifecycle
+  - [ ] Follow mainnet validation runbook in `PR_NOTES_AUTH_VALIDATION.md` for BTC/ETH place-and-cancel sanity checks
 
 ### Milestone 4: Account (Week 4)
 

@@ -41,34 +41,53 @@ Notes:
   - `cancel_order` response: `code=200`, tx_hash=`570b4f85522d87fee23f2cb6dd6f2c3b6e20e471bdd4780a9aeb1c244a1dc2a80a19c13fc2ce4105`
 - Both calls returned `{"ratelimit": "didn't use volume quota"}`.
 
-## One-file place-and-cancel snippet (mainnet)
+## One-file place-and-cancel snippet (mainnet, BTC perp)
 
 ```python
-import asyncio, os, time, json
+import asyncio, os, time
 from lighter import SignerClient
 from lighter.api_client import ApiClient
 from lighter.configuration import Configuration
 from lighter.api import OrderApi
 
-URL = "https://mainnet.zklighter.elliot.ai"
+URL = os.getenv("LIGHTER_HTTP_BASE", "https://mainnet.zklighter.elliot.ai")
 ACCOUNT_INDEX = int(os.environ["LIGHTER_ACCOUNT_INDEX"])
 API_KEY_INDEX = int(os.environ["LIGHTER_API_KEY_INDEX"])
+# Private key is expected without 0x prefix for SignerClient
 API_KEY_PRIVATE = os.environ["LIGHTER_API_SECRET"].removeprefix("0x")
 MARKET_INDEX = 1  # BTC perp
+NOTIONAL_USD = 50.0
+DISCOUNT = 0.10  # 10% below best ask
 
-async def main():
+
+async def main() -> None:
     api = ApiClient(Configuration(host=URL))
-    ob = (await OrderApi(api).order_book_details(market_id=MARKET_INDEX)).order_book_details[0]
-    price = float(ob.last_trade_price)
-    price_int = int(round(price * 0.9 * (10 ** ob.price_decimals)))
-    size_int = int(round((50.0 / (price * 0.9)) * (10 ** ob.size_decimals)))
-    size_int = max(size_int, 1)
-    coi = int(time.time_ns() // 1_000_000)
 
-    signer = SignerClient(URL, account_index=ACCOUNT_INDEX, api_private_keys={API_KEY_INDEX: API_KEY_PRIVATE})
+    # 1) Get current book/price to anchor the test order
+    ob = (await OrderApi(api).order_book_details(market_id=MARKET_INDEX)).order_book_details[0]
+    last_price = float(ob.last_trade_price)
+    price_decimals = ob.price_decimals
+    size_decimals = ob.size_decimals
+
+    limit_price = last_price * (1.0 - DISCOUNT)
+    price_int = int(round(limit_price * (10 ** price_decimals)))
+
+    base_amount = NOTIONAL_USD / limit_price
+    size_int = int(round(base_amount * (10 ** size_decimals)))
+    size_int = max(size_int, 1)
+
+    client_order_index = int(time.time_ns() // 1_000_000)
+
+    signer = SignerClient(
+        url=URL,
+        account_index=ACCOUNT_INDEX,
+        api_private_keys={API_KEY_INDEX: API_KEY_PRIVATE},
+    )
+
+    # 2) Place limit buy ~10% below best ask
     _, create_resp, create_err = await signer.create_order(
         market_index=MARKET_INDEX,
-        client_order_index=coi,
+        client_order_index=client_order_index,
         base_amount=size_int,
         price=price_int,
         is_ask=False,
@@ -76,13 +95,111 @@ async def main():
         time_in_force=SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
     )
     print("create:", create_resp, create_err)
-    await asyncio.sleep(5)
-    _, cancel_resp, cancel_err = await signer.cancel_order(market_index=MARKET_INDEX, order_index=coi)
-    print("cancel:", cancel_resp, cancel_err)
-    await signer.close(); await api.close()
 
-asyncio.run(main())
+    # 3) Let it settle on-chain, then cancel
+    await asyncio.sleep(5)
+    _, cancel_resp, cancel_err = await signer.cancel_order(
+        market_index=MARKET_INDEX,
+        order_index=client_order_index,
+    )
+    print("cancel:", cancel_resp, cancel_err)
+
+    await signer.close()
+    await api.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
+
+## Mainnet validation spike runbook (BTC & ETH perps)
+
+> **Important**: This runbook is designed to be executed manually.  
+> The adapter implementation should never hardcode these values; they are only for
+> a small “place-and-cancel” probe with ~$50 notional per market.
+
+### Preconditions
+
+- `.env` in the repo root populated with:
+  - `LIGHTER_HTTP_BASE`, `LIGHTER_WS_BASE`
+  - `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`
+  - Either `LIGHTER_API_SECRET` (API key private key, with or without `0x` prefix)  
+    or `LIGHTER_API_KEY_PRIVATE_KEY` (adapter-specific env used via `resolve_api_key_private_key`).
+- Python venv and project deps set up (`make install-debug` or equivalent).
+- `lighter-python` SDK installed into the venv:
+
+  ```bash
+  . .venv/bin/activate
+  python -m pip install "git+https://github.com/elliottech/lighter-python.git"
+  ```
+
+### Step 1 — Sanity check env and connectivity
+
+1. Load env and print key routing parameters (no secrets):
+
+   ```bash
+   export $(grep -v '^#' .env | xargs)
+   echo "env=${LIGHTER_ENV:-mainnet} account_index=${LIGHTER_ACCOUNT_INDEX} api_key_index=${LIGHTER_API_KEY_INDEX}"
+   echo "http_base=${LIGHTER_HTTP_BASE:-https://mainnet.zklighter.elliot.ai}"
+   ```
+
+2. Confirm public REST works:
+
+   ```bash
+   curl -s "${LIGHTER_HTTP_BASE:-https://mainnet.zklighter.elliot.ai}/api/v1/orderBooks" | head -c 512
+   ```
+
+   You should see JSON with `code: 200` and an `order_books` array.
+
+### Step 2 — BTC perp place-and-cancel (~$50, 10% below best ask)
+
+1. Run the one-file script above (or equivalent) from the repo root:
+
+   ```bash
+   . .venv/bin/activate
+   python docs/lighter_adapter/tmp_btc_place_cancel.py  # or `python - <<'PY'` using the snippet inline
+   ```
+
+2. Expected behaviour:
+   - `create:` response has `code: 200`, a non-empty `tx_hash`, and a `"ratelimit": "didn't use volume quota"` note.
+   - `cancel:` response likewise has `code: 200` and a `tx_hash`.
+   - The effective price used by the script is ~10% below the live last/ask price and respects `price_decimals`.
+
+3. Optional: verify via REST that the order is no longer active:
+
+   ```bash
+   # Requires auth token created via SignerClient.create_auth_token_with_expiry(...)
+   curl -s -H "Authorization: ${LIGHTER_AUTH_TOKEN}" \
+     "${LIGHTER_HTTP_BASE}/api/v1/accountActiveOrders" | jq '.'
+   ```
+
+### Step 3 — ETH perp place-and-cancel (~$50, 10% below best ask)
+
+Repeat Step 2 but with `MARKET_INDEX = 0` (ETH perp) and updated decimals:
+
+- From `orderBooks` / `orderBookDetails`:
+  - ETH perp: `market_id=0`, `price_decimals=2`, `size_decimals=4`, `min_base_amount=0.0050`.
+- Use the same formulas:
+  - `limit_price = best_ask * 0.9`
+  - `price_int = round(limit_price * 10 ** price_decimals)`
+  - `base_amount = 50.0 / limit_price`
+  - `size_int = max(1, round(base_amount * 10 ** size_decimals))`
+
+Capture the `create:` and `cancel:` responses as for BTC, plus the resulting `tx_hash` values.
+
+### Step 4 — Data capture for fixtures and PR3 design
+
+For at least one of the BTC/ETH runs, capture:
+
+- Raw HTTP requests/responses for:
+  - `GET /api/v1/orderBooks` or `GET /api/v1/orderBookDetails?market_id={id}`
+  - `POST /api/v1/sendTx` for create and cancel
+  - `GET /api/v1/account` and `GET /api/v1/accountActiveOrders` with auth token
+  - `GET /api/v1/nextNonce` (or equivalent) before/after a nonce mismatch, if you deliberately trigger one.
+- WS traffic (if private channels are available) around the lifecycle of the test orders.
+
+These should be redacted and stored under `tests/test_data/lighter/{http,ws}/` and referenced from
+`03_LIGHTER_API_SPEC.md` for PR3.
 
 ## Open items
 
