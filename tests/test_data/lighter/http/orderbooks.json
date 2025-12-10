@@ -1,0 +1,26 @@
+{
+  "order_books": [
+    {
+      "market_id": 1,
+      "symbol": "BTC",
+      "base_token": "BTC",
+      "quote_token": "USD",
+      "supported_price_decimals": 1,
+      "supported_size_decimals": 4,
+      "min_base_amount": "0.0010",
+      "tick_size": "0.1",
+      "lot_size": "0.0001",
+      "active": true
+    },
+    {
+      "market_id": 2,
+      "symbol": "ETH",
+      "base_token": "ETH",
+      "quote_token": "USD",
+      "supported_price_decimals": 2,
+      "supported_size_decimals": 3,
+      "min_base_amount": "0.010",
+      "active": false
+    }
+  ]
+}

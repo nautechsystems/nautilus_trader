@@ -10,6 +10,7 @@ members = [
   "crates/adapters/deribit",
   "crates/adapters/dydx",
   "crates/adapters/hyperliquid",
+  "crates/adapters/lighter",
   "crates/adapters/kraken",
   "crates/adapters/okx",
   "crates/adapters/tardis",
@@ -90,6 +91,7 @@ nautilus-databento = { path = "crates/adapters/databento", version = "0.52.0" }
 nautilus-deribit = { path = "crates/adapters/deribit", version = "0.52.0" }
 nautilus-dydx = { path = "crates/adapters/dydx", version = "0.52.0" }
 nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.52.0" }
+nautilus-lighter = { path = "crates/adapters/lighter", version = "0.52.0" }
 nautilus-kraken = { path = "crates/adapters/kraken", version = "0.52.0" }
 nautilus-okx = { path = "crates/adapters/okx", version = "0.52.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.52.0" }
