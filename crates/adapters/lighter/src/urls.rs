@@ -23,20 +23,22 @@ use crate::common::constants::{
 
 #[must_use]
 pub fn get_http_base_url(network: LighterNetwork, override_url: Option<&str>) -> String {
-    override_url
-        .map(str::to_owned)
-        .unwrap_or_else(|| match network {
+    override_url.map_or_else(
+        || match network {
             LighterNetwork::Mainnet => format!("{LIGHTER_MAINNET_HTTP_BASE}/api/v1"),
             LighterNetwork::Testnet => format!("{LIGHTER_TESTNET_HTTP_BASE}/api/v1"),
-        })
+        },
+        str::to_owned,
+    )
 }
 
 #[must_use]
 pub fn get_ws_url(network: LighterNetwork, override_url: Option<&str>) -> String {
-    override_url
-        .map(str::to_owned)
-        .unwrap_or_else(|| match network {
+    override_url.map_or_else(
+        || match network {
             LighterNetwork::Mainnet => LIGHTER_MAINNET_WS_BASE.to_string(),
             LighterNetwork::Testnet => LIGHTER_TESTNET_WS_BASE.to_string(),
-        })
+        },
+        str::to_owned,
+    )
 }

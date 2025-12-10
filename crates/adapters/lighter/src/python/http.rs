@@ -16,7 +16,6 @@
 use anyhow::anyhow;
 use nautilus_core::{python::to_pyvalue_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::OrderBookDeltas,
     identifiers::InstrumentId,
     instruments::Instrument,
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
@@ -72,7 +71,7 @@ impl PyLighterHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let py_instruments = instruments
                     .into_iter()
                     .map(|instrument| instrument_any_to_pyobject(py, instrument))

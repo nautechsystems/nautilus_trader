@@ -123,7 +123,8 @@ impl LighterHttpClient {
         &self,
         market_index: u32,
     ) -> Result<LighterOrderBookDepth> {
-        self.get_order_book_snapshot_with_limit(market_index, 100).await
+        self.get_order_book_snapshot_with_limit(market_index, 100)
+            .await
     }
 
     /// Fetch a depth snapshot with a custom limit for the given market index.

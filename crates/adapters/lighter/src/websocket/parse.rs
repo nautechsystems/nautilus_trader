@@ -47,7 +47,7 @@ pub fn parse_ws_message(
         WsMessage::TradesSnapshot(msg) | WsMessage::TradesUpdate(msg) => {
             parse_trades(msg, instruments, ts_init)
         }
-        WsMessage::MarketStats(msg) => parse_market_stats(msg, instruments, ts_init),
+        WsMessage::MarketStats(msg) => parse_market_stats(*msg, instruments, ts_init),
     }
 }
 
@@ -160,8 +160,7 @@ fn parse_market_stats(
         let ts_event = msg
             .market_stats
             .funding_timestamp
-            .map(|ts| parse_timestamp(Some(ts), ts_init))
-            .unwrap_or(ts_init);
+            .map_or(ts_init, |ts| parse_timestamp(Some(ts), ts_init));
         events.push(NautilusWsMessage::FundingRate(FundingRateUpdate::new(
             instrument_id,
             rate,
@@ -179,7 +178,7 @@ fn parse_market_stats(
 pub fn parse_market_index(channel: &str) -> Option<u32> {
     channel
         .split([':', '/'])
-        .last()
+        .next_back()
         .and_then(|s| u32::from_str(s).ok())
 }
 

@@ -194,10 +194,10 @@ impl LighterWebSocketClient {
     #[must_use]
     pub fn is_active(&self) -> bool {
         // Delegate to the underlying WebSocket client if connected
-        if let Ok(guard) = self.client.read() {
-            if let Some(client) = guard.as_ref() {
-                return client.is_active();
-            }
+        if let Ok(guard) = self.client.read()
+            && let Some(client) = guard.as_ref()
+        {
+            return client.is_active();
         }
         false
     }
@@ -333,7 +333,7 @@ async fn handle_text_message(
     let instruments_guard = instruments
         .read()
         .map_err(|_| anyhow!("instrument cache poisoned"))?;
-    let events = parse_ws_message(message, &*instruments_guard, ts_init)?;
+    let events = parse_ws_message(message, &instruments_guard, ts_init)?;
 
     for event in events {
         if let Err(err) = out_tx.send(event) {

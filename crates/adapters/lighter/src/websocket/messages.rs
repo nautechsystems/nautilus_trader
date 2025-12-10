@@ -49,7 +49,7 @@ pub enum WsMessage {
     #[serde(rename = "update/trade")]
     TradesUpdate(WsTradesMessage),
     #[serde(rename = "subscribed/market_stats")]
-    MarketStats(WsMarketStatsMessage),
+    MarketStats(Box<WsMarketStatsMessage>),
 }
 
 /// Order book snapshot or delta message.

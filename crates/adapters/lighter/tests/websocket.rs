@@ -51,7 +51,7 @@ use serde_json::{Value, json};
 #[derive(Clone, Default)]
 struct TestServerState {
     connection_count: Arc<AtomicUsize>,
-    total_connections: Arc<AtomicUsize>,  // Monotonic counter - never decremented
+    total_connections: Arc<AtomicUsize>, // Monotonic counter - never decremented
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     drop_next_connection: Arc<AtomicBool>,
     messages_sent: Arc<AtomicUsize>,
@@ -112,14 +112,18 @@ async fn handle_ws_upgrade(
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     state.connection_count.fetch_add(1, Ordering::SeqCst);
-    state.total_connections.fetch_add(1, Ordering::SeqCst);  // Never decremented
+    state.total_connections.fetch_add(1, Ordering::SeqCst); // Never decremented
 
     // Send connected message
     let connected = json!({
         "type": "connected",
         "session_id": "test-session-id"
     });
-    if socket.send(Message::Text(connected.to_string().into())).await.is_err() {
+    if socket
+        .send(Message::Text(connected.to_string().into()))
+        .await
+        .is_err()
+    {
         state.connection_count.fetch_sub(1, Ordering::SeqCst);
         return;
     }
@@ -153,7 +157,11 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                     "type": "subscribed",
                                     "channel": ch
                                 });
-                                if socket.send(Message::Text(subscribed.to_string().into())).await.is_err() {
+                                if socket
+                                    .send(Message::Text(subscribed.to_string().into()))
+                                    .await
+                                    .is_err()
+                                {
                                     break;
                                 }
                                 state.messages_sent.fetch_add(1, Ordering::SeqCst);
@@ -161,28 +169,40 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 // Send fixture data based on channel type
                                 if ch.starts_with("order_book") {
                                     // Send the snapshot message from the fixture (index 1)
-                                    if let Some(snapshot) = order_book_fixture.as_array()
-                                        .and_then(|arr| arr.get(1))
+                                    if let Some(snapshot) =
+                                        order_book_fixture.as_array().and_then(|arr| arr.get(1))
                                     {
-                                        if socket.send(Message::Text(snapshot.to_string().into())).await.is_err() {
+                                        if socket
+                                            .send(Message::Text(snapshot.to_string().into()))
+                                            .await
+                                            .is_err()
+                                        {
                                             break;
                                         }
                                         state.messages_sent.fetch_add(1, Ordering::SeqCst);
                                     }
                                 } else if ch.starts_with("trade") {
-                                    if let Some(snapshot) = trade_fixture.as_array()
-                                        .and_then(|arr| arr.get(1))
+                                    if let Some(snapshot) =
+                                        trade_fixture.as_array().and_then(|arr| arr.get(1))
                                     {
-                                        if socket.send(Message::Text(snapshot.to_string().into())).await.is_err() {
+                                        if socket
+                                            .send(Message::Text(snapshot.to_string().into()))
+                                            .await
+                                            .is_err()
+                                        {
                                             break;
                                         }
                                         state.messages_sent.fetch_add(1, Ordering::SeqCst);
                                     }
                                 } else if ch.starts_with("market_stats") {
-                                    if let Some(snapshot) = market_stats_fixture.as_array()
-                                        .and_then(|arr| arr.get(1))
+                                    if let Some(snapshot) =
+                                        market_stats_fixture.as_array().and_then(|arr| arr.get(1))
                                     {
-                                        if socket.send(Message::Text(snapshot.to_string().into())).await.is_err() {
+                                        if socket
+                                            .send(Message::Text(snapshot.to_string().into()))
+                                            .await
+                                            .is_err()
+                                        {
                                             break;
                                         }
                                         state.messages_sent.fetch_add(1, Ordering::SeqCst);
@@ -205,7 +225,11 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                     "type": "unsubscribed",
                                     "channel": ch
                                 });
-                                if socket.send(Message::Text(unsubscribed.to_string().into())).await.is_err() {
+                                if socket
+                                    .send(Message::Text(unsubscribed.to_string().into()))
+                                    .await
+                                    .is_err()
+                                {
                                     break;
                                 }
                             }
@@ -247,12 +271,11 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
     addr
 }
 
-fn create_client(ws_url: &str, instruments: &HashMap<u32, InstrumentAny>) -> LighterWebSocketClient {
-    let mut client = LighterWebSocketClient::new(
-        LighterNetwork::Mainnet,
-        Some(ws_url),
-        None,
-    );
+fn create_client(
+    ws_url: &str,
+    instruments: &HashMap<u32, InstrumentAny>,
+) -> LighterWebSocketClient {
+    let client = LighterWebSocketClient::new(LighterNetwork::Mainnet, Some(ws_url), None);
     for (&market_index, instrument) in instruments {
         client.cache_instrument(instrument.clone(), Some(market_index));
     }
@@ -273,12 +296,18 @@ async fn test_connect_and_subscribe() {
     let mut client = create_client(&ws_url, &instruments);
 
     client.connect().await.expect("connect failed");
-    client.wait_until_active(5000).await.expect("client inactive");
+    client
+        .wait_until_active(5000)
+        .await
+        .expect("client inactive");
 
     assert_eq!(state.connection_count(), 1);
 
     // Subscribe to order book
-    client.subscribe_order_book(1).await.expect("subscribe failed");
+    client
+        .subscribe_order_book(1)
+        .await
+        .expect("subscribe failed");
 
     // Wait for subscription to be recorded
     wait_until_async(
@@ -314,18 +343,21 @@ async fn test_order_book_message_parsing() {
     let mut client = create_client(&ws_url, &instruments);
 
     client.connect().await.expect("connect failed");
-    client.wait_until_active(5000).await.expect("client inactive");
+    client
+        .wait_until_active(5000)
+        .await
+        .expect("client inactive");
 
-    client.subscribe_order_book(1).await.expect("subscribe failed");
+    client
+        .subscribe_order_book(1)
+        .await
+        .expect("subscribe failed");
 
     // Wait for and receive the order book message
-    let event = tokio::time::timeout(
-        Duration::from_secs(2),
-        client.next_event(),
-    )
-    .await
-    .expect("timeout waiting for event")
-    .expect("no event received");
+    let event = tokio::time::timeout(Duration::from_secs(2), client.next_event())
+        .await
+        .expect("timeout waiting for event")
+        .expect("no event received");
 
     match event {
         NautilusWsMessage::Deltas(deltas) => {
@@ -348,18 +380,18 @@ async fn test_trade_message_parsing() {
     let mut client = create_client(&ws_url, &instruments);
 
     client.connect().await.expect("connect failed");
-    client.wait_until_active(5000).await.expect("client inactive");
+    client
+        .wait_until_active(5000)
+        .await
+        .expect("client inactive");
 
     client.subscribe_trades(1).await.expect("subscribe failed");
 
     // Wait for and receive the trade message
-    let event = tokio::time::timeout(
-        Duration::from_secs(2),
-        client.next_event(),
-    )
-    .await
-    .expect("timeout waiting for event")
-    .expect("no event received");
+    let event = tokio::time::timeout(Duration::from_secs(2), client.next_event())
+        .await
+        .expect("timeout waiting for event")
+        .expect("no event received");
 
     match event {
         NautilusWsMessage::Trades(trades) => {
@@ -381,18 +413,21 @@ async fn test_market_stats_parsing() {
     let mut client = create_client(&ws_url, &instruments);
 
     client.connect().await.expect("connect failed");
-    client.wait_until_active(5000).await.expect("client inactive");
+    client
+        .wait_until_active(5000)
+        .await
+        .expect("client inactive");
 
-    client.subscribe_market_stats(1).await.expect("subscribe failed");
+    client
+        .subscribe_market_stats(1)
+        .await
+        .expect("subscribe failed");
 
     // Wait for and receive market stats (may be MarkPrice, IndexPrice, or FundingRate)
-    let event = tokio::time::timeout(
-        Duration::from_secs(2),
-        client.next_event(),
-    )
-    .await
-    .expect("timeout waiting for event")
-    .expect("no event received");
+    let event = tokio::time::timeout(Duration::from_secs(2), client.next_event())
+        .await
+        .expect("timeout waiting for event")
+        .expect("no event received");
 
     match event {
         NautilusWsMessage::MarkPrice(_) => {}
@@ -417,10 +452,16 @@ async fn test_reconnect_after_disconnect() {
     let mut client = create_client(&ws_url, &instruments);
 
     client.connect().await.expect("connect failed");
-    client.wait_until_active(5000).await.expect("client inactive");
+    client
+        .wait_until_active(5000)
+        .await
+        .expect("client inactive");
 
     // Subscribe - this will trigger a disconnect
-    client.subscribe_order_book(1).await.expect("subscribe failed");
+    client
+        .subscribe_order_book(1)
+        .await
+        .expect("subscribe failed");
 
     // Wait for reconnection - total_connections must reach 2 (initial + reconnect)
     wait_until_async(
@@ -437,7 +478,10 @@ async fn test_reconnect_after_disconnect() {
     .await;
 
     // Client should still be active after reconnection
-    client.wait_until_active(5000).await.expect("client should reconnect");
+    client
+        .wait_until_active(5000)
+        .await
+        .expect("client should reconnect");
 
     client.close().await;
 }
@@ -455,10 +499,16 @@ async fn test_resubscribe_after_reconnect() {
     let mut client = create_client(&ws_url, &instruments);
 
     client.connect().await.expect("connect failed");
-    client.wait_until_active(5000).await.expect("client inactive");
+    client
+        .wait_until_active(5000)
+        .await
+        .expect("client inactive");
 
     // Subscribe - this will trigger a disconnect
-    client.subscribe_order_book(1).await.expect("subscribe failed");
+    client
+        .subscribe_order_book(1)
+        .await
+        .expect("subscribe failed");
 
     // Wait for reconnection and resubscription
     // After reconnect, the client should automatically resubscribe
@@ -476,7 +526,10 @@ async fn test_resubscribe_after_reconnect() {
 
     // Verify subscriptions were recorded
     let subs = state.subscriptions.lock().await;
-    let order_book_subs: Vec<_> = subs.iter().filter(|s| s.starts_with("order_book")).collect();
+    let order_book_subs: Vec<_> = subs
+        .iter()
+        .filter(|s| s.starts_with("order_book"))
+        .collect();
     assert!(
         order_book_subs.len() >= 2,
         "expected at least 2 order_book subscriptions (initial + resub), got {:?}",
@@ -496,12 +549,24 @@ async fn test_subscription_tracking() {
     let mut client = create_client(&ws_url, &instruments);
 
     client.connect().await.expect("connect failed");
-    client.wait_until_active(5000).await.expect("client inactive");
+    client
+        .wait_until_active(5000)
+        .await
+        .expect("client inactive");
 
     // Subscribe to multiple channels
-    client.subscribe_order_book(1).await.expect("subscribe order_book failed");
-    client.subscribe_trades(1).await.expect("subscribe trades failed");
-    client.subscribe_market_stats(1).await.expect("subscribe market_stats failed");
+    client
+        .subscribe_order_book(1)
+        .await
+        .expect("subscribe order_book failed");
+    client
+        .subscribe_trades(1)
+        .await
+        .expect("subscribe trades failed");
+    client
+        .subscribe_market_stats(1)
+        .await
+        .expect("subscribe market_stats failed");
 
     // Wait for all subscriptions
     wait_until_async(
@@ -516,7 +581,10 @@ async fn test_subscription_tracking() {
     assert!(state.subscription_count().await >= 3);
 
     // Unsubscribe from order book
-    client.unsubscribe_order_book(1).await.expect("unsubscribe failed");
+    client
+        .unsubscribe_order_book(1)
+        .await
+        .expect("unsubscribe failed");
 
     // Give the server time to process
     tokio::time::sleep(Duration::from_millis(100)).await;

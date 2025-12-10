@@ -67,7 +67,7 @@ pub fn depth_to_deltas_and_quote(
 
         if best_bid
             .as_ref()
-            .map_or(true, |(best_price, _)| price > *best_price)
+            .is_none_or(|(best_price, _)| price > *best_price)
         {
             best_bid = Some((price, size));
         }
@@ -102,7 +102,7 @@ pub fn depth_to_deltas_and_quote(
 
         if best_ask
             .as_ref()
-            .map_or(true, |(best_price, _)| price < *best_price)
+            .is_none_or(|(best_price, _)| price < *best_price)
         {
             best_ask = Some((price, size));
         }
@@ -155,6 +155,7 @@ fn parse_level(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn make_delta(
     instrument: &InstrumentAny,
     side: OrderSide,
@@ -195,8 +196,10 @@ mod tests {
     fn create_test_instrument() -> InstrumentAny {
         let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
         let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat);
-        let instrument_id =
-            InstrumentId::new(Symbol::new("BTC-USD-PERP"), nautilus_model::identifiers::Venue::new("LIGHTER"));
+        let instrument_id = InstrumentId::new(
+            Symbol::new("BTC-USD-PERP"),
+            nautilus_model::identifiers::Venue::new("LIGHTER"),
+        );
 
         InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
             instrument_id,
@@ -205,8 +208,8 @@ mod tests {
             usd,
             usd,
             false,
-            1,  // price_precision
-            4,  // size_precision
+            1, // price_precision
+            4, // size_precision
             Price::from("0.1"),
             Quantity::from("0.0001"),
             None,
@@ -255,9 +258,13 @@ mod tests {
             Some(100),
         );
 
-        let (deltas, _quote) =
-            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
-                .expect("should parse");
+        let (deltas, _quote) = depth_to_deltas_and_quote(
+            &depth,
+            &instrument,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .expect("should parse");
 
         // First delta should be CLEAR
         assert!(!deltas.deltas.is_empty());
@@ -274,9 +281,13 @@ mod tests {
             Some(100),
         );
 
-        let (deltas, _quote) =
-            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
-                .expect("should parse");
+        let (deltas, _quote) = depth_to_deltas_and_quote(
+            &depth,
+            &instrument,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .expect("should parse");
 
         // 1 CLEAR + 2 bids + 2 asks = 5 deltas
         assert_eq!(deltas.deltas.len(), 5);
@@ -299,9 +310,13 @@ mod tests {
             Some(100),
         );
 
-        let (deltas, _quote) =
-            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
-                .expect("should parse");
+        let (deltas, _quote) = depth_to_deltas_and_quote(
+            &depth,
+            &instrument,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .expect("should parse");
 
         // 1 CLEAR + 1 DELETE bid + 1 DELETE ask = 3 deltas
         assert_eq!(deltas.deltas.len(), 3);
@@ -318,9 +333,13 @@ mod tests {
             Some(100),
         );
 
-        let (_deltas, quote) =
-            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
-                .expect("should parse");
+        let (_deltas, quote) = depth_to_deltas_and_quote(
+            &depth,
+            &instrument,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .expect("should parse");
 
         // Should have a quote with best bid/ask
         let quote = quote.expect("should have quote");
@@ -335,15 +354,15 @@ mod tests {
         let instrument = create_test_instrument();
 
         // Only bids, no asks
-        let depth = create_test_depth(
-            vec![(dec("50000.0"), dec("1.0"))],
-            vec![],
-            Some(100),
-        );
+        let depth = create_test_depth(vec![(dec("50000.0"), dec("1.0"))], vec![], Some(100));
 
-        let (_deltas, quote) =
-            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
-                .expect("should parse");
+        let (_deltas, quote) = depth_to_deltas_and_quote(
+            &depth,
+            &instrument,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .expect("should parse");
 
         // No quote without both sides
         assert!(quote.is_none());
@@ -354,9 +373,13 @@ mod tests {
         let instrument = create_test_instrument();
         let depth = create_test_depth(vec![], vec![], Some(100));
 
-        let (deltas, quote) =
-            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
-                .expect("should parse");
+        let (deltas, quote) = depth_to_deltas_and_quote(
+            &depth,
+            &instrument,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .expect("should parse");
 
         // Only CLEAR delta
         assert_eq!(deltas.deltas.len(), 1);
@@ -375,9 +398,13 @@ mod tests {
             None, // No offset
         );
 
-        let (deltas, _quote) =
-            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
-                .expect("should parse");
+        let (deltas, _quote) = depth_to_deltas_and_quote(
+            &depth,
+            &instrument,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .expect("should parse");
 
         // Should use default (0) for sequence
         assert_eq!(deltas.deltas[0].sequence, 0);

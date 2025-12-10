@@ -112,7 +112,7 @@ fn parse_single_def(book: &LighterOrderBook) -> Result<LighterInstrumentDef> {
         .ok_or_else(|| anyhow!("missing base token/symbol"))?;
     let quote = book.quote_token.as_deref().unwrap_or("USD");
     let venue_symbol = book.symbol.as_deref().unwrap_or(base);
-    let symbol = Symbol::new(format!("{}-{}-PERP", base, quote));
+    let symbol = Symbol::new(format!("{base}-{quote}-PERP"));
     let instrument_id = InstrumentId::new(symbol, *LIGHTER_VENUE);
     let raw_symbol = Symbol::new(venue_symbol);
 
