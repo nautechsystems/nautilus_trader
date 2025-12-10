@@ -157,18 +157,18 @@ def main() -> None:
 
     nonce = fetch_nonce(base_http, account_index, api_key_index)
     client_order_index = int(time.time_ns() // 1_000_000)
-    expiry_ms = int((time.time() + 600) * 1000)
+    expiry_ms = int((time.time() + 600) * 1000)  # 10 minutes from now
     signed_create = signer.sign_create_order(
         market_index=market_id,
         client_order_index=client_order_index,
         base_amount_int=size_int,
         price_int=price_int,
         is_ask=False,
-        order_type=2,  # 1=market, 2=limit
-        time_in_force=0,  # signer expects 0 with expiry_ms for limit orders
+        order_type=2,  # 0=limit, 1=market, 2=stop_loss (using 2 as workaround)
+        time_in_force=0,  # GTT (Good Till Time)
         nonce=nonce,
         reduce_only=False,
-        trigger_price=price_int,
+        trigger_price=price_int,  # Must match price for order_type=2; shows as "S/L Market"
         order_expiry=expiry_ms,
     )
     print(f"Signed create: tx_hash={signed_create.tx_hash}")
