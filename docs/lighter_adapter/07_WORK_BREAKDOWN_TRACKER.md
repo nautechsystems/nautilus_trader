@@ -50,12 +50,13 @@
 
 **Definition of Done**: Can place and cancel orders (gated on Validation Spike)
 
-- [ ] **PR3: Execution Client** (in progress; signer + HTTP plumbing started)
+- [ ] **PR3: Execution Client** (in progress; user WS pending)
   - [x] Nonce manager (HTTP `/nextNonce` wrapper + Python bindings)
   - [x] Order submission (sendTx) via signer-generated tx_info
   - [x] Order cancellation (sendTx cancel) via signer-generated tx_info
-  - [ ] User order stream (WS) and status/fill mapping
-  - [ ] Execution client implementation (retries, token refresh, reconciliation)
+  - [ ] User order stream (WS)
+  - [x] Status/fill mapping via REST reconciliation
+  - [x] Execution client implementation (retries, token refresh, reconciliation)
   - [ ] Integration test: order lifecycle
   - [ ] Follow mainnet validation runbook in `PR_NOTES_AUTH_VALIDATION.md` for BTC/ETH place-and-cancel sanity checks
 
