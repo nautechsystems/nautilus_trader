@@ -168,7 +168,7 @@ def main() -> None:
         time_in_force=0,  # signer expects 0 with expiry_ms for limit orders
         nonce=nonce,
         reduce_only=False,
-        trigger_price=-1,
+        trigger_price=price_int,
         order_expiry=expiry_ms,
     )
     print(f"Signed create: tx_hash={signed_create.tx_hash}")

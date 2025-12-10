@@ -225,23 +225,29 @@ class LighterExecutionClient(LiveExecutionClient):
         price_int = self._price_to_int(instrument, order.price)
         size_int = self._size_to_int(instrument, order.quantity)
         coi = self._client_order_index(order.client_order_id.value)
+        expiry_ms = _expiry_from_order(order) or int(self._clock.timestamp_ns() // 1_000_000 + 600_000)
+        trigger_px = (
+            self._price_to_int(instrument, order.stop_price)
+            if getattr(order, "stop_price", None) is not None
+            else price_int
+        )
 
         signed = await self._execute_with_retry(
             lambda nonce: self._signer.sign_create_order(
                 market_index=market_index,
                 client_order_index=coi,
                 base_amount_int=size_int,
-            price_int=price_int,
-            is_ask=getattr(order.side, "is_sell", order.side == OrderSide.SELL),
-            order_type=_map_order_type(order.order_type),
-            time_in_force=_map_time_in_force(order.time_in_force),
-            nonce=nonce,
-            reduce_only=getattr(order, "reduce_only", getattr(order, "is_reduce_only", False)),
-            trigger_price=self._price_to_int(instrument, order.stop_price) if getattr(order, "stop_price", None) else 0,
-            order_expiry=_expiry_from_order(order),
-        ),
-        op_name="submit",
-    )
+                price_int=price_int,
+                is_ask=getattr(order.side, "is_sell", order.side == OrderSide.SELL),
+                order_type=_map_order_type(order.order_type),
+                time_in_force=_map_time_in_force(order.time_in_force),
+                nonce=nonce,
+                reduce_only=getattr(order, "reduce_only", getattr(order, "is_reduce_only", False)),
+                trigger_price=trigger_px,
+                order_expiry=expiry_ms,
+            ),
+            op_name="submit",
+        )
         self._strategy_order_ids[order.strategy_id.value].add(order.client_order_id.value)
         self._log.info(f"Submitted order {order.client_order_id} tx={signed.tx_hash}")
 
@@ -799,10 +805,10 @@ def _map_order_type(order_type: OrderType) -> int:
 def _map_time_in_force(time_in_force: TimeInForce) -> int:
     mapping = {
         TimeInForce.IOC: 0,
-        TimeInForce.GTC: 1,
+        TimeInForce.GTC: 0,
         TimeInForce.FOK: 0,
     }
-    return mapping.get(time_in_force, 1)
+    return mapping.get(time_in_force, 0)
 
 
 def _order_status(order: Any, *, filled_qty: Quantity | None = None, quantity: Quantity | None = None) -> OrderStatus:
