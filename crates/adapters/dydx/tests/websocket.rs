@@ -450,7 +450,6 @@ async fn start_test_server()
         axum::serve(listener, router).await.unwrap();
     });
 
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     Ok((addr, state))
 }
 
@@ -504,7 +503,8 @@ async fn test_websocket_close() {
     assert!(client.is_connected());
 
     client.disconnect().await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
 
     assert!(!client.is_connected());
 }
@@ -802,7 +802,8 @@ async fn test_is_active_states() {
     assert!(client.is_connected());
 
     client.disconnect().await.unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
 
     assert!(!client.is_connected());
 }
@@ -821,11 +822,14 @@ async fn test_rapid_reconnections() {
 
     for _ in 0..3 {
         state.disconnect_trigger.store(true, Ordering::Relaxed);
-        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
 
         state.disconnect_trigger.store(false, Ordering::Relaxed);
         client.disconnect().await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
+
         client.connect().await.unwrap();
 
         wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -851,21 +855,46 @@ async fn test_subscription_restoration_after_reconnect() {
 
     let instrument_id = InstrumentId::from("BTC-USD.DYDX");
     client.subscribe_trades(instrument_id).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    wait_until_async(
+        || async {
+            state
+                .subscriptions
+                .lock()
+                .await
+                .iter()
+                .any(|s| s.contains("v4_trades"))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     state.disconnect_trigger.store(true, Ordering::Relaxed);
-    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
 
     state.disconnect_trigger.store(false, Ordering::Relaxed);
     state.subscription_events.lock().await.clear();
 
     client.disconnect().await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
+
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    wait_until_async(
+        || async {
+            state
+                .subscription_events()
+                .await
+                .iter()
+                .any(|(channel, success)| channel.contains("v4_trades") && *success)
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let events = state.subscription_events().await;
     assert!(
@@ -1288,13 +1317,22 @@ async fn test_subscription_restoration_tracking() {
     let btc_id = InstrumentId::from("BTC-USD.DYDX");
     client.subscribe_trades(btc_id).await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let subs = state.subscriptions.lock().await.clone();
     assert_eq!(subs.len(), 1);
 
     state.disconnect_trigger.store(true, Ordering::Relaxed);
-    tokio::time::sleep(Duration::from_millis(1000)).await;
+
+    wait_until_async(
+        || async { state.subscription_events().await.len() >= 2 },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let events = state.subscription_events().await;
     assert!(
@@ -1325,14 +1363,22 @@ async fn test_unsubscribe_tracking_removes_from_state() {
     let btc_id = InstrumentId::from("BTC-USD.DYDX");
     client.subscribe_trades(btc_id).await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let subs = state.subscriptions.lock().await.clone();
     assert_eq!(subs.len(), 1);
 
     client.unsubscribe_trades(btc_id).await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    wait_until_async(
+        || async { state.subscription_events().await.len() == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let events = state.subscription_events().await;
     assert_eq!(events.len(), 2, "Should have subscribe + unsubscribe");
@@ -1498,7 +1544,7 @@ async fn test_is_active_false_after_close() {
 
     client.disconnect().await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
 
     assert!(
         !client.is_connected(),
@@ -1526,7 +1572,11 @@ async fn test_multiple_instruments_subscription() {
     client.subscribe_trades(eth_id).await.unwrap();
     client.subscribe_trades(sol_id).await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() == 3 },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let subs = state.subscriptions.lock().await.clone();
     assert_eq!(subs.len(), 3, "Should have 3 trade subscriptions");
@@ -1583,7 +1633,9 @@ async fn test_connection_lifecycle_multiple_times() {
         );
 
         client.disconnect().await.unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
+
         assert!(
             !client.is_connected(),
             "Client should not be connected on iteration {i}"
@@ -1683,10 +1735,34 @@ async fn test_unsubscribe_orderbook() {
     let btc_id = InstrumentId::from("BTC-USD.DYDX");
 
     client.subscribe_orderbook(btc_id).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    wait_until_async(
+        || async {
+            state
+                .subscriptions
+                .lock()
+                .await
+                .iter()
+                .any(|s| s.contains("v4_orderbook"))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client.unsubscribe_orderbook(btc_id).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    wait_until_async(
+        || async {
+            state
+                .subscription_events
+                .lock()
+                .await
+                .iter()
+                .any(|(ch, subscribed)| ch.contains("v4_orderbook") && !subscribed)
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let events = state.subscription_events.lock().await;
     assert!(
@@ -1714,10 +1790,34 @@ async fn test_unsubscribe_candles() {
     let btc_id = InstrumentId::from("BTC-USD.DYDX");
 
     client.subscribe_candles(btc_id, "1MIN").await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    wait_until_async(
+        || async {
+            state
+                .subscriptions
+                .lock()
+                .await
+                .iter()
+                .any(|s| s.contains("v4_candles"))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client.unsubscribe_candles(btc_id, "1MIN").await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    wait_until_async(
+        || async {
+            state
+                .subscription_events
+                .lock()
+                .await
+                .iter()
+                .any(|(ch, subscribed)| ch.contains("v4_candles") && !subscribed)
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let events = state.subscription_events.lock().await;
     assert!(
@@ -1894,7 +1994,7 @@ async fn test_heartbeat_keeps_connection_alive() {
 #[tokio::test]
 #[ignore = "Flaky - disconnect state timing issues"]
 async fn test_disconnect_clears_subscriptions() {
-    let (addr, _state) = start_test_server().await.unwrap();
+    let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
     let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
@@ -1905,11 +2005,22 @@ async fn test_disconnect_clears_subscriptions() {
     let btc_id = InstrumentId::from("BTC-USD.DYDX");
     client.subscribe_trades(btc_id).await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(
+        || async {
+            state
+                .subscriptions
+                .lock()
+                .await
+                .iter()
+                .any(|s| s.contains("v4_trades"))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client.disconnect().await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
 
     assert!(!client.is_connected(), "Should be disconnected");
 }
