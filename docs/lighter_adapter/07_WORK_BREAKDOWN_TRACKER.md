@@ -57,7 +57,7 @@
   - [x] User order stream (WS)
   - [x] Status/fill mapping via REST reconciliation
   - [x] Execution client implementation (retries, token refresh, reconciliation)
-  - [ ] Integration test: order lifecycle
+  - [x] Integration test: order lifecycle
   - [ ] Follow mainnet validation runbook in `PR_NOTES_AUTH_VALIDATION.md` for BTC/ETH place-and-cancel sanity checks
 
 ### Milestone 4: Account (Week 4)

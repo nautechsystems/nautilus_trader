@@ -44,6 +44,7 @@ from nautilus_trader.execution.messages import (
 from nautilus_trader.execution.reports import FillReport, OrderStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import (
+    AccountType,
     LiquiditySide,
     OmsType,
     OrderSide,
@@ -188,7 +189,7 @@ class LighterExecutionClient(LiveExecutionClient):
             venue=LIGHTER_VENUE,
             oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
-            account_type=config.account_type,
+            account_type=AccountType.MARGIN,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
@@ -221,8 +222,8 @@ class LighterExecutionClient(LiveExecutionClient):
         if market_index is None:
             raise ValueError(f"Missing market index for {order.instrument_id}")
 
-        price_int = instrument.price_to_int(order.price)
-        size_int = instrument.size_to_int(order.quantity)
+        price_int = self._price_to_int(instrument, order.price)
+        size_int = self._size_to_int(instrument, order.quantity)
         coi = self._client_order_index(order.client_order_id.value)
 
         signed = await self._execute_with_retry(
@@ -230,28 +231,33 @@ class LighterExecutionClient(LiveExecutionClient):
                 market_index=market_index,
                 client_order_index=coi,
                 base_amount_int=size_int,
-                price_int=price_int,
-                is_ask=order.side.is_sell,
-                order_type=_map_order_type(order.order_type),
-                time_in_force=_map_time_in_force(order.time_in_force),
-                nonce=nonce,
-                reduce_only=order.reduce_only,
-                trigger_price=instrument.price_to_int(order.stop_price) if order.stop_price else 0,
-                order_expiry=_expiry_from_order(order),
-            ),
-            op_name="submit",
-        )
+            price_int=price_int,
+            is_ask=getattr(order.side, "is_sell", order.side == OrderSide.SELL),
+            order_type=_map_order_type(order.order_type),
+            time_in_force=_map_time_in_force(order.time_in_force),
+            nonce=nonce,
+            reduce_only=getattr(order, "reduce_only", getattr(order, "is_reduce_only", False)),
+            trigger_price=self._price_to_int(instrument, order.stop_price) if getattr(order, "stop_price", None) else 0,
+            order_expiry=_expiry_from_order(order),
+        ),
+        op_name="submit",
+    )
         self._strategy_order_ids[order.strategy_id.value].add(order.client_order_id.value)
         self._log.info(f"Submitted order {order.client_order_id} tx={signed.tx_hash}")
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        order_id = command.order_id
-        instrument = self._require_instrument(order_id.instrument_id)
+        order_id = getattr(command, "order_id", None)
+        instrument_id = getattr(order_id, "instrument_id", getattr(command, "instrument_id", None))
+        if instrument_id is None:
+            raise ValueError("CancelOrder missing instrument_id")
+        instrument = self._require_instrument(instrument_id)
         market_index = self._instrument_provider.market_index_for(instrument.id)
         if market_index is None:
             raise ValueError(f"Missing market index for {instrument.id}")
 
-        coi = self._client_order_index(order_id.client_order_id.value)
+        client_order_id = getattr(order_id, "client_order_id", getattr(command, "client_order_id", None))
+        coi_value = client_order_id.value if hasattr(client_order_id, "value") else str(client_order_id)
+        coi = self._client_order_index(coi_value)
 
         signed = await self._execute_with_retry(
             lambda nonce: self._signer.sign_cancel_order(
@@ -261,8 +267,11 @@ class LighterExecutionClient(LiveExecutionClient):
             ),
             op_name="cancel",
         )
-        self._strategy_order_ids[order_id.strategy_id.value].discard(order_id.client_order_id.value)
-        self._log.info(f"Canceled order {order_id.client_order_id} tx={signed.tx_hash}")
+        strategy_id = getattr(order_id, "strategy_id", getattr(command, "strategy_id", None))
+        if strategy_id is not None:
+            key = strategy_id.value if hasattr(strategy_id, "value") else str(strategy_id)
+            self._strategy_order_ids[key].discard(coi_value)
+        self._log.info(f"Canceled order {client_order_id} tx={signed.tx_hash}")
 
     # ---------------------------------------------------------------------------------------------
     # Reports
@@ -524,7 +533,8 @@ class LighterExecutionClient(LiveExecutionClient):
         filled_qty = Quantity.from_str(str(_get(order, "filled_base_amount", default="0")))
         remaining_qty = Quantity.from_str(str(_get(order, "remaining_base_amount", default="0")))
         if filled_qty == Quantity.zero():
-            filled_qty = quantity - remaining_qty if quantity > remaining_qty else Quantity.zero()
+            filled_qty_calc = quantity - remaining_qty if quantity > remaining_qty else Quantity.zero()
+            filled_qty = filled_qty_calc if isinstance(filled_qty_calc, Quantity) else Quantity.from_str(str(filled_qty_calc))
 
         price_raw = _get(order, "price")
         price = Price.from_str(str(price_raw)) if price_raw not in (None, "") else None
@@ -596,6 +606,9 @@ class LighterExecutionClient(LiveExecutionClient):
         if filled_qty <= prev_filled:
             return None
 
+        if filled_quote is None or filled_quote <= Decimal("0"):
+            return None
+
         last_qty = filled_qty - prev_filled
         quote_delta = filled_quote - prev_quote if filled_quote is not None else Decimal("0")
         px_dec: Decimal | None = None
@@ -613,7 +626,7 @@ class LighterExecutionClient(LiveExecutionClient):
             account_id=self.account_id,
             instrument_id=instrument.id,
             venue_order_id=VenueOrderId(order_index),
-            trade_id=TradeId(f"recon-{order_index}-{ts_event}"),
+            trade_id=TradeId(str(UUID4())),
             order_side=order_side,
             last_qty=last_qty,
             last_px=px,
@@ -630,6 +643,52 @@ class LighterExecutionClient(LiveExecutionClient):
         if instrument is None:
             raise ValueError(f"Instrument not loaded: {instrument_id}")
         return instrument
+
+    @staticmethod
+    def _price_scale(instrument: Any) -> int:
+        if hasattr(instrument, "price_precision"):
+            return int(getattr(instrument, "price_precision", 0))
+        inc = getattr(instrument, "price_increment", None)
+        if inc:
+            try:
+                return max(0, -Decimal(str(inc)).as_tuple().exponent)
+            except Exception:
+                return 0
+        return 0
+
+    def _price_to_int(self, instrument: Any, price: Price | None) -> int:
+        if price is None:
+            return 0
+        converter = getattr(instrument, "price_to_int", None)
+        if callable(converter):
+            try:
+                return converter(price)
+            except Exception:
+                pass
+        scale = self._price_scale(instrument)
+        return int(Decimal(str(price)) * (Decimal(10) ** scale))
+
+    @staticmethod
+    def _size_scale(instrument: Any) -> int:
+        if hasattr(instrument, "size_precision"):
+            return int(getattr(instrument, "size_precision", 0))
+        inc = getattr(instrument, "size_increment", None)
+        if inc:
+            try:
+                return max(0, -Decimal(str(inc)).as_tuple().exponent)
+            except Exception:
+                return 0
+        return 0
+
+    def _size_to_int(self, instrument: Any, quantity: Quantity) -> int:
+        converter = getattr(instrument, "size_to_int", None)
+        if callable(converter):
+            try:
+                return converter(quantity)
+            except Exception:
+                pass
+        scale = self._size_scale(instrument)
+        return int(Decimal(str(quantity)) * (Decimal(10) ** scale))
 
     async def _reconcile_open_orders(self) -> None:
         reports, fills = await self._build_reports()
