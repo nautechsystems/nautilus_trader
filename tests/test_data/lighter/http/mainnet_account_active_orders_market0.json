@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://mainnet.zklighter.elliot.ai/api/v1/accountActiveOrders",
+    "params": {
+      "account_index": 659514,
+      "market_id": 0
+    },
+    "headers": {
+      "Authorization": "<redacted-token>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "code": 200,
+      "orders": []
+    }
+  }
+}

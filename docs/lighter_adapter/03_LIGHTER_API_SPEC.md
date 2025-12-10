@@ -12,6 +12,12 @@ during the validation spike.
   `trade:1`, `market_stats:1`
 - Private WS requires auth token from signer (`create_auth_token_with_expiry`) plus API key private
   key; wallet key not needed for order flow
+- Mainnet auth/sendTx fixtures captured (SDK-free, signer binary + HTTP) under
+  `tests/test_data/lighter/http/`:
+  - `mainnet_sendtx_create_{btc,eth}.json`, `mainnet_sendtx_cancel_{btc,eth}.json`
+  - `mainnet_next_nonce.json`, `mainnet_account_index_659514.json`
+  - `mainnet_account_active_orders_market{0,1}.json`
+  - `mainnet_orderbook_details_btc.json`
 - Fixtures stored under `tests/test_data/lighter/` (public + private samples)
 
 ### REST Endpoints (to validate)

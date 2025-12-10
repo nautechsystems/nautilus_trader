@@ -1,0 +1,61 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://mainnet.zklighter.elliot.ai/api/v1/account",
+    "params": {
+      "by": "index",
+      "value": "659514"
+    },
+    "headers": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "code": 200,
+      "total": 1,
+      "accounts": [
+        {
+          "code": 0,
+          "account_type": 0,
+          "index": 659514,
+          "l1_address": "0xD341fa0bEDe0A2448Ea248DB27B529bd09bB0C34",
+          "cancel_all_time": 0,
+          "total_order_count": 2,
+          "total_isolated_order_count": 0,
+          "pending_order_count": 0,
+          "available_balance": "1000.167669",
+          "status": 1,
+          "collateral": "1000.167669",
+          "account_index": 659514,
+          "name": "",
+          "description": "",
+          "can_invite": true,
+          "referral_points_percentage": "",
+          "positions": [
+            {
+              "market_id": 1,
+              "symbol": "BTC",
+              "initial_margin_fraction": "5.00",
+              "open_order_count": 2,
+              "pending_order_count": 0,
+              "position_tied_order_count": 0,
+              "sign": 1,
+              "position": "0.00000",
+              "avg_entry_price": "0.0",
+              "position_value": "-0.000000",
+              "unrealized_pnl": "0.000000",
+              "realized_pnl": "0.000000",
+              "liquidation_price": "0",
+              "margin_mode": 0,
+              "allocated_margin": "0.000000"
+            }
+          ],
+          "assets": [],
+          "total_asset_value": "1000.167669",
+          "cross_asset_value": "1000.167669",
+          "shares": []
+        }
+      ]
+    }
+  }
+}

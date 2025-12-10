@@ -2,207 +2,235 @@
 
 ## What we validated
 
-- **Auth token**: `SignerClient.create_auth_token_with_expiry(deadline_seconds, api_key_index, account_index)` returns a token for private REST/WS. Pass it as `Authorization: <token>` header *or* `auth=<token>` query param. No HMAC headers.
-- **Nonce**: Per API key. Fetch with `TransactionApi.next_nonce(account_index, api_key_index)`. Retry on `"invalid nonce"` by refreshing the nonce.
-- **sendTx**: No auth header needed. Body is multipart form with `tx_type` and `tx_info` where `tx_info` already contains the signature from the signer binary.
-- **Account/accountActiveOrders/nextNonce**: Require auth token as above. Header and query both work in the SDK (`authorization` header is accepted).
+- **Signer + auth token (SDK-free)**: Loading `lighter-signer-*.{dylib,so,dll}` with `ctypes` works
+  without installing the `lighter-python` SDK. Call
+  `CreateClient(base_url, api_key_no_0x, chain_id, api_key_index, account_index)` (chain_id 304
+  mainnet, 300 testnet), then `CreateAuthToken(deadline_seconds + now, api_key_index, account_index)`
+  for a bearer token.
+- **Auth scope**: `accountActiveOrders` requires the token (`Authorization` header or `auth` query)
+  and returns HTTP 400/code `20001` if missing. `/api/v1/account` currently responds 200 without
+  auth; `/api/v1/nextNonce` also works unauthenticated.
+- **Nonce**: Per API key via `/api/v1/nextNonce?account_index=<>&api_key_index=<>`; refresh on
+  `"invalid nonce"` errors.
+- **sendTx**: No auth header needed. Submit `multipart/form-data` with `tx_type`, `tx_info`, and
+  optional `price_protection` (defaults `true`). `tx_info` is the signer-produced JSON (Sig
+  included).
+- **Price/size scales**: `price_int = price * 10 ** price_decimals`, `base_amount_int = size * 10 **
+  size_decimals`. Mainnet perps: BTC `price_decimals=1`, `size_decimals=5`, `min_base=0.00020`; ETH
+  `price_decimals=2`, `size_decimals=4`, `min_base=0.0050`.
 
-## Working recipe (mainnet)
+## SDK-free working recipe (mainnet)
 
-1. Install SDK in the repo venv: `.venv/bin/python -m pip install git+https://github.com/elliottech/lighter-python.git`
-2. Construct signer:
+1. Make a signer binary available (from `lighter-python/lighter/signers/`): choose the platform file
+   (e.g., `lighter-signer-darwin-arm64.dylib` on Apple Silicon). Chain IDs: mainnet `304`, testnet
+   `300`.
+2. Initialize signer, fetch nonce, sign, and send via raw HTTP:
 
    ```python
-   signer = SignerClient(
-       url="https://mainnet.zklighter.elliot.ai",
-       account_index=<ACCOUNT_INDEX>,
-       api_private_keys={<API_KEY_INDEX>: "<API_KEY_PRIVATE_KEY_NO_0x>"},
+   import ctypes, os, pathlib, platform, time, requests
+   from decimal import Decimal
+
+   HTTP_BASE = os.getenv("LIGHTER_HTTP_BASE", "https://mainnet.zklighter.elliot.ai").rstrip("/")
+   ACCOUNT_INDEX = int(os.environ["LIGHTER_ACCOUNT_INDEX"])
+   API_KEY_INDEX = int(os.environ["LIGHTER_API_KEY_INDEX"])
+   API_KEY = (
+       os.environ.get("LIGHTER_API_SECRET")
+       or os.environ.get("LIGHTER_API_KEY_PRIVATE_KEY")
+       or os.environ["LIGHTER_API_KEY"]
+   ).removeprefix("0x")
+   MARKET_ID = 1  # 1=BTC perp, 0=ETH perp
+   DISCOUNT = 0.10
+   NOTIONAL_USD = 50.0
+
+   root = pathlib.Path("/tmp/lighter-python/lighter/signers")
+   signer_path = root / (
+       "lighter-signer-darwin-arm64.dylib" if platform.system() == "Darwin"
+       else "lighter-signer-linux-amd64.so"
+   )
+
+   class StrOrErr(ctypes.Structure):
+       _fields_ = [("str", ctypes.c_char_p), ("err", ctypes.c_char_p)]
+
+   class SignedTx(ctypes.Structure):
+       _fields_ = [
+           ("txType", ctypes.c_uint8),
+           ("txInfo", ctypes.c_char_p),
+           ("txHash", ctypes.c_char_p),
+           ("messageToSign", ctypes.c_char_p),
+           ("err", ctypes.c_char_p),
+       ]
+
+   signer = ctypes.CDLL(str(signer_path))
+   signer.CreateClient.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_longlong]
+   signer.CreateClient.restype = ctypes.c_char_p
+   signer.CreateAuthToken.argtypes = [ctypes.c_longlong, ctypes.c_int, ctypes.c_longlong]
+   signer.CreateAuthToken.restype = StrOrErr
+   signer.SignCreateOrder.argtypes = [
+       ctypes.c_int,
+       ctypes.c_longlong,
+       ctypes.c_longlong,
+       ctypes.c_int,
+       ctypes.c_int,
+       ctypes.c_int,
+       ctypes.c_int,
+       ctypes.c_int,
+       ctypes.c_int,
+       ctypes.c_longlong,
+       ctypes.c_longlong,
+       ctypes.c_int,
+       ctypes.c_longlong,
+   ]
+   signer.SignCreateOrder.restype = SignedTx
+   signer.SignCancelOrder.argtypes = [ctypes.c_int, ctypes.c_longlong, ctypes.c_longlong, ctypes.c_int, ctypes.c_longlong]
+   signer.SignCancelOrder.restype = SignedTx
+
+   chain_id = 304 if "mainnet" in HTTP_BASE else 300
+   err = signer.CreateClient(HTTP_BASE.encode(), API_KEY.encode(), chain_id, API_KEY_INDEX, ACCOUNT_INDEX)
+   if err:
+       raise SystemExit(err.decode())
+
+   token_res = signer.CreateAuthToken(int(time.time()) + 600, API_KEY_INDEX, ACCOUNT_INDEX)
+   if token_res.err:
+       raise SystemExit(token_res.err.decode())
+   token = token_res.str.decode()
+
+   nonce = requests.get(
+       f"{HTTP_BASE}/api/v1/nextNonce",
+       params={"account_index": ACCOUNT_INDEX, "api_key_index": API_KEY_INDEX},
+       timeout=10,
+   ).json()["nonce"]
+
+   book = requests.get(
+       f"{HTTP_BASE}/api/v1/orderBookDetails",
+       params={"market_id": MARKET_ID},
+       timeout=10,
+   ).json()["order_book_details"][0]
+   price_decimals, size_decimals = int(book["price_decimals"]), int(book["size_decimals"])
+   last_price = float(book["last_trade_price"])
+   limit_price = last_price * (1 - DISCOUNT)
+   price_int = int(round(limit_price * (10 ** price_decimals)))
+   size_int = int(
+       max(
+           round((Decimal(str(NOTIONAL_USD)) / Decimal(str(limit_price))) * (10 ** size_decimals)),
+           round(Decimal(book["min_base_amount"]) * (10 ** size_decimals)),
+       ),
+   )
+
+   client_order_index = int(time.time_ns() // 1_000_000)
+   create = signer.SignCreateOrder(
+       MARKET_ID,
+       client_order_index,
+       size_int,
+       price_int,
+       0,
+       0,
+       1,
+       0,
+       0,
+       -1,
+       nonce,
+       API_KEY_INDEX,
+       ACCOUNT_INDEX,
+   )
+   if create.err:
+       raise SystemExit(create.err.decode())
+   requests.post(
+       f"{HTTP_BASE}/api/v1/sendTx",
+       files={
+           "tx_type": (None, str(int(create.txType))),
+           "tx_info": (None, create.txInfo.decode()),
+           "price_protection": (None, "true"),
+       },
+       timeout=15,
+   )
+
+   cancel_nonce = requests.get(
+       f"{HTTP_BASE}/api/v1/nextNonce",
+       params={"account_index": ACCOUNT_INDEX, "api_key_index": API_KEY_INDEX},
+       timeout=10,
+   ).json()["nonce"]
+   cancel = signer.SignCancelOrder(MARKET_ID, client_order_index, cancel_nonce, API_KEY_INDEX, ACCOUNT_INDEX)
+   if cancel.err:
+       raise SystemExit(cancel.err.decode())
+   requests.post(
+       f"{HTTP_BASE}/api/v1/sendTx",
+       files={"tx_type": (None, str(int(cancel.txType))), "tx_info": (None, cancel.txInfo.decode())},
+       timeout=15,
    )
    ```
 
-3. Get nonce: `TransactionApi(ApiClient(Configuration(host=url))).next_nonce(account_index, api_key_index)`
-4. Sign order: `signer.sign_create_order(...)` using venue ints (price_int, base_amount_int).
-5. Submit: `TransactionApi.send_tx(tx_type, tx_info)`
-6. Cancel: `signer.cancel_order(market_index, order_index=client_order_index)`
+3. Use the token for private reads (`Authorization: <token>` or `auth=<token>` query) when hitting
+   `accountActiveOrders`. `/api/v1/account` currently works without auth; `nextNonce` also succeeds
+   without auth.
 
-Notes:
+## Live probe (2025-12-10, mainnet, SDK-free)
 
-- Price scale is `10 ** price_decimals`, size scale is `10 ** size_decimals`.
-- BTC perp (market_id=1 on mainnet): `price_decimals=1`, `size_decimals=5`, `min_base_amount=0.00020`.
+- Signer: `lighter-signer-darwin-arm64.dylib` via `ctypes` + `requests` (no lighter-python install).
+- Nonces consumed sequentially via `/nextNonce` (13 → 16); `sendTx` calls unauthenticated.
+- Auth behaviour confirmed: `accountActiveOrders` rejects missing token (HTTP 400/code `20001`) but
+  accepts either header or `auth` query. `account` and `nextNonce` succeeded without auth.
 
-## Live probe (2025-02-05, mainnet)
+**BTC-USD-PERP (market_id=1, 10% below last)**
 
-- Order placed: limit **buy** BTC perp, ~10% below last.
-  - last_price ≈ 90,410.8; target_price ≈ 81,369.7 → `price_int=813697`
-  - size for ~$50 notional → `base_amount_int=61` (scaled with size_decimals=5)
-  - `client_order_index`: milliseconds from `time.time_ns() // 1_000_000`
-  - `create_order` response: `code=200`, tx_hash=`73ddaba96ccd6bc149511e2e9da6626292dfafa6d01a54aebb14fcdb59c4e0508c9dce830a7c4879`
-- Cancel after ~5s:
-  - `cancel_order` response: `code=200`, tx_hash=`570b4f85522d87fee23f2cb6dd6f2c3b6e20e471bdd4780a9aeb1c244a1dc2a80a19c13fc2ce4105`
-- Both calls returned `{"ratelimit": "didn't use volume quota"}`.
+- `price_decimals=1`, `size_decimals=5`, `last_price≈92,299.5`, `limit_price≈83,069.6`
+- `price_int=830696`, `size_int=60` (~$50 notional, min base 0.00020)
+- Create: `code=200`, tx_hash=`78f13c839a0f10c1f6db19701dd45bc26f4016a61a492bd3c1a619137d38c5985209f866540c95bd`
+- Cancel (~6s later): `code=200`, tx_hash=`169778979183122f75f2fb8af5bbf7944a9b3918b5099f3680da04eaaa5a0286a04aad3df8a22998`
+- accountActiveOrders after cancel still showed two pre-existing bids (client_order_index
+  `1765388099432`/`1765388052824`) but no new probe order.
+- **Cleanup (same session):** legacy BTC bids canceled successfully via signer:
+  - order_index `844423989556373` → tx_hash `42cf7ee7bad59fefc052a39a4c6a586d30140cd36d78836e15adb43dde510c48f5477cb9ebd62d2c`
+  - order_index `844423989563098` → tx_hash `d1136fcf8829ecdbefd0121790af0e356497848a0e93c3c48c4b47b6efdb6fb4a679a8fb1cc7a0c3`
+  - `accountActiveOrders` now empty for market 1.
 
-## One-file place-and-cancel snippet (mainnet, BTC perp)
+**ETH-USD-PERP (market_id=0, 10% below last)**
 
-```python
-import asyncio, os, time
-from lighter import SignerClient
-from lighter.api_client import ApiClient
-from lighter.configuration import Configuration
-from lighter.api import OrderApi
-
-URL = os.getenv("LIGHTER_HTTP_BASE", "https://mainnet.zklighter.elliot.ai")
-ACCOUNT_INDEX = int(os.environ["LIGHTER_ACCOUNT_INDEX"])
-API_KEY_INDEX = int(os.environ["LIGHTER_API_KEY_INDEX"])
-# Private key is expected without 0x prefix for SignerClient
-API_KEY_PRIVATE = os.environ["LIGHTER_API_SECRET"].removeprefix("0x")
-MARKET_INDEX = 1  # BTC perp
-NOTIONAL_USD = 50.0
-DISCOUNT = 0.10  # 10% below best ask
-
-
-async def main() -> None:
-    api = ApiClient(Configuration(host=URL))
-
-    # 1) Get current book/price to anchor the test order
-    ob = (await OrderApi(api).order_book_details(market_id=MARKET_INDEX)).order_book_details[0]
-    last_price = float(ob.last_trade_price)
-    price_decimals = ob.price_decimals
-    size_decimals = ob.size_decimals
-
-    limit_price = last_price * (1.0 - DISCOUNT)
-    price_int = int(round(limit_price * (10 ** price_decimals)))
-
-    base_amount = NOTIONAL_USD / limit_price
-    size_int = int(round(base_amount * (10 ** size_decimals)))
-    size_int = max(size_int, 1)
-
-    client_order_index = int(time.time_ns() // 1_000_000)
-
-    signer = SignerClient(
-        url=URL,
-        account_index=ACCOUNT_INDEX,
-        api_private_keys={API_KEY_INDEX: API_KEY_PRIVATE},
-    )
-
-    # 2) Place limit buy ~10% below best ask
-    _, create_resp, create_err = await signer.create_order(
-        market_index=MARKET_INDEX,
-        client_order_index=client_order_index,
-        base_amount=size_int,
-        price=price_int,
-        is_ask=False,
-        order_type=SignerClient.ORDER_TYPE_LIMIT,
-        time_in_force=SignerClient.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME,
-    )
-    print("create:", create_resp, create_err)
-
-    # 3) Let it settle on-chain, then cancel
-    await asyncio.sleep(5)
-    _, cancel_resp, cancel_err = await signer.cancel_order(
-        market_index=MARKET_INDEX,
-        order_index=client_order_index,
-    )
-    print("cancel:", cancel_resp, cancel_err)
-
-    await signer.close()
-    await api.close()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
+- `price_decimals=2`, `size_decimals=4`, `last_price≈3,359.73`, `limit_price≈3,023.76`
+- `price_int=302376`, `size_int=165` (~$50 notional, min base 0.0050)
+- Create: `code=200`, tx_hash=`94a41a32be4374dd77ef5e0dff075503be648814e043a8b05011604c8852567b9393549eabe5b7d8`
+- Cancel: `code=200`, tx_hash=`ee908b42c71284f28df38aa8d578e9ef7ee2d131517bd70e043f3e1b412b6864d5c3553c2d1d2969`
+- accountActiveOrders empty before/after.
 
 ## Mainnet validation spike runbook (BTC & ETH perps)
 
-> **Important**: This runbook is designed to be executed manually.  
-> The adapter implementation should never hardcode these values; they are only for
-> a small “place-and-cancel” probe with ~$50 notional per market.
+> **Important**: Manual probe only; the adapter must not hardcode any of these numbers.
 
-### Preconditions
+**Preconditions**
 
-- `.env` in the repo root populated with:
-  - `LIGHTER_HTTP_BASE`, `LIGHTER_WS_BASE`
-  - `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`
-  - Either `LIGHTER_API_SECRET` (API key private key, with or without `0x` prefix)  
-    or `LIGHTER_API_KEY_PRIVATE_KEY` (adapter-specific env used via `resolve_api_key_private_key`).
-- Python venv and project deps set up (`make install-debug` or equivalent).
-- `lighter-python` SDK installed into the venv:
+- `.env` populated with `LIGHTER_HTTP_BASE/WS_BASE`, `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`,
+  and either `LIGHTER_API_SECRET` or `LIGHTER_API_KEY`.
+- Signer binary available locally (e.g.,
+  `/tmp/lighter-python/lighter/signers/lighter-signer-darwin-arm64.dylib`); chain_id `304` for
+  mainnet.
+- Repo venv active (`. .venv/bin/activate`).
 
-  ```bash
-  . .venv/bin/activate
-  python -m pip install "git+https://github.com/elliottech/lighter-python.git"
-  ```
+**Step 1 — Sanity check**
 
-### Step 1 — Sanity check env and connectivity
+- Load env:
+  `set -a; source .env; set +a; echo "http_base=$LIGHTER_HTTP_BASE account_index=$LIGHTER_ACCOUNT_INDEX api_key_index=$LIGHTER_API_KEY_INDEX"`
+- Verify public REST: `curl -s "$LIGHTER_HTTP_BASE/api/v1/orderBooks" | head -c 256`
 
-1. Load env and print key routing parameters (no secrets):
+**Step 2 — BTC probe (~$50, 10% below best ask)**
 
-   ```bash
-   export $(grep -v '^#' .env | xargs)
-   echo "env=${LIGHTER_ENV:-mainnet} account_index=${LIGHTER_ACCOUNT_INDEX} api_key_index=${LIGHTER_API_KEY_INDEX}"
-   echo "http_base=${LIGHTER_HTTP_BASE:-https://mainnet.zklighter.elliot.ai}"
-   ```
+- Use the SDK-free snippet above with `MARKET_ID=1`.
+- Expect `code=200` and `tx_hash` for both create and cancel; message includes `ratelimit`:
+  `"didn't use volume quota"`.
 
-2. Confirm public REST works:
+**Step 3 — ETH probe (~$50, 10% below best ask)**
 
-   ```bash
-   curl -s "${LIGHTER_HTTP_BASE:-https://mainnet.zklighter.elliot.ai}/api/v1/orderBooks" | head -c 512
-   ```
+- Repeat Step 2 with `MARKET_ID=0`, `price_decimals=2`, `size_decimals=4`, `min_base_amount=0.0050`.
 
-   You should see JSON with `code: 200` and an `order_books` array.
+**Step 4 — Capture data for fixtures/PR3**
 
-### Step 2 — BTC perp place-and-cancel (~$50, 10% below best ask)
-
-1. Run the one-file script above (or equivalent) from the repo root:
-
-   ```bash
-   . .venv/bin/activate
-   python docs/lighter_adapter/tmp_btc_place_cancel.py  # or `python - <<'PY'` using the snippet inline
-   ```
-
-2. Expected behaviour:
-   - `create:` response has `code: 200`, a non-empty `tx_hash`, and a `"ratelimit": "didn't use volume quota"` note.
-   - `cancel:` response likewise has `code: 200` and a `tx_hash`.
-   - The effective price used by the script is ~10% below the live last/ask price and respects `price_decimals`.
-
-3. Optional: verify via REST that the order is no longer active:
-
-   ```bash
-   # Requires auth token created via SignerClient.create_auth_token_with_expiry(...)
-   curl -s -H "Authorization: ${LIGHTER_AUTH_TOKEN}" \
-     "${LIGHTER_HTTP_BASE}/api/v1/accountActiveOrders" | jq '.'
-   ```
-
-### Step 3 — ETH perp place-and-cancel (~$50, 10% below best ask)
-
-Repeat Step 2 but with `MARKET_INDEX = 0` (ETH perp) and updated decimals:
-
-- From `orderBooks` / `orderBookDetails`:
-  - ETH perp: `market_id=0`, `price_decimals=2`, `size_decimals=4`, `min_base_amount=0.0050`.
-- Use the same formulas:
-  - `limit_price = best_ask * 0.9`
-  - `price_int = round(limit_price * 10 ** price_decimals)`
-  - `base_amount = 50.0 / limit_price`
-  - `size_int = max(1, round(base_amount * 10 ** size_decimals))`
-
-Capture the `create:` and `cancel:` responses as for BTC, plus the resulting `tx_hash` values.
-
-### Step 4 — Data capture for fixtures and PR3 design
-
-For at least one of the BTC/ETH runs, capture:
-
-- Raw HTTP requests/responses for:
-  - `GET /api/v1/orderBooks` or `GET /api/v1/orderBookDetails?market_id={id}`
-  - `POST /api/v1/sendTx` for create and cancel
-  - `GET /api/v1/account` and `GET /api/v1/accountActiveOrders` with auth token
-  - `GET /api/v1/nextNonce` (or equivalent) before/after a nonce mismatch, if you deliberately trigger one.
-- WS traffic (if private channels are available) around the lifecycle of the test orders.
-
-These should be redacted and stored under `tests/test_data/lighter/{http,ws}/` and referenced from
-`03_LIGHTER_API_SPEC.md` for PR3.
+- Save raw HTTP interactions for `orderBookDetails`, `sendTx` (create/cancel), `account`,
+  `accountActiveOrders` (with token), and `nextNonce` under `tests/test_data/lighter/http/`
+  (redacted). **Captured:** mainnet fixtures added under `tests/test_data/lighter/http/mainnet_*.json`.
+- Optional: capture WS traffic around order lifecycle. **Captured:** public stream for BTC place/cancel
+  at `tests/test_data/lighter/ws/mainnet_order_book_place_cancel_btc.json`.
 
 ## Open items
 
-- Capture private REST (`account`, `accountActiveOrders`, `nextNonce`) responses with auth token for fixtures.
-- Add token refresh logic (deadline-based) and retry on auth failures.
-- Confirm private WS auth flow (token in subscribe payload vs header) and message schemas.
+- Persist redacted HTTP/WS captures (private endpoints + sendTx) into `tests/test_data/lighter/{http,ws}/`
+  and cross-link from `03_LIGHTER_API_SPEC.md`.
+- Add token refresh/retry logic (deadline-based) to the adapter implementation.
+- Confirm private WS auth flow (token placement + schema) once WS access is exercised.

@@ -1,0 +1,91 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://mainnet.zklighter.elliot.ai/api/v1/accountActiveOrders",
+    "params": {
+      "account_index": 659514,
+      "market_id": 1
+    },
+    "headers": {
+      "Authorization": "<redacted-token>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "code": 200,
+      "orders": [
+        {
+          "order_index": 844423989556373,
+          "client_order_index": 1765388099432,
+          "order_id": "844423989556373",
+          "client_order_id": "1765388099432",
+          "market_index": 1,
+          "owner_account_index": 659514,
+          "initial_base_amount": "0.00060",
+          "price": "83123.5",
+          "nonce": 281474036135061,
+          "remaining_base_amount": "0.00060",
+          "is_ask": false,
+          "base_size": 60,
+          "base_price": 831235,
+          "filled_base_amount": "0.00000",
+          "filled_quote_amount": "0.000000",
+          "side": "",
+          "type": "limit",
+          "time_in_force": "good-till-time",
+          "reduce_only": false,
+          "trigger_price": "0.0",
+          "order_expiry": 1767807299432,
+          "status": "open",
+          "trigger_status": "na",
+          "trigger_time": 0,
+          "parent_order_index": 0,
+          "parent_order_id": "0",
+          "to_trigger_order_id_0": "0",
+          "to_trigger_order_id_1": "0",
+          "to_cancel_order_id_0": "0",
+          "block_height": 122229393,
+          "timestamp": 1765388100,
+          "created_at": 1765388100,
+          "updated_at": 1765388100
+        },
+        {
+          "order_index": 844423989563098,
+          "client_order_index": 1765388052824,
+          "order_id": "844423989563098",
+          "client_order_id": "1765388052824",
+          "market_index": 1,
+          "owner_account_index": 659514,
+          "initial_base_amount": "0.00060",
+          "price": "83072.8",
+          "nonce": 281474036141786,
+          "remaining_base_amount": "0.00060",
+          "is_ask": false,
+          "base_size": 60,
+          "base_price": 830728,
+          "filled_base_amount": "0.00000",
+          "filled_quote_amount": "0.000000",
+          "side": "",
+          "type": "limit",
+          "time_in_force": "good-till-time",
+          "reduce_only": false,
+          "trigger_price": "0.0",
+          "order_expiry": 1767807252824,
+          "status": "open",
+          "trigger_status": "na",
+          "trigger_time": 0,
+          "parent_order_index": 0,
+          "parent_order_id": "0",
+          "to_trigger_order_id_0": "0",
+          "to_trigger_order_id_1": "0",
+          "to_cancel_order_id_0": "0",
+          "block_height": 122228828,
+          "timestamp": 1765388054,
+          "created_at": 1765388054,
+          "updated_at": 1765388054
+        }
+      ]
+    }
+  }
+}

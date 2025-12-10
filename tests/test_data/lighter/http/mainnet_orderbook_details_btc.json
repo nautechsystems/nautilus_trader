@@ -1,0 +1,51 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://mainnet.zklighter.elliot.ai/api/v1/orderBookDetails",
+    "params": {
+      "market_id": 1
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "code": 200,
+      "order_book_details": [
+        {
+          "symbol": "BTC",
+          "market_id": 1,
+          "market_type": "perp",
+          "base_asset_id": 0,
+          "quote_asset_id": 0,
+          "status": "active",
+          "taker_fee": "0.0000",
+          "maker_fee": "0.0000",
+          "liquidation_fee": "1.0000",
+          "min_base_amount": "0.00020",
+          "min_quote_amount": "10.000000",
+          "order_quote_limit": "281474976.710655",
+          "supported_size_decimals": 5,
+          "supported_price_decimals": 1,
+          "supported_quote_decimals": 6,
+          "size_decimals": 5,
+          "price_decimals": 1,
+          "quote_multiplier": "10",
+          "default_initial_margin_fraction": "5.00",
+          "min_initial_margin_fraction": "1.00",
+          "maintenance_margin_fraction": "0.50",
+          "closeout_margin_fraction": "0.25",
+          "last_trade_price": "92299.5",
+          "daily_trades_count": 0,
+          "daily_base_token_volume": "0.00000",
+          "daily_quote_token_volume": "0.000000",
+          "daily_price_low": "0.0",
+          "daily_price_high": "0.0",
+          "daily_price_change": "0.0",
+          "open_interest": "0.0000",
+          "daily_chart": [],
+          "market_config": {}
+        }
+      ]
+    }
+  }
+}

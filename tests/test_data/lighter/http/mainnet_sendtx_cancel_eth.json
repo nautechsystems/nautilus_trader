@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://mainnet.zklighter.elliot.ai/api/v1/sendTx",
+    "form": {
+      "tx_type": "15",
+      "tx_info": "{\"AccountIndex\":659514,\"ApiKeyIndex\":8,\"MarketIndex\":0,\"Index\":1765388160644,\"ExpiredAt\":1765390733590,\"Nonce\":16,\"Sig\":\"pCv0PrJFvNUJMp7VKMj9KYd0/4b0ePNtL5PNAzacfAVB+ZPmD/ATPZnIGgGqE1qcizgoKfhDfsze79qWdEhWSd2gz2rPfYwBptv1Tb3r82M=\"}"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "code": 200,
+      "message": "{\"ratelimit\": \"didn't use volume quota\"}",
+      "tx_hash": "ee908b42c71284f28df38aa8d578e9ef7ee2d131517bd70e043f3e1b412b6864d5c3553c2d1d2969",
+      "predicted_execution_time_ms": 1765388170796
+    }
+  }
+}
