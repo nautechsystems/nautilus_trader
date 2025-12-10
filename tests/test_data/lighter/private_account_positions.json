@@ -1,0 +1,12 @@
+[
+  {
+    "session_id": "81c8e789-0309-4b1b-863b-789557035248",
+    "type": "connected"
+  },
+  {
+    "error": {
+      "code": 30005,
+      "message": "Invalid Channel"
+    }
+  }
+]

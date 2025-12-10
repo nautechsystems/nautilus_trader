@@ -38,6 +38,7 @@ extension-module = [
   "nautilus-dydx/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-hyperliquid/extension-module",
+  "nautilus-lighter/extension-module",
   "nautilus-indicators/extension-module",
   "nautilus-kraken/extension-module",
   "nautilus-infrastructure/extension-module",
@@ -95,6 +96,7 @@ nautilus-coinbase-intx = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python"] }
 nautilus-dydx = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
+nautilus-lighter = { workspace = true, features = ["python"] }
 nautilus-kraken = { workspace = true, features = ["python"] }
 nautilus-okx = { workspace = true, features = ["python"] }
 nautilus-tardis = { workspace = true, features = ["python"] }
