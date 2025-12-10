@@ -176,3 +176,210 @@ fn make_delta(
         ts_init,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::CryptoPerpetual,
+        types::Currency,
+    };
+    use std::str::FromStr;
+
+    fn dec(s: &str) -> Decimal {
+        Decimal::from_str(s).expect("valid decimal")
+    }
+
+    fn create_test_instrument() -> InstrumentAny {
+        let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
+        let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat);
+        let instrument_id =
+            InstrumentId::new(Symbol::new("BTC-USD-PERP"), nautilus_model::identifiers::Venue::new("LIGHTER"));
+
+        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+            instrument_id,
+            Symbol::new("BTC"),
+            btc,
+            usd,
+            usd,
+            false,
+            1,  // price_precision
+            4,  // size_precision
+            Price::from("0.1"),
+            Quantity::from("0.0001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
+    fn create_test_depth(
+        bids: Vec<(Decimal, Decimal)>,
+        asks: Vec<(Decimal, Decimal)>,
+        offset: Option<u64>,
+    ) -> LighterOrderBookDepth {
+        LighterOrderBookDepth {
+            code: None,
+            bids: bids
+                .into_iter()
+                .map(|(price, size)| super::super::models::LighterBookLevel { price, size })
+                .collect(),
+            asks: asks
+                .into_iter()
+                .map(|(price, size)| super::super::models::LighterBookLevel { price, size })
+                .collect(),
+            offset,
+            nonce: None,
+        }
+    }
+
+    #[test]
+    fn test_depth_to_deltas_starts_with_clear() {
+        let instrument = create_test_instrument();
+        let depth = create_test_depth(
+            vec![(dec("50000.0"), dec("1.0"))],
+            vec![(dec("50001.0"), dec("1.0"))],
+            Some(100),
+        );
+
+        let (deltas, _quote) =
+            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
+                .expect("should parse");
+
+        // First delta should be CLEAR
+        assert!(!deltas.deltas.is_empty());
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas.deltas[0].sequence, 100);
+    }
+
+    #[test]
+    fn test_depth_to_deltas_creates_bids_and_asks() {
+        let instrument = create_test_instrument();
+        let depth = create_test_depth(
+            vec![(dec("50000.0"), dec("1.0")), (dec("49999.0"), dec("2.0"))],
+            vec![(dec("50001.0"), dec("0.5")), (dec("50002.0"), dec("1.5"))],
+            Some(100),
+        );
+
+        let (deltas, _quote) =
+            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
+                .expect("should parse");
+
+        // 1 CLEAR + 2 bids + 2 asks = 5 deltas
+        assert_eq!(deltas.deltas.len(), 5);
+
+        // Check bid deltas (after CLEAR)
+        assert_eq!(deltas.deltas[1].action, BookAction::Add);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+
+        // Check ask deltas
+        assert_eq!(deltas.deltas[3].action, BookAction::Add);
+        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+    }
+
+    #[test]
+    fn test_depth_to_deltas_zero_size_is_delete() {
+        let instrument = create_test_instrument();
+        let depth = create_test_depth(
+            vec![(dec("50000.0"), dec("0.0"))], // Zero size = DELETE
+            vec![(dec("50001.0"), dec("0.0"))], // Zero size = DELETE
+            Some(100),
+        );
+
+        let (deltas, _quote) =
+            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
+                .expect("should parse");
+
+        // 1 CLEAR + 1 DELETE bid + 1 DELETE ask = 3 deltas
+        assert_eq!(deltas.deltas.len(), 3);
+        assert_eq!(deltas.deltas[1].action, BookAction::Delete);
+        assert_eq!(deltas.deltas[2].action, BookAction::Delete);
+    }
+
+    #[test]
+    fn test_depth_to_deltas_generates_quote() {
+        let instrument = create_test_instrument();
+        let depth = create_test_depth(
+            vec![(dec("50000.0"), dec("1.0")), (dec("49999.0"), dec("2.0"))],
+            vec![(dec("50001.0"), dec("0.5")), (dec("50002.0"), dec("1.5"))],
+            Some(100),
+        );
+
+        let (_deltas, quote) =
+            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
+                .expect("should parse");
+
+        // Should have a quote with best bid/ask
+        let quote = quote.expect("should have quote");
+        assert_eq!(quote.bid_price, Price::from("50000.0"));
+        assert_eq!(quote.ask_price, Price::from("50001.0"));
+        assert_eq!(quote.bid_size, Quantity::from("1.0"));
+        assert_eq!(quote.ask_size, Quantity::from("0.5"));
+    }
+
+    #[test]
+    fn test_depth_to_deltas_no_quote_without_both_sides() {
+        let instrument = create_test_instrument();
+
+        // Only bids, no asks
+        let depth = create_test_depth(
+            vec![(dec("50000.0"), dec("1.0"))],
+            vec![],
+            Some(100),
+        );
+
+        let (_deltas, quote) =
+            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
+                .expect("should parse");
+
+        // No quote without both sides
+        assert!(quote.is_none());
+    }
+
+    #[test]
+    fn test_depth_to_deltas_empty_book() {
+        let instrument = create_test_instrument();
+        let depth = create_test_depth(vec![], vec![], Some(100));
+
+        let (deltas, quote) =
+            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
+                .expect("should parse");
+
+        // Only CLEAR delta
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+
+        // No quote
+        assert!(quote.is_none());
+    }
+
+    #[test]
+    fn test_depth_to_deltas_default_offset() {
+        let instrument = create_test_instrument();
+        let depth = create_test_depth(
+            vec![(dec("50000.0"), dec("1.0"))],
+            vec![(dec("50001.0"), dec("1.0"))],
+            None, // No offset
+        );
+
+        let (deltas, _quote) =
+            depth_to_deltas_and_quote(&depth, &instrument, UnixNanos::default(), UnixNanos::default())
+                .expect("should parse");
+
+        // Should use default (0) for sequence
+        assert_eq!(deltas.deltas[0].sequence, 0);
+    }
+}
