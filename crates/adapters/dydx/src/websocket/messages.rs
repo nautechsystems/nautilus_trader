@@ -26,7 +26,7 @@ use ustr::Ustr;
 use super::enums::{DydxWsChannel, DydxWsMessageType, DydxWsOperation};
 use crate::common::enums::{
     DydxFillType, DydxLiquidity, DydxOrderStatus, DydxOrderType, DydxPositionStatus,
-    DydxTickerType, DydxTimeInForce,
+    DydxTickerType, DydxTimeInForce, DydxTradeType,
 };
 
 // ------------------------------------------------------------------------------------------------
@@ -334,9 +334,9 @@ pub struct DydxTrade {
     pub price: String,
     /// Trade timestamp.
     pub created_at: DateTime<Utc>,
-    /// Order type.
+    /// Trade type.
     #[serde(rename = "type")]
-    pub order_type: String,
+    pub order_type: DydxTradeType,
     /// Block height (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at_height: Option<String>,

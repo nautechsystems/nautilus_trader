@@ -1391,10 +1391,6 @@ mod tests {
     use super::*;
     use crate::http::error;
 
-    // ========================================================================
-    // Raw Client Tests
-    // ========================================================================
-
     #[tokio::test]
     async fn test_raw_client_creation() {
         let client = DydxRawHttpClient::new(None, Some(30), None, false, None);
@@ -1414,10 +1410,6 @@ mod tests {
         assert!(client.is_testnet());
         assert_eq!(client.base_url(), DYDX_TESTNET_HTTP_URL);
     }
-
-    // ========================================================================
-    // Domain Client Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_domain_client_creation() {

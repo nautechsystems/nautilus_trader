@@ -1010,10 +1010,6 @@ async fn test_orders_with_limit() {
     assert_eq!(result.len(), 0);
 }
 
-// ================================================================================
-// Additional tests: Authentication, concurrency, edge cases
-// ================================================================================
-
 #[rstest]
 #[tokio::test]
 async fn test_http_401_unauthorized() {

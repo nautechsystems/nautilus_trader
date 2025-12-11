@@ -740,13 +740,18 @@ async fn test_ping_pong() {
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
 
+    // Wait for complete ping/pong cycle (pong_count tracks successful responses)
     wait_until_async(
-        || async { state.ping_count.load(Ordering::Relaxed) > 0 },
+        || async { state.pong_count.load(Ordering::Relaxed) >= 1 },
         Duration::from_secs(3),
     )
     .await;
 
-    assert!(state.ping_count.load(Ordering::Relaxed) > 0);
+    let pong_count = state.pong_count.load(Ordering::Relaxed);
+    assert!(
+        pong_count >= 1,
+        "Expected at least 1 completed ping/pong cycle within 3s, got {pong_count}"
+    );
 
     client.disconnect().await.unwrap();
 }
@@ -1100,13 +1105,18 @@ async fn test_sends_pong_for_control_ping() {
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
 
+    // Wait for complete ping/pong cycle
     wait_until_async(
-        || async { state.ping_count.load(Ordering::Relaxed) > 0 },
+        || async { state.pong_count.load(Ordering::Relaxed) >= 1 },
         Duration::from_secs(3),
     )
     .await;
 
-    assert!(state.ping_count.load(Ordering::Relaxed) > 0);
+    let pong_count = state.pong_count.load(Ordering::Relaxed);
+    assert!(
+        pong_count >= 1,
+        "Expected at least 1 completed ping/pong cycle within 3s, got {pong_count}"
+    );
 
     client.disconnect().await.unwrap();
 }
@@ -1977,15 +1987,22 @@ async fn test_heartbeat_keeps_connection_alive() {
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
 
+    // Wait for complete ping/pong cycle to verify heartbeat is working
     wait_until_async(
-        || async { state.ping_count.load(Ordering::Relaxed) > 0 },
+        || async { state.pong_count.load(Ordering::Relaxed) >= 1 },
         Duration::from_secs(5),
     )
     .await;
 
-    let ping_count = state.ping_count.load(Ordering::Relaxed);
-    assert!(ping_count > 0, "Should have sent heartbeat pings");
-    assert!(client.is_connected(), "Connection should still be alive");
+    let pong_count = state.pong_count.load(Ordering::Relaxed);
+    assert!(
+        pong_count >= 1,
+        "Expected at least 1 completed heartbeat cycle within 5s (heartbeat_interval=1s), got {pong_count}"
+    );
+    assert!(
+        client.is_connected(),
+        "Connection should still be alive after heartbeat"
+    );
 
     client.disconnect().await.unwrap();
 }
@@ -2642,10 +2659,6 @@ async fn test_markets_subscription_failure() {
 
     client.disconnect().await.unwrap();
 }
-
-// =============================================================================
-// Subaccounts Channel Tests (Authenticated WebSocket)
-// =============================================================================
 
 const TEST_MNEMONIC: &str = "mirror actor skill push coach wait confirm orchard lunch mobile athlete gossip awake miracle matter bus reopen team ladder lazy list timber render wait";
 

@@ -14,12 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Integration tests for dYdX execution client.
-//!
-//! These tests verify:
-//! 1. Order status report parsing from HTTP responses
-//! 2. Fill report parsing from HTTP responses
-//! 3. Position status report parsing
-//! 4. Account state generation
 
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, time::Duration};
 
@@ -28,8 +22,8 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_dydx::{
     common::enums::{
-        DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderStatus, DydxTickerType,
-        DydxTimeInForce,
+        DydxFillType, DydxLiquidity, DydxMarketStatus, DydxOrderStatus, DydxOrderType,
+        DydxTickerType, DydxTimeInForce,
     },
     http::{
         client::DydxRawHttpClient,
@@ -177,7 +171,7 @@ fn create_test_order() -> Order {
         size: dec!(0.1),
         total_filled: dec!(0.05),
         price: dec!(50000),
-        order_type: "LIMIT".to_string(),
+        order_type: DydxOrderType::Limit,
         status: DydxOrderStatus::PartiallyFilled,
         time_in_force: DydxTimeInForce::Gtt,
         post_only: false,
@@ -216,10 +210,6 @@ fn create_test_fill() -> Fill {
         client_metadata: 0,
     }
 }
-
-// =============================================================================
-// Order Status Report Parsing Tests
-// =============================================================================
 
 #[rstest]
 #[tokio::test]
@@ -314,10 +304,6 @@ async fn test_parse_order_status_report_empty_client_id() {
     assert!(report.client_order_id.is_none());
 }
 
-// =============================================================================
-// Fill Report Parsing Tests
-// =============================================================================
-
 #[rstest]
 #[tokio::test]
 async fn test_parse_fill_report_taker_buy() {
@@ -375,10 +361,6 @@ async fn test_parse_fill_report_zero_fee() {
 
     assert_eq!(report.commission.as_f64(), 0.0);
 }
-
-// =============================================================================
-// HTTP Client Integration Tests
-// =============================================================================
 
 #[rstest]
 #[tokio::test]
@@ -476,10 +458,6 @@ async fn test_fills_to_reports_roundtrip() {
         "ef7ad6fb-ed77-50c7-b592-73ab5b32d42a"
     );
 }
-
-// =============================================================================
-// Edge Cases and Error Handling
-// =============================================================================
 
 #[rstest]
 #[tokio::test]

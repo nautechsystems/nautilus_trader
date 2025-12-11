@@ -177,9 +177,6 @@ fn convert_ws_order_to_http(
         .as_ref()
         .and_then(|s| s.parse::<u64>().ok());
 
-    // Convert order type to string using Display (gives PascalCase like "Limit", "Market")
-    let order_type = ws_order.order_type.to_string();
-
     // Calculate total filled from size - remaining_size
     let total_filled = size.checked_sub(remaining_size).unwrap_or(Decimal::ZERO);
 
@@ -193,7 +190,7 @@ fn convert_ws_order_to_http(
         total_filled,
         price,
         status: ws_order.status,
-        order_type,
+        order_type: ws_order.order_type,
         time_in_force: ws_order.time_in_force,
         reduce_only: ws_order.reduce_only,
         post_only: ws_order.post_only,

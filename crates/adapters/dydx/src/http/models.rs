@@ -44,8 +44,8 @@ use ustr::Ustr;
 
 use crate::common::enums::{
     DydxCandleResolution, DydxConditionType, DydxFillType, DydxLiquidity, DydxMarketStatus,
-    DydxOrderExecution, DydxOrderStatus, DydxPositionSide, DydxPositionStatus, DydxTickerType,
-    DydxTimeInForce, DydxTradeType,
+    DydxOrderExecution, DydxOrderStatus, DydxOrderType, DydxPositionSide, DydxPositionStatus,
+    DydxTickerType, DydxTimeInForce, DydxTradeType,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -385,7 +385,7 @@ pub struct Order {
     pub status: DydxOrderStatus,
     /// Order type (LIMIT, MARKET, etc.).
     #[serde(rename = "type")]
-    pub order_type: String,
+    pub order_type: DydxOrderType,
     /// Time-in-force.
     pub time_in_force: DydxTimeInForce,
     /// Reduce-only flag.

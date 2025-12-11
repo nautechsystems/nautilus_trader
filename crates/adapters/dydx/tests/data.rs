@@ -14,12 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Integration tests for dYdX data client.
-//!
-//! These tests verify:
-//! 1. Instrument parsing from HTTP responses
-//! 2. Trade parsing from HTTP responses
-//! 3. Candle/bar parsing from HTTP responses
-//! 4. Orderbook parsing from HTTP responses
 
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
@@ -155,10 +149,6 @@ async fn start_test_server()
     Ok((addr, state))
 }
 
-// =============================================================================
-// Instrument Parsing Tests
-// =============================================================================
-
 #[rstest]
 #[tokio::test]
 async fn test_request_instruments_returns_all_active_markets() {
@@ -265,10 +255,6 @@ async fn test_cache_single_instrument() {
     assert!(client.get_instrument(&eth_symbol).is_none());
 }
 
-// =============================================================================
-// Trades Tests
-// =============================================================================
-
 #[rstest]
 #[tokio::test]
 async fn test_request_trades_success() {
@@ -320,10 +306,6 @@ async fn test_trades_with_limit() {
         Some(&"10".to_string())
     );
 }
-
-// =============================================================================
-// Candles Tests
-// =============================================================================
 
 #[rstest]
 #[tokio::test]
@@ -412,10 +394,6 @@ async fn test_candles_chronological_order() {
         );
     }
 }
-
-// =============================================================================
-// Error Handling Tests
-// =============================================================================
 
 #[rstest]
 #[tokio::test]
@@ -542,10 +520,6 @@ async fn test_malformed_json_response() {
     let result = client.request_instruments(None, None, None).await;
     assert!(result.is_err());
 }
-
-// =============================================================================
-// Client Configuration Tests
-// =============================================================================
 
 #[rstest]
 #[tokio::test]

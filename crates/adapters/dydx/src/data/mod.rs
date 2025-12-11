@@ -3558,10 +3558,6 @@ mod tests {
         assert!(book.best_ask_price().unwrap() > book.best_bid_price().unwrap());
     }
 
-    // ========================================================================
-    // request_instruments Tests
-    // ========================================================================
-
     #[tokio::test]
     async fn test_request_instruments_successful_fetch() {
         // Test successful fetch of all instruments
@@ -3923,10 +3919,6 @@ mod tests {
         }
     }
 
-    // ========================================================================
-    // request_instruments Parameter Combination Tests
-    // ========================================================================
-
     #[tokio::test]
     async fn test_request_instruments_with_start_and_end_range() {
         // Test timestamp handling when both start and end are provided
@@ -4086,10 +4078,6 @@ mod tests {
             assert!(resp.ts_init > 0);
         }
     }
-
-    // ========================================================================
-    // request_instrument Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_request_instrument_cache_hit() {
@@ -4394,10 +4382,6 @@ mod tests {
             assert_eq!(resp.client_id, client_id);
         }
     }
-
-    // ========================================================================
-    // request_trades Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_request_trades_success_with_limit_and_symbol_conversion() {
@@ -4950,10 +4934,6 @@ mod tests {
         }
     }
 
-    // ========================================================================
-    // HTTP Error Handling Tests
-    // ========================================================================
-
     #[tokio::test]
     async fn test_http_404_handling() {
         // Test HTTP 404 handling (instrument not found)
@@ -5361,10 +5341,6 @@ mod tests {
         );
         assert!(client.request_trades(&request_trades).is_ok());
     }
-
-    // ========================================================================
-    // Parse Error Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_malformed_json_response() {
@@ -5842,10 +5818,6 @@ mod tests {
         }
     }
 
-    // ========================================================================
-    // Validation Error Tests
-    // ========================================================================
-
     #[tokio::test]
     async fn test_invalid_instrument_id_format() {
         // Test handling of non-existent instrument (valid ID format but doesn't exist)
@@ -6215,10 +6187,6 @@ mod tests {
 
         // All validation edge cases handled without panic
     }
-
-    // ========================================================================
-    // Response Format Verification Tests - InstrumentsResponse
-    // ========================================================================
 
     #[tokio::test]
     async fn test_instruments_response_has_correct_venue() {
@@ -6650,10 +6618,6 @@ mod tests {
         }
     }
 
-    // ========================================================================
-    // Response Format Verification Tests - InstrumentResponse
-    // ========================================================================
-
     #[tokio::test]
     async fn test_instrument_response_properly_boxed() {
         // Verify InstrumentResponse is properly boxed in DataResponse
@@ -6985,10 +6949,6 @@ mod tests {
             let _params = resp.params;
         }
     }
-
-    // ========================================================================
-    // TradesResponse Format Verification Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_trades_response_contains_vec_trade_tick() {
