@@ -214,3 +214,233 @@ impl std::fmt::Display for DeribitCurrency {
         write!(f, "{}", self.as_str())
     }
 }
+
+/// Wrapper for the account summaries response.
+///
+/// The API returns an object with a `summaries` field containing the array of account summaries,
+/// plus account-level metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeribitAccountSummariesResponse {
+    /// Array of per-currency account summaries
+    pub summaries: Vec<DeribitAccountSummary>,
+    /// Account ID
+    #[serde(default)]
+    pub id: Option<i64>,
+    /// Account email
+    #[serde(default)]
+    pub email: Option<String>,
+    /// System name
+    #[serde(default)]
+    pub system_name: Option<String>,
+    /// Account username
+    #[serde(default)]
+    pub username: Option<String>,
+    /// Account type (e.g., "main", "subaccount")
+    #[serde(rename = "type", default)]
+    pub account_type: Option<String>,
+    /// Account creation timestamp (milliseconds since UNIX epoch)
+    #[serde(default)]
+    pub creation_timestamp: Option<i64>,
+    /// Referrer ID (affiliation program)
+    #[serde(default)]
+    pub referrer_id: Option<String>,
+    /// Whether login is enabled for this account
+    #[serde(default)]
+    pub login_enabled: Option<bool>,
+    /// Whether security keys are enabled
+    #[serde(default)]
+    pub security_keys_enabled: Option<bool>,
+    /// Whether MMP (Market Maker Protection) is enabled
+    #[serde(default)]
+    pub mmp_enabled: Option<bool>,
+    /// Whether inter-user transfers are enabled
+    #[serde(default)]
+    pub interuser_transfers_enabled: Option<bool>,
+    /// Self-trading reject mode
+    #[serde(default)]
+    pub self_trading_reject_mode: Option<String>,
+    /// Whether self-trading is extended to subaccounts
+    #[serde(default)]
+    pub self_trading_extended_to_subaccounts: Option<bool>,
+    /// Block RFQ self match prevention
+    #[serde(default)]
+    pub block_rfq_self_match_prevention: Option<bool>,
+}
+
+/// Account summary for a single currency.
+///
+/// Contains balance, equity, margin information, and profit/loss data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeribitAccountSummary {
+    /// Currency code (e.g., "BTC", "ETH")
+    pub currency: Ustr,
+    /// Account equity (balance + unrealized PnL)
+    pub equity: f64,
+    /// Account balance
+    pub balance: f64,
+    /// Available funds for trading
+    pub available_funds: f64,
+    /// Margin balance (for derivatives)
+    pub margin_balance: f64,
+    /// Initial margin (required for current positions)
+    #[serde(default)]
+    pub initial_margin: Option<f64>,
+    /// Maintenance margin
+    #[serde(default)]
+    pub maintenance_margin: Option<f64>,
+    /// Total profit/loss
+    #[serde(default)]
+    pub total_pl: Option<f64>,
+    /// Session unrealized profit/loss
+    #[serde(default)]
+    pub session_upl: Option<f64>,
+    /// Session realized profit/loss
+    #[serde(default)]
+    pub session_rpl: Option<f64>,
+    /// Portfolio margining enabled
+    #[serde(default)]
+    pub portfolio_margining_enabled: Option<bool>,
+}
+
+/// Extended account summary with additional account details.
+///
+/// Returned by `private/get_account_summary` with `extended=true`.
+/// Contains all fields from [`DeribitAccountSummary`] plus account metadata,
+/// position Greeks, detailed margins, and fee structures.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeribitAccountSummaryExtended {
+    /// Currency code (e.g., "BTC", "ETH")
+    pub currency: Ustr,
+    /// Account equity (balance + unrealized PnL)
+    pub equity: f64,
+    /// Account balance
+    pub balance: f64,
+    /// Available funds for trading
+    pub available_funds: f64,
+    /// Margin balance (for derivatives)
+    pub margin_balance: f64,
+    /// Initial margin (required for current positions)
+    #[serde(default)]
+    pub initial_margin: Option<f64>,
+    /// Maintenance margin
+    #[serde(default)]
+    pub maintenance_margin: Option<f64>,
+    /// Total profit/loss
+    #[serde(default)]
+    pub total_pl: Option<f64>,
+    /// Session unrealized profit/loss
+    #[serde(default)]
+    pub session_upl: Option<f64>,
+    /// Session realized profit/loss
+    #[serde(default)]
+    pub session_rpl: Option<f64>,
+    /// Portfolio margining enabled
+    #[serde(default)]
+    pub portfolio_margining_enabled: Option<bool>,
+    // Extended fields below
+    /// Account ID
+    #[serde(default)]
+    pub id: Option<i64>,
+    /// Account email
+    #[serde(default)]
+    pub email: Option<String>,
+    /// Account username
+    #[serde(default)]
+    pub username: Option<String>,
+    /// System name
+    #[serde(default)]
+    pub system_name: Option<String>,
+    /// Account type (e.g., "main", "subaccount")
+    #[serde(rename = "type", default)]
+    pub account_type: Option<String>,
+    /// Futures session unrealized P&L
+    #[serde(default)]
+    pub futures_session_upl: Option<f64>,
+    /// Futures session realized P&L
+    #[serde(default)]
+    pub futures_session_rpl: Option<f64>,
+    /// Options session unrealized P&L
+    #[serde(default)]
+    pub options_session_upl: Option<f64>,
+    /// Options session realized P&L
+    #[serde(default)]
+    pub options_session_rpl: Option<f64>,
+    /// Futures profit/loss
+    #[serde(default)]
+    pub futures_pl: Option<f64>,
+    /// Options profit/loss
+    #[serde(default)]
+    pub options_pl: Option<f64>,
+    /// Options delta
+    #[serde(default)]
+    pub options_delta: Option<f64>,
+    /// Options gamma
+    #[serde(default)]
+    pub options_gamma: Option<f64>,
+    /// Options vega
+    #[serde(default)]
+    pub options_vega: Option<f64>,
+    /// Options theta
+    #[serde(default)]
+    pub options_theta: Option<f64>,
+    /// Options value
+    #[serde(default)]
+    pub options_value: Option<f64>,
+    /// Total delta across all positions
+    #[serde(default)]
+    pub delta_total: Option<f64>,
+    /// Projected delta total
+    #[serde(default)]
+    pub projected_delta_total: Option<f64>,
+    /// Projected initial margin
+    #[serde(default)]
+    pub projected_initial_margin: Option<f64>,
+    /// Projected maintenance margin
+    #[serde(default)]
+    pub projected_maintenance_margin: Option<f64>,
+    /// Estimated liquidation ratio
+    #[serde(default)]
+    pub estimated_liquidation_ratio: Option<f64>,
+    /// Available withdrawal funds
+    #[serde(default)]
+    pub available_withdrawal_funds: Option<f64>,
+    /// Spot reserve
+    #[serde(default)]
+    pub spot_reserve: Option<f64>,
+    /// Fee balance
+    #[serde(default)]
+    pub fee_balance: Option<f64>,
+    /// Margin model (e.g., "segregated_sm", "cross_pm")
+    #[serde(default)]
+    pub margin_model: Option<String>,
+    /// Cross collateral enabled
+    #[serde(default)]
+    pub cross_collateral_enabled: Option<bool>,
+    /// Account creation timestamp (milliseconds since UNIX epoch)
+    #[serde(default)]
+    pub creation_timestamp: Option<i64>,
+    /// Whether login is enabled for this account
+    #[serde(default)]
+    pub login_enabled: Option<bool>,
+    /// Whether security keys are enabled
+    #[serde(default)]
+    pub security_keys_enabled: Option<bool>,
+    /// Whether MMP (Market Maker Protection) is enabled
+    #[serde(default)]
+    pub mmp_enabled: Option<bool>,
+    /// Whether inter-user transfers are enabled
+    #[serde(default)]
+    pub interuser_transfers_enabled: Option<bool>,
+    /// Self-trading reject mode
+    #[serde(default)]
+    pub self_trading_reject_mode: Option<String>,
+    /// Whether self-trading is extended to subaccounts
+    #[serde(default)]
+    pub self_trading_extended_to_subaccounts: Option<bool>,
+    /// Referrer ID (affiliation program)
+    #[serde(default)]
+    pub referrer_id: Option<String>,
+    /// Block RFQ self match prevention
+    #[serde(default)]
+    pub block_rfq_self_match_prevention: Option<bool>,
+}

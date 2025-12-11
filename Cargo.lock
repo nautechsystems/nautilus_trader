@@ -5110,6 +5110,7 @@ dependencies = [
  "derive_builder",
  "dotenvy",
  "futures-util",
+ "hex",
  "iai",
  "indexmap 2.12.1",
  "log",

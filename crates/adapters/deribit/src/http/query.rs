@@ -70,3 +70,25 @@ pub struct GetInstrumentParams {
     /// Instrument name (e.g., "BTC-PERPETUAL", "ETH-25MAR23-2000-C")
     pub instrument_name: String,
 }
+
+/// Query parameters for `/private/get_account_summaries` endpoint.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct GetAccountSummariesParams {
+    /// The user id for the subaccount.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subaccount_id: Option<String>,
+    /// Include extended fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extended: Option<bool>,
+}
+
+impl GetAccountSummariesParams {
+    /// Creates a new instance with both subaccount ID and extended flag.
+    #[must_use]
+    pub fn new(subaccount_id: String, extended: bool) -> Self {
+        Self {
+            subaccount_id: Some(subaccount_id),
+            extended: Some(extended),
+        }
+    }
+}

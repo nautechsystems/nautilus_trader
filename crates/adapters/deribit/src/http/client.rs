@@ -23,7 +23,8 @@ use std::sync::{
 use dashmap::DashMap;
 use nautilus_core::{nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    identifiers::InstrumentId,
+    events::AccountState,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
@@ -36,12 +37,16 @@ use ustr::Ustr;
 
 use super::{
     error::DeribitHttpError,
-    models::{DeribitCurrency, DeribitInstrument, DeribitJsonRpcRequest, DeribitJsonRpcResponse},
-    query::{GetInstrumentParams, GetInstrumentsParams},
+    models::{
+        DeribitAccountSummariesResponse, DeribitCurrency, DeribitInstrument, DeribitJsonRpcRequest,
+        DeribitJsonRpcResponse,
+    },
+    query::{GetAccountSummariesParams, GetInstrumentParams, GetInstrumentsParams},
 };
 use crate::common::{
     consts::{DERIBIT_API_PATH, JSONRPC_VERSION, should_retry_error_code},
-    parse::parse_deribit_instrument_any,
+    credential::Credential,
+    parse::{extract_server_timestamp, parse_account_state, parse_deribit_instrument_any},
     urls::get_http_base_url,
 };
 
@@ -56,7 +61,7 @@ const DERIBIT_SUCCESS_CODE: i64 = 0;
 pub struct DeribitRawHttpClient {
     base_url: String,
     client: HttpClient,
-    #[allow(dead_code)]
+    credential: Option<Credential>,
     retry_manager: RetryManager<DeribitHttpError>,
     cancellation_token: CancellationToken,
     request_id: AtomicU64,
@@ -70,6 +75,7 @@ impl DeribitRawHttpClient {
     /// Returns an error if the HTTP client cannot be created.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        base_url: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         max_retries: Option<u32>,
@@ -77,7 +83,8 @@ impl DeribitRawHttpClient {
         retry_delay_max_ms: Option<u64>,
         proxy_url: Option<String>,
     ) -> Result<Self, DeribitHttpError> {
-        let base_url = format!("{}{}", get_http_base_url(is_testnet), DERIBIT_API_PATH);
+        let base_url = base_url
+            .unwrap_or_else(|| format!("{}{}", get_http_base_url(is_testnet), DERIBIT_API_PATH));
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
             initial_delay_ms: retry_delay_ms.unwrap_or(1000),
@@ -102,6 +109,7 @@ impl DeribitRawHttpClient {
                 proxy_url,
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
+            credential: None,
             retry_manager,
             cancellation_token: CancellationToken::new(),
             request_id: AtomicU64::new(1),
@@ -113,22 +121,38 @@ impl DeribitRawHttpClient {
         &self.cancellation_token
     }
 
-    #[doc(hidden)]
-    /// Creates a test client with custom base URL (test only).
-    pub fn new_with_base_url(
-        base_url: String,
+    /// Creates a new [`DeribitRawHttpClient`] with explicit credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_credentials(
+        api_key: String,
+        api_secret: String,
+        base_url: Option<String>,
+        is_testnet: bool,
         timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> Result<Self, DeribitHttpError> {
+        let base_url = base_url
+            .unwrap_or_else(|| format!("{}{}", get_http_base_url(is_testnet), DERIBIT_API_PATH));
         let retry_config = RetryConfig {
-            max_retries: 0,      // No retries in tests
-            initial_delay_ms: 1, // Must be non-zero
-            max_delay_ms: 1,
-            backoff_factor: 1.0,
-            jitter_ms: 0,
-            operation_timeout_ms: Some(5000),
+            max_retries: max_retries.unwrap_or(3),
+            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
+            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            backoff_factor: 2.0,
+            jitter_ms: 1000,
+            operation_timeout_ms: Some(60_000),
             immediate_first: false,
-            max_elapsed_ms: Some(10000),
+            max_elapsed_ms: Some(180_000),
         };
+
+        let retry_manager = RetryManager::new(retry_config);
+        let credential = Credential::new(api_key, api_secret);
 
         Ok(Self {
             base_url,
@@ -138,17 +162,83 @@ impl DeribitRawHttpClient {
                 Vec::new(),
                 None,
                 timeout_secs,
-                None,
+                proxy_url,
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
-            retry_manager: RetryManager::new(retry_config),
+            credential: Some(credential),
+            retry_manager,
             cancellation_token: CancellationToken::new(),
             request_id: AtomicU64::new(1),
         })
     }
 
+    /// Creates a new [`DeribitRawHttpClient`] with credentials from environment variables.
+    ///
+    /// If `api_key` or `api_secret` are not provided, they will be loaded from environment:
+    /// - Mainnet: `DERIBIT_API_KEY`, `DERIBIT_API_SECRET`
+    /// - Testnet: `DERIBIT_TESTNET_API_KEY`, `DERIBIT_TESTNET_API_SECRET`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The HTTP client cannot be created
+    /// - Credentials are not provided and environment variables are not set
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_env(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        is_testnet: bool,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> Result<Self, DeribitHttpError> {
+        // Determine environment variable names based on environment
+        let (key_env, secret_env) = if is_testnet {
+            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
+        } else {
+            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
+        };
+
+        // Resolve credentials from explicit params or environment
+        let api_key = nautilus_core::env::get_or_env_var_opt(api_key, key_env);
+        let api_secret = nautilus_core::env::get_or_env_var_opt(api_secret, secret_env);
+
+        // If credentials were resolved, create authenticated client
+        if let (Some(key), Some(secret)) = (api_key, api_secret) {
+            Self::with_credentials(
+                key,
+                secret,
+                None,
+                is_testnet,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                proxy_url,
+            )
+        } else {
+            // No credentials - create unauthenticated client
+            Self::new(
+                None,
+                is_testnet,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                proxy_url,
+            )
+        }
+    }
+
     /// Sends a JSON-RPC 2.0 request to the Deribit API.
-    async fn send_request<T, P>(&self, method: &str, params: P) -> Result<T, DeribitHttpError>
+    async fn send_request<T, P>(
+        &self,
+        method: &str,
+        params: P,
+        authenticate: bool,
+    ) -> Result<DeribitJsonRpcResponse<T>, DeribitHttpError>
     where
         T: DeserializeOwned,
         P: Serialize,
@@ -171,9 +261,19 @@ impl DeribitRawHttpClient {
 
                 let body = serde_json::to_vec(&request)?;
 
-                // Execute HTTP POST
+                // Build headers
                 let mut headers = std::collections::HashMap::new();
                 headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+                // Add authentication headers if required
+                if authenticate {
+                    let credentials = self
+                        .credential
+                        .as_ref()
+                        .ok_or(DeribitHttpError::MissingCredentials)?;
+                    let auth_headers = credentials.sign_auth_headers("POST", "/api/v2", &body)?;
+                    headers.extend(auth_headers);
+                }
 
                 let resp = self
                     .client
@@ -232,9 +332,9 @@ impl DeribitRawHttpClient {
                     })?;
 
                 // Check if it's a success or error result
-                if let Some(result) = json_rpc_response.result {
-                    Ok(result)
-                } else if let Some(error) = json_rpc_response.error {
+                if json_rpc_response.result.is_some() {
+                    Ok(json_rpc_response)
+                } else if let Some(error) = &json_rpc_response.error {
                     // JSON-RPC error (may come with any HTTP status)
                     tracing::warn!(
                         method = %method,
@@ -248,14 +348,14 @@ impl DeribitRawHttpClient {
                     // Map JSON-RPC error to appropriate error variant
                     Err(DeribitHttpError::from_jsonrpc_error(
                         error.code,
-                        error.message,
-                        error.data,
+                        error.message.clone(),
+                        error.data.clone(),
                     ))
                 } else {
                     tracing::error!(
                         method = %method,
                         status = resp.status.as_u16(),
-                        request_id = json_rpc_response.id,
+                        request_id = ?json_rpc_response.id,
                         "Response contains neither result nor error field"
                     );
                     Err(DeribitHttpError::JsonError(
@@ -313,8 +413,9 @@ impl DeribitRawHttpClient {
     pub async fn get_instruments(
         &self,
         params: GetInstrumentsParams,
-    ) -> Result<Vec<DeribitInstrument>, DeribitHttpError> {
-        self.send_request("public/get_instruments", params).await
+    ) -> Result<DeribitJsonRpcResponse<Vec<DeribitInstrument>>, DeribitHttpError> {
+        self.send_request("public/get_instruments", params, false)
+            .await
     }
 
     /// Gets details for a specific trading instrument.
@@ -325,8 +426,25 @@ impl DeribitRawHttpClient {
     pub async fn get_instrument(
         &self,
         params: GetInstrumentParams,
-    ) -> Result<DeribitInstrument, DeribitHttpError> {
-        self.send_request("public/get_instrument", params).await
+    ) -> Result<DeribitJsonRpcResponse<DeribitInstrument>, DeribitHttpError> {
+        self.send_request("public/get_instrument", params, false)
+            .await
+    }
+
+    /// Gets account summaries for all currencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
+    /// - Authentication fails (invalid signature, expired timestamp)
+    /// - The request fails or the response cannot be parsed
+    pub async fn get_account_summaries(
+        &self,
+        params: GetAccountSummariesParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitAccountSummariesResponse>, DeribitHttpError> {
+        self.send_request("private/get_account_summaries", params, true)
+            .await
     }
 }
 
@@ -345,12 +463,15 @@ impl DeribitHttpClient {
     /// Creates a new [`DeribitHttpClient`] with default configuration.
     ///
     /// # Parameters
+    /// - `base_url`: Optional custom base URL (for testing)
     /// - `is_testnet`: Whether to use the testnet environment
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        base_url: Option<String>,
         is_testnet: bool,
         timeout_secs: Option<u64>,
         max_retries: Option<u32>,
@@ -359,6 +480,47 @@ impl DeribitHttpClient {
         proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let raw_client = Arc::new(DeribitRawHttpClient::new(
+            base_url,
+            is_testnet,
+            timeout_secs,
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+            proxy_url,
+        )?);
+
+        Ok(Self {
+            inner: raw_client,
+            instruments_cache: Arc::new(DashMap::new()),
+            cache_initialized: AtomicBool::new(false),
+        })
+    }
+
+    /// Creates a new [`DeribitHttpClient`] with credentials from environment variables.
+    ///
+    /// If `api_key` or `api_secret` are not provided, they will be loaded from environment:
+    /// - Mainnet: `DERIBIT_API_KEY`, `DERIBIT_API_SECRET`
+    /// - Testnet: `DERIBIT_TESTNET_API_KEY`, `DERIBIT_TESTNET_API_SECRET`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The HTTP client cannot be created
+    /// - Credentials are not provided and environment variables are not set
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_env(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        is_testnet: bool,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> anyhow::Result<Self> {
+        let raw_client = Arc::new(DeribitRawHttpClient::new_with_env(
+            api_key,
+            api_secret,
             is_testnet,
             timeout_secs,
             max_retries,
@@ -392,9 +554,11 @@ impl DeribitHttpClient {
         };
 
         // Call raw client
-        let resp = self.inner.get_instruments(params).await?;
-
-        // Use current timestamp for ts_init
+        let full_response = self.inner.get_instruments(params).await?;
+        let result = full_response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
+        let ts_event = extract_server_timestamp(full_response.us_out)?;
         let ts_init = self.generate_ts_init();
 
         // Parse each instrument
@@ -402,8 +566,8 @@ impl DeribitHttpClient {
         let mut skipped_count = 0;
         let mut error_count = 0;
 
-        for raw_instrument in resp {
-            match parse_deribit_instrument_any(&raw_instrument, ts_init) {
+        for raw_instrument in result {
+            match parse_deribit_instrument_any(&raw_instrument, ts_init, ts_event) {
                 Ok(Some(instrument)) => {
                     instruments.push(instrument);
                 }
@@ -456,10 +620,14 @@ impl DeribitHttpClient {
             instrument_name: instrument_id.symbol.to_string(),
         };
 
-        let response = self.inner.get_instrument(params).await?;
+        let full_response = self.inner.get_instrument(params).await?;
+        let response = full_response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
+        let ts_event = extract_server_timestamp(full_response.us_out)?;
         let ts_init = self.generate_ts_init();
 
-        match parse_deribit_instrument_any(&response, ts_init)? {
+        match parse_deribit_instrument_any(&response, ts_init, ts_event)? {
             Some(instrument) => Ok(instrument),
             None => anyhow::bail!(
                 "Unsupported instrument type: {} (kind: {:?})",
@@ -467,6 +635,35 @@ impl DeribitHttpClient {
                 response.kind
             ),
         }
+    }
+
+    /// Requests account state for all currencies.
+    ///
+    /// Fetches account balance and margin information for all currencies from Deribit
+    /// and converts it to Nautilus [`AccountState`] event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails
+    /// - Currency conversion fails
+    pub async fn request_account_state(
+        &self,
+        account_id: AccountId,
+    ) -> anyhow::Result<AccountState> {
+        let params = GetAccountSummariesParams::default();
+        let full_response = self
+            .inner
+            .get_account_summaries(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let response_data = full_response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
+        let ts_init = self.generate_ts_init();
+        let ts_event = extract_server_timestamp(full_response.us_out)?;
+
+        parse_account_state(&response_data.summaries, account_id, ts_init, ts_event)
     }
 
     /// Generates a timestamp for initialization.
