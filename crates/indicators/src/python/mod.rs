@@ -61,6 +61,7 @@ pub fn indicators(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::momentum::amat::ArcherMovingAveragesTrends>()?;
     m.add_class::<crate::momentum::swings::Swings>()?;
     m.add_class::<crate::momentum::bb::BollingerBands>()?;
+    m.add_class::<crate::momentum::stochastics::StochasticsDMethod>()?;
     m.add_class::<crate::momentum::stochastics::Stochastics>()?;
     m.add_class::<crate::momentum::psl::PsychologicalLine>()?;
     m.add_class::<crate::momentum::pressure::Pressure>()?;

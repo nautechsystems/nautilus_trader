@@ -16,18 +16,54 @@
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
-use crate::{indicator::Indicator, momentum::stochastics::Stochastics};
+use crate::{
+    average::MovingAverageType,
+    indicator::Indicator,
+    momentum::stochastics::{Stochastics, StochasticsDMethod},
+};
 
 #[pymethods]
 impl Stochastics {
+    /// Creates a new Stochastics indicator.
+    ///
+    /// Parameters
+    /// ----------
+    /// period_k : int
+    ///     The lookback period for %K calculation (highest high / lowest low).
+    /// period_d : int
+    ///     The smoothing period for %D calculation.
+    /// slowing : int, optional
+    ///     The slowing period for %K smoothing. Default is 1 (no slowing).
+    ///     Use >1 for MA smoothed %K.
+    /// ma_type : MovingAverageType, optional
+    ///     The MA type for slowing and MA-based %D. Default is Exponential.
+    /// d_method : StochasticsDMethod, optional
+    ///     The %D calculation method. Default is Ratio (Nautilus original).
+    ///     Use MovingAverage for MA smoothed %D.
     #[new]
+    #[pyo3(signature = (period_k, period_d, slowing=None, ma_type=None, d_method=None))]
     #[must_use]
-    pub fn py_new(period_k: usize, period_d: usize) -> Self {
-        Self::new(period_k, period_d)
+    pub fn py_new(
+        period_k: usize,
+        period_d: usize,
+        slowing: Option<usize>,
+        ma_type: Option<MovingAverageType>,
+        d_method: Option<StochasticsDMethod>,
+    ) -> Self {
+        Self::new_with_params(
+            period_k,
+            period_d,
+            slowing.unwrap_or(1),
+            ma_type.unwrap_or(MovingAverageType::Exponential),
+            d_method.unwrap_or(StochasticsDMethod::Ratio),
+        )
     }
 
     fn __repr__(&self) -> String {
-        format!("Stochastics({},{})", self.period_k, self.period_d)
+        format!(
+            "Stochastics({},{},{},{:?},{:?})",
+            self.period_k, self.period_d, self.slowing, self.ma_type, self.d_method
+        )
     }
 
     #[getter]
@@ -46,6 +82,24 @@ impl Stochastics {
     #[pyo3(name = "period_d")]
     const fn py_period_d(&self) -> usize {
         self.period_d
+    }
+
+    #[getter]
+    #[pyo3(name = "slowing")]
+    const fn py_slowing(&self) -> usize {
+        self.slowing
+    }
+
+    #[getter]
+    #[pyo3(name = "ma_type")]
+    const fn py_ma_type(&self) -> MovingAverageType {
+        self.ma_type
+    }
+
+    #[getter]
+    #[pyo3(name = "d_method")]
+    const fn py_d_method(&self) -> StochasticsDMethod {
+        self.d_method
     }
 
     #[getter]
