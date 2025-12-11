@@ -191,6 +191,37 @@ impl Currency {
             currency
         })
     }
+
+    /// Gets or creates a cryptocurrency with context logging.
+    ///
+    /// This is a convenience wrapper around [`Currency::get_or_create_crypto`] that:
+    /// - Trims whitespace from the currency code
+    /// - Handles empty strings with a fallback to USDT
+    /// - Provides optional context for logging
+    ///
+    /// Used by exchange adapters for consistent currency handling across parsing operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `code` - The currency code (will be trimmed)
+    /// * `context` - Optional context for logging (e.g., "balance detail", "instrument")
+    #[must_use]
+    pub fn get_or_create_crypto_with_context<T: AsRef<str>>(
+        code: T,
+        context: Option<&str>,
+    ) -> Self {
+        let trimmed = code.as_ref().trim();
+        let ctx = context.unwrap_or("unknown");
+
+        if trimmed.is_empty() {
+            tracing::warn!(
+                "get_or_create_crypto_with_context called with empty code (context: {ctx}), using USDT as fallback"
+            );
+            return Self::USDT();
+        }
+
+        Self::get_or_create_crypto(trimmed)
+    }
 }
 
 impl PartialEq for Currency {
@@ -499,5 +530,31 @@ mod tests {
         let currency = Currency::get_or_create_crypto(code);
         assert_eq!(currency.code.as_str(), "USTRCOIN");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_context_valid() {
+        let result = Currency::get_or_create_crypto_with_context("BTC", Some("test context"));
+        assert_eq!(result, Currency::BTC());
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_context_empty() {
+        let result = Currency::get_or_create_crypto_with_context("", Some("test context"));
+        assert_eq!(result, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_context_whitespace() {
+        let result = Currency::get_or_create_crypto_with_context("  ", Some("test context"));
+        assert_eq!(result, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_get_or_create_crypto_with_context_unknown() {
+        // Unknown codes should create a new Currency, preserving newly listed assets
+        let result = Currency::get_or_create_crypto_with_context("NEWCOIN", Some("test context"));
+        assert_eq!(result.code.as_str(), "NEWCOIN");
+        assert_eq!(result.precision, 8);
     }
 }

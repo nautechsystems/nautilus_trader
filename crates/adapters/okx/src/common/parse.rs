@@ -218,25 +218,6 @@ where
     Ok(OKXVipLevel::from(level_num))
 }
 
-/// Returns a currency from the internal map or creates a new crypto currency.
-///
-/// If the code is empty, logs a warning with context and returns USDT as fallback.
-/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
-/// which automatically registers newly listed OKX assets.
-fn get_currency_with_context(code: &str, context: Option<&str>) -> Currency {
-    let trimmed = code.trim();
-    let ctx = context.unwrap_or("unknown");
-
-    if trimmed.is_empty() {
-        tracing::warn!(
-            "get_currency called with empty code (context: {ctx}), using USDT as fallback"
-        );
-        return Currency::USDT();
-    }
-
-    Currency::get_or_create_crypto(trimmed)
-}
-
 /// Returns the [`OKXInstrumentType`] that corresponds to the supplied
 /// [`InstrumentAny`].
 ///
@@ -395,7 +376,7 @@ pub fn parse_fee_currency(
         return Currency::USDT();
     }
 
-    get_currency_with_context(trimmed, Some(&context()))
+    Currency::get_or_create_crypto_with_context(trimmed, Some(&context()))
 }
 
 /// Parses OKX side to Nautilus aggressor side.
@@ -1510,8 +1491,10 @@ impl InstrumentParser for SpotInstrumentParser {
         ts_init: UnixNanos,
     ) -> anyhow::Result<InstrumentAny> {
         let context = format!("{} instrument {}", definition.inst_type, definition.inst_id);
-        let base_currency = get_currency_with_context(&definition.base_ccy, Some(&context));
-        let quote_currency = get_currency_with_context(&definition.quote_ccy, Some(&context));
+        let base_currency =
+            Currency::get_or_create_crypto_with_context(definition.base_ccy, Some(&context));
+        let quote_currency =
+            Currency::get_or_create_crypto_with_context(definition.quote_ccy, Some(&context));
 
         // Parse multiplier as product of ct_mult and ct_val
         let multiplier = parse_multiplier_product(definition)?;
@@ -1610,9 +1593,11 @@ pub fn parse_swap_instrument(
 
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
-    let base_currency = get_currency_with_context(base_currency, Some(&context));
-    let quote_currency = get_currency_with_context(quote_currency, Some(&context));
-    let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
+    let base_currency = Currency::get_or_create_crypto_with_context(base_currency, Some(&context));
+    let quote_currency =
+        Currency::get_or_create_crypto_with_context(quote_currency, Some(&context));
+    let settlement_currency =
+        Currency::get_or_create_crypto_with_context(definition.settle_ccy, Some(&context));
     let is_inverse = match definition.ct_type {
         OKXContractType::Linear => false,
         OKXContractType::Inverse => true,
@@ -1702,9 +1687,11 @@ pub fn parse_futures_instrument(
 
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
-    let underlying = get_currency_with_context(&definition.uly, Some(&context));
-    let quote_currency = get_currency_with_context(quote_currency, Some(&context));
-    let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
+    let underlying = Currency::get_or_create_crypto_with_context(definition.uly, Some(&context));
+    let quote_currency =
+        Currency::get_or_create_crypto_with_context(quote_currency, Some(&context));
+    let settlement_currency =
+        Currency::get_or_create_crypto_with_context(definition.settle_ccy, Some(&context));
     let is_inverse = match definition.ct_type {
         OKXContractType::Linear => false,
         OKXContractType::Inverse => true,
@@ -1798,11 +1785,12 @@ pub fn parse_option_instrument(
 
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
-    let underlying = get_currency_with_context(underlying_str, Some(&context));
+    let underlying = Currency::get_or_create_crypto_with_context(underlying_str, Some(&context));
     let option_kind: OptionKind = definition.opt_type.into();
     let strike_price = Price::from(&definition.stk);
-    let quote_currency = get_currency_with_context(quote_ccy_str, Some(&context));
-    let settlement_currency = get_currency_with_context(&definition.settle_ccy, Some(&context));
+    let quote_currency = Currency::get_or_create_crypto_with_context(quote_ccy_str, Some(&context));
+    let settlement_currency =
+        Currency::get_or_create_crypto_with_context(definition.settle_ccy, Some(&context));
 
     let is_inverse = if definition.ct_type == OKXContractType::None {
         settlement_currency == underlying
@@ -1908,7 +1896,7 @@ pub fn parse_account_state(
         }
 
         // Get or create currency (consistent with instrument parsing)
-        let currency = get_currency_with_context(ccy_str, Some("balance detail"));
+        let currency = Currency::get_or_create_crypto_with_context(ccy_str, Some("balance detail"));
 
         // Parse balance values, skip if invalid
         let Some(total) = parse_balance_field(&b.cash_bal, "cash_bal", currency, ccy_str) else {
@@ -2061,32 +2049,6 @@ mod tests {
         // Unknown currency code should create a new Currency (8 decimals, crypto)
         let result = parse_fee_currency("NEWTOKEN", dec!(0.5), || "test context".to_string());
         assert_eq!(result.code.as_str(), "NEWTOKEN");
-        assert_eq!(result.precision, 8);
-    }
-
-    #[rstest]
-    fn test_get_currency_with_context_valid() {
-        let result = get_currency_with_context("BTC", Some("test context"));
-        assert_eq!(result, Currency::BTC());
-    }
-
-    #[rstest]
-    fn test_get_currency_with_context_empty() {
-        let result = get_currency_with_context("", Some("test context"));
-        assert_eq!(result, Currency::USDT());
-    }
-
-    #[rstest]
-    fn test_get_currency_with_context_whitespace() {
-        let result = get_currency_with_context("  ", Some("test context"));
-        assert_eq!(result, Currency::USDT());
-    }
-
-    #[rstest]
-    fn test_get_currency_with_context_unknown() {
-        // Unknown codes should create a new Currency, preserving newly listed assets
-        let result = get_currency_with_context("NEWCOIN", Some("test context"));
-        assert_eq!(result.code.as_str(), "NEWCOIN");
         assert_eq!(result.precision, 8);
     }
 

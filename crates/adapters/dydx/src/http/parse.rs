@@ -47,7 +47,7 @@ use super::models::PerpetualMarket;
 use crate::{
     common::{
         enums::{DydxMarketStatus, DydxOrderExecution, DydxOrderType, DydxTimeInForce},
-        parse::{get_currency, parse_decimal, parse_instrument_id, parse_price, parse_quantity},
+        parse::{parse_decimal, parse_instrument_id, parse_price, parse_quantity},
     },
     websocket::messages::DydxSubaccountInfo,
 };
@@ -231,8 +231,8 @@ pub fn parse_instrument_any(
     let (base_str, quote_str) = parse_ticker_currencies(&definition.ticker)
         .context(format!("Failed to parse ticker '{}'", definition.ticker))?;
 
-    let base_currency = get_currency(base_str);
-    let quote_currency = get_currency(quote_str);
+    let base_currency = Currency::get_or_create_crypto_with_context(base_str, None);
+    let quote_currency = Currency::get_or_create_crypto_with_context(quote_str, None);
     let settlement_currency = quote_currency; // dYdX perpetuals settle in quote currency
 
     // Parse price and size increments with context
@@ -1128,7 +1128,7 @@ pub fn parse_account_state(
     ))?;
 
     // dYdX uses USDC as the settlement currency
-    let currency = get_currency("USDC");
+    let currency = Currency::get_or_create_crypto_with_context("USDC", None);
 
     let total = Money::new(equity_f64, currency);
     let free = Money::new(free_collateral_f64, currency);
