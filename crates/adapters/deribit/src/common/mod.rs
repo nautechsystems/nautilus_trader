@@ -16,6 +16,7 @@
 //! Common types and utilities for the Deribit adapter.
 
 pub mod consts;
+pub mod credential;
 pub mod parse;
 #[cfg(test)]
 pub mod testing;
