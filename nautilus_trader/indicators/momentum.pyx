@@ -314,6 +314,22 @@ cdef class ChandeMomentumOscillator(Indicator):
         self.value = 0
 
 
+class StochasticsDMethod:
+    """
+    Method for calculating %D in the Stochastics indicator.
+
+    The %D line is the smoothed version of %K and provides trading signals.
+    Two calculation methods are supported:
+
+    - **RATIO**: Nautilus original method using `100 * SUM(close-LL) / SUM(HH-LL)` over `period_d`.
+      This is range-weighted and has less lag than MA-based methods.
+    - **MOVING_AVERAGE**: Standard method using MA of slowed %K values, compatible with
+      cTrader/MetaTrader implementations.
+    """
+    RATIO = "ratio"
+    MOVING_AVERAGE = "moving_average"
+
+
 cdef class Stochastics(Indicator):
     """
     An oscillator which can indicate when an asset may be over bought or over
@@ -322,9 +338,17 @@ cdef class Stochastics(Indicator):
     Parameters
     ----------
     period_k : int
-        The period for the K line.
+        The period for the K line (highest high / lowest low lookback).
     period_d : int
-        The period for the D line.
+        The period for the D line (smoothing period).
+    slowing : int, optional
+        The slowing period for %K smoothing (1 = no slowing, > 1 = MA smoothed).
+        Default is 1 for backward compatibility.
+    ma_type : MovingAverageType, optional
+        The MA type for slowing and MA-based %D. Default is EXPONENTIAL.
+    d_method : str, optional
+        The %D calculation method: "ratio" (Nautilus native) or "moving_average" (cTrader-like).
+        Default is "ratio" for backward compatibility.
 
     Raises
     ------
@@ -332,23 +356,62 @@ cdef class Stochastics(Indicator):
         If `period_k` is not positive (> 0).
     ValueError
         If `period_d` is not positive (> 0).
+    ValueError
+        If `slowing` is not positive (> 0).
 
     References
     ----------
     https://www.forextraders.com/forex-education/forex-indicators/stochastics-indicator-explained/
     """
 
-    def __init__(self, int period_k, int period_d):
+    def __init__(
+        self,
+        int period_k,
+        int period_d,
+        int slowing = 1,
+        ma_type = None,
+        str d_method = "ratio",
+    ):
+        from nautilus_trader.indicators.averages import MovingAverageFactory
+        from nautilus_trader.indicators.averages import MovingAverageType
+
         Condition.positive_int(period_k, "period_k")
         Condition.positive_int(period_d, "period_d")
-        super().__init__(params=[period_k, period_d])
+        Condition.positive_int(slowing, "slowing")
+
+        if ma_type is None:
+            ma_type = MovingAverageType.EXPONENTIAL
+
+        # Validate d_method
+        if d_method not in (StochasticsDMethod.RATIO, StochasticsDMethod.MOVING_AVERAGE):
+            raise ValueError(
+                f"d_method must be '{StochasticsDMethod.RATIO}' or "
+                f"'{StochasticsDMethod.MOVING_AVERAGE}', got '{d_method}'"
+            )
+
+        params = [period_k, period_d, slowing, get_ma_type_name(ma_type), d_method]
+        super().__init__(params=params)
 
         self.period_k = period_k
         self.period_d = period_d
+        self.slowing = slowing
+        self.ma_type = ma_type
+        self.d_method = d_method
+
         self._highs = deque(maxlen=period_k)
         self._lows = deque(maxlen=period_k)
         self._c_sub_l = deque(maxlen=period_d)
         self._h_sub_l = deque(maxlen=period_d)
+
+        # Slowing MA (only if slowing > 1)
+        self._slowing_ma = None
+        if slowing > 1:
+            self._slowing_ma = MovingAverageFactory.create(slowing, ma_type)
+
+        # %D MA (only if d_method == MOVING_AVERAGE)
+        self._d_ma = None
+        if d_method == StochasticsDMethod.MOVING_AVERAGE:
+            self._d_ma = MovingAverageFactory.create(period_d, ma_type)
 
         self.value_k = 0
         self.value_d = 0
@@ -397,28 +460,77 @@ cdef class Stochastics(Indicator):
         self._highs.append(high)
         self._lows.append(low)
 
-        # Initialization logic
+        # Initialization logic for backward compatibility (slowing=1, d_method=ratio)
         if not self.initialized:
             if len(self._highs) == self.period_k and len(self._lows) == self.period_k:
-                self._set_initialized(True)
+                if self._slowing_ma is None and self.d_method == StochasticsDMethod.RATIO:
+                    self._set_initialized(True)
 
         cdef double k_max_high = max(self._highs)
         cdef double k_min_low = min(self._lows)
 
-        self._c_sub_l.append(close - k_min_low)
-        self._h_sub_l.append(k_max_high - k_min_low)
+        # For ratio method, always update the deques (matches original behavior)
+        if self.d_method == StochasticsDMethod.RATIO:
+            self._c_sub_l.append(close - k_min_low)
+            self._h_sub_l.append(k_max_high - k_min_low)
 
         if k_max_high == k_min_low:
             return  # Divide by zero guard
 
-        self.value_k = 100 * ((close - k_min_low) / (k_max_high - k_min_low))
-        self.value_d = 100 * (sum(self._c_sub_l) / sum(self._h_sub_l))
+        # Calculate raw %K
+        cdef double raw_k = 100.0 * ((close - k_min_low) / (k_max_high - k_min_low))
+
+        # Apply slowing if configured (slowing > 1)
+        cdef double slowed_k
+        cdef double sum_h_sub_l  # Pre-declare for use in RATIO method
+        if self._slowing_ma is not None:
+            self._slowing_ma.update_raw(raw_k)
+            slowed_k = self._slowing_ma.value
+        else:
+            slowed_k = raw_k  # No slowing when slowing == 1
+
+        self.value_k = slowed_k
+
+        # Calculate %D based on d_method
+        if self.d_method == StochasticsDMethod.RATIO:
+            # Nautilus native: 100 * SUM(close-LL) / SUM(HH-LL) over period_d
+            sum_h_sub_l = sum(self._h_sub_l)
+            if sum_h_sub_l == 0.0:
+                self.value_d = 0.0
+            else:
+                self.value_d = 100.0 * (sum(self._c_sub_l) / sum_h_sub_l)
+        else:
+            # cTrader-like: MA(slowed_k, period_d, ma_type)
+            if self._d_ma is not None:
+                self._d_ma.update_raw(slowed_k)
+                self.value_d = self._d_ma.value
+            else:
+                self.value_d = 50.0  # Fallback (shouldn't happen)
+
+        # Update initialization state for new parameter combinations
+        if not self.initialized:
+            base_ready = len(self._highs) == self.period_k
+            slowing_ready = self._slowing_ma is None or self._slowing_ma.initialized
+            d_ready = True
+            if self.d_method == StochasticsDMethod.MOVING_AVERAGE:
+                d_ready = self._d_ma is None or self._d_ma.initialized
+
+            if base_ready and slowing_ready and d_ready:
+                self._set_initialized(True)
 
     cpdef void _reset(self):
         self._highs.clear()
         self._lows.clear()
         self._c_sub_l.clear()
         self._h_sub_l.clear()
+
+        # Reset slowing MA if present
+        if self._slowing_ma is not None:
+            self._slowing_ma.reset()
+
+        # Reset %D MA if present
+        if self._d_ma is not None:
+            self._d_ma.reset()
 
         self.value_k = 0
         self.value_d = 0

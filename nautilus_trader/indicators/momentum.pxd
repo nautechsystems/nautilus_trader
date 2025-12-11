@@ -63,11 +63,19 @@ cdef class Stochastics(Indicator):
     cdef object _lows
     cdef object _c_sub_l
     cdef object _h_sub_l
+    cdef object _slowing_ma
+    cdef object _d_ma
 
     cdef readonly int period_k
     """The k period.\n\n:returns: `int`"""
     cdef readonly int period_d
     """The d period.\n\n:returns: `int`"""
+    cdef readonly int slowing
+    """The slowing period for %K smoothing.\n\n:returns: `int`"""
+    cdef readonly object ma_type
+    """The MA type for slowing and MA-based %D.\n\n:returns: `MovingAverageType`"""
+    cdef readonly str d_method
+    """The %D calculation method ('ratio' or 'moving_average').\n\n:returns: `str`"""
     cdef readonly double value_k
     """The k value.\n\n:returns: `double`"""
     cdef readonly double value_d
