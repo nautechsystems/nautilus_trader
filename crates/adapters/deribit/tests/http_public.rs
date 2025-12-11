@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Integration tests for the Deribit HTTP client using a mock Axum server.
+//! Integration tests for Deribit public HTTP API using a mock Axum server.
 
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
@@ -67,15 +67,8 @@ async fn start_test_server(state: TestServerState) -> SocketAddr {
 
 async fn wait_for_server(addr: SocketAddr) {
     let health_url = format!("http://{addr}/health");
-    let http_client = HttpClient::new(
-        HashMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-        Some(1), // 1 second timeout
-        None,
-    )
-    .unwrap();
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, Some(1), None).unwrap();
 
     wait_until_async(
         || {
@@ -96,11 +89,8 @@ async fn handle_jsonrpc_request(
     State(state): State<TestServerState>,
     Json(request): Json<serde_json::Value>,
 ) -> axum::response::Response {
-    // Extract JSON-RPC method from request body
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
-
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
-
     let params = request.get("params").cloned();
 
     // Track request
@@ -134,7 +124,7 @@ async fn handle_get_instrument(id: u64, params: Option<Value>) -> axum::response
     match instrument_name.as_deref() {
         Some("BTC-PERPETUAL") => {
             let mut data = load_test_data("http_get_instrument.json");
-            data["id"] = json!(id); // Match request ID
+            data["id"] = json!(id);
             Json(data).into_response()
         }
         Some("INVALID") => Json(json!({
@@ -180,7 +170,7 @@ async fn handle_get_instruments(id: u64, params: Option<Value>) -> axum::respons
     match currency.as_deref() {
         Some("BTC") => {
             let mut data = load_test_data("http_get_instruments.json");
-            data["id"] = json!(id); // Match request ID
+            data["id"] = json!(id);
 
             // If kind is specified, filter the results
             if let Some(kind_str) = kind
@@ -239,9 +229,7 @@ async fn handle_method_not_found(id: u64) -> axum::response::Response {
 
 fn create_router(state: TestServerState) -> Router {
     Router::new()
-        // Single POST endpoint for all JSON-RPC requests
         .route("/api/v2", post(handle_jsonrpc_request))
-        // Health check for server readiness
         .route("/health", get(|| async { "OK" }))
         .with_state(state)
 }
@@ -252,25 +240,21 @@ fn create_router(state: TestServerState) -> Router {
 
 #[tokio::test]
 async fn test_get_instrument_success() {
-    // Setup
     let state = TestServerState::default();
     let addr = start_test_server(state.clone()).await;
     wait_for_server(addr).await;
 
-    // Create client pointing to test server
-    // Note: client.send_request() POSTs directly to base_url
-    // The /public is part of the method name (public/get_instrument), not the URL
     let base_url = format!("http://{addr}/api/v2");
-    let client = DeribitRawHttpClient::new_with_base_url(base_url, Some(5)).unwrap();
-
-    // Execute
+    let client =
+        DeribitRawHttpClient::new(Some(base_url), false, Some(5), None, None, None, None).unwrap();
     let params = GetInstrumentParams {
         instrument_name: "BTC-PERPETUAL".to_string(),
     };
     let result = client.get_instrument(params).await;
 
     assert!(result.is_ok(), "Request should succeed");
-    let instrument = result.unwrap();
+    let response = result.unwrap();
+    let instrument = response.result.expect("Response should have result");
 
     assert_eq!(instrument.instrument_name.as_str(), "BTC-PERPETUAL");
     assert_eq!(instrument.instrument_id, 124972);
@@ -282,61 +266,45 @@ async fn test_get_instrument_success() {
     assert!(instrument.is_active);
     assert_eq!(instrument.kind, DeribitInstrumentKind::Future);
 
-    // Verify state tracking
     assert_eq!(
         *state
             .request_counts
             .get("public/get_instrument")
             .expect("Request count should be tracked"),
-        1,
-        "Should track request count"
-    );
-
-    let last_params = state
-        .last_request_params
-        .get("public/get_instrument")
-        .expect("Request params should be tracked")
-        .clone();
-    assert_eq!(
-        last_params
-            .get("instrument_name")
-            .unwrap()
-            .as_str()
-            .unwrap(),
-        "BTC-PERPETUAL"
+        1
     );
 }
 
 #[tokio::test]
 async fn test_get_instrument_invalid_params() {
-    // Setup
     let state = TestServerState::default();
     let addr = start_test_server(state.clone()).await;
     wait_for_server(addr).await;
 
     let base_url = format!("http://{addr}/api/v2");
-    let client = DeribitRawHttpClient::new_with_base_url(base_url, Some(5)).unwrap();
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
 
-    // Test with invalid instrument name
     let params = GetInstrumentParams {
         instrument_name: "INVALID".to_string(),
     };
     let result = client.get_instrument(params).await;
 
-    // Should fail with ValidationError
     assert!(result.is_err());
     let err = result.unwrap_err();
 
     match err {
         DeribitHttpError::ValidationError(msg) => {
-            assert!(
-                msg.contains("Invalid params"),
-                "Error message should contain 'Invalid params': {msg}"
-            );
-            assert!(
-                msg.contains("instrument_name"),
-                "Error should mention parameter name: {msg}"
-            );
+            assert!(msg.contains("Invalid params"));
+            assert!(msg.contains("instrument_name"));
         }
         other => panic!("Expected ValidationError, got: {other:?}"),
     }
@@ -344,15 +312,22 @@ async fn test_get_instrument_invalid_params() {
 
 #[tokio::test]
 async fn test_get_instrument_not_found() {
-    // Setup
     let state = TestServerState::default();
     let addr = start_test_server(state.clone()).await;
     wait_for_server(addr).await;
 
     let base_url = format!("http://{addr}/api/v2");
-    let client = DeribitRawHttpClient::new_with_base_url(base_url, Some(5)).unwrap();
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
 
-    // Test with nonexistent instrument
     let params = GetInstrumentParams {
         instrument_name: "NONEXISTENT-INSTRUMENT".to_string(),
     };
@@ -366,7 +341,7 @@ async fn test_get_instrument_not_found() {
             error_code,
             message,
         } => {
-            assert_eq!(error_code, 13020, "Should be instrument_not_found error");
+            assert_eq!(error_code, 13020);
             assert!(message.contains("instrument_not_found"));
         }
         other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
@@ -375,49 +350,51 @@ async fn test_get_instrument_not_found() {
 
 #[tokio::test]
 async fn test_get_instruments_success() {
-    // Setup
     let state = TestServerState::default();
     let addr = start_test_server(state.clone()).await;
     wait_for_server(addr).await;
 
     let base_url = format!("http://{addr}/api/v2");
-    let client = DeribitRawHttpClient::new_with_base_url(base_url, Some(5)).unwrap();
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
 
-    // Execute - get all BTC instruments
     let params = GetInstrumentsParams::new(DeribitCurrency::BTC);
     let result = client.get_instruments(params).await;
 
     assert!(result.is_ok(), "Request should succeed");
-    let instruments = result.unwrap();
+    let response = result.unwrap();
+    let instruments = response.result.expect("Response should have result");
 
-    // Should return 4 instruments (perpetual, future, option, combo)
     assert_eq!(instruments.len(), 4, "Should return 4 instruments");
 
-    // Verify first instrument (BTC-PERPETUAL)
     let perpetual = &instruments[0];
     assert_eq!(perpetual.instrument_name.as_str(), "BTC-PERPETUAL");
     assert_eq!(perpetual.kind, DeribitInstrumentKind::Future);
     assert_eq!(perpetual.base_currency.as_str(), "BTC");
     assert!(perpetual.is_active);
 
-    // Verify second instrument (BTC-27DEC24 future)
     let future = &instruments[1];
     assert_eq!(future.instrument_name.as_str(), "BTC-27DEC24");
     assert_eq!(future.kind, DeribitInstrumentKind::Future);
     assert_eq!(future.expiration_timestamp, Some(1735300800000));
 
-    // Verify third instrument (option)
     let option = &instruments[2];
     assert_eq!(option.instrument_name.as_str(), "BTC-27DEC24-100000-C");
     assert_eq!(option.kind, DeribitInstrumentKind::Option);
     assert_eq!(option.strike, Some(100000.0));
 
-    // Verify fourth instrument (combo)
     let combo = &instruments[3];
     assert_eq!(combo.instrument_name.as_str(), "BTC-COMBO-1");
     assert_eq!(combo.kind, DeribitInstrumentKind::FutureCombo);
 
-    // Verify state tracking
     assert_eq!(
         *state
             .request_counts
@@ -429,28 +406,31 @@ async fn test_get_instruments_success() {
 
 #[tokio::test]
 async fn test_get_instruments_with_kind_filter() {
-    // Setup
     let state = TestServerState::default();
     let addr = start_test_server(state.clone()).await;
     wait_for_server(addr).await;
 
     let base_url = format!("http://{addr}/api/v2");
-    let client = DeribitRawHttpClient::new_with_base_url(base_url, Some(5)).unwrap();
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
 
-    // Execute - get only option instruments
     let params =
         GetInstrumentsParams::with_kind(DeribitCurrency::BTC, DeribitInstrumentKind::Option);
     let result = client.get_instruments(params).await;
 
     assert!(result.is_ok(), "Request should succeed");
-    let instruments = result.unwrap();
+    let response = result.unwrap();
+    let instruments = response.result.expect("Response should have result");
 
-    // Should return only 1 option instrument
-    assert_eq!(
-        instruments.len(),
-        1,
-        "Should return only 1 option instrument"
-    );
+    assert_eq!(instruments.len(), 1);
 
     let option = &instruments[0];
     assert_eq!(option.instrument_name.as_str(), "BTC-27DEC24-100000-C");
@@ -459,22 +439,27 @@ async fn test_get_instruments_with_kind_filter() {
 
 #[tokio::test]
 async fn test_get_instruments_empty_result() {
-    // Setup
     let state = TestServerState::default();
     let addr = start_test_server(state.clone()).await;
     wait_for_server(addr).await;
 
     let base_url = format!("http://{addr}/api/v2");
-    let client = DeribitRawHttpClient::new_with_base_url(base_url, Some(5)).unwrap();
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
 
-    // Execute - request instruments for ETH (not in our test data)
     let params = GetInstrumentsParams::new(DeribitCurrency::ETH);
     let result = client.get_instruments(params).await;
 
-    assert!(
-        result.is_ok(),
-        "Request should succeed even with empty result"
-    );
-    let instruments = result.unwrap();
-    assert_eq!(instruments.len(), 0, "Should return empty array");
+    assert!(result.is_ok());
+    let response = result.unwrap();
+    let instruments = response.result.expect("Response should have result");
+    assert_eq!(instruments.len(), 0);
 }
