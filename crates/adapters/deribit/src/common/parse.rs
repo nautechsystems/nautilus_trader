@@ -18,21 +18,35 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    enums::{AssetClass, CurrencyType, OptionKind},
-    identifiers::{InstrumentId, Symbol},
+    enums::{AccountType, AssetClass, CurrencyType, OptionKind},
+    events::AccountState,
+    identifiers::{AccountId, InstrumentId, Symbol, Venue},
     instruments::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, OptionContract, any::InstrumentAny,
     },
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
 use crate::{
     common::consts::DERIBIT_VENUE,
-    http::models::{DeribitInstrument, DeribitInstrumentKind, DeribitOptionType},
+    http::models::{
+        DeribitAccountSummary, DeribitInstrument, DeribitInstrumentKind, DeribitOptionType,
+    },
 };
+
+/// Extracts server timestamp from response and converts to UnixNanos.
+///
+/// # Errors
+///
+/// Returns an error if the server timestamp (us_out) is missing from the response.
+pub fn extract_server_timestamp(us_out: Option<u64>) -> anyhow::Result<UnixNanos> {
+    let us_out =
+        us_out.ok_or_else(|| anyhow::anyhow!("Missing server timestamp (us_out) in response"))?;
+    Ok(UnixNanos::from(us_out * NANOSECONDS_IN_MICROSECOND))
+}
 
 /// Parses a Deribit instrument into a Nautilus [`InstrumentAny`].
 ///
@@ -47,18 +61,23 @@ use crate::{
 pub fn parse_deribit_instrument_any(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
+    ts_event: UnixNanos,
 ) -> anyhow::Result<Option<InstrumentAny>> {
     match instrument.kind {
-        DeribitInstrumentKind::Spot => parse_spot_instrument(instrument, ts_init).map(Some),
+        DeribitInstrumentKind::Spot => {
+            parse_spot_instrument(instrument, ts_init, ts_event).map(Some)
+        }
         DeribitInstrumentKind::Future => {
             // Check if it's a perpetual
             if instrument.instrument_name.as_str().contains("PERPETUAL") {
-                parse_perpetual_instrument(instrument, ts_init).map(Some)
+                parse_perpetual_instrument(instrument, ts_init, ts_event).map(Some)
             } else {
-                parse_future_instrument(instrument, ts_init).map(Some)
+                parse_future_instrument(instrument, ts_init, ts_event).map(Some)
             }
         }
-        DeribitInstrumentKind::Option => parse_option_instrument(instrument, ts_init).map(Some),
+        DeribitInstrumentKind::Option => {
+            parse_option_instrument(instrument, ts_init, ts_event).map(Some)
+        }
         DeribitInstrumentKind::FutureCombo | DeribitInstrumentKind::OptionCombo => {
             // Skip combos for initial implementation
             Ok(None)
@@ -70,6 +89,7 @@ pub fn parse_deribit_instrument_any(
 fn parse_spot_instrument(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
+    ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
@@ -117,8 +137,8 @@ fn parse_spot_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
-        ts_init, // ts_event
-        ts_init, // ts_init
+        ts_event,
+        ts_init,
     );
 
     Ok(InstrumentAny::CurrencyPair(currency_pair))
@@ -128,6 +148,7 @@ fn parse_spot_instrument(
 fn parse_perpetual_instrument(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
+    ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
@@ -191,8 +212,8 @@ fn parse_perpetual_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
-        ts_init, // ts_event
-        ts_init, // ts_init
+        ts_event,
+        ts_init,
     );
 
     Ok(InstrumentAny::CryptoPerpetual(perpetual))
@@ -202,6 +223,7 @@ fn parse_perpetual_instrument(
 fn parse_future_instrument(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
+    ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
@@ -274,8 +296,8 @@ fn parse_future_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
-        ts_init, // ts_event
-        ts_init, // ts_init
+        ts_event,
+        ts_init,
     );
 
     Ok(InstrumentAny::CryptoFuture(future))
@@ -285,6 +307,7 @@ fn parse_future_instrument(
 fn parse_option_instrument(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
+    ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
 
@@ -349,11 +372,104 @@ fn parse_option_instrument(
         None, // margin_maint
         Some(maker_fee),
         Some(taker_fee),
-        ts_init, // ts_event
-        ts_init, // ts_init
+        ts_event,
+        ts_init,
     );
 
     Ok(InstrumentAny::OptionContract(option))
+}
+
+/// Parses Deribit account summaries into a Nautilus [`AccountState`].
+///
+/// Processes multiple currency summaries and creates balance entries for each currency.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Money conversion fails for any balance field
+/// - Decimal conversion fails for margin values
+pub fn parse_account_state(
+    summaries: &[DeribitAccountSummary],
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    ts_event: UnixNanos,
+) -> anyhow::Result<AccountState> {
+    let mut balances = Vec::new();
+    let mut margins = Vec::new();
+
+    // Parse each currency summary
+    for summary in summaries {
+        let ccy_str = summary.currency.as_str().trim();
+
+        // Skip balances with empty currency codes
+        if ccy_str.is_empty() {
+            tracing::debug!(
+                "Skipping balance detail with empty currency code | raw_data={:?}",
+                summary
+            );
+            continue;
+        }
+
+        let currency = Currency::get_or_create_crypto_with_context(
+            ccy_str,
+            Some("DERIBIT - Parsing account state"),
+        );
+
+        // Parse balance: total (equity includes unrealized PnL), locked, free
+        // Note: Deribit's available_funds = equity - initial_margin, so we must use equity for total
+        let total = Money::new(summary.equity, currency);
+        let free = Money::new(summary.available_funds, currency);
+        let locked = Money::from_raw(total.raw - free.raw, currency);
+
+        let balance = AccountBalance::new(total, locked, free);
+        balances.push(balance);
+
+        // Parse margin balances if present
+        if let (Some(initial_margin), Some(maintenance_margin)) =
+            (summary.initial_margin, summary.maintenance_margin)
+        {
+            // Only create margin balance if there are actual margin requirements
+            if initial_margin > 0.0 || maintenance_margin > 0.0 {
+                let initial = Money::new(initial_margin, currency);
+                let maintenance = Money::new(maintenance_margin, currency);
+
+                // Create a synthetic instrument_id for account-level margins
+                let margin_instrument_id = InstrumentId::new(
+                    Symbol::from_str_unchecked(format!("ACCOUNT-{}", summary.currency)),
+                    Venue::new("DERIBIT"),
+                );
+
+                margins.push(MarginBalance::new(
+                    initial,
+                    maintenance,
+                    margin_instrument_id,
+                ));
+            }
+        }
+    }
+
+    // Ensure at least one balance exists (Nautilus requires non-empty balances)
+    if balances.is_empty() {
+        let zero_currency = Currency::USD();
+        let zero_money = Money::new(0.0, zero_currency);
+        let zero_balance = AccountBalance::new(zero_money, zero_money, zero_money);
+        balances.push(zero_balance);
+    }
+
+    let account_type = AccountType::Margin;
+    let is_reported = true;
+
+    Ok(AccountState::new(
+        account_id,
+        account_type,
+        balances,
+        margins,
+        is_reported,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        None,
+    ))
 }
 
 #[cfg(test)]
@@ -363,7 +479,10 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::{common::testing::load_test_json, http::models::DeribitJsonRpcResponse};
+    use crate::{
+        common::testing::load_test_json,
+        http::models::{DeribitAccountSummariesResponse, DeribitJsonRpcResponse},
+    };
 
     #[rstest]
     fn test_parse_perpetual_instrument() {
@@ -373,7 +492,8 @@ mod tests {
         let deribit_inst = response.result.expect("Test data must have result");
 
         let instrument_any =
-            parse_deribit_instrument_any(&deribit_inst, UnixNanos::default()).unwrap();
+            parse_deribit_instrument_any(&deribit_inst, UnixNanos::default(), UnixNanos::default())
+                .unwrap();
         let instrument = instrument_any.expect("Should parse perpetual instrument");
 
         let InstrumentAny::CryptoPerpetual(perpetual) = instrument else {
@@ -409,7 +529,8 @@ mod tests {
             .expect("Test data must contain BTC-27DEC24");
 
         let instrument_any =
-            parse_deribit_instrument_any(deribit_inst, UnixNanos::default()).unwrap();
+            parse_deribit_instrument_any(deribit_inst, UnixNanos::default(), UnixNanos::default())
+                .unwrap();
         let instrument = instrument_any.expect("Should parse future instrument");
 
         let InstrumentAny::CryptoFuture(future) = instrument else {
@@ -453,7 +574,8 @@ mod tests {
             .expect("Test data must contain BTC-27DEC24-100000-C");
 
         let instrument_any =
-            parse_deribit_instrument_any(deribit_inst, UnixNanos::default()).unwrap();
+            parse_deribit_instrument_any(deribit_inst, UnixNanos::default(), UnixNanos::default())
+                .unwrap();
         let instrument = instrument_any.expect("Should parse option instrument");
 
         // Verify it's an OptionContract
@@ -485,5 +607,84 @@ mod tests {
         assert_eq!(option.lot_size(), Some(Quantity::from("0.1")));
         assert_eq!(option.maker_fee, dec!(0.0003));
         assert_eq!(option.taker_fee, dec!(0.0003));
+    }
+
+    #[rstest]
+    fn test_parse_account_state_with_positions() {
+        let json_data = load_test_json("http_get_account_summaries.json");
+        let response: DeribitJsonRpcResponse<DeribitAccountSummariesResponse> =
+            serde_json::from_str(&json_data).unwrap();
+        let result = response.result.expect("Test data must have result");
+
+        let account_id = AccountId::from("DERIBIT-001");
+
+        // Extract server timestamp from response
+        let ts_event =
+            extract_server_timestamp(response.us_out).expect("Test data must have us_out");
+        let ts_init = UnixNanos::default();
+
+        let account_state = parse_account_state(&result.summaries, account_id, ts_init, ts_event)
+            .expect("Should parse account state");
+
+        // Verify we got 2 currencies (BTC and ETH)
+        assert_eq!(account_state.balances.len(), 2);
+
+        // Test BTC balance (has open positions with unrealized PnL)
+        let btc_balance = account_state
+            .balances
+            .iter()
+            .find(|b| b.currency.code == "BTC")
+            .expect("BTC balance should exist");
+
+        // From test data:
+        // balance: 302.60065765, equity: 302.61869214, available_funds: 301.38059622
+        // initial_margin: 1.24669592, session_upl: 0.05271555
+        //
+        // Using equity (correct):
+        // total = equity = 302.61869214
+        // free = available_funds = 301.38059622
+        // locked = total - free = 302.61869214 - 301.38059622 = 1.23809592
+        //
+        // This is close to initial_margin (1.24669592), small difference due to other factors
+        assert_eq!(btc_balance.total.as_f64(), 302.61869214);
+        assert_eq!(btc_balance.free.as_f64(), 301.38059622);
+
+        // Verify locked is positive and close to initial_margin
+        let locked = btc_balance.locked.as_f64();
+        assert!(
+            locked > 0.0,
+            "Locked should be positive when positions exist"
+        );
+        assert!(
+            (locked - 1.24669592).abs() < 0.01,
+            "Locked ({locked}) should be close to initial_margin (1.24669592)"
+        );
+
+        // Test ETH balance (no positions)
+        let eth_balance = account_state
+            .balances
+            .iter()
+            .find(|b| b.currency.code == "ETH")
+            .expect("ETH balance should exist");
+
+        // From test data: balance: 100, equity: 100, available_funds: 99.999598
+        // total = equity = 100
+        // free = available_funds = 99.999598
+        // locked = 100 - 99.999598 = 0.000402 (matches initial_margin)
+        assert_eq!(eth_balance.total.as_f64(), 100.0);
+        assert_eq!(eth_balance.free.as_f64(), 99.999598);
+        assert_eq!(eth_balance.locked.as_f64(), 0.000402);
+
+        // Verify account metadata
+        assert_eq!(account_state.account_id, account_id);
+        assert_eq!(account_state.account_type, AccountType::Margin);
+        assert!(account_state.is_reported);
+
+        // Verify ts_event matches server timestamp (us_out = 1687352432005000 microseconds)
+        let expected_ts_event = UnixNanos::from(1687352432005000_u64 * NANOSECONDS_IN_MICROSECOND);
+        assert_eq!(
+            account_state.ts_event, expected_ts_event,
+            "ts_event should match server timestamp from response"
+        );
     }
 }
