@@ -28,6 +28,7 @@ Env:
   LIGHTER_API_KEY_INDEX
   LIGHTER_API_KEY_PRIVATE_KEY or LIGHTER_API_SECRET
   Signer binaries under /tmp/lighter-python/lighter/signers
+
 """
 
 from __future__ import annotations
@@ -43,16 +44,15 @@ from typing import Any
 
 import requests
 
-from nautilus_trader.adapters.lighter.constants import (
-    LIGHTER_MAINNET_HTTP_BASE,
-    LIGHTER_TESTNET_HTTP_BASE,
-)
+from nautilus_trader.adapters.lighter.constants import LIGHTER_MAINNET_HTTP_BASE
+from nautilus_trader.adapters.lighter.constants import LIGHTER_TESTNET_HTTP_BASE
 from nautilus_trader.adapters.lighter.providers import LighterInstrumentProvider
 from nautilus_trader.adapters.lighter.signer import LighterSigner
 from nautilus_trader.common.providers import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import InstrumentId
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("lighter_ping_pong")
@@ -106,7 +106,9 @@ def size_to_int(size: Decimal, decimals: int) -> int:
 
 
 def get_pyo3_instrument_for_market(provider: LighterInstrumentProvider, market: str) -> Any:
-    """Get the PyO3 instrument for the specified market (btc/eth)."""
+    """
+    Get the PyO3 instrument for the specified market (btc/eth).
+    """
     target_base = market.upper()
     for inst in provider.instruments_pyo3():
         inst_id_attr = getattr(inst, "id", None)
@@ -229,8 +231,8 @@ async def main() -> None:
         bid, ask = await top_of_book(ws_client, market_id, [pyo3_instrument])
         buy_px = (bid * Decimal("0.95")).quantize(Decimal(f"1e-{price_decimals}"))
         sell_px = (ask * Decimal("1.05")).quantize(Decimal(f"1e-{price_decimals}"))
-        buy_sz = (Decimal("50") / buy_px).max(min_base)
-        sell_sz = (Decimal("50") / sell_px).max(min_base)
+        buy_sz = (Decimal(50) / buy_px).max(min_base)
+        sell_sz = (Decimal(50) / sell_px).max(min_base)
 
         buy_px_int = price_to_int(buy_px, price_decimals)
         sell_px_int = price_to_int(sell_px, price_decimals)

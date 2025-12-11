@@ -430,7 +430,7 @@ mod tests {
         assert_eq!(client.instrument_meta.read().unwrap().len(), 1);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn parses_next_nonce_fixture() {
         let value: Value = serde_json::from_str(
             &std::fs::read_to_string(fixture("mainnet_next_nonce.json")).unwrap(),
@@ -442,7 +442,7 @@ mod tests {
         assert_eq!(resp.nonce, 13);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn parses_send_tx_fixture() {
         let value: Value = serde_json::from_str(
             &std::fs::read_to_string(fixture("mainnet_sendtx_create_btc.json")).unwrap(),
@@ -454,7 +454,7 @@ mod tests {
         assert!(resp.tx_hash.is_some());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn parses_account_active_orders_fixture() {
         let value: Value = serde_json::from_str(
             &std::fs::read_to_string(fixture("mainnet_account_active_orders_market1.json"))

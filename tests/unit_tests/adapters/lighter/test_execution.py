@@ -19,21 +19,28 @@ import asyncio
 import json
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from nautilus_trader.adapters.lighter.config import LighterExecClientConfig
 from nautilus_trader.adapters.lighter.constants import LIGHTER_VENUE
 from nautilus_trader.adapters.lighter.execution import LighterExecutionClient
-from nautilus_trader.common.component import LiveClock, MessageBus
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.model.currencies import BTC, USD
-from nautilus_trader.model.enums import OrderStatus, OrderType, TimeInForce
-from nautilus_trader.model.identifiers import InstrumentId, Symbol
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoPerpetual
-from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -50,7 +57,7 @@ class DummyInstrumentProvider(InstrumentProvider):
         self.add(instrument)
         self._market_index_by_instrument = {instrument.id.value: market_index}
 
-    def market_index_for(self, instrument_id) -> int | None:  # type: ignore[override]
+    def market_index_for(self, instrument_id) -> int | None:
         return self._market_index if instrument_id == self._instrument.id else None
 
 
@@ -126,14 +133,14 @@ def exec_client(loop, btc_instrument):
 
 @pytest.fixture
 def active_orders():
-    with open("tests/test_data/lighter/http/mainnet_account_active_orders_market1.json", "r") as f:
+    with open("tests/test_data/lighter/http/mainnet_account_active_orders_market1.json") as f:
         fixture = json.load(f)
     return fixture["response"]["body"]["orders"]
 
 
 @pytest.fixture
 def private_ws_messages():
-    with open("tests/test_data/lighter/ws/private_mainnet_orders.json", "r") as f:
+    with open("tests/test_data/lighter/ws/private_mainnet_orders.json") as f:
         return json.load(f)
 
 

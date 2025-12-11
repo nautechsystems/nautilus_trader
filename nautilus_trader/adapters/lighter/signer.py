@@ -20,14 +20,15 @@ import platform
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 _DEFAULT_SIGNER_ROOT = Path("/tmp/lighter-python/lighter/signers")
 
 
 class SignerError(Exception):
-    """Raised when the signer returns an error string."""
+    """
+    Raised when the signer returns an error string.
+    """
 
 
 def _resolve_signer_path(root: Path | None = None) -> Path:
@@ -70,7 +71,7 @@ class _SignedTx(ctypes.Structure):
 class SignedTx:
     tx_type: int
     tx_info: str
-    tx_hash: Optional[str]
+    tx_hash: str | None
 
 
 class LighterSigner:
@@ -212,5 +213,5 @@ class LighterSigner:
         return SignedTx(int(res.txType), res.txInfo.decode("utf-8"), _safe_decode(res.txHash))
 
 
-def _safe_decode(raw: ctypes.c_char_p | None) -> Optional[str]:
-    return raw.decode("utf-8") if raw else None
+def _safe_decode(raw: ctypes.c_char_p | None) -> str | None:
+    return raw.decode("utf-8") if raw else None  # type: ignore[attr-defined]

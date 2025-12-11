@@ -19,51 +19,47 @@ import asyncio
 import hashlib
 import json
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING
+from typing import Any
 
 from nautilus_trader.adapters.lighter.config import LighterExecClientConfig
-from nautilus_trader.adapters.lighter.constants import (
-    LIGHTER_MAINNET_WS_BASE,
-    LIGHTER_TESTNET_WS_BASE,
-    LIGHTER_VENUE,
-)
-from nautilus_trader.adapters.lighter.signer import LighterSigner, SignerError
+from nautilus_trader.adapters.lighter.constants import LIGHTER_MAINNET_WS_BASE
+from nautilus_trader.adapters.lighter.constants import LIGHTER_TESTNET_WS_BASE
+from nautilus_trader.adapters.lighter.constants import LIGHTER_VENUE
+from nautilus_trader.adapters.lighter.signer import LighterSigner
+from nautilus_trader.adapters.lighter.signer import SignerError
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
-from nautilus_trader.core.nautilus_pyo3 import WebSocketClient, WebSocketClientError, WebSocketConfig
-from nautilus_trader.execution.messages import (
-    CancelOrder,
-    CancelAllOrders,
-    GenerateOrderStatusReport,
-    GenerateOrderStatusReports,
-    SubmitOrder,
-)
-from nautilus_trader.execution.reports import FillReport, OrderStatusReport
-from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.enums import (
-    AccountType,
-    LiquiditySide,
-    OmsType,
-    OrderSide,
-    OrderStatus,
-    OrderType,
-    TimeInForce,
-)
-from nautilus_trader.model.identifiers import (
-    ClientId,
-    ClientOrderId,
-    InstrumentId,
-    TradeId,
-    Venue,
-    VenueOrderId,
-)
-from nautilus_trader.model.objects import Money, Price, Quantity
-from nautilus_trader.model.orders import Order
-
+from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
+from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import Order
 
 
 if TYPE_CHECKING:
@@ -155,6 +151,7 @@ class LighterExecutionClient(LiveExecutionClient):
 
     Uses the native signer to produce tx_info payloads and the Rust HTTP client
     (via PyO3) to post `sendTx`. Private WS order streams are not yet wired.
+
     """
 
     def __init__(
@@ -179,7 +176,7 @@ class LighterExecutionClient(LiveExecutionClient):
         self._strategy_order_ids: dict[str, set[str]] = defaultdict(set)
         self._filled_qty_cache: dict[str, Quantity] = {}
         self._filled_quote_cache: dict[str, Decimal] = {}
-        self._auth_token: Optional[str] = None
+        self._auth_token: str | None = None
         self._auth_token_expiry_ns: int = 0
         self._user_stream: _LighterUserStream | None = None
 
@@ -218,7 +215,7 @@ class LighterExecutionClient(LiveExecutionClient):
         order = command.order
         instrument = self._require_instrument(order.instrument_id)
 
-        market_index = self._instrument_provider.market_index_for(order.instrument_id)
+        market_index = self._instrument_provider.market_index_for(order.instrument_id)  # type: ignore[attr-defined]
         if market_index is None:
             raise ValueError(f"Missing market index for {order.instrument_id}")
 
@@ -257,12 +254,12 @@ class LighterExecutionClient(LiveExecutionClient):
         if instrument_id is None:
             raise ValueError("CancelOrder missing instrument_id")
         instrument = self._require_instrument(instrument_id)
-        market_index = self._instrument_provider.market_index_for(instrument.id)
+        market_index = self._instrument_provider.market_index_for(instrument.id)  # type: ignore[attr-defined]
         if market_index is None:
             raise ValueError(f"Missing market index for {instrument.id}")
 
         client_order_id = getattr(order_id, "client_order_id", getattr(command, "client_order_id", None))
-        coi_value = client_order_id.value if hasattr(client_order_id, "value") else str(client_order_id)
+        coi_value = getattr(client_order_id, "value", None) or str(client_order_id)
         coi = self._client_order_index(coi_value)
 
         signed = await self._execute_with_retry(
@@ -325,11 +322,11 @@ class LighterExecutionClient(LiveExecutionClient):
             instrument_ids = list(self._instrument_provider._market_index_by_instrument.keys())  # type: ignore[attr-defined]
 
         for instrument_id in instrument_ids:
-            market_index = self._instrument_provider.market_index_for(instrument_id)  # type: ignore[arg-type]
+            market_index = self._instrument_provider.market_index_for(instrument_id)  # type: ignore[attr-defined]
             if market_index is None:
                 continue
 
-            resp = await self._http_client.account_active_orders(  # type: ignore[attr-defined]
+            resp = await self._http_client.account_active_orders(
                 account_index=self._config.resolved_account_index or 0,
                 market_id=market_index,
                 auth_token=token,
@@ -348,7 +345,7 @@ class LighterExecutionClient(LiveExecutionClient):
                     client_order_id = str(
                         order.get("client_order_id")
                         if isinstance(order, dict)
-                        else getattr(order, "client_order_id", "")
+                        else getattr(order, "client_order_id", ""),
                     )
                     if not client_order_id:
                         continue
@@ -364,9 +361,9 @@ class LighterExecutionClient(LiveExecutionClient):
                         ),
                         op_name="cancel_all",
                     )
-                except Exception as exc:  # pragma: no cover - best-effort
+                except Exception as e:  # pragma: no cover - best-effort
                     cid = client_order_id or "<unknown>"
-                    self._log.warning(f"cancel_all_orders failed for {cid}: {exc}")
+                    self._log.warning(f"cancel_all_orders failed for {cid}: {e}")
 
     # ---------------------------------------------------------------------------------------------
     # Helpers
@@ -375,7 +372,7 @@ class LighterExecutionClient(LiveExecutionClient):
     async def _fetch_nonce(self) -> int:
         # Token is optional for nextNonce but provided if available
         token = self._ensure_auth_token()
-        resp = await self._http_client.next_nonce(  # type: ignore[attr-defined]
+        resp = await self._http_client.next_nonce(
             account_index=self._config.resolved_account_index or 0,
             api_key_index=self._config.api_key_index,
             auth_token=token,
@@ -383,7 +380,7 @@ class LighterExecutionClient(LiveExecutionClient):
         return resp["nonce"] if isinstance(resp, dict) else resp.nonce  # PyO3 returns pyobj
 
     async def _post_send_tx(self, tx_type: int, tx_info: str) -> dict[str, Any]:
-        resp = await self._http_client.send_tx(  # type: ignore[attr-defined]
+        resp = await self._http_client.send_tx(
             tx_type=tx_type,
             tx_info=tx_info,
             price_protection=True,
@@ -425,7 +422,7 @@ class LighterExecutionClient(LiveExecutionClient):
 
         raise last_error or RuntimeError(f"{op_name} failed after retries")
 
-    def _ensure_auth_token(self) -> Optional[str]:
+    def _ensure_auth_token(self) -> str | None:
         now = self._clock.timestamp_ns()
         if self._auth_token and now < self._auth_token_expiry_ns:
             return self._auth_token
@@ -442,9 +439,12 @@ class LighterExecutionClient(LiveExecutionClient):
 
     def _client_order_index(self, client_order_id: str) -> int:
         """
-        Convert an arbitrary client order ID into a deterministic int64 the signer accepts.
+        Convert an arbitrary client order ID into a deterministic int64 the signer
+        accepts.
 
-        Prefers numeric IDs; otherwise uses a stable blake2b hash (64-bit) derived from the string.
+        Prefers numeric IDs; otherwise uses a stable blake2b hash (64-bit) derived from
+        the string.
+
         """
         if client_order_id in self._client_order_indices:
             return self._client_order_indices[client_order_id]
@@ -480,11 +480,11 @@ class LighterExecutionClient(LiveExecutionClient):
 
         for instrument_key in instruments:
             instrument = self._require_instrument(instrument_key)
-            market_index = self._instrument_provider.market_index_for(instrument.id)
+            market_index = self._instrument_provider.market_index_for(instrument.id)  # type: ignore[attr-defined]
             if market_index is None:
                 continue
 
-            resp = await self._http_client.account_active_orders(  # type: ignore[attr-defined]
+            resp = await self._http_client.account_active_orders(
                 account_index=self._config.resolved_account_index or 0,
                 market_id=market_index,
                 auth_token=token,
@@ -608,17 +608,17 @@ class LighterExecutionClient(LiveExecutionClient):
         ts_event: int,
     ) -> FillReport | None:
         prev_filled = self._filled_qty_cache.get(order_index, Quantity.zero())
-        prev_quote = self._filled_quote_cache.get(order_index, Decimal("0"))
+        prev_quote = self._filled_quote_cache.get(order_index, Decimal(0))
         if filled_qty <= prev_filled:
             return None
 
-        if filled_quote is None or filled_quote <= Decimal("0"):
+        if filled_quote is None or filled_quote <= Decimal(0):
             return None
 
         last_qty = filled_qty - prev_filled
-        quote_delta = filled_quote - prev_quote if filled_quote is not None else Decimal("0")
+        quote_delta = filled_quote - prev_quote if filled_quote is not None else Decimal(0)
         px_dec: Decimal | None = None
-        if last_qty > Quantity.zero() and quote_delta > Decimal("0"):
+        if last_qty > Quantity.zero() and quote_delta > Decimal(0):
             px_dec = quote_delta / Decimal(str(last_qty))
         elif filled_quote is not None and filled_qty > Quantity.zero():
             px_dec = filled_quote / Decimal(str(filled_qty))
@@ -657,7 +657,8 @@ class LighterExecutionClient(LiveExecutionClient):
         inc = getattr(instrument, "price_increment", None)
         if inc:
             try:
-                return max(0, -Decimal(str(inc)).as_tuple().exponent)
+                exp = Decimal(str(inc)).as_tuple().exponent
+                return max(0, -int(exp)) if isinstance(exp, int) else 0
             except Exception:
                 return 0
         return 0
@@ -681,7 +682,8 @@ class LighterExecutionClient(LiveExecutionClient):
         inc = getattr(instrument, "size_increment", None)
         if inc:
             try:
-                return max(0, -Decimal(str(inc)).as_tuple().exponent)
+                exp = Decimal(str(inc)).as_tuple().exponent
+                return max(0, -int(exp)) if isinstance(exp, int) else 0
             except Exception:
                 return 0
         return 0
@@ -729,12 +731,12 @@ class LighterExecutionClient(LiveExecutionClient):
             account_index=account_index,
             auth_provider=self._ensure_auth_token,
             handler=self._handle_user_stream_message,
-            on_reconnect=lambda: self._loop.create_task(self._reconcile_open_orders()),
+            on_reconnect=lambda: self._loop.create_task(self._reconcile_open_orders()) and None,  # type: ignore[arg-type]
         )
         try:
             await self._user_stream.connect()
-        except Exception as exc:  # pragma: no cover - defensive
-            self._log.exception("Failed to connect user stream", exc)
+        except Exception as e:  # pragma: no cover - defensive
+            self._log.exception("Failed to connect user stream", e)
             self._user_stream = None
 
     def _handle_user_stream_message(self, message: dict[str, Any]) -> None:
@@ -767,7 +769,7 @@ class LighterExecutionClient(LiveExecutionClient):
                 self._send_fill_report(fill)
 
     def _instrument_for_market_index(self, market_index: int):
-        lookup = getattr(self._instrument_provider, "_market_index_by_instrument", {})  # type: ignore[attr-defined]
+        lookup = getattr(self._instrument_provider, "_market_index_by_instrument", {})
         for instrument_key, idx in lookup.items():
             if idx == market_index:
                 try:

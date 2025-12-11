@@ -15,21 +15,26 @@
 
 from __future__ import annotations
 
-import json
 import asyncio
+import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
 from nautilus_trader.adapters.lighter.config import LighterExecClientConfig
 from nautilus_trader.adapters.lighter.execution import LighterExecutionClient
-from nautilus_trader.common.component import LiveClock, MessageBus
-from nautilus_trader.common.providers import InstrumentProvider, InstrumentProviderConfig
+from nautilus_trader.common.component import LiveClock
+from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.common.providers import InstrumentProviderConfig
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.messages import CancelOrder, SubmitOrder
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
@@ -42,7 +47,7 @@ class _DummyInstrumentProvider(InstrumentProvider):
         self._market_index_by_instrument = {instrument.id.value: market_index}
         self.add(instrument)
 
-    def market_index_for(self, instrument_id: InstrumentId) -> int | None:  # type: ignore[override]
+    def market_index_for(self, instrument_id: InstrumentId) -> int | None:
         return self._market_index if instrument_id == self._instrument.id else None
 
 
@@ -53,11 +58,11 @@ async def test_submit_cancel_lifecycle_with_fixtures(btc_instrument):
     cache = TestComponentStubs.cache()
     provider = _DummyInstrumentProvider(btc_instrument)
 
-    with open("tests/test_data/lighter/http/mainnet_next_nonce.json", "r") as f:
+    with open("tests/test_data/lighter/http/mainnet_next_nonce.json") as f:
         next_nonce = json.load(f)["response"]["body"]
-    with open("tests/test_data/lighter/http/mainnet_sendtx_create_btc.json", "r") as f:
+    with open("tests/test_data/lighter/http/mainnet_sendtx_create_btc.json") as f:
         create_resp = json.load(f)["response"]["body"]
-    with open("tests/test_data/lighter/http/mainnet_sendtx_cancel_btc.json", "r") as f:
+    with open("tests/test_data/lighter/http/mainnet_sendtx_cancel_btc.json") as f:
         cancel_resp = json.load(f)["response"]["body"]
 
     http = AsyncMock()
