@@ -253,7 +253,7 @@ impl DeribitRawHttpClient {
                 // Build JSON-RPC request
                 let id = self.request_id.fetch_add(1, Ordering::SeqCst);
                 let request = DeribitJsonRpcRequest {
-                    jsonrpc: JSONRPC_VERSION.to_string(),
+                    jsonrpc: JSONRPC_VERSION,
                     id,
                     method: method.clone(),
                     params: params_clone.clone(),

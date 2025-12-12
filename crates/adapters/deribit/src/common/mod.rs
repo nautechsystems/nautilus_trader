@@ -18,6 +18,7 @@
 pub mod consts;
 pub mod credential;
 pub mod parse;
+pub mod rpc;
 #[cfg(test)]
 pub mod testing;
 pub mod urls;

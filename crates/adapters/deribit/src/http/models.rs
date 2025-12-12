@@ -18,46 +18,7 @@
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-/// JSON-RPC 2.0 request envelope.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DeribitJsonRpcRequest<T> {
-    /// JSON-RPC version (always "2.0")
-    pub jsonrpc: String,
-    /// Request ID for matching responses
-    pub id: u64,
-    /// API method name (e.g., "public/get_instruments")
-    pub method: String,
-    /// Method-specific parameters
-    pub params: T,
-}
-
-/// JSON-RPC 2.0 response envelope.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DeribitJsonRpcResponse<T> {
-    /// JSON-RPC version (always "2.0")
-    pub jsonrpc: String,
-    /// Request ID matching the request (may be absent in error responses)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<u64>,
-    /// Success result (if successful)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<T>,
-    /// Error details (if error)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<DeribitError>,
-    /// Whether this is from testnet
-    #[serde(default)]
-    pub testnet: bool,
-    /// Server timestamp when request was received (microseconds)
-    #[serde(rename = "usIn")]
-    pub us_in: Option<u64>,
-    /// Server timestamp when response was sent (microseconds)
-    #[serde(rename = "usOut")]
-    pub us_out: Option<u64>,
-    /// Server processing time (microseconds)
-    #[serde(rename = "usDiff")]
-    pub us_diff: Option<u64>,
-}
+pub use crate::common::rpc::{DeribitJsonRpcError, DeribitJsonRpcRequest, DeribitJsonRpcResponse};
 
 /// JSON-RPC 2.0 response payload (either success or error).
 #[derive(Debug, Serialize, Deserialize)]
@@ -66,19 +27,7 @@ pub enum DeribitResponsePayload<T> {
     /// Successful response with result data
     Success { result: T },
     /// Error response with error details
-    Error { error: DeribitError },
-}
-
-/// Deribit error details.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DeribitError {
-    /// Error code (e.g., 10050, 11029)
-    pub code: i64,
-    /// Human-readable error message
-    pub message: String,
-    /// Optional additional error data
-    #[serde(default)]
-    pub data: Option<serde_json::Value>,
+    Error { error: DeribitJsonRpcError },
 }
 
 /// Deribit instrument definition.
