@@ -1,0 +1,7 @@
+{
+    "jsonrpc": "2.0",
+    "method": "heartbeat",
+    "params": {
+        "type": "test_request"
+    }
+}

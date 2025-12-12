@@ -1,0 +1,35 @@
+{
+  "jsonrpc":"2.0",
+  "method":"subscription",
+  "params":{
+    "channel":"trades.BTC-PERPETUAL.100ms",
+    "data":[
+      {
+        "timestamp":1765531356452,
+        "price":92294.5,
+        "amount":10.0,
+        "direction":"sell",
+        "index_price":92276.75,
+        "instrument_name":"BTC-PERPETUAL",
+        "trade_seq":271252854,
+        "mark_price":92287.11,
+        "tick_direction":2,
+        "contracts":1.0,
+        "trade_id":"403691824"
+      },
+      {
+        "timestamp":1765531356452,
+        "price":92288.5,
+        "amount":750.0,
+        "direction":"sell",
+        "index_price":92276.75,
+        "instrument_name":"BTC-PERPETUAL",
+        "trade_seq":271252855,
+        "mark_price":92287.11,
+        "tick_direction":2,
+        "contracts":75.0,
+        "trade_id":"403691825"
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "ticker.BTC-PERPETUAL.100ms",
+    "data": {
+      "timestamp": 1765541474086,
+      "state": "open",
+      "stats": {
+        "high": 93612.0,
+        "low": 89277.5,
+        "price_change": 2.3275,
+        "volume": 11897.27640428,
+        "volume_usd": 1092371540.0,
+        "volume_notional": 1092371540.0
+      },
+      "index_price": 92263.55,
+      "instrument_name": "BTC-PERPETUAL",
+      "last_price": 92283.5,
+      "settlement_price": 92464.66,
+      "min_price": 90897.5,
+      "max_price": 93666.5,
+      "open_interest": 1132329370.0,
+      "mark_price": 92281.78,
+      "interest_value": 0.0028213400122472977,
+      "best_ask_price": 92284.0,
+      "best_bid_price": 92283.5,
+      "estimated_delivery_price": 92263.55,
+      "best_ask_amount": 186520.0,
+      "best_bid_amount": 117660.0,
+      "current_funding": 0.0,
+      "funding_8h": 0.00001742
+    }
+  }
+}
