@@ -55,6 +55,7 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
+nautilus-cryptography = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -89,6 +90,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-cryptography = { workspace = true }
 nautilus-testkit = { workspace = true }
 
 criterion = { workspace = true }
@@ -110,3 +112,8 @@ path = "bin/http_private.rs"
 [[bin]]
 name = "deribit-ws-data"
 path = "bin/ws_data.rs"
+
+# Run with `cargo bench -p nautilus-deribit --bench websocket`
+[[bench]]
+name = "websocket"
+harness = false

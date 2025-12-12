@@ -25,6 +25,7 @@ use axum::{
 };
 use dashmap::DashMap;
 use nautilus_common::testing::wait_until_async;
+use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_deribit::http::{
     client::DeribitRawHttpClient, error::DeribitHttpError, query::GetAccountSummariesParams,
 };
@@ -177,6 +178,7 @@ fn create_router(state: TestServerState) -> Router {
 
 #[tokio::test]
 async fn test_get_account_summaries_success() {
+    install_cryptographic_provider();
     let state = TestServerState::default();
     let addr = start_test_server(state.clone()).await;
     wait_for_server(addr).await;
@@ -233,6 +235,7 @@ async fn test_get_account_summaries_success() {
 
 #[tokio::test]
 async fn test_get_account_summaries_missing_credentials() {
+    install_cryptographic_provider();
     let base_url = "http://127.0.0.1:0/api/v2".to_string();
     let client =
         DeribitRawHttpClient::new(Some(base_url), false, Some(5), None, None, None, None).unwrap();
@@ -251,6 +254,7 @@ async fn test_get_account_summaries_missing_credentials() {
 
 #[tokio::test]
 async fn test_get_account_summaries_authorization_required() {
+    install_cryptographic_provider();
     let state = TestServerState::default();
     let addr = start_test_server(state.clone()).await;
     wait_for_server(addr).await;
