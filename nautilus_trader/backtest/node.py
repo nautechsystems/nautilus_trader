@@ -69,7 +69,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.types import CatalogDataResult
 from nautilus_trader.persistence.config import DataCatalogConfig
-from nautilus_trader.persistence.funcs import class_to_filename
 
 
 class BacktestNode:
@@ -580,7 +579,7 @@ class BacktestNode:
                 start=used_start,
                 end=used_end,
                 session=session,
-                files=filter_files
+                files=filter_files,
             )
 
         # Stream data

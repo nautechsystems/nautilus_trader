@@ -19,7 +19,6 @@ import itertools
 import os
 import platform
 import re
-import time
 from collections import defaultdict
 from collections.abc import Generator
 from itertools import groupby
@@ -1965,7 +1964,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         This function filters the provided file paths by:
         1. Matching identifiers (exact match for instruments, prefix match for bars)
         2. Intersecting with the specified time range
-        
+
         Parameters
         ----------
         data_cls : type
@@ -1983,12 +1982,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         -------
         list[str]
             Filtered list of file paths that match the criteria.
-            
+
         Notes
         -----
         For Bar data classes, if exact identifier matching fails, the function attempts
         partial matching by checking if the file's identifier starts with the provided identifier
         followed by a dash (to match bar type patterns).
+
         """
         if identifiers:
             if not isinstance(identifiers, list):
@@ -2043,16 +2043,17 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         This function constructs a glob pattern to find all parquet files
         associated with the specified data class in the catalog's directory structure.
-        
+
         Parameters
         ----------
         data_cls : type
+            The data class type to retrieve file paths for (e.g., Bar, TradeTick).
 
         Returns
         -------
         list[str]
             List of file paths matching the data class.
-            
+
         """
         file_prefix = class_to_filename(data_cls)
         base_path = self.path.rstrip("/")
@@ -2066,14 +2067,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
-        files: list[str] | None = None
+        files: list[str] | None = None,
     ) -> list[str]:
         """
         Query files based on data class, identifiers, and time range.
 
         This function either retrieves files for a data class or uses a provided list,
         then filters them based on identifiers and time range.
-        
+
         Parameters
         ----------
         data_cls : type
@@ -2091,11 +2092,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         -------
         list[str]
             List of file paths that match the query criteria.
+
         """
+        file_paths = []
         if files:
-            file_paths: list[str] = files
+            file_paths = files
         else:
-            file_paths: list[str] = self.get_file_list_from_data_cls(data_cls)
+            file_paths = self.get_file_list_from_data_cls(data_cls)
 
         return self.filter_files(data_cls, file_paths, identifiers, start, end)
 
