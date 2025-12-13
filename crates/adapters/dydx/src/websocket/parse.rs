@@ -137,8 +137,6 @@ fn convert_ws_order_to_http(
         .parse()
         .context("Failed to parse created_at_height")?;
 
-    let order_flags = ws_order.order_flags;
-
     let client_metadata: u32 = ws_order
         .client_metadata
         .parse()
@@ -191,7 +189,7 @@ fn convert_ws_order_to_http(
         time_in_force: ws_order.time_in_force,
         reduce_only: ws_order.reduce_only,
         post_only: ws_order.post_only,
-        order_flags,
+        order_flags: ws_order.order_flags.clone(),
         good_til_block,
         good_til_block_time,
         created_at_height: Some(created_at_height),
@@ -492,7 +490,7 @@ mod tests {
             time_in_force: DydxTimeInForce::Gtt,
             post_only: false,
             reduce_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
             created_at_height: "900".to_string(),
@@ -529,7 +527,7 @@ mod tests {
             time_in_force: DydxTimeInForce::Gtt,
             post_only: true,
             reduce_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: Some("2000".to_string()),
             good_til_block_time: None,
             created_at_height: "1800".to_string(),
@@ -580,7 +578,7 @@ mod tests {
             time_in_force: DydxTimeInForce::Ioc,
             post_only: false,
             reduce_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
             created_at_height: "900".to_string(),
@@ -940,7 +938,7 @@ mod tests {
             time_in_force: DydxTimeInForce::Gtt,
             post_only: false,
             reduce_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
             created_at_height: "900".to_string(),
@@ -1006,7 +1004,7 @@ mod tests {
             time_in_force: DydxTimeInForce::Gtt,
             post_only: false,
             reduce_only: true,
-            order_flags: 32, // Conditional flag
+            order_flags: "32".to_string(),
             good_til_block: None,
             good_til_block_time: Some("2024-12-31T23:59:59Z".to_string()),
             created_at_height: "1000".to_string(),
@@ -1058,7 +1056,7 @@ mod tests {
             time_in_force: DydxTimeInForce::Ioc,
             post_only: false,
             reduce_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
             created_at_height: "900".to_string(),
@@ -1109,7 +1107,7 @@ mod tests {
             time_in_force: DydxTimeInForce::Gtt,
             post_only: false,
             reduce_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: Some("1000".to_string()),
             good_til_block_time: None,
             created_at_height: "900".to_string(),

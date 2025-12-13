@@ -512,7 +512,7 @@ pub struct DydxWsOrderSubaccountMessageContents {
     #[serde(rename = "reduceOnly")]
     pub reduce_only: bool,
     #[serde(rename = "orderFlags")]
-    pub order_flags: u32,
+    pub order_flags: String,
     #[serde(rename = "goodTilBlock")]
     pub good_til_block: Option<String>,
     #[serde(rename = "goodTilBlockTime")]

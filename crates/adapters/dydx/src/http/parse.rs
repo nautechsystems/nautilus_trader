@@ -44,6 +44,8 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::models::PerpetualMarket;
+#[cfg(test)]
+use crate::common::enums::DydxTransferType;
 use crate::{
     common::{
         enums::{DydxMarketStatus, DydxOrderExecution, DydxOrderType, DydxTimeInForce},
@@ -51,9 +53,6 @@ use crate::{
     },
     websocket::messages::DydxSubaccountInfo,
 };
-
-#[cfg(test)]
-use crate::common::enums::DydxTransferType;
 
 /// Validates that a ticker has the correct format (BASE-QUOTE).
 ///
@@ -1350,7 +1349,7 @@ mod reconciliation_tests {
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: false,
             post_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: None,
             good_til_block_time: Some(Utc::now()),
             created_at_height: Some(1000),
@@ -1400,7 +1399,7 @@ mod reconciliation_tests {
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: true,
             post_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: None,
             good_til_block_time: Some(Utc::now()),
             created_at_height: Some(1000),
@@ -1578,7 +1577,7 @@ mod reconciliation_tests {
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: false,
             post_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: Some(1000),
             good_til_block_time: None,
             created_at_height: Some(900),
@@ -1625,7 +1624,7 @@ mod reconciliation_tests {
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: false,
             post_only: false,
-            order_flags: 0,
+            order_flags: "0".to_string(),
             good_til_block: Some(2000),
             good_til_block_time: None,
             created_at_height: Some(1500),

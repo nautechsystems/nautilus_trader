@@ -393,8 +393,7 @@ pub struct Order {
     /// Post-only flag.
     pub post_only: bool,
     /// Order flags (bitfield).
-    #[serde_as(as = "DisplayFromStr")]
-    pub order_flags: u32,
+    pub order_flags: String,
     /// Good-til-block (for short-term orders).
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -573,7 +572,7 @@ pub struct PlaceOrderRequest {
     /// Client-generated order ID.
     pub client_id: u32,
     /// Order type flags (bitfield for short-term, reduce-only, etc.).
-    pub order_flags: u32,
+    pub order_flags: String,
     /// CLOB pair ID.
     pub clob_pair_id: u32,
     /// Order side.
@@ -617,7 +616,7 @@ pub struct CancelOrderRequest {
     /// CLOB pair ID.
     pub clob_pair_id: u32,
     /// Order flags.
-    pub order_flags: u32,
+    pub order_flags: String,
     /// Good-til-block or good-til-block-time for the cancel.
     pub good_til_block: Option<u32>,
     pub good_til_block_time: Option<u32>,
