@@ -554,6 +554,33 @@ pub enum DydxTradeType {
     TakeProfitLimit,
 }
 
+/// dYdX transfer types.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", eq, eq_int)
+)]
+pub enum DydxTransferType {
+    TransferIn,
+    TransferOut,
+    Deposit,
+    Withdrawal,
+}
+
 /// dYdX candlestick resolution.
 #[derive(
     Copy,
@@ -571,6 +598,10 @@ pub enum DydxTradeType {
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[derive(Default)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", eq, eq_int)
+)]
 pub enum DydxCandleResolution {
     /// 1 minute candles.
     #[serde(rename = "1MIN")]

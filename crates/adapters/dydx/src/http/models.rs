@@ -45,7 +45,7 @@ use ustr::Ustr;
 use crate::common::enums::{
     DydxCandleResolution, DydxConditionType, DydxFillType, DydxLiquidity, DydxMarketStatus,
     DydxOrderExecution, DydxOrderStatus, DydxOrderType, DydxPositionSide, DydxPositionStatus,
-    DydxTickerType, DydxTimeInForce, DydxTradeType,
+    DydxTickerType, DydxTimeInForce, DydxTradeType, DydxTransferType,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -503,9 +503,9 @@ pub struct TransfersResponse {
 pub struct Transfer {
     /// Unique transfer ID.
     pub id: String,
-    /// Transfer type (DEPOSIT, WITHDRAWAL, TRANSFER_OUT, TRANSFER_IN).
+    /// Transfer type.
     #[serde(rename = "type")]
-    pub transfer_type: String,
+    pub transfer_type: DydxTransferType,
     /// Sender address.
     pub sender: TransferAccount,
     /// Recipient address.

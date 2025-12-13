@@ -52,6 +52,9 @@ use crate::{
     websocket::messages::DydxSubaccountInfo,
 };
 
+#[cfg(test)]
+use crate::common::enums::DydxTransferType;
+
 /// Validates that a ticker has the correct format (BASE-QUOTE).
 ///
 /// # Errors
@@ -792,7 +795,7 @@ mod tests {
         assert_eq!(response.transfers.len(), 1);
 
         let deposit = &response.transfers[0];
-        assert_eq!(deposit.transfer_type, "DEPOSIT");
+        assert_eq!(deposit.transfer_type, DydxTransferType::Deposit);
         assert_eq!(deposit.asset, "USDC");
         assert_eq!(deposit.amount.to_string(), "45.334703");
     }

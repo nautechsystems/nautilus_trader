@@ -25,8 +25,8 @@ use ustr::Ustr;
 
 use super::enums::{DydxWsChannel, DydxWsMessageType, DydxWsOperation};
 use crate::common::enums::{
-    DydxFillType, DydxLiquidity, DydxOrderStatus, DydxOrderType, DydxPositionStatus,
-    DydxTickerType, DydxTimeInForce, DydxTradeType,
+    DydxCandleResolution, DydxFillType, DydxLiquidity, DydxOrderStatus, DydxOrderType,
+    DydxPositionStatus, DydxTickerType, DydxTimeInForce, DydxTradeType,
 };
 
 // ------------------------------------------------------------------------------------------------
@@ -336,7 +336,7 @@ pub struct DydxTrade {
     pub created_at: DateTime<Utc>,
     /// Trade type.
     #[serde(rename = "type")]
-    pub order_type: DydxTradeType,
+    pub trade_type: DydxTradeType,
     /// Block height (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at_height: Option<String>,
@@ -368,7 +368,7 @@ pub struct DydxCandle {
     /// Open price.
     pub open: String,
     /// Resolution/timeframe.
-    pub resolution: String,
+    pub resolution: DydxCandleResolution,
     /// Start time.
     pub started_at: DateTime<Utc>,
     /// Starting open interest.
@@ -512,7 +512,7 @@ pub struct DydxWsOrderSubaccountMessageContents {
     #[serde(rename = "reduceOnly")]
     pub reduce_only: bool,
     #[serde(rename = "orderFlags")]
-    pub order_flags: String,
+    pub order_flags: u32,
     #[serde(rename = "goodTilBlock")]
     pub good_til_block: Option<String>,
     #[serde(rename = "goodTilBlockTime")]
