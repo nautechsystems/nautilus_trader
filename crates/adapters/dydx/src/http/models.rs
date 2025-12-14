@@ -393,7 +393,8 @@ pub struct Order {
     /// Post-only flag.
     pub post_only: bool,
     /// Order flags (bitfield).
-    pub order_flags: String,
+    #[serde_as(as = "DisplayFromStr")]
+    pub order_flags: u32,
     /// Good-til-block (for short-term orders).
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -502,7 +503,7 @@ pub struct TransfersResponse {
 pub struct Transfer {
     /// Unique transfer ID.
     pub id: String,
-    /// Transfer type.
+    /// Transfer type (DEPOSIT, WITHDRAWAL, TRANSFER_OUT, TRANSFER_IN).
     #[serde(rename = "type")]
     pub transfer_type: DydxTransferType,
     /// Sender address.

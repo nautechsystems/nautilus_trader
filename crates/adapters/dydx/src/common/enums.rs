@@ -575,9 +575,13 @@ pub enum DydxTradeType {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", eq, eq_int)
 )]
 pub enum DydxTransferType {
+    /// Transfer into the account.
     TransferIn,
+    /// Transfer out of the account.
     TransferOut,
+    /// Deposit from external wallet.
     Deposit,
+    /// Withdrawal to external wallet.
     Withdrawal,
 }
 

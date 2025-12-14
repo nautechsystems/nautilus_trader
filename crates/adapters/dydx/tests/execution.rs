@@ -176,7 +176,7 @@ fn create_test_order() -> Order {
         time_in_force: DydxTimeInForce::Gtt,
         post_only: false,
         reduce_only: false,
-        order_flags: "0".to_string(),
+        order_flags: 0,
         good_til_block: Some(12400),
         good_til_block_time: None,
         created_at_height: Some(12345),

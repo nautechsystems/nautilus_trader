@@ -142,6 +142,11 @@ fn convert_ws_order_to_http(
         .parse()
         .context("Failed to parse client_metadata")?;
 
+    let order_flags: u32 = ws_order
+        .order_flags
+        .parse()
+        .context("Failed to parse order_flags")?;
+
     // Parse optional fields
     let good_til_block = ws_order
         .good_til_block
@@ -189,7 +194,7 @@ fn convert_ws_order_to_http(
         time_in_force: ws_order.time_in_force,
         reduce_only: ws_order.reduce_only,
         post_only: ws_order.post_only,
-        order_flags: ws_order.order_flags.clone(),
+        order_flags,
         good_til_block,
         good_til_block_time,
         created_at_height: Some(created_at_height),

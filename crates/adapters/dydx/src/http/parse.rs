@@ -798,6 +798,34 @@ mod tests {
         assert_eq!(deposit.asset, "USDC");
         assert_eq!(deposit.amount.to_string(), "45.334703");
     }
+
+    #[rstest]
+    fn test_transfer_type_enum_serde() {
+        // Test all transfer type variants serialize/deserialize correctly
+        let test_cases = vec![
+            (DydxTransferType::Deposit, "\"DEPOSIT\""),
+            (DydxTransferType::Withdrawal, "\"WITHDRAWAL\""),
+            (DydxTransferType::TransferIn, "\"TRANSFER_IN\""),
+            (DydxTransferType::TransferOut, "\"TRANSFER_OUT\""),
+        ];
+
+        for (variant, expected_json) in test_cases {
+            // Test serialization
+            let serialized = serde_json::to_string(&variant).expect("Failed to serialize");
+            assert_eq!(
+                serialized, expected_json,
+                "Serialization failed for {variant:?}"
+            );
+
+            // Test deserialization
+            let deserialized: DydxTransferType =
+                serde_json::from_str(&serialized).expect("Failed to deserialize");
+            assert_eq!(
+                deserialized, variant,
+                "Deserialization failed for {variant:?}"
+            );
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1349,7 +1377,7 @@ mod reconciliation_tests {
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: false,
             post_only: false,
-            order_flags: "0".to_string(),
+            order_flags: 0,
             good_til_block: None,
             good_til_block_time: Some(Utc::now()),
             created_at_height: Some(1000),
@@ -1399,7 +1427,7 @@ mod reconciliation_tests {
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: true,
             post_only: false,
-            order_flags: "0".to_string(),
+            order_flags: 0,
             good_til_block: None,
             good_til_block_time: Some(Utc::now()),
             created_at_height: Some(1000),
@@ -1577,7 +1605,7 @@ mod reconciliation_tests {
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: false,
             post_only: false,
-            order_flags: "0".to_string(),
+            order_flags: 0,
             good_til_block: Some(1000),
             good_til_block_time: None,
             created_at_height: Some(900),
@@ -1624,7 +1652,7 @@ mod reconciliation_tests {
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: false,
             post_only: false,
-            order_flags: "0".to_string(),
+            order_flags: 0,
             good_til_block: Some(2000),
             good_til_block_time: None,
             created_at_height: Some(1500),
