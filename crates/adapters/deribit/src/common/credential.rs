@@ -75,7 +75,32 @@ impl Credential {
         nautilus_core::string::mask_api_key(self.api_key.as_str())
     }
 
-    /// Signs a request message according to the Deribit authentication scheme.
+    /// Signs a WebSocket authentication request according to Deribit specification.
+    ///
+    /// # Deribit WebSocket Signature Formula
+    ///
+    /// ```text
+    /// StringToSign = Timestamp + "\n" + Nonce + "\n" + Data
+    /// Signature = HEX_STRING(HMAC-SHA256(ClientSecret, StringToSign))
+    /// ```
+    ///
+    /// # Returns
+    ///
+    /// Hex-encoded HMAC-SHA256 signature
+    #[must_use]
+    pub fn sign_ws_auth(&self, timestamp: u64, nonce: &str, data: &str) -> String {
+        // Build string to sign: timestamp + "\n" + nonce + "\n" + data
+        let string_to_sign = format!("{timestamp}\n{nonce}\n{data}");
+
+        // Sign with HMAC-SHA256
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret[..]);
+        let tag = hmac::sign(&key, string_to_sign.as_bytes());
+
+        // Return hex-encoded signature
+        hex::encode(tag.as_ref())
+    }
+
+    /// Signs a request message according to the Deribit HTTP authentication scheme.
     ///
     /// # Deribit Signature Specification
     ///
@@ -376,5 +401,78 @@ mod tests {
             auth1, auth2,
             "Authorization headers should differ between calls due to timestamp/nonce"
         );
+    }
+
+    #[rstest]
+    fn test_sign_ws_auth_basic() {
+        let credential = Credential::new(
+            "test_client_id".to_string(),
+            "test_client_secret".to_string(),
+        );
+
+        let timestamp = 1576074319000u64;
+        let nonce = "1iqt2wls";
+        let data = "";
+
+        let signature = credential.sign_ws_auth(timestamp, nonce, data);
+
+        assert!(
+            signature.chars().all(|c| c.is_ascii_hexdigit()),
+            "Signature should be hex-encoded"
+        );
+        assert_eq!(
+            signature.len(),
+            64,
+            "HMAC-SHA256 should produce 64 hex characters"
+        );
+        let signature2 = credential.sign_ws_auth(timestamp, nonce, data);
+        assert_eq!(signature, signature2, "Signature should be deterministic");
+    }
+
+    #[rstest]
+    fn test_sign_ws_auth_with_known_values() {
+        // Test with known values from Deribit documentation example
+        // ClientSecret = "AMANDASECRECT", Timestamp = 1576074319000, Nonce = "1iqt2wls", Data = ""
+        // Expected signature from docs: 56590594f97921b09b18f166befe0d1319b198bbcdad7ca73382de2f88fe9aa1
+        let credential = Credential::new("AMANDA".to_string(), "AMANDASECRECT".to_string());
+
+        let timestamp = 1576074319000u64;
+        let nonce = "1iqt2wls";
+        let data = "";
+
+        let signature = credential.sign_ws_auth(timestamp, nonce, data);
+
+        assert_eq!(
+            signature, "56590594f97921b09b18f166befe0d1319b198bbcdad7ca73382de2f88fe9aa1",
+            "Signature should match Deribit documentation example"
+        );
+    }
+
+    #[rstest]
+    #[case(1000, 2000)]
+    #[case(1576074319000, 1576074320000)]
+    fn test_sign_ws_auth_changes_with_timestamp(#[case] ts1: u64, #[case] ts2: u64) {
+        let credential = Credential::new("key".to_string(), "secret".to_string());
+        let nonce = "nonce";
+        let data = "";
+
+        let sig1 = credential.sign_ws_auth(ts1, nonce, data);
+        let sig2 = credential.sign_ws_auth(ts2, nonce, data);
+
+        assert_ne!(sig1, sig2, "Signature should change with timestamp");
+    }
+
+    #[rstest]
+    #[case("nonce1", "nonce2")]
+    #[case("abc123", "xyz789")]
+    fn test_sign_ws_auth_changes_with_nonce(#[case] nonce1: &str, #[case] nonce2: &str) {
+        let credential = Credential::new("key".to_string(), "secret".to_string());
+        let timestamp = 1576074319000u64;
+        let data = "";
+
+        let sig1 = credential.sign_ws_auth(timestamp, nonce1, data);
+        let sig2 = credential.sign_ws_auth(timestamp, nonce2, data);
+
+        assert_ne!(sig1, sig2, "Signature should change with nonce");
     }
 }
