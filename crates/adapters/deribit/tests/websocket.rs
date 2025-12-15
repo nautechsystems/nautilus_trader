@@ -37,7 +37,9 @@ use axum::{
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
-use nautilus_deribit::websocket::{client::DeribitWebSocketClient, messages::NautilusWsMessage};
+use nautilus_deribit::websocket::{
+    client::DeribitWebSocketClient, enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+};
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{CryptoPerpetual, InstrumentAny},
@@ -111,6 +113,12 @@ struct TestServerState {
     fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     drop_next_connection: Arc<AtomicBool>,
     send_test_request: Arc<AtomicBool>,
+    // Authentication state
+    auth_request_count: Arc<AtomicUsize>,
+    auth_scopes: Arc<tokio::sync::Mutex<Vec<String>>>,
+    is_authenticated: Arc<AtomicBool>,
+    fail_next_auth: Arc<AtomicBool>,
+    auth_expires_in: Arc<tokio::sync::Mutex<u64>>,
 }
 
 impl TestServerState {
@@ -331,6 +339,73 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                             }
                         }
                     }
+                    Some("public/auth") => {
+                        // Handle authentication request
+                        state.auth_request_count.fetch_add(1, Ordering::Relaxed);
+
+                        // Check if we should fail auth
+                        if state.fail_next_auth.swap(false, Ordering::Relaxed) {
+                            let error_response = json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "error": {
+                                    "code": 13004,
+                                    "message": "invalid_credentials"
+                                },
+                                "testnet": true
+                            });
+                            if socket
+                                .send(Message::Text(error_response.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                            continue;
+                        }
+
+                        // Extract scope from params
+                        let scope = payload
+                            .get("params")
+                            .and_then(|p| p.get("scope"))
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("connection")
+                            .to_string();
+
+                        state.auth_scopes.lock().await.push(scope.clone());
+                        state.is_authenticated.store(true, Ordering::Relaxed);
+
+                        // Get configured expires_in or default to 900
+                        let expires_in = {
+                            let exp = state.auth_expires_in.lock().await;
+                            if *exp > 0 { *exp } else { 900 }
+                        };
+
+                        let auth_response = json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": {
+                                "access_token": "mock_access_token_12345",
+                                "refresh_token": "mock_refresh_token_67890",
+                                "expires_in": expires_in,
+                                "scope": scope,
+                                "token_type": "bearer",
+                                "enabled_features": []
+                            },
+                            "testnet": true,
+                            "usIn": 1699999999000000_u64,
+                            "usOut": 1699999999001000_u64,
+                            "usDiff": 1000
+                        });
+
+                        if socket
+                            .send(Message::Text(auth_response.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
                     Some("public/test") => {
                         // Client responding to test_request
                         state.test_response_count.fetch_add(1, Ordering::Relaxed);
@@ -463,10 +538,10 @@ async fn test_websocket_connection() {
 async fn test_wait_until_active_timeout() {
     let client = DeribitWebSocketClient::new(
         Some("ws://127.0.0.1:0/ws/api/v2".to_string()),
-        None,
-        None,
-        Some(30),
-        true,
+        None,     // api_key
+        None,     // api_secret
+        Some(30), // heartbeat_interval
+        true,     // is_testnet
     )
     .expect("construct client");
 
@@ -536,7 +611,7 @@ async fn test_trades_subscription_flow() {
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
-        .subscribe_trades(instrument_id)
+        .subscribe_trades(instrument_id, None)
         .await
         .expect("subscribe failed");
 
@@ -592,7 +667,7 @@ async fn test_book_subscription_snapshot() {
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
-        .subscribe_book(instrument_id)
+        .subscribe_book(instrument_id, None)
         .await
         .expect("subscribe failed");
 
@@ -648,7 +723,7 @@ async fn test_ticker_subscription_flow() {
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
-        .subscribe_ticker(instrument_id)
+        .subscribe_ticker(instrument_id, None)
         .await
         .expect("subscribe failed");
 
@@ -762,11 +837,11 @@ async fn test_multiple_subscriptions() {
 
     // Subscribe to multiple channels
     client
-        .subscribe_trades(instrument_id)
+        .subscribe_trades(instrument_id, None)
         .await
         .expect("subscribe trades failed");
     client
-        .subscribe_ticker(instrument_id)
+        .subscribe_ticker(instrument_id, None)
         .await
         .expect("subscribe ticker failed");
 
@@ -811,7 +886,7 @@ async fn test_unsubscribe() {
 
     // Subscribe
     client
-        .subscribe_trades(instrument_id)
+        .subscribe_trades(instrument_id, None)
         .await
         .expect("subscribe failed");
 
@@ -832,7 +907,7 @@ async fn test_unsubscribe() {
 
     // Unsubscribe
     client
-        .unsubscribe_trades(instrument_id)
+        .unsubscribe_trades(instrument_id, None)
         .await
         .expect("unsubscribe failed");
 
@@ -978,7 +1053,7 @@ async fn test_subscription_failure_handling() {
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
-        .subscribe_trades(instrument_id)
+        .subscribe_trades(instrument_id, None)
         .await
         .expect("subscribe call should not fail");
 
@@ -1025,7 +1100,7 @@ async fn test_reconnection_after_disconnect() {
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
-        .subscribe_trades(instrument_id)
+        .subscribe_trades(instrument_id, None)
         .await
         .expect("subscribe failed");
 
@@ -1088,7 +1163,7 @@ async fn test_instrument_cache_usage() {
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
-        .subscribe_trades(instrument_id)
+        .subscribe_trades(instrument_id, None)
         .await
         .expect("subscribe failed");
 
@@ -1131,7 +1206,7 @@ async fn test_cache_instrument_single() {
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
-        .subscribe_trades(instrument_id)
+        .subscribe_trades(instrument_id, None)
         .await
         .expect("subscribe failed");
 
@@ -1149,6 +1224,308 @@ async fn test_cache_instrument_single() {
         }
         other => panic!("unexpected message: {other:?}"),
     }
+
+    client.close().await.expect("close failed");
+}
+
+fn create_authenticated_client(ws_url: &str) -> DeribitWebSocketClient {
+    DeribitWebSocketClient::new(
+        Some(ws_url.to_string()),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(30), // heartbeat_interval
+        true,     // is_testnet
+    )
+    .expect("failed to construct authenticated deribit websocket client")
+}
+
+#[tokio::test]
+async fn test_authentication_success() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_authenticated_client(&ws_url);
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    // Before auth
+    assert!(!client.is_authenticated());
+
+    // Authenticate
+    client
+        .authenticate(None)
+        .await
+        .expect("authentication failed");
+
+    // After auth
+    assert!(client.is_authenticated());
+    assert_eq!(state.auth_request_count.load(Ordering::Relaxed), 1);
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_authentication_session_scope() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_authenticated_client(&ws_url);
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    // Authenticate with session scope
+    client
+        .authenticate_session()
+        .await
+        .expect("session authentication failed");
+
+    assert!(client.is_authenticated());
+
+    // Verify session scope was used
+    let scopes = state.auth_scopes.lock().await;
+    assert_eq!(scopes.len(), 1);
+    assert!(
+        scopes[0].starts_with("session:"),
+        "expected session scope, got: {}",
+        scopes[0]
+    );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_authentication_without_credentials_fails() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    // Create client without credentials
+    let mut client = create_test_client(&ws_url);
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    // Attempt to authenticate should fail
+    let result = client.authenticate(None).await;
+    assert!(
+        result.is_err(),
+        "expected authentication error without credentials"
+    );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_raw_subscription_requires_authentication() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_authenticated_client(&ws_url);
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+    // Attempt raw subscription without authentication should fail
+    let result = client
+        .subscribe_trades(instrument_id, Some(DeribitUpdateInterval::Raw))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "expected error when subscribing to raw without auth"
+    );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_raw_subscription_after_authentication() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_authenticated_client(&ws_url);
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    // Authenticate first
+    client
+        .authenticate_session()
+        .await
+        .expect("authentication failed");
+    assert!(client.is_authenticated());
+
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+    // Raw subscription should succeed after authentication
+    client
+        .subscribe_trades(instrument_id, Some(DeribitUpdateInterval::Raw))
+        .await
+        .expect("raw subscription failed");
+
+    // Verify subscription was sent with "raw" interval
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(ch, ok)| ch.contains(".raw") && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_100ms_subscription_without_authentication() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    // Create client without credentials (public only)
+    let mut client = create_test_client(&ws_url);
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+    // 100ms subscription should work without authentication
+    client
+        .subscribe_trades(instrument_id, Some(DeribitUpdateInterval::Ms100))
+        .await
+        .expect("100ms subscription should succeed without auth");
+
+    // Verify subscription was sent with "100ms" interval
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(ch, ok)| ch.contains(".100ms") && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client.close().await.expect("close failed");
+}
+
+// ================================================================================================
+// Reconnection with Authentication Tests
+// ================================================================================================
+
+#[tokio::test]
+async fn test_reconnection_with_reauthentication() {
+    let state = Arc::new(TestServerState::default());
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_authenticated_client(&ws_url);
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    // Authenticate with session scope
+    client
+        .authenticate_session()
+        .await
+        .expect("authentication failed");
+    assert!(client.is_authenticated());
+
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+    // Subscribe (will trigger disconnect after response)
+    client
+        .subscribe_trades(instrument_id, None)
+        .await
+        .expect("subscribe failed");
+
+    // Wait for initial auth + subscription
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.auth_request_count.load(Ordering::Relaxed) >= 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Wait for reconnection and re-authentication
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                // Should have 2 auth requests (initial + reconnect)
+                state.auth_request_count.load(Ordering::Relaxed) >= 2
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // Verify scope was preserved across reconnection
+    let scopes = state.auth_scopes.lock().await;
+    assert!(scopes.len() >= 2, "expected at least 2 auth scopes");
+    assert!(
+        scopes.iter().all(|s| s.starts_with("session:")),
+        "all scopes should be session-based"
+    );
 
     client.close().await.expect("close failed");
 }
