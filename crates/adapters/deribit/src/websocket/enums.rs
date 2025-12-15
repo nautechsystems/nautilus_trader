@@ -18,6 +18,47 @@
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
+/// Deribit data stream update intervals.
+///
+/// Controls how frequently updates are sent for subscribed channels.
+/// Raw updates require authentication while aggregated updates are public.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeribitUpdateInterval {
+    /// Raw updates - immediate delivery of each event.
+    /// Requires authentication.
+    Raw,
+    /// Aggregated updates every 100 milliseconds (default).
+    #[default]
+    Ms100,
+    /// Aggregated updates every 2 ticks.
+    Agg2,
+}
+
+impl DeribitUpdateInterval {
+    /// Returns the string representation for Deribit channel subscription.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Raw => "raw",
+            Self::Ms100 => "100ms",
+            Self::Agg2 => "agg2",
+        }
+    }
+
+    /// Returns whether this interval requires authentication.
+    #[must_use]
+    pub const fn requires_auth(&self) -> bool {
+        matches!(self, Self::Raw)
+    }
+}
+
+impl std::fmt::Display for DeribitUpdateInterval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Deribit WebSocket public data channels.
 ///
 /// Channels follow the format: `{channel_type}.{instrument_or_currency}.{interval}`
@@ -81,11 +122,21 @@ impl DeribitWsChannel {
     ///
     /// Returns the full channel string for Deribit subscription.
     ///
-    /// Available intervals: `raw`, `100ms`, `agg2`
-    /// Note: `raw` subscriptions require authentication. Use `100ms` for public/unauthenticated access.
+    /// # Arguments
+    ///
+    /// * `instrument_or_currency` - The instrument name (e.g., "BTC-PERPETUAL") or currency (e.g., "BTC")
+    /// * `interval` - Optional update interval. Defaults to `Ms100` (100ms) if not specified.
+    ///
+    /// # Note
+    ///
+    /// `Raw` subscriptions require authentication. Use `Ms100` for public/unauthenticated access.
     #[must_use]
-    pub fn format_channel(&self, instrument_or_currency: &str, interval: Option<&str>) -> String {
-        let interval_str = interval.unwrap_or("100ms");
+    pub fn format_channel(
+        &self,
+        instrument_or_currency: &str,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> String {
+        let interval_str = interval.unwrap_or_default().as_str();
         match self {
             Self::Trades => format!("trades.{instrument_or_currency}.{interval_str}"),
             Self::Book => format!("book.{instrument_or_currency}.{interval_str}"),
