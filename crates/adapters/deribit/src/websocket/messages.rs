@@ -61,6 +61,20 @@ pub struct DeribitAuthParams {
     pub nonce: String,
     /// Data string (empty for WebSocket auth).
     pub data: String,
+    /// Optional scope for session-based authentication.
+    /// Use "session:name" for persistent session auth (allows skipping access_token in private requests).
+    /// Use "connection" (default) for per-connection auth (requires access_token in each private request).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+}
+
+/// Token refresh request parameters.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeribitRefreshTokenParams {
+    /// Grant type (always "refresh_token").
+    pub grant_type: String,
+    /// The refresh token obtained from authentication.
+    pub refresh_token: String,
 }
 
 /// Authentication response result.
@@ -301,8 +315,8 @@ pub enum NautilusWsMessage {
     Raw(serde_json::Value),
     /// Reconnection completed.
     Reconnected,
-    /// Authentication succeeded.
-    Authenticated,
+    /// Authentication succeeded with tokens.
+    Authenticated(Box<DeribitAuthResult>),
 }
 
 /// Parses a raw JSON message into a DeribitWsMessage.
