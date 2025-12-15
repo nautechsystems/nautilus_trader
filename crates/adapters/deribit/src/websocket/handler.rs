@@ -42,9 +42,9 @@ use super::{
     enums::{DeribitHeartbeatType, DeribitWsChannel},
     error::DeribitWsError,
     messages::{
-        DeribitBookMsg, DeribitHeartbeatParams, DeribitJsonRpcRequest, DeribitQuoteMsg,
-        DeribitSubscribeParams, DeribitTickerMsg, DeribitTradeMsg, DeribitWsMessage,
-        NautilusWsMessage, parse_raw_message,
+        DeribitAuthResult, DeribitBookMsg, DeribitHeartbeatParams, DeribitJsonRpcRequest,
+        DeribitQuoteMsg, DeribitSubscribeParams, DeribitTickerMsg, DeribitTradeMsg,
+        DeribitWsMessage, NautilusWsMessage, parse_raw_message,
     },
     parse::{parse_book_msg, parse_quote_msg, parse_ticker_to_quote, parse_trades_data},
 };
@@ -311,14 +311,27 @@ impl DeribitWsFeedHandler {
                     }
                 }
                 // Check for authentication response
-                if response
-                    .result
-                    .as_ref()
-                    .is_some_and(|r| r.get("access_token").is_some())
+                if let Some(result) = &response.result
+                    && result.get("access_token").is_some()
                 {
-                    self.auth_tracker.succeed();
-                    tracing::info!("Authentication successful");
-                    return Some(NautilusWsMessage::Authenticated);
+                    // Parse the full auth result
+                    match serde_json::from_value::<DeribitAuthResult>(result.clone()) {
+                        Ok(auth_result) => {
+                            self.auth_tracker.succeed();
+                            tracing::info!(
+                                "Authentication successful, scope: {}, expires_in: {}s",
+                                auth_result.scope,
+                                auth_result.expires_in
+                            );
+                            return Some(NautilusWsMessage::Authenticated(Box::new(auth_result)));
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to parse auth result: {e}");
+                            self.auth_tracker
+                                .fail(format!("Failed to parse auth result: {e}"));
+                            return None;
+                        }
+                    }
                 }
                 None
             }
@@ -473,7 +486,7 @@ impl DeribitWsFeedHandler {
                                     }
                                     // Return messages that need client-side handling
                                     NautilusWsMessage::Reconnected
-                                    | NautilusWsMessage::Authenticated => {
+                                    | NautilusWsMessage::Authenticated(_) => {
                                         return Some(nautilus_msg);
                                     }
                                 }
