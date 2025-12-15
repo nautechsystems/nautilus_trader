@@ -46,11 +46,19 @@ from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_O
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_TYPE
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_TIME_IN_FORCE
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_TRIGGER_METHOD
-from nautilus_trader.adapters.interactive_brokers.parsing.execution import ORDER_SIDE_TO_ORDER_ACTION
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
+    ORDER_SIDE_TO_ORDER_ACTION,
+)
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import timestring_to_timestamp
-from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import ib_price_to_nautilus_price
-from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import nautilus_price_to_ib_price
-from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
+from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import (
+    ib_price_to_nautilus_price,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import (
+    nautilus_price_to_ib_price,
+)
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -107,6 +115,7 @@ from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
+from datetime import UTC
 
 
 # Monkey patch to fix IB API bug where PriceCondition.__str__ is a property instead of a method
@@ -585,6 +594,37 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         return reports
 
+    def _is_expired_option(self, contract: IBContract) -> bool:
+        """
+        Check if a contract is an expired option.
+
+        IB API cannot provide contract details for expired options (the includeExpired
+        flag only works for futures). This helper is used to skip zero-quantity
+        positions on expired options during reconciliation.
+
+        """
+        if contract.secType not in ("OPT", "FOP"):
+            return False
+
+        expiry_str = contract.lastTradeDateOrContractMonth
+        if not expiry_str:
+            return False
+
+        try:
+            from datetime import datetime
+
+            # Handle both YYYYMMDD and YYYYMM formats
+            if len(expiry_str) == 8:
+                expiry_date = datetime.strptime(expiry_str, "%Y%m%d").replace(tzinfo=UTC).date()
+            elif len(expiry_str) == 6:
+                expiry_date = datetime.strptime(expiry_str, "%Y%m").replace(tzinfo=UTC).date()
+            else:
+                return False
+
+            return expiry_date < self._clock.utc_now().date()
+        except ValueError:
+            return False
+
     def _create_fill_report(
         self,
         execution: Execution,
@@ -681,6 +721,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         for position in positions:
             self._log.debug(f"Trying PositionStatusReport for {position.contract.conId}")
+
+            # Skip zero-quantity expired options - IB API cannot provide contract details
+            # for expired options (includeExpired only works for futures), and zero-quantity
+            # positions on expired contracts have no actionable meaning for reconciliation
+            if position.quantity == 0 and self._is_expired_option(position.contract):
+                self._log.debug(
+                    f"Skipping zero-quantity expired option position: {position.contract}",
+                )
+                continue
 
             instrument = await self.instrument_provider.get_instrument(position.contract)
 
@@ -950,18 +999,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 oca_type_from_tags = tags[tag]
             elif tag == "smartComboRoutingParams":
                 ib_order.smartComboRoutingParams = [
-                    TagValue(tag=param["tag"], value=param["value"])
-                    for param in tags[tag]
+                    TagValue(tag=param["tag"], value=param["value"]) for param in tags[tag]
                 ]
             elif tag == "algoParams":
                 ib_order.algoParams = [
-                    TagValue(tag=param["tag"], value=param["value"])
-                    for param in tags[tag]
+                    TagValue(tag=param["tag"], value=param["value"]) for param in tags[tag]
                 ]
             elif tag == "orderMiscOptions":
                 ib_order.orderMiscOptions = [
-                    TagValue(tag=param["tag"], value=param["value"])
-                    for param in tags[tag]
+                    TagValue(tag=param["tag"], value=param["value"]) for param in tags[tag]
                 ]
             else:
                 setattr(ib_order, tag, tags[tag])
@@ -1604,7 +1650,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             # Combo commission scaled to the number of legs of the combo
             combo_commission = (
-                commission_report.commission * generic_spread_id_n_legs(nautilus_order.instrument_id) / abs(ratio)
+                commission_report.commission
+                * generic_spread_id_n_legs(nautilus_order.instrument_id)
+                / abs(ratio)
             )
             commission = Money(combo_commission, Currency.from_str(commission_report.currency))
 
@@ -1671,7 +1719,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
 
             # Unique trade ID for leg fills to avoid conflicts with combo fills
-            spread_legs = generic_spread_id_to_list(nautilus_order.instrument_id)  # [(instrument_id, ratio), ...]
+            spread_legs = generic_spread_id_to_list(
+                nautilus_order.instrument_id
+            )  # [(instrument_id, ratio), ...]
             spread_instrument_ids = [leg[0] for leg in spread_legs]
             leg_position = (
                 spread_instrument_ids.index(leg_instrument_id)
