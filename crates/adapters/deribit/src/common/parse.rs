@@ -110,6 +110,7 @@ fn parse_spot_instrument(
 
     let price_increment = Price::from(instrument.tick_size.to_string().as_str());
     let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
         .context("Failed to parse maker_commission")?;
@@ -128,7 +129,7 @@ fn parse_spot_instrument(
         None, // multiplier
         None, // lot_size
         None, // max_quantity
-        None, // min_quantity
+        Some(min_quantity),
         None, // max_notional
         None, // min_notional
         None, // max_price
@@ -177,6 +178,7 @@ fn parse_perpetual_instrument(
 
     let price_increment = Price::from(instrument.tick_size.to_string().as_str());
     let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
 
     // Contract size represents the multiplier (e.g., 10 USD per contract for BTC-PERPETUAL)
     let multiplier = Some(Quantity::from(
@@ -203,7 +205,7 @@ fn parse_perpetual_instrument(
         multiplier,
         lot_size,
         None, // max_quantity - Deribit doesn't specify a hard max
-        None, // min_quantity
+        Some(min_quantity),
         None, // max_notional
         None, // min_notional
         None, // max_price
@@ -259,6 +261,7 @@ fn parse_future_instrument(
 
     let price_increment = Price::from(instrument.tick_size.to_string().as_str());
     let size_increment = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
 
     // Contract size represents the multiplier
     let multiplier = Some(Quantity::from(
@@ -287,7 +290,7 @@ fn parse_future_instrument(
         multiplier,
         lot_size,
         None, // max_quantity - Deribit doesn't specify a hard max
-        None, // min_quantity
+        Some(min_quantity),
         None, // max_notional
         None, // min_notional
         None, // max_price
@@ -343,6 +346,7 @@ fn parse_option_instrument(
     // Contract size is the multiplier (e.g., 1.0 for BTC options)
     let multiplier = Quantity::from(instrument.contract_size.to_string().as_str());
     let lot_size = Quantity::from(instrument.min_trade_amount.to_string().as_str());
+    let min_quantity = Quantity::from(instrument.min_trade_amount.to_string().as_str());
 
     let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
         .context("Failed to parse maker_commission")?;
@@ -365,7 +369,7 @@ fn parse_option_instrument(
         multiplier,
         lot_size,
         None, // max_quantity
-        None, // min_quantity
+        Some(min_quantity),
         None, // max_price
         None, // min_price
         None, // margin_init
@@ -514,7 +518,7 @@ mod tests {
         assert_eq!(perpetual.maker_fee(), dec!(0));
         assert_eq!(perpetual.taker_fee(), dec!(0.0005));
         assert_eq!(perpetual.max_quantity(), None);
-        assert_eq!(perpetual.min_quantity(), None);
+        assert_eq!(perpetual.min_quantity(), Some(Quantity::from("10")));
     }
 
     #[rstest]
