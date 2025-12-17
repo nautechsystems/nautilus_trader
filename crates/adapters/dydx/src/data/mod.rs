@@ -21,7 +21,6 @@ use std::sync::{
 };
 
 use anyhow::Context;
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_common::{
     live::runner::get_data_event_sender,
@@ -39,6 +38,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UnixNanos,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_data::client::DataClient;
@@ -1348,14 +1348,6 @@ fn upsert_instrument(cache: &Arc<DashMap<Ustr, InstrumentAny>>, instrument: Inst
     cache.insert(symbol, instrument);
 }
 
-/// Convert optional DateTime to optional UnixNanos timestamp.
-fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
-    value
-        .and_then(|dt| dt.timestamp_nanos_opt())
-        .and_then(|nanos| u64::try_from(nanos).ok())
-        .map(UnixNanos::from)
-}
-
 impl DydxDataClient {
     /// Start a task to periodically refresh instruments.
     ///
@@ -2247,6 +2239,7 @@ mod tests {
         response::Json,
         routing::get,
     };
+    use chrono::Utc;
     use indexmap::IndexMap;
     use nautilus_common::{
         live::runner::set_data_event_sender,

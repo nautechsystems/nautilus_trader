@@ -25,7 +25,6 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use nautilus_common::{
     live::runner::get_data_event_sender,
@@ -43,7 +42,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_data::client::DataClient;
@@ -340,13 +339,6 @@ impl BitmexDataClient {
         self.instrument_refresh_active = true;
         Ok(())
     }
-}
-
-fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
-    value
-        .and_then(|dt| dt.timestamp_nanos_opt())
-        .and_then(|nanos| u64::try_from(nanos).ok())
-        .map(UnixNanos::from)
 }
 
 #[async_trait::async_trait(?Send)]

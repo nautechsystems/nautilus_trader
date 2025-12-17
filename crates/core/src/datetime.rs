@@ -490,13 +490,21 @@ pub const fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
+/// Convert optional DateTime to optional UnixNanos timestamp.
+pub fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
+    value
+        .and_then(|dt| dt.timestamp_nanos_opt())
+        .and_then(|nanos| u64::try_from(nanos).ok())
+        .map(UnixNanos::from)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::float_cmp,
     reason = "Exact float comparisons acceptable in tests"
 )]
 mod tests {
-    use chrono::{DateTime, TimeDelta, TimeZone, Utc};
+    use chrono::{DateTime, TimeDelta, TimeZone, Timelike, Utc};
     use rstest::rstest;
 
     use super::*;
@@ -864,5 +872,52 @@ mod tests {
         // Adding years to epoch should never produce negative, but the check is there
         let result = add_n_years_nanos(start, 1);
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_datetime_to_unix_nanos_at_epoch() {
+        // Unix epoch (1970-01-01 00:00:00 UTC) should return 0 nanoseconds
+        let epoch = Utc.timestamp_opt(0, 0).unwrap();
+        let result = datetime_to_unix_nanos(Some(epoch));
+        assert_eq!(result, Some(UnixNanos::from(0)));
+    }
+
+    #[rstest]
+    fn test_datetime_to_unix_nanos_typical_datetime() {
+        let dt = Utc
+            .with_ymd_and_hms(2024, 1, 15, 13, 30, 45)
+            .unwrap()
+            .with_nanosecond(123_456_789)
+            .unwrap();
+        let result = datetime_to_unix_nanos(Some(dt));
+
+        // Expected: 1705325445123456789 nanoseconds
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_u64(), 1_705_325_445_123_456_789);
+    }
+
+    #[rstest]
+    fn test_datetime_to_unix_nanos_before_epoch() {
+        // Pre-epoch datetime (1969-12-31 23:59:59 UTC) should return None
+        // because negative timestamps can't be converted to u64
+        let before_epoch = Utc.with_ymd_and_hms(1969, 12, 31, 23, 59, 59).unwrap();
+        let result = datetime_to_unix_nanos(Some(before_epoch));
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    fn test_datetime_to_unix_nanos_one_second_after_epoch() {
+        // 1970-01-01 00:00:01 UTC = 1_000_000_000 nanoseconds
+        let dt = Utc.timestamp_opt(1, 0).unwrap();
+        let result = datetime_to_unix_nanos(Some(dt));
+        assert_eq!(result, Some(UnixNanos::from(1_000_000_000)));
+    }
+
+    #[rstest]
+    fn test_datetime_to_unix_nanos_with_subsecond_precision() {
+        // Test with microseconds: 1970-01-01 00:00:00.000001 UTC
+        let dt = Utc.timestamp_opt(0, 1_000).unwrap(); // 1 microsecond = 1000 nanos
+        let result = datetime_to_unix_nanos(Some(dt));
+        assert_eq!(result, Some(UnixNanos::from(1_000)));
     }
 }
