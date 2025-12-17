@@ -459,6 +459,23 @@ pub struct DeribitHttpClient {
     cache_initialized: AtomicBool,
 }
 
+impl Clone for DeribitHttpClient {
+    fn clone(&self) -> Self {
+        let cache_initialized = AtomicBool::new(false);
+
+        let is_initialized = self.cache_initialized.load(Ordering::Acquire);
+        if is_initialized {
+            cache_initialized.store(true, Ordering::Release);
+        }
+
+        Self {
+            inner: self.inner.clone(),
+            instruments_cache: self.instruments_cache.clone(),
+            cache_initialized,
+        }
+    }
+}
+
 impl DeribitHttpClient {
     /// Creates a new [`DeribitHttpClient`] with default configuration.
     ///
