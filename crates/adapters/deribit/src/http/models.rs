@@ -132,6 +132,9 @@ pub enum DeribitCurrency {
     USDT,
     /// Euro stablecoin
     EURR,
+    /// All currencies
+    #[serde(rename = "any")]
+    ANY,
 }
 
 /// Deribit option type.
@@ -154,6 +157,7 @@ impl DeribitCurrency {
             Self::USDC => "USDC",
             Self::USDT => "USDT",
             Self::EURR => "EURR",
+            Self::ANY => "any",
         }
     }
 }
