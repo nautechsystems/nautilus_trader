@@ -894,6 +894,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 start=query_info["query_start"],
                 end=query_info["query_end"],
                 files=existing_files,
+                optimize_file_loading=False,
             )
 
             if not period_data:
@@ -1642,6 +1643,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
         session: DataBackendSession | None = None,
         files: list[str] | None = None,
+        optimize_file_loading: bool = True,
         **kwargs: Any,
     ) -> DataBackendSession:
         """
@@ -1668,6 +1670,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         files : list[str], optional
             A specific list of files to query from. If provided, these files are used
             instead of discovering files through the normal process.
+        optimize_file_loading : bool, default True
+            If True, groups files by directory to reduce the number of registered tables
+            and streams, significantly reducing memory usage when dealing with many small files.
+            If False, registers each file individually.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -1701,7 +1707,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if self.fs_protocol != "file":
             self._register_object_store_with_session(session)
 
-        if files is not None:
+        if files is not None and not optimize_file_loading:
             # If specific files are requested, register them individually
             for file in files:
                 self._register_file_table(
@@ -1717,7 +1723,11 @@ class ParquetDataCatalog(BaseDataCatalog):
             # Otherwise, group by directory (instrument) to reduce the number of
             # registered tables and streams. This significantly reduces memory usage
             # when dealing with many small files.
-            file_list = self._query_files(data_cls, identifiers, start, end)
+            if files is not None:
+                file_list = files
+            else:
+                file_list = self._query_files(data_cls, identifiers, start, end)
+
             directories = {os.path.dirname(file) for file in file_list}
             for directory in directories:
                 self._register_directory_table(
