@@ -6833,6 +6833,143 @@ class DatabentoLiveClient:
     ) -> Awaitable[None]: ...
     def close(self) -> None: ...
 
+# Deribit
+
+class DeribitHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        is_testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
+    ) -> None: ...
+    @property
+    def is_testnet(self) -> bool: ...
+    def is_initialized(self) -> bool: ...
+    def cache_instruments(self, instruments: list[Instrument]) -> None: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
+    async def request_instruments(
+        self,
+        currency: DeribitCurrency,
+        kind: DeribitInstrumentKind | None = None,
+    ) -> list[Instrument]: ...
+    async def request_instrument(self, instrument_id: InstrumentId) -> Instrument: ...
+    async def request_account_state(self, account_id: AccountId) -> AccountState: ...
+
+class DeribitWebSocketClient:
+    def __init__(
+        self,
+        url: str | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        heartbeat_interval: int | None = None,
+        is_testnet: bool = False,
+    ) -> None: ...
+    @staticmethod
+    def new_public(is_testnet: bool) -> DeribitWebSocketClient: ...
+    @staticmethod
+    def with_credentials(is_testnet: bool) -> DeribitWebSocketClient: ...
+    @property
+    def url(self) -> str: ...
+    @property
+    def is_testnet(self) -> bool: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
+    def has_credentials(self) -> bool: ...
+    def is_authenticated(self) -> bool: ...
+    def cancel_all_requests(self) -> None: ...
+    def cache_instruments(self, instruments: list[Instrument]) -> None: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
+    async def connect(
+        self,
+        instruments: list[Instrument],
+        callback: Callable,
+    ) -> None: ...
+    async def wait_until_active(self, timeout_secs: float) -> None: ...
+    async def close(self) -> None: ...
+    async def authenticate(self, session_name: str | None = None) -> None: ...
+    async def authenticate_session(self) -> None: ...
+    async def subscribe_trades(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_trades_raw(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_trades(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_book(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_book_raw(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_book(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_ticker(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_ticker_raw(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_ticker(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe(self, channels: list[str]) -> None: ...
+    async def unsubscribe(self, channels: list[str]) -> None: ...
+
+def get_deribit_http_base_url(is_testnet: bool) -> str: ...
+def get_deribit_ws_url(is_testnet: bool) -> str: ...
+
+class DeribitCurrency(Enum):
+    BTC = "BTC"
+    ETH = "ETH"
+    USDC = "USDC"
+    USDT = "USDT"
+    EURR = "EURR"
+    ANY = "ANY"
+
+class DeribitInstrumentKind(Enum):
+    FUTURE = "FUTURE"
+    OPTION = "OPTION"
+    SPOT = "SPOT"
+    FUTURE_COMBO = "FUTURE_COMBO"
+    OPTION_COMBO = "OPTION_COMBO"
+
+class DeribitOptionType(Enum):
+    CALL = "CALL"
+    PUT = "PUT"
+
+class DeribitUpdateInterval(Enum):
+    RAW = "RAW"
+    MS100 = "MS100"
+    AGG2 = "AGG2"
+
+class DeribitWsChannel(Enum):
+    TRADES = "TRADES"
+    BOOK = "BOOK"
+    TICKER = "TICKER"
+    QUOTE = "QUOTE"
+    PRICE_INDEX = "PRICE_INDEX"
+    PRICE_RANKING = "PRICE_RANKING"
+    VOLATILITY_INDEX = "VOLATILITY_INDEX"
+    ESTIMATED_EXPIRATION_PRICE = "ESTIMATED_EXPIRATION_PRICE"
+    PERPETUAL = "PERPETUAL"
+
 # Tardis
 
 def tardis_normalize_symbol_str(
