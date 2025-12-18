@@ -186,7 +186,9 @@ def databento_data(
         definition = load_databento_data(definition_file) if load_databento_files_if_exist else None
 
     data = None
-    data_file_name = f"{file_prefix}_{schema}_{start_time}_{end_time}.dbn.zst".replace(":", "h")
+    used_start_time = start_time.replace(":", "-").replace(".", "-")
+    used_end_time = end_time.replace(":", "-").replace(".", "-")
+    data_file_name = f"{file_prefix}_{schema}_{used_start_time}_{used_end_time}.dbn.zst"
     data_file = used_path / data_file_name
 
     if schema != "definition":

@@ -19,7 +19,6 @@ This module provides a data client for backtesting.
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.core.uuid import UUID4
 
-from nautilus_trader.backtest.models cimport SpreadQuoteAggregator
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport MessageBus
@@ -167,9 +166,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             cache=cache,
             clock=clock,
         )
-
         self.is_connected = False
-        self._spread_quote_aggregators = {} # type: dict[InstrumentId, SpreadQuoteAggregator]
 
     cpdef void _start(self):
         self._log.info(f"Connecting...")
@@ -178,21 +175,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void _stop(self):
         self._log.info(f"Disconnecting...")
-
-        # Stop all spread quote aggregators
-        if self._spread_quote_aggregators is not None:
-            for aggregator in self._spread_quote_aggregators.values():
-                aggregator.stop()
-
         self.is_connected = False
         self._log.info(f"Disconnected")
-
-    cpdef void _reset(self):
-        # Stop and clear all spread quote aggregators
-        for aggregator in self._spread_quote_aggregators.values():
-            aggregator.stop()
-
-        self._spread_quote_aggregators.clear()
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
@@ -284,11 +268,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void subscribe_quote_ticks(self, SubscribeQuoteTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
-
-        # Handle spread instruments
-        if is_generic_spread_id(command.instrument_id) or "spread_legs" in command.params:
-            self._start_spread_quote_aggregator(command)
-            return
 
         if not self._cache.instrument(command.instrument_id):
             self._log.error(
@@ -407,11 +386,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void unsubscribe_quote_ticks(self, UnsubscribeQuoteTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
-
-        # Handle spread instruments
-        if is_generic_spread_id(command.instrument_id) or "spread_legs" in command.params:
-            self._stop_spread_quote_aggregator(command)
-            return
 
         self._remove_subscription_quote_ticks(command.instrument_id)
         self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
@@ -628,7 +602,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void request_instruments(self, RequestInstruments request):
         cdef list instruments = self._cache.instruments(request.venue)
-
         if not instruments:
             self._log.error(f"Cannot find instruments")
             return
@@ -650,103 +623,3 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void request_bars(self, RequestBars request):
         # Do nothing else for backtest
         pass
-
-# -- SPREAD QUOTE AGGREGATORS --------------------------------------------------------------------
-
-    cpdef void _start_spread_quote_aggregator(self, SubscribeQuoteTicks command):
-        spread_instrument_id = command.instrument_id
-
-        # Ensure the dictionary is initialized
-        if self._spread_quote_aggregators is None:
-            self._spread_quote_aggregators = {}
-
-        if spread_instrument_id in self._spread_quote_aggregators:
-            return
-
-        update_interval_seconds = command.params.get("update_interval_seconds", 60)
-
-        # Get spread_legs from command params if available, otherwise parse from instrument_id
-        spread_legs = None
-        if command.params and "spread_legs" in command.params:
-            spread_legs = command.params["spread_legs"]
-        else:
-            spread_legs = generic_spread_id_to_list(spread_instrument_id)
-
-        aggregator = SpreadQuoteAggregator(
-            spread_instrument_id=spread_instrument_id,
-            handler=self._handle_spread_quote,
-            msgbus=self._msgbus,
-            cache=self._cache,
-            clock=self._clock,
-            update_interval_seconds=update_interval_seconds,
-            spread_legs=spread_legs,
-        )
-        self._spread_quote_aggregators[spread_instrument_id] = aggregator
-
-        # Subscribe to quotes for leg instruments
-        for leg_id, _ in spread_legs:
-            subscribe = SubscribeQuoteTicks(
-                instrument_id=leg_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=UUID4(),
-                ts_init=command.ts_init,
-                params=command.params,
-                correlation_id=command.id,
-            )
-
-            # Send command to message bus for normal treatment
-            self._msgbus.send(endpoint="DataEngine.execute", msg=subscribe)
-
-    cpdef void _stop_spread_quote_aggregator(self, UnsubscribeQuoteTicks command):
-        spread_instrument_id = command.instrument_id
-
-        # Ensure the dictionary is initialized
-        if self._spread_quote_aggregators is None:
-            self._spread_quote_aggregators = {}
-            return
-
-        # Get spread_legs from command params if available, otherwise parse from instrument_id
-        spread_legs = None
-        if command.params and "spread_legs" in command.params:
-            spread_legs = command.params["spread_legs"]
-        else:
-            spread_legs = generic_spread_id_to_list(spread_instrument_id)
-
-        aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
-
-        if aggregator is None:
-            self._log.warning(
-                f"Cannot stop spread quote aggregator: no aggregator found for {spread_instrument_id}",
-            )
-            return
-
-        aggregator.stop()
-
-        # Unsubscribe from component instruments
-        for leg_id, _ in spread_legs:
-            unsubscribe = UnsubscribeQuoteTicks(
-                instrument_id=leg_id,
-                client_id=command.client_id,
-                venue=command.venue,
-                command_id=command.id,
-                ts_init=command.ts_init,
-                params=command.params,
-            )
-
-            # Send command to message bus for normal treatment
-            self._msgbus.send(endpoint="DataEngine.execute", msg=unsubscribe)
-
-        del self._spread_quote_aggregators[spread_instrument_id]
-
-    cdef void _handle_spread_quote(self, quote):
-        """
-        Handle a spread quote generated by the aggregator.
-
-        Parameters
-        ----------
-        quote : QuoteTick
-            The spread quote to handle.
-        """
-        # Send the quote to the data engine for processing
-        self._msgbus.send(endpoint="DataEngine.process", msg=quote)

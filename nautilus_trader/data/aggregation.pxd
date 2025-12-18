@@ -17,14 +17,22 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport Logger
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TimeEvent
+from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.greeks cimport GreeksCalculator
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -148,7 +156,6 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef bint _skip_first_non_full_bar
     cdef bint _build_with_no_updates
     cdef int _bar_build_delay
-    cdef bint _add_delay
     cdef object _time_bars_origin_offset
     cdef list _historical_events
 
@@ -156,6 +163,52 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef uint64_t _get_interval_ns(self)
     cpdef void start_timer(self)
     cpdef void stop_timer(self)
-    cdef void _preprocess_historical_events(self, uint64_t ts_init)
-    cdef void _postprocess_historical_events(self, uint64_t ts_init)
+    cdef void _process_historical_events(self, uint64_t ts_init)
     cpdef void _build_bar(self, TimeEvent event)
+
+
+cdef class SpreadQuoteAggregator:
+    cdef Logger _log
+    cdef readonly InstrumentId _spread_instrument_id
+    cdef readonly object _handler
+    cdef readonly Clock _clock
+    cdef readonly list _legs
+    cdef readonly GreeksCalculator _greeks_calculator
+    cdef readonly object _update_interval_seconds
+    cdef readonly str _timer_name
+    cdef readonly list _leg_ids
+    cdef readonly int _n_legs
+    cdef readonly object _ratios
+    cdef readonly object _mid_prices
+    cdef readonly object _bid_prices
+    cdef readonly object _ask_prices
+    cdef readonly object _vegas
+    cdef readonly object _bid_ask_spreads
+    cdef readonly object _bid_sizes
+    cdef readonly object _ask_sizes
+    cdef readonly Instrument _spread_instrument
+    cdef readonly bint _is_futures_spread
+    cdef readonly bint _has_update
+
+    # Component tracking
+    cdef dict _last_quotes  # Dict keyed by InstrumentId: QuoteTick
+
+    # State flags similar to bar aggregators
+    cdef public bint historical_mode
+    cdef public bint is_running
+
+    # Historical mode support (similar to TimeBarAggregator)
+    cdef list _historical_events
+
+    cpdef void start_timer(self)
+    cpdef void stop_timer(self)
+    cpdef void set_historical_mode(self, bint historical_mode, handler)
+    cpdef void set_running(self, bint is_running)
+    cpdef void handle_quote_tick(self, QuoteTick tick)
+
+    cdef void _process_historical_events(self, uint64_t ts_init)
+    cdef void _build_and_send_quote(self, uint64_t ts_event)
+    cdef void _build_and_send_quote_callback(self, TimeEvent event)
+    cdef tuple _create_option_spread_prices(self)
+    cdef tuple _create_futures_spread_prices(self)
+    cdef QuoteTick _create_quote_tick_from_raw_prices(self, double raw_bid_price, double raw_ask_price, uint64_t ts_event)

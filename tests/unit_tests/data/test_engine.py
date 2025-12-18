@@ -90,6 +90,7 @@ from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.option_contract import OptionContract
+from nautilus_trader.model.instruments.option_spread import OptionSpread
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -3711,7 +3712,7 @@ class TestDataEngine:
             / "databento"
             / "historical_bars_catalog"
             / "databento"
-            / "futures_ohlcv-1m_2024-07-01T23h40_2024-07-02T00h10.dbn.zst"
+            / "futures_ohlcv-1m_2024-07-01T23-40_2024-07-02T00-10.dbn.zst"
         )
         data = loader.from_dbn_file(path, as_legacy_cython=True)
 
@@ -3864,7 +3865,7 @@ class TestDataEngine:
             / "databento"
             / "historical_bars_catalog"
             / "databento"
-            / "futures_mbp-1_2024-07-01T23h58_2024-07-02T00h02.dbn.zst"
+            / "futures_mbp-1_2024-07-01T23-58_2024-07-02T00-02.dbn.zst"
         )
         data = loader.from_dbn_file(path, as_legacy_cython=True)
 
@@ -3985,7 +3986,7 @@ class TestDataEngine:
             / "databento"
             / "historical_bars_catalog"
             / "databento"
-            / "futures_trades_2024-07-01T23h58_2024-07-02T00h02.dbn.zst"
+            / "futures_trades_2024-07-01T23-58_2024-07-02T00-02.dbn.zst"
         )
         data = loader.from_dbn_file(path, as_legacy_cython=True)
 
@@ -4404,6 +4405,25 @@ class TestDataEngine:
             ],
         )
 
+        # Create spread instrument and add to cache
+        spread_instrument = OptionSpread(
+            instrument_id=spread_instrument_id,
+            raw_symbol=spread_instrument_id.symbol,
+            asset_class=option1.asset_class,
+            currency=option1.quote_currency,
+            price_precision=option1.price_precision,
+            price_increment=option1.price_increment,
+            multiplier=option1.multiplier,
+            lot_size=option1.lot_size,
+            underlying="ES",
+            strategy_type="SPREAD",
+            activation_ns=0,
+            expiration_ns=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(spread_instrument)
+
         subscribe = SubscribeQuoteTicks(
             client_id=None,
             venue=Venue("XCME"),  # Use the venue from the spread components
@@ -4481,6 +4501,25 @@ class TestDataEngine:
             ],
         )
 
+        # Create spread instrument and add to cache
+        spread_instrument = OptionSpread(
+            instrument_id=spread_instrument_id,
+            raw_symbol=spread_instrument_id.symbol,
+            asset_class=option1.asset_class,
+            currency=option1.quote_currency,
+            price_precision=option1.price_precision,
+            price_increment=option1.price_increment,
+            multiplier=option1.multiplier,
+            lot_size=option1.lot_size,
+            underlying="ES",
+            strategy_type="SPREAD",
+            activation_ns=0,
+            expiration_ns=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(spread_instrument)
+
         # Subscribe first
         subscribe = SubscribeQuoteTicks(
             client_id=None,
@@ -4506,9 +4545,7 @@ class TestDataEngine:
         self.data_engine.execute(unsubscribe)
 
         # Assert - Verify unsubscribe was processed
-        # Command count is 4: 3 for subscribe (spread + 2 components) + 1 for unsubscribe (spread only)
-        # Component instruments may not be unsubscribed if they have other subscribers
-        assert self.data_engine.command_count == 4
+        assert self.data_engine.command_count == 6
 
     def test_spread_quote_generation_and_distribution(self):
         # Arrange
@@ -4569,6 +4606,25 @@ class TestDataEngine:
                 (option2.id, -1),
             ],
         )
+
+        # Create spread instrument and add to cache
+        spread_instrument = OptionSpread(
+            instrument_id=spread_instrument_id,
+            raw_symbol=spread_instrument_id.symbol,
+            asset_class=option1.asset_class,
+            currency=option1.quote_currency,
+            price_precision=option1.price_precision,
+            price_increment=option1.price_increment,
+            multiplier=option1.multiplier,
+            lot_size=option1.lot_size,
+            underlying="ES",
+            strategy_type="SPREAD",
+            activation_ns=0,
+            expiration_ns=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(spread_instrument)
 
         # Set up handler to capture spread quotes
         handler = []

@@ -16,7 +16,6 @@
 from nautilus_trader.accounting.margin_models import LeveragedMarginModel
 from nautilus_trader.accounting.margin_models import MarginModel
 from nautilus_trader.accounting.margin_models import StandardMarginModel
-from nautilus_trader.backtest.models.aggregator import SpreadQuoteAggregator
 from nautilus_trader.backtest.models.fee import FeeModel
 from nautilus_trader.backtest.models.fee import FixedFeeModel
 from nautilus_trader.backtest.models.fee import MakerTakerFeeModel
@@ -52,7 +51,6 @@ __all__ = [
     "PerContractFeeModel",
     "ProbabilisticFillModel",
     "SizeAwareFillModel",
-    "SpreadQuoteAggregator",
     "StandardMarginModel",
     "ThreeTierFillModel",
     "TwoTierFillModel",

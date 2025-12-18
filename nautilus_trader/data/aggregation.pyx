@@ -22,6 +22,7 @@ import pandas as pd
 cimport numpy as np
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from libc.math cimport fabs
 from libc.stdint cimport uint64_t
 
 from datetime import timedelta
@@ -29,14 +30,18 @@ from datetime import timedelta
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 
 from nautilus_trader.common.component cimport Clock
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport Logger
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TimeEvent
+from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
@@ -44,9 +49,16 @@ from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.functions cimport bar_aggregation_to_str
+from nautilus_trader.model.greeks cimport GreeksCalculator
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport generic_spread_id_to_list
+from nautilus_trader.model.identifiers cimport is_generic_spread_id
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 
 
 cdef class BarBuilder:
@@ -1553,34 +1565,27 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_init):
-        if self.historical_mode:
-            self._preprocess_historical_events(ts_init)
-
         self._builder.update(price, size, ts_init)
 
         if self.historical_mode:
-            self._postprocess_historical_events(ts_init)
+            self._process_historical_events(ts_init)
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
-        if self.historical_mode:
-            self._preprocess_historical_events(ts_init)
-
         self._builder.update_bar(bar, volume, ts_init)
 
         if self.historical_mode:
-            self._postprocess_historical_events(ts_init)
+            self._process_historical_events(ts_init)
 
-    cdef void _preprocess_historical_events(self, uint64_t ts_init):
+    cdef void _process_historical_events(self, uint64_t ts_init):
         if self._clock.timestamp_ns() == 0:
             self._clock.set_time(ts_init)
             self.start_timer()
 
         # Advance this aggregator's independent clock and collect timer events
-        self._historical_events = self._clock.advance_time(ts_init, set_time=True)
+        event_handlers = self._clock.advance_time(ts_init, set_time=True)
 
-    cdef void _postprocess_historical_events(self, uint64_t ts_init):
         # Process timer events after data processing
-        for event_handler in self._historical_events:
+        for event_handler in event_handlers:
             self._build_bar(event_handler.event)
 
     cpdef void _build_bar(self, TimeEvent event):
@@ -1648,3 +1653,328 @@ def find_closest_smaller_time(
     closest_time = base_time + num_periods * period
 
     return closest_time
+
+
+cdef class SpreadQuoteAggregator:
+    """
+    Provides a spread quote generator for creating synthetic quotes from leg instruments.
+
+    The generator receives quote ticks from leg instruments via handler callbacks and generates
+    synthetic quotes for the spread instrument. Pricing logic differs by instrument type:
+
+    - **Futures spreads**: Calculates weighted bid/ask prices based on leg ratios (positive ratios
+      use bid/ask directly, negative ratios invert bid/ask).
+    - **Option spreads**: Uses vega-weighted spread calculation to determine bid/ask spreads,
+      then applies to the weighted mid-price based on leg ratios.
+
+    The aggregator requires quotes from all legs before building a spread quote. It can operate
+    in two modes:
+
+    1. **Quote-driven mode** (`update_interval_seconds=None`): Receives quote tick updates via handler
+       and builds spread quotes immediately when all legs have received quotes. This is the default
+       and recommended mode for most use cases.
+
+    2. **Timer-driven mode** (`update_interval_seconds=int`): Uses a periodic timer to read quotes
+       from internal state and build spread quotes at regular intervals. In historical mode, timer
+       events are processed when quotes arrive, ensuring all quotes for a given timestamp are
+       received before processing timer events for that timestamp.
+
+    In historical mode, the aggregator advances the provided clock independently with incoming
+    data timestamps, similar to TimeBarAggregator. Timer events are generated by advancing the
+    clock and are processed only when all legs have received quotes for the corresponding timestamp.
+
+    Parameters
+    ----------
+    spread_instrument : Instrument
+        The spread instrument to generate quotes for.
+    handler : Callable[[QuoteTick], None]
+        The quote handler callback that receives generated spread quotes.
+    greeks_calculator : GreeksCalculator
+        The greeks calculator for calculating option greeks (required for option spreads).
+    clock : Clock
+        The clock for timing operations and timer management.
+    historical : bool
+        Whether the aggregator is processing historical data. When True, the clock is advanced
+        independently with incoming data timestamps.
+    update_interval_seconds : int | None, default None
+        The interval in seconds for timer-driven quote building. If None, uses quote-driven mode
+        (builds immediately when all legs have quotes). If an integer, uses timer-driven mode
+        (reads from internal state at the specified interval).
+
+    Raises
+    ------
+    ValueError
+        If `spread_instrument` has one or fewer legs.
+    """
+
+    def __init__(
+        self,
+        Instrument spread_instrument not None,
+        handler not None: Callable[[QuoteTick], None],
+        GreeksCalculator greeks_calculator not None,
+        Clock clock not None,
+        bint historical,
+        object update_interval_seconds = None,
+    ):
+        self._handler = handler
+        self._clock = clock
+        self._log = Logger(name=f"{type(self).__name__}")
+
+        self._spread_instrument = spread_instrument
+        self._spread_instrument_id = spread_instrument.id
+
+        # Get spread legs from instrument
+        self._legs = spread_instrument.legs()
+        if not self._legs or len(self._legs) <= 1:
+            raise ValueError(f"Spread instrument {spread_instrument.id} must have more than one leg")
+
+        self._greeks_calculator = greeks_calculator
+
+        self._leg_ids = [leg[0] for leg in self._legs]
+        self._ratios = np.array([leg[1] for leg in self._legs])
+        self._n_legs = len(self._legs)
+        self._mid_prices = np.zeros(self._n_legs)
+        self._bid_prices = np.zeros(self._n_legs)
+        self._ask_prices = np.zeros(self._n_legs)
+        self._vegas = np.zeros(self._n_legs)
+        self._bid_ask_spreads = np.zeros(self._n_legs)
+        self._bid_sizes = np.zeros(self._n_legs)
+        self._ask_sizes = np.zeros(self._n_legs)
+        self._last_quotes = {}
+
+        self._is_futures_spread = self._spread_instrument.instrument_class == InstrumentClass.FUTURES_SPREAD
+        self.historical_mode = historical
+        self._update_interval_seconds = update_interval_seconds
+        self.is_running = False
+        self._historical_events = []
+        # Use object id to ensure unique timer names per aggregator instance
+        self._timer_name = f"spread_quote_timer_{id(self)}_{self._spread_instrument_id}"
+        self._has_update = False
+
+    cpdef void set_historical_mode(self, bint historical_mode, handler: Callable[[QuoteTick], None]):
+        Condition.callable(handler, "handler")
+
+        self.historical_mode = historical_mode
+        self._handler = handler
+
+    cpdef void set_running(self, bint is_running):
+        self.is_running = is_running
+
+    cpdef void start_timer(self):
+        if self._update_interval_seconds is None:
+            return
+
+        cdef datetime now = self._clock.utc_now()
+        start_time = find_closest_smaller_time(now, pd.Timedelta(0), pd.Timedelta(seconds=<int>self._update_interval_seconds))
+
+        # Determine if we should fire immediately (if start_time equals now)
+        cdef bint fire_immediately = (start_time == now)
+
+        self._clock.set_timer(
+            name=self._timer_name,
+            interval=timedelta(seconds=<int>self._update_interval_seconds),
+            callback=self._build_and_send_quote_callback,
+            start_time=start_time,
+            stop_time=None,   # Run indefinitely
+            allow_past=True,  # Allow past start times
+            fire_immediately=fire_immediately,
+        )
+
+    cpdef void stop_timer(self):
+        if self._update_interval_seconds is None:
+            return
+
+        if self._timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(self._timer_name)
+
+    cpdef void handle_quote_tick(self, QuoteTick tick):
+        if self._update_interval_seconds is not None and self.historical_mode:
+            self._process_historical_events(tick.ts_init)
+
+        self._last_quotes[tick.instrument_id] = tick
+        self._has_update = True
+
+        self._log.debug(f"Component QuoteTick: {tick}, ts={unix_nanos_to_iso8601(tick.ts_init)}")
+
+        if self._update_interval_seconds is None and len(self._last_quotes) == self._n_legs:
+            self._build_and_send_quote(tick.ts_init)
+            return
+
+    cdef void _process_historical_events(self, uint64_t ts_init):
+        if self._clock.timestamp_ns() == 0:
+            self._clock.set_time(ts_init)
+            self.start_timer()
+
+        self._historical_events.extend(self._clock.advance_time(ts_init, set_time=True))
+
+        if not self._historical_events:
+            return
+
+        # Don't process the last event and keep it if it matches ts_init
+        # This is to ensure that all quotes are received for a same time
+        last_event = self._historical_events[-1]
+        if last_event.event.ts_event == ts_init:
+            event_handlers = self._historical_events[:-1]
+            self._historical_events = [last_event]
+        else:
+            event_handlers = self._historical_events
+            self._historical_events.clear()
+
+        if len(self._last_quotes) != self._n_legs:
+            return
+
+        # Process events if all legs have quotes
+        for event_handler in event_handlers:
+            self._build_and_send_quote(event_handler.event.ts_event)
+
+    cdef void _build_and_send_quote_callback(self, TimeEvent event):
+        if len(self._last_quotes) != self._n_legs:
+            return
+
+        self._build_and_send_quote(event.ts_init)
+
+    cdef void _build_and_send_quote(self, uint64_t ts_init):
+        if not self._has_update:
+            return
+
+        for idx, leg_id in enumerate(self._leg_ids):
+            tick = self._last_quotes.get(leg_id)
+            if tick is None:
+                self._log.error(
+                    f"SpreadQuoteAggregator[{self._spread_instrument_id}]: Missing quote for leg {leg_id}"
+                )
+                return  # Cannot build quote without all legs
+
+            ask_price = tick.ask_price.as_double()
+            bid_price = tick.bid_price.as_double()
+
+            self._bid_prices[idx] = bid_price
+            self._ask_prices[idx] = ask_price
+            self._bid_sizes[idx] = tick.bid_size.as_double()
+            self._ask_sizes[idx] = tick.ask_size.as_double()
+
+            if not self._is_futures_spread:
+                self._mid_prices[idx] = (ask_price + bid_price) * 0.5
+                self._bid_ask_spreads[idx] = ask_price - bid_price
+                greeks_data = self._greeks_calculator.instrument_greeks(
+                    leg_id,
+                    percent_greeks=True,
+                    use_cached_greeks=True,
+                    vega_time_weight_base=30,
+                )
+                if greeks_data is not None:
+                    self._vegas[idx] = greeks_data.vega
+
+        cdef tuple raw_bid_ask_prices
+        if self._is_futures_spread:
+            raw_bid_ask_prices = self._create_futures_spread_prices()
+        else:
+            raw_bid_ask_prices = self._create_option_spread_prices()
+
+        spread_quote = self._create_quote_tick_from_raw_prices(raw_bid_ask_prices[0], raw_bid_ask_prices[1], ts_init)
+
+        self._has_update = False
+        self._handler(spread_quote)
+
+    cdef tuple _create_option_spread_prices(self):
+        vega_multipliers = np.divide(
+            self._bid_ask_spreads,
+            self._vegas,
+            out=np.zeros_like(self._vegas),
+            where=self._vegas != 0
+        )
+
+        # Filter out zero multipliers before taking mean
+        non_zero_multipliers = vega_multipliers[vega_multipliers != 0]
+        if len(non_zero_multipliers) == 0:
+            self._log.warning(
+                f"All vegas are zero for spread {self._spread_instrument_id}, cannot generate spread quote"
+            )
+            return self._create_futures_spread_prices()
+
+        vega_multiplier = np.abs(non_zero_multipliers).mean()
+        spread_vega = abs(np.dot(self._vegas, self._ratios))
+
+        bid_ask_spread = spread_vega * vega_multiplier
+        self._log.debug(f"{self._bid_ask_spreads=}, {self._vegas=}, {vega_multipliers=}, "
+                        f"{spread_vega=}, {vega_multiplier=}, {bid_ask_spread=}")
+
+        spread_mid_price = (self._mid_prices * self._ratios).sum()
+        raw_bid_price = spread_mid_price - bid_ask_spread * 0.5
+        raw_ask_price = spread_mid_price + bid_ask_spread * 0.5
+
+        return (raw_bid_price, raw_ask_price)
+
+    cdef tuple _create_futures_spread_prices(self):
+        # Calculate spread ask: for positive ratios use ask, for negative ratios use bid
+        # Calculate spread bid: for positive ratios use bid, for negative ratios use ask
+
+        cdef double raw_ask_price = 0.0
+        cdef double raw_bid_price = 0.0
+
+        cdef int i
+        for i in range(self._n_legs):
+            if self._ratios[i] >= 0:
+                raw_ask_price += self._ratios[i] * self._ask_prices[i]
+                raw_bid_price += self._ratios[i] * self._bid_prices[i]
+            else:
+                raw_ask_price += self._ratios[i] * self._bid_prices[i]
+                raw_bid_price += self._ratios[i] * self._ask_prices[i]
+
+        return (raw_bid_price, raw_ask_price)
+
+    cdef QuoteTick _create_quote_tick_from_raw_prices(self, double raw_bid_price, double raw_ask_price, uint64_t ts_init):
+        # Apply tick scheme if available
+        if self._spread_instrument._tick_scheme is not None:
+            if raw_bid_price >= 0.:
+                bid_price = self._spread_instrument._tick_scheme.next_bid_price(raw_bid_price)
+            else:
+                bid_price = self._spread_instrument.make_price(-self._spread_instrument._tick_scheme.next_ask_price(-raw_bid_price).as_double())
+
+            if raw_ask_price >= 0.:
+                ask_price = self._spread_instrument._tick_scheme.next_ask_price(raw_ask_price)
+            else:
+                ask_price = self._spread_instrument.make_price(-self._spread_instrument._tick_scheme.next_bid_price(-raw_ask_price).as_double())
+
+            self._log.debug(f"Bid ask created using tick_scheme: {bid_price=}, {ask_price=}, {raw_bid_price=}, {raw_ask_price=}, is_futures_spread={self._is_futures_spread}")
+        else:
+            # Fallback to simple method if no tick scheme
+            bid_price = self._spread_instrument.make_price(raw_bid_price)
+            ask_price = self._spread_instrument.make_price(raw_ask_price)
+            self._log.debug(f"Bid ask created: {bid_price=}, {ask_price=}, {raw_bid_price=}, {raw_ask_price=}, is_futures_spread={self._is_futures_spread}")
+
+        # Create bid and ask sizes (use minimum of leg sizes based on ratio signs)
+        cdef double min_bid_size = float('inf')
+        cdef double min_ask_size = float('inf')
+
+        cdef double abs_ratio
+        cdef int i
+        for i in range(self._n_legs):
+            abs_ratio = fabs(self._ratios[i])
+            if self._ratios[i] >= 0:
+                if self._bid_sizes[i] / abs_ratio < min_bid_size:
+                    min_bid_size = self._bid_sizes[i] / abs_ratio
+
+                if self._ask_sizes[i] / abs_ratio < min_ask_size:
+                    min_ask_size = self._ask_sizes[i] / abs_ratio
+            else:
+                if self._ask_sizes[i] / abs_ratio < min_bid_size:
+                    min_bid_size = self._ask_sizes[i] / abs_ratio
+
+                if self._bid_sizes[i] / abs_ratio < min_ask_size:
+                    min_ask_size = self._bid_sizes[i] / abs_ratio
+
+        bid_size = self._spread_instrument.make_qty(min_bid_size)
+        ask_size = self._spread_instrument.make_qty(min_ask_size)
+
+        cdef QuoteTick spread_quote = QuoteTick(
+            instrument_id=self._spread_instrument_id,
+            bid_price=bid_price,
+            ask_price=ask_price,
+            bid_size=bid_size,
+            ask_size=ask_size,
+            ts_event=ts_init,
+            ts_init=ts_init,
+        )
+
+        return spread_quote
