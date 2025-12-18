@@ -73,6 +73,10 @@ const AUTHENTICATION_TIMEOUT_SECS: u64 = 30;
 
 /// WebSocket client for connecting to Deribit.
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 pub struct DeribitWebSocketClient {
     url: String,
     is_testnet: bool,
@@ -224,6 +228,12 @@ impl DeribitWebSocketClient {
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.connection_mode() == ConnectionMode::Active
+    }
+
+    /// Returns the WebSocket URL.
+    #[must_use]
+    pub fn url(&self) -> &str {
+        &self.url
     }
 
     /// Returns whether the client is closed.

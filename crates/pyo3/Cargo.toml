@@ -36,6 +36,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-cryptography/extension-module",
   "nautilus-databento/extension-module",
+  "nautilus-deribit/extension-module",
   "nautilus-dydx/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-hyperliquid/extension-module",
@@ -95,6 +96,7 @@ nautilus-blockchain = { workspace = true, features = [
 nautilus-bybit = { workspace = true, features = ["python"] }
 nautilus-coinbase-intx = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python"] }
+nautilus-deribit = { workspace = true, features = ["python"] }
 nautilus-dydx = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-kraken = { workspace = true, features = ["python"] }

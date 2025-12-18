@@ -121,6 +121,12 @@ impl DeribitRawHttpClient {
         &self.cancellation_token
     }
 
+    /// Returns whether this client is connected to testnet.
+    #[must_use]
+    pub fn is_testnet(&self) -> bool {
+        self.base_url.contains("test")
+    }
+
     /// Creates a new [`DeribitRawHttpClient`] with explicit credentials.
     ///
     /// # Errors
@@ -453,6 +459,10 @@ impl DeribitRawHttpClient {
 /// This client wraps the raw HTTP client and provides methods that use Nautilus
 /// domain types. It maintains an instrument cache for efficient lookups.
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 pub struct DeribitHttpClient {
     pub(crate) inner: Arc<DeribitRawHttpClient>,
     pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
@@ -709,5 +719,11 @@ impl DeribitHttpClient {
     #[must_use]
     pub fn is_cache_initialized(&self) -> bool {
         self.cache_initialized.load(Ordering::Acquire)
+    }
+
+    /// Returns whether this client is connected to testnet.
+    #[must_use]
+    pub fn is_testnet(&self) -> bool {
+        self.inner.is_testnet()
     }
 }

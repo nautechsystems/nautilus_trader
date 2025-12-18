@@ -5652,6 +5652,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-cryptography",
  "nautilus-databento",
+ "nautilus-deribit",
  "nautilus-dydx",
  "nautilus-execution",
  "nautilus-hyperliquid",

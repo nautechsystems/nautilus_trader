@@ -22,8 +22,25 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 ///
 /// Controls how frequently updates are sent for subscribed channels.
 /// Raw updates require authentication while aggregated updates are public.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
+)]
 pub enum DeribitUpdateInterval {
     /// Raw updates - immediate delivery of each event.
     /// Requires authentication.
@@ -64,6 +81,7 @@ impl std::fmt::Display for DeribitUpdateInterval {
 /// Channels follow the format: `{channel_type}.{instrument_or_currency}.{interval}`
 #[derive(
     Clone,
+    Copy,
     Debug,
     Display,
     PartialEq,
@@ -74,6 +92,10 @@ impl std::fmt::Display for DeribitUpdateInterval {
     EnumString,
     Serialize,
     Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
 )]
 pub enum DeribitWsChannel {
     // Public Market Data Channels
