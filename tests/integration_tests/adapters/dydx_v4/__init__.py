@@ -12,4 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-"""Integration tests for dYdX v4 adapter."""
+"""
+Integration tests for dYdX v4 adapter.
+"""

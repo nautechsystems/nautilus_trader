@@ -31,12 +31,6 @@ if sys.version_info < (3, 14):
 
 @pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14+ not supported")
 def test_dydx_channel_enum_values():
-    """
-    Test all DYDXChannel enum variants are accessible.
-
-    Ensures that all WebSocket channel types are properly defined,
-    including the newly added BLOCK_HEIGHT channel.
-    """
     assert DYDXChannel.TRADES.value == "v4_trades"
     assert DYDXChannel.ORDERBOOK.value == "v4_orderbook"
     assert DYDXChannel.CANDLES.value == "v4_candles"
@@ -47,11 +41,6 @@ def test_dydx_channel_enum_values():
 
 @pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14+ not supported")
 def test_dydx_order_status_enum_values():
-    """
-    Test all DYDXOrderStatus enum variants.
-
-    Validates that all order status types are properly defined and accessible.
-    """
     assert DYDXOrderStatus.OPEN.value == "OPEN"
     assert DYDXOrderStatus.FILLED.value == "FILLED"
     assert DYDXOrderStatus.CANCELED.value == "CANCELED"
@@ -62,11 +51,6 @@ def test_dydx_order_status_enum_values():
 
 @pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14+ not supported")
 def test_enum_string_representation():
-    """
-    Test enum string representations.
-
-    Ensures enums can be properly serialized for logging and debugging.
-    """
     channel = DYDXChannel.BLOCK_HEIGHT
     assert str(channel.value) == "v4_block_height"
 
@@ -76,11 +60,6 @@ def test_enum_string_representation():
 
 @pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14+ not supported")
 def test_enum_from_string():
-    """
-    Test creating enum from string value.
-
-    Validates that enums can be created from incoming WebSocket message strings.
-    """
     channel_str = "v4_block_height"
     channel = DYDXChannel(channel_str)
     assert channel == DYDXChannel.BLOCK_HEIGHT

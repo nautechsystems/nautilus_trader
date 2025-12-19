@@ -25,7 +25,6 @@ pytestmark = pytest.mark.skipif(
 
 
 if sys.version_info < (3, 14):
-    import json
 
     from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightChannelData
     from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMessageGeneral
@@ -33,12 +32,6 @@ if sys.version_info < (3, 14):
 
 @pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14+ not supported")
 def test_unknown_websocket_message_parsing():
-    """
-    Test that unknown WebSocket messages can be parsed as general messages.
-
-    This validates the enhanced logging behavior where unknown message types
-    are logged with full message content for debugging.
-    """
     unknown_msg = {
         "type": "unknown_type",
         "connection_id": "test-connection",
@@ -53,11 +46,6 @@ def test_unknown_websocket_message_parsing():
 
 @pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14+ not supported")
 def test_block_height_message_structure():
-    """
-    Test block height WebSocket message structure.
-
-    Validates that block height messages are properly parsed with all required fields.
-    """
     from datetime import datetime
 
     block_height_msg = {
@@ -80,36 +68,20 @@ def test_block_height_message_structure():
 
 @pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14+ not supported")
 def test_malformed_message_handling():
-    """
-    Test that malformed messages fail gracefully.
-
-    This ensures that parsing errors are handled properly and would trigger
-    the enhanced error logging in the actual client.
-    """
     malformed_msg = {
         "type": "channel_data",
         "connection_id": "test",
-        # Missing required fields like message_id
     }
 
-    # msgspec will coerce types, so we test missing required fields instead
     try:
         msg = DYDXWsMessageGeneral(**malformed_msg)
-        # If it doesn't raise, check that it at least parsed what it could
         assert msg.type == "channel_data"
     except (TypeError, KeyError):
-        # Expected if strict validation is enabled
         pass
 
 
 @pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14+ not supported")
 def test_block_height_conversion():
-    """
-    Test block height string to integer conversion.
-
-    Validates that block height values are properly converted from strings
-    to integers as required by the execution client.
-    """
     block_height_str = "999999"
     block_height_int = int(block_height_str)
 
@@ -119,12 +91,7 @@ def test_block_height_conversion():
 
 @pytest.mark.skipif(sys.version_info >= (3, 14), reason="Python 3.14+ not supported")
 def test_block_height_large_values():
-    """
-    Test handling of large block height values.
-
-    Ensures that very large block heights (as chain progresses) are handled correctly.
-    """
-    large_block_height = "18446744073709551615"  # Max uint64
+    large_block_height = "18446744073709551615"
     block_height_int = int(large_block_height)
 
     assert block_height_int > 0

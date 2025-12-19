@@ -11,10 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-# -------------------------------------------------------------------------------------------------"""Unit tests for the execution engine of dYdX."""
-"""
-Unit tests for the dYdX execution engine.
-"""
+# -------------------------------------------------------------------------------------------------
 
 import msgspec
 import pytest
@@ -25,95 +22,49 @@ from nautilus_trader.model.identifiers import ClientOrderId
 
 @pytest.fixture
 def client_order_id_helper(cache):
-    """
-    Create a stub ClientOrderIdHelper.
-    """
     return ClientOrderIdHelper(cache=cache)
 
 
 @pytest.mark.parametrize("order_string", ["839ca109-f2c8-46b5-88f2-345eeeb01058", str(12345)])
 def test_generate_client_order_id_int_uuid(client_order_id_helper, order_string) -> None:
-    """
-    Test the generate_client_order_id_int method with a UUID4.
-    """
-    # Prepare
     client_order_id = ClientOrderId(order_string)
-
-    # Act
     result = client_order_id_helper.generate_client_order_id_int(client_order_id)
-
-    # Assert
     assert isinstance(result, int)
 
 
 def test_generate_client_order_id_int_with_int(client_order_id_helper) -> None:
-    """
-    Test the generate_client_order_id_int method with an integer.
-    """
-    # Prepare
     expected_result = 12345
     client_order_id = ClientOrderId(str(expected_result))
-
-    # Act
     result = client_order_id_helper.generate_client_order_id_int(client_order_id)
-
-    # Assert
     assert result == expected_result
 
 
 def test_retrieve_from_cache(client_order_id_helper) -> None:
-    """
-    Test the generate_client_order_id_int method with an integer.
-    """
-    # Prepare
     client_order_id_int = 12345
     expected_result = ClientOrderId(str(client_order_id_int))
     client_order_id_helper.generate_client_order_id_int(expected_result)
-
-    # Act
     result = client_order_id_helper.get_client_order_id(client_order_id_int)
-
-    # Assert
     assert result.value == expected_result.value
     assert result == expected_result
 
 
 def test_retrieve_from_empty_cache(client_order_id_helper) -> None:
-    """
-    Test the generate_client_order_id_int method with an integer.
-    """
-    # Prepare
     client_order_id_int = 12345
     expected_result = ClientOrderId(str(client_order_id_int))
-
-    # Act
     result = client_order_id_helper.get_client_order_id(client_order_id_int)
-
-    # Assert
     assert result.value == expected_result.value
     assert result == expected_result
 
 
 def test_retrieve_client_order_id_integer_from_cache(client_order_id_helper) -> None:
-    """
-    Test the generate_client_order_id_int method with an integer.
-    """
-    # Prepare
     expected_result = 12345
     client_order_id = ClientOrderId(str(expected_result))
     client_order_id_helper.generate_client_order_id_int(client_order_id)
-
-    # Act
     result = client_order_id_helper.get_client_order_id_int(client_order_id)
-
-    # Assert
     assert result == expected_result
 
 
 def test_retrieve_client_order_id_integer_from_empty_cache(client_order_id_helper) -> None:
-    """
-    Test the generate_client_order_id_int method with an integer.
-    """
     expected_result = 12345
     client_order_id = ClientOrderId(str(expected_result))
     result = client_order_id_helper.get_client_order_id_int(client_order_id)
@@ -121,9 +72,6 @@ def test_retrieve_client_order_id_integer_from_empty_cache(client_order_id_helpe
 
 
 def test_block_height_message_parsing():
-    """
-    Test parsing of block height WebSocket messages.
-    """
     from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightChannelData
 
     raw_message = b'{"type":"channel_data","connection_id":"test-123","message_id":42,"id":"dydx","channel":"v4_block_height","version":"4.0.0","contents":{"blockHeight":"12345678","time":"2025-12-19T10:30:00.000Z"}}'
@@ -141,21 +89,15 @@ def test_block_height_message_parsing():
 
 
 def test_block_height_initialization():
-    """
-    Test that block height starts at 0 and updates correctly.
-    """
     block_height = 0
-    assert block_height == 0, "Initial block height should be 0"
+    assert block_height == 0
 
     block_height = 1000
-    assert block_height > 0, "Updated block height should be positive"
-    assert block_height == 1000, "Block height should update to new value"
+    assert block_height > 0
+    assert block_height == 1000
 
 
 def test_good_til_block_calculation():
-    """
-    Test good_til_block calculation for limit orders.
-    """
     SHORT_TERM_ORDER_MAXIMUM_LIFETIME = 20
 
     current_block_height = 1000
@@ -166,26 +108,20 @@ def test_good_til_block_calculation():
 
     current_block_height = 0
     good_til_block = current_block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME
-    assert good_til_block == 20, "Orders with block_height=0 will have expired good_til_block"
+    assert good_til_block == 20
 
 
 def test_block_height_validation_prevents_zero():
-    """
-    Test that validation detects uninitialized block height.
-    """
     block_height = 0
     can_submit_order = block_height > 0
-    assert not can_submit_order, "Should not allow order submission with block_height=0"
+    assert not can_submit_order
 
     block_height = 100
     can_submit_order = block_height > 0
-    assert can_submit_order, "Should allow order submission with valid block_height"
+    assert can_submit_order
 
 
 def test_block_height_string_to_int_conversion():
-    """
-    Test conversion of block height from string to integer.
-    """
     test_cases = [
         ("123", 123),
         ("9876543210", 9876543210),
@@ -200,9 +136,6 @@ def test_block_height_string_to_int_conversion():
 
 
 def test_block_height_invalid_string():
-    """
-    Test that invalid block height strings raise errors.
-    """
     invalid_values = ["not-a-number", "12.34", "abc"]
 
     for invalid in invalid_values:
@@ -211,9 +144,6 @@ def test_block_height_invalid_string():
 
 
 def test_block_height_large_values():
-    """
-    Test handling of large block height values.
-    """
     large_block_height = "999999999999"
     result = int(large_block_height)
 

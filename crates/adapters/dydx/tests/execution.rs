@@ -574,8 +574,10 @@ async fn test_parse_block_height_websocket_message() {
 #[rstest]
 #[tokio::test]
 async fn test_block_height_zero_validation() {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    };
 
     let block_height = Arc::new(AtomicU64::new(0));
     let current_height = block_height.load(Ordering::Relaxed);
@@ -619,8 +621,11 @@ async fn test_good_til_block_calculation() {
 #[rstest]
 #[tokio::test]
 async fn test_block_height_concurrent_access() {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    };
+
     use tokio::task;
 
     let block_height = Arc::new(AtomicU64::new(1000));
