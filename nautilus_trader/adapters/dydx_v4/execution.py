@@ -314,6 +314,18 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
             )
             return
 
+        # Check block height is available for short-term orders
+        if self._block_height == 0:
+            self._log.warning(
+                f"Block height not yet available, rejecting order {command.order.client_order_id}",
+                LogColor.YELLOW,
+            )
+            self._generate_order_rejected(
+                command.order.client_order_id,
+                "Block height not available - please retry",
+            )
+            return
+
         order = command.order
         instrument = self._instrument_provider.find(order.instrument_id)
 
@@ -380,6 +392,12 @@ class DYDXv4ExecutionClient(LiveExecutionClient):
         assert self._wallet is not None  # Checked in _submit_order
         # Convert TimeInForce enum to int value
         tif_value = order.time_in_force.value
+
+        self._log.info(
+            f"Submitting limit order with block_height={self._block_height}, "
+            f"price={order.price}, qty={order.quantity}, tif={order.time_in_force}",
+            LogColor.MAGENTA,
+        )
 
         await self._order_submitter.submit_limit_order(
             wallet=self._wallet,

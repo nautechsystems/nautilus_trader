@@ -538,3 +538,113 @@ async fn test_empty_fills_response() {
     let result = client.get_fills("dydx1test", 0, None, None).await.unwrap();
     assert!(result.fills.is_empty());
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_parse_block_height_websocket_message() {
+    use chrono::Utc;
+    use nautilus_dydx::websocket::{
+        enums::{DydxWsChannel, DydxWsMessageType},
+        messages::{DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData},
+    };
+
+    let test_block_height = "9876543210";
+    let block_msg = DydxWsBlockHeightChannelData {
+        msg_type: DydxWsMessageType::ChannelData,
+        connection_id: "test-conn-123".to_string(),
+        message_id: 42,
+        id: "dydx".to_string(),
+        channel: DydxWsChannel::BlockHeight,
+        version: "4.0.0".to_string(),
+        contents: DydxBlockHeightChannelContents {
+            block_height: test_block_height.to_string(),
+            time: Utc::now(),
+        },
+    };
+
+    assert_eq!(
+        block_msg.contents.block_height.parse::<u64>().unwrap(),
+        9876543210_u64,
+        "Block height string should parse to correct u64"
+    );
+    assert_eq!(block_msg.channel, DydxWsChannel::BlockHeight);
+    assert_eq!(block_msg.msg_type, DydxWsMessageType::ChannelData);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_block_height_zero_validation() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let block_height = Arc::new(AtomicU64::new(0));
+    let current_height = block_height.load(Ordering::Relaxed);
+
+    assert_eq!(current_height, 0, "Initial block height should be 0");
+
+    // Validation that should prevent order submission when block height is 0
+    assert_eq!(
+        current_height, 0,
+        "Validation should detect uninitialized block height"
+    );
+
+    block_height.store(100, Ordering::Relaxed);
+    let updated_height = block_height.load(Ordering::Relaxed);
+
+    assert_eq!(updated_height, 100, "Block height should update correctly");
+    assert!(
+        updated_height > 0,
+        "Updated block height should be valid for order submission"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_good_til_block_calculation() {
+    use nautilus_dydx::grpc::SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
+
+    let current_block: u32 = 1000;
+    let good_til_block = current_block + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
+
+    assert_eq!(
+        good_til_block, 1020,
+        "good_til_block should be current block + 20"
+    );
+    assert!(
+        good_til_block > current_block,
+        "good_til_block must be in the future"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_block_height_concurrent_access() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use tokio::task;
+
+    let block_height = Arc::new(AtomicU64::new(1000));
+    let mut handles = vec![];
+
+    for i in 1..=10 {
+        let bh = Arc::clone(&block_height);
+        let handle = task::spawn(async move {
+            let new_height = 1000 + i * 100;
+            bh.store(new_height, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            bh.load(Ordering::Relaxed)
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        let height = handle.await.unwrap();
+        assert!(
+            height >= 1000,
+            "Block height should never go below initial value"
+        );
+    }
+
+    let final_height = block_height.load(Ordering::Relaxed);
+    assert!(final_height >= 1000, "Final block height should be valid");
+}

@@ -127,8 +127,8 @@ pub struct DydxExecutionClient {
     instruments: DashMap<InstrumentId, InstrumentAny>,
     market_to_instrument: DashMap<String, InstrumentId>,
     clob_pair_id_to_instrument: DashMap<u32, InstrumentId>,
-    block_height: AtomicU64,
-    oracle_prices: DashMap<InstrumentId, Decimal>,
+    block_height: Arc<AtomicU64>,
+    oracle_prices: Arc<DashMap<InstrumentId, Decimal>>,
     client_id_to_int: DashMap<String, u32>,
     int_to_client_id: DashMap<u32, String>,
     next_client_id: AtomicU32,
@@ -189,8 +189,8 @@ impl DydxExecutionClient {
             instruments: DashMap::new(),
             market_to_instrument: DashMap::new(),
             clob_pair_id_to_instrument: DashMap::new(),
-            block_height: AtomicU64::new(0),
-            oracle_prices: DashMap::new(),
+            block_height: Arc::new(AtomicU64::new(0)),
+            oracle_prices: Arc::new(DashMap::new()),
             client_id_to_int: DashMap::new(),
             int_to_client_id: DashMap::new(),
             next_client_id: AtomicU32::new(1),
@@ -1207,6 +1207,7 @@ impl ExecutionClient for DydxExecutionClient {
                 let instruments = self.instruments.clone();
                 let oracle_prices = self.oracle_prices.clone();
                 let clob_pair_id_to_instrument = self.clob_pair_id_to_instrument.clone();
+                let block_height = self.block_height.clone();
 
                 let handle = tokio::spawn(async move {
                     while let Some(msg) = rx.recv().await {
@@ -1448,6 +1449,10 @@ impl ExecutionClient for DydxExecutionClient {
                                         }
                                     }
                                 }
+                            }
+                            NautilusWsMessage::BlockHeight(height) => {
+                                tracing::debug!("Block height update: {}", height);
+                                block_height.store(height, std::sync::atomic::Ordering::Relaxed);
                             }
                             NautilusWsMessage::Error(err) => {
                                 tracing::error!("WebSocket error: {:?}", err);

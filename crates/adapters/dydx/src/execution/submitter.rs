@@ -726,8 +726,16 @@ impl OrderSubmitter {
             ))))
         })?;
 
+        tracing::debug!(
+            "Broadcasting {} with {} bytes, account_seq={}",
+            operation,
+            tx_bytes.len(),
+            account.sequence_number
+        );
+
         let mut grpc_client = self.grpc_client.clone();
         let tx_hash = grpc_client.broadcast_tx(tx_bytes).await.map_err(|e| {
+            tracing::error!("gRPC broadcast failed for {}: {}", operation, e);
             DydxError::Grpc(Box::new(tonic::Status::internal(format!(
                 "Broadcast failed: {e}"
             ))))

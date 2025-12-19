@@ -57,10 +57,12 @@ use super::{
     enums::{DydxWsChannel, DydxWsMessage, NautilusWsMessage},
     error::DydxWebSocketError,
     messages::{
-        DydxCandle, DydxMarketsContents, DydxOrderbookContents, DydxOrderbookSnapshotContents,
-        DydxTradeContents, DydxWsChannelBatchDataMsg, DydxWsChannelDataMsg, DydxWsConnectedMsg,
-        DydxWsGenericMsg, DydxWsSubaccountsChannelContents, DydxWsSubaccountsChannelData,
-        DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg,
+        DydxBlockHeightChannelContents, DydxCandle, DydxMarketsContents, DydxOrderbookContents,
+        DydxOrderbookSnapshotContents, DydxTradeContents, DydxWsBlockHeightMessage,
+        DydxWsCandlesMessage, DydxWsChannelBatchDataMsg, DydxWsChannelDataMsg, DydxWsConnectedMsg,
+        DydxWsFeedMessage, DydxWsGenericMsg, DydxWsMarketsMessage, DydxWsOrderbookMessage,
+        DydxWsSubaccountsChannelContents, DydxWsSubaccountsChannelData, DydxWsSubaccountsMessage,
+        DydxWsSubaccountsSubscribed, DydxWsSubscriptionMsg, DydxWsTradesMessage,
     },
 };
 use crate::common::parse::parse_instrument_id;
@@ -216,7 +218,17 @@ impl FeedHandler {
 
                 match serde_json::from_str::<serde_json::Value>(&txt) {
                     Ok(val) => {
-                        // Attempt to classify message using generic envelope
+                        let val_clone = val.clone();
+
+                        // Try two-level parsing first (channel → type)
+                        if let Ok(feed_msg) =
+                            serde_json::from_value::<DydxWsFeedMessage>(val.clone())
+                        {
+                            return self.handle_feed_message(feed_msg).await;
+                        }
+
+                        // Fall back to single-level parsing for non-channel messages
+                        // (connected, error, subscribed/unsubscribed without channel data)
                         match serde_json::from_value::<DydxWsGenericMsg>(val.clone()) {
                             Ok(meta) => {
                                 let result = if meta.is_connected() {
@@ -230,9 +242,17 @@ impl FeedHandler {
                                         if sub_msg.channel == DydxWsChannel::Subaccounts {
                                             // Parse as subaccounts-specific subscription message
                                             serde_json::from_value::<DydxWsSubaccountsSubscribed>(
-                                                val,
+                                                val.clone(),
                                             )
                                             .map(DydxWsMessage::SubaccountsSubscribed)
+                                            .or_else(|e| {
+                                                tracing::debug!(
+                                                    "Failed to parse subaccounts subscription (fallback to standard): {e}. Raw: {}",
+                                                    serde_json::to_string(&val_clone)
+                                                        .unwrap_or_else(|_| "<invalid json>".into())
+                                                );
+                                                Ok(DydxWsMessage::Subscribed(sub_msg))
+                                            })
                                         } else {
                                             Ok(DydxWsMessage::Subscribed(sub_msg))
                                         }
@@ -243,17 +263,15 @@ impl FeedHandler {
                                 } else if meta.is_unsubscribed() {
                                     serde_json::from_value::<DydxWsSubscriptionMsg>(val)
                                         .map(DydxWsMessage::Unsubscribed)
-                                } else if meta.is_channel_data() {
-                                    serde_json::from_value::<DydxWsChannelDataMsg>(val)
-                                        .map(DydxWsMessage::ChannelData)
-                                } else if meta.is_channel_batch_data() {
-                                    serde_json::from_value::<DydxWsChannelBatchDataMsg>(val)
-                                        .map(DydxWsMessage::ChannelBatchData)
                                 } else if meta.is_error() {
                                     serde_json::from_value::<DydxWebSocketError>(val)
                                         .map(DydxWsMessage::Error)
                                 } else if meta.is_unknown() {
-                                    tracing::debug!("Received unknown WebSocket message type");
+                                    tracing::warn!(
+                                        "Received unknown WebSocket message type: {}",
+                                        serde_json::to_string(&val_clone)
+                                            .unwrap_or_else(|_| "<invalid json>".into())
+                                    );
                                     Ok(DydxWsMessage::Raw(val))
                                 } else {
                                     Ok(DydxWsMessage::Raw(val))
@@ -262,13 +280,24 @@ impl FeedHandler {
                                 match result {
                                     Ok(dydx_msg) => self.handle_dydx_message(dydx_msg).await,
                                     Err(e) => {
-                                        tracing::warn!("Failed to parse WebSocket message: {e}");
+                                        tracing::error!(
+                                            "Failed to parse WebSocket message: {e}. Message type: {:?}, Channel: {:?}. Raw: {}",
+                                            meta.msg_type,
+                                            meta.channel,
+                                            serde_json::to_string(&val_clone)
+                                                .unwrap_or_else(|_| "<invalid json>".into())
+                                        );
                                         None
                                     }
                                 }
                             }
-                            Err(_) => {
-                                // Fallback to raw if generic parse fails
+                            Err(e) => {
+                                let raw_json = serde_json::to_string_pretty(&val_clone)
+                                    .unwrap_or_else(|_| format!("{val_clone:?}"));
+                                tracing::error!(
+                                    "Failed to parse WebSocket message envelope (DydxWsGenericMsg): {e}\nRaw JSON:\n{}",
+                                    raw_json
+                                );
                                 None
                             }
                         }
@@ -298,6 +327,100 @@ impl FeedHandler {
                 tracing::error!("Error handling message: {e}");
                 None
             }
+        }
+    }
+
+    /// Handles a two-level channel-tagged feed message.
+    async fn handle_feed_message(&self, feed_msg: DydxWsFeedMessage) -> Option<NautilusWsMessage> {
+        match feed_msg {
+            DydxWsFeedMessage::Subaccounts(msg) => match msg {
+                DydxWsSubaccountsMessage::Subscribed(data) => {
+                    self.handle_dydx_message(DydxWsMessage::SubaccountsSubscribed(data))
+                        .await
+                }
+                DydxWsSubaccountsMessage::ChannelData(data) => {
+                    // Extract the generic parts to create DydxWsChannelDataMsg
+                    self.handle_dydx_message(DydxWsMessage::ChannelData(DydxWsChannelDataMsg {
+                        msg_type: data.msg_type,
+                        connection_id: data.connection_id,
+                        message_id: data.message_id,
+                        channel: data.channel,
+                        id: Some(data.id),
+                        contents: serde_json::to_value(&data.contents)
+                            .unwrap_or(serde_json::Value::Null),
+                        version: Some(data.version),
+                    }))
+                    .await
+                }
+            },
+            DydxWsFeedMessage::Orderbook(msg) => match msg {
+                DydxWsOrderbookMessage::Subscribed(data)
+                | DydxWsOrderbookMessage::ChannelData(data) => {
+                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
+                        .await
+                }
+                DydxWsOrderbookMessage::ChannelBatchData(data) => {
+                    self.handle_dydx_message(DydxWsMessage::ChannelBatchData(data))
+                        .await
+                }
+            },
+            DydxWsFeedMessage::Trades(msg) => match msg {
+                DydxWsTradesMessage::Subscribed(data) | DydxWsTradesMessage::ChannelData(data) => {
+                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
+                        .await
+                }
+            },
+            DydxWsFeedMessage::Markets(msg) => match msg {
+                DydxWsMarketsMessage::Subscribed(data)
+                | DydxWsMarketsMessage::ChannelData(data) => {
+                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
+                        .await
+                }
+            },
+            DydxWsFeedMessage::Candles(msg) => match msg {
+                DydxWsCandlesMessage::Subscribed(data)
+                | DydxWsCandlesMessage::ChannelData(data) => {
+                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
+                        .await
+                }
+            },
+            DydxWsFeedMessage::ParentSubaccounts(msg) => match msg {
+                super::messages::DydxWsParentSubaccountsMessage::Subscribed(data)
+                | super::messages::DydxWsParentSubaccountsMessage::ChannelData(data) => {
+                    self.handle_dydx_message(DydxWsMessage::ChannelData(data))
+                        .await
+                }
+            },
+            DydxWsFeedMessage::BlockHeight(msg) => match msg {
+                DydxWsBlockHeightMessage::Subscribed(_)
+                | DydxWsBlockHeightMessage::ChannelData(_) => {
+                    // Convert to generic channel data and let existing handler parse it
+                    let channel_data = match msg {
+                        DydxWsBlockHeightMessage::Subscribed(data) => DydxWsChannelDataMsg {
+                            msg_type: data.msg_type,
+                            connection_id: data.connection_id,
+                            message_id: data.message_id,
+                            channel: data.channel,
+                            id: Some(data.id),
+                            contents: serde_json::to_value(&data.contents)
+                                .unwrap_or(serde_json::Value::Null),
+                            version: None,
+                        },
+                        DydxWsBlockHeightMessage::ChannelData(data) => DydxWsChannelDataMsg {
+                            msg_type: data.msg_type,
+                            connection_id: data.connection_id,
+                            message_id: data.message_id,
+                            channel: data.channel,
+                            id: Some(data.id),
+                            contents: serde_json::to_value(&data.contents)
+                                .unwrap_or(serde_json::Value::Null),
+                            version: Some(data.version),
+                        },
+                    };
+                    self.handle_dydx_message(DydxWsMessage::ChannelData(channel_data))
+                        .await
+                }
+            },
         }
     }
 
@@ -434,6 +557,10 @@ impl FeedHandler {
             }
             DydxWsMessage::ChannelData(data) => self.handle_channel_data(data),
             DydxWsMessage::ChannelBatchData(data) => self.handle_channel_batch_data(data),
+            DydxWsMessage::BlockHeight(height) => {
+                tracing::debug!("Block height update: {}", height);
+                Ok(Some(NautilusWsMessage::BlockHeight(height)))
+            }
             DydxWsMessage::Error(err) => Ok(Some(NautilusWsMessage::Error(err))),
             DydxWsMessage::Reconnected => {
                 if let Err(e) = self.replay_subscriptions().await {
@@ -458,12 +585,13 @@ impl FeedHandler {
             DydxWsChannel::Subaccounts | DydxWsChannel::ParentSubaccounts => {
                 self.parse_subaccounts(&data)
             }
-            DydxWsChannel::BlockHeight => {
-                tracing::debug!("Block height update received");
-                Ok(None)
-            }
+            DydxWsChannel::BlockHeight => self.parse_block_height(&data),
             DydxWsChannel::Unknown => {
-                tracing::debug!("Unknown channel data received");
+                tracing::warn!(
+                    "Unknown channel data received: id={:?}, msg_type={:?}",
+                    data.id,
+                    data.msg_type
+                );
                 Ok(None)
             }
         }
@@ -476,10 +604,32 @@ impl FeedHandler {
         match data.channel {
             DydxWsChannel::Orderbook => self.parse_orderbook_batch(&data),
             _ => {
-                tracing::warn!("Unexpected batch data for channel: {:?}", data.channel);
+                tracing::warn!(
+                    "Unexpected batch data for channel: {:?}, id={:?}",
+                    data.channel,
+                    data.id
+                );
                 Ok(None)
             }
         }
+    }
+
+    fn parse_block_height(
+        &self,
+        data: &DydxWsChannelDataMsg,
+    ) -> DydxWsResult<Option<NautilusWsMessage>> {
+        let contents: DydxBlockHeightChannelContents =
+            serde_json::from_value(data.contents.clone()).map_err(|e| {
+                DydxWsError::Parse(format!("Failed to parse block height contents: {e}"))
+            })?;
+
+        let height = contents
+            .block_height
+            .parse::<u64>()
+            .map_err(|e| DydxWsError::Parse(format!("Failed to parse block height: {e}")))?;
+
+        tracing::debug!("Parsed block height: {}", height);
+        Ok(Some(NautilusWsMessage::BlockHeight(height)))
     }
 
     fn parse_trades(&self, data: &DydxWsChannelDataMsg) -> DydxWsResult<Option<NautilusWsMessage>> {

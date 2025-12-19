@@ -1827,6 +1827,11 @@ impl DydxDataClient {
                     tracing::warn!("WebSocket client not available for re-subscription");
                 }
             }
+            crate::websocket::enums::NautilusWsMessage::BlockHeight(_) => {
+                tracing::debug!(
+                    "Ignoring block height message on dYdX data client (handled by execution adapter)"
+                );
+            }
             crate::websocket::enums::NautilusWsMessage::Order(_)
             | crate::websocket::enums::NautilusWsMessage::Fill(_)
             | crate::websocket::enums::NautilusWsMessage::Position(_)

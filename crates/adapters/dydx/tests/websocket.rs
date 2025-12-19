@@ -2835,3 +2835,65 @@ async fn test_subaccount_subscription_failure() {
 
     client.disconnect().await.unwrap();
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_block_height_parsing() {
+    use chrono::Utc;
+    use nautilus_dydx::websocket::{
+        enums::{DydxWsChannel, DydxWsMessageType},
+        messages::{DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData},
+    };
+
+    let test_block_height = "12345678";
+    let block_msg = DydxWsBlockHeightChannelData {
+        msg_type: DydxWsMessageType::ChannelData,
+        connection_id: "test-conn-123".to_string(),
+        message_id: 42,
+        id: "dydx".to_string(),
+        channel: DydxWsChannel::BlockHeight,
+        version: "4.0.0".to_string(),
+        contents: DydxBlockHeightChannelContents {
+            block_height: test_block_height.to_string(),
+            time: Utc::now(),
+        },
+    };
+
+    assert_eq!(
+        block_msg.contents.block_height.parse::<u64>().unwrap(),
+        12345678_u64,
+        "Block height string should parse to correct u64"
+    );
+    assert_eq!(block_msg.channel, DydxWsChannel::BlockHeight);
+    assert_eq!(block_msg.msg_type, DydxWsMessageType::ChannelData);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_block_height_invalid_format() {
+    use chrono::Utc;
+    use nautilus_dydx::websocket::{
+        enums::{DydxWsChannel, DydxWsMessageType},
+        messages::{DydxBlockHeightChannelContents, DydxWsBlockHeightChannelData},
+    };
+
+    let invalid_block_height = "not-a-number";
+    let block_msg = DydxWsBlockHeightChannelData {
+        msg_type: DydxWsMessageType::ChannelData,
+        connection_id: "test-conn".to_string(),
+        message_id: 1,
+        id: "dydx".to_string(),
+        channel: DydxWsChannel::BlockHeight,
+        version: "4.0.0".to_string(),
+        contents: DydxBlockHeightChannelContents {
+            block_height: invalid_block_height.to_string(),
+            time: Utc::now(),
+        },
+    };
+
+    let parse_result = block_msg.contents.block_height.parse::<u64>();
+    assert!(
+        parse_result.is_err(),
+        "Parsing invalid block height should fail"
+    );
+}
