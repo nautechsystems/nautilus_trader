@@ -334,10 +334,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
-        force_instrument_update = request.params.get("force_instrument_update", False)
         await self.instrument_provider.load_with_return_async(
             request.instrument_id,
-            force_instrument_update=force_instrument_update,
+            request.params,
         )
 
         if instrument := self.instrument_provider.find(request.instrument_id):
@@ -349,7 +348,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        force_instrument_update = request.params.get("force_instrument_update", False)
         loaded_instrument_ids: list[InstrumentId] = []
 
         if "ib_contracts" in request.params:
@@ -357,7 +355,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             ib_contracts = [IBContract(**d) for d in request.params["ib_contracts"]]
             loaded_instrument_ids = await self.instrument_provider.load_ids_with_return_async(
                 ib_contracts,
-                force_instrument_update=force_instrument_update,
+                request.params,
             )
             loaded_instruments: list[Instrument] = []
 
@@ -389,7 +387,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_ids = [instrument.id for instrument in instruments]
         loaded_instrument_ids = await self.instrument_provider.load_ids_with_return_async(
             instrument_ids,
-            force_instrument_update=force_instrument_update,
+            request.params,
         )
         self._handle_instruments(
             venue=request.venue,

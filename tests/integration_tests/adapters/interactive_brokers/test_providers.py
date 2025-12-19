@@ -227,3 +227,95 @@ async def test_bag_contract_venue_determination(instrument_provider):
     # Assert
     assert venue_smart == "CME"  # Should use primaryExchange when exchange is SMART
     assert venue_direct == "ARCA"  # Should use exchange directly
+
+
+@pytest.mark.asyncio
+async def test_create_bag_contract_with_explicit_exchange(instrument_provider):
+    """
+    Test that _create_bag_contract uses explicit exchange parameter when provided.
+    """
+    from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+
+    # Arrange - Create mock leg contract details
+    leg1_contract = IBContract(
+        secType="FUT",
+        symbol="ES",
+        conId=100,
+        exchange="CME",
+        currency="USD",
+        multiplier="50",
+    )
+    leg1_details = IBContractDetails(contract=leg1_contract, minTick=0.25, underSymbol="ES")
+
+    leg2_contract = IBContract(
+        secType="FUT",
+        symbol="ES",
+        conId=101,
+        exchange="CME",
+        currency="USD",
+        multiplier="50",
+    )
+    leg2_details = IBContractDetails(contract=leg2_contract, minTick=0.25, underSymbol="ES")
+
+    leg_contract_details = [(leg1_details, 1), (leg2_details, -1)]
+    instrument_id = None
+
+    # Act - Create BAG contract with explicit exchange
+    bag_contract = await instrument_provider._create_bag_contract(
+        leg_contract_details=leg_contract_details,
+        instrument_id=instrument_id,
+        exchange="CME",  # Explicit exchange
+    )
+
+    # Assert
+    assert bag_contract.exchange == "CME"
+    assert bag_contract.secType == "BAG"
+    assert bag_contract.symbol == "ES"
+    assert bag_contract.currency == "USD"
+    assert len(bag_contract.comboLegs) == 2
+
+
+@pytest.mark.asyncio
+async def test_create_bag_contract_defaults_to_smart(instrument_provider):
+    """
+    Test that _create_bag_contract defaults to SMART exchange when not provided.
+    """
+    from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+
+    # Arrange - Create mock leg contract details
+    leg1_contract = IBContract(
+        secType="FUT",
+        symbol="ES",
+        conId=100,
+        exchange="CME",
+        currency="USD",
+        multiplier="50",
+    )
+    leg1_details = IBContractDetails(contract=leg1_contract, minTick=0.25, underSymbol="ES")
+
+    leg2_contract = IBContract(
+        secType="FUT",
+        symbol="ES",
+        conId=101,
+        exchange="CME",
+        currency="USD",
+        multiplier="50",
+    )
+    leg2_details = IBContractDetails(contract=leg2_contract, minTick=0.25, underSymbol="ES")
+
+    leg_contract_details = [(leg1_details, 1), (leg2_details, -1)]
+    instrument_id = None
+
+    # Act - Create BAG contract without exchange (empty string should default to SMART)
+    bag_contract = await instrument_provider._create_bag_contract(
+        leg_contract_details=leg_contract_details,
+        instrument_id=instrument_id,
+        exchange="",  # Empty string should default to SMART
+    )
+
+    # Assert
+    assert bag_contract.exchange == "SMART"
+    assert bag_contract.secType == "BAG"
+    assert bag_contract.symbol == "ES"
+    assert bag_contract.currency == "USD"
+    assert len(bag_contract.comboLegs) == 2
