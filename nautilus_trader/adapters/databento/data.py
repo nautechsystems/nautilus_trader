@@ -615,8 +615,6 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
         try:
-            await self._ensure_subscribed_for_instrument(command.instrument_id)
-
             match command.depth:
                 case 1:
                     schema = DatabentoSchema.MBP_1.value
@@ -628,11 +626,35 @@ class DatabentoDataClient(LiveMarketDataClient):
                     )
                     return
 
-            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
+            # Check if multiple instrument_ids are provided in params
+            instrument_ids_param: list[InstrumentId] | None = command.params.get("instrument_ids")
+            if instrument_ids_param:
+                # Multiple subscriptions
+                instrument_ids = instrument_ids_param
+            else:
+                # Single subscription (backward compatible)
+                instrument_ids = [command.instrument_id]
+
+            # Validate all instrument_ids belong to the same dataset
+            datasets = {self._loader.get_dataset_for_venue(instrument_id.venue) for instrument_id in instrument_ids}
+            if len(datasets) > 1:
+                self._log.error(
+                    f"Cannot subscribe to instruments from multiple datasets: {datasets}. "
+                    f"All subscriptions must belong to the same dataset.",
+                )
+                return
+
+            dataset = datasets.pop()
+
+            # Ensure all instruments are subscribed
+            for instrument_id in instrument_ids:
+                await self._ensure_subscribed_for_instrument(instrument_id)
+
+            # Subscribe
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
-                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -640,7 +662,14 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         try:
-            await self._ensure_subscribed_for_instrument(command.instrument_id)
+            # Check if multiple instrument_ids are provided in params
+            instrument_ids_param: list[InstrumentId] | None = command.params.get("instrument_ids")
+            if instrument_ids_param:
+                # Multiple subscriptions
+                instrument_ids = instrument_ids_param
+            else:
+                # Single subscription (backward compatible)
+                instrument_ids = [command.instrument_id]
 
             # allowed schema values: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m, tbbo, tcbbo
             schema: str | None = command.params.get("schema")
@@ -657,16 +686,33 @@ class DatabentoDataClient(LiveMarketDataClient):
                 schema = DatabentoSchema.MBP_1.value
 
             start: int | None = command.params.get("start_ns")
-            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
+
+            # Validate all instrument_ids belong to the same dataset
+            datasets = {self._loader.get_dataset_for_venue(instrument_id.venue) for instrument_id in instrument_ids}
+            if len(datasets) > 1:
+                self._log.error(
+                    f"Cannot subscribe to instruments from multiple datasets: {datasets}. "
+                    f"All subscriptions must belong to the same dataset.",
+                )
+                return
+
+            dataset = datasets.pop()
+
+            # Ensure all instruments are subscribed
+            for instrument_id in instrument_ids:
+                await self._ensure_subscribed_for_instrument(instrument_id)
+
+            # Subscribe
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
-                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids],
                 start=start,
             )
 
-            # Add trade tick subscriptions for instrument (MBP-1 data includes trades)
-            self._trade_tick_subscriptions.add(command.instrument_id)
+            # Add trade tick subscriptions for instruments (MBP-1 data includes trades)
+            for instrument_id in instrument_ids:
+                self._trade_tick_subscriptions.add(instrument_id)
 
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
@@ -674,10 +720,21 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         try:
-            if command.instrument_id in self._trade_tick_subscriptions:
-                return  # Already subscribed (this will save on data costs)
-
-            await self._ensure_subscribed_for_instrument(command.instrument_id)
+            # Check if multiple instrument_ids are provided in params
+            instrument_ids_param: list[InstrumentId] | None = command.params.get("instrument_ids")
+            if instrument_ids_param:
+                # Multiple subscriptions
+                instrument_ids = [
+                    inst_id for inst_id in instrument_ids_param
+                    if inst_id not in self._trade_tick_subscriptions
+                ]
+                if not instrument_ids:
+                    return  # All already subscribed (this will save on data costs)
+            else:
+                # Single subscription (backward compatible)
+                if command.instrument_id in self._trade_tick_subscriptions:
+                    return  # Already subscribed (this will save on data costs)
+                instrument_ids = [command.instrument_id]
 
             # allowed schema values: trades, tbbo, tcbbo, mbp-1, cmbp-1
             schema: str | None = command.params.get("schema")
@@ -691,11 +748,27 @@ class DatabentoDataClient(LiveMarketDataClient):
                 schema = DatabentoSchema.TRADES.value
 
             start: int | None = command.params.get("start_ns")
-            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
+
+            # Validate all instrument_ids belong to the same dataset
+            datasets = {self._loader.get_dataset_for_venue(instrument_id.venue) for instrument_id in instrument_ids}
+            if len(datasets) > 1:
+                self._log.error(
+                    f"Cannot subscribe to instruments from multiple datasets: {datasets}. "
+                    f"All subscriptions must belong to the same dataset.",
+                )
+                return
+
+            dataset = datasets.pop()
+
+            # Ensure all instruments are subscribed
+            for instrument_id in instrument_ids:
+                await self._ensure_subscribed_for_instrument(instrument_id)
+
+            # Subscribe
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
-                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids],
                 start=start,
             )
             await self._check_live_client_started(dataset, live_client)
@@ -704,37 +777,75 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         try:
-            dataset: Dataset = self._loader.get_dataset_for_venue(
-                command.bar_type.instrument_id.venue,
-            )
-
-            try:
-                schema = databento_schema_from_nautilus_bar_type(command.bar_type)
-            except ValueError as e:
-                self._log.error(f"Cannot subscribe: {e}")
-                return
-
-            # Check for schema override in params
-            schema_override: str | None = command.params.get("schema")
-            if schema_override:
-                if (
-                    command.bar_type.spec.aggregation == BarAggregation.DAY
-                    and schema_override == "ohlcv-eod"
-                ):
-                    # Allow ohlcv-eod override for daily bars
-                    schema = DatabentoSchema.OHLCV_EOD
-                else:
-                    self._log.error(
-                        f"Invalid schema override '{schema_override}' for bar type {command.bar_type}. "
-                        f"Only 'ohlcv-eod' is supported for DAY aggregation bars.",
-                    )
-                    return
+            # Check if multiple bar_types are provided in params
+            bar_types_param: list | None = command.params.get("bar_types")
+            if bar_types_param:
+                # Multiple subscriptions
+                bar_types = bar_types_param
+            else:
+                # Single subscription (backward compatible)
+                bar_types = [command.bar_type]
 
             start: int | None = command.params.get("start_ns")
+            schema_override: str | None = command.params.get("schema")
+
+            # Validate all bar_types belong to the same dataset
+            datasets = {
+                self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
+                for bar_type in bar_types
+            }
+            if len(datasets) > 1:
+                self._log.error(
+                    f"Cannot subscribe to bar types from multiple datasets: {datasets}. "
+                    f"All subscriptions must belong to the same dataset.",
+                )
+                return
+
+            dataset = datasets.pop()
+
+            # Determine schema for all bar_types (must be the same)
+            schemas = set()
+            instrument_ids = []
+            for bar_type in bar_types:
+                try:
+                    schema = databento_schema_from_nautilus_bar_type(bar_type)
+                except ValueError as e:
+                    self._log.error(f"Cannot subscribe to {bar_type}: {e}")
+                    return
+
+                # Check for schema override in params
+                if schema_override:
+                    if (
+                        bar_type.spec.aggregation == BarAggregation.DAY
+                        and schema_override == "ohlcv-eod"
+                    ):
+                        # Allow ohlcv-eod override for daily bars
+                        schema = DatabentoSchema.OHLCV_EOD
+                    else:
+                        self._log.error(
+                            f"Invalid schema override '{schema_override}' for bar type {bar_type}. "
+                            f"Only 'ohlcv-eod' is supported for DAY aggregation bars.",
+                        )
+                        return
+
+                schemas.add(schema.value)
+                instrument_ids.append(bar_type.instrument_id)
+
+            # Validate all bar_types use the same schema
+            if len(schemas) > 1:
+                self._log.error(
+                    f"Cannot subscribe to bar types with multiple schemas: {schemas}. "
+                    f"All subscriptions must use the same schema.",
+                )
+                return
+
+            schema_value = schemas.pop()
+
+            # Subscribe
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
-                schema=schema.value,
-                instrument_ids=[instrument_id_to_pyo3(command.bar_type.instrument_id)],
+                schema=schema_value,
+                instrument_ids=[instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids],
                 start=start,
             )
             await self._check_live_client_started(dataset, live_client)
@@ -743,11 +854,31 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         try:
-            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
+            # Check if multiple instrument_ids are provided in params
+            instrument_ids_param: list[InstrumentId] | None = command.params.get("instrument_ids")
+            if instrument_ids_param:
+                # Multiple subscriptions
+                instrument_ids = instrument_ids_param
+            else:
+                # Single subscription (backward compatible)
+                instrument_ids = [command.instrument_id]
+
+            # Validate all instrument_ids belong to the same dataset
+            datasets = {self._loader.get_dataset_for_venue(instrument_id.venue) for instrument_id in instrument_ids}
+            if len(datasets) > 1:
+                self._log.error(
+                    f"Cannot subscribe to instruments from multiple datasets: {datasets}. "
+                    f"All subscriptions must belong to the same dataset.",
+                )
+                return
+
+            dataset = datasets.pop()
+
+            # Subscribe
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.STATUS.value,
-                instrument_ids=[instrument_id_to_pyo3(command.instrument_id)],
+                instrument_ids=[instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids],
             )
             await self._check_live_client_started(dataset, live_client)
         except asyncio.CancelledError:
