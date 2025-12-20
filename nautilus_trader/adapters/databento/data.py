@@ -1112,22 +1112,40 @@ class DatabentoDataClient(LiveMarketDataClient):
         data_type: DataType,
         correlation_id: UUID4,
     ) -> None:
-        instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+        # Check if multiple instrument_ids are provided in metadata
+        instrument_ids_param: list[InstrumentId] | None = data_type.metadata.get("instrument_ids")
+        if instrument_ids_param:
+            instrument_ids = instrument_ids_param
+        else:
+            instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+            instrument_ids = [instrument_id]
+
         start = data_type.metadata.get("start")
         end = data_type.metadata.get("end")
 
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+        # Validate all instrument_ids belong to the same dataset
+        datasets = {self._loader.get_dataset_for_venue(inst_id.venue) for inst_id in instrument_ids}
+        if len(datasets) > 1:
+            self._log.error(
+                f"Cannot request instrument status from multiple datasets: {datasets}. "
+                f"All requests must belong to the same dataset.",
+            )
+            return
+
+        dataset = datasets.pop()
         start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
-            f"Requesting {instrument_id} instrument status: "
+            f"Requesting instrument status for {len(instrument_ids)} instruments: "
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+        for i, inst_id in enumerate(instrument_ids):
+            self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
         pyo3_status_list = await self._http_client.get_range_status(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
             start=start.value,
             end=end.value,
         )
@@ -1142,21 +1160,40 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request_imbalance(self, data_type: DataType, correlation_id: UUID4) -> None:
-        instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+        # Check if multiple instrument_ids are provided in metadata
+        instrument_ids_param: list[InstrumentId] | None = data_type.metadata.get("instrument_ids")
+        if instrument_ids_param:
+            instrument_ids = instrument_ids_param
+        else:
+            instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+            instrument_ids = [instrument_id]
+
         start = data_type.metadata.get("start")
         end = data_type.metadata.get("end")
 
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+        # Validate all instrument_ids belong to the same dataset
+        datasets = {self._loader.get_dataset_for_venue(inst_id.venue) for inst_id in instrument_ids}
+        if len(datasets) > 1:
+            self._log.error(
+                f"Cannot request imbalance from multiple datasets: {datasets}. "
+                f"All requests must belong to the same dataset.",
+            )
+            return
+
+        dataset = datasets.pop()
         start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
-            f"Requesting {instrument_id} imbalance: dataset={dataset}, start={start}, end={end}",
+            f"Requesting imbalance for {len(instrument_ids)} instruments: "
+            f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+        for i, inst_id in enumerate(instrument_ids):
+            self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
         pyo3_imbalances = await self._http_client.get_range_imbalance(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
             start=start.value,
             end=end.value,
         )
@@ -1170,21 +1207,40 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request_statistics(self, data_type: DataType, correlation_id: UUID4) -> None:
-        instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+        # Check if multiple instrument_ids are provided in metadata
+        instrument_ids_param: list[InstrumentId] | None = data_type.metadata.get("instrument_ids")
+        if instrument_ids_param:
+            instrument_ids = instrument_ids_param
+        else:
+            instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+            instrument_ids = [instrument_id]
+
         start = data_type.metadata.get("start")
         end = data_type.metadata.get("end")
 
-        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+        # Validate all instrument_ids belong to the same dataset
+        datasets = {self._loader.get_dataset_for_venue(inst_id.venue) for inst_id in instrument_ids}
+        if len(datasets) > 1:
+            self._log.error(
+                f"Cannot request statistics from multiple datasets: {datasets}. "
+                f"All requests must belong to the same dataset.",
+            )
+            return
+
+        dataset = datasets.pop()
         start, end = await self._resolve_time_range_for_request(dataset, start, end)
 
         self._log.info(
-            f"Requesting {instrument_id} statistics: dataset={dataset}, start={start}, end={end}",
+            f"Requesting statistics for {len(instrument_ids)} instruments: "
+            f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+        for i, inst_id in enumerate(instrument_ids):
+            self._log.info(f"  [{i}] {inst_id}", LogColor.BLUE)
 
         pyo3_statistics = await self._http_client.get_range_statistics(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
             start=start.value,
             end=end.value,
         )
@@ -1198,19 +1254,39 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
+        # Check if multiple instrument_ids are provided in params
+        instrument_ids_param: list[InstrumentId] | None = request.params.get("instrument_ids")
+        if instrument_ids_param:
+            instrument_ids = instrument_ids_param
+        else:
+            instrument_ids = [request.instrument_id]
+
+        # Validate all instrument_ids belong to the same dataset
+        datasets = {
+            self._loader.get_dataset_for_venue(instrument_id.venue)
+            for instrument_id in instrument_ids
+        }
+        if len(datasets) > 1:
+            self._log.error(
+                f"Cannot request instruments from multiple datasets: {datasets}. "
+                f"All requests must belong to the same dataset.",
+            )
+            return
+
+        dataset = datasets.pop()
         start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         self._log.info(
-            f"Requesting {request.instrument_id} instrument definition: "
+            f"Requesting instrument definitions for {len(instrument_ids)} instruments: "
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+        for i, instrument_id in enumerate(instrument_ids):
+            self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
-        # Request single instrument
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
             start=start.value,
             end=end.value,
         )
@@ -1218,17 +1294,19 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if not instruments:
             self._log.warning(
-                f"No instrument found for request: {request.instrument_id=}, {request.id=}",
+                f"No instruments found for request: {instrument_ids=}, {request.id=}",
             )
             return
 
-        self._handle_instrument(
-            instruments[0],
-            correlation_id=request.id,
-            start=request.start,
-            end=request.end,
-            params=request.params,
-        )
+        # Handle each instrument
+        for instrument in instruments:
+            self._handle_instrument(
+                instrument,
+                correlation_id=request.id,
+                start=request.start,
+                end=request.end,
+                params=request.params,
+            )
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.venue)
@@ -1264,7 +1342,26 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
+        # Check if multiple instrument_ids are provided in params
+        instrument_ids_param: list[InstrumentId] | None = request.params.get("instrument_ids")
+        if instrument_ids_param:
+            instrument_ids = instrument_ids_param
+        else:
+            instrument_ids = [request.instrument_id]
+
+        # Validate all instrument_ids belong to the same dataset
+        datasets = {
+            self._loader.get_dataset_for_venue(instrument_id.venue)
+            for instrument_id in instrument_ids
+        }
+        if len(datasets) > 1:
+            self._log.error(
+                f"Cannot request quotes for instruments from multiple datasets: {datasets}. "
+                f"All requests must belong to the same dataset.",
+            )
+            return
+
+        dataset = datasets.pop()
         start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
@@ -1273,9 +1370,11 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
 
         self._log.info(
-            f"Requesting {request.instrument_id} quotes: dataset={dataset}, start={start}, end={end}",
+            f"Requesting quotes for {len(instrument_ids)} instruments: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+        for i, instrument_id in enumerate(instrument_ids):
+            self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
         # allowed schema values: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m, tbbo, tcbbo
         schema: str | None = request.params.get("schema")
@@ -1294,7 +1393,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         pyo3_quotes = await self._http_client.get_range_quotes(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
             start=start.value,
             end=end.value,
             schema=schema,
@@ -1311,7 +1410,26 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
+        # Check if multiple instrument_ids are provided in params
+        instrument_ids_param: list[InstrumentId] | None = request.params.get("instrument_ids")
+        if instrument_ids_param:
+            instrument_ids = instrument_ids_param
+        else:
+            instrument_ids = [request.instrument_id]
+
+        # Validate all instrument_ids belong to the same dataset
+        datasets = {
+            self._loader.get_dataset_for_venue(instrument_id.venue)
+            for instrument_id in instrument_ids
+        }
+        if len(datasets) > 1:
+            self._log.error(
+                f"Cannot request trades for instruments from multiple datasets: {datasets}. "
+                f"All requests must belong to the same dataset.",
+            )
+            return
+
+        dataset = datasets.pop()
         start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
@@ -1320,13 +1438,15 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
 
         self._log.info(
-            f"Requesting {request.instrument_id} trades: dataset={dataset}, start={start}, end={end}",
+            f"Requesting trades for {len(instrument_ids)} instruments: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+        for i, instrument_id in enumerate(instrument_ids):
+            self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
         pyo3_trades = await self._http_client.get_range_trades(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
             start=start.value,
             end=end.value,
         )
@@ -1342,7 +1462,39 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request_bars(self, request: RequestBars) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(request.bar_type.instrument_id.venue)
+        # Check if multiple bar_types are provided in params
+        bar_types_param: list | None = request.params.get("bar_types")
+        if bar_types_param:
+            bar_types = bar_types_param
+        else:
+            bar_types = [request.bar_type]
+
+        # Extract instrument_ids from bar_types
+        instrument_ids = [bar_type.instrument_id for bar_type in bar_types]
+
+        # Validate all bar_types belong to the same dataset
+        datasets = {
+            self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
+            for bar_type in bar_types
+        }
+        if len(datasets) > 1:
+            self._log.error(
+                f"Cannot request bars for instruments from multiple datasets: {datasets}. "
+                f"All requests must belong to the same dataset.",
+            )
+            return
+
+        # Validate all bar_types use the same aggregation
+        aggregations = {bar_type.spec.aggregation for bar_type in bar_types}
+        if len(aggregations) > 1:
+            self._log.error(
+                f"Cannot request bars with multiple aggregations: {aggregations}. "
+                f"All bar types must use the same aggregation.",
+            )
+            return
+
+        dataset = datasets.pop()
+        aggregation = aggregations.pop()
         start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
@@ -1351,16 +1503,18 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
 
         self._log.info(
-            f"Requesting {request.bar_type.instrument_id} 1 {bar_aggregation_to_str(request.bar_type.spec.aggregation)} bars: "
+            f"Requesting 1 {bar_aggregation_to_str(aggregation)} bars for {len(instrument_ids)} instruments: "
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
+        for i, instrument_id in enumerate(instrument_ids):
+            self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
         pyo3_bars = await self._http_client.get_range_bars(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(request.bar_type.instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
             aggregation=nautilus_pyo3.BarAggregation(
-                bar_aggregation_to_str(request.bar_type.spec.aggregation),
+                bar_aggregation_to_str(aggregation),
             ),
             start=start.value,
             end=end.value,
@@ -1378,12 +1532,26 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request_order_book_depth(self, request: RequestOrderBookDepth) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
-        self._log.info(
-            f"DEBUG: Dataset for venue {request.instrument_id.venue}: {dataset}",
-            LogColor.CYAN,
-        )
+        # Check if multiple instrument_ids are provided in params
+        instrument_ids_param: list[InstrumentId] | None = request.params.get("instrument_ids")
+        if instrument_ids_param:
+            instrument_ids = instrument_ids_param
+        else:
+            instrument_ids = [request.instrument_id]
 
+        # Validate all instrument_ids belong to the same dataset
+        datasets = {
+            self._loader.get_dataset_for_venue(instrument_id.venue)
+            for instrument_id in instrument_ids
+        }
+        if len(datasets) > 1:
+            self._log.error(
+                f"Cannot request order book depths for instruments from multiple datasets: {datasets}. "
+                f"All requests must belong to the same dataset.",
+            )
+            return
+
+        dataset = datasets.pop()
         start, end = await self._resolve_time_range_for_request(dataset, request.start, request.end)
 
         if request.limit > 0:
@@ -1393,16 +1561,16 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
 
         self._log.info(
-            f"Requesting {request.instrument_id} order book depth data: "
-            f"depth={request.depth}, "
-            f"start={start}, "
-            f"end={end}",
+            f"Requesting order book depth data for {len(instrument_ids)} instruments: "
+            f"depth={request.depth}, start={start}, end={end}",
             LogColor.BLUE,
         )
+        for i, instrument_id in enumerate(instrument_ids):
+            self._log.info(f"  [{i}] {instrument_id}", LogColor.BLUE)
 
         pyo3_depths = await self._http_client.get_order_book_depth10(
             dataset=dataset,
-            instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
+            instrument_ids=[instrument_id_to_pyo3(inst_id) for inst_id in instrument_ids],
             start=start.value,
             end=end.value,
             depth=request.depth,
