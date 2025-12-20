@@ -52,6 +52,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
@@ -379,7 +380,7 @@ impl DydxWebSocketClient {
         let signal = self.signal.clone();
         let subscriptions = self.subscriptions.clone();
 
-        let handler_task = tokio::spawn(async move {
+        let handler_task = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
                 account_id,
                 cmd_rx,

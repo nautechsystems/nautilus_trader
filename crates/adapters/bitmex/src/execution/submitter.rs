@@ -45,6 +45,7 @@ use std::{
 };
 
 use futures_util::future;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
     identifiers::{ClientOrderId, InstrumentId, OrderListId},
@@ -445,7 +446,7 @@ impl SubmitBroadcaster {
         let interval_secs = self.config.health_check_interval_secs;
         let timeout_secs = self.config.health_check_timeout_secs;
 
-        let task = tokio::spawn(async move {
+        let task = get_runtime().spawn(async move {
             let mut ticker = interval(Duration::from_secs(interval_secs));
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -659,7 +660,7 @@ impl SubmitBroadcaster {
                 ClientOrderId::new(format!("{}-{}", client_order_id.as_str(), idx))
             };
 
-            let handle = tokio::spawn(async move {
+            let handle = get_runtime().spawn(async move {
                 let client_id = transport.client_id.clone();
                 let result = transport
                     .submit_order(

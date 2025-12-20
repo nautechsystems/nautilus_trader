@@ -296,7 +296,7 @@ impl DeribitWebSocketClient {
             let tx = self.cmd_tx.clone();
             let inst = self.instruments_cache.get(&symbol).map(|r| r.clone());
             if let Some(inst) = inst {
-                tokio::spawn(async move {
+                get_runtime().spawn(async move {
                     let _ = tx
                         .read()
                         .await

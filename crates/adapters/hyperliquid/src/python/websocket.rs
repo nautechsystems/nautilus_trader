@@ -15,6 +15,7 @@
 
 //! Python bindings for the Hyperliquid WebSocket client.
 
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
@@ -79,7 +80,7 @@ impl HyperliquidWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client.connect().await.map_err(to_pyruntime_err)?;
 
-            tokio::spawn(async move {
+            get_runtime().spawn(async move {
                 loop {
                     let event = client.next_event().await;
 

@@ -374,7 +374,7 @@ impl DydxExecutionClient {
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 tracing::error!("{label}: {e:?}");
             }
@@ -404,7 +404,7 @@ impl DydxExecutionClient {
         let account_id = self.core.account_id;
         let sender = get_exec_event_sender();
 
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 let error_msg = format!("{label} failed: {e:?}");
                 tracing::error!("{}", error_msg);
@@ -1229,7 +1229,7 @@ impl ExecutionClient for DydxExecutionClient {
                 let clob_pair_id_to_instrument = self.clob_pair_id_to_instrument.clone();
                 let block_height = self.block_height.clone();
 
-                let handle = tokio::spawn(async move {
+                let handle = get_runtime().spawn(async move {
                     while let Some(msg) = rx.recv().await {
                         match msg {
                             NautilusWsMessage::Order(report) => {

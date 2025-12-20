@@ -24,7 +24,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
         DataEvent,
         data::{
@@ -194,7 +194,7 @@ impl OKXDataClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 tracing::error!("{context}: {e:?}");
             }
@@ -396,7 +396,7 @@ impl DataClient for OKXDataClient {
             let sender = self.data_sender.clone();
             let insts = self.instruments.clone();
             let cancel = self.cancellation_token.clone();
-            let handle = tokio::spawn(async move {
+            let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 loop {
                     tokio::select! {
@@ -443,7 +443,7 @@ impl DataClient for OKXDataClient {
             let sender = self.data_sender.clone();
             let insts = self.instruments.clone();
             let cancel = self.cancellation_token.clone();
-            let handle = tokio::spawn(async move {
+            let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 loop {
                     tokio::select! {
@@ -891,7 +891,7 @@ impl DataClient for OKXDataClient {
         let contract_types = self.config.contract_types.clone();
         let instrument_families = self.config.instrument_families.clone();
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             let mut all_instruments = Vec::new();
 
             for inst_type in instrument_types {
@@ -1001,7 +1001,7 @@ impl DataClient for OKXDataClient {
         };
         let contract_types = self.config.contract_types.clone();
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match http
                 .request_instrument(instrument_id)
                 .await
@@ -1063,7 +1063,7 @@ impl DataClient for OKXDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match http
                 .request_trades(instrument_id, start, end, limit)
                 .await
@@ -1105,7 +1105,7 @@ impl DataClient for OKXDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match http
                 .request_bars(bar_type, start, end, limit)
                 .await

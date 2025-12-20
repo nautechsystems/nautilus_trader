@@ -5752,6 +5752,7 @@ dependencies = [
  "futures-util",
  "heck",
  "log",
+ "nautilus-common",
  "nautilus-core",
  "nautilus-cryptography",
  "nautilus-model",

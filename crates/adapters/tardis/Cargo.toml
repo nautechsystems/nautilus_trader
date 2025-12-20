@@ -23,6 +23,7 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = ["replay"]
 extension-module = [
+  "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-serialization/extension-module",
@@ -31,6 +32,7 @@ extension-module = [
   "replay",
 ]
 python = [
+  "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
   "nautilus-serialization/python",
@@ -45,6 +47,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-cryptography = { workspace = true }
 nautilus-model = { workspace = true, features = ["python"] }

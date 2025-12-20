@@ -202,7 +202,7 @@ impl CoinbaseIntxWebSocketClient {
         let post_reconnect = Arc::new(move || {
             let client = client.clone();
 
-            tokio::spawn(async move { client.resubscribe_all().await });
+            get_runtime().spawn(async move { client.resubscribe_all().await });
         });
 
         let config = WebSocketConfig {

@@ -42,6 +42,7 @@
 //! - Always clone before async blocks for lifetime requirements.
 
 use futures_util::StreamExt;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
@@ -184,7 +185,7 @@ impl KrakenSpotWebSocketClient {
 
             let stream = client.stream();
 
-            tokio::spawn(async move {
+            get_runtime().spawn(async move {
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {

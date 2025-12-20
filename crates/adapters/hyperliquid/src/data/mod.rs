@@ -22,7 +22,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
         DataEvent,
         data::{
@@ -198,7 +198,7 @@ impl HyperliquidDataClient {
         let _clock = self.clock;
         let cancellation_token = self.cancellation_token.clone();
 
-        let task = tokio::spawn(async move {
+        let task = get_runtime().spawn(async move {
             tracing::info!("Hyperliquid WebSocket consumption loop started");
 
             loop {
@@ -590,7 +590,7 @@ impl DataClient for HyperliquidDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
         let instruments = Arc::clone(&self.instruments);
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match request_bars_from_http(http, bar_type, start, end, limit, instruments).await {
                 Ok(bars) => {
                     let response = DataResponse::Bars(BarsResponse::new(
@@ -652,7 +652,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_trades(instrument_id).await {
                 tracing::error!("Failed to subscribe to trades: {e:?}");
             }
@@ -670,7 +670,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_trades(instrument_id).await {
                 tracing::error!("Failed to unsubscribe from trades: {e:?}");
             }
@@ -694,7 +694,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_book(instrument_id).await {
                 tracing::error!("Failed to subscribe to book deltas: {e:?}");
             }
@@ -715,7 +715,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_book(instrument_id).await {
                 tracing::error!("Failed to unsubscribe from book deltas: {e:?}");
             }
@@ -740,7 +740,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_quotes(instrument_id).await {
                 tracing::error!("Failed to subscribe to book snapshots: {e:?}");
             }
@@ -761,7 +761,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
                 tracing::error!("Failed to unsubscribe from book snapshots: {e:?}");
             }
@@ -776,7 +776,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_quotes(instrument_id).await {
                 tracing::error!("Failed to subscribe to quotes: {e:?}");
             }
@@ -794,7 +794,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
                 tracing::error!("Failed to unsubscribe from quotes: {e:?}");
             }
@@ -822,7 +822,7 @@ impl DataClient for HyperliquidDataClient {
         let bar_type = subscription.bar_type;
         let ws = self.ws_client.clone();
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_bars(bar_type).await {
                 tracing::error!("Failed to subscribe to bars: {e:?}");
             }
@@ -839,7 +839,7 @@ impl DataClient for HyperliquidDataClient {
         let bar_type = unsubscription.bar_type;
         let ws = self.ws_client.clone();
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_bars(bar_type).await {
                 tracing::error!("Failed to unsubscribe from bars: {e:?}");
             }

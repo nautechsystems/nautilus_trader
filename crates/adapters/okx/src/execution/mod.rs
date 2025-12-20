@@ -384,7 +384,7 @@ impl ExecutionClient for OKXExecutionClient {
         if self.ws_stream_handle.is_none() {
             let stream = self.ws_private.stream();
             let sender = sender.clone();
-            let handle = tokio::spawn(async move {
+            let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
                     dispatch_ws_message(message, &sender);
@@ -399,7 +399,7 @@ impl ExecutionClient for OKXExecutionClient {
         if self.ws_business_stream_handle.is_none() {
             let stream = self.ws_business.stream();
             let sender = sender.clone();
-            let handle = tokio::spawn(async move {
+            let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
                     dispatch_ws_message(message, &sender);

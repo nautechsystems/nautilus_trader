@@ -36,6 +36,7 @@
 //! - Always clone before async blocks for lifetime requirements.
 
 use futures_util::StreamExt;
+use nautilus_common::live::get_runtime;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
@@ -212,7 +213,7 @@ impl DeribitWebSocketClient {
             let stream = client.stream();
 
             // Keep client alive in the spawned task to prevent handler from dropping
-            tokio::spawn(async move {
+            get_runtime().spawn(async move {
                 let _client = client;
                 tokio::pin!(stream);
 

@@ -16,6 +16,7 @@
 //! Python bindings for the Bybit WebSocket client.
 
 use futures_util::StreamExt;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
@@ -161,7 +162,7 @@ impl BybitWebSocketClient {
 
             let stream = client.stream();
 
-            tokio::spawn(async move {
+            get_runtime().spawn(async move {
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {

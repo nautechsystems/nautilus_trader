@@ -32,7 +32,10 @@ use std::{
 
 use aws_lc_rs::hmac;
 use base64::prelude::*;
-use nautilus_common::logging::{log_task_started, log_task_stopped};
+use nautilus_common::{
+    live::runtime::get_runtime,
+    logging::{log_task_started, log_task_stopped},
+};
 #[cfg(feature = "python")]
 use nautilus_core::python::IntoPyObjectNautilusExt;
 use nautilus_core::{env::get_or_env_var, time::get_atomic_clock_realtime};
@@ -337,7 +340,7 @@ impl CoinbaseIntxFixClient {
         let heartbeat_secs = self.heartbeat_secs;
         let client_clone = self.clone();
 
-        self.processing_task = Some(Arc::new(tokio::spawn(async move {
+        self.processing_task = Some(Arc::new(get_runtime().spawn(async move {
             log_task_started("maintain-fix-connection");
 
             let mut last_logon_attempt = std::time::Instant::now()
@@ -367,7 +370,7 @@ impl CoinbaseIntxFixClient {
         let sender_comp_id = self.sender_comp_id.clone();
         let target_comp_id = self.target_comp_id.clone();
 
-        self.heartbeat_task = Some(Arc::new(tokio::spawn(async move {
+        self.heartbeat_task = Some(Arc::new(get_runtime().spawn(async move {
             log_task_started("heartbeat");
             tracing::debug!("Heartbeat at {heartbeat_secs}s intervals");
 

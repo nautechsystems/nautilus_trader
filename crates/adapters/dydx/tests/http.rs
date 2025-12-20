@@ -25,7 +25,7 @@ use axum::{
     routing::get,
 };
 use chrono::{Duration as ChronoDuration, Utc};
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{live::get_runtime, testing::wait_until_async};
 use nautilus_dydx::{
     common::enums::DydxCandleResolution,
     http::client::{DydxHttpClient, DydxRawHttpClient},
@@ -1395,9 +1395,7 @@ async fn test_concurrent_requests() {
     let mut handles = vec![];
     for _ in 0..5 {
         let client_clone = client.clone();
-        handles.push(tokio::spawn(
-            async move { client_clone.get_markets().await },
-        ));
+        handles.push(get_runtime().spawn(async move { client_clone.get_markets().await }));
     }
 
     let mut success_count = 0;

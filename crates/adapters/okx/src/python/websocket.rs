@@ -44,6 +44,7 @@
 use std::str::FromStr;
 
 use futures_util::StreamExt;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
@@ -236,7 +237,7 @@ impl OKXWebSocketClient {
             let stream = client.stream();
 
             // Keep client alive in the spawned task to prevent handler from dropping
-            tokio::spawn(async move {
+            get_runtime().spawn(async move {
                 let _client = client;
                 tokio::pin!(stream);
 

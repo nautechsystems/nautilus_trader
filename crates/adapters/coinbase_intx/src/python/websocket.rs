@@ -42,6 +42,7 @@
 //! - `RwLock` is preferred over Mutex (many reads, few writes).
 
 use futures_util::StreamExt;
+use nautilus_common::live::runtime::get_runtime;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
@@ -139,7 +140,7 @@ impl CoinbaseIntxWebSocketClient {
 
             let stream = client.stream();
 
-            tokio::spawn(async move {
+            get_runtime().spawn(async move {
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {

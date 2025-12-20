@@ -183,7 +183,7 @@ impl BitmexExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 tracing::error!("{label}: {e:?}");
             }
@@ -262,7 +262,7 @@ impl BitmexExecutionClient {
 
         let stream = self.ws_client.stream();
 
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             pin_mut!(stream);
             while let Some(message) = stream.next().await {
                 dispatch_ws_message(message);
