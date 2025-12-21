@@ -575,7 +575,7 @@ class KrakenDataClient(LiveMarketDataClient):
         instruments = []
         for pyo3_instrument in all_pyo3_instruments:
             if isinstance(pyo3_instrument, KRAKEN_INSTRUMENT_TYPES):
-                self._handle_instrument_update(pyo3_instrument)
+                self._cache_instrument(pyo3_instrument)
             instrument = transform_instrument_from_pyo3(pyo3_instrument)
             instruments.append(instrument)
 
@@ -603,7 +603,7 @@ class KrakenDataClient(LiveMarketDataClient):
                 request.instrument_id.value,
             ):
                 if isinstance(pyo3_instrument, KRAKEN_INSTRUMENT_TYPES):
-                    self._handle_instrument_update(pyo3_instrument)
+                    self._cache_instrument(pyo3_instrument)
                 instrument = transform_instrument_from_pyo3(pyo3_instrument)
                 self._handle_instrument(
                     instrument,
@@ -732,7 +732,7 @@ class KrakenDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
 
-    def _handle_instrument_update(self, pyo3_instrument: KrakenInstrument) -> None:
+    def _cache_instrument(self, pyo3_instrument: KrakenInstrument) -> None:
         client = self._get_http_client_for_symbol(str(pyo3_instrument.raw_symbol))
         if client:
             client.cache_instrument(pyo3_instrument)
@@ -742,6 +742,9 @@ class KrakenDataClient(LiveMarketDataClient):
 
         if self._ws_client_futures is not None and self._ws_client_futures_connected:
             self._ws_client_futures.cache_instrument(pyo3_instrument)
+
+    def _handle_instrument_update(self, pyo3_instrument: KrakenInstrument) -> None:
+        self._cache_instrument(pyo3_instrument)
 
         instrument = transform_instrument_from_pyo3(pyo3_instrument)
 
