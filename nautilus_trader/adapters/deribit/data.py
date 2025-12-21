@@ -279,14 +279,17 @@ class DeribitDataClient(LiveMarketDataClient):
 
         all_instruments: list[Instrument] = []
 
-        instrument_kinds = self._instrument_provider.instrument_kinds
+        instrument_kinds = self._config.instrument_kinds
 
         if instrument_kinds:
             for kind in instrument_kinds:
                 instruments = await self._fetch_instruments_for_currency(DeribitCurrency.ANY, kind)
                 all_instruments.extend(instruments)
         else:
-            instruments = await self._fetch_instruments_for_currency(DeribitCurrency.ANY)
+            instruments = await self._fetch_instruments_for_currency(
+                DeribitCurrency.ANY,
+                nautilus_pyo3.DeribitInstrumentKind.Future,
+            )
             all_instruments.extend(instruments)
 
         self._handle_instruments(

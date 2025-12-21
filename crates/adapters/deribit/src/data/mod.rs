@@ -28,13 +28,14 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            InstrumentResponse, RequestBars, RequestInstrument, RequestInstruments, RequestTrades,
-            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
+            RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+            SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments, SubscribeMarkPrices,
+            SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -51,8 +52,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::consts::DERIBIT_VENUE, config::DeribitDataClientConfig,
-    http::client::DeribitHttpClient, websocket::client::DeribitWebSocketClient,
+    common::consts::DERIBIT_VENUE,
+    config::DeribitDataClientConfig,
+    http::{client::DeribitHttpClient, models::DeribitCurrency},
+    websocket::client::DeribitWebSocketClient,
 };
 
 /// Deribit live data client.
@@ -283,11 +286,106 @@ impl DataClient for DeribitDataClient {
         todo!("Implement unsubscribe_bars");
     }
 
-    fn request_instruments(&self, _request: &RequestInstruments) -> anyhow::Result<()> {
-        todo!("Implement request_instruments");
+    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
+        if request.start.is_some() {
+            tracing::warn!(
+                "Requesting instruments for {:?} with specified `start` which has no effect",
+                request.venue
+            );
+        }
+        if request.end.is_some() {
+            tracing::warn!(
+                "Requesting instruments for {:?} with specified `end` which has no effect",
+                request.venue
+            );
+        }
+
+        let http_client = self.http_client.clone();
+        let instruments_cache = Arc::clone(&self.instruments);
+        let sender = self.data_sender.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+        let params = request.params.clone();
+        let clock = self.clock;
+        let venue = *DERIBIT_VENUE;
+
+        // Get instrument kinds from config, default to Future if empty
+        let instrument_kinds = if self.config.instrument_kinds.is_empty() {
+            vec![crate::http::models::DeribitInstrumentKind::Future]
+        } else {
+            self.config.instrument_kinds.clone()
+        };
+
+        get_runtime().spawn(async move {
+            let mut all_instruments = Vec::new();
+            for kind in &instrument_kinds {
+                tracing::debug!("Requesting instruments for currency=ANY, kind={:?}", kind);
+
+                match http_client
+                    .request_instruments(DeribitCurrency::ANY, Some(*kind))
+                    .await
+                {
+                    Ok(instruments) => {
+                        tracing::info!(
+                            "Fetched {} instruments for ANY/{:?}",
+                            instruments.len(),
+                            kind
+                        );
+
+                        for instrument in instruments {
+                            // Cache the instrument
+                            {
+                                let mut guard = instruments_cache
+                                    .write()
+                                    .expect("instrument cache lock poisoned");
+                                guard.insert(instrument.id(), instrument.clone());
+                            }
+
+                            all_instruments.push(instrument);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to fetch instruments for ANY/{:?}: {:?}", kind, e);
+                    }
+                }
+            }
+
+            // Send response with all collected instruments
+            let response = DataResponse::Instruments(InstrumentsResponse::new(
+                request_id,
+                client_id,
+                venue,
+                all_instruments,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                params,
+            ));
+
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                tracing::error!("Failed to send instruments response: {}", e);
+            }
+        });
+
+        Ok(())
     }
 
     fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
+        if request.start.is_some() {
+            tracing::warn!(
+                "Requesting instrument {} with specified `start` which has no effect",
+                request.instrument_id
+            );
+        }
+        if request.end.is_some() {
+            tracing::warn!(
+                "Requesting instrument {} with specified `end` which has no effect",
+                request.instrument_id
+            );
+        }
+
         // First, check if instrument exists in cache
         if let Some(instrument) = self
             .instruments
