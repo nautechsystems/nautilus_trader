@@ -187,8 +187,8 @@ cdef class DataEngine(Component):
         self._external_clients: set[ClientId] = set()
         self._catalogs: dict[str, ParquetDataCatalog] = {}
         self._order_book_intervals: dict[tuple[InstrumentId, int], list[Callable[[OrderBook], None]]] = {}
-        self._bar_aggregators: dict[BarType, BarAggregator] = {}
-        self._spread_quote_aggregators: dict[InstrumentId, SpreadQuoteAggregator] = {}
+        self._bar_aggregators: dict[tuple[BarType, UUID4], BarAggregator] = {}
+        self._spread_quote_aggregators: dict[tuple[InstrumentId, UUID4], SpreadQuoteAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._subscribed_synthetic_quotes: list[InstrumentId] = []
@@ -630,7 +630,20 @@ cdef class DataEngine(Component):
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_bars()
 
-        return subscriptions + list(self._bar_aggregators.keys())
+        return subscriptions + self._get_bar_types_from_aggregators()
+
+    cdef list _get_bar_types_from_aggregators(self):
+        cdef:
+            list bar_types = []
+            tuple key
+            BarType bar_type
+            UUID4 request_id
+        for key in self._bar_aggregators.keys():
+            bar_type, request_id = key
+            if request_id is None:
+                bar_types.append(bar_type)
+
+        return bar_types
 
     cpdef list subscribed_instrument_status(self):
         """
@@ -1063,10 +1076,11 @@ cdef class DataEngine(Component):
             if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
                 spread_instrument_id = command.instrument_id
 
-                if spread_instrument_id not in self._spread_quote_aggregators:
+                key = self._get_spread_quote_aggregator_key(spread_instrument_id)
+                if key not in self._spread_quote_aggregators:
                     # Aggregator doesn't exist, create and start it
                     self._start_spread_quote_aggregator(client, command)
-                elif not self._spread_quote_aggregators[spread_instrument_id].is_running:
+                elif not self._spread_quote_aggregators[key].is_running:
                     # Aggregator exists but not running, start it
                     self._start_spread_quote_aggregator(client, command)
                 else:
@@ -1179,17 +1193,17 @@ cdef class DataEngine(Component):
 
         if command.bar_type.is_internally_aggregated():
             # Internal aggregation
-            bar_type_standard = command.bar_type.standard()
-
-            if bar_type_standard not in self._bar_aggregators:
+            key = self._get_bar_aggregator_key(command.bar_type)
+            if key not in self._bar_aggregators:
                 # Aggregator doesn't exist, create and start it
                 self._start_bar_aggregator(client, command)
-            elif not self._bar_aggregators[bar_type_standard].is_running:
+            elif not self._bar_aggregators[key].is_running:
                 # Aggregator exists but not running, start it
                 self._start_bar_aggregator(client, command)
             else:
                 # Aggregator exists and is running
-                self._log.warning(f"Aggregator for {bar_type_standard} is currently in use, subscription can't be started.")
+                bar_type, request_id = key
+                self._log.warning(f"Aggregator for {bar_type} (request_id={request_id}) is currently in use, subscription can't be started.")
         else:
             # External aggregation
             if command.bar_type.instrument_id.is_synthetic():
@@ -1383,7 +1397,8 @@ cdef class DataEngine(Component):
 
         if command.bar_type.is_internally_aggregated():
             # Internal aggregation
-            if command.bar_type.standard() in self._bar_aggregators:
+            key = self._get_bar_aggregator_key(command.bar_type)
+            if key in self._bar_aggregators:
                 self._stop_bar_aggregator(client, command)
         else:
             # External aggregation
@@ -1450,8 +1465,13 @@ cdef class DataEngine(Component):
         if client is not None:
             Condition.is_true(isinstance(client, DataClient), "client was not a DataClient")
 
+        self._requests[request.id] = request
+
         request.start = time_object_to_dt(request.start)
         request.end = time_object_to_dt(request.end)
+
+        if request.params.get("bar_types"):
+            self._init_historical_aggregators(request)
 
         # A request involving a spread aggregator will be converted to a request join first
         # "request_actual_quotes" allows to request actual quotes instead of aggregated ones,
@@ -1470,9 +1490,6 @@ cdef class DataEngine(Component):
 
         if isinstance(request, RequestJoin):
             self._handle_request_join(request)
-
-        if request.params.get("bar_types"):
-            self._init_historical_aggregators(request)
 
         if isinstance(request, RequestInstruments):
             self._handle_request_instruments(client, request)
@@ -1582,8 +1599,6 @@ cdef class DataEngine(Component):
 
         # From here the parent request is split into subrequests
         if n_requests == 0:
-            self._new_request_group(request, 1)
-            self._request_group_parent_request_id[request.id] = request.id
             response = DataResponse(
                 client_id=request.client_id,
                 venue=request.venue,
@@ -1757,7 +1772,6 @@ cdef class DataEngine(Component):
     cpdef void _handle_long_request(self, DataClient client, RequestData request):
         start, end = self._bound_dates(request)
         request.start, request.end = start, end
-        self._requests[request.id] = request
 
         time_range_generator = get_time_range_generator(
             request.params.get("time_range_generator", "")
@@ -1814,6 +1828,9 @@ cdef class DataEngine(Component):
         # We remove time_range_generator from params to avoid an infinite recursion
         new_request.params.pop("time_range_generator", None)
 
+        # We don't want to create aggregators for sub requests
+        new_request.params.pop("bar_types", None)
+
         # Send the sub-request through the message bus to properly register the callback
         self._parent_long_request_id[new_request.id] = parent_request_id
         self._msgbus.request(endpoint="DataEngine.request", request=new_request)
@@ -1836,7 +1853,7 @@ cdef class DataEngine(Component):
         self._update_long_request_data(parent_request_id, data_received=data_received)
 
     cpdef void _finalize_long_request(self, UUID4 parent_request_id):
-        cdef RequestData parent_request = self._requests.pop(parent_request_id, None)
+        cdef RequestData parent_request = self._requests.get(parent_request_id)
         if parent_request is None:
             self._log.error(f"Cannot finalize long request: no parent request found for {parent_request_id}")
             return
@@ -1862,14 +1879,17 @@ cdef class DataEngine(Component):
             ts_init=self._clock.timestamp_ns(),
             params=parent_request.params,
         )
-        self._msgbus.response(response)
+        self._handle_response(response)
 
     cpdef void _handle_request_join(self, RequestJoin request):
         if not request.correlation_id:
-            self._requests[request.id] = request
             start, end = self._bound_dates(request)
             new_request = request.with_dates(start, end, self._clock.timestamp_ns(), self._finalize_request_join)
             new_request.params["is_started"] = True
+
+            # We don't want to create aggregators for sub requests
+            new_request.params.pop("bar_types", None)
+
             self._parent_join_request_id[new_request.id] = request.id
             self._msgbus.request(endpoint="DataEngine.request", request=new_request)
             return
@@ -1889,14 +1909,14 @@ cdef class DataEngine(Component):
             self._log.error(f"parent_request_id for {response.correlation_id=} not found.")
             return
 
-        parent_request = self._requests.pop(parent_request_id, None)
+        parent_request = self._requests.get(parent_request_id)
         if not parent_request:
             self._log.error(f"parent_request for {parent_request_id=} not found.")
             return
 
         # We send responses for the joined requests and the joining request to trigger callbacks
         for request_id in parent_request.request_ids:
-            joined_request = self._requests.pop(request_id, None)
+            joined_request = self._requests.get(request_id)
             if not joined_request:
                 self._log.error(f"joined_request for {request_id=} not found.")
                 continue
@@ -1913,7 +1933,7 @@ cdef class DataEngine(Component):
                 ts_init=self._clock.timestamp_ns(),
                 params=joined_request.params,
             )
-            self._msgbus.response(response)
+            self._handle_response(response)
 
         response = DataResponse(
             client_id=parent_request.client_id,
@@ -1927,7 +1947,7 @@ cdef class DataEngine(Component):
             ts_init=self._clock.timestamp_ns(),
             params=parent_request.params,
         )
-        self._msgbus.response(response)
+        self._handle_response(response)
 
     cpdef tuple _bound_dates(self, RequestData request):
         # Capping dates to the now datetime
@@ -2255,11 +2275,13 @@ cdef class DataEngine(Component):
                     self.process_historical(data)
 
                 if grouped_response.params.get("bar_types"):
-                    self._handle_aggregated_bars(grouped_response)
+                    self._finalize_aggregated_bars_request(grouped_response)
 
                 # We store the amount of data received to be used for long requests
                 grouped_response.params["data_count"] = len(grouped_response.data)
                 grouped_response.data = []
+
+        self._requests.pop(grouped_response.correlation_id, None)
 
         self._msgbus.response(grouped_response)
 
@@ -2274,12 +2296,11 @@ cdef class DataEngine(Component):
         return self._handle_request_group_aux(response)
 
     cdef DataResponse _handle_request_group_aux(self, DataResponse response):
-        # Look for parent request id using the mapping
         parent_request_id = self._request_group_parent_request_id.pop(response.correlation_id, None)
         if parent_request_id not in self._request_group_responses:
-            self._log.error(f"_handle_request_group_aux: correlation_id {response.correlation_id} not found "
-                            f"in _request_group_responses. Available keys: {list(self._request_group_responses.keys())}")
-            return None
+            # When a response's request is not part of a request group, we just return it
+            self._log.debug(f"_handle_request_group_aux: correlation_id {response.correlation_id} not found")
+            return response
 
         self._request_group_responses[parent_request_id].append(response)
         if len(self._request_group_responses[parent_request_id]) != self._request_group_n_components[parent_request_id]:
@@ -2569,24 +2590,30 @@ cdef class DataEngine(Component):
     cpdef void _init_historical_aggregators(self, RequestData request):
         bar_types = request.params.get("bar_types", ())
         for bar_type in bar_types:
-            self._create_bar_aggregator(bar_type, request.params)
-            aggregator = self._bar_aggregators.get(bar_type.standard())
+            self._create_bar_aggregator(bar_type, request.params, request.id)
 
-            # No need to setup again an already existing aggregator (kept with update_subscriptions) in historical_mode
+            update_subscriptions = request.params.get("update_subscriptions", False)
+            request_id = request.id if not update_subscriptions else None
+            key = self._get_bar_aggregator_key(bar_type, request_id)
+            aggregator = self._bar_aggregators.get(key)
+
             if aggregator and not aggregator.historical_mode:
-                self._setup_bar_aggregator(bar_type, historical=True)
+                self._setup_bar_aggregator(bar_type, historical=True, request_id=request_id)
 
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
         self._create_bar_aggregator(command.bar_type, command.params)
         self._setup_bar_aggregator(command.bar_type)
         self._subscribe_bar_aggregator(client, command)
 
-    cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params):
-        aggregated_bar_type = bar_type.standard()
-        if aggregated_bar_type in self._bar_aggregators:
-            self._log.debug(f"BarAggregator for {aggregated_bar_type} already exists.")
+    cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params, UUID4 request_id = None):
+        update_subscriptions = params.get("update_subscriptions", False)
+        key = self._get_bar_aggregator_key(bar_type, request_id if not update_subscriptions else None)
+        if key in self._bar_aggregators:
+            bar_type_key, request_id_key = key
+            self._log.debug(f"BarAggregator for {bar_type_key} (request_id={request_id_key}) already exists.")
             return
 
+        aggregated_bar_type = bar_type.standard()
         instrument = self._cache.instrument(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -2674,16 +2701,19 @@ cdef class DataEngine(Component):
                 bar_aggregation_not_implemented_message(bar_type.spec.aggregation)
             )
 
-        self._bar_aggregators[aggregated_bar_type] = aggregator
+        self._bar_aggregators[key] = aggregator
 
     cpdef void _setup_bar_aggregator(
         self,
         BarType bar_type,
         bint historical = False,
+        UUID4 request_id = None,
     ):
-        aggregator = self._bar_aggregators.get(bar_type.standard())
+        key = self._get_bar_aggregator_key(bar_type, request_id)
+        aggregator = self._bar_aggregators.get(key)
         if aggregator is None:
-            self._log.error(f"Cannot setup bar aggregator: no aggregator found for {bar_type}")
+            bar_type_key, request_id_key = key
+            self._log.warning(f"Cannot setup bar aggregator: no aggregator found for {bar_type} with key ({bar_type_key}, {request_id_key})")
             return
 
         if historical:
@@ -2691,7 +2721,7 @@ cdef class DataEngine(Component):
         else:
             if aggregator.historical_mode:
                 # When switching from historical to live mode we unsubscribe from a historical topic
-                self._dispose_bar_aggregator(bar_type, historical=True)
+                self._dispose_bar_aggregator(bar_type, historical=True, request_id=request_id)
 
             aggregator.set_historical_mode(historical, self.process)
 
@@ -2726,9 +2756,11 @@ cdef class DataEngine(Component):
         aggregator.set_running(True)
 
     cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
-        aggregator = self._bar_aggregators.get(command.bar_type.standard())
+        key = self._get_bar_aggregator_key(command.bar_type)
+        aggregator = self._bar_aggregators.get(key)
         if aggregator is None:
-            self._log.error(f"Cannot subscribe bar aggregator: no aggregator found for {command.bar_type}")
+            bar_type_key, request_id_key = key
+            self._log.error(f"Cannot subscribe bar aggregator: no aggregator found for {command.bar_type} with key ({bar_type_key}, {request_id_key})")
             return
 
         # Subscribe to required market data
@@ -2768,32 +2800,31 @@ cdef class DataEngine(Component):
             )
             self.execute(subscribe)
 
-    cpdef void _handle_aggregated_bars(self, DataResponse response):
-        # 1. Create aggregators (in _handle_request)
-        # 2. Process underlying data through aggregators (in _handle_response)
-        # 3. Handle aggregator lifecycle based on update_subscriptions
+    cpdef void _finalize_aggregated_bars_request(self, DataResponse response):
         update_subscriptions = response.params.get("update_subscriptions", False)
+        request_id = response.correlation_id
 
         bar_types = response.params.get("bar_types", ())
         for bar_type in bar_types:
-            aggregator = self._bar_aggregators.get(bar_type.standard())
+            key = self._get_bar_aggregator_key(bar_type, request_id if not update_subscriptions else None)
+            aggregator = self._bar_aggregators.get(key)
             if not aggregator:
                 continue
 
-            # Setting aggregator.is_running to False allows to start a live subscription
-            # allowing the aggregator to still aggregate historical data if update_subscriptions is True
             aggregator.set_running(False)
 
             if not update_subscriptions:
-                self._dispose_bar_aggregator(bar_type, historical=True)
-                self._bar_aggregators.pop(bar_type.standard(), None)
+                self._dispose_bar_aggregator(bar_type, historical=True, request_id=request_id)
+                self._bar_aggregators.pop(key)
 
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command):
-        aggregator = self._bar_aggregators.get(command.bar_type.standard())
+        key = self._get_bar_aggregator_key(command.bar_type)
+        aggregator = self._bar_aggregators.get(key)
         if aggregator is None:
+            bar_type_key, request_id_key = key
             self._log.warning(
                 f"Cannot stop bar aggregator: "
-                f"no aggregator to stop for {command.bar_type}",
+                f"no aggregator to stop for {command.bar_type} with key ({bar_type_key}, {request_id_key})",
             )
             return
 
@@ -2803,12 +2834,14 @@ cdef class DataEngine(Component):
         self._dispose_bar_aggregator(command.bar_type)
         self._unsubscribe_bar_aggregator(client, command)
 
-        del self._bar_aggregators[command.bar_type.standard()]
+        del self._bar_aggregators[key]
 
-    cpdef void _dispose_bar_aggregator(self, BarType bar_type, bint historical = False):
-        aggregator = self._bar_aggregators.get(bar_type.standard())
+    cpdef void _dispose_bar_aggregator(self, BarType bar_type, bint historical = False, UUID4 request_id = None):
+        key = self._get_bar_aggregator_key(bar_type, request_id)
+        aggregator = self._bar_aggregators.get(key)
         if aggregator is None:
-            self._log.error(f"Cannot dispose bar aggregator: no aggregator found for {bar_type}")
+            bar_type_key, request_id_key = key
+            self._log.warning(f"Cannot dispose bar aggregator: no aggregator found for {bar_type} with key ({bar_type_key}, {request_id_key})")
             return
 
         if bar_type.is_composite():
@@ -2828,9 +2861,11 @@ cdef class DataEngine(Component):
             )
 
     cpdef void _unsubscribe_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command):
-        aggregator = self._bar_aggregators.get(command.bar_type.standard())
+        key = self._get_bar_aggregator_key(command.bar_type)
+        aggregator = self._bar_aggregators.get(key)
         if aggregator is None:
-            self._log.error(f"Cannot unsubscribe bar aggregator: no aggregator found for {command.bar_type}")
+            bar_type_key, request_id_key = key
+            self._log.error(f"Cannot unsubscribe bar aggregator: no aggregator found for {command.bar_type} with key ({bar_type_key}, {request_id_key})")
             return
 
         # Unsubscribe from market data updates
@@ -2870,6 +2905,9 @@ cdef class DataEngine(Component):
             )
             self.execute(unsubscribe)
 
+    cdef tuple _get_bar_aggregator_key(self, BarType bar_type, UUID4 request_id = None):
+        return (bar_type.standard(), request_id)
+
 # -- INTERNAL - Spread Quote Aggregators ----------------------------------------------------------
 
     cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command):
@@ -2878,11 +2916,13 @@ cdef class DataEngine(Component):
         self._subscribe_spread_quote_aggregator(client, command)
 
     cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command):
-        aggregator = self._spread_quote_aggregators.get(command.instrument_id)
+        key = self._get_spread_quote_aggregator_key(command.instrument_id)
+        aggregator = self._spread_quote_aggregators.get(key)
         if aggregator is None:
+            instrument_id_key, request_id_key = key
             self._log.warning(
                 f"Cannot stop spread quote aggregator: "
-                f"no aggregator to stop for {command.instrument_id}",
+                f"no aggregator to stop for {command.instrument_id} with key ({instrument_id_key}, {request_id_key})",
             )
             return
 
@@ -2891,7 +2931,7 @@ cdef class DataEngine(Component):
         self._dispose_spread_quote_aggregator(command.instrument_id)
         self._unsubscribe_spread_quote_aggregator(client, command)
 
-        del self._spread_quote_aggregators[command.instrument_id]
+        del self._spread_quote_aggregators[key]
 
     cpdef void _handle_spread_quote_tick_request(self, RequestQuoteTicks request):
         spread_instrument_id = request.instrument_id
@@ -2913,8 +2953,8 @@ cdef class DataEngine(Component):
             return
 
         self._log.info(f"Handling spread quote tick request: {spread_instrument_id}, start={request.start}, end={request.end}, legs={[leg_id for leg_id, _ in spread_legs]}")
-        self._create_spread_quote_aggregator(spread_instrument_id, request.params, historical=True)
-        self._setup_spread_quote_aggregator(spread_instrument_id, historical=True)
+        self._create_spread_quote_aggregator(spread_instrument_id, request.params, historical=True, request_id=request.id)
+        self._setup_spread_quote_aggregator(spread_instrument_id, historical=True, request_id=request.id)
 
         # Create individual RequestQuoteTicks for each leg
         cdef uint64_t ts_init = self._clock.timestamp_ns()
@@ -2948,67 +2988,69 @@ cdef class DataEngine(Component):
             ts_init=ts_init,
             params=request.params,
         )
-        self._requests[request.id] = request
         self._parent_request_id[join_request.id] = request.id
 
         self.request(join_request)
 
     cpdef void _finalize_spread_quote_request(self, DataResponse response):
-        original_request_id = self._parent_request_id.pop(response.correlation_id, None)
-        if original_request_id is None:
+        request_id = self._parent_request_id.pop(response.correlation_id, None)
+        if request_id is None:
             self._log.error(f"Cannot finalize spread quote request: original request id not found for {response.correlation_id}")
             return
 
-        original_request = self._requests.pop(original_request_id, None)
-        if original_request is None:
-            self._log.error(f"Cannot finalize spread quote request: join request {original_request} not found")
+        request = self._requests.get(request_id)
+        if request is None:
+            self._log.error(f"Cannot finalize spread quote request: join request {request} not found")
             return
 
-        spread_instrument_id = original_request.instrument_id
+        spread_instrument_id = request.instrument_id
         update_subscriptions = response.params.get("update_subscriptions", False)
 
-        aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
+        key = self._get_spread_quote_aggregator_key(spread_instrument_id, request.id if not update_subscriptions else None)
+        aggregator = self._spread_quote_aggregators.get(key)
         if aggregator:
-             # Setting aggregator.is_running to False allows to start a live subscription
-             # allowing the aggregator to still aggregate historical data if update_subscriptions is True
             aggregator.set_running(False)
 
             if not update_subscriptions:
-                self._dispose_spread_quote_aggregator(spread_instrument_id, historical=True)
-                del self._spread_quote_aggregators[spread_instrument_id]
+                self._dispose_spread_quote_aggregator(spread_instrument_id, historical=True, request_id=request.id)
+                del self._spread_quote_aggregators[key]
 
         # Send response for the original request to trigger its callback
         final_response = DataResponse(
-            client_id=original_request.client_id,
-            venue=original_request.venue,
-            data_type=original_request.data_type,
+            client_id=request.client_id,
+            venue=request.venue,
+            data_type=request.data_type,
             data=[],
-            correlation_id=original_request.id,
+            correlation_id=request.id,
             response_id=UUID4(),
-            start=original_request.start,
-            end=original_request.end,
+            start=request.start,
+            end=request.end,
             ts_init=self._clock.timestamp_ns(),
             params=response.params,
         )
-        self._msgbus.response(final_response)
+        self._handle_response(final_response)
 
     cpdef void _create_spread_quote_aggregator(
         self,
         InstrumentId spread_instrument_id,
         dict params,
         bint historical = False,
+        UUID4 request_id = None,
     ):
+        update_subscriptions = params.get("update_subscriptions", False)
+        key = self._get_spread_quote_aggregator_key(spread_instrument_id, request_id if not update_subscriptions else None)
         # If aggregator already exists, stop and remove it first
-        aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
+        aggregator = self._spread_quote_aggregators.get(key)
         if aggregator:
+            instrument_id_key, request_id_key = key
             if aggregator.historical_mode == historical:
-                self._log.debug(f"SpreadQuoteAggregator for {spread_instrument_id} already exists.")
+                self._log.debug(f"SpreadQuoteAggregator for ({instrument_id_key}, {request_id_key}) already exists.")
                 return
             else:
                 self._log.warning(
-                    f"SpreadQuoteAggregator for {spread_instrument_id} already exists with different mode. Stopping and replacing."
+                    f"SpreadQuoteAggregator for ({instrument_id_key}, {request_id_key}) already exists with different mode. Stopping and replacing."
                 )
-                self._dispose_spread_quote_aggregator(spread_instrument_id, historical=aggregator.historical_mode)
+                self._dispose_spread_quote_aggregator(spread_instrument_id, historical=aggregator.historical_mode, request_id=request_id)
 
         cdef Instrument instrument = self._cache.instrument(spread_instrument_id)
         if instrument is None:
@@ -3026,7 +3068,7 @@ cdef class DataEngine(Component):
             )
             return
 
-        update_interval_seconds = (params or {}).get("update_interval_seconds", None)
+        update_interval_seconds = (params or {}).get("update_interval_seconds")
 
         greeks_calculator = GreeksCalculator(self._msgbus, self._cache, self._clock)
         if historical:
@@ -3036,7 +3078,7 @@ cdef class DataEngine(Component):
             handler = self._handle_spread_quote
             clock = self._clock
 
-        self._spread_quote_aggregators[spread_instrument_id] = SpreadQuoteAggregator(
+        self._spread_quote_aggregators[key] = SpreadQuoteAggregator(
             spread_instrument=instrument,
             handler=handler,
             greeks_calculator=greeks_calculator,
@@ -3049,10 +3091,13 @@ cdef class DataEngine(Component):
         self,
         InstrumentId spread_instrument_id,
         bint historical = False,
+        UUID4 request_id = None,
     ):
-        aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
+        key = self._get_spread_quote_aggregator_key(spread_instrument_id, request_id)
+        aggregator = self._spread_quote_aggregators.get(key)
         if aggregator is None:
-            self._log.error(f"Cannot setup spread quote aggregator: no aggregator found for {spread_instrument_id}")
+            instrument_id_key, request_id_key = key
+            self._log.warning(f"Cannot setup spread quote aggregator: no aggregator found for {spread_instrument_id} with key ({instrument_id_key}, {request_id_key})")
             return
 
         if historical:
@@ -3060,7 +3105,7 @@ cdef class DataEngine(Component):
         else:
             if aggregator.historical_mode:
                 # When switching from historical to live mode we unsubscribe from a historical topic
-                self._dispose_spread_quote_aggregator(spread_instrument_id, historical=True)
+                self._dispose_spread_quote_aggregator(spread_instrument_id, historical=True, request_id=request_id)
 
             aggregator.set_historical_mode(historical, self._handle_spread_quote)
 
@@ -3087,9 +3132,11 @@ cdef class DataEngine(Component):
         self.process(quote)
 
     cpdef void _subscribe_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command):
-        aggregator = self._spread_quote_aggregators.get(command.instrument_id)
+        key = self._get_spread_quote_aggregator_key(command.instrument_id)
+        aggregator = self._spread_quote_aggregators.get(key)
         if aggregator is None:
-            self._log.error(f"Cannot subscribe spread quote aggregator: no aggregator found for {command.instrument_id}")
+            instrument_id_key, request_id_key = key
+            self._log.error(f"Cannot subscribe spread quote aggregator: no aggregator found for {command.instrument_id} with key ({instrument_id_key}, {request_id_key})")
             return
 
         # Subscribe to leg data
@@ -3106,9 +3153,11 @@ cdef class DataEngine(Component):
             self.execute(subscribe)
 
     cpdef void _unsubscribe_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command):
-        aggregator = self._spread_quote_aggregators.get(command.instrument_id)
+        key = self._get_spread_quote_aggregator_key(command.instrument_id)
+        aggregator = self._spread_quote_aggregators.get(key)
         if aggregator is None:
-            self._log.error(f"Cannot unsubscribe spread quote aggregator: no aggregator found for {command.instrument_id}")
+            instrument_id_key, request_id_key = key
+            self._log.error(f"Cannot unsubscribe spread quote aggregator: no aggregator found for {command.instrument_id} with key ({instrument_id_key}, {request_id_key})")
             return
 
         # Unsubscribe from component instruments
@@ -3124,10 +3173,12 @@ cdef class DataEngine(Component):
             )
             self.execute(unsubscribe)
 
-    cpdef void _dispose_spread_quote_aggregator(self, InstrumentId spread_instrument_id, bint historical = False):
-        aggregator = self._spread_quote_aggregators.get(spread_instrument_id)
+    cpdef void _dispose_spread_quote_aggregator(self, InstrumentId spread_instrument_id, bint historical = False, UUID4 request_id = None):
+        key = self._get_spread_quote_aggregator_key(spread_instrument_id, request_id)
+        aggregator = self._spread_quote_aggregators.get(key)
         if aggregator is None:
-            self._log.error(f"Cannot dispose spread quote aggregator: no aggregator found for {spread_instrument_id}")
+            instrument_id_key, request_id_key = key
+            self._log.warning(f"Cannot dispose spread quote aggregator: no aggregator found for {spread_instrument_id} with key ({instrument_id_key}, {request_id_key})")
             return
 
         aggregator.stop_timer()
@@ -3139,6 +3190,9 @@ cdef class DataEngine(Component):
                 topic=topic,
                 handler=aggregator.handle_quote_tick,
             )
+
+    cdef tuple _get_spread_quote_aggregator_key(self, InstrumentId spread_instrument_id, UUID4 request_id = None):
+        return (spread_instrument_id, request_id)
 
 TimeRangeGenerator = Callable[[int, dict[str, Any]], Generator[int, bool, None]]
 

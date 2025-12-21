@@ -4098,6 +4098,212 @@ class TestDataEngine:
         assert bars_1_received[-1] == expected_last_1_minute_bar
         assert bars_2_received[-1] == expected_last_2_minute_bar
 
+    def test_request_aggregated_bars_does_not_pollute_subscription_aggregator(self):
+        # Test that requesting aggregated bars (with update_subscriptions=False) for the same
+        # bar type as an active subscription does not pollute/interfere with the subscription aggregator.
+        # Previously, the request would have polluted the live aggregation.
+        # Arrange
+        loader = DatabentoDataLoader()
+
+        path = (
+            TEST_DATA_DIR
+            / "databento"
+            / "historical_bars_catalog"
+            / "databento"
+            / "futures_trades_2024-07-01T23-58_2024-07-02T00-02.dbn.zst"
+        )
+        data = loader.from_dbn_file(path, as_legacy_cython=True)
+
+        definition_path = (
+            TEST_DATA_DIR
+            / "databento"
+            / "historical_bars_catalog"
+            / "databento"
+            / "futures_definition.dbn.zst"
+        )
+        definition = loader.from_dbn_file(definition_path, as_legacy_cython=True)
+
+        catalog = setup_catalog(protocol="file", path=self.tmp_path / "catalog")
+        catalog.write_data(data)
+        catalog.write_data(definition)
+
+        self.data_engine.register_catalog(catalog)
+        self.data_engine.process(definition[0])
+
+        symbol_id = InstrumentId.from_str("ESU4.GLBX")
+        bar_type = BarType.from_str("ESU4.GLBX-1-MINUTE-LAST-INTERNAL")
+
+        # Get trade ticks from the data
+        trade_ticks = [d for d in data if isinstance(d, TradeTick)]
+        assert len(trade_ticks) > 0, "No trade ticks found in test data"
+
+        # Create a client for GLBX venue
+        glbx_client = BacktestMarketDataClient(
+            client_id=ClientId("GLBX"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.data_engine.register_client(glbx_client)
+        glbx_client.start()
+
+        utc_now = pd.Timestamp("2024-07-02T00:00:01")
+        self.clock.advance_time(utc_now.value)
+
+        start = utc_now - pd.Timedelta(minutes=2, seconds=1)
+        end = utc_now - pd.Timedelta(minutes=0, seconds=0)
+
+        # Run 1: Subscribe to bars and process ticks WITHOUT a request
+        subscription_bars_without_request = []
+
+        self.msgbus.subscribe(
+            topic=f"data.bars.{bar_type.standard()}",
+            handler=subscription_bars_without_request.append,
+        )
+
+        subscribe = SubscribeBars(
+            client_id=ClientId("GLBX"),
+            venue=symbol_id.venue,
+            bar_type=bar_type,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        # Process trade ticks
+        for tick in trade_ticks[:10]:  # Process first 10 ticks
+            self.data_engine.process(tick)
+
+        # Advance clock to trigger any pending timers
+        events = self.clock.advance_time(utc_now.value + 1)
+        for event in events:
+            event.handle()
+
+        # Unsubscribe to clean up for next run
+        unsubscribe = UnsubscribeBars(
+            client_id=ClientId("GLBX"),
+            venue=symbol_id.venue,
+            bar_type=bar_type,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(unsubscribe)
+
+        # Run 2: Subscribe to bars, make a request, and process ticks WITH a request
+        # This tests that historical ticks from the request don't pollute subscription aggregator
+        subscription_bars_with_request = []
+        request_historical_bars = []
+
+        self.msgbus.subscribe(
+            topic=f"data.bars.{bar_type.standard()}",
+            handler=subscription_bars_with_request.append,
+        )
+
+        # Subscribe to historical bars from the request aggregator
+        self.msgbus.subscribe(
+            topic=f"historical.data.bars.{bar_type.standard()}",
+            handler=request_historical_bars.append,
+        )
+
+        subscribe = SubscribeBars(
+            client_id=ClientId("GLBX"),
+            venue=symbol_id.venue,
+            bar_type=bar_type,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        # Process first batch of subscription ticks
+        for tick in trade_ticks[:5]:  # Process first 5 ticks as subscription ticks
+            self.data_engine.process(tick)
+
+        # Make a request for aggregated bars (with update_subscriptions=False)
+        handler = []
+        params = {}
+        params["bar_types"] = (bar_type,)
+        params["include_external_data"] = False
+        params["update_subscriptions"] = False
+        params["update_catalog"] = False
+
+        request = RequestTradeTicks(
+            instrument_id=bar_type.instrument_id,
+            start=start,
+            end=end,
+            limit=0,
+            client_id=None,
+            venue=symbol_id.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params=params,
+        )
+
+        # Send request (this creates a request aggregator with request_id in key)
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Process historical ticks from the request (these should only go to request aggregator)
+        # Get historical ticks that fall within the request time range
+        historical_ticks = [
+            tick
+            for tick in trade_ticks
+            if start.value <= tick.ts_init <= end.value
+        ]
+        assert len(historical_ticks) > 0, "No historical ticks found in request range"
+
+        for tick in historical_ticks[:10]:  # Process historical ticks
+            self.data_engine.process_historical(tick)
+
+        # Advance clock to trigger any pending timers for historical aggregator
+        events = self.clock.advance_time(utc_now.value + 1)
+        for event in events:
+            event.handle()
+
+        # Process more subscription ticks (these should only go to subscription aggregator)
+        for tick in trade_ticks[5:10]:  # Process next 5 ticks as subscription ticks
+            self.data_engine.process(tick)
+
+        # Advance clock to trigger any pending timers for subscription aggregator
+        events = self.clock.advance_time(utc_now.value + 2)
+        for event in events:
+            event.handle()
+
+        # Finalize the request
+        response = DataResponse(
+            client_id=request.client_id,
+            venue=request.venue,
+            data_type=DataType(TradeTick),
+            data=[],
+            correlation_id=request.id,
+            response_id=UUID4(),
+            start=request.start,
+            end=request.end,
+            ts_init=self.clock.timestamp_ns(),
+            params=params,
+        )
+        self.msgbus.response(response)
+
+        # Assert: Subscription bars should be identical in both runs
+        # The request aggregator should not have polluted the subscription aggregator
+        assert len(subscription_bars_without_request) == len(
+            subscription_bars_with_request,
+        ), "Number of subscription bars should be the same with and without request"
+
+        for i, (bar_without, bar_with) in enumerate(
+            zip(subscription_bars_without_request, subscription_bars_with_request, strict=True),
+        ):
+            assert (
+                bar_without == bar_with
+            ), f"Subscription bar {i} should be identical: without_request={bar_without}, with_request={bar_with}"
+
+        # Assert: Historical bars should be received from the request aggregator
+        assert (
+            len(request_historical_bars) > 0
+        ), "Request aggregator should produce historical bars"
+        assert all(
+            bar.bar_type == bar_type.standard() for bar in request_historical_bars
+        ), "All historical bars should have the correct bar type"
+
     # TODO: Implement with new Rust datafusion backend"
     # def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:
     #     # Arrange
