@@ -14,15 +14,22 @@
 # -------------------------------------------------------------------------------------------------
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from nautilus_trader.adapters.kraken.config import KrakenDataClientConfig
 from nautilus_trader.adapters.kraken.constants import KRAKEN_VENUE
 from nautilus_trader.adapters.kraken.data import KrakenDataClient
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -268,3 +275,73 @@ async def test_unsubscribe_order_book_deltas(data_client_builder, monkeypatch):
         ws_client.unsubscribe_book.assert_awaited_once()
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_request_instrument_receives_single_instrument(
+    data_client_builder,
+    instrument,
+    live_clock,
+    monkeypatch,
+) -> None:
+    client, ws_client, http_client, instrument_provider = data_client_builder(monkeypatch)
+    instrument_provider.get_all.return_value = {instrument.id: instrument}
+
+    # Use the client's internal msgbus for subscription
+    msgbus = client._msgbus
+
+    # Create DataEngine to process messages and publish to topics
+    data_engine = DataEngine(msgbus, client._cache, live_clock)
+    data_engine.register_client(client)
+    data_engine.start()
+
+    # Track received instruments via msgbus subscription
+    received_instruments: list = []
+    topic = f"data.instrument.{instrument.id.venue}.{instrument.id.symbol}"
+    msgbus.subscribe(topic=topic, handler=received_instruments.append)
+
+    # Mock pyo3 instrument with matching ID
+    # Kraken's _request_instrument calls request_instruments() and filters by ID
+    mock_pyo3_instrument = MagicMock()
+    mock_pyo3_instrument.id = nautilus_pyo3.InstrumentId.from_str(instrument.id.value)
+
+    http_client.request_instruments = AsyncMock(return_value=[mock_pyo3_instrument])
+
+    # Patch transform_instrument_from_pyo3 to return our fixture instrument
+    # Also need to patch KRAKEN_INSTRUMENT_TYPES isinstance check
+    with (
+        patch(
+            "nautilus_trader.adapters.kraken.data.transform_instrument_from_pyo3",
+            return_value=instrument,
+        ),
+        patch(
+            "nautilus_trader.adapters.kraken.data.KRAKEN_INSTRUMENT_TYPES",
+            (type(mock_pyo3_instrument),),
+        ),
+    ):
+        # Create request
+        request = RequestInstrument(
+            instrument_id=instrument.id,
+            start=None,
+            end=None,
+            client_id=ClientId(KRAKEN_VENUE.value),
+            venue=KRAKEN_VENUE,
+            callback=lambda x: None,
+            request_id=UUID4(),
+            ts_init=live_clock.timestamp_ns(),
+            params=None,
+        )
+
+        # Act - Request the instrument
+        await client._request_instrument(request)
+
+    # Assert - Should receive exactly ONE instrument (not 2!)
+    assert len(received_instruments) == 1, (
+        f"Expected 1 instrument publication, got {len(received_instruments)}. "
+        f"This indicates duplicate publication bug! "
+        f"Received: {received_instruments}"
+    )
+    assert received_instruments[0].id == instrument.id
+
+    # Cleanup
+    data_engine.stop()

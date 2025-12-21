@@ -14,13 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from nautilus_trader.adapters.deribit.constants import DERIBIT_VENUE
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 
@@ -262,3 +268,63 @@ class TestDeribitDataClient:
             )
         finally:
             await client._disconnect()
+
+    @pytest.mark.asyncio
+    async def test_request_instrument_receives_single_instrument(
+        self,
+        data_client_builder,
+        instrument,
+        live_clock,
+        mock_http_client,
+    ) -> None:
+        client = data_client_builder()
+        client._instrument_provider.get_all.return_value = {instrument.id: instrument}
+
+        # Use the client's internal msgbus for subscription
+        msgbus = client._msgbus
+
+        # Create DataEngine using the client's msgbus
+        data_engine = DataEngine(msgbus, client._cache, live_clock)
+        data_engine.register_client(client)
+        data_engine.start()
+
+        # Track received instruments via msgbus subscription
+        received_instruments: list = []
+        topic = f"data.instrument.{instrument.id.venue}.{instrument.id.symbol}"
+        msgbus.subscribe(topic=topic, handler=received_instruments.append)
+
+        # Mock HTTP client to return a pyo3 instrument
+        mock_pyo3_instrument = MagicMock()
+        mock_http_client.request_instrument.return_value = mock_pyo3_instrument
+
+        # Patch transform_instrument_from_pyo3 to return our fixture instrument
+        with patch(
+            "nautilus_trader.adapters.deribit.data.transform_instrument_from_pyo3",
+            return_value=instrument,
+        ):
+            # Create request
+            request = RequestInstrument(
+                instrument_id=instrument.id,
+                start=None,
+                end=None,
+                client_id=ClientId(DERIBIT_VENUE.value),
+                venue=DERIBIT_VENUE,
+                callback=lambda x: None,
+                request_id=UUID4(),
+                ts_init=live_clock.timestamp_ns(),
+                params=None,
+            )
+
+            # Act - Request the instrument
+            await client._request_instrument(request)
+
+        # Assert - Should receive exactly ONE instrument (not 2!)
+        assert len(received_instruments) == 1, (
+            f"Expected 1 instrument publication, got {len(received_instruments)}. "
+            f"This indicates duplicate publication bug! "
+            f"Received: {received_instruments}"
+        )
+        assert received_instruments[0].id == instrument.id
+
+        # Cleanup
+        data_engine.stop()
