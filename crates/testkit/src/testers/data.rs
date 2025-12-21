@@ -22,6 +22,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use chrono::Duration as ChronoDuration;
 use nautilus_common::{
     actor::{DataActor, DataActorConfig, DataActorCore},
     enums::LogColor,
@@ -261,6 +262,12 @@ impl DataTesterConfig {
     }
 
     #[must_use]
+    pub fn with_request_trades(mut self, request: bool) -> Self {
+        self.request_trades = request;
+        self
+    }
+
+    #[must_use]
     pub fn with_can_unsubscribe(mut self, can_unsubscribe: bool) -> Self {
         self.can_unsubscribe = can_unsubscribe;
         self
@@ -432,10 +439,20 @@ impl DataActor for DataTester {
             //     self.request_quote_ticks(...);
             // }
 
-            // TODO: Implement historical data requests
-            // if self.config.request_trades {
-            //     self.request_trade_ticks(...);
-            // }
+            // Request historical trades (default to last 1 hour)
+            if self.config.request_trades {
+                let start = self.clock().utc_now() - ChronoDuration::hours(1);
+                if let Err(e) = self.request_trades(
+                    instrument_id,
+                    Some(start),
+                    None, // end: None means "now"
+                    None, // limit: None means use API default
+                    client_id,
+                    None, // params
+                ) {
+                    log::error!("Failed to request trades for {instrument_id}: {e}");
+                }
+            }
         }
 
         // Subscribe to bars
@@ -632,6 +649,27 @@ impl DataActor for DataTester {
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         if self.config.log_data {
             log_info!("Received {update:?}", color = LogColor::Cyan);
+        }
+        Ok(())
+    }
+
+    fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        if self.config.log_data {
+            log_info!(
+                "Received {} historical trades",
+                trades.len(),
+                color = LogColor::Cyan
+            );
+            for trade in trades.iter().take(5) {
+                log_info!("  {trade:?}", color = LogColor::Cyan);
+            }
+            if trades.len() > 5 {
+                log_info!(
+                    "  ... and {} more trades",
+                    trades.len() - 5,
+                    color = LogColor::Cyan
+                );
+            }
         }
         Ok(())
     }

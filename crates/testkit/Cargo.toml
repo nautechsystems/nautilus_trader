@@ -49,6 +49,7 @@ nautilus-trading = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 aws-lc-rs = { workspace = true }
+chrono = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }

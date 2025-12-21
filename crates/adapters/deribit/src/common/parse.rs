@@ -20,9 +20,10 @@ use std::str::FromStr;
 use anyhow::Context;
 use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    enums::{AccountType, AssetClass, CurrencyType, OptionKind},
+    data::TradeTick,
+    enums::{AccountType, AggressorSide, AssetClass, CurrencyType, OptionKind},
     events::AccountState,
-    identifiers::{AccountId, InstrumentId, Symbol, Venue},
+    identifiers::{AccountId, InstrumentId, Symbol, TradeId, Venue},
     instruments::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, OptionContract, any::InstrumentAny,
     },
@@ -34,6 +35,7 @@ use crate::{
     common::consts::DERIBIT_VENUE,
     http::models::{
         DeribitAccountSummary, DeribitInstrument, DeribitInstrumentKind, DeribitOptionType,
+        DeribitPublicTrade,
     },
 };
 
@@ -476,6 +478,42 @@ pub fn parse_account_state(
     ))
 }
 
+// Parses a Deribit public trade into a Nautilus [`TradeTick`].
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The direction is not "buy" or "sell"
+/// - Decimal conversion fails for price or size
+pub fn parse_trade_tick(
+    trade: &DeribitPublicTrade,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<TradeTick> {
+    // Parse aggressor side from direction
+    let aggressor_side = match trade.direction.as_str() {
+        "buy" => AggressorSide::Buyer,
+        "sell" => AggressorSide::Seller,
+        other => anyhow::bail!("Invalid trade direction: {other}"),
+    };
+    let price = Price::new(trade.price, price_precision);
+    let size = Quantity::new(trade.amount, size_precision);
+    let ts_event = UnixNanos::from((trade.timestamp as u64) * 1_000_000);
+    let trade_id = TradeId::new(&trade.trade_id);
+
+    Ok(TradeTick::new(
+        instrument_id,
+        price,
+        size,
+        aggressor_side,
+        trade_id,
+        ts_event,
+        ts_init,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::instruments::Instrument;
@@ -485,7 +523,9 @@ mod tests {
     use super::*;
     use crate::{
         common::testing::load_test_json,
-        http::models::{DeribitAccountSummariesResponse, DeribitJsonRpcResponse},
+        http::models::{
+            DeribitAccountSummariesResponse, DeribitJsonRpcResponse, DeribitTradesResponse,
+        },
     };
 
     #[rstest]
@@ -690,5 +730,57 @@ mod tests {
             account_state.ts_event, expected_ts_event,
             "ts_event should match server timestamp from response"
         );
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_sell() {
+        let json_data = load_test_json("http_get_last_trades.json");
+        let response: DeribitJsonRpcResponse<DeribitTradesResponse> =
+            serde_json::from_str(&json_data).unwrap();
+        let result = response.result.expect("Test data must have result");
+
+        assert!(result.has_more, "has_more should be true");
+        assert_eq!(result.trades.len(), 10, "Should have 10 trades");
+
+        let raw_trade = &result.trades[0];
+        let instrument_id = InstrumentId::from("ETH-PERPETUAL.DERIBIT");
+        let ts_init = UnixNanos::from(1766335632425576_u64 * 1000); // from usOut
+
+        let trade = parse_trade_tick(raw_trade, instrument_id, 1, 0, ts_init)
+            .expect("Should parse trade tick");
+
+        assert_eq!(trade.instrument_id, instrument_id);
+        assert_eq!(trade.price, Price::from("2968.3"));
+        assert_eq!(trade.size, Quantity::from("1"));
+        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.trade_id, TradeId::new("ETH-284830839"));
+        // timestamp 1766332040636 ms -> ns
+        assert_eq!(
+            trade.ts_event,
+            UnixNanos::from(1766332040636_u64 * 1_000_000)
+        );
+        assert_eq!(trade.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_buy() {
+        let json_data = load_test_json("http_get_last_trades.json");
+        let response: DeribitJsonRpcResponse<DeribitTradesResponse> =
+            serde_json::from_str(&json_data).unwrap();
+        let result = response.result.expect("Test data must have result");
+
+        // Last trade is a buy with amount 106
+        let raw_trade = &result.trades[9];
+        let instrument_id = InstrumentId::from("ETH-PERPETUAL.DERIBIT");
+        let ts_init = UnixNanos::default();
+
+        let trade = parse_trade_tick(raw_trade, instrument_id, 1, 0, ts_init)
+            .expect("Should parse trade tick");
+
+        assert_eq!(trade.instrument_id, instrument_id);
+        assert_eq!(trade.price, Price::from("2968.3"));
+        assert_eq!(trade.size, Quantity::from("106"));
+        assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(trade.trade_id, TradeId::new("ETH-284830854"));
     }
 }

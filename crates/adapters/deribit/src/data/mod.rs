@@ -32,10 +32,10 @@ use nautilus_common::{
             RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
             SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeFundingRates,
             SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments, SubscribeMarkPrices,
-            SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -469,8 +469,46 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn request_trades(&self, _request: &RequestTrades) -> anyhow::Result<()> {
-        todo!("Implement request_trades");
+    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
+        let http_client = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let start = request.start;
+        let end = request.end;
+        let limit = request.limit.map(|n| n.get() as u32);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params.clone();
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+
+        get_runtime().spawn(async move {
+            match http_client
+                .request_trades(instrument_id, start, end, limit)
+                .await
+                .context("failed to request trades from Deribit")
+            {
+                Ok(trades) => {
+                    let response = DataResponse::Trades(TradesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        trades,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send trades response: {e}");
+                    }
+                }
+                Err(e) => tracing::error!("Trades request failed for {}: {:?}", instrument_id, e),
+            }
+        });
+
+        Ok(())
     }
 
     fn request_bars(&self, _request: &RequestBars) -> anyhow::Result<()> {

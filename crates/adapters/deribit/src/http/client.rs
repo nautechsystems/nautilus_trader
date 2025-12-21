@@ -20,9 +20,11 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
+    data::TradeTick,
     events::AccountState,
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
@@ -43,11 +45,17 @@ use super::{
     },
     query::{GetAccountSummariesParams, GetInstrumentParams, GetInstrumentsParams},
 };
-use crate::common::{
-    consts::{DERIBIT_API_PATH, JSONRPC_VERSION, should_retry_error_code},
-    credential::Credential,
-    parse::{extract_server_timestamp, parse_account_state, parse_deribit_instrument_any},
-    urls::get_http_base_url,
+use crate::{
+    common::{
+        consts::{DERIBIT_API_PATH, JSONRPC_VERSION, should_retry_error_code},
+        credential::Credential,
+        parse::{
+            extract_server_timestamp, parse_account_state, parse_deribit_instrument_any,
+            parse_trade_tick,
+        },
+        urls::get_http_base_url,
+    },
+    http::{models::DeribitTradesResponse, query::GetLastTradesByInstrumentAndTimeParams},
 };
 
 #[allow(dead_code)]
@@ -437,6 +445,23 @@ impl DeribitRawHttpClient {
             .await
     }
 
+    /// Gets recent trades for an instrument within a time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_last_trades_by_instrument_and_time(
+        &self,
+        params: GetLastTradesByInstrumentAndTimeParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitTradesResponse>, DeribitHttpError> {
+        self.send_request(
+            "public/get_last_trades_by_instrument_and_time",
+            params,
+            false,
+        )
+        .await
+    }
+
     /// Gets account summaries for all currencies.
     ///
     /// # Errors
@@ -662,6 +687,98 @@ impl DeribitHttpClient {
                 response.kind
             ),
         }
+    }
+
+    /// Requests historical trades for an instrument within a time range.
+    ///
+    /// Fetches trade ticks from Deribit and converts them to Nautilus [`TradeTick`] objects.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to fetch trades for
+    /// * `start` - Optional start time filter
+    /// * `end` - Optional end time filter
+    /// * `limit` - Optional limit on number of trades (max 1000)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails
+    /// - Trade parsing fails
+    pub async fn request_trades(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        // Get instrument from cache to determine precisions
+        let (price_precision, size_precision) =
+            if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
+                (instrument.price_precision(), instrument.size_precision())
+            } else {
+                // Default precisions if instrument not cached
+                // This is a fallback; ideally the instrument should be cached first
+                tracing::warn!(
+                    "Instrument {} not in cache, using default precisions",
+                    instrument_id
+                );
+                (8u8, 8u8)
+            };
+
+        // Convert timestamps to milliseconds
+        let start_timestamp = start.map_or_else(
+            || Utc::now().timestamp_millis() - 3_600_000, // Default: 1 hour ago
+            |dt| dt.timestamp_millis(),
+        );
+
+        let end_timestamp = end.map_or_else(
+            || Utc::now().timestamp_millis(), // Default: now
+            |dt| dt.timestamp_millis(),
+        );
+
+        let params = GetLastTradesByInstrumentAndTimeParams::new(
+            instrument_id.symbol.to_string(),
+            start_timestamp,
+            end_timestamp,
+            limit,
+            Some("asc".to_string()), // Sort ascending for historical data
+        );
+
+        let full_response = self
+            .inner
+            .get_last_trades_by_instrument_and_time(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let response_data = full_response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
+
+        let ts_init = self.generate_ts_init();
+        let mut trades = Vec::with_capacity(response_data.trades.len());
+
+        for raw_trade in &response_data.trades {
+            match parse_trade_tick(
+                raw_trade,
+                instrument_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            ) {
+                Ok(trade) => trades.push(trade),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse trade {} for {}: {}",
+                        raw_trade.trade_id,
+                        instrument_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(trades)
     }
 
     /// Requests account state for all currencies.

@@ -92,3 +92,43 @@ impl GetAccountSummariesParams {
         }
     }
 }
+
+/// Query parameters for `/public/get_last_trades_by_instrument_and_time` endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetLastTradesByInstrumentAndTimeParams {
+    /// Instrument name (e.g., "BTC-PERPETUAL")
+    pub instrument_name: String,
+    /// The earliest timestamp to return result from (milliseconds since the UNIX epoch)
+    pub start_timestamp: i64,
+    /// The most recent timestamp to return result from (milliseconds since the UNIX epoch)
+    pub end_timestamp: i64,
+    /// Number of requested items, default - 10, maximum - 1000
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub count: Option<u32>,
+    /// Direction of results sorting: "asc", "desc", or "default"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub sorting: Option<String>,
+}
+
+impl GetLastTradesByInstrumentAndTimeParams {
+    /// Creates a new instance with the required parameters.
+    #[must_use]
+    pub fn new(
+        instrument_name: impl Into<String>,
+        start_timestamp: i64,
+        end_timestamp: i64,
+        count: Option<u32>,
+        sorting: Option<String>,
+    ) -> Self {
+        Self {
+            instrument_name: instrument_name.into(),
+            start_timestamp,
+            end_timestamp,
+            count,
+            sorting,
+        }
+    }
+}

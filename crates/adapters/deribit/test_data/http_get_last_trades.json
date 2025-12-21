@@ -1,0 +1,143 @@
+{
+  "id": 2,
+  "jsonrpc": "2.0",
+  "result": {
+    "has_more": true,
+    "trades": [
+      {
+        "amount": 1.0,
+        "contracts": 1.0,
+        "direction": "sell",
+        "index_price": 2967.73,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2968.01,
+        "price": 2968.3,
+        "tick_direction": 0,
+        "timestamp": 1766332040636,
+        "trade_id": "ETH-284830839",
+        "trade_seq": 203024587
+      },
+      {
+        "amount": 1.0,
+        "contracts": 1.0,
+        "direction": "sell",
+        "index_price": 2967.63,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2967.91,
+        "price": 2968.3,
+        "tick_direction": 1,
+        "timestamp": 1766332047406,
+        "trade_id": "ETH-284830843",
+        "trade_seq": 203024588
+      },
+      {
+        "amount": 1.0,
+        "contracts": 1.0,
+        "direction": "sell",
+        "index_price": 2967.63,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2967.91,
+        "price": 2968.3,
+        "tick_direction": 1,
+        "timestamp": 1766332047588,
+        "trade_id": "ETH-284830844",
+        "trade_seq": 203024589
+      },
+      {
+        "amount": 1.0,
+        "contracts": 1.0,
+        "direction": "sell",
+        "index_price": 2967.64,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2967.93,
+        "price": 2968.3,
+        "tick_direction": 1,
+        "timestamp": 1766332053559,
+        "trade_id": "ETH-284830845",
+        "trade_seq": 203024590
+      },
+      {
+        "amount": 1.0,
+        "contracts": 1.0,
+        "direction": "sell",
+        "index_price": 2967.93,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2968.25,
+        "price": 2968.3,
+        "tick_direction": 1,
+        "timestamp": 1766332059546,
+        "trade_id": "ETH-284830846",
+        "trade_seq": 203024591
+      },
+      {
+        "amount": 1.0,
+        "contracts": 1.0,
+        "direction": "sell",
+        "index_price": 2968.03,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2968.36,
+        "price": 2968.3,
+        "tick_direction": 1,
+        "timestamp": 1766332065501,
+        "trade_id": "ETH-284830847",
+        "trade_seq": 203024592
+      },
+      {
+        "amount": 1.0,
+        "contracts": 1.0,
+        "direction": "sell",
+        "index_price": 2968.02,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2968.35,
+        "price": 2968.3,
+        "tick_direction": 1,
+        "timestamp": 1766332071115,
+        "trade_id": "ETH-284830848",
+        "trade_seq": 203024593
+      },
+      {
+        "amount": 1.0,
+        "contracts": 1.0,
+        "direction": "sell",
+        "index_price": 2968.02,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2968.35,
+        "price": 2968.3,
+        "tick_direction": 1,
+        "timestamp": 1766332077402,
+        "trade_id": "ETH-284830849",
+        "trade_seq": 203024594
+      },
+      {
+        "amount": 1.0,
+        "contracts": 1.0,
+        "direction": "sell",
+        "index_price": 2968.02,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2968.35,
+        "price": 2968.3,
+        "tick_direction": 1,
+        "timestamp": 1766332079917,
+        "trade_id": "ETH-284830853",
+        "trade_seq": 203024595
+      },
+      {
+        "amount": 106.0,
+        "contracts": 106.0,
+        "direction": "buy",
+        "index_price": 2968.02,
+        "instrument_name": "ETH-PERPETUAL",
+        "mark_price": 2968.35,
+        "price": 2968.3,
+        "tick_direction": 1,
+        "timestamp": 1766332079917,
+        "trade_id": "ETH-284830854",
+        "trade_seq": 203024596
+      }
+    ]
+  },
+  "testnet": false,
+  "usDiff": 384,
+  "usIn": 1766335632425192,
+  "usOut": 1766335632425576
+}

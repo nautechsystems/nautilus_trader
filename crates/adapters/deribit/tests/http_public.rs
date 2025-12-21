@@ -29,7 +29,7 @@ use nautilus_deribit::http::{
     client::DeribitRawHttpClient,
     error::DeribitHttpError,
     models::{DeribitCurrency, DeribitInstrumentKind},
-    query::{GetInstrumentParams, GetInstrumentsParams},
+    query::{GetInstrumentParams, GetInstrumentsParams, GetLastTradesByInstrumentAndTimeParams},
 };
 use nautilus_network::http::HttpClient;
 use serde_json::{Value, json};
@@ -110,6 +110,7 @@ async fn handle_jsonrpc_request(
     match method {
         "public/get_instrument" => handle_get_instrument(id, params).await,
         "public/get_instruments" => handle_get_instruments(id, params).await,
+        "public/get_last_trades_by_instrument_and_time" => handle_get_last_trades(id, params).await,
         _ => handle_method_not_found(id).await,
     }
 }
@@ -205,6 +206,56 @@ async fn handle_get_instruments(id: u64, params: Option<Value>) -> axum::respons
             "id": id,
             "result": [],
             "testnet": true
+        }))
+        .into_response(),
+    }
+}
+
+async fn handle_get_last_trades(id: u64, params: Option<Value>) -> axum::response::Response {
+    let instrument_name = params
+        .as_ref()
+        .and_then(|p| p.get("instrument_name"))
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string());
+
+    match instrument_name.as_deref() {
+        Some("ETH-PERPETUAL") => {
+            let mut data = load_test_data("http_get_last_trades.json");
+            data["id"] = json!(id);
+            Json(data).into_response()
+        }
+        Some("INVALID") => Json(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32602,
+                "message": "Invalid params",
+                "data": {
+                    "param": "instrument_name",
+                    "reason": "wrong format"
+                }
+            },
+            "testnet": false
+        }))
+        .into_response(),
+        Some("NONEXISTENT") => Json(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": 13020,
+                "message": "instrument_not_found"
+            },
+            "testnet": false
+        }))
+        .into_response(),
+        _ => Json(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "has_more": false,
+                "trades": []
+            },
+            "testnet": false
         }))
         .into_response(),
     }
@@ -458,4 +509,165 @@ async fn test_get_instruments_empty_result() {
     let response = result.unwrap();
     let instruments = response.result.expect("Response should have result");
     assert_eq!(instruments.len(), 0);
+}
+
+#[tokio::test]
+async fn test_get_last_trades_success() {
+    let state = TestServerState::default();
+    let addr = start_test_server(state.clone()).await;
+    wait_for_server(addr).await;
+
+    let base_url = format!("http://{addr}/api/v2");
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
+
+    let params = GetLastTradesByInstrumentAndTimeParams::new(
+        "ETH-PERPETUAL",
+        1766332000000, // start_timestamp
+        1766332100000, // end_timestamp
+        Some(10),      // count
+        Some("asc".to_string()),
+    );
+    let result = client.get_last_trades_by_instrument_and_time(params).await;
+
+    assert!(result.is_ok(), "Request should succeed");
+    let response = result.unwrap();
+    let trades_response = response.result.expect("Response should have result");
+
+    assert!(trades_response.has_more, "has_more should be true");
+    assert_eq!(trades_response.trades.len(), 10, "Should return 10 trades");
+
+    // Verify first trade
+    let first_trade = &trades_response.trades[0];
+    assert_eq!(first_trade.instrument_name, "ETH-PERPETUAL");
+    assert_eq!(first_trade.direction, "sell");
+    assert_eq!(first_trade.price, 2968.3);
+    assert_eq!(first_trade.amount, 1.0);
+    assert_eq!(first_trade.trade_id, "ETH-284830839");
+    assert_eq!(first_trade.trade_seq, 203024587);
+    assert_eq!(first_trade.tick_direction, 0);
+    assert_eq!(first_trade.index_price, 2967.73);
+    assert_eq!(first_trade.mark_price, 2968.01);
+
+    // Verify last trade (buy order with larger size)
+    let last_trade = &trades_response.trades[9];
+    assert_eq!(last_trade.direction, "buy");
+    assert_eq!(last_trade.amount, 106.0);
+    assert_eq!(last_trade.trade_id, "ETH-284830854");
+
+    // Verify request was tracked
+    assert_eq!(
+        *state
+            .request_counts
+            .get("public/get_last_trades_by_instrument_and_time")
+            .expect("Request count should be tracked"),
+        1
+    );
+
+    // Verify params were captured correctly
+    let captured_params = state
+        .last_request_params
+        .get("public/get_last_trades_by_instrument_and_time")
+        .expect("Params should be captured");
+    assert_eq!(
+        captured_params.get("instrument_name").unwrap().as_str(),
+        Some("ETH-PERPETUAL")
+    );
+    assert_eq!(
+        captured_params.get("start_timestamp").unwrap().as_i64(),
+        Some(1766332000000)
+    );
+    assert_eq!(
+        captured_params.get("end_timestamp").unwrap().as_i64(),
+        Some(1766332100000)
+    );
+}
+
+#[tokio::test]
+async fn test_get_last_trades_invalid_params() {
+    let state = TestServerState::default();
+    let addr = start_test_server(state.clone()).await;
+    wait_for_server(addr).await;
+
+    let base_url = format!("http://{addr}/api/v2");
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
+
+    let params = GetLastTradesByInstrumentAndTimeParams::new(
+        "INVALID",
+        1766332000000,
+        1766332100000,
+        None,
+        None,
+    );
+    let result = client.get_last_trades_by_instrument_and_time(params).await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+
+    match err {
+        DeribitHttpError::ValidationError(msg) => {
+            assert!(msg.contains("Invalid params"));
+            assert!(msg.contains("instrument_name"));
+        }
+        other => panic!("Expected ValidationError, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_get_last_trades_instrument_not_found() {
+    let state = TestServerState::default();
+    let addr = start_test_server(state.clone()).await;
+    wait_for_server(addr).await;
+
+    let base_url = format!("http://{addr}/api/v2");
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
+
+    let params = GetLastTradesByInstrumentAndTimeParams::new(
+        "NONEXISTENT",
+        1766332000000,
+        1766332100000,
+        None,
+        None,
+    );
+    let result = client.get_last_trades_by_instrument_and_time(params).await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+
+    match err {
+        DeribitHttpError::DeribitError {
+            error_code,
+            message,
+        } => {
+            assert_eq!(error_code, 13020);
+            assert!(message.contains("instrument_not_found"));
+        }
+        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+    }
 }

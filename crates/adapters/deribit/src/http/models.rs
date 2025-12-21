@@ -450,3 +450,67 @@ pub struct DeribitAccountSummaryExtended {
     #[serde(default)]
     pub block_rfq_self_match_prevention: Option<bool>,
 }
+
+/// Deribit public trade data from the market data API.
+///
+/// Represents a single trade returned by `/public/get_last_trades_by_instrument_and_time`
+/// and other trade-related endpoints.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitPublicTrade {
+    /// Trade amount. For perpetual and inverse futures the amount is in USD units.
+    /// For options and linear futures it is the underlying base currency coin.
+    pub amount: f64,
+    /// Trade size in contract units (optional, may be absent in historical trades).
+    #[serde(default)]
+    pub contracts: Option<f64>,
+    /// Direction of the trade: "buy" or "sell"
+    pub direction: String,
+    /// Index Price at the moment of trade.
+    pub index_price: f64,
+    /// Unique instrument identifier.
+    pub instrument_name: String,
+    /// Option implied volatility for the price (Option only).
+    #[serde(default)]
+    pub iv: Option<f64>,
+    /// Optional field (only for trades caused by liquidation).
+    #[serde(default)]
+    pub liquidation: Option<String>,
+    /// Mark Price at the moment of trade.
+    pub mark_price: f64,
+    /// Price in base currency.
+    pub price: f64,
+    /// Direction of the "tick" (0 = Plus Tick, 1 = Zero-Plus Tick, 2 = Minus Tick, 3 = Zero-Minus Tick).
+    pub tick_direction: i32,
+    /// The timestamp of the trade (milliseconds since the UNIX epoch).
+    pub timestamp: i64,
+    /// Unique (per currency) trade identifier.
+    pub trade_id: String,
+    /// The sequence number of the trade within instrument.
+    pub trade_seq: i64,
+    /// Block trade id - when trade was part of a block trade.
+    #[serde(default)]
+    pub block_trade_id: Option<String>,
+    /// Block trade leg count - when trade was part of a block trade.
+    #[serde(default)]
+    pub block_trade_leg_count: Option<i32>,
+    /// ID of the Block RFQ - when trade was part of the Block RFQ.
+    #[serde(default)]
+    pub block_rfq_id: Option<i64>,
+    /// Optional field containing combo instrument name if the trade is a combo trade.
+    #[serde(default)]
+    pub combo_id: Option<String>,
+    /// Optional field containing combo trade identifier if the trade is a combo trade.
+    #[serde(default)]
+    pub combo_trade_id: Option<f64>,
+}
+
+/// Response wrapper for trades endpoints.
+///
+/// Contains the trades array and pagination information.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitTradesResponse {
+    /// Whether there are more trades available.
+    pub has_more: bool,
+    /// Array of trade objects.
+    pub trades: Vec<DeribitPublicTrade>,
+}

@@ -26,9 +26,11 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import DeribitCurrency
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
@@ -38,6 +40,7 @@ from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import book_type_to_str
@@ -288,13 +291,41 @@ class DeribitDataClient(LiveMarketDataClient):
         else:
             instruments = await self._fetch_instruments_for_currency(
                 DeribitCurrency.ANY,
-                nautilus_pyo3.DeribitInstrumentKind.Future,
+                nautilus_pyo3.DeribitInstrumentKind.FUTURE,
             )
             all_instruments.extend(instruments)
 
         self._handle_instruments(
             request.venue,
             all_instruments,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+
+        try:
+            pyo3_trades = await self._http_client.request_trades(
+                instrument_id=pyo3_instrument_id,
+                start=ensure_pydatetime_utc(request.start),
+                end=ensure_pydatetime_utc(request.end),
+                limit=request.limit or None,
+            )
+        except Exception as e:
+            self._log.exception(
+                f"Failed to request trades for {request.instrument_id}",
+                e,
+            )
+            return
+
+        trades = TradeTick.from_pyo3_list(pyo3_trades)
+
+        self._handle_trade_ticks(
+            request.instrument_id,
+            trades,
             request.id,
             request.start,
             request.end,

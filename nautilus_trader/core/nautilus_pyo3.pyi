@@ -6859,6 +6859,13 @@ class DeribitHttpClient:
         kind: DeribitInstrumentKind | None = None,
     ) -> list[Instrument]: ...
     async def request_instrument(self, instrument_id: InstrumentId) -> Instrument: ...
+    async def request_trades(
+        self,
+        instrument_id: InstrumentId,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[TradeTick]: ...
     async def request_account_state(self, account_id: AccountId) -> AccountState: ...
 
 class DeribitWebSocketClient:
