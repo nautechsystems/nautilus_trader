@@ -13,42 +13,6 @@
 #     name: python3
 # ---
 
-# %%
-from nautilus_trader.common.component import TestClock
-
-
-clock = TestClock()
-
-# %%
-clock.set_time(10)
-
-
-# %%
-def f(x):
-    print("toto")
-
-
-# %%
-import pandas as pd  # noqa: E402
-
-
-# %%
-clock.set_timer(
-    name="toto",
-    interval=pd.Timedelta(seconds=1),
-    callback=f,
-    start_time=pd.Timestamp(10),
-    stop_time=None,   # Run indefinitely
-    allow_past=True,  # Allow past start times
-    fire_immediately=True,
-)
-
-# %%
-clock.advance_time(2e9, set_time=True)
-
-# %%
-clock.next_time_ns("toto")
-
 # %% [markdown]
 # ## imports
 
@@ -56,49 +20,49 @@ clock.next_time_ns("toto")
 # Note: Use the jupytext python extension to be able to open this python file in jupyter as a notebook
 
 # %%
-import numpy as np  # noqa: E402
+import numpy as np
 
-from nautilus_trader.adapters.databento.data_utils import data_path  # noqa: E402
-from nautilus_trader.adapters.databento.data_utils import databento_data  # noqa: E402
-from nautilus_trader.adapters.databento.data_utils import load_catalog  # noqa: E402
-from nautilus_trader.analysis.config import TearsheetConfig  # noqa: E402
-from nautilus_trader.analysis.tearsheet import create_bars_with_fills  # noqa: E402
-from nautilus_trader.analysis.tearsheet import create_tearsheet  # noqa: E402
-from nautilus_trader.backtest.config import MarginModelConfig  # noqa: E402
-from nautilus_trader.backtest.node import BacktestNode  # noqa: E402
-from nautilus_trader.backtest.option_exercise import OptionExerciseConfig  # noqa: E402
-from nautilus_trader.backtest.option_exercise import OptionExerciseModule  # noqa: E402
-from nautilus_trader.common.enums import LogColor  # noqa: E402
-from nautilus_trader.config import BacktestDataConfig  # noqa: E402
-from nautilus_trader.config import BacktestEngineConfig  # noqa: E402
-from nautilus_trader.config import BacktestRunConfig  # noqa: E402
-from nautilus_trader.config import BacktestVenueConfig  # noqa: E402
-from nautilus_trader.config import ImportableActorConfig  # noqa: E402
-from nautilus_trader.config import ImportableFillModelConfig  # noqa: E402
-from nautilus_trader.config import ImportableStrategyConfig  # noqa: E402
-from nautilus_trader.config import LoggingConfig  # noqa: E402
-from nautilus_trader.config import StrategyConfig  # noqa: E402
-from nautilus_trader.config import StreamingConfig  # noqa: E402
-from nautilus_trader.core.datetime import time_object_to_dt  # noqa: E402
-from nautilus_trader.core.datetime import unix_nanos_to_iso8601  # noqa: E402
-from nautilus_trader.model.data import Bar  # noqa: E402
-from nautilus_trader.model.data import BarType  # noqa: E402
-from nautilus_trader.model.data import DataType  # noqa: E402
-from nautilus_trader.model.data import QuoteTick  # noqa: E402
-from nautilus_trader.model.enums import OrderSide  # noqa: E402
-from nautilus_trader.model.greeks_data import GreeksData  # noqa: E402
-from nautilus_trader.model.identifiers import InstrumentId  # noqa: E402
-from nautilus_trader.model.identifiers import Venue  # noqa: E402
-from nautilus_trader.model.identifiers import new_generic_spread_id  # noqa: E402
-from nautilus_trader.model.instruments import FuturesContract  # noqa: E402
-from nautilus_trader.model.objects import Price  # noqa: E402
-from nautilus_trader.model.objects import Quantity  # noqa: E402
-from nautilus_trader.model.tick_scheme import TieredTickScheme  # noqa: E402
-from nautilus_trader.model.tick_scheme import register_tick_scheme  # noqa: E402
-from nautilus_trader.persistence.config import DataCatalogConfig  # noqa: E402
-from nautilus_trader.persistence.loaders import InterestRateProvider  # noqa: E402
-from nautilus_trader.persistence.loaders import InterestRateProviderConfig  # noqa: E402
-from nautilus_trader.trading.strategy import Strategy  # noqa: E402
+from nautilus_trader.adapters.databento.data_utils import data_path
+from nautilus_trader.adapters.databento.data_utils import databento_data
+from nautilus_trader.adapters.databento.data_utils import load_catalog
+from nautilus_trader.analysis.config import TearsheetConfig
+from nautilus_trader.analysis.tearsheet import create_bars_with_fills
+from nautilus_trader.analysis.tearsheet import create_tearsheet
+from nautilus_trader.backtest.config import MarginModelConfig
+from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.backtest.option_exercise import OptionExerciseConfig
+from nautilus_trader.backtest.option_exercise import OptionExerciseModule
+from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.config import ImportableFillModelConfig
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config import StreamingConfig
+from nautilus_trader.core.datetime import time_object_to_dt
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.greeks_data import GreeksData
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import new_generic_spread_id
+from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick_scheme import TieredTickScheme
+from nautilus_trader.model.tick_scheme import register_tick_scheme
+from nautilus_trader.persistence.config import DataCatalogConfig
+from nautilus_trader.persistence.loaders import InterestRateProvider
+from nautilus_trader.persistence.loaders import InterestRateProviderConfig
+from nautilus_trader.trading.strategy import Strategy
 
 
 # %%
@@ -593,6 +557,7 @@ fig = create_bars_with_fills(
     engine=engine,
     bar_type=bar_type,
     title=f"{future_symbols[0]} - Price Bars with Order Fills",
+    theme="nautilus_dark",
 )
 fig
 
@@ -605,6 +570,7 @@ tearsheet_config = TearsheetConfig(
             "bar_type": f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL",
         },
     },
+    theme="nautilus_dark",
 )
 
 create_tearsheet(
