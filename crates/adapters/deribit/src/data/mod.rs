@@ -23,6 +23,7 @@ use std::sync::{
 use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
+use futures_util::StreamExt;
 use nautilus_common::{
     live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
@@ -45,6 +46,7 @@ use nautilus_core::{
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
+    data::{Data, OrderBookDeltas_API},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -54,8 +56,11 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     common::consts::DERIBIT_VENUE,
     config::DeribitDataClientConfig,
-    http::{client::DeribitHttpClient, models::DeribitCurrency},
-    websocket::client::DeribitWebSocketClient,
+    http::{
+        client::DeribitHttpClient,
+        models::{DeribitCurrency, DeribitInstrumentKind},
+    },
+    websocket::{client::DeribitWebSocketClient, messages::NautilusWsMessage},
 };
 
 /// Deribit live data client.
@@ -64,7 +69,7 @@ pub struct DeribitDataClient {
     client_id: ClientId,
     config: DeribitDataClientConfig,
     http_client: DeribitHttpClient,
-    _ws_client: Option<DeribitWebSocketClient>,
+    ws_client: Option<DeribitWebSocketClient>,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
@@ -118,7 +123,7 @@ impl DeribitDataClient {
             client_id,
             config,
             http_client,
-            _ws_client: Some(ws_client),
+            ws_client: Some(ws_client),
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
@@ -126,6 +131,98 @@ impl DeribitDataClient {
             instruments: Arc::new(RwLock::new(AHashMap::new())),
             clock,
         })
+    }
+
+    /// Returns a mutable reference to the WebSocket client.
+    fn ws_client_mut(&mut self) -> anyhow::Result<&mut DeribitWebSocketClient> {
+        self.ws_client
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))
+    }
+
+    /// Spawns a task to process WebSocket messages.
+    fn spawn_stream_task(
+        &mut self,
+        stream: impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static,
+    ) -> anyhow::Result<()> {
+        let data_sender = self.data_sender.clone();
+        let instruments = Arc::clone(&self.instruments);
+        let cancellation = self.cancellation_token.clone();
+
+        let handle = get_runtime().spawn(async move {
+            tokio::pin!(stream);
+
+            loop {
+                tokio::select! {
+                    maybe_msg = stream.next() => {
+                        match maybe_msg {
+                            Some(msg) => Self::handle_ws_message(msg, &data_sender, &instruments),
+                            None => {
+                                tracing::debug!("Deribit websocket stream ended");
+                                break;
+                            }
+                        }
+                    }
+                    _ = cancellation.cancelled() => {
+                        tracing::debug!("Deribit websocket stream task cancelled");
+                        break;
+                    }
+                }
+            }
+        });
+
+        self.tasks.push(handle);
+        Ok(())
+    }
+
+    /// Handles incoming WebSocket messages.
+    fn handle_ws_message(
+        message: NautilusWsMessage,
+        sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    ) {
+        match message {
+            NautilusWsMessage::Data(payloads) => {
+                for data in payloads {
+                    Self::send_data(sender, data);
+                }
+            }
+            NautilusWsMessage::Deltas(deltas) => {
+                Self::send_data(sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
+            }
+            NautilusWsMessage::Instrument(instrument) => {
+                let mut guard = instruments.write().expect("instrument cache lock poisoned");
+                let instrument_id = instrument.id();
+                guard.insert(instrument_id, *instrument.clone());
+                drop(guard);
+
+                if let Err(e) = sender.send(DataEvent::Instrument(*instrument)) {
+                    tracing::warn!("Failed to send instrument update: {e}");
+                }
+            }
+            NautilusWsMessage::Error(e) => {
+                tracing::error!("Deribit WebSocket error: {e:?}");
+            }
+            NautilusWsMessage::Raw(value) => {
+                tracing::debug!("Unhandled raw message: {value}");
+            }
+            NautilusWsMessage::Reconnected => {
+                tracing::info!("Deribit websocket reconnected");
+            }
+            NautilusWsMessage::Authenticated(auth) => {
+                tracing::debug!(
+                    "Deribit websocket authenticated: expires_in={}s",
+                    auth.expires_in
+                );
+            }
+        }
+    }
+
+    /// Sends data to the data channel.
+    fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
+        if let Err(e) = sender.send(DataEvent::Data(data)) {
+            tracing::error!("Failed to send data: {e}");
+        }
     }
 }
 
@@ -184,7 +281,67 @@ impl DataClient for DeribitDataClient {
             return Ok(());
         }
 
-        // TODO add instruments fetching
+        // Fetch instruments for each configured instrument kind
+        let instrument_kinds = if self.config.instrument_kinds.is_empty() {
+            vec![DeribitInstrumentKind::Future]
+        } else {
+            self.config.instrument_kinds.clone()
+        };
+
+        let mut all_instruments = Vec::new();
+        for kind in &instrument_kinds {
+            let fetched = self
+                .http_client
+                .request_instruments(DeribitCurrency::ANY, Some(*kind))
+                .await
+                .with_context(|| format!("failed to request Deribit instruments for {kind:?}"))?;
+
+            // Cache in http client
+            self.http_client.cache_instruments(fetched.clone());
+
+            // Cache locally
+            let mut guard = self
+                .instruments
+                .write()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            for instrument in &fetched {
+                guard.insert(instrument.id(), instrument.clone());
+            }
+            drop(guard);
+
+            all_instruments.extend(fetched);
+        }
+
+        tracing::info!(
+            client_id = %self.client_id,
+            total = all_instruments.len(),
+            "Cached instruments"
+        );
+
+        for instrument in &all_instruments {
+            if let Err(e) = self
+                .data_sender
+                .send(DataEvent::Instrument(instrument.clone()))
+            {
+                tracing::warn!("Failed to send instrument: {e}");
+            }
+        }
+
+        // Cache instruments in WebSocket client before connecting
+        let ws = self.ws_client_mut()?;
+        ws.cache_instruments(all_instruments);
+
+        // Connect WebSocket and wait until active
+        ws.connect()
+            .await
+            .context("failed to connect Deribit websocket")?;
+        ws.wait_until_active(10.0)
+            .await
+            .context("websocket failed to become active")?;
+
+        // Get the stream and spawn processing task
+        let stream = self.ws_client_mut()?.stream();
+        self.spawn_stream_task(stream)?;
 
         self.is_connected.store(true, Ordering::Release);
         tracing::info!(client_id = %self.client_id, "Connected");
@@ -192,7 +349,33 @@ impl DataClient for DeribitDataClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        todo!("Implement disconnect");
+        if self.is_disconnected() {
+            return Ok(());
+        }
+
+        // Cancel all tasks
+        self.cancellation_token.cancel();
+
+        // Close WebSocket connection
+        if let Some(ws) = self.ws_client.as_ref() {
+            if let Err(e) = ws.close().await {
+                tracing::warn!("Error while closing Deribit websocket: {e:?}");
+            }
+        }
+
+        // Wait for all tasks to complete
+        for handle in self.tasks.drain(..) {
+            if let Err(e) = handle.await {
+                tracing::error!("Error joining websocket task: {e:?}");
+            }
+        }
+
+        // Reset cancellation token for potential reconnection
+        self.cancellation_token = CancellationToken::new();
+        self.is_connected.store(false, Ordering::Relaxed);
+
+        tracing::info!(client_id = %self.client_id, "Disconnected");
+        Ok(())
     }
 
     fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
