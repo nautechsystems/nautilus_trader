@@ -103,8 +103,8 @@ node = TradingNode(config=config_node)
 # Configure and initialize the tester
 config_tester = DataTesterConfig(
     instrument_ids=[perpetual_id],
-    request_bars=True,
-    bar_types=bar_types,
+    request_book_snapshot=True,
+    log_data=True,
 )
 tester = DataTester(config=config_tester)
 

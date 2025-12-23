@@ -539,3 +539,80 @@ pub struct DeribitTradingViewChartData {
     /// List of volume bars (in base currency, one per candle)
     pub volume: Vec<f64>,
 }
+
+/// Response from `public/get_order_book` endpoint.
+///
+/// Contains the current order book state with bids, asks, and market data.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitOrderBook {
+    /// The timestamp of the order book (milliseconds since UNIX epoch)
+    pub timestamp: i64,
+    /// Unique instrument identifier
+    pub instrument_name: String,
+    /// List of bids as [price, amount] pairs
+    pub bids: Vec<[f64; 2]>,
+    /// List of asks as [price, amount] pairs
+    pub asks: Vec<[f64; 2]>,
+    /// The state of the order book: "open" or "closed"
+    pub state: String,
+    /// The current best bid price (null if there aren't any bids)
+    #[serde(default)]
+    pub best_bid_price: Option<f64>,
+    /// The current best ask price (null if there aren't any asks)
+    #[serde(default)]
+    pub best_ask_price: Option<f64>,
+    /// The order size of all best bids
+    #[serde(default)]
+    pub best_bid_amount: Option<f64>,
+    /// The order size of all best asks
+    #[serde(default)]
+    pub best_ask_amount: Option<f64>,
+    /// The mark price for the instrument
+    #[serde(default)]
+    pub mark_price: Option<f64>,
+    /// The price for the last trade
+    #[serde(default)]
+    pub last_price: Option<f64>,
+    /// Current index price
+    #[serde(default)]
+    pub index_price: Option<f64>,
+    /// The total amount of outstanding contracts
+    #[serde(default)]
+    pub open_interest: Option<f64>,
+    /// The maximum price for the future
+    #[serde(default)]
+    pub max_price: Option<f64>,
+    /// The minimum price for the future
+    #[serde(default)]
+    pub min_price: Option<f64>,
+    /// Current funding (perpetual only)
+    #[serde(default)]
+    pub current_funding: Option<f64>,
+    /// Funding 8h (perpetual only)
+    #[serde(default)]
+    pub funding_8h: Option<f64>,
+    /// The settlement price for the instrument (when state = open)
+    #[serde(default)]
+    pub settlement_price: Option<f64>,
+    /// The settlement/delivery price for the instrument (when state = closed)
+    #[serde(default)]
+    pub delivery_price: Option<f64>,
+    /// (Only for option) implied volatility for best bid
+    #[serde(default)]
+    pub bid_iv: Option<f64>,
+    /// (Only for option) implied volatility for best ask
+    #[serde(default)]
+    pub ask_iv: Option<f64>,
+    /// (Only for option) implied volatility for mark price
+    #[serde(default)]
+    pub mark_iv: Option<f64>,
+    /// Underlying price for implied volatility calculations (options only)
+    #[serde(default)]
+    pub underlying_price: Option<f64>,
+    /// Name of the underlying future, or index_price (options only)
+    #[serde(default)]
+    pub underlying_index: Option<serde_json::Value>,
+    /// Interest rate used in implied volatility calculations (options only)
+    #[serde(default)]
+    pub interest_rate: Option<f64>,
+}

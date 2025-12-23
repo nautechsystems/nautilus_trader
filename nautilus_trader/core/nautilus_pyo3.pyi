@@ -6876,6 +6876,11 @@ class DeribitHttpClient:
         end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[Bar]: ...
+    async def request_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        depth: int | None = None,
+    ) -> OrderBook: ...
     async def request_account_state(self, account_id: AccountId) -> AccountState: ...
 
 class DeribitWebSocketClient:

@@ -29,11 +29,11 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            BarsResponse, InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
-            RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments, SubscribeMarkPrices,
-            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            BarsResponse, BookResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
+            RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
+            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
             UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
@@ -731,6 +731,50 @@ impl DataClient for DeribitDataClient {
                     }
                 }
                 Err(e) => tracing::error!("Bars request failed for {}: {:?}", bar_type, e),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
+        let http_client = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let depth = request.depth.map(|n| n.get() as u32);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params.clone();
+        let clock = self.clock;
+
+        get_runtime().spawn(async move {
+            match http_client
+                .request_book_snapshot(instrument_id, depth)
+                .await
+                .context("failed to request book snapshot from Deribit")
+            {
+                Ok(book) => {
+                    let response = DataResponse::Book(BookResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        book,
+                        None,
+                        None,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send book snapshot response: {e}");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Book snapshot request failed for {}: {:?}",
+                        instrument_id,
+                        e
+                    );
+                }
             }
         });
 

@@ -730,7 +730,8 @@ impl DataEngine {
             DataResponse::Quotes(resp) => self.handle_quotes(&resp.data),
             DataResponse::Trades(resp) => self.handle_trades(&resp.data),
             DataResponse::Bars(resp) => self.handle_bars(&resp.data),
-            _ => todo!(),
+            DataResponse::Book(resp) => self.handle_book_response(&resp.data),
+            _ => todo!("Handle other response types"),
         }
 
         msgbus::send_response(resp.correlation_id(), &resp);
@@ -1189,6 +1190,18 @@ impl DataEngine {
 
     fn handle_bars(&self, bars: &[Bar]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(bars) {
+            log_error_on_cache_insert(&e);
+        }
+    }
+
+    fn handle_book_response(&self, book: &OrderBook) {
+        log::debug!("Adding order book {} to cache", book.instrument_id);
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_order_book(book.clone())
+        {
             log_error_on_cache_insert(&e);
         }
     }

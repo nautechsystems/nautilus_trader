@@ -88,6 +88,8 @@ pub struct DataTesterConfig {
     pub request_trades: bool,
     /// Whether to request historical bars.
     pub request_bars: bool,
+    /// Whether to request order book snapshots.
+    pub request_book_snapshot: bool,
     // TODO: Support requests_start_delta when we implement historical data requests
     /// Book type for order book subscriptions.
     pub book_type: BookType,
@@ -128,6 +130,7 @@ impl DataTesterConfig {
             subscribe_index_prices: false,
             subscribe_funding_rates: false,
             subscribe_bars: false,
+
             subscribe_instrument: false,
             subscribe_instrument_status: false,
             subscribe_instrument_close: false,
@@ -136,6 +139,7 @@ impl DataTesterConfig {
             request_quotes: false,
             request_trades: false,
             request_bars: false,
+            request_book_snapshot: false,
             book_type: BookType::L2_MBP,
             book_depth: None,
             book_interval_ms: NonZeroUsize::new(1000).unwrap(),
@@ -273,6 +277,12 @@ impl DataTesterConfig {
     }
 
     #[must_use]
+    pub fn with_request_book_snapshot(mut self, request: bool) -> Self {
+        self.request_book_snapshot = request;
+        self
+    }
+
+    #[must_use]
     pub fn with_can_unsubscribe(mut self, can_unsubscribe: bool) -> Self {
         self.can_unsubscribe = can_unsubscribe;
         self
@@ -309,6 +319,7 @@ impl Default for DataTesterConfig {
             request_quotes: false,
             request_trades: false,
             request_bars: false,
+            request_book_snapshot: false,
             book_type: BookType::L2_MBP,
             book_depth: None,
             book_interval_ms: NonZeroUsize::new(1000).unwrap(),
@@ -457,6 +468,16 @@ impl DataActor for DataTester {
                 ) {
                     log::error!("Failed to request trades for {instrument_id}: {e}");
                 }
+            }
+
+            // Request order book snapshot if configured
+            if self.config.request_book_snapshot {
+                let _ = self.request_book_snapshot(
+                    instrument_id,
+                    self.config.book_depth,
+                    client_id,
+                    None,
+                );
             }
         }
 

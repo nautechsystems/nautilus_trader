@@ -164,3 +164,28 @@ impl GetTradingViewChartDataParams {
         }
     }
 }
+
+/// Query parameters for `/public/get_order_book` endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct GetOrderBookParams {
+    /// Instrument name (e.g., "BTC-PERPETUAL")
+    pub instrument_name: String,
+    /// The number of entries to return for bids and asks.
+    /// Valid values: 1, 5, 10, 20, 50, 100, 1000, 10000
+    /// Maximum: 10000
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub depth: Option<u32>,
+}
+
+impl GetOrderBookParams {
+    /// Creates parameters with required fields.
+    #[must_use]
+    pub fn new(instrument_name: String, depth: Option<u32>) -> Self {
+        Self {
+            instrument_name,
+            depth,
+        }
+    }
+}

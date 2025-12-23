@@ -29,7 +29,7 @@ use nautilus_model::{
     events::AccountState,
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
+    orderbook::OrderBook,
 };
 use nautilus_network::{
     http::{HttpClient, Method},
@@ -52,14 +52,17 @@ use crate::{
         consts::{DERIBIT_API_PATH, JSONRPC_VERSION, should_retry_error_code},
         credential::Credential,
         parse::{
-            extract_server_timestamp, parse_account_state, parse_deribit_instrument_any,
-            parse_trade_tick,
+            extract_server_timestamp, parse_account_state, parse_bars,
+            parse_deribit_instrument_any, parse_order_book, parse_trade_tick,
         },
         urls::get_http_base_url,
     },
     http::{
-        models::{DeribitTradesResponse, DeribitTradingViewChartData},
-        query::{GetLastTradesByInstrumentAndTimeParams, GetTradingViewChartDataParams},
+        models::{DeribitOrderBook, DeribitTradesResponse, DeribitTradingViewChartData},
+        query::{
+            GetLastTradesByInstrumentAndTimeParams, GetOrderBookParams,
+            GetTradingViewChartDataParams,
+        },
     },
 };
 
@@ -495,6 +498,19 @@ impl DeribitRawHttpClient {
         self.send_request("private/get_account_summaries", params, true)
             .await
     }
+
+    /// Gets order book for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_order_book(
+        &self,
+        params: GetOrderBookParams,
+    ) -> Result<DeribitJsonRpcResponse<DeribitOrderBook>, DeribitHttpError> {
+        self.send_request("public/get_order_book", params, false)
+            .await
+    }
 }
 
 /// High-level Deribit HTTP client with domain-level abstractions.
@@ -888,11 +904,79 @@ impl DeribitHttpClient {
             };
 
         let ts_init = self.generate_ts_init();
-        let bars = parse_bars(&chart_data, bar_type, price_precision, size_precision, ts_init)?;
+        let bars = parse_bars(
+            &chart_data,
+            bar_type,
+            price_precision,
+            size_precision,
+            ts_init,
+        )?;
 
         tracing::info!("Parsed {} bars for {}", bars.len(), bar_type);
 
         Ok(bars)
+    }
+
+    /// Requests a snapshot of the order book for an instrument.
+    ///
+    /// Fetches the order book from Deribit and converts it to a Nautilus [`OrderBook`].
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to fetch the order book for
+    /// * `depth` - Optional depth limit (valid values: 1, 5, 10, 20, 50, 100, 1000, 10000)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails
+    /// - Order book parsing fails
+    pub async fn request_book_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> anyhow::Result<OrderBook> {
+        // Get instrument from cache to determine precisions
+        let (price_precision, size_precision) =
+            if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
+                (instrument.price_precision(), instrument.size_precision())
+            } else {
+                // Default precisions if instrument not cached
+                tracing::warn!(
+                    "Instrument {} not in cache, using default precisions",
+                    instrument_id
+                );
+                (8u8, 8u8)
+            };
+
+        let params = GetOrderBookParams::new(instrument_id.symbol.to_string(), depth);
+        let full_response = self
+            .inner
+            .get_order_book(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let order_book_data = full_response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
+
+        let ts_init = self.generate_ts_init();
+        let book = parse_order_book(
+            &order_book_data,
+            instrument_id,
+            price_precision,
+            size_precision,
+            ts_init,
+        )?;
+
+        tracing::info!(
+            "Fetched order book for {} with {} bids and {} asks",
+            instrument_id,
+            order_book_data.bids.len(),
+            order_book_data.asks.len()
+        );
+
+        Ok(book)
     }
 
     /// Requests account state for all currencies.

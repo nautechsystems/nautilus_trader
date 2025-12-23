@@ -24,13 +24,16 @@ use nautilus_core::{
     uuid::UUID4,
 };
 use nautilus_model::{
-    data::{Bar, BarType, TradeTick},
-    enums::{AccountType, AggressorSide, AssetClass, CurrencyType, OptionKind},
+    data::{Bar, BarType, BookOrder, TradeTick},
+    enums::{
+        AccountType, AggressorSide, AssetClass, BookType, CurrencyType, OptionKind, OrderSide,
+    },
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol, TradeId, Venue},
     instruments::{
         CryptoFuture, CryptoPerpetual, CurrencyPair, OptionContract, any::InstrumentAny,
     },
+    orderbook::OrderBook,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -39,7 +42,7 @@ use crate::{
     common::consts::DERIBIT_VENUE,
     http::models::{
         DeribitAccountSummary, DeribitInstrument, DeribitInstrumentKind, DeribitOptionType,
-        DeribitPublicTrade, DeribitTradingViewChartData,
+        DeribitOrderBook, DeribitPublicTrade, DeribitTradingViewChartData,
     },
 };
 
@@ -579,6 +582,50 @@ pub fn parse_bars(
     Ok(bars)
 }
 
+/// Parses Deribit order book data into a Nautilus [`OrderBook`].
+///
+/// Converts bids and asks from the `public/get_order_book` endpoint
+/// into an L2_MBP order book.
+///
+/// # Errors
+///
+/// Returns an error if order book creation fails.
+pub fn parse_order_book(
+    order_book_data: &DeribitOrderBook,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderBook> {
+    let ts_event = UnixNanos::from((order_book_data.timestamp as u64) * NANOSECONDS_IN_MILLISECOND);
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    for (idx, [price, amount]) in order_book_data.bids.iter().enumerate() {
+        let order = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(*price, price_precision),
+            Quantity::new(*amount, size_precision),
+            idx as u64,
+        );
+        book.add(order, 0, idx as u64, ts_event);
+    }
+
+    let bids_len = order_book_data.bids.len();
+    for (idx, [price, amount]) in order_book_data.asks.iter().enumerate() {
+        let order = BookOrder::new(
+            OrderSide::Sell,
+            Price::new(*price, price_precision),
+            Quantity::new(*amount, size_precision),
+            (bids_len + idx) as u64,
+        );
+        book.add(order, 0, (bids_len + idx) as u64, ts_event);
+    }
+
+    book.ts_last = ts_init;
+
+    Ok(book)
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::instruments::Instrument;
@@ -887,6 +934,121 @@ mod tests {
         assert_eq!(
             last_bar.ts_event,
             UnixNanos::from(1766483700000_u64 * NANOSECONDS_IN_MILLISECOND)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_book() {
+        let json_data = load_test_json("http_get_order_book.json");
+        let response: DeribitJsonRpcResponse<DeribitOrderBook> =
+            serde_json::from_str(&json_data).unwrap();
+        let order_book_data = response.result.expect("Test data must have result");
+
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        let ts_init = UnixNanos::from(1766554855146274_u64 * NANOSECONDS_IN_MICROSECOND);
+
+        let book = parse_order_book(&order_book_data, instrument_id, 1, 0, ts_init)
+            .expect("Should parse order book");
+
+        // Verify book metadata
+        assert_eq!(book.instrument_id, instrument_id);
+        assert_eq!(book.book_type, BookType::L2_MBP);
+        assert_eq!(book.ts_last, ts_init);
+
+        // Verify book has both sides
+        assert!(book.has_bid(), "Book should have bids");
+        assert!(book.has_ask(), "Book should have asks");
+
+        // Verify best bid using OrderBook methods
+        assert_eq!(
+            book.best_bid_price(),
+            Some(Price::from("87002.5")),
+            "Best bid price should match"
+        );
+        assert_eq!(
+            book.best_bid_size(),
+            Some(Quantity::from("199190")),
+            "Best bid size should match"
+        );
+
+        // Verify best ask using OrderBook methods
+        assert_eq!(
+            book.best_ask_price(),
+            Some(Price::from("87003.0")),
+            "Best ask price should match"
+        );
+        assert_eq!(
+            book.best_ask_size(),
+            Some(Quantity::from("125090")),
+            "Best ask size should match"
+        );
+
+        // Verify spread (best_ask - best_bid = 87003.0 - 87002.5 = 0.5)
+        let spread = book.spread().expect("Spread should exist");
+        assert!(
+            (spread - 0.5).abs() < 0.0001,
+            "Spread should be 0.5, got {spread}"
+        );
+
+        // Verify midpoint ((87003.0 + 87002.5) / 2 = 87002.75)
+        let midpoint = book.midpoint().expect("Midpoint should exist");
+        assert!(
+            (midpoint - 87002.75).abs() < 0.0001,
+            "Midpoint should be 87002.75, got {midpoint}"
+        );
+
+        // Verify level counts match input data
+        let bid_count = book.bids(None).count();
+        let ask_count = book.asks(None).count();
+        assert_eq!(
+            bid_count,
+            order_book_data.bids.len(),
+            "Bid levels count should match input data"
+        );
+        assert_eq!(
+            ask_count,
+            order_book_data.asks.len(),
+            "Ask levels count should match input data"
+        );
+        assert_eq!(bid_count, 20, "Should have 20 bid levels");
+        assert_eq!(ask_count, 20, "Should have 20 ask levels");
+
+        // Verify depth limiting works (get top 5 levels)
+        assert_eq!(
+            book.bids(Some(5)).count(),
+            5,
+            "Should limit to 5 bid levels"
+        );
+        assert_eq!(
+            book.asks(Some(5)).count(),
+            5,
+            "Should limit to 5 ask levels"
+        );
+
+        // Verify bids_as_map and asks_as_map
+        let bids_map = book.bids_as_map(None);
+        let asks_map = book.asks_as_map(None);
+        assert_eq!(bids_map.len(), 20, "Bids map should have 20 entries");
+        assert_eq!(asks_map.len(), 20, "Asks map should have 20 entries");
+
+        // Verify specific prices exist in maps
+        assert!(
+            bids_map.contains_key(&dec!(87002.5)),
+            "Bids map should contain best bid price"
+        );
+        assert!(
+            asks_map.contains_key(&dec!(87003.0)),
+            "Asks map should contain best ask price"
+        );
+
+        // Verify worst levels exist
+        assert!(
+            bids_map.contains_key(&dec!(86980.0)),
+            "Bids map should contain worst bid price"
+        );
+        assert!(
+            asks_map.contains_key(&dec!(87031.5)),
+            "Asks map should contain worst ask price"
         );
     }
 }
