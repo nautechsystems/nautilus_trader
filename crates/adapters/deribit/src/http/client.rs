@@ -717,13 +717,11 @@ impl DeribitHttpClient {
             if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
                 (instrument.price_precision(), instrument.size_precision())
             } else {
-                // Default precisions if instrument not cached
-                // This is a fallback; ideally the instrument should be cached first
                 tracing::warn!(
-                    "Instrument {} not in cache, using default precisions",
+                    "Instrument {} not in cache, skipping trades request",
                     instrument_id
                 );
-                (8u8, 8u8)
+                anyhow::bail!("Instrument {} not in cache", instrument_id);
             };
 
         // Convert timestamps to milliseconds
