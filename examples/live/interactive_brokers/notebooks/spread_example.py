@@ -285,11 +285,11 @@ class SpreadTestStrategy(Strategy):
 
 
 # %%
-leg1_id = InstrumentId.from_str("ESZ5.XCME")
-leg2_id = InstrumentId.from_str("ESH6.XCME")
+# leg1_id = InstrumentId.from_str("ESH6.XCME")
+# leg2_id = InstrumentId.from_str("ESM6.XCME")
 
-# leg1_id = InstrumentId.from_str("ESZ5 P6800.XCME")
-# leg2_id = InstrumentId.from_str("ESZ5 P6790.XCME")
+leg1_id = InstrumentId.from_str("ESH6 P6800.XCME")
+leg2_id = InstrumentId.from_str("ESH6 P6775.XCME")
 
 spread_id = new_generic_spread_id(
     [
