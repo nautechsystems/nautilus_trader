@@ -1500,13 +1500,24 @@ cdef class Actor(Component):
         if pyo3_conversion:
             self._pyo3_conversion_types.add(OrderBookDepth10)
 
-        self._msgbus.subscribe(
-            topic=self._topic_cache.get_depth_topic(instrument_id),
-            handler=self.handle_order_book_depth,
-        )
-
         params = params or {}
         params["update_catalog"] = update_catalog
+
+        # Check if multiple instrument_ids are provided in params for bulk subscription
+        instrument_ids_param = params.get("instrument_ids")
+        if instrument_ids_param and isinstance(instrument_ids_param, list):
+            # Bulk subscription: subscribe to message bus topics for all instruments
+            for inst_id in instrument_ids_param:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_depth_topic(inst_id),
+                    handler=self.handle_order_book_depth,
+                )
+        else:
+            # Single subscription
+            self._msgbus.subscribe(
+                topic=self._topic_cache.get_depth_topic(instrument_id),
+                handler=self.handle_order_book_depth,
+            )
 
         cdef SubscribeOrderBook command = SubscribeOrderBook(
             instrument_id=instrument_id,
@@ -1631,13 +1642,24 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.subscribe(
-            topic=self._topic_cache.get_quotes_topic(instrument_id),
-            handler=self.handle_quote_tick,
-        )
-
         params = params or {}
         params["update_catalog"] = update_catalog
+
+        # Check if multiple instrument_ids are provided in params for bulk subscription
+        instrument_ids_param = params.get("instrument_ids")
+        if instrument_ids_param and isinstance(instrument_ids_param, list):
+            # Bulk subscription: subscribe to message bus topics for all instruments
+            for inst_id in instrument_ids_param:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_quotes_topic(inst_id),
+                    handler=self.handle_quote_tick,
+                )
+        else:
+            # Single subscription
+            self._msgbus.subscribe(
+                topic=self._topic_cache.get_quotes_topic(instrument_id),
+                handler=self.handle_quote_tick,
+            )
 
         cdef SubscribeQuoteTicks command = SubscribeQuoteTicks(
             instrument_id=instrument_id,
@@ -1679,13 +1701,24 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.subscribe(
-            topic=self._topic_cache.get_trades_topic(instrument_id),
-            handler=self.handle_trade_tick,
-        )
-
         params = params or {}
         params["update_catalog"] = update_catalog
+
+        # Check if multiple instrument_ids are provided in params for bulk subscription
+        instrument_ids_param = params.get("instrument_ids")
+        if instrument_ids_param and isinstance(instrument_ids_param, list):
+            # Bulk subscription: subscribe to message bus topics for all instruments
+            for inst_id in instrument_ids_param:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_trades_topic(inst_id),
+                    handler=self.handle_trade_tick,
+                )
+        else:
+            # Single subscription
+            self._msgbus.subscribe(
+                topic=self._topic_cache.get_trades_topic(instrument_id),
+                handler=self.handle_trade_tick,
+            )
 
         cdef SubscribeTradeTicks command = SubscribeTradeTicks(
             instrument_id=instrument_id,
@@ -1847,13 +1880,24 @@ cdef class Actor(Component):
         Condition.not_none(bar_type, "bar_type")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.subscribe(
-            topic=self._topic_cache.get_bars_topic(bar_type.standard()),
-            handler=self.handle_bar,
-        )
-
         params = params or {}
         params["update_catalog"] = update_catalog
+
+        # Check if multiple bar_types are provided in params for bulk subscription
+        bar_types_param = params.get("bar_types")
+        if bar_types_param and isinstance(bar_types_param, list):
+            # Bulk subscription: subscribe to message bus topics for all bar types
+            for bt in bar_types_param:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_bars_topic(bt.standard()),
+                    handler=self.handle_bar,
+                )
+        else:
+            # Single subscription
+            self._msgbus.subscribe(
+                topic=self._topic_cache.get_bars_topic(bar_type.standard()),
+                handler=self.handle_bar,
+            )
 
         cdef SubscribeBars command = SubscribeBars(
             bar_type=bar_type,
