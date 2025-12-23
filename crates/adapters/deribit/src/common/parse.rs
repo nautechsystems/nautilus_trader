@@ -18,9 +18,13 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{
+    datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND},
+    nanos::UnixNanos,
+    uuid::UUID4,
+};
 use nautilus_model::{
-    data::TradeTick,
+    data::{Bar, BarType, TradeTick},
     enums::{AccountType, AggressorSide, AssetClass, CurrencyType, OptionKind},
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol, TradeId, Venue},
@@ -35,7 +39,7 @@ use crate::{
     common::consts::DERIBIT_VENUE,
     http::models::{
         DeribitAccountSummary, DeribitInstrument, DeribitInstrumentKind, DeribitOptionType,
-        DeribitPublicTrade,
+        DeribitPublicTrade, DeribitTradingViewChartData,
     },
 };
 
@@ -500,7 +504,7 @@ pub fn parse_trade_tick(
     };
     let price = Price::new(trade.price, price_precision);
     let size = Quantity::new(trade.amount, size_precision);
-    let ts_event = UnixNanos::from((trade.timestamp as u64) * 1_000_000);
+    let ts_event = UnixNanos::from((trade.timestamp as u64) * NANOSECONDS_IN_MILLISECOND);
     let trade_id = TradeId::new(&trade.trade_id);
 
     Ok(TradeTick::new(
@@ -512,6 +516,67 @@ pub fn parse_trade_tick(
         ts_event,
         ts_init,
     ))
+}
+
+/// Parses Deribit TradingView chart data into Nautilus [`Bar`]s.
+///
+/// Converts OHLCV arrays from the `public/get_tradingview_chart_data` endpoint
+/// into a vector of [`Bar`] objects.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The status is not "ok"
+/// - Array lengths are inconsistent
+/// - No data points are present
+pub fn parse_bars(
+    chart_data: &DeribitTradingViewChartData,
+    bar_type: BarType,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Vec<Bar>> {
+    // Check status
+    if chart_data.status != "ok" {
+        anyhow::bail!(
+            "Chart data status is '{}', expected 'ok'",
+            chart_data.status
+        );
+    }
+
+    let num_bars = chart_data.ticks.len();
+
+    // Verify array lengths match
+    anyhow::ensure!(
+        chart_data.open.len() == num_bars
+            && chart_data.high.len() == num_bars
+            && chart_data.low.len() == num_bars
+            && chart_data.close.len() == num_bars
+            && chart_data.volume.len() == num_bars,
+        "Inconsistent array lengths in chart data"
+    );
+
+    if num_bars == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut bars = Vec::with_capacity(num_bars);
+
+    for i in 0..num_bars {
+        let open = Price::new(chart_data.open[i], price_precision);
+        let high = Price::new(chart_data.high[i], price_precision);
+        let low = Price::new(chart_data.low[i], price_precision);
+        let close = Price::new(chart_data.close[i], price_precision);
+        let volume = Quantity::new(chart_data.volume[i], size_precision);
+
+        // Convert timestamp from milliseconds to nanoseconds
+        let ts_event = UnixNanos::from((chart_data.ticks[i] as u64) * NANOSECONDS_IN_MILLISECOND);
+
+        let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init);
+        bars.push(bar);
+    }
+
+    Ok(bars)
 }
 
 #[cfg(test)]
@@ -782,5 +847,46 @@ mod tests {
         assert_eq!(trade.size, Quantity::from("106"));
         assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
         assert_eq!(trade.trade_id, TradeId::new("ETH-284830854"));
+    }
+
+    #[rstest]
+    fn test_parse_bars() {
+        let json_data = load_test_json("http_get_tradingview_chart_data.json");
+        let response: DeribitJsonRpcResponse<DeribitTradingViewChartData> =
+            serde_json::from_str(&json_data).unwrap();
+        let chart_data = response.result.expect("Test data must have result");
+
+        let bar_type = BarType::from("BTC-PERPETUAL.DERIBIT-1-MINUTE-LAST-EXTERNAL");
+        let ts_init = UnixNanos::from(1766487086146245_u64 * NANOSECONDS_IN_MICROSECOND);
+
+        let bars = parse_bars(&chart_data, bar_type, 1, 8, ts_init).expect("Should parse bars");
+
+        assert_eq!(bars.len(), 5, "Should parse 5 bars");
+
+        // Verify first bar
+        let first_bar = &bars[0];
+        assert_eq!(first_bar.bar_type, bar_type);
+        assert_eq!(first_bar.open, Price::from("87451.0"));
+        assert_eq!(first_bar.high, Price::from("87456.5"));
+        assert_eq!(first_bar.low, Price::from("87451.0"));
+        assert_eq!(first_bar.close, Price::from("87456.5"));
+        assert_eq!(first_bar.volume, Quantity::from("2.94375216"));
+        assert_eq!(
+            first_bar.ts_event,
+            UnixNanos::from(1766483460000_u64 * NANOSECONDS_IN_MILLISECOND)
+        );
+        assert_eq!(first_bar.ts_init, ts_init);
+
+        // Verify last bar
+        let last_bar = &bars[4];
+        assert_eq!(last_bar.open, Price::from("87456.0"));
+        assert_eq!(last_bar.high, Price::from("87456.5"));
+        assert_eq!(last_bar.low, Price::from("87456.0"));
+        assert_eq!(last_bar.close, Price::from("87456.0"));
+        assert_eq!(last_bar.volume, Quantity::from("0.1018798"));
+        assert_eq!(
+            last_bar.ts_event,
+            UnixNanos::from(1766483700000_u64 * NANOSECONDS_IN_MILLISECOND)
+        );
     }
 }

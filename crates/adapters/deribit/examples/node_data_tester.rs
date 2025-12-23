@@ -21,7 +21,10 @@ use nautilus_deribit::{
     http::models::DeribitInstrumentKind,
 };
 use nautilus_live::node::LiveNode;
-use nautilus_model::identifiers::{ClientId, InstrumentId, TraderId};
+use nautilus_model::{
+    data::bar::BarType,
+    identifiers::{ClientId, InstrumentId, TraderId},
+};
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 #[tokio::main]
@@ -50,12 +53,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)
         .add_data_client(None, Box::new(client_factory), Box::new(deribit_config))?
+        .with_delay_post_stop_secs(5)
         .build()?;
 
+    let bar_types = vec![
+        BarType::from("BTC-PERPETUAL.DERIBIT-1-MINUTE-LAST-EXTERNAL"),
+        BarType::from("ETH-PERPETUAL.DERIBIT-1-MINUTE-LAST-EXTERNAL"),
+    ];
+
     let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_quotes(true)
-        .with_subscribe_trades(true)
-        .with_request_instruments(true);
+        .with_bar_types(bar_types)
+        .with_request_bars(true);
+    // .with_subscribe_quotes(true)
+    // .with_subscribe_trades(true)
+    // .with_request_instruments(true);
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

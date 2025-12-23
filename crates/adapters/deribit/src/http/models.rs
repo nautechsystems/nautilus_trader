@@ -514,3 +514,28 @@ pub struct DeribitTradesResponse {
     /// Array of trade objects.
     pub trades: Vec<DeribitPublicTrade>,
 }
+
+/// Response from `public/get_tradingview_chart_data` endpoint.
+///
+/// Contains OHLCV data in array format where each array element corresponds
+/// to a single candle at the index in the `ticks` array.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeribitTradingViewChartData {
+    /// List of prices at close (one per candle)
+    pub close: Vec<f64>,
+    /// List of cost bars (volume in quote currency, one per candle)
+    #[serde(default)]
+    pub cost: Vec<f64>,
+    /// List of highest price levels (one per candle)
+    pub high: Vec<f64>,
+    /// List of lowest price levels (one per candle)
+    pub low: Vec<f64>,
+    /// List of prices at open (one per candle)
+    pub open: Vec<f64>,
+    /// Status of the query: "ok" or "no_data"
+    pub status: String,
+    /// Values of the time axis given in milliseconds since UNIX epoch
+    pub ticks: Vec<i64>,
+    /// List of volume bars (in base currency, one per candle)
+    pub volume: Vec<f64>,
+}

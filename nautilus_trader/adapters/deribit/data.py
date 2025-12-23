@@ -28,6 +28,7 @@ from nautilus_trader.common.secure import mask_api_key
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import DeribitCurrency
+from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestTradeTicks
@@ -40,6 +41,7 @@ from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOUT
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
@@ -326,6 +328,32 @@ class DeribitDataClient(LiveMarketDataClient):
         self._handle_trade_ticks(
             request.instrument_id,
             trades,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def _request_bars(self, request: RequestBars) -> None:
+        bar_type = request.bar_type
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(bar_type))
+
+        try:
+            pyo3_bars = await self._http_client.request_bars(
+                bar_type=pyo3_bar_type,
+                start=ensure_pydatetime_utc(request.start),
+                end=ensure_pydatetime_utc(request.end),
+                limit=request.limit or None,
+            )
+        except Exception as e:
+            self._log.exception(f"Failed to request bars for {bar_type}", e)
+            return
+
+        bars = Bar.from_pyo3_list(pyo3_bars)
+
+        self._handle_bars(
+            bar_type,
+            bars,
             request.id,
             request.start,
             request.end,

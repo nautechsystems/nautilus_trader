@@ -29,7 +29,7 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
+            BarsResponse, InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
             RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
             SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeFundingRates,
             SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments, SubscribeMarkPrices,
@@ -191,12 +191,13 @@ impl DeribitDataClient {
                 Self::send_data(sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
             }
             NautilusWsMessage::Instrument(instrument) => {
+                let instrument_any = *instrument;
                 let mut guard = instruments.write().expect("instrument cache lock poisoned");
-                let instrument_id = instrument.id();
-                guard.insert(instrument_id, *instrument.clone());
+                let instrument_id = instrument_any.id();
+                guard.insert(instrument_id, instrument_any.clone());
                 drop(guard);
 
-                if let Err(e) = sender.send(DataEvent::Instrument(*instrument)) {
+                if let Err(e) = sender.send(DataEvent::Instrument(instrument_any)) {
                     tracing::warn!("Failed to send instrument update: {e}");
                 }
             }
@@ -357,10 +358,10 @@ impl DataClient for DeribitDataClient {
         self.cancellation_token.cancel();
 
         // Close WebSocket connection
-        if let Some(ws) = self.ws_client.as_ref() {
-            if let Err(e) = ws.close().await {
-                tracing::warn!("Error while closing Deribit websocket: {e:?}");
-            }
+        if let Some(ws) = self.ws_client.as_ref()
+            && let Err(e) = ws.close().await
+        {
+            tracing::warn!("Error while closing Deribit websocket: {e:?}");
         }
 
         // Wait for all tasks to complete
@@ -694,7 +695,45 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn request_bars(&self, _request: &RequestBars) -> anyhow::Result<()> {
-        todo!("Implement request_bars");
+    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+        let http_client = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let bar_type = request.bar_type;
+        let start = request.start;
+        let end = request.end;
+        let limit = request.limit.map(|n| n.get() as u32);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params.clone();
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+
+        get_runtime().spawn(async move {
+            match http_client
+                .request_bars(bar_type, start, end, limit)
+                .await
+                .context("failed to request bars from Deribit")
+            {
+                Ok(bars) => {
+                    let response = DataResponse::Bars(BarsResponse::new(
+                        request_id,
+                        client_id,
+                        bar_type,
+                        bars,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send bars response: {e}");
+                    }
+                }
+                Err(e) => tracing::error!("Bars request failed for {}: {:?}", bar_type, e),
+            }
+        });
+
+        Ok(())
     }
 }

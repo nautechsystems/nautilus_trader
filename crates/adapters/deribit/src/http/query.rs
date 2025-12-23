@@ -132,3 +132,35 @@ impl GetLastTradesByInstrumentAndTimeParams {
         }
     }
 }
+
+/// Query parameters for `/public/get_tradingview_chart_data` endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GetTradingViewChartDataParams {
+    /// Instrument name (e.g., "BTC-PERPETUAL")
+    pub instrument_name: String,
+    /// The earliest timestamp to return result from (milliseconds since UNIX epoch)
+    pub start_timestamp: i64,
+    /// The most recent timestamp to return result from (milliseconds since UNIX epoch)
+    pub end_timestamp: i64,
+    /// Chart bars resolution given in full minutes or keyword "1D"
+    /// Supported resolutions: 1, 3, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1D
+    pub resolution: String,
+}
+
+impl GetTradingViewChartDataParams {
+    /// Creates new parameters for chart data request.
+    #[must_use]
+    pub fn new(
+        instrument_name: String,
+        start_timestamp: i64,
+        end_timestamp: i64,
+        resolution: String,
+    ) -> Self {
+        Self {
+            instrument_name,
+            start_timestamp,
+            end_timestamp,
+            resolution,
+        }
+    }
+}

@@ -41,6 +41,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.test_kit.strategies.tester_data import DataTester
@@ -63,6 +64,11 @@ instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = (
 # Define instruments to subscribe to
 # BTC-PERPETUAL is a popular perpetual futures contract
 perpetual_id = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
+
+# Define bar types for historical data requests
+bar_types = [
+    BarType.from_str(f"BTC-PERPETUAL.{DERIBIT}-1-MINUTE-LAST-EXTERNAL"),
+]
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -97,10 +103,8 @@ node = TradingNode(config=config_node)
 # Configure and initialize the tester
 config_tester = DataTesterConfig(
     instrument_ids=[perpetual_id],
-    subscribe_quotes=True,
-    subscribe_trades=True,
-    subscribe_book_deltas=True,
-    # subscribe_book_deltas=True,
+    request_bars=True,
+    bar_types=bar_types,
 )
 tester = DataTester(config=config_tester)
 

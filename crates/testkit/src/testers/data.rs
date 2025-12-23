@@ -86,8 +86,7 @@ pub struct DataTesterConfig {
     // TODO: Support request_trades when historical data requests are available
     /// Whether to request historical trades (not yet implemented).
     pub request_trades: bool,
-    // TODO: Support request_bars when historical data requests are available
-    /// Whether to request historical bars (not yet implemented).
+    /// Whether to request historical bars.
     pub request_bars: bool,
     // TODO: Support requests_start_delta when we implement historical data requests
     /// Book type for order book subscriptions.
@@ -264,6 +263,12 @@ impl DataTesterConfig {
     #[must_use]
     pub fn with_request_trades(mut self, request: bool) -> Self {
         self.request_trades = request;
+        self
+    }
+
+    #[must_use]
+    pub fn with_request_bars(mut self, request: bool) -> Self {
+        self.request_bars = request;
         self
     }
 
@@ -462,10 +467,20 @@ impl DataActor for DataTester {
                     self.subscribe_bars(bar_type, client_id, None);
                 }
 
-                // TODO: Implement historical data requests
-                // if self.config.request_bars {
-                //     self.request_bars(...);
-                // }
+                // Request historical bars (default to last 1 hour)
+                if self.config.request_bars {
+                    let start = self.clock().utc_now() - ChronoDuration::hours(1);
+                    if let Err(e) = self.request_bars(
+                        bar_type,
+                        Some(start),
+                        None, // end: None means "now"
+                        None, // limit: None means use API default
+                        client_id,
+                        None, // params
+                    ) {
+                        log::error!("Failed to request bars for {bar_type}: {e}");
+                    }
+                }
             }
         }
 
@@ -667,6 +682,27 @@ impl DataActor for DataTester {
                 log_info!(
                     "  ... and {} more trades",
                     trades.len() - 5,
+                    color = LogColor::Cyan
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
+        if self.config.log_data {
+            log_info!(
+                "Received {} historical bars",
+                bars.len(),
+                color = LogColor::Cyan
+            );
+            for bar in bars.iter().take(5) {
+                log_info!("  {bar:?}", color = LogColor::Cyan);
+            }
+            if bars.len() > 5 {
+                log_info!(
+                    "  ... and {} more bars",
+                    bars.len() - 5,
                     color = LogColor::Cyan
                 );
             }

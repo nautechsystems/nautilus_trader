@@ -29,7 +29,10 @@ use nautilus_deribit::http::{
     client::DeribitRawHttpClient,
     error::DeribitHttpError,
     models::{DeribitCurrency, DeribitInstrumentKind},
-    query::{GetInstrumentParams, GetInstrumentsParams, GetLastTradesByInstrumentAndTimeParams},
+    query::{
+        GetInstrumentParams, GetInstrumentsParams, GetLastTradesByInstrumentAndTimeParams,
+        GetTradingViewChartDataParams,
+    },
 };
 use nautilus_network::http::HttpClient;
 use serde_json::{Value, json};
@@ -111,6 +114,7 @@ async fn handle_jsonrpc_request(
         "public/get_instrument" => handle_get_instrument(id, params).await,
         "public/get_instruments" => handle_get_instruments(id, params).await,
         "public/get_last_trades_by_instrument_and_time" => handle_get_last_trades(id, params).await,
+        "public/get_tradingview_chart_data" => handle_get_tradingview_chart_data(id, params).await,
         _ => handle_method_not_found(id).await,
     }
 }
@@ -254,6 +258,65 @@ async fn handle_get_last_trades(id: u64, params: Option<Value>) -> axum::respons
             "result": {
                 "has_more": false,
                 "trades": []
+            },
+            "testnet": false
+        }))
+        .into_response(),
+    }
+}
+
+async fn handle_get_tradingview_chart_data(
+    id: u64,
+    params: Option<Value>,
+) -> axum::response::Response {
+    let instrument_name = params
+        .as_ref()
+        .and_then(|p| p.get("instrument_name"))
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string());
+
+    match instrument_name.as_deref() {
+        Some("BTC-PERPETUAL") => {
+            let mut data = load_test_data("http_get_tradingview_chart_data.json");
+            data["id"] = json!(id);
+            Json(data).into_response()
+        }
+        Some("INVALID") => Json(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32602,
+                "message": "Invalid params",
+                "data": {
+                    "param": "instrument_name",
+                    "reason": "wrong format"
+                }
+            },
+            "testnet": false
+        }))
+        .into_response(),
+        Some("NONEXISTENT") => Json(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": 13020,
+                "message": "instrument_not_found"
+            },
+            "testnet": false
+        }))
+        .into_response(),
+        _ => Json(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "status": "no_data",
+                "ticks": [],
+                "open": [],
+                "high": [],
+                "low": [],
+                "close": [],
+                "volume": [],
+                "cost": []
             },
             "testnet": false
         }))
@@ -656,6 +719,133 @@ async fn test_get_last_trades_instrument_not_found() {
         None,
     );
     let result = client.get_last_trades_by_instrument_and_time(params).await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+
+    match err {
+        DeribitHttpError::DeribitError {
+            error_code,
+            message,
+        } => {
+            assert_eq!(error_code, 13020);
+            assert!(message.contains("instrument_not_found"));
+        }
+        other => panic!("Expected DeribitError with code 13020, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_get_tradingview_chart_data_success() {
+    let state = TestServerState::default();
+    let addr = start_test_server(state.clone()).await;
+    wait_for_server(addr).await;
+
+    let base_url = format!("http://{addr}/api/v2");
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
+
+    let params = GetTradingViewChartDataParams::new(
+        "BTC-PERPETUAL".to_string(),
+        1766483460000,   // start_timestamp
+        1766483700000,   // end_timestamp
+        "1".to_string(), // resolution (1 minute)
+    );
+    let result = client.get_tradingview_chart_data(params).await;
+
+    assert!(result.is_ok(), "Request should succeed");
+    let response = result.unwrap();
+    let chart_data = response.result.expect("Response should have result");
+
+    assert_eq!(chart_data.status, "ok");
+    assert_eq!(chart_data.ticks.len(), 5, "Should return 5 data points");
+    assert_eq!(chart_data.open.len(), 5);
+    assert_eq!(chart_data.high.len(), 5);
+    assert_eq!(chart_data.low.len(), 5);
+    assert_eq!(chart_data.close.len(), 5);
+    assert_eq!(chart_data.volume.len(), 5);
+
+    // Verify first bar data
+    assert_eq!(chart_data.ticks[0], 1766483460000);
+    assert_eq!(chart_data.open[0], 87451.0);
+    assert_eq!(chart_data.high[0], 87456.5);
+    assert_eq!(chart_data.low[0], 87451.0);
+    assert_eq!(chart_data.close[0], 87456.5);
+    assert_eq!(chart_data.volume[0], 2.94375216);
+
+    // Verify last bar data
+    assert_eq!(chart_data.ticks[4], 1766483700000);
+    assert_eq!(chart_data.open[4], 87456.0);
+    assert_eq!(chart_data.high[4], 87456.5);
+    assert_eq!(chart_data.low[4], 87456.0);
+    assert_eq!(chart_data.close[4], 87456.0);
+    assert_eq!(chart_data.volume[4], 0.1018798);
+
+    // Verify request was tracked
+    assert_eq!(
+        *state
+            .request_counts
+            .get("public/get_tradingview_chart_data")
+            .expect("Request count should be tracked"),
+        1
+    );
+
+    // Verify params were captured correctly
+    let captured_params = state
+        .last_request_params
+        .get("public/get_tradingview_chart_data")
+        .expect("Params should be captured");
+    assert_eq!(
+        captured_params.get("instrument_name").unwrap().as_str(),
+        Some("BTC-PERPETUAL")
+    );
+    assert_eq!(
+        captured_params.get("start_timestamp").unwrap().as_i64(),
+        Some(1766483460000)
+    );
+    assert_eq!(
+        captured_params.get("end_timestamp").unwrap().as_i64(),
+        Some(1766483700000)
+    );
+    assert_eq!(
+        captured_params.get("resolution").unwrap().as_str(),
+        Some("1")
+    );
+}
+
+#[tokio::test]
+async fn test_get_tradingview_chart_data_instrument_not_found() {
+    let state = TestServerState::default();
+    let addr = start_test_server(state.clone()).await;
+    wait_for_server(addr).await;
+
+    let base_url = format!("http://{addr}/api/v2");
+    let client = DeribitRawHttpClient::new(
+        Some(base_url),
+        false,   // is_testnet
+        Some(5), // timeout_secs
+        None,    // max_retries
+        None,    // retry_delay_ms
+        None,    // retry_delay_max_ms
+        None,    // proxy_url
+    )
+    .unwrap();
+
+    let params = GetTradingViewChartDataParams::new(
+        "NONEXISTENT".to_string(),
+        1766483460000,
+        1766483700000,
+        "1".to_string(),
+    );
+    let result = client.get_tradingview_chart_data(params).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
