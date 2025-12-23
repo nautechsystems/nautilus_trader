@@ -30,6 +30,7 @@ from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.adapters.databento.types import DatabentoImbalance
 from nautilus_trader.adapters.databento.types import DatabentoStatistics
+from nautilus_trader.adapters.databento.types import DatabentoSubscriptionAck
 from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -1613,6 +1614,11 @@ class DatabentoDataClient(LiveMarketDataClient):
         self,
         record: object,
     ) -> None:
+        # Handle subscription acknowledgements
+        if isinstance(record, DatabentoSubscriptionAck):
+            self._handle_subscription_ack(record)
+            return
+
         # TODO: Improve the efficiency of this
         if isinstance(record, nautilus_pyo3.InstrumentStatus):
             data = InstrumentStatus.from_pyo3(record)
@@ -1626,6 +1632,9 @@ class DatabentoDataClient(LiveMarketDataClient):
             raise RuntimeError(f"Cannot handle pyo3 record `{record!r}`")
 
         self._handle_data(data)
+
+    def _handle_subscription_ack(self, ack: DatabentoSubscriptionAck) -> None:
+        self._log.info(f"Subscription acknowledged: {ack.message}", LogColor.GREEN)
 
     def _handle_msg(
         self,
