@@ -380,6 +380,32 @@ class DatabentoDataClient(LiveMarketDataClient):
                 "Canceled task 'ensure_subscribed_for_instrument'",
             )
 
+    async def _ensure_subscribed_for_instruments(
+        self,
+        dataset: Dataset,
+        instrument_ids: list[InstrumentId],
+    ) -> None:
+        """Ensure all instruments are subscribed for definitions in a single batch."""
+        try:
+            subscribed_instruments = self._instrument_ids[dataset]
+
+            # Filter to only new instruments
+            new_instrument_ids = [
+                iid for iid in instrument_ids if iid not in subscribed_instruments
+            ]
+
+            if not new_instrument_ids:
+                return
+
+            # Mark all as subscribed
+            for instrument_id in new_instrument_ids:
+                self._instrument_ids[dataset].add(instrument_id)
+
+            # Subscribe in batch
+            await self._subscribe_instrument_ids(dataset, new_instrument_ids)
+        except asyncio.CancelledError:
+            self._log.warning("Canceled task 'ensure_subscribed_for_instruments'")
+
     async def _get_dataset_range(
         self,
         dataset: Dataset,
@@ -727,9 +753,8 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset = datasets.pop()
 
-            # Ensure all instruments are subscribed
-            for instrument_id in instrument_ids:
-                await self._ensure_subscribed_for_instrument(instrument_id)
+            # Ensure all instruments are subscribed for definitions (batched)
+            await self._ensure_subscribed_for_instruments(dataset, instrument_ids)
 
             # Subscribe
             live_client = self._get_live_client(dataset)
@@ -787,9 +812,8 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset = datasets.pop()
 
-            # Ensure all instruments are subscribed
-            for instrument_id in instrument_ids:
-                await self._ensure_subscribed_for_instrument(instrument_id)
+            # Ensure all instruments are subscribed for definitions (batched)
+            await self._ensure_subscribed_for_instruments(dataset, instrument_ids)
 
             self._log.info(
                 f"Subscribing to quotes (schema: {schema}) from dataset {dataset} for {len(instrument_ids)} instrument ids:",
@@ -862,9 +886,8 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             dataset = datasets.pop()
 
-            # Ensure all instruments are subscribed
-            for instrument_id in instrument_ids:
-                await self._ensure_subscribed_for_instrument(instrument_id)
+            # Ensure all instruments are subscribed for definitions (batched)
+            await self._ensure_subscribed_for_instruments(dataset, instrument_ids)
 
             # Subscribe
             live_client = self._get_live_client(dataset)
