@@ -39,6 +39,8 @@ use crate::{
     types::DatabentoPublisher,
 };
 
+use super::types::DatabentoSubscriptionAck;
+
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
@@ -98,6 +100,11 @@ impl DatabentoLiveClient {
                 }),
                 LiveMessage::Statistics(data) => Python::attach(|py| {
                     let py_obj = data.into_py_any_unwrap(py);
+                    call_python(py, &callback_pyo3, py_obj);
+                }),
+                LiveMessage::SubscriptionAck(ack) => Python::attach(|py| {
+                    let py_obj: DatabentoSubscriptionAck = ack.into();
+                    let py_obj = py_obj.into_py_any_unwrap(py);
                     call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Close => {

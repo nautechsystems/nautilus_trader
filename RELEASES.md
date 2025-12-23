@@ -123,6 +123,7 @@ This release adds support for Python 3.14 with the following limitations:
 - Added BitMEX submit broadcaster
 - Added Bybit start/end time filtering for order status reports (#3209), thanks @sunlei
 - Added BybitRawHttpClient Python bindings (#3252), thanks @sunlei
+- Added Databento subscription acknowledgement handling and logging
 - Added non-mutating swap quote simulation for Pool tickmap profiling (#3123), thanks @filipmacek
 - Added ERC20 token balance tracking to BlockchainExecutionClient (#3224), thanks @filipmacek
 - Added DeFi pool discovery service with full Uniswap(V2/V3/V4) support (#3255), thanks @filipmacek

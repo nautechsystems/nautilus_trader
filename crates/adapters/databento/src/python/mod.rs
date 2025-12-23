@@ -46,5 +46,7 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[cfg(feature = "live")]
     m.add_class::<live::DatabentoLiveClient>()?;
+    #[cfg(feature = "live")]
+    m.add_class::<types::DatabentoSubscriptionAck>()?;
     Ok(())
 }
