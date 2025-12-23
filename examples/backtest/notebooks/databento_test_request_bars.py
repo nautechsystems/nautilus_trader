@@ -259,16 +259,14 @@ class TestHistoricalAggStrategy(Strategy):
     def on_historical_data(self, data):
         if type(data) is Bar:
             self.user_log(
-                f"historical bar ts_init = {unix_nanos_to_iso8601(data.ts_init)}, {data.ts_init}",
+                f"historical bar: {data}, ts_init = {unix_nanos_to_iso8601(data.ts_init)}",
             )
-            self.user_log(data)
 
             # self.user_log(f"{self.external_sma.value=}, {self.external_sma.initialized=}")
             # self.user_log(f"{self.composite_sma.value=}, {self.composite_sma.initialized=}")
 
     def on_bar(self, bar):
-        self.user_log(f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, {bar.ts_init}")
-        self.user_log(bar)
+        self.user_log(f"bar: {bar}, ts_init = {unix_nanos_to_iso8601(bar.ts_init)}")
 
         # self.user_log(f"{self.external_sma.value=}, {self.external_sma.initialized=}")
         # self.user_log(f"{self.composite_sma.value=}, {self.composite_sma.initialized=}")

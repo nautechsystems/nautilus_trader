@@ -113,6 +113,7 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, UUID4] _parent_long_request_id
     cdef readonly dict[UUID4, UUID4] _parent_join_request_id
     cdef readonly dict[UUID4, UUID4] _parent_request_id
+    cdef readonly bint _disable_historical_cache
 
     cdef TopicCache _topic_cache
 
@@ -297,7 +298,7 @@ cdef class DataEngine(Component):
 
     cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command)
     cpdef void _subscribe_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command)
-    cpdef void _create_spread_quote_aggregator(self, InstrumentId spread_instrument_id, dict params, bint historical = *, UUID4 request_id = *)
+    cpdef void _create_spread_quote_aggregator(self, InstrumentId spread_instrument_id, dict params, UUID4 request_id = *)
     cpdef void _setup_spread_quote_aggregator(self, InstrumentId spread_instrument_id, bint historical = *, UUID4 request_id = *)
     cpdef void _handle_spread_quote(self, Data quote)
     cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command)
