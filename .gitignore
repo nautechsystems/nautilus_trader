@@ -81,6 +81,10 @@ env/
 PERF.JSON
 output.json
 
+# Devenv
+.devenv/
+.devenv.flake.nix
+
 # AI assistants and tools
 .cursorignore
 .mcp.json
