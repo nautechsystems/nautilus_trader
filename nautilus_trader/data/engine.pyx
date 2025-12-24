@@ -1454,11 +1454,25 @@ cdef class DataEngine(Component):
         if isinstance(request, RequestQuoteTicks) and not request.params.get("request_actual_quotes", False):
             instrument = self._cache.instrument(request.instrument_id)
             if instrument and instrument.is_spread() and len(instrument.legs()) > 1:
-                self._handle_spread_quote_tick_request(request)
-                return
+                if self._should_request_spread_quote_ticks(request):
+                    self._handle_spread_quote_tick_request(request)
+                    return
+                else:
+                    self._log.error(f"An aggregator for {request.instrument_id} is already running. "
+                                    f"Either wait for a request to complete or unsubscribe from a live subscription. "
+                                    f"Aborting request {request.id}.")
+                    self._requests.pop(request.id, None)
+                    return
 
         if request.params.get("bar_types"):
-            self._init_historical_aggregators(request)
+            if self._should_request_aggregated_bars(request):
+                self._init_historical_aggregators(request)
+            else:
+                self._log.error(f"One of the aggregators in {request.params.get('bar_types')} is already running. "
+                                f"Either wait for a request to complete or unsubscribe from a live subscription. "
+                                f"Aborting request {request.id}.")
+                self._requests.pop(request.id, None)
+                return
 
         # Long join requests need to be processed as join requests first before the long request starts
         if ("time_range_generator" in request.params
@@ -2574,6 +2588,20 @@ cdef class DataEngine(Component):
 
     # -- INTERNAL - Bar Aggregators -------------------------------------------------------------------
 
+    cpdef bint _should_request_aggregated_bars(self, RequestData request):
+        # Check if any aggregator is running, meaning a request using one is already ongoing, or
+        # a live subscription is ongoing
+        update_subscriptions = request.params.get("update_subscriptions", False)
+        used_request_id = request.id if not update_subscriptions else None
+
+        bar_types = request.params.get("bar_types", ())
+        for bar_type in bar_types:
+            key = self._get_bar_aggregator_key(bar_type, used_request_id)
+            if key in self._bar_aggregators and self._bar_aggregators[key].is_running:
+                return False
+
+        return True
+
     cpdef void _init_historical_aggregators(self, RequestData request):
         update_subscriptions = request.params.get("update_subscriptions", False)
         used_request_id = request.id if not update_subscriptions else None
@@ -2610,8 +2638,7 @@ cdef class DataEngine(Component):
         # Aggregator exists but not running, start it
         if not (key not in self._bar_aggregators or not self._bar_aggregators[key].is_running):
             # Aggregator exists and is running
-            bar_type, request_id = key
-            self._log.warning(f"Aggregator for {bar_type} (request_id={request_id}) is currently in use, subscription can't be started.")
+            self._log.error(f"Aggregator for {command.bar_type} is currently in use, subscription can't be started.")
             return
 
         self._create_bar_aggregator(command.bar_type, command.params)
@@ -2637,7 +2664,7 @@ cdef class DataEngine(Component):
 
         self._bar_aggregators.pop(key, None)
 
-    cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params, UUID4 request_id = None):
+    cpdef void _create_bar_aggregator(self, BarType bar_type, dict params, UUID4 request_id = None):
         key = self._get_bar_aggregator_key(bar_type, request_id)
         if key in self._bar_aggregators:
             bar_type_key, request_id_key = key
@@ -2917,6 +2944,18 @@ cdef class DataEngine(Component):
 
 # -- INTERNAL - Spread Quote Aggregators ----------------------------------------------------------
 
+    cpdef bint _should_request_spread_quote_ticks(self, RequestQuoteTicks request):
+        # Check if a spread quote aggregator is running, meaning a request using one is already ongoing, or
+        # a live subscription is ongoing
+        update_subscriptions = request.params.get("update_subscriptions", False)
+        used_request_id = request.id if not update_subscriptions else None
+
+        key = self._get_spread_quote_aggregator_key(request.instrument_id, used_request_id)
+        if key in self._spread_quote_aggregators and self._spread_quote_aggregators[key].is_running:
+            return False
+
+        return True
+
     cpdef void _handle_spread_quote_tick_request(self, RequestQuoteTicks request):
         spread_instrument_id = request.instrument_id
 
@@ -3017,14 +3056,13 @@ cdef class DataEngine(Component):
         self._handle_response(final_response)
 
     cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command):
-        spread_instrument_id = command.instrument_id
-        key = self._get_spread_quote_aggregator_key(spread_instrument_id)
+        key = self._get_spread_quote_aggregator_key(command.instrument_id)
 
         # Aggregator doesn't exist, create and start it
         # Aggregator exists but not running, start it
         if not (key not in self._spread_quote_aggregators or not self._spread_quote_aggregators[key].is_running):
             # Aggregator exists and is running
-            self._log.warning(f"SpreadQuoteAggregator for {spread_instrument_id} is currently in use, subscription can't be started.")
+            self._log.warning(f"SpreadQuoteAggregator for {command.instrument_id} is currently in use, subscription can't be started.")
             return
 
         self._create_spread_quote_aggregator(command.instrument_id, command.params)

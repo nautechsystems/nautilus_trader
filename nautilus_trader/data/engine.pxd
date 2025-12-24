@@ -286,13 +286,14 @@ cdef class DataEngine(Component):
     cdef list _get_bar_types_from_aggregators(self)
     cpdef void _init_historical_aggregators(self, RequestData request)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
-    cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params, UUID4 request_id = *)
+    cpdef void _create_bar_aggregator(self, BarType bar_type, dict params, UUID4 request_id = *)
     cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *, UUID4 request_id = *)
     cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
     cpdef void _finalize_aggregated_bars_request(self, DataResponse response)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _dispose_bar_aggregator(self, BarType bar_type, bint historical = *, UUID4 request_id = *)
     cpdef void _unsubscribe_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
+    cpdef bint _should_request_aggregated_bars(self, RequestData request)
 
 # -- INTERNAL - Spread Quote Aggregators ----------------------------------------------------------
 
@@ -304,6 +305,7 @@ cdef class DataEngine(Component):
     cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command)
     cpdef void _dispose_spread_quote_aggregator(self, InstrumentId spread_instrument_id, bint historical=*, UUID4 request_id = *)
     cpdef void _unsubscribe_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command)
+    cpdef bint _should_request_spread_quote_ticks(self, RequestQuoteTicks request)
 
 cdef class SnapshotInfo:
     cdef InstrumentId instrument_id
