@@ -107,7 +107,7 @@ async def test_load_option_contract_instrument(mocker, instrument_provider):
     assert option.id == instrument_id
     assert option.asset_class == AssetClass.EQUITY
     assert option.multiplier == 100
-    assert option.expiration_ns == 1674172800000000000
+    assert option.expiration_ns == 1674248400000000000
     assert option.strike_price == Price.from_str("100.0")
     assert option.option_kind == OptionKind.CALL
     assert option.price_increment == Price.from_str("0.01")

@@ -228,6 +228,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_instrument(
         self,
@@ -239,6 +240,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_instruments(
         self,
@@ -250,6 +252,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_order_book_snapshot(
         self,
@@ -259,6 +262,7 @@ cdef class Actor(Component):
         callback=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_order_book_depth(
         self,
@@ -272,6 +276,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_quote_ticks(
         self,
@@ -284,6 +289,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_trade_ticks(
         self,
@@ -296,6 +302,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_bars(
         self,
@@ -308,6 +315,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_aggregated_bars(
         self,
@@ -321,6 +329,7 @@ cdef class Actor(Component):
         bint update_subscriptions=*,
         bint update_catalog=*,
         dict[str, object] params=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_join(
         self,
@@ -331,6 +340,7 @@ cdef class Actor(Component):
         Venue venue=*,
         callback=*,
         dict[str, object] params=*,
+        UUID4 request_id=*,
     )
     cpdef bint is_pending_request(self, UUID4 request_id)
     cpdef bint has_pending_requests(self)

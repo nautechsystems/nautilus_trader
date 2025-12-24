@@ -204,6 +204,8 @@ This release adds support for Python 3.14 with the following limitations:
 - Refined `BacktestDataConfig.query` (#3266), thanks @faysou
 - Refined Databento utils (#3268), thanks @faysou
 - Refined Interactive Brokers historical data request methods (#3279), thanks @faysou
+- Refined requests and aggregators (#3328), thanks @faysou
+- Refined parsing of IB expiries (#3332), thanks @faysou
 - Optimized unnecessary string allocations and `Ustr` usage
 - Optimized build to prefer sccache when available (#3243), thanks @sunlei
 - Optimized execution reconciliation to avoid quadratic complexity (#3140), thanks @DeirhX

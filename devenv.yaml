@@ -1,0 +1,9 @@
+inputs:
+  rust-overlay:
+    url: github:oxalica/rust-overlay
+    overlays:
+      - default
+  # Use patched devenv with DYLD_FALLBACK_LIBRARY_PATH fix (PR #2339)
+  # Remove this override once cachix/devenv#2339 is merged and released
+  devenv:
+    url: github:zia-ai/devenv/fix-darwin-python-dyld?dir=src/modules

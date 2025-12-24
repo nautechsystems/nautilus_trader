@@ -382,15 +382,29 @@ def test_tick_size_to_precision(tick_size: float | Decimal, expected: int):
 
 
 @pytest.mark.parametrize(
-    ("expiry", "expected"),
+    ("contract_details", "expected"),
     [
-        ("20240411", pd.Timestamp("2024-04-11 00:00:00", tz="UTC")),
-        ("20250420 18:35:00 GB", pd.Timestamp("2025-04-20 17:35:00", tz="UTC")),
+        (
+            IBContractDetails(
+                contract=IBContract(lastTradeDateOrContractMonth="20240411"),
+                tradingHours="CLOSED",
+                timeZoneId="UTC",
+            ),
+            pd.Timestamp("2024-04-11 00:00:00", tz="UTC"),
+        ),
+        (
+            IBContractDetails(
+                contract=IBContract(lastTradeDateOrContractMonth="20250420"),
+                tradingHours="20250420:0930-20250420:1835",
+                timeZoneId="Europe/London",
+            ),
+            pd.Timestamp("2025-04-20 17:35:00", tz="UTC"),
+        ),
     ],
 )
-def test_expiry_timestring_to_datetime(expiry: str, expected: pd.Timestamp):
+def test_expiry_timestring_to_datetime(contract_details: IBContractDetails, expected: pd.Timestamp):
     # Arrange, Act
-    result = expiry_timestring_to_datetime(expiry=expiry)
+    result = expiry_timestring_to_datetime(contract_details)
     # Act, Assert
     assert result == expected
 

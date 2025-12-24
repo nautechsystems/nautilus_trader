@@ -1762,6 +1762,9 @@ cdef class SpreadQuoteAggregator:
     cpdef void set_running(self, bint is_running):
         self.is_running = is_running
 
+    cpdef void set_clock(self, Clock clock):
+        self._clock = clock
+
     cpdef void start_timer(self):
         if self._update_interval_seconds is None:
             return
