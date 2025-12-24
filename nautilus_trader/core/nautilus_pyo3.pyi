@@ -6571,6 +6571,14 @@ class DatabentoStatistics:
     @property
     def ts_init(self) -> int: ...
 
+class DatabentoSubscriptionAck:
+    @property
+    def schema(self) -> str: ...
+    @property
+    def message(self) -> str: ...
+    @property
+    def ts_received(self) -> int: ...
+
 class DatabentoDataLoader:
     def __init__(
         self,

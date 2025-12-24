@@ -683,15 +683,12 @@ fn handle_system_msg(msg: &dbn::SystemMsg, ts_received: UnixNanos) -> Option<Sub
 /// Parses a subscription ack message to extract the schema.
 fn parse_ack_message(message: &str) -> String {
     // Format: "Subscription request N for <schema> data succeeded"
-    if let Some(rest) = message.strip_prefix("Subscription request ") {
-        if let Some((_, after_num)) = rest.split_once(" for ") {
-            if let Some(schema) = after_num.strip_suffix(" data succeeded") {
-                return schema.trim().to_string();
-            }
-        }
-    }
-
-    String::new()
+    message
+        .strip_prefix("Subscription request ")
+        .and_then(|rest| rest.split_once(" for "))
+        .and_then(|(_, after_num)| after_num.strip_suffix(" data succeeded"))
+        .map(|schema| schema.trim().to_string())
+        .unwrap_or_default()
 }
 
 /// Handles symbol mapping messages and updates the instrument ID map.
