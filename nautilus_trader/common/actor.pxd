@@ -377,6 +377,7 @@ cdef class Actor(Component):
     cpdef void _handle_quote_ticks_response(self, DataResponse response)
     cpdef void _handle_trade_ticks_response(self, DataResponse response)
     cpdef void _handle_order_book_depth_response(self, DataResponse response)
+    cpdef void _handle_order_book_snapshot_response(self, DataResponse response)
     cpdef void _handle_bars_response(self, DataResponse response)
     cpdef void _handle_aggregated_bars_response(self, DataResponse response)
     cpdef void _unsubscribe_historical_aggregated_bars(self, tuple bar_types, bint include_external_data = *)

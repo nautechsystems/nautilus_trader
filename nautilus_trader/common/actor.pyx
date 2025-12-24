@@ -3068,15 +3068,22 @@ cdef class Actor(Component):
             limit=limit,
             client_id=client_id,
             venue=instrument_id.venue,
-            callback=self._handle_data_response,
+            callback=self._handle_order_book_snapshot_response,
             request_id=used_request_id,
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
-        self._pending_requests[request_id] = callback
+        self._requests[used_request_id] = request
+        self._pending_requests[used_request_id] = callback
+
+        self._msgbus.subscribe(
+            topic=self._topic_cache.get_deltas_topic(instrument_id, historical=True),
+            handler=self.handle_historical_data,
+        )
+
         self._send_data_req(request)
 
-        return request_id
+        return used_request_id
 
     cpdef UUID4 request_order_book_depth(
         self,
@@ -4349,6 +4356,24 @@ cdef class Actor(Component):
             self._log.info(f"Received <OrderBookDepth10[{length}]> data for {instrument_id}")
         else:
             self._log.warning(f"Received <OrderBookDepth10[]> data with no ticks for {instrument_id}")
+
+        self._finish_response(response.correlation_id)
+
+    cpdef void _handle_order_book_snapshot_response(self, DataResponse response):
+        cdef RequestOrderBookSnapshot request = self._requests.pop(response.correlation_id, None)
+        if request is not None:
+            self._msgbus.unsubscribe(
+                topic=self._topic_cache.get_deltas_topic(request.instrument_id, historical=True),
+                handler=self.handle_historical_data,
+            )
+
+        cdef int length = response.params.get("data_count", 0)
+        cdef InstrumentId instrument_id = request.instrument_id
+
+        if length > 0:
+            self._log.info(f"Received <OrderBookDeltas[{length}]> data for {instrument_id}")
+        else:
+            self._log.warning(f"Received <OrderBookDeltas[]> data with no deltas for {instrument_id}")
 
         self._finish_response(response.correlation_id)
 

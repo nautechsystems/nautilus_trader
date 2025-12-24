@@ -2451,6 +2451,67 @@ class TestActor:
         # Assert
         self.assert_successful_request(actor, request_id, "request_order_book_depth")
 
+    def test_request_order_book_snapshot_sends_request_to_data_engine(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        request_id = actor.request_order_book_snapshot(
+            AUDUSD_SIM.id,
+            limit=10,
+        )
+
+        # Assert
+        # Note: Unlike date-range requests (bars, quotes, trades), order book snapshot
+        # requests don't auto-respond with empty data when there's no client data.
+        # The request remains pending until a response is received.
+        assert request_id is not None
+        assert self.data_engine.request_count == 1
+
+    def test_request_order_book_snapshot_with_registered_callback(self) -> None:
+        # Arrange
+        handler: list[UUID4] = []
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        deltas = TestDataStubs.order_book_deltas(AUDUSD_SIM.id)
+
+        # Act
+        request_id = actor.request_order_book_snapshot(
+            AUDUSD_SIM.id,
+            limit=10,
+            callback=handler.append,
+        )
+
+        response = DataResponse(
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            data_type=DataType(OrderBookDeltas, metadata={"instrument_id": AUDUSD_SIM.id}),
+            data=[deltas],
+            correlation_id=request_id,
+            response_id=UUID4(),
+            start=None,
+            end=None,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.response(response)
+
+        # Assert
+        self.assert_successful_request(actor, request_id, "request_order_book_snapshot")
+        assert request_id in handler
+
     def test_request_bars_with_registered_callback(self) -> None:
         # Arrange
         handler: list[Bar] = []
