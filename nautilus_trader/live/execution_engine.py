@@ -1845,25 +1845,6 @@ class LiveExecutionEngine(ExecutionEngine):
         reconciled_trades: set[TradeId] = set()
 
         # Reconcile all reported orders
-        total_ethusdt_fills = 0
-        for venue_order_id, order_report in mass_status.order_reports.items():
-            trades = mass_status.fill_reports.get(venue_order_id, [])
-            if (
-                order_report.instrument_id == InstrumentId.from_str("ETHUSDT-LINEAR.BYBIT")
-                and trades
-            ):
-                total_ethusdt_fills += len(trades)
-                for trade in trades:
-                    self._log.debug(
-                        f"Reconciling order {venue_order_id}: trade_id={trade.trade_id}, last_px={trade.last_px}",
-                    )
-
-        if total_ethusdt_fills > 0:
-            self._log.info(
-                f"Total ETHUSDT fills being reconciled: {total_ethusdt_fills}",
-                LogColor.BLUE,
-            )
-
         for venue_order_id, order_report in mass_status.order_reports.items():
             trades = mass_status.fill_reports.get(venue_order_id, [])
 
