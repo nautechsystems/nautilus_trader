@@ -902,6 +902,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         converted_low = ib_price_to_nautilus_price(low, price_magnifier)
         converted_close = ib_price_to_nautilus_price(close, price_magnifier)
 
+        # Validate bar data integrity BEFORE creating Bar object
+        # IB sometimes sends corrupt data during extended hours
+        if not self._validate_bar_prices(
+            bar_type=bar_type,
+            open_price=converted_open,
+            high_price=converted_high,
+            low_price=converted_low,
+            close_price=converted_close,
+            bar_identifier=f"time={time}",
+        ):
+            return
+
         bar = Bar(
             bar_type=bar_type,
             open=instrument.make_price(converted_open),
@@ -1287,7 +1299,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         bar: BarData,
         ts_init: int,
         is_revision: bool = False,
-    ) -> Bar:
+    ) -> Bar | None:
         """
         Convert Interactive Brokers bar data to NautilusTrader's bar type.
 
@@ -1304,7 +1316,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         Returns
         -------
-        Bar
+        Bar | None
+            The converted bar, or None if the bar data is invalid (e.g., low > open during extended hours).
 
         """
         instrument = self._cache.instrument(bar_type.instrument_id)
@@ -1325,6 +1338,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         converted_high = ib_price_to_nautilus_price(bar.high, price_magnifier)
         converted_low = ib_price_to_nautilus_price(bar.low, price_magnifier)
         converted_close = ib_price_to_nautilus_price(bar.close, price_magnifier)
+
+        # Validate bar data integrity BEFORE creating Bar object
+        # IB sometimes sends corrupt data during extended hours
+        if not self._validate_bar_prices(
+            bar_type=bar_type,
+            open_price=converted_open,
+            high_price=converted_high,
+            low_price=converted_low,
+            close_price=converted_close,
+            bar_identifier=f"bar.date={bar.date}",
+        ):
+            return None
 
         return Bar(
             bar_type=bar_type,
@@ -1435,6 +1460,57 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             ts = pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc)
 
         return ts.value
+
+    def _validate_bar_prices(
+        self,
+        bar_type: BarType,
+        open_price: float,
+        high_price: float,
+        low_price: float,
+        close_price: float,
+        bar_identifier: str,
+    ) -> bool:
+        if high_price < open_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"high ({high_price}) < open ({open_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        if high_price < low_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"high ({high_price}) < low ({low_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        if high_price < close_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"high ({high_price}) < close ({close_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        if low_price > close_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"low ({low_price}) > close ({close_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        if low_price > open_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"low ({low_price}) > open ({open_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        return True
 
     async def process_update_mkt_depth_l2(
         self,

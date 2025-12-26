@@ -353,6 +353,114 @@ async def test_ib_bar_to_nautilus_bar(ib_client):
 
 
 @pytest.mark.asyncio
+async def test_ib_bar_to_nautilus_bar_invalid_data(ib_client):
+    """
+    Test that invalid bar data (e.g., low > open) returns None instead of raising an
+    exception.
+
+    This prevents the strategy from crashing when IB sends corrupt data during extended
+    hours.
+
+    """
+    # Arrange
+    bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
+    bar_type = BarType.from_str(bar_type_str)
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+    ts_init = 1704067205000000000
+
+    # Test case 1: low > open (the specific case from the issue)
+    bar_invalid_low_gt_open = BarData()
+    bar_invalid_low_gt_open.date = "1704067200"
+    bar_invalid_low_gt_open.open = 425.32
+    bar_invalid_low_gt_open.high = 425.70
+    bar_invalid_low_gt_open.low = 425.67  # low > open
+    bar_invalid_low_gt_open.close = 425.50
+    bar_invalid_low_gt_open.volume = Decimal(100)
+    bar_invalid_low_gt_open.wap = Decimal(-1)
+    bar_invalid_low_gt_open.barCount = -1
+
+    # Act
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_low_gt_open, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
+
+    # Test case 2: high < open
+    bar_invalid_high_lt_open = BarData()
+    bar_invalid_high_lt_open.date = "1704067200"
+    bar_invalid_high_lt_open.open = 425.50
+    bar_invalid_high_lt_open.high = 425.30  # high < open
+    bar_invalid_high_lt_open.low = 425.20
+    bar_invalid_high_lt_open.close = 425.40
+    bar_invalid_high_lt_open.volume = Decimal(100)
+    bar_invalid_high_lt_open.wap = Decimal(-1)
+    bar_invalid_high_lt_open.barCount = -1
+
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_high_lt_open, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
+
+    # Test case 3: high < low
+    bar_invalid_high_lt_low = BarData()
+    bar_invalid_high_lt_low.date = "1704067200"
+    bar_invalid_high_lt_low.open = 425.40
+    bar_invalid_high_lt_low.high = 425.30  # high < low
+    bar_invalid_high_lt_low.low = 425.50
+    bar_invalid_high_lt_low.close = 425.45
+    bar_invalid_high_lt_low.volume = Decimal(100)
+    bar_invalid_high_lt_low.wap = Decimal(-1)
+    bar_invalid_high_lt_low.barCount = -1
+
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_high_lt_low, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
+
+    # Test case 4: low > close
+    bar_invalid_low_gt_close = BarData()
+    bar_invalid_low_gt_close.date = "1704067200"
+    bar_invalid_low_gt_close.open = 425.40
+    bar_invalid_low_gt_close.high = 425.50
+    bar_invalid_low_gt_close.low = 425.45  # low > close
+    bar_invalid_low_gt_close.close = 425.42
+    bar_invalid_low_gt_close.volume = Decimal(100)
+    bar_invalid_low_gt_close.wap = Decimal(-1)
+    bar_invalid_low_gt_close.barCount = -1
+
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_low_gt_close, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
+
+    # Test case 5: high < close
+    bar_invalid_high_lt_close = BarData()
+    bar_invalid_high_lt_close.date = "1704067200"
+    bar_invalid_high_lt_close.open = 425.40
+    bar_invalid_high_lt_close.high = 425.45  # high < close
+    bar_invalid_high_lt_close.low = 425.35
+    bar_invalid_high_lt_close.close = 425.50
+    bar_invalid_high_lt_close.volume = Decimal(100)
+    bar_invalid_high_lt_close.wap = Decimal(-1)
+    bar_invalid_high_lt_close.barCount = -1
+
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_high_lt_close, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
+
+
+@pytest.mark.asyncio
 async def test_process_bar_data_eod_bar_missing_issue(ib_client):
     """
     Test that demonstrates the EOD bar missing issue.
