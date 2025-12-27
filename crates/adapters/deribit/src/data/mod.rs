@@ -192,13 +192,16 @@ impl DeribitDataClient {
             }
             NautilusWsMessage::Instrument(instrument) => {
                 let instrument_any = *instrument;
-                let mut guard = instruments.write().expect("instrument cache lock poisoned");
-                let instrument_id = instrument_any.id();
-                guard.insert(instrument_id, instrument_any.clone());
-                drop(guard);
+                if let Ok(mut guard) = instruments.write() {
+                    let instrument_id = instrument_any.id();
+                    guard.insert(instrument_id, instrument_any.clone());
+                    drop(guard);
 
-                if let Err(e) = sender.send(DataEvent::Instrument(instrument_any)) {
-                    tracing::warn!("Failed to send instrument update: {e}");
+                    if let Err(e) = sender.send(DataEvent::Instrument(instrument_any)) {
+                        tracing::warn!("Failed to send instrument update: {e}");
+                    }
+                } else {
+                    tracing::error!("Instrument cache lock poisoned, skipping instrument update");
                 }
             }
             NautilusWsMessage::Error(e) => {
@@ -521,10 +524,16 @@ impl DataClient for DeribitDataClient {
                         for instrument in instruments {
                             // Cache the instrument
                             {
-                                let mut guard = instruments_cache
-                                    .write()
-                                    .expect("instrument cache lock poisoned");
-                                guard.insert(instrument.id(), instrument.clone());
+                                match instruments_cache.write() {
+                                    Ok(mut guard) => {
+                                        guard.insert(instrument.id(), instrument.clone());
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Instrument cache lock poisoned: {e}, skipping cache update"
+                                        );
+                                    }
+                                }
                             }
 
                             all_instruments.push(instrument);
@@ -574,7 +583,7 @@ impl DataClient for DeribitDataClient {
         if let Some(instrument) = self
             .instruments
             .read()
-            .expect("instrument cache lock poisoned")
+            .map_err(|e| anyhow::anyhow!("Instrument cache lock poisoned: {e}"))?
             .get(&request.instrument_id)
             .cloned()
         {
