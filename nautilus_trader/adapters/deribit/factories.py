@@ -17,7 +17,9 @@ import asyncio
 from functools import lru_cache
 
 from nautilus_trader.adapters.deribit.config import DeribitDataClientConfig
+from nautilus_trader.adapters.deribit.config import DeribitExecClientConfig
 from nautilus_trader.adapters.deribit.data import DeribitDataClient
+from nautilus_trader.adapters.deribit.execution import DeribitExecutionClient
 from nautilus_trader.adapters.deribit.providers import DeribitInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -26,6 +28,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import DeribitInstrumentKind
 from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 
 
 @lru_cache(1)
@@ -165,6 +168,70 @@ class DeribitLiveDataClientFactory(LiveDataClientFactory):
             config=config.instrument_provider,
         )
         return DeribitDataClient(
+            loop=loop,
+            client=client,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            instrument_provider=provider,
+            config=config,
+            name=name,
+        )
+
+
+class DeribitLiveExecClientFactory(LiveExecClientFactory):
+    """
+    Provides a Deribit live execution client factory.
+    """
+
+    @staticmethod
+    def create(  # type: ignore
+        loop: asyncio.AbstractEventLoop,
+        name: str,
+        config: DeribitExecClientConfig,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+    ) -> DeribitExecutionClient:
+        """
+        Create a new Deribit execution client.
+
+        Parameters
+        ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
+        name : str
+            The custom client ID.
+        config : DeribitExecClientConfig
+            The client configuration.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
+        clock: LiveClock
+            The clock for the instrument provider.
+
+        Returns
+        -------
+        DeribitExecutionClient
+
+        """
+        client: nautilus_pyo3.DeribitHttpClient = get_cached_deribit_http_client(
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            base_url=config.base_url_http,
+            is_testnet=config.is_testnet,
+            timeout_secs=config.http_timeout_secs,
+            max_retries=config.max_retries,
+            retry_delay_ms=config.retry_delay_initial_ms,
+            retry_delay_max_ms=config.retry_delay_max_ms,
+        )
+        provider = get_cached_deribit_instrument_provider(
+            client=client,
+            instrument_kinds=config.instrument_kinds,
+            config=config.instrument_provider,
+        )
+        return DeribitExecutionClient(
             loop=loop,
             client=client,
             msgbus=msgbus,
