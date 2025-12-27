@@ -4022,15 +4022,21 @@ cdef class OrderMatchingEngine:
     cdef void _process_trade_ticks_from_bar(self, Bar bar):
         # Split bar volume into 4, adding remainder to close trade
         cdef QuantityRaw quarter_raw = bar._mem.volume.raw // 4
-        cdef QuantityRaw remainder_raw = bar._mem.volume.raw % 4
         cdef QuantityRaw min_size_raw = self.instrument.size_increment._mem.raw
 
-        # Ensure minimum size increment
+        # Round down to nearest size_increment, ensuring minimum
+        quarter_raw = (quarter_raw // min_size_raw) * min_size_raw
         if quarter_raw < min_size_raw:
             quarter_raw = min_size_raw
 
+        # Calculate close size: remaining volume after 3 quarters, also rounded
+        cdef QuantityRaw close_raw = bar._mem.volume.raw - (quarter_raw * 3)
+        close_raw = (close_raw // min_size_raw) * min_size_raw
+        if close_raw < min_size_raw:
+            close_raw = min_size_raw
+
         cdef Quantity size = Quantity.from_raw_c(quarter_raw, bar._mem.volume.precision)
-        cdef Quantity close_size = Quantity.from_raw_c(quarter_raw + remainder_raw, bar._mem.volume.precision)
+        cdef Quantity close_size = Quantity.from_raw_c(close_raw, bar._mem.volume.precision)
 
         # Create base tick template
         cdef TradeTick tick = self._create_base_trade_tick(bar, size)
@@ -4126,20 +4132,30 @@ cdef class OrderMatchingEngine:
         # Split bar volume into 4, adding remainder to close quote
         cdef QuantityRaw min_size_raw = self.instrument.size_increment._mem.raw
         cdef QuantityRaw bid_quarter = self._last_bid_bar._mem.volume.raw // 4
-        cdef QuantityRaw bid_remainder = self._last_bid_bar._mem.volume.raw % 4
         cdef QuantityRaw ask_quarter = self._last_ask_bar._mem.volume.raw // 4
-        cdef QuantityRaw ask_remainder = self._last_ask_bar._mem.volume.raw % 4
 
-        # Ensure minimum size increment
+        # Round down to nearest size_increment, ensuring minimum
+        bid_quarter = (bid_quarter // min_size_raw) * min_size_raw
         if bid_quarter < min_size_raw:
             bid_quarter = min_size_raw
+        ask_quarter = (ask_quarter // min_size_raw) * min_size_raw
         if ask_quarter < min_size_raw:
             ask_quarter = min_size_raw
 
+        # Calculate close sizes: remaining volume after 3 quarters, also rounded
+        cdef QuantityRaw bid_close_raw = self._last_bid_bar._mem.volume.raw - (bid_quarter * 3)
+        bid_close_raw = (bid_close_raw // min_size_raw) * min_size_raw
+        if bid_close_raw < min_size_raw:
+            bid_close_raw = min_size_raw
+        cdef QuantityRaw ask_close_raw = self._last_ask_bar._mem.volume.raw - (ask_quarter * 3)
+        ask_close_raw = (ask_close_raw // min_size_raw) * min_size_raw
+        if ask_close_raw < min_size_raw:
+            ask_close_raw = min_size_raw
+
         cdef Quantity bid_size = Quantity.from_raw_c(bid_quarter, self._last_bid_bar._mem.volume.precision)
         cdef Quantity ask_size = Quantity.from_raw_c(ask_quarter, self._last_ask_bar._mem.volume.precision)
-        cdef Quantity bid_close_size = Quantity.from_raw_c(bid_quarter + bid_remainder, self._last_bid_bar._mem.volume.precision)
-        cdef Quantity ask_close_size = Quantity.from_raw_c(ask_quarter + ask_remainder, self._last_ask_bar._mem.volume.precision)
+        cdef Quantity bid_close_size = Quantity.from_raw_c(bid_close_raw, self._last_bid_bar._mem.volume.precision)
+        cdef Quantity ask_close_size = Quantity.from_raw_c(ask_close_raw, self._last_ask_bar._mem.volume.precision)
 
         # Create base tick template
         cdef QuoteTick tick = self._create_base_quote_tick(bid_size, ask_size)
