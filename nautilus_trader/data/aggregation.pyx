@@ -1403,7 +1403,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._build_with_no_updates = build_with_no_updates
         self._bar_build_delay = bar_build_delay
         self._time_bars_origin_offset = time_bars_origin_offset or 0
-        self._timer_name = str(self.bar_type)
+        self._timer_name = f"time_bar_{self.bar_type}"
         self.interval = self._get_interval()
         self.interval_ns = self._get_interval_ns()
         self.stored_open_ns = 0
@@ -1749,15 +1749,19 @@ cdef class SpreadQuoteAggregator:
         self._update_interval_seconds = update_interval_seconds
         self.is_running = False
         self._historical_events = []
-        # Use object id to ensure unique timer names per aggregator instance
-        self._timer_name = f"spread_quote_timer_{id(self)}_{self._spread_instrument_id}"
+
+        # Timers on a same clock execute first based on their timer name
+        # "spread_quote_..." < "time_bar_..."
+        self._timer_name = f"spread_quote_{self._spread_instrument_id}"
         self._has_update = False
 
-    cpdef void set_historical_mode(self, bint historical_mode, handler: Callable[[QuoteTick], None]):
+    cpdef void set_historical_mode(self, bint historical_mode, handler: Callable[[QuoteTick], None], GreeksCalculator greeks_calculator):
         Condition.callable(handler, "handler")
+        Condition.not_none(greeks_calculator, "greeks_calculator")
 
         self.historical_mode = historical_mode
         self._handler = handler
+        self._greeks_calculator = greeks_calculator
 
     cpdef void set_running(self, bint is_running):
         self.is_running = is_running

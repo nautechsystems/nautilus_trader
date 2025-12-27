@@ -143,7 +143,6 @@ cdef class DataEngine(Component):
     cpdef bint check_disconnected(self)
     cpdef set[ClientId] get_external_client_ids(self)
     cpdef bint _is_backtest_client(self, DataClient client)
-    cpdef bint is_live_mode(self)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 

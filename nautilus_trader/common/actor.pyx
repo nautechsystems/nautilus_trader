@@ -1283,6 +1283,7 @@ cdef class Actor(Component):
 
         # TODO during a backtest, use any ClientId for subscribing to custom data from a catalog when not using instrument_id
         if client_id is None and instrument_id is None:
+            self.log.error("`Actor.subscribe_data`: `client_id` or `instrument_id` need to be specified")
             return
 
         params = params or {}
@@ -2019,6 +2020,7 @@ cdef class Actor(Component):
 
         # TODO during a backtest, use any ClientId for subscribing to custom data from a catalog when not using instrument_id
         if client_id is None and instrument_id is None:
+            self.log.error("`Actor.unsubscribe_data`: `client_id` or `instrument_id` need to be specified")
             return
 
         cdef UnsubscribeData command = UnsubscribeData(

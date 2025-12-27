@@ -4035,7 +4035,7 @@ class TestTimeBarAggregator:
             clock,
         )
         aggregator.start_timer()
-        timer_name = str(bar_type.standard())
+        timer_name = f"time_bar_{bar_type.standard()}"
         composite_bar_type = bar_type.composite()
 
         bar1 = Bar(

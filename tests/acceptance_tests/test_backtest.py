@@ -37,6 +37,8 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.data.engine import default_time_range_generator
@@ -63,7 +65,9 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
@@ -77,13 +81,17 @@ from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.greeks_data import GreeksData
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.tick_scheme import TieredTickScheme
+from nautilus_trader.model.tick_scheme import register_tick_scheme
 from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -895,587 +903,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         assert account.balance_total(GBP) == Money(-19_351.96, GBP)
 
 
-@pytest.mark.xdist_group(name="databento_catalog")
-class TestBacktestNodeWithBacktestDataIterator:
-    @pytest.mark.skip(reason="Catalog interval conflict - needs investigation")
-    def test_backtest_same_with_and_without_data_configs(self) -> None:
-        # Arrange
-        messages_with_data: list = []
-        messages_without_data: list = []
-
-        # Act
-        run_backtest(messages_with_data.append, with_data=True)
-        run_backtest(messages_without_data.append, with_data=False)
-
-        # Find the last portfolio greeks message (may not be the very last message due to spread quotes)
-        portfolio_greeks_messages = [
-            msg for msg in messages_with_data if "portfolio_greeks=" in msg
-        ]
-        assert len(portfolio_greeks_messages) > 0, "No portfolio greeks messages found"
-
-        # The last portfolio greeks message should match the expected values (adjusted for spread execution)
-        # Now includes both individual leg orders and spread orders (option spread and future spread)
-        # Values may vary slightly due to future spread quote requests affecting execution timing
-        last_greeks = portfolio_greeks_messages[-1]
-        # Verify portfolio greeks structure is present (exact values may vary)
-        assert "portfolio_greeks=PortfolioGreeks" in last_greeks, f"Unexpected portfolio greeks: {last_greeks}"
-        assert "pnl=" in last_greeks, f"Missing pnl in portfolio greeks: {last_greeks}"
-        assert "price=" in last_greeks, f"Missing price in portfolio greeks: {last_greeks}"
-        assert messages_with_data == messages_without_data
-
-    @pytest.mark.skip(reason="Catalog interval conflict - needs investigation")
-    def test_spread_execution_functionality(self) -> None:
-        """
-        Test that spread execution generates proper combo and leg fills with
-        mathematical consistency.
-        """
-        # Arrange
-        messages: list = []
-
-        # Act
-        run_backtest(messages.append, with_data=True)
-
-        # Extract relevant messages
-        # Look for option spread quotes (format: "((1))ESM4 P5230___(1)ESM4 P5250.XCME")
-        spread_quotes = [
-            msg for msg in messages
-            if "Quote received:" in msg and ("((1))ESM4 P5230" in msg or "((1))ESM4___(1)" in msg)
-        ]
-        combo_fills = [msg for msg in messages if "COMBO FILL:" in msg]
-        all_leg_fills = [msg for msg in messages if "LEG FILL:" in msg]
-
-        # Separate spread-related leg fills from individual leg fills
-        # Spread leg fills have "-LEG-" in the order ID
-        spread_leg_fills = [msg for msg in all_leg_fills if "-LEG-" in msg]
-        individual_leg_fills = [msg for msg in all_leg_fills if "-LEG-" not in msg]
-
-        # Assert spread execution functionality
-        assert len(spread_quotes) > 0, "No spread quotes were received"
-
-        # Verify that future spread quotes were requested
-        request_messages = [msg for msg in messages if "Requesting quote ticks for future spread" in msg]
-        assert len(request_messages) > 0, "Future spread quote request was not made"
-
-        # Verify that future spread quotes were received (if data is available)
-        # Note: Future spread quotes may not arrive if underlying leg data isn't available
-        # The request was made, which is the main thing we're testing
-        # If quotes don't arrive, it's likely because the underlying data isn't available
-
-        # Validate spread quote format
-        self._validate_spread_quote_format(spread_quotes)
-
-        # Combo fills may not be generated if both spread quotes don't arrive in time
-        # or if orders aren't submitted due to timing issues
-        if len(combo_fills) > 0:
-            assert (
-                len(spread_leg_fills) >= 2
-            ), f"Expected at least 2 spread leg fills, was {len(spread_leg_fills)}"
-
-            # Validate that we have exactly 2 spread leg fills per combo fill (for a 2-leg spread)
-            assert (
-                len(spread_leg_fills) == len(combo_fills) * 2
-            ), f"Expected {len(combo_fills) * 2} spread leg fills for {len(combo_fills)} combo fills, was {len(spread_leg_fills)}"
-
-            # Extract and validate mathematical consistency using only spread leg fills
-            self._validate_spread_math_consistency(combo_fills, spread_leg_fills)
-
-        # Also validate that we have individual leg fills from init_portfolio
-        assert (
-            len(individual_leg_fills) >= 2
-        ), f"Expected at least 2 individual leg fills, was {len(individual_leg_fills)}"
-
-    def _validate_spread_math_consistency(self, combo_fills: list, leg_fills: list):
-        """
-        Validate mathematical consistency between combo and leg fills.
-        """
-        for combo_msg in combo_fills:
-            # Extract combo fill details: "COMBO FILL: BUY 5 @ 10.64 (Order: ..., Trade: XCME-4-001)"
-            combo_parts = combo_msg.split()
-            combo_price = float(combo_parts[5])
-
-            # Extract trade ID to match leg fills
-            trade_id_part = combo_msg.split("Trade: ")[1].split(")")[0]
-
-            # Find matching leg fills
-            matching_legs = [msg for msg in leg_fills if trade_id_part in msg]
-            assert (
-                len(matching_legs) == 2
-            ), f"Expected 2 leg fills for trade {trade_id_part}, was {len(matching_legs)}"
-
-            # Extract leg fill prices
-            # Format: "LEG FILL: ESM4 P5230.XCME 2 5 @ 97.63 (Order: ...)"
-            # Where index 4 is order side (2=SELL, 1=BUY), index 7 is price
-            leg_prices = []
-            leg_sides = []
-            for leg_msg in matching_legs:
-                leg_parts = leg_msg.split()
-                side_code = leg_parts[4]  # 2 = SELL, 1 = BUY
-                side = "SELL" if side_code == "2" else "BUY"
-                leg_sides.append(side)
-                leg_prices.append(float(leg_parts[7]))  # Price after "@"
-
-            # Calculate expected spread price: -leg1_price + leg2_price (for PUT spread: short lower strike, long higher strike)
-            # The leg fills should be: SELL ESM4 P5230 and BUY ESM4 P5250
-            sell_price = None
-            buy_price = None
-
-            for i, side in enumerate(leg_sides):
-                if side == "SELL":
-                    sell_price = leg_prices[i]
-                elif side == "BUY":
-                    buy_price = leg_prices[i]
-
-            assert sell_price is not None, "No SELL leg fill found"
-            assert buy_price is not None, "No BUY leg fill found"
-
-            # For a put spread: short lower strike (P5230) - long higher strike (P5250)
-            # Spread price = -sell_price + buy_price
-            calculated_spread = -sell_price + buy_price
-
-            # Allow small floating point tolerance
-            tolerance = 0.01
-            assert abs(calculated_spread - combo_price) < tolerance, (
-                f"Mathematical inconsistency: -{sell_price} + {buy_price} = {calculated_spread:.4f}, "
-                f"but combo fill was {combo_price:.4f} (diff: {abs(calculated_spread - combo_price):.4f})"
-            )
-
-    def _validate_spread_quote_format(self, spread_quotes: list):
-        """
-        Validate that spread quotes have the correct format.
-        """
-        for quote_msg in spread_quotes:
-            # Validate spread instrument ID format (option spread)
-            assert (
-                "((1))ESM4 P5230___(1)ESM4 P5250.XCME" in quote_msg or
-                ("ESM4 P5230" in quote_msg and "ESM4 P5250" in quote_msg) or
-                "((1))ESM4___(1)NQM4.XCME" in quote_msg  # Future spread
-            ), f"Spread instrument ID not found in correct format: {quote_msg}"
-
-            # Validate that quote has bid/ask prices (comma-separated format: instrument,bid,ask,...)
-            quote_part = quote_msg.split("Quote received: ")[1] if "Quote received: " in quote_msg else quote_msg
-            quote_data = quote_part.split(",")
-            assert (
-                len(quote_data) >= 3
-            ), f"Quote should have at least instrument,bid,ask: {quote_part}"
-
-            # Validate bid/ask are numeric
-            try:
-                bid = float(quote_data[1])
-                ask = float(quote_data[2])
-                assert bid > 0, f"Bid price should be positive: {bid}"
-                assert ask > 0, f"Ask price should be positive: {ask}"
-                assert ask >= bid, f"Ask ({ask}) should be >= bid ({bid})"
-            except (ValueError, IndexError) as e:
-                raise AssertionError(f"Invalid quote format: {quote_part}, error: {e}")
-
-
-def run_backtest(test_callback=None, with_data=True, log_path=None):
-    catalog_folder = "options_catalog"
-    catalog = load_catalog(catalog_folder)
-
-    future_symbols = ["ESM4", "NQM4"]
-    option_symbols = ["ESM4 P5230", "ESM4 P5250"]
-
-    start_time = "2024-05-09T09:55"
-    end_time = "2024-05-09T10:05"
-    backtest_start_time = "2024-05-09T10:00"
-
-    _ = databento_data(
-        future_symbols,
-        start_time,
-        end_time,
-        "bbo-1m",
-        "futures",
-        catalog_folder,
-    )
-    _ = databento_data(
-        future_symbols,
-        start_time,
-        end_time,
-        "ohlcv-1m",
-        "futures",
-        catalog_folder,
-    )
-    _ = databento_data(
-        option_symbols,
-        start_time,
-        end_time,
-        "bbo-1m",
-        "options",
-        catalog_folder,
-    )
-
-    # When load_greeks is False, the streamed greeks can be saved after the backtest
-    # When load_greeks is True, greeks are loaded from the catalog
-    load_greeks = not with_data
-
-    # actors = [
-    #     ImportableActorConfig(
-    #         actor_path=InterestRateProvider.fully_qualified_name(),
-    #         config_path=InterestRateProviderConfig.fully_qualified_name(),
-    #         config={
-    #             "interest_rates_file": str(
-    #                 data_path(catalog_folder, "usd_short_term_rate.xml"),
-    #             ),
-    #         },
-    #     ),
-    # ]
-
-    # Create spread instrument ID for testing spread execution
-    future_instrument_id = InstrumentId.from_str(f"{future_symbols[0]}.XCME")
-    future_instrument_id2 = InstrumentId.from_str(f"{future_symbols[1]}.XCME")
-    option1_id = InstrumentId.from_str(f"{option_symbols[0]}.XCME")
-    option2_id = InstrumentId.from_str(f"{option_symbols[1]}.XCME")
-    spread_instrument_id = new_generic_spread_id(
-        [
-            (option1_id, -1),  # Short ESM4 P5230
-            (option2_id, 1),  # Long ESM4 P5250
-        ],
-    )
-    spread_instrument_id2 = new_generic_spread_id(
-        [
-            (future_instrument_id, -1),  # Short ESM4
-            (future_instrument_id2, 1),  # Long NQM4
-        ],
-    )
-
-    register_time_range_generator("default", default_time_range_generator)
-
-    strategies = [
-        ImportableStrategyConfig(
-            strategy_path=OptionStrategy.fully_qualified_name(),
-            config_path=OptionConfig.fully_qualified_name(),
-            config={
-                "future_id": future_instrument_id,
-                "future_id2": future_instrument_id2,
-                "option_id": option1_id,
-                "option_id2": option2_id,
-                "spread_id": spread_instrument_id,
-                "spread_id2": spread_instrument_id2,
-                "load_greeks": load_greeks,
-                "start_time": start_time,
-            },
-        ),
-    ]
-
-    streaming = StreamingConfig(
-        catalog_path=catalog.path,
-        fs_protocol="file",
-        include_types=[GreeksData],
-    )
-
-    logging = LoggingConfig(
-        bypass_logging=False,
-        log_colors=True,
-        log_level="WARN",
-        log_level_file="WARN",
-        log_directory=log_path,
-        log_file_format=None,  # "json" or None
-        log_file_name="test_logs",
-        clear_log_file=True,
-        print_config=False,
-        use_pyo3=False,
-    )
-
-    catalogs = [
-        DataCatalogConfig(
-            path=catalog.path,
-        ),
-    ]
-
-    engine_config = BacktestEngineConfig(
-        logging=logging,
-        # actors=actors,
-        strategies=strategies,
-        streaming=(streaming if not load_greeks else None),
-        catalogs=catalogs,
-    )
-
-    data = [
-        BacktestDataConfig(
-            data_cls=QuoteTick,
-            catalog_path=catalog.path,
-            instrument_id=InstrumentId.from_str(f"{option_symbols[0]}.XCME"),
-        ),
-        BacktestDataConfig(
-            data_cls=QuoteTick,
-            catalog_path=catalog.path,
-            instrument_id=InstrumentId.from_str(f"{option_symbols[1]}.XCME"),
-        ),
-        BacktestDataConfig(
-            data_cls=Bar,
-            catalog_path=catalog.path,
-            instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
-            bar_spec="1-MINUTE-LAST",
-        ),
-        BacktestDataConfig(
-            data_cls=QuoteTick,
-            catalog_path=catalog.path,
-            instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
-        ),
-        BacktestDataConfig(
-            data_cls=QuoteTick,
-            catalog_path=catalog.path,
-            instrument_id=InstrumentId.from_str(f"{future_symbols[1]}.XCME"),
-        ),
-    ]
-
-    if load_greeks:
-        data = [
-            BacktestDataConfig(
-                data_cls=GreeksData.fully_qualified_name(),
-                catalog_path=catalog.path,
-                client_id="GreeksDataProvider",
-                # metadata={"instrument_id": "ES"}, # not used anymore, reminder on syntax
-            ),
-            *data,
-        ]
-
-    venues = [
-        BacktestVenueConfig(
-            name="XCME",
-            oms_type="NETTING",
-            account_type="MARGIN",
-            base_currency="USD",
-            starting_balances=["1_000_000 USD"],
-        ),
-    ]
-
-    configs = [
-        BacktestRunConfig(
-            engine=engine_config,
-            data=data if with_data else [],
-            venues=venues,
-            chunk_size=None,  # use None when loading custom data, else a value of 10_000 for example
-            start=backtest_start_time,
-            end=end_time,
-            raise_exception=True,
-        ),
-    ]
-
-    node = BacktestNode(configs=configs)
-    node.build()
-
-    if test_callback:
-        node.get_engine(configs[0].id).kernel.msgbus.subscribe("test", test_callback)
-
-    results = node.run()
-
-    if not load_greeks:
-        catalog.convert_stream_to_data(
-            results[0].instance_id,
-            GreeksData,
-        )
-
-    engine: BacktestEngine = node.get_engine(configs[0].id)
-    engine.trader.generate_order_fills_report()
-    engine.trader.generate_positions_report()
-    engine.trader.generate_account_report(Venue("XCME"))
-    node.dispose()
-
-
-class OptionConfig(StrategyConfig, frozen=True):
-    future_id: InstrumentId
-    future_id2: InstrumentId
-    option_id: InstrumentId
-    option_id2: InstrumentId
-    spread_id: InstrumentId
-    spread_id2: InstrumentId
-    load_greeks: bool = False
-    start_time: str | None = None
-
-
-class OptionStrategy(Strategy):
-    def __init__(self, config: OptionConfig):
-        super().__init__(config=config)
-        self.start_orders_done = False
-        self.spread_order_submitted = False
-        self.spread_quotes_received = 0
-        self.future_spread_quotes_received = 0
-        self.combo_fills: list[str] = []
-        self.leg_fills: list[str] = []
-
-    def on_start(self):
-        self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
-
-        self.request_instrument(self.config.option_id)
-        self.request_instrument(self.config.option_id2)
-        self.request_instrument(self.config.future_id)
-        self.request_instrument(self.config.future_id2)
-
-        # Subscribe to individual option quotes
-        self.subscribe_quote_ticks(
-            self.config.option_id,
-            params={
-                "time_range_generator": "default",
-                "durations_seconds": (pd.Timedelta(minutes=2).seconds,),
-            },
-        )
-        self.subscribe_quote_ticks(
-            self.config.option_id2,
-            params={"point_data": True, "durations_seconds": (pd.Timedelta(minutes=1).seconds,)},
-        )
-        self.subscribe_bars(self.bar_type)
-
-        # Request and subscribe to spread instrument
-        self.request_instrument(self.config.spread_id)
-        self.subscribe_quote_ticks(self.config.spread_id)
-
-        self.subscribe_quote_ticks(self.config.future_id)
-        self.subscribe_quote_ticks(self.config.future_id2)
-        self.request_instrument(
-            instrument_id=self.config.spread_id2,
-        )
-        self.subscribe_quote_ticks(self.config.spread_id2)
-
-        # Request historical quote ticks for future spread (matching databento_option_greeks.py)
-        if self.config.start_time:
-            self.user_log(f"Requesting quote ticks for future spread {self.config.spread_id2} from {self.config.start_time}")
-            self.request_quote_ticks(self.config.spread_id2, start=time_object_to_dt(self.config.start_time))
-
-        self.subscribe_data(
-            DataType(GreeksData),
-            instrument_id=self.config.option_id,
-            params={
-                "append_data": False,
-            },  # prepending data ensures that greeks are cached and available before on_bar
-        )
-        self.subscribe_data(
-            DataType(GreeksData),
-            instrument_id=self.config.option_id2,
-            params={"append_data": False},
-        )
-        self.greeks.subscribe_greeks(
-            InstrumentId.from_str("ES*.XCME"),
-        )  # adds all ES greeks read from the message bus to the cache
-
-    # def on_data(self, greeks):
-    #     self.log.warning(f"{greeks=}")
-    #     self.cache.add_greeks(greeks)
-
-    def on_quote_tick(self, tick):
-        self.user_log(f"Quote received: {tick}")
-
-        # Track quotes for both spreads
-        if tick.instrument_id == self.config.spread_id:
-            self.spread_quotes_received += 1
-        elif tick.instrument_id == self.config.spread_id2:
-            self.future_spread_quotes_received += 1
-
-        # Submit spread orders when we have quotes for both spreads available
-        if (
-            (tick.instrument_id == self.config.spread_id or tick.instrument_id == self.config.spread_id2)
-            and not self.spread_order_submitted
-            and self.spread_quotes_received > 0
-            and self.future_spread_quotes_received > 0
-        ):
-            # Both spreads have quotes, submit orders
-            self.user_log(f"Submitting spread order for {self.config.spread_id}")
-            self.submit_market_order(instrument_id=self.config.spread_id, quantity=5)
-
-            self.user_log(f"Submitting spread order for {self.config.spread_id2}")
-            self.submit_market_order(instrument_id=self.config.spread_id2, quantity=5)
-
-            self.spread_order_submitted = True
-
-    def on_order_filled(self, event):
-        """
-        Log and analyze order fills for spread execution testing.
-        """
-        if event.instrument_id == self.config.spread_id:
-            # This is a combo fill
-            self.combo_fills.append(event)
-            self.user_log(
-                f"COMBO FILL: {event.order_side} {event.last_qty} @ {event.last_px} "
-                f"(Order: {event.client_order_id}, Trade: {event.trade_id})",
-                color=LogColor.GREEN,
-            )
-        elif (
-            event.instrument_id == self.config.option_id
-            or event.instrument_id == self.config.option_id2
-        ):
-            # This is a leg fill
-            self.leg_fills.append(event)
-            self.user_log(
-                f"LEG FILL: {event.instrument_id} {event.order_side} {event.last_qty} @ {event.last_px} "
-                f"(Order: {event.client_order_id}, Trade: {event.trade_id})",
-                color=LogColor.BLUE,
-            )
-        else:
-            # Regular fill
-            self.user_log(
-                f"FILL: {event.instrument_id} {event.order_side} {event.last_qty} @ {event.last_px}",
-            )
-
-    def init_portfolio(self):
-        self.submit_market_order(instrument_id=self.config.option_id, quantity=-10)
-        self.submit_market_order(instrument_id=self.config.option_id2, quantity=10)
-        self.submit_market_order(instrument_id=self.config.future_id, quantity=1)
-
-        self.start_orders_done = True
-
-    def on_bar(self, bar):
-        self.user_log(
-            f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar.close}",
-        )
-
-        if not self.start_orders_done:
-            self.user_log("Initializing the portfolio with some trades")
-            self.init_portfolio()
-            return
-
-        self.display_greeks()
-
-    def display_greeks(self, alert=None):
-        portfolio_greeks = self.greeks.portfolio_greeks(
-            use_cached_greeks=self.config.load_greeks,
-            publish_greeks=(not self.config.load_greeks),
-            index_instrument_id=self.config.future_id,
-            beta_weights={self.config.future_id2: 1.5},
-        )
-        self.user_log(f"{portfolio_greeks=}")
-
-    def submit_market_order(self, instrument_id, quantity):
-        order = self.order_factory.market(
-            instrument_id=instrument_id,
-            order_side=(OrderSide.BUY if quantity > 0 else OrderSide.SELL),
-            quantity=Quantity.from_int(abs(quantity)),
-        )
-
-        self.submit_order(order)
-
-    def submit_limit_order(self, instrument_id, price, quantity):
-        order = self.order_factory.limit(
-            instrument_id=instrument_id,
-            order_side=(OrderSide.BUY if quantity > 0 else OrderSide.SELL),
-            quantity=Quantity.from_int(abs(quantity)),
-            price=Price(price),
-        )
-
-        self.submit_order(order)
-
-    def on_stop(self):
-        """
-        Log final statistics for spread execution testing and clean up subscriptions.
-        """
-        self.user_log("Strategy stopping - Spread execution statistics:")
-        self.user_log(f"Spread quotes received: {self.spread_quotes_received}")
-        self.user_log(f"Combo fills: {len(self.combo_fills)}")
-        self.user_log(f"Leg fills: {len(self.leg_fills)}")
-
-        # Clean up subscriptions
-        self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_quote_ticks(self.config.option_id)
-        self.unsubscribe_quote_ticks(self.config.option_id2)
-        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
-        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
-        self.unsubscribe_quote_ticks(self.config.spread_id)
-
-    def user_log(self, msg, color=LogColor.GREEN):
-        self.log.warning(f"[SpreadTest] {msg!s}", color=color)
-        self.msgbus.publish(topic="test", msg=str(msg))
-
-
 class StratTestConfig(StrategyConfig):  # type: ignore [misc]
     instrument: Instrument
     bar_type: BarType
@@ -2131,25 +1558,80 @@ class TestBacktestPnLAlignmentAcceptance:
 
 
 @pytest.mark.xdist_group(name="databento_catalog")
-@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
-class TestBarsWithFillsVisualization:
-    """
-    Tests for create_bars_with_fills and _render_bars_with_fills functions.
+class TestBacktestNodeWithBacktestDataIterator:
+    def test_backtest_same_with_and_without_data_configs(self) -> None:
+        # Arrange
+        messages_with_data: list = []
+        messages_without_data: list = []
 
-    These tests validate the visualization functionality used in
-    databento_option_greeks.py to create candlestick charts with order fills overlaid.
+        # Act
+        _, node1 = run_backtest(messages_with_data.append, with_data=True)
+        _, node2 = run_backtest(messages_without_data.append, with_data=False)
 
-    """
+        # Assert
+        assert messages_with_data == messages_without_data
 
-    @pytest.mark.skip(reason="Catalog interval conflict - needs investigation")
+        # Cleanup
+        node1.dispose()
+        node2.dispose()
+
+    def test_spread_execution_functionality(self) -> None:
+        # Arrange
+        messages: list = []
+
+        # Act
+        _, node = run_backtest(messages.append, with_data=True)
+        order_filled_messages = [msg for msg in messages if "Order filled" in msg]
+
+        # Assert
+        expected_order_filled_messages = [
+            "Order filled: ESM4 P5230.XCME, qty=10, price=97.25, trade_id=XCME-1-001",
+            "Order filled: ESM4 P5250.XCME, qty=10, price=108.50, trade_id=XCME-2-001",
+            "Order filled: ESM4.XCME, qty=1, price=5199.75, trade_id=XCME-3-002",
+            "Order filled: ((1))ESM4 P5230___(1)ESM4 P5250.XCME, qty=5, price=10.63, trade_id=XCME-5-001",
+            "Order filled: ESM4 P5230.XCME, qty=5, price=97.62, trade_id=XCME-5-001-0",
+            "Order filled: ESM4 P5250.XCME, qty=5, price=108.25, trade_id=XCME-5-001-1",
+            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=2, price=12930.50, trade_id=XCME-6-001",
+            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=3, price=12930.75, trade_id=XCME-6-002",
+            "Order filled: ESM4.XCME, qty=2, price=5199.62, trade_id=XCME-6-002-0",
+            "Order filled: NQM4.XCME, qty=2, price=18130.12, trade_id=XCME-6-002-1",
+        ]
+        assert order_filled_messages == expected_order_filled_messages
+
+        # Cleanup
+        node.dispose()
+
+    def test_spread_quote_bars_values(self) -> None:
+        # Arrange
+        messages: list = []
+
+        # Act
+        _, node = run_backtest(messages.append, with_data=False)
+        spread_bar_messages = [
+            msg for msg in messages
+            if "((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL" in msg
+               and ("Historical Bar:" in msg or "Bar:" in msg)
+        ]
+
+        # Assert
+        expected_spread_bar_messages = [
+            "Historical Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12928.25,12928.25,12927.25,12927.25,4,1715248560000000000, ts=2024-05-09T09:56:00.000000000Z",
+            "Historical Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12927.50,12928.00,12927.50,12928.00,3,1715248680000000000, ts=2024-05-09T09:58:00.000000000Z",
+            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12930.50,12930.25,12930.50,3,1715248800000000000, ts=2024-05-09T10:00:00.000000000Z",
+            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12931.75,12930.25,12931.75,8,1715248920000000000, ts=2024-05-09T10:02:00.000000000Z",
+            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12933.00,12933.00,12932.50,12932.50,4,1715249040000000000, ts=2024-05-09T10:04:00.000000000Z",
+        ]
+        assert spread_bar_messages == expected_spread_bar_messages
+
+        # Cleanup
+        node.dispose()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_create_bars_with_fills_basic(self):
-        """
-        Test create_bars_with_fills creates a valid figure with bars and fills.
-        """
-        # Arrange - Use helper to run backtest and get engine
-        engine, node = run_backtest_and_return_engine(with_data=True)
+        # Arrange
+        engine, node = run_backtest(with_data=True)
 
-        # Act - Create visualization
+        # Act
         from nautilus_trader.analysis.tearsheet import create_bars_with_fills
 
         bar_type = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
@@ -2159,20 +1641,17 @@ class TestBarsWithFillsVisualization:
             title="ESM4 - Price Bars with Order Fills",
         )
 
-        # Assert - Verify figure structure
+        # Assert
         assert fig is not None
         assert len(fig.data) > 0, "Figure should have at least one trace"
 
-        # Check for candlestick trace
         candlestick_traces = [trace for trace in fig.data if trace.type == "candlestick"]
         assert len(candlestick_traces) > 0, "Figure should have candlestick trace"
 
-        # Check for scatter traces (order fills)
         scatter_traces = [trace for trace in fig.data if trace.type == "scatter"]
-        # Should have buy and/or sell fills
-        assert len(scatter_traces) >= 0, "Figure may have scatter traces for fills"
 
-        # Verify layout
+        assert len(scatter_traces) > 0, "Figure may have scatter traces for fills"
+
         assert fig.layout.xaxis.title.text == "Time"
         assert fig.layout.yaxis.title.text == "Price"
         assert fig.layout.xaxis.rangeslider.visible is True
@@ -2180,20 +1659,12 @@ class TestBarsWithFillsVisualization:
         # Cleanup
         node.dispose()
 
-    @pytest.mark.skip(reason="Catalog interval conflict - needs investigation")
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_create_tearsheet_with_bars_with_fills(self, tmp_path):
-        """
-        Test create_tearsheet integration with bars_with_fills chart.
+        # Arrange
+        engine, node = run_backtest(with_data=True)
 
-        This test validates the tearsheet functionality used in
-        databento_option_greeks.py to create a tearsheet with bars_with_fills chart
-        included.
-
-        """
-        # Arrange - Use helper to run backtest and get engine
-        engine, node = run_backtest_and_return_engine(with_data=True)
-
-        # Act - Create tearsheet with bars_with_fills chart
+        # Act
         from nautilus_trader.analysis.config import TearsheetConfig
         from nautilus_trader.analysis.tearsheet import create_tearsheet
 
@@ -2214,11 +1685,10 @@ class TestBarsWithFillsVisualization:
             output_path=str(output_path),
         )
 
-        # Assert - Verify tearsheet was created
+        # Assert
         assert output_path.exists(), "Tearsheet HTML file should be created"
         assert output_path.stat().st_size > 0, "Tearsheet file should not be empty"
 
-        # Verify HTML content contains expected elements
         html_content = output_path.read_text()
         assert "plotly" in html_content.lower(), "Should contain plotly visualization"
         assert "stats_table" in html_content.lower() or "statistics" in html_content.lower(), "Should contain stats table"
@@ -2228,21 +1698,39 @@ class TestBarsWithFillsVisualization:
         node.dispose()
 
 
-def run_backtest_and_return_engine(with_data=True):
-    """
-    Run backtest and return engine for visualization tests.
+# Register ES Options tick scheme (required for option spread instruments)
+ES_OPTIONS_TICK_SCHEME = TieredTickScheme(
+    name="ES_OPTIONS",
+    tiers=[
+        (0.05, 10.00, 0.05),  # Below $10.00: $0.05 increments
+        (10.00, float("inf"), 0.25),  # $10.00 and above: $0.25 increments
+    ],
+    price_precision=2,
+    max_ticks_per_tier=1000,
+)
+register_tick_scheme(ES_OPTIONS_TICK_SCHEME)
 
-    Returns the engine and node so they can be used for testing and then disposed.
 
+@customdataclass
+class CustomTestData(Data):
     """
+    A simple custom data class for testing custom data subscription.
+    """
+
+    value: float = 0.0
+    label: str = ""
+
+
+def run_backtest(test_callback=None, with_data=True, log_path=None):
     catalog_folder = "options_catalog"
     catalog = load_catalog(catalog_folder)
 
     future_symbols = ["ESM4", "NQM4"]
     option_symbols = ["ESM4 P5230", "ESM4 P5250"]
 
-    start_time = "2024-05-09T09:55"  # Match the data file that exists
+    start_time = "2024-05-09T09:55"
     end_time = "2024-05-09T10:05"
+    backtest_start_time = "2024-05-09T10:00"
 
     _ = databento_data(
         future_symbols,
@@ -2269,7 +1757,26 @@ def run_backtest_and_return_engine(with_data=True):
         catalog_folder,
     )
 
-    load_greeks = not with_data
+    # Create and write custom data to catalog (every minute between 10:00 and 10:05)
+    custom_data_list = []
+    for minute in range(6):  # 0, 1, 2, 3, 4, 5 (10:00 to 10:05)
+        timestamp_str = f"2024-05-09T10:0{minute}:00"
+        ts_nanos = dt_to_unix_nanos(time_object_to_dt(timestamp_str))
+        custom_test_data = CustomTestData(
+            value=100.0 + minute,  # Simple incrementing value
+            label=f"CustomData-{minute:02d}",
+            ts_event=ts_nanos,
+            ts_init=ts_nanos,
+        )
+        # Wrap custom data in CustomData for catalog storage
+        custom_data_wrapper = CustomData(
+            data_type=DataType(CustomTestData),
+            data=custom_test_data,
+        )
+        custom_data_list.append(custom_data_wrapper)
+
+    # Write custom data to catalog
+    catalog.write_data(custom_data_list)
 
     future_instrument_id = InstrumentId.from_str(f"{future_symbols[0]}.XCME")
     future_instrument_id2 = InstrumentId.from_str(f"{future_symbols[1]}.XCME")
@@ -2277,8 +1784,8 @@ def run_backtest_and_return_engine(with_data=True):
     option2_id = InstrumentId.from_str(f"{option_symbols[1]}.XCME")
     spread_instrument_id = new_generic_spread_id(
         [
-            (option1_id, -1),
-            (option2_id, 1),
+            (option1_id, -1),  # Short ESM4 P5230
+            (option2_id, 1),  # Long ESM4 P5250
         ],
     )
     spread_instrument_id2 = new_generic_spread_id(
@@ -2301,11 +1808,29 @@ def run_backtest_and_return_engine(with_data=True):
                 "option_id2": option2_id,
                 "spread_id": spread_instrument_id,
                 "spread_id2": spread_instrument_id2,
-                "load_greeks": load_greeks,
                 "start_time": start_time,
             },
         ),
     ]
+
+    streaming = StreamingConfig(
+        catalog_path=catalog.path,
+        fs_protocol="file",
+        include_types=[GreeksData, Bar, FuturesContract],
+    )
+
+    logging = LoggingConfig(
+        bypass_logging=False,
+        log_colors=True,
+        log_level="WARN",
+        log_level_file="WARN",
+        log_directory=log_path,
+        log_file_format=None,  # "json" or None
+        log_file_name="test_logs",
+        clear_log_file=True,
+        print_config=False,
+        use_pyo3=False,
+    )
 
     catalogs = [
         DataCatalogConfig(
@@ -2313,9 +1838,23 @@ def run_backtest_and_return_engine(with_data=True):
         ),
     ]
 
+    # actors = [
+    #     ImportableActorConfig(
+    #         actor_path=InterestRateProvider.fully_qualified_name(),
+    #         config_path=InterestRateProviderConfig.fully_qualified_name(),
+    #         config={
+    #             "interest_rates_file": str(
+    #                 data_path(catalog_folder, "usd_short_term_rate.xml"),
+    #             ),
+    #         },
+    #     ),
+    # ]
+
     engine_config = BacktestEngineConfig(
-        logging=LoggingConfig(bypass_logging=True),
+        logging=logging,
+        # actors=actors,
         strategies=strategies,
+        streaming=streaming,
         catalogs=catalogs,
     )
 
@@ -2346,17 +1885,14 @@ def run_backtest_and_return_engine(with_data=True):
             catalog_path=catalog.path,
             instrument_id=InstrumentId.from_str(f"{future_symbols[1]}.XCME"),
         ),
+        BacktestDataConfig(
+            data_cls=CustomTestData,
+            catalog_path=catalog.path,
+            client_id="BACKTEST",
+            # Not used anymore, reminder on syntax to add extra metadata to custom data after query from the catalog
+            # metadata={"instrument_id": "ES"},
+        ),
     ]
-
-    if load_greeks:
-        data = [
-            BacktestDataConfig(
-                data_cls=GreeksData.fully_qualified_name(),
-                catalog_path=catalog.path,
-                client_id="GreeksDataProvider",
-            ),
-            *data,
-        ]
 
     venues = [
         BacktestVenueConfig(
@@ -2373,8 +1909,8 @@ def run_backtest_and_return_engine(with_data=True):
             engine=engine_config,
             data=data if with_data else [],
             venues=venues,
-            chunk_size=None,
-            start=start_time,
+            chunk_size=None,  # use None when loading custom data, else a value of 10_000 for example
+            start=backtest_start_time,
             end=end_time,
             raise_exception=True,
         ),
@@ -2382,7 +1918,237 @@ def run_backtest_and_return_engine(with_data=True):
 
     node = BacktestNode(configs=configs)
     node.build()
-    node.run()
+
+    if test_callback:
+        node.get_engine(configs[0].id).kernel.msgbus.subscribe("test", test_callback)
+
+    results = node.run()
+
+    catalog.convert_stream_to_data(
+        results[0].instance_id,
+        GreeksData,
+    )
+    catalog.convert_stream_to_data(
+        results[0].instance_id,
+        Bar,
+        identifiers=["2-MINUTE"],
+    )
+    catalog.convert_stream_to_data(
+        results[0].instance_id,
+        FuturesContract,
+    )
 
     engine: BacktestEngine = node.get_engine(configs[0].id)
+    engine.trader.generate_order_fills_report()
+    engine.trader.generate_positions_report()
+    engine.trader.generate_account_report(Venue("XCME"))
+
+    # Return engine and node for testing purposes
     return engine, node
+
+
+class OptionConfig(StrategyConfig, frozen=True):
+    future_id: InstrumentId
+    future_id2: InstrumentId
+    option_id: InstrumentId
+    option_id2: InstrumentId
+    spread_id: InstrumentId
+    spread_id2: InstrumentId
+    start_time: str | None = None
+
+
+class OptionStrategy(Strategy):
+    def __init__(self, config: OptionConfig):
+        super().__init__(config=config)
+        self.start_orders_done = False
+        self.spread_order_submitted = False
+        self.spread_order_submitted2 = False
+        # Test-specific tracking attributes
+        self.spread_quotes_received = 0
+        self.future_spread_quotes_received = 0
+        self.combo_fills: list[str] = []
+        self.leg_fills: list[str] = []
+        self.spread_bars: list[Bar] = []
+        self.historical_spread_bars: list[Bar] = []
+        self.live_spread_bars: list[Bar] = []
+        self.custom_data_received: list[CustomTestData] = []
+
+    def on_start(self):
+        self.user_log("Strategy on_start called")
+        self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
+        self.bar_type_2 = BarType.from_str(
+            f"{self.config.future_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+        )
+
+        self.bar_type_3 = BarType.from_str(f"{self.config.spread_id2}-2-MINUTE-ASK-INTERNAL")
+
+        self.user_log(f"Requesting instruments: {self.config.option_id}, {self.config.option_id2}, {self.config.future_id}, {self.config.future_id2}")
+        self.request_instrument(self.config.option_id)
+        self.request_instrument(self.config.option_id2)
+        self.request_instrument(self.config.future_id)
+        self.request_instrument(self.config.future_id2)
+        self.request_instrument(
+            instrument_id=self.config.spread_id,
+            params={
+                "instrument_properties": {
+                    "tick_scheme_name": "ES_OPTIONS",
+                },
+            },
+        )
+        self.request_instrument(
+            instrument_id=self.config.spread_id2,
+        )
+
+        if self.config.start_time:
+            self.user_log(f"Requesting quote ticks for spread {self.config.spread_id2} from {self.config.start_time}")
+            self.request_quote_ticks(self.config.spread_id2, start=time_object_to_dt(self.config.start_time))
+
+            self.user_log(f"Requesting bars for spread {self.bar_type_3} from {self.config.start_time}")
+            self.request_aggregated_bars(
+                [self.bar_type_3],
+                start=time_object_to_dt(self.config.start_time),
+                update_subscriptions=True,
+            )
+
+        # Subscribe to various data
+        self.user_log("Subscribing to quote ticks and bars")
+        self.subscribe_quote_ticks(self.config.option_id)
+        self.subscribe_quote_ticks(self.config.option_id2)
+        self.subscribe_bars(self.bar_type)
+        self.subscribe_quote_ticks(self.config.future_id)
+        self.subscribe_quote_ticks(self.config.future_id2)
+        self.subscribe_quote_ticks(self.config.spread_id)
+        self.subscribe_quote_ticks(self.config.spread_id2)
+        self.subscribe_bars(self.bar_type_2)
+        self.subscribe_bars(self.bar_type_3)
+
+        # Subscribe to custom data
+        # Any client id can be used when loading custom data from the catalog,
+        # but a client id or an instrument id is required
+        self.user_log("Subscribing to custom data")
+        self.subscribe_data(DataType(CustomTestData), client_id=ClientId("any_id"))
+
+    def on_instrument(self, instrument):
+        self.user_log(f"Received instrument: {instrument}")
+
+    def init_portfolio(self):
+        self.user_log("Initializing portfolio with initial trades")
+        self.submit_market_order(instrument_id=self.config.option_id, quantity=-10)
+        self.submit_market_order(instrument_id=self.config.option_id2, quantity=10)
+        self.submit_market_order(instrument_id=self.config.future_id, quantity=1)
+
+        self.start_orders_done = True
+        self.user_log("Portfolio initialization complete")
+
+    def on_historical_data(self, data):
+        if isinstance(data, QuoteTick):
+            self.user_log(f"Historical QuoteTick: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}", color=LogColor.BLUE)
+
+        if isinstance(data, Bar):
+            self.user_log(f"Historical Bar: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}", color=LogColor.RED)
+            # Test-specific: track historical spread bars
+            if self.bar_type_3 and data.bar_type == self.bar_type_3:
+                self.historical_spread_bars.append(data)
+                self.spread_bars.append(data)
+
+    def on_quote_tick(self, tick):
+        self.user_log(f"QuoteTick: {tick}, ts={unix_nanos_to_iso8601(tick.ts_init)}", color=LogColor.BLUE)
+
+        # Test-specific: track quotes
+        if tick.instrument_id == self.config.spread_id:
+            self.spread_quotes_received += 1
+        elif tick.instrument_id == self.config.spread_id2:
+            self.future_spread_quotes_received += 1
+
+        # Submit spread order when we have spread quotes available
+        if tick.instrument_id == self.config.spread_id and not self.spread_order_submitted:
+            # Try submitting order immediately - the exchange should have processed the quote by now
+            self.submit_market_order(instrument_id=self.config.spread_id, quantity=5)
+            self.spread_order_submitted = True
+
+        if tick.instrument_id == self.config.spread_id2 and not self.spread_order_submitted2:
+            self.submit_market_order(instrument_id=self.config.spread_id2, quantity=5)
+            self.spread_order_submitted2 = True
+
+    def on_order_filled(self, event):
+        self.user_log(f"Order filled: {event.instrument_id}, qty={event.last_qty}, price={event.last_px}, trade_id={event.trade_id}")
+        # Test-specific: track fills
+        if event.instrument_id == self.config.spread_id:
+            self.combo_fills.append(event)
+        elif (
+                event.instrument_id == self.config.option_id
+                or event.instrument_id == self.config.option_id2
+        ):
+            self.leg_fills.append(event)
+
+    def on_position_opened(self, event):
+        self.user_log(f"Position opened: {event.instrument_id}, qty={event.quantity}, entry={event.entry}")
+
+    def on_position_changed(self, event):
+        self.user_log(f"Position changed: {event.instrument_id}, qty={event.quantity}, pnl={event.unrealized_pnl}")
+
+    def on_data(self, data: Data):
+        if isinstance(data, CustomTestData):
+            self.user_log(f"Received custom data: {data.label}={data.value}, ts={unix_nanos_to_iso8601(data.ts_init)}")
+            self.custom_data_received.append(data)
+
+    def on_bar(self, bar):
+        if bar.bar_type == self.bar_type_3:
+            self.user_log(f"Bar: {bar}, ts={unix_nanos_to_iso8601(bar.ts_init)}", color=LogColor.RED)
+            # Test-specific: track live spread bars
+            self.live_spread_bars.append(bar)
+            self.spread_bars.append(bar)
+        else:
+            self.user_log(
+                f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar}",
+            )
+
+        if not self.start_orders_done:
+            self.user_log("Initializing the portfolio with some trades")
+            self.init_portfolio()
+            return
+
+        self.display_greeks()
+
+    def display_greeks(self, alert=None):
+        self.user_log("Calculating portfolio greeks...")
+        portfolio_greeks = self.greeks.portfolio_greeks(
+            # underlyings=["ES"],
+            # spot_shock=10.,
+            # vol_shock=0.0,
+            # percent_greeks=True,
+            index_instrument_id=self.config.future_id,
+            beta_weights={self.config.future_id2: 1.5},
+        )
+        self.user_log(f"Portfolio greeks calculated: {portfolio_greeks=}")
+
+    def submit_market_order(self, instrument_id, quantity):
+        order = self.order_factory.market(
+            instrument_id=instrument_id,
+            order_side=(OrderSide.BUY if quantity > 0 else OrderSide.SELL),
+            quantity=Quantity.from_int(abs(quantity)),
+        )
+        self.submit_order(order)
+        self.user_log(f"Order submitted: {order}")
+
+    def submit_limit_order(self, instrument_id, price, quantity):
+        order = self.order_factory.limit(
+            instrument_id=instrument_id,
+            order_side=(OrderSide.BUY if quantity > 0 else OrderSide.SELL),
+            quantity=Quantity.from_int(abs(quantity)),
+            price=Price.from_str(f"{price:.2f}"),
+        )
+        self.submit_order(order)
+        self.user_log(f"Order submitted: {order}")
+
+    def on_stop(self):
+        self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_quote_ticks(self.config.option_id)
+        self.unsubscribe_quote_ticks(self.config.option_id2)
+        self.unsubscribe_quote_ticks(self.config.spread_id)
+        self.unsubscribe_data(DataType(CustomTestData), client_id=ClientId("any_id"))
+
+    def user_log(self, msg, color=LogColor.GREEN):
+        self.log.warning(f"{msg}", color=color)
+        # Test-specific: publish to message bus for test collection
+        self.msgbus.publish(topic="test", msg=str(msg))

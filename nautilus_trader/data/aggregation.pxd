@@ -202,7 +202,7 @@ cdef class SpreadQuoteAggregator:
 
     cpdef void start_timer(self)
     cpdef void stop_timer(self)
-    cpdef void set_historical_mode(self, bint historical_mode, handler)
+    cpdef void set_historical_mode(self, bint historical_mode, handler, GreeksCalculator greeks_calculator)
     cpdef void set_running(self, bint is_running)
     cpdef void set_clock(self, Clock clock)
     cpdef void handle_quote_tick(self, QuoteTick tick)

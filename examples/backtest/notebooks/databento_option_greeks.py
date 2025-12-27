@@ -196,6 +196,8 @@ class OptionStrategy(Strategy):
         else:
             self.bar_type_2 = BarType.from_str(f"{self.config.future_id}-2-MINUTE-LAST-EXTERNAL")
 
+        self.bar_type_3 = BarType.from_str(f"{self.config.spread_id2}-2-MINUTE-ASK-INTERNAL")
+
         self.user_log(f"Requesting instruments: {self.config.option_id}, {self.config.option_id2}, {self.config.future_id}, {self.config.future_id2}")
         self.request_instrument(self.config.option_id)
         self.request_instrument(self.config.option_id2)
@@ -213,16 +215,27 @@ class OptionStrategy(Strategy):
             instrument_id=self.config.spread_id2,
         )
 
+        self.user_log(f"Requesting quote ticks for spread {self.config.spread_id2} from {start_time}")
+        self.request_quote_ticks(self.config.spread_id2, start=time_object_to_dt(start_time))
+
+        self.user_log(f"Requesting bars for spread {self.bar_type_3} from {start_time}")
+        self.request_aggregated_bars(
+            [self.bar_type_3],
+            start=time_object_to_dt(start_time),
+            update_subscriptions=True,
+        )
+
         # Subscribe to various data
         self.user_log("Subscribing to quote ticks and bars")
         self.subscribe_quote_ticks(self.config.option_id)
         self.subscribe_quote_ticks(self.config.option_id2)
+        self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.config.future_id)
         self.subscribe_quote_ticks(self.config.future_id2)
         self.subscribe_quote_ticks(self.config.spread_id)
         self.subscribe_quote_ticks(self.config.spread_id2)
-        self.subscribe_bars(self.bar_type)
         self.subscribe_bars(self.bar_type_2)
+        self.subscribe_bars(self.bar_type_3)
 
         # Subscribing to custom greeks data if it's already stored
         self.user_log(f"Subscribing to GreeksData for options, load_greeks={self.config.load_greeks}")
@@ -242,9 +255,6 @@ class OptionStrategy(Strategy):
             InstrumentId.from_str("ES*.XCME"),
         )  # adds all ES greeks read from the message bus to the cache
 
-        self.user_log(f"Requesting quote ticks for spread {self.config.spread_id2} from {start_time}")
-        self.request_quote_ticks(self.config.spread_id2, start=time_object_to_dt(start_time))
-
     def on_instrument(self, instrument):
         self.user_log(f"Received instrument: {instrument}")
 
@@ -261,19 +271,19 @@ class OptionStrategy(Strategy):
         if isinstance(data, QuoteTick):
             self.user_log(f"Historical QuoteTick: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}", color=LogColor.BLUE)
 
+        if isinstance(data, Bar):
+            self.user_log(f"Historical Bar: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}", color=LogColor.RED)
+
     def on_quote_tick(self, tick):
         self.user_log(f"QuoteTick: {tick}, ts={unix_nanos_to_iso8601(tick.ts_init)}", color=LogColor.BLUE)
-        # self.user_log(f"Quote received: {tick}")
 
         # Submit spread order when we have spread quotes available
         if tick.instrument_id == self.config.spread_id and not self.spread_order_submitted:
             # Try submitting order immediately - the exchange should have processed the quote by now
-            self.user_log(f"Submitting spread order for {self.config.spread_id}")
             self.submit_market_order(instrument_id=self.config.spread_id, quantity=5)
             self.spread_order_submitted = True
 
         if tick.instrument_id == self.config.spread_id2 and not self.spread_order_submitted2:
-            self.user_log(f"Submitting spread order for {self.config.spread_id2}")
             self.submit_market_order(instrument_id=self.config.spread_id2, quantity=5)
             self.spread_order_submitted2 = True
 
@@ -291,9 +301,12 @@ class OptionStrategy(Strategy):
     #     self.cache.add_greeks(greeks)
 
     def on_bar(self, bar):
-        self.user_log(
-            f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar}",
-        )
+        if bar.bar_type == self.bar_type_3:
+            self.user_log(f"Bar: {bar}, ts={unix_nanos_to_iso8601(bar.ts_init)}", color=LogColor.RED)
+        else:
+            self.user_log(
+                f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar}",
+            )
 
         if not self.start_orders_done:
             self.user_log("Initializing the portfolio with some trades")
@@ -317,15 +330,13 @@ class OptionStrategy(Strategy):
         self.user_log(f"Portfolio greeks calculated: {portfolio_greeks=}")
 
     def submit_market_order(self, instrument_id, quantity):
-        self.user_log(f"Submitting market order: {instrument_id}, quantity={quantity}")
         order = self.order_factory.market(
             instrument_id=instrument_id,
             order_side=(OrderSide.BUY if quantity > 0 else OrderSide.SELL),
             quantity=Quantity.from_int(abs(quantity)),
         )
-
         self.submit_order(order)
-        self.user_log(f"Order submitted: {order.client_order_id}")
+        self.user_log(f"Order submitted: {order}")
 
     def submit_limit_order(self, instrument_id, price, quantity):
         order = self.order_factory.limit(
@@ -334,8 +345,8 @@ class OptionStrategy(Strategy):
             quantity=Quantity.from_int(abs(quantity)),
             price=Price.from_str(f"{price:.2f}"),
         )
-
         self.submit_order(order)
+        self.user_log(f"Order submitted: {order}")
 
     def user_log(self, msg, color=LogColor.GREEN):
         self.log.warning(f"{msg}", color=color)
@@ -397,12 +408,12 @@ logging = LoggingConfig(
     log_directory=".",
     log_file_name="databento_option_greeks",
     log_file_format=None,  # "json" or None
-    # log_component_levels={"SpreadQuoteAggregator": "DEBUG"},
+    log_component_levels={"DataEngine": "WARNING"},
+    log_components_only=False,
     bypass_logging=False,
     print_config=False,
     use_pyo3=False,
     clear_log_file=True,
-    # log_components_only=True,
 )
 
 catalogs = [
@@ -508,34 +519,19 @@ results = node.run()
 
 # %%
 if not load_greeks:
-    print("Converting stream data to catalog...")
-    try:
-        catalog.convert_stream_to_data(
-            results[0].instance_id,
-            GreeksData,
-        )
-        print("GreeksData converted successfully")
-    except Exception as e:
-        print(f"Warning: Failed to convert GreeksData to catalog: {e}")
-
-    try:
-        catalog.convert_stream_to_data(
-            results[0].instance_id,
-            Bar,
-            identifiers=["2-MINUTE"],
-        )
-        print("Bar data converted successfully")
-    except Exception as e:
-        print(f"Warning: Failed to convert Bar data to catalog: {e}")
-
-    try:
-        catalog.convert_stream_to_data(
-            results[0].instance_id,
-            FuturesContract,
-        )
-        print("FuturesContract data converted successfully")
-    except Exception as e:
-        print(f"Warning: Failed to convert FuturesContract data to catalog: {e}")
+    catalog.convert_stream_to_data(
+        results[0].instance_id,
+        GreeksData,
+    )
+    catalog.convert_stream_to_data(
+        results[0].instance_id,
+        Bar,
+        identifiers=["2-MINUTE"],
+    )
+    catalog.convert_stream_to_data(
+        results[0].instance_id,
+        FuturesContract,
+    )
 
 # %% [markdown]
 # ## backtest results

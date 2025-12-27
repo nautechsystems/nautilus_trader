@@ -78,6 +78,7 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport format_optional_iso8601
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_advance_clock
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
@@ -913,7 +914,7 @@ cdef class BacktestEngine:
 
     cpdef void _handle_data_command(self, DataCommand command):
         if not(command.data_type.type in [Bar, QuoteTick, TradeTick, OrderBookDepth10]
-               or type(command) not in [SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments]):
+               or type(command) in [SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments]):
             return
 
         if isinstance(command, SubscribeData):
@@ -1905,7 +1906,7 @@ cdef class BacktestEngine:
             self._kernel.data_engine.register_client(client)
 
     def set_default_market_data_client(self) -> None:
-        cdef ClientId client_id = ClientId("backtest_default_client")
+        cdef ClientId client_id = ClientId("BACKTEST")
         client = BacktestMarketDataClient(
             client_id=client_id,
             msgbus=self._kernel.msgbus,
