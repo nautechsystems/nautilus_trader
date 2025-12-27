@@ -15,6 +15,8 @@
 
 //! Configuration structures for the Deribit adapter.
 
+use nautilus_model::identifiers::{AccountId, TraderId};
+
 use crate::{
     common::urls::{get_http_base_url, get_ws_url},
     http::models::DeribitInstrumentKind,
@@ -73,6 +75,98 @@ impl DeribitDataClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Returns `true` when API credentials are available (in config or env vars).
+    #[must_use]
+    pub fn has_api_credentials(&self) -> bool {
+        let (key_env, secret_env) = if self.use_testnet {
+            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
+        } else {
+            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
+        };
+
+        let has_key = self.api_key.is_some() || std::env::var(key_env).is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var(secret_env).is_ok();
+        has_key && has_secret
+    }
+
+    /// Returns the HTTP base URL, falling back to the default when unset.
+    #[must_use]
+    pub fn http_base_url(&self) -> String {
+        self.base_url_http
+            .clone()
+            .unwrap_or_else(|| get_http_base_url(self.use_testnet).to_string())
+    }
+
+    /// Returns the WebSocket URL, respecting the testnet flag and overrides.
+    #[must_use]
+    pub fn ws_url(&self) -> String {
+        self.base_url_ws
+            .clone()
+            .unwrap_or_else(|| get_ws_url(self.use_testnet).to_string())
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+
+/// Configuration for the Deribit execution client.
+#[derive(Clone, Debug)]
+pub struct DeribitExecClientConfig {
+    /// The trader ID for this client.
+    pub trader_id: TraderId,
+    /// The account ID for this client.
+    pub account_id: AccountId,
+    /// Optional API key for authenticated endpoints.
+    pub api_key: Option<String>,
+    /// Optional API secret for authenticated endpoints.
+    pub api_secret: Option<String>,
+    /// Instrument kinds to load (e.g., Future, Option, Spot).
+    pub instrument_kinds: Vec<DeribitInstrumentKind>,
+    /// Optional override for the HTTP base URL.
+    pub base_url_http: Option<String>,
+    /// Optional override for the WebSocket URL.
+    pub base_url_ws: Option<String>,
+    /// When true the client will use Deribit testnet endpoints.
+    pub use_testnet: bool,
+    /// Optional HTTP timeout in seconds.
+    pub http_timeout_secs: Option<u64>,
+    /// Optional maximum retry attempts for requests.
+    pub max_retries: Option<u32>,
+    /// Optional initial retry delay in milliseconds.
+    pub retry_delay_initial_ms: Option<u64>,
+    /// Optional maximum retry delay in milliseconds.
+    pub retry_delay_max_ms: Option<u64>,
+}
+
+impl Default for DeribitExecClientConfig {
+    fn default() -> Self {
+        Self {
+            trader_id: TraderId::default(),
+            account_id: AccountId::from("DERIBIT-001"),
+            api_key: None,
+            api_secret: None,
+            instrument_kinds: vec![DeribitInstrumentKind::Future],
+            base_url_http: None,
+            base_url_ws: None,
+            use_testnet: false,
+            http_timeout_secs: Some(60),
+            max_retries: Some(3),
+            retry_delay_initial_ms: Some(1_000),
+            retry_delay_max_ms: Some(10_000),
+        }
+    }
+}
+
+impl DeribitExecClientConfig {
+    /// Creates a new configuration with default settings.
+    #[must_use]
+    pub fn new(trader_id: TraderId, account_id: AccountId) -> Self {
+        Self {
+            trader_id,
+            account_id,
+            ..Default::default()
+        }
     }
 
     /// Returns `true` when API credentials are available (in config or env vars).
