@@ -566,16 +566,22 @@ pub fn parse_bars(
     let mut bars = Vec::with_capacity(num_bars);
 
     for i in 0..num_bars {
-        let open = Price::new(chart_data.open[i], price_precision);
-        let high = Price::new(chart_data.high[i], price_precision);
-        let low = Price::new(chart_data.low[i], price_precision);
-        let close = Price::new(chart_data.close[i], price_precision);
-        let volume = Quantity::new(chart_data.volume[i], size_precision);
+        let open = Price::new_checked(chart_data.open[i], price_precision)
+            .with_context(|| format!("Invalid open price at index {i}"))?;
+        let high = Price::new_checked(chart_data.high[i], price_precision)
+            .with_context(|| format!("Invalid high price at index {i}"))?;
+        let low = Price::new_checked(chart_data.low[i], price_precision)
+            .with_context(|| format!("Invalid low price at index {i}"))?;
+        let close = Price::new_checked(chart_data.close[i], price_precision)
+            .with_context(|| format!("Invalid close price at index {i}"))?;
+        let volume = Quantity::new_checked(chart_data.volume[i], size_precision)
+            .with_context(|| format!("Invalid volume at index {i}"))?;
 
         // Convert timestamp from milliseconds to nanoseconds
         let ts_event = UnixNanos::from((chart_data.ticks[i] as u64) * NANOSECONDS_IN_MILLISECOND);
 
-        let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init);
+        let bar = Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
+            .with_context(|| format!("Invalid OHLC bar at index {i}"))?;
         bars.push(bar);
     }
 
