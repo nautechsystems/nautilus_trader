@@ -4030,10 +4030,16 @@ cdef class OrderMatchingEngine:
             quarter_raw = min_size_raw
 
         # Calculate close size: remaining volume after 3 quarters, also rounded
-        cdef QuantityRaw close_raw = bar._mem.volume.raw - (quarter_raw * 3)
-        close_raw = (close_raw // min_size_raw) * min_size_raw
-        if close_raw < min_size_raw:
-            close_raw = min_size_raw
+        # Protect against underflow when quarter_raw * 3 exceeds bar volume
+        cdef QuantityRaw three_quarters = quarter_raw * 3
+        cdef QuantityRaw close_raw
+        if three_quarters >= bar._mem.volume.raw:
+            close_raw = min_size_raw  # Use minimum if no remaining volume
+        else:
+            close_raw = bar._mem.volume.raw - three_quarters
+            close_raw = (close_raw // min_size_raw) * min_size_raw
+            if close_raw < min_size_raw:
+                close_raw = min_size_raw
 
         cdef Quantity size = Quantity.from_raw_c(quarter_raw, bar._mem.volume.precision)
         cdef Quantity close_size = Quantity.from_raw_c(close_raw, bar._mem.volume.precision)
@@ -4143,14 +4149,26 @@ cdef class OrderMatchingEngine:
             ask_quarter = min_size_raw
 
         # Calculate close sizes: remaining volume after 3 quarters, also rounded
-        cdef QuantityRaw bid_close_raw = self._last_bid_bar._mem.volume.raw - (bid_quarter * 3)
-        bid_close_raw = (bid_close_raw // min_size_raw) * min_size_raw
-        if bid_close_raw < min_size_raw:
-            bid_close_raw = min_size_raw
-        cdef QuantityRaw ask_close_raw = self._last_ask_bar._mem.volume.raw - (ask_quarter * 3)
-        ask_close_raw = (ask_close_raw // min_size_raw) * min_size_raw
-        if ask_close_raw < min_size_raw:
-            ask_close_raw = min_size_raw
+        # Protect against underflow when quarter * 3 exceeds bar volume
+        cdef QuantityRaw bid_three_quarters = bid_quarter * 3
+        cdef QuantityRaw bid_close_raw
+        if bid_three_quarters >= self._last_bid_bar._mem.volume.raw:
+            bid_close_raw = min_size_raw  # Use minimum if no remaining volume
+        else:
+            bid_close_raw = self._last_bid_bar._mem.volume.raw - bid_three_quarters
+            bid_close_raw = (bid_close_raw // min_size_raw) * min_size_raw
+            if bid_close_raw < min_size_raw:
+                bid_close_raw = min_size_raw
+
+        cdef QuantityRaw ask_three_quarters = ask_quarter * 3
+        cdef QuantityRaw ask_close_raw
+        if ask_three_quarters >= self._last_ask_bar._mem.volume.raw:
+            ask_close_raw = min_size_raw  # Use minimum if no remaining volume
+        else:
+            ask_close_raw = self._last_ask_bar._mem.volume.raw - ask_three_quarters
+            ask_close_raw = (ask_close_raw // min_size_raw) * min_size_raw
+            if ask_close_raw < min_size_raw:
+                ask_close_raw = min_size_raw
 
         cdef Quantity bid_size = Quantity.from_raw_c(bid_quarter, self._last_bid_bar._mem.volume.precision)
         cdef Quantity ask_size = Quantity.from_raw_c(ask_quarter, self._last_ask_bar._mem.volume.precision)
