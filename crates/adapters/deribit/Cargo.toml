@@ -115,6 +115,10 @@ path = "bin/ws_data.rs"
 name = "deribit-data-tester"
 path = "examples/node_data_tester.rs"
 
+[[example]]
+name = "deribit-exec-tester"
+path = "examples/node_exec_tester.rs"
+
 # Run with `cargo bench -p nautilus-deribit --bench websocket`
 [[bench]]
 name = "websocket"
