@@ -417,8 +417,7 @@ class DeribitDataClient(LiveMarketDataClient):
             )
             deltas.append(delta)
 
-        for i, level in enumerate(asks):
-            is_last = i == len(asks) - 1
+        for level in asks:
             order = BookOrder(
                 side=OrderSide.SELL,
                 price=instrument.make_price(level.price.as_double()),
@@ -429,12 +428,25 @@ class DeribitDataClient(LiveMarketDataClient):
                 instrument_id=request.instrument_id,
                 action=BookAction.ADD,
                 order=order,
-                flags=RecordFlag.F_LAST if is_last else 0,
+                flags=0,
                 sequence=sequence,
                 ts_event=ts_event,
                 ts_init=ts_init,
             )
             deltas.append(delta)
+
+        # Set F_LAST flag on the actual last delta (after CLEAR + bids + asks)
+        if deltas:
+            last = deltas[-1]
+            deltas[-1] = OrderBookDelta(
+                instrument_id=last.instrument_id,
+                action=last.action,
+                order=last.order,
+                flags=RecordFlag.F_LAST,
+                sequence=last.sequence,
+                ts_event=last.ts_event,
+                ts_init=last.ts_init,
+            )
 
         snapshot = OrderBookDeltas(instrument_id=request.instrument_id, deltas=deltas)
 
