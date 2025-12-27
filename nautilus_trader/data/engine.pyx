@@ -39,6 +39,7 @@ from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence.funcs import parse_filters_expr
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -1662,10 +1663,15 @@ cdef class DataEngine(Component):
         # We assume each symbol is only in one catalog
         for catalog in self._catalogs.values():
             if isinstance(request, RequestInstruments):
+                filter_expr = request.params.get("filter_expr")
+                if filter_expr:
+                    filter_expr = parse_filters_expr(filter_expr)
+
                 # We only use ts_end if end is passed as request argument
                 data += catalog.instruments(
                     start=ts_start,
                     end=(ts_end if end is not None else None),
+                    filter_expr=filter_expr,
                 )
             elif isinstance(request, RequestInstrument):
                 # We only use ts_end if end is passed as request argument
@@ -1705,12 +1711,17 @@ cdef class DataEngine(Component):
                     end=ts_end,
                 )
             elif type(request) is RequestData:
+                filter_expr = request.params.get("filter_expr")
+                if filter_expr:
+                    filter_expr = parse_filters_expr(filter_expr)
+
                 data = catalog.custom_data(
                     cls=request.data_type.type,
                     instrument_ids=[str(request.instrument_id)] if request.instrument_id else None,
                     metadata=request.data_type.metadata,
                     start=ts_start,
                     end=ts_end,
+                    filter_expr=filter_expr,
                 )
 
             if data and not isinstance(request, RequestInstruments):

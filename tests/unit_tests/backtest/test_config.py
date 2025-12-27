@@ -24,8 +24,6 @@ import pyarrow.dataset as ds
 import pytest
 from click.testing import CliRunner
 
-# Our code
-from nautilus_trader.backtest.config import parse_filters_expr
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
@@ -55,6 +53,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.persistence.funcs import parse_filters_expr
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_quote_ticks_audusd
 from nautilus_trader.test_kit.mocks.data import setup_catalog

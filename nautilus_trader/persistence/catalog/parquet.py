@@ -1931,7 +1931,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
-        filter_expr: str | None = None,
+        filter_expr: pds.Expression | None = None,
         files: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Data]:
