@@ -399,12 +399,12 @@ class DeribitDataClient(LiveMarketDataClient):
         bids = list(pyo3_book.bids())
         asks = list(pyo3_book.asks())
 
-        for level in bids:
+        for i, level in enumerate(bids):
             order = BookOrder(
                 side=OrderSide.BUY,
                 price=instrument.make_price(level.price.as_double()),
                 size=instrument.make_qty(level.size()),
-                order_id=0,
+                order_id=i,
             )
             delta = OrderBookDelta(
                 instrument_id=request.instrument_id,
@@ -417,12 +417,12 @@ class DeribitDataClient(LiveMarketDataClient):
             )
             deltas.append(delta)
 
-        for level in asks:
+        for i, level in enumerate(asks):
             order = BookOrder(
                 side=OrderSide.SELL,
                 price=instrument.make_price(level.price.as_double()),
                 size=instrument.make_qty(level.size()),
-                order_id=0,
+                order_id=len(bids) + i,
             )
             delta = OrderBookDelta(
                 instrument_id=request.instrument_id,

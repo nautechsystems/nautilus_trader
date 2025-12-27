@@ -121,7 +121,7 @@ pub fn parse_book_snapshot(
     ));
 
     // Parse bids: ["new", price, amount] for snapshot (3-element format)
-    for bid in &msg.bids {
+    for (i, bid) in msg.bids.iter().enumerate() {
         if bid.len() >= 3 {
             // Skip action field (bid[0]), use bid[1] for price and bid[2] for amount
             let price_val = bid[1].as_f64().unwrap_or(0.0);
@@ -134,7 +134,7 @@ pub fn parse_book_snapshot(
                 deltas.push(OrderBookDelta::new(
                     instrument_id,
                     BookAction::Add,
-                    BookOrder::new(OrderSide::Buy, price, size, 0),
+                    BookOrder::new(OrderSide::Buy, price, size, i as u64),
                     0, // No flags for regular deltas
                     msg.change_id,
                     ts_event,
@@ -145,7 +145,8 @@ pub fn parse_book_snapshot(
     }
 
     // Parse asks: ["new", price, amount] for snapshot (3-element format)
-    for ask in &msg.asks {
+    let num_bids = msg.bids.len();
+    for (i, ask) in msg.asks.iter().enumerate() {
         if ask.len() >= 3 {
             // Skip action field (ask[0]), use ask[1] for price and ask[2] for amount
             let price_val = ask[1].as_f64().unwrap_or(0.0);
@@ -158,7 +159,7 @@ pub fn parse_book_snapshot(
                 deltas.push(OrderBookDelta::new(
                     instrument_id,
                     BookAction::Add,
-                    BookOrder::new(OrderSide::Sell, price, size, 0),
+                    BookOrder::new(OrderSide::Sell, price, size, (num_bids + i) as u64),
                     0, // No flags for regular deltas
                     msg.change_id,
                     ts_event,
@@ -202,7 +203,7 @@ pub fn parse_book_delta(
     let mut deltas = Vec::new();
 
     // Parse bids: [action, price, amount] for delta
-    for bid in &msg.bids {
+    for (i, bid) in msg.bids.iter().enumerate() {
         if bid.len() >= 3 {
             let action_str = bid[0].as_str().unwrap_or("new");
             let price_val = bid[1].as_f64().unwrap_or(0.0);
@@ -221,7 +222,7 @@ pub fn parse_book_delta(
             deltas.push(OrderBookDelta::new(
                 instrument_id,
                 action,
-                BookOrder::new(OrderSide::Buy, price, size, 0),
+                BookOrder::new(OrderSide::Buy, price, size, i as u64),
                 0, // No flags for regular deltas
                 msg.change_id,
                 ts_event,
@@ -231,7 +232,8 @@ pub fn parse_book_delta(
     }
 
     // Parse asks: [action, price, amount] for delta
-    for ask in &msg.asks {
+    let num_bids = msg.bids.len();
+    for (i, ask) in msg.asks.iter().enumerate() {
         if ask.len() >= 3 {
             let action_str = ask[0].as_str().unwrap_or("new");
             let price_val = ask[1].as_f64().unwrap_or(0.0);
@@ -250,7 +252,7 @@ pub fn parse_book_delta(
             deltas.push(OrderBookDelta::new(
                 instrument_id,
                 action,
-                BookOrder::new(OrderSide::Sell, price, size, 0),
+                BookOrder::new(OrderSide::Sell, price, size, (num_bids + i) as u64),
                 0, // No flags for regular deltas
                 msg.change_id,
                 ts_event,
