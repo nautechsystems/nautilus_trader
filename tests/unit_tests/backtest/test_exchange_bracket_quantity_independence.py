@@ -198,12 +198,12 @@ class TestSimulatedExchangeBracketQuantityIndependence:
 
         # Get the individual orders for verification
         entry1 = bracket1.orders[0]
-        tp1 = bracket1.orders[1]
-        sl1 = bracket1.orders[2]
+        sl1 = bracket1.orders[1]  # Factory returns [entry, sl, tp]
+        tp1 = bracket1.orders[2]
 
         entry2 = bracket2.orders[0]
-        tp2 = bracket2.orders[1]
-        sl2 = bracket2.orders[2]
+        sl2 = bracket2.orders[1]
+        tp2 = bracket2.orders[2]
 
         # Act - Process quote first to set market prices
         # For BUY limit orders at 1.10000 to fill, ask must be <= 1.10000
@@ -289,12 +289,12 @@ class TestSimulatedExchangeBracketQuantityIndependence:
         self.strategy.submit_order_list(bracket2)
 
         entry1 = bracket1.orders[0]
-        tp1 = bracket1.orders[1]
-        sl1 = bracket1.orders[2]
+        sl1 = bracket1.orders[1]  # Factory returns [entry, sl, tp]
+        tp1 = bracket1.orders[2]
 
         entry2 = bracket2.orders[0]
-        tp2 = bracket2.orders[1]
-        sl2 = bracket2.orders[2]
+        sl2 = bracket2.orders[1]
+        tp2 = bracket2.orders[2]
 
         # Act - Process quote with limited size to cause partial fills
         quote1 = QuoteTick(
@@ -521,12 +521,12 @@ class TestSimulatedExchangeBracketQuantityIndependence:
 
         # Get the individual orders for verification
         entry1 = bracket1.orders[0]
-        tp1 = bracket1.orders[1]
-        sl1 = bracket1.orders[2]
+        sl1 = bracket1.orders[1]  # Factory returns [entry, sl, tp]
+        tp1 = bracket1.orders[2]
 
         entry2 = bracket2.orders[0]
-        tp2 = bracket2.orders[1]
-        sl2 = bracket2.orders[2]
+        sl2 = bracket2.orders[1]
+        tp2 = bracket2.orders[2]
 
         # Process quote first to set market prices
         quote = QuoteTick(
@@ -557,10 +557,10 @@ class TestSimulatedExchangeBracketQuantityIndependence:
         assert position.quantity == Quantity.from_int(300_000)
 
         # Child orders should maintain their parent quantities initially
-        assert tp1.quantity == Quantity.from_int(100_000)
         assert sl1.quantity == Quantity.from_int(100_000)
-        assert tp2.quantity == Quantity.from_int(200_000)
+        assert tp1.quantity == Quantity.from_int(100_000)
         assert sl2.quantity == Quantity.from_int(200_000)
+        assert tp2.quantity == Quantity.from_int(200_000)
 
         # Act - Reduce position externally by 270k, leaving only 30k
         reduce_order = order_factory.market(

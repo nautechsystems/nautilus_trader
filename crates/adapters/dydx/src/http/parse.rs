@@ -21,18 +21,16 @@
 //!
 //! # Design Principles
 //!
-//! - **Validation First**: All inputs are validated before parsing
-//! - **Contextual Errors**: All errors include context about what was being parsed
-//! - **Zero-Copy When Possible**: Uses references and borrows to minimize allocations
-//! - **Type Safety**: Leverages Rust's type system to prevent invalid states
+//! - **Validation First**: All inputs are validated before parsing.
+//! - **Contextual Errors**: All errors include context about what was being parsed.
+//! - **Zero-Copy When Possible**: Uses references and borrows to minimize allocations.
+//! - **Type Safety**: Leverages Rust's type system to prevent invalid states.
 //!
 //! # Error Handling
 //!
 //! All parsing functions return `anyhow::Result<T>` with descriptive error messages
 //! that include context about the field being parsed and the value that failed.
 //! This makes debugging API changes or data issues much easier.
-//!
-//!
 
 use anyhow::Context;
 use nautilus_core::UnixNanos;
@@ -46,9 +44,14 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::models::PerpetualMarket;
-use crate::common::{
-    enums::{DydxMarketStatus, DydxOrderExecution, DydxOrderType, DydxTimeInForce},
-    parse::{get_currency, parse_decimal, parse_instrument_id, parse_price, parse_quantity},
+#[cfg(test)]
+use crate::common::enums::DydxTransferType;
+use crate::{
+    common::{
+        enums::{DydxMarketStatus, DydxOrderExecution, DydxOrderType, DydxTimeInForce},
+        parse::{parse_decimal, parse_instrument_id, parse_price, parse_quantity},
+    },
+    websocket::messages::DydxSubaccountInfo,
 };
 
 /// Validates that a ticker has the correct format (BASE-QUOTE).
@@ -80,18 +83,10 @@ pub fn parse_ticker_currencies(ticker: &str) -> anyhow::Result<(&str, &str)> {
     Ok((parts[0], parts[1]))
 }
 
-/// Validates that a market is active and tradable.
-///
-/// # Errors
-///
-/// Returns an error if the market status is not Active.
-pub fn validate_market_active(ticker: &str, status: &DydxMarketStatus) -> anyhow::Result<()> {
-    if *status != DydxMarketStatus::Active {
-        anyhow::bail!(
-            "Market '{ticker}' is not active (status: {status:?}). Only active markets can be parsed."
-        );
-    }
-    Ok(())
+/// Returns true if the market status is Active.
+#[must_use]
+pub const fn is_market_active(status: &DydxMarketStatus) -> bool {
+    matches!(status, DydxMarketStatus::Active)
 }
 
 /// Calculate time-in-force for conditional orders.
@@ -207,21 +202,19 @@ pub fn validate_conditional_order(
 /// # Errors
 ///
 /// Returns an error if:
-/// - Market status is not Active.
 /// - Ticker format is invalid (not BASE-QUOTE).
 /// - Required fields are missing or invalid.
 /// - Price or quantity values cannot be parsed.
 /// - Currency parsing fails.
 /// - Margin fractions are out of valid range.
+///
+/// Note: Callers should pre-filter inactive markets using [`is_market_active`].
 pub fn parse_instrument_any(
     definition: &PerpetualMarket,
     maker_fee: Option<rust_decimal::Decimal>,
     taker_fee: Option<rust_decimal::Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    // Validate market status - only parse active markets
-    validate_market_active(&definition.ticker, &definition.status)?;
-
     // Parse instrument ID with Nautilus perpetual suffix and keep raw symbol as venue ticker
     let instrument_id = parse_instrument_id(&definition.ticker);
     let raw_symbol = Symbol::from(definition.ticker.as_str());
@@ -230,8 +223,8 @@ pub fn parse_instrument_any(
     let (base_str, quote_str) = parse_ticker_currencies(&definition.ticker)
         .context(format!("Failed to parse ticker '{}'", definition.ticker))?;
 
-    let base_currency = get_currency(base_str);
-    let quote_currency = get_currency(quote_str);
+    let base_currency = Currency::get_or_create_crypto_with_context(base_str, None);
+    let quote_currency = Currency::get_or_create_crypto_with_context(quote_str, None);
     let settlement_currency = quote_currency; // dYdX perpetuals settle in quote currency
 
     // Parse price and size increments with context
@@ -315,23 +308,26 @@ pub fn parse_instrument_any(
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
     use chrono::Utc;
-    use nautilus_model::enums::OrderSide;
+    use nautilus_model::{enums::OrderSide, instruments::Instrument};
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::enums::{
-        DydxOrderExecution, DydxOrderType, DydxTickerType, DydxTimeInForce,
+    use crate::{
+        common::{
+            enums::{DydxOrderExecution, DydxOrderType, DydxTickerType, DydxTimeInForce},
+            testing::load_json_result_fixture,
+        },
+        http::models::{
+            CandlesResponse, FillsResponse, MarketsResponse, Order, OrderbookResponse,
+            SubaccountResponse, TradesResponse, TransfersResponse,
+        },
     };
 
     fn create_test_market() -> PerpetualMarket {
@@ -389,13 +385,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_instrument_any_inactive_market() {
-        let mut market = create_test_market();
-        market.status = DydxMarketStatus::Paused;
-
-        let result = parse_instrument_any(&market, None, None, UnixNanos::default());
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not active"));
+    fn test_is_market_active() {
+        assert!(is_market_active(&DydxMarketStatus::Active));
+        assert!(!is_market_active(&DydxMarketStatus::Paused));
+        assert!(!is_market_active(&DydxMarketStatus::CancelOnly));
+        assert!(!is_market_active(&DydxMarketStatus::PostOnly));
+        assert!(!is_market_active(&DydxMarketStatus::Initializing));
+        assert!(!is_market_active(&DydxMarketStatus::FinalSettlement));
     }
 
     #[rstest]
@@ -454,15 +450,6 @@ mod tests {
     fn test_parse_ticker_currencies_invalid() {
         assert!(parse_ticker_currencies("INVALID").is_err());
         assert!(parse_ticker_currencies("BTC-USD-PERP").is_err());
-    }
-
-    #[rstest]
-    fn test_validate_market_active() {
-        assert!(validate_market_active("BTC-USD", &DydxMarketStatus::Active).is_ok());
-
-        assert!(validate_market_active("BTC-USD", &DydxMarketStatus::Paused).is_err());
-        assert!(validate_market_active("BTC-USD", &DydxMarketStatus::CancelOnly).is_err());
-        assert!(validate_market_active("BTC-USD", &DydxMarketStatus::PostOnly).is_err());
     }
 
     #[rstest]
@@ -647,6 +634,175 @@ mod tests {
         .unwrap();
         assert_eq!(tif, TimeInForce::Gtc);
     }
+
+    #[rstest]
+    fn test_parse_perpetual_markets() {
+        let json = load_json_result_fixture("http_get_perpetual_markets.json");
+        let response: MarketsResponse =
+            serde_json::from_value(json).expect("Failed to parse markets");
+
+        assert_eq!(response.markets.len(), 3);
+        assert!(response.markets.contains_key("BTC-USD"));
+        assert!(response.markets.contains_key("ETH-USD"));
+        assert!(response.markets.contains_key("SOL-USD"));
+
+        let btc = response.markets.get("BTC-USD").unwrap();
+        assert_eq!(btc.ticker, "BTC-USD");
+        assert_eq!(btc.clob_pair_id, 0);
+        assert_eq!(btc.atomic_resolution, -10);
+    }
+
+    #[rstest]
+    fn test_parse_instrument_from_market() {
+        let json = load_json_result_fixture("http_get_perpetual_markets.json");
+        let response: MarketsResponse =
+            serde_json::from_value(json).expect("Failed to parse markets");
+        let btc = response.markets.get("BTC-USD").unwrap();
+
+        let ts_init = UnixNanos::default();
+        let instrument =
+            parse_instrument_any(btc, None, None, ts_init).expect("Failed to parse instrument");
+
+        assert_eq!(instrument.id().symbol.as_str(), "BTC-USD-PERP");
+        assert_eq!(instrument.id().venue.as_str(), "DYDX");
+    }
+
+    #[rstest]
+    fn test_parse_orderbook_response() {
+        let json = load_json_result_fixture("http_get_orderbook.json");
+        let response: OrderbookResponse =
+            serde_json::from_value(json).expect("Failed to parse orderbook");
+
+        assert_eq!(response.bids.len(), 5);
+        assert_eq!(response.asks.len(), 5);
+
+        let best_bid = &response.bids[0];
+        assert_eq!(best_bid.price.to_string(), "89947");
+        assert_eq!(best_bid.size.to_string(), "0.0002");
+
+        let best_ask = &response.asks[0];
+        assert_eq!(best_ask.price.to_string(), "89958");
+        assert_eq!(best_ask.size.to_string(), "0.1177");
+    }
+
+    #[rstest]
+    fn test_parse_trades_response() {
+        let json = load_json_result_fixture("http_get_trades.json");
+        let response: TradesResponse =
+            serde_json::from_value(json).expect("Failed to parse trades");
+
+        assert_eq!(response.trades.len(), 3);
+
+        let first_trade = &response.trades[0];
+        assert_eq!(first_trade.id, "03f89a550000000200000002");
+        assert_eq!(first_trade.side, OrderSide::Buy);
+        assert_eq!(first_trade.price.to_string(), "89942");
+        assert_eq!(first_trade.size.to_string(), "0.0001");
+    }
+
+    #[rstest]
+    fn test_parse_candles_response() {
+        let json = load_json_result_fixture("http_get_candles.json");
+        let response: CandlesResponse =
+            serde_json::from_value(json).expect("Failed to parse candles");
+
+        assert_eq!(response.candles.len(), 3);
+
+        let first_candle = &response.candles[0];
+        assert_eq!(first_candle.ticker, "BTC-USD");
+        assert_eq!(first_candle.open.to_string(), "89934");
+        assert_eq!(first_candle.high.to_string(), "89970");
+        assert_eq!(first_candle.low.to_string(), "89911");
+        assert_eq!(first_candle.close.to_string(), "89941");
+    }
+
+    #[rstest]
+    fn test_parse_subaccount_response() {
+        let json = load_json_result_fixture("http_get_subaccount.json");
+        let response: SubaccountResponse =
+            serde_json::from_value(json).expect("Failed to parse subaccount");
+
+        let subaccount = &response.subaccount;
+        assert_eq!(subaccount.subaccount_number, 0);
+        assert_eq!(subaccount.equity.to_string(), "45.201296");
+        assert_eq!(subaccount.free_collateral.to_string(), "45.201296");
+        assert!(subaccount.margin_enabled);
+        assert_eq!(subaccount.open_perpetual_positions.len(), 0);
+    }
+
+    #[rstest]
+    fn test_parse_orders_response() {
+        let json = load_json_result_fixture("http_get_orders.json");
+        let response: Vec<Order> = serde_json::from_value(json).expect("Failed to parse orders");
+
+        assert_eq!(response.len(), 3);
+
+        let first_order = &response[0];
+        assert_eq!(first_order.id, "0f0981cb-152e-57d3-bea9-4d8e0dd5ed35");
+        assert_eq!(first_order.side, OrderSide::Buy);
+        assert_eq!(first_order.order_type, DydxOrderType::Limit);
+        assert!(first_order.reduce_only);
+
+        let second_order = &response[1];
+        assert_eq!(second_order.side, OrderSide::Sell);
+        assert!(!second_order.reduce_only);
+    }
+
+    #[rstest]
+    fn test_parse_fills_response() {
+        let json = load_json_result_fixture("http_get_fills.json");
+        let response: FillsResponse = serde_json::from_value(json).expect("Failed to parse fills");
+
+        assert_eq!(response.fills.len(), 3);
+
+        let first_fill = &response.fills[0];
+        assert_eq!(first_fill.id, "6450e369-1dc3-5229-8dc2-fb3b5d1cf2ab");
+        assert_eq!(first_fill.side, OrderSide::Buy);
+        assert_eq!(first_fill.market, "BTC-USD");
+        assert_eq!(first_fill.price.to_string(), "105117");
+    }
+
+    #[rstest]
+    fn test_parse_transfers_response() {
+        let json = load_json_result_fixture("http_get_transfers.json");
+        let response: TransfersResponse =
+            serde_json::from_value(json).expect("Failed to parse transfers");
+
+        assert_eq!(response.transfers.len(), 1);
+
+        let deposit = &response.transfers[0];
+        assert_eq!(deposit.transfer_type, DydxTransferType::Deposit);
+        assert_eq!(deposit.asset, "USDC");
+        assert_eq!(deposit.amount.to_string(), "45.334703");
+    }
+
+    #[rstest]
+    fn test_transfer_type_enum_serde() {
+        // Test all transfer type variants serialize/deserialize correctly
+        let test_cases = vec![
+            (DydxTransferType::Deposit, "\"DEPOSIT\""),
+            (DydxTransferType::Withdrawal, "\"WITHDRAWAL\""),
+            (DydxTransferType::TransferIn, "\"TRANSFER_IN\""),
+            (DydxTransferType::TransferOut, "\"TRANSFER_OUT\""),
+        ];
+
+        for (variant, expected_json) in test_cases {
+            // Test serialization
+            let serialized = serde_json::to_string(&variant).expect("Failed to serialize");
+            assert_eq!(
+                serialized, expected_json,
+                "Serialization failed for {variant:?}"
+            );
+
+            // Test deserialization
+            let deserialized: DydxTransferType =
+                serde_json::from_str(&serialized).expect("Failed to deserialize");
+            assert_eq!(
+                deserialized, variant,
+                "Deserialization failed for {variant:?}"
+            );
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -701,8 +857,7 @@ pub fn parse_order_status_report(
     };
 
     // Parse order type and time-in-force
-    let dydx_order_type = DydxOrderType::from_str(&order.order_type)?;
-    let order_type = dydx_order_type.into();
+    let order_type = order.order_type.into();
 
     let execution = order.execution.or({
         // Infer execution type from post_only flag if not explicitly set
@@ -713,7 +868,7 @@ pub fn parse_order_status_report(
         }
     });
     let time_in_force = calculate_time_in_force(
-        dydx_order_type,
+        order.order_type,
         order.time_in_force,
         order.reduce_only,
         execution,
@@ -731,17 +886,11 @@ pub fn parse_order_status_report(
             .context("failed to convert order size to f64")?,
         size_precision,
     );
-    let filled_qty = Quantity::from_raw(
-        quantity.raw.saturating_sub(
-            Quantity::new(
-                order
-                    .remaining_size
-                    .to_f64()
-                    .context("failed to convert remaining_size to f64")?,
-                size_precision,
-            )
-            .raw,
-        ),
+    let filled_qty = Quantity::new(
+        order
+            .total_filled
+            .to_f64()
+            .context("failed to convert total_filled to f64")?,
         size_precision,
     );
 
@@ -759,7 +908,9 @@ pub fn parse_order_status_report(
     let ts_accepted = order.good_til_block_time.map_or(ts_init, |dt| {
         UnixNanos::from(dt.timestamp_millis() as u64 * 1_000_000)
     });
-    let ts_last = UnixNanos::from(order.updated_at.timestamp_millis() as u64 * 1_000_000);
+    let ts_last = order.updated_at.map_or(ts_init, |dt| {
+        UnixNanos::from(dt.timestamp_millis() as u64 * 1_000_000)
+    });
 
     // Build the report
     let mut report = OrderStatusReport::new(
@@ -954,7 +1105,7 @@ pub fn parse_position_status_report(
 ///
 /// Returns an error if balance fields cannot be parsed.
 pub fn parse_account_state(
-    subaccount: &crate::schemas::ws::DydxSubaccountInfo,
+    subaccount: &DydxSubaccountInfo,
     account_id: AccountId,
     instruments: &std::collections::HashMap<InstrumentId, InstrumentAny>,
     oracle_prices: &std::collections::HashMap<InstrumentId, Decimal>,
@@ -983,7 +1134,7 @@ pub fn parse_account_state(
     ))?;
 
     // dYdX uses USDC as the settlement currency
-    let currency = get_currency("USDC");
+    let currency = Currency::get_or_create_crypto_with_context("USDC", None);
 
     let total = Money::new(equity_f64, currency);
     let free = Money::new(free_collateral_f64, currency);
@@ -1196,24 +1347,27 @@ mod reconciliation_tests {
             clob_pair_id: 1,
             side: OrderSide::Buy,
             size: dec!(1.5),
-            remaining_size: dec!(0.5),
+            total_filled: dec!(1.0),
             price: dec!(50000.0),
             status: DydxOrderStatus::PartiallyFilled,
-            order_type: "Limit".to_string(), // EnumString uses PascalCase
+            order_type: DydxOrderType::Limit,
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: false,
             post_only: false,
             order_flags: 0,
             good_til_block: None,
             good_til_block_time: Some(Utc::now()),
-            created_at_height: 1000,
+            created_at_height: Some(1000),
             client_metadata: 0,
             trigger_price: None,
             condition_type: None,
             conditional_order_trigger_subticks: None,
             execution: None,
-            updated_at: Utc::now(),
-            updated_at_height: 1001,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(1001),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
         };
 
         let result = parse_order_status_report(&order, &instrument, account_id, ts_init);
@@ -1243,24 +1397,27 @@ mod reconciliation_tests {
             clob_pair_id: 1,
             side: OrderSide::Sell,
             size: dec!(2.0),
-            remaining_size: dec!(2.0),
+            total_filled: dec!(0.0),
             price: dec!(51000.0),
             status: DydxOrderStatus::Untriggered,
-            order_type: "StopLimit".to_string(), // EnumString uses PascalCase
+            order_type: DydxOrderType::StopLimit,
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: true,
             post_only: false,
             order_flags: 0,
             good_til_block: None,
             good_til_block_time: Some(Utc::now()),
-            created_at_height: 1000,
+            created_at_height: Some(1000),
             client_metadata: 0,
             trigger_price: Some(dec!(49000.0)),
             condition_type: Some(crate::common::enums::DydxConditionType::StopLoss),
             conditional_order_trigger_subticks: Some(490000),
             execution: None,
-            updated_at: Utc::now(),
-            updated_at_height: 1001,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(1001),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
         };
 
         let result = parse_order_status_report(&order, &instrument, account_id, ts_init);
@@ -1418,24 +1575,27 @@ mod reconciliation_tests {
             clob_pair_id: 1,
             side: OrderSide::Buy,
             size: dec!(0.5),
-            remaining_size: dec!(0.5),
+            total_filled: dec!(0.0),
             price: dec!(50000.0),
             status: DydxOrderStatus::Open,
-            order_type: "Limit".to_string(),
+            order_type: DydxOrderType::Limit,
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: false,
             post_only: false,
             order_flags: 0,
             good_til_block: Some(1000),
             good_til_block_time: None,
-            created_at_height: 900,
+            created_at_height: Some(900),
             client_metadata: 0,
             trigger_price: None,
             condition_type: None,
             conditional_order_trigger_subticks: None,
             execution: None,
-            updated_at: Utc::now(),
-            updated_at_height: 900,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(900),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
         };
 
         let result = parse_order_status_report(&order, &instrument, account_id, ts_init);
@@ -1462,24 +1622,27 @@ mod reconciliation_tests {
             clob_pair_id: 1,
             side: OrderSide::Buy,
             size: dec!(2.0),
-            remaining_size: dec!(1.25), // 0.75 filled = 1.25 remaining
+            total_filled: dec!(0.75),
             price: dec!(50000.0),
             status: DydxOrderStatus::PartiallyFilled,
-            order_type: "Limit".to_string(),
+            order_type: DydxOrderType::Limit,
             time_in_force: DydxTimeInForce::Gtt,
             reduce_only: false,
             post_only: false,
             order_flags: 0,
             good_til_block: Some(2000),
             good_til_block_time: None,
-            created_at_height: 1500,
+            created_at_height: Some(1500),
             client_metadata: 0,
             trigger_price: None,
             condition_type: None,
             conditional_order_trigger_subticks: None,
             execution: None,
-            updated_at: Utc::now(),
-            updated_at_height: 1600,
+            updated_at: Some(Utc::now()),
+            updated_at_height: Some(1600),
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
         };
 
         let result = parse_order_status_report(&order, &instrument, account_id, ts_init);

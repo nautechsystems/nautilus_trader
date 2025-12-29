@@ -44,6 +44,7 @@
 use std::str::FromStr;
 
 use futures_util::StreamExt;
+use nautilus_common::live::get_runtime;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
@@ -236,7 +237,7 @@ impl OKXWebSocketClient {
             let stream = client.stream();
 
             // Keep client alive in the spawned task to prevent handler from dropping
-            tokio::spawn(async move {
+            get_runtime().spawn(async move {
                 let _client = client;
                 tokio::pin!(stream);
 
@@ -258,6 +259,15 @@ impl OKXWebSocketClient {
                                 call_python_with_data(&callback, |py| data.into_py_any(py));
                             }
                         }
+                        NautilusWsMessage::OrderAccepted(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderCanceled(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderExpired(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
                         NautilusWsMessage::OrderRejected(msg) => {
                             call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
@@ -265,6 +275,12 @@ impl OKXWebSocketClient {
                             call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::OrderModifyRejected(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderTriggered(msg) => {
+                            call_python_with_data(&callback, |py| msg.into_py_any(py));
+                        }
+                        NautilusWsMessage::OrderUpdated(msg) => {
                             call_python_with_data(&callback, |py| msg.into_py_any(py));
                         }
                         NautilusWsMessage::ExecutionReports(msg) => {

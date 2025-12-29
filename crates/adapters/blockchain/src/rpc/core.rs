@@ -19,9 +19,9 @@ use nautilus_core::consts::NAUTILUS_USER_AGENT;
 use nautilus_model::defi::{Block, Chain, rpc::RpcNodeWssResponse};
 use nautilus_network::{
     RECONNECTED,
+    http::USER_AGENT,
     websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
 };
-use reqwest::header::USER_AGENT;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::rpc::{
@@ -117,10 +117,8 @@ impl CoreBlockchainRpcClient {
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
             headers: vec![user_agent],
-            message_handler: Some(handler),
             heartbeat: Some(heartbeat_interval),
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(10_000),
             reconnect_delay_initial_ms: Some(1_000),
             reconnect_delay_max_ms: Some(30_000),
@@ -129,7 +127,8 @@ impl CoreBlockchainRpcClient {
             reconnect_max_attempts: None,
         };
 
-        let client = WebSocketClient::connect(config, None, vec![], None).await?;
+        let client =
+            WebSocketClient::connect(config, Some(handler), None, None, vec![], None).await?;
 
         self.wss_client = Some(Arc::new(client));
         self.wss_consumer_rx = Some(rx);

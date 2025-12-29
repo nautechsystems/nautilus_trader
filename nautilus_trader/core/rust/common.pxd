@@ -295,6 +295,11 @@ cdef extern from "../includes/common.h":
     # Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
     CVec test_clock_advance_time(TestClock_API *clock, uint64_t to_time_ns, uint8_t set_time);
 
+    # Drops a `CVec` of `TimeEventHandler` values.
+    #
+    # # Panics
+    #
+    # Panics if `CVec` invariants are violated (corrupted metadata).
     void vec_time_event_handlers_drop(CVec v);
 
     # # Safety

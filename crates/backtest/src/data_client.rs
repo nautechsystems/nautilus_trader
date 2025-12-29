@@ -247,7 +247,10 @@ impl DataClient for BacktestDataClient {
     }
 }
 
-// SAFETY: Cannot be sent across thread boundaries
+// SAFETY: BacktestDataClient contains Rc<RefCell<Cache>> which is not thread-safe.
+// These implementations exist to satisfy trait bounds but the type must only be used
+// on a single thread. The backtest engine ensures single-threaded access.
+// WARNING: Actually sending this type across threads is undefined behavior.
 #[allow(unsafe_code)]
 unsafe impl Send for BacktestDataClient {}
 #[allow(unsafe_code)]

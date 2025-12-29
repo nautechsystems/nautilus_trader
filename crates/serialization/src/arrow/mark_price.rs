@@ -22,18 +22,14 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::prices::MarkPriceUpdate,
-    identifiers::InstrumentId,
-    types::{Price, fixed::PRECISION_BYTES},
+    data::prices::MarkPriceUpdate, identifiers::InstrumentId, types::fixed::PRECISION_BYTES,
 };
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
+    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, decode_price,
     extract_column,
 };
-use crate::arrow::{
-    ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, get_raw_price,
-};
+use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for MarkPriceUpdate {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -136,9 +132,10 @@ impl DecodeFromRecordBatch for MarkPriceUpdate {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {
+                let value = decode_price(value_values.value(row), price_precision, "value", row)?;
                 Ok(Self {
                     instrument_id,
-                    value: Price::from_raw(get_raw_price(value_values.value(row)), price_precision),
+                    value,
                     ts_event: ts_event_values.value(row).into(),
                     ts_init: ts_init_values.value(row).into(),
                 })
@@ -159,15 +156,12 @@ impl DecodeDataFromRecordBatch for MarkPriceUpdate {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::types::price::PriceRaw;
+    use nautilus_model::types::{Price, fixed::FIXED_SCALAR, price::PriceRaw};
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -264,10 +258,10 @@ mod tests {
             (KEY_PRICE_PRECISION.to_string(), "2".to_string()),
         ]);
 
-        let value = FixedSizeBinaryArray::from(vec![
-            &(5020000 as PriceRaw).to_le_bytes(),
-            &(5030000 as PriceRaw).to_le_bytes(),
-        ]);
+        let raw_price1 = (50.20 * FIXED_SCALAR) as PriceRaw;
+        let raw_price2 = (50.30 * FIXED_SCALAR) as PriceRaw;
+        let value =
+            FixedSizeBinaryArray::from(vec![&raw_price1.to_le_bytes(), &raw_price2.to_le_bytes()]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
@@ -281,13 +275,108 @@ mod tests {
 
         assert_eq!(decoded_data.len(), 2);
         assert_eq!(decoded_data[0].instrument_id, instrument_id);
-        assert_eq!(decoded_data[0].value, Price::from_raw(5020000, 2));
+        assert_eq!(decoded_data[0].value, Price::from_raw(raw_price1, 2));
         assert_eq!(decoded_data[0].ts_event.as_u64(), 1);
         assert_eq!(decoded_data[0].ts_init.as_u64(), 3);
 
         assert_eq!(decoded_data[1].instrument_id, instrument_id);
-        assert_eq!(decoded_data[1].value, Price::from_raw(5030000, 2));
+        assert_eq!(decoded_data[1].value, Price::from_raw(raw_price2, 2));
         assert_eq!(decoded_data[1].ts_event.as_u64(), 2);
         assert_eq!(decoded_data[1].ts_init.as_u64(), 4);
+    }
+
+    #[rstest]
+    fn test_decode_batch_invalid_value_returns_error() {
+        let instrument_id = InstrumentId::from("BTC-USDT.BINANCE");
+        let metadata = HashMap::from([
+            (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+            (KEY_PRICE_PRECISION.to_string(), "2".to_string()),
+        ]);
+
+        let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
+        let value = FixedSizeBinaryArray::from(vec![&invalid_price.to_le_bytes()]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            MarkPriceUpdate::get_schema(Some(metadata.clone())).into(),
+            vec![Arc::new(value), Arc::new(ts_event), Arc::new(ts_init)],
+        )
+        .unwrap();
+
+        let result = MarkPriceUpdate::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("value") && err.to_string().contains("row 0"),
+            "Expected value error at row 0, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_batch_missing_instrument_id_returns_error() {
+        let mut metadata = HashMap::from([
+            (
+                KEY_INSTRUMENT_ID.to_string(),
+                "BTC-USDT.BINANCE".to_string(),
+            ),
+            (KEY_PRICE_PRECISION.to_string(), "2".to_string()),
+        ]);
+
+        let raw_price = (50.20 * FIXED_SCALAR) as PriceRaw;
+        let value = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let ts_event = UInt64Array::from(vec![1]);
+        let ts_init = UInt64Array::from(vec![2]);
+
+        let record_batch = RecordBatch::try_new(
+            MarkPriceUpdate::get_schema(Some(metadata.clone())).into(),
+            vec![Arc::new(value), Arc::new(ts_event), Arc::new(ts_init)],
+        )
+        .unwrap();
+
+        metadata.remove(KEY_INSTRUMENT_ID);
+
+        let result = MarkPriceUpdate::decode_batch(&metadata, record_batch);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("instrument_id"),
+            "Expected missing instrument_id error, got: {err}"
+        );
+    }
+
+    #[rstest]
+    fn test_encode_decode_round_trip() {
+        let instrument_id = InstrumentId::from("BTC-USDT.BINANCE");
+        let metadata = HashMap::from([
+            (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+            (KEY_PRICE_PRECISION.to_string(), "2".to_string()),
+        ]);
+
+        let update1 = MarkPriceUpdate {
+            instrument_id,
+            value: Price::from("50200.00"),
+            ts_event: 1_000_000_000.into(),
+            ts_init: 1_000_000_001.into(),
+        };
+
+        let update2 = MarkPriceUpdate {
+            instrument_id,
+            value: Price::from("50300.00"),
+            ts_event: 2_000_000_000.into(),
+            ts_init: 2_000_000_001.into(),
+        };
+
+        let original = vec![update1, update2];
+        let record_batch = MarkPriceUpdate::encode_batch(&metadata, &original).unwrap();
+        let decoded = MarkPriceUpdate::decode_batch(&metadata, record_batch).unwrap();
+
+        assert_eq!(decoded.len(), original.len());
+        for (orig, dec) in original.iter().zip(decoded.iter()) {
+            assert_eq!(dec.instrument_id, orig.instrument_id);
+            assert_eq!(dec.value, orig.value);
+            assert_eq!(dec.ts_event, orig.ts_event);
+            assert_eq!(dec.ts_init, orig.ts_init);
+        }
     }
 }

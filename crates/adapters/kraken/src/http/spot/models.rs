@@ -21,7 +21,7 @@ use ustr::Ustr;
 
 use crate::common::enums::{
     KrakenAssetClass, KrakenOrderSide, KrakenOrderStatus, KrakenOrderType, KrakenPairStatus,
-    KrakenSystemStatus,
+    KrakenSpotTrigger, KrakenSystemStatus,
 };
 
 /// Wrapper for Kraken API responses.
@@ -30,6 +30,12 @@ pub struct KrakenResponse<T> {
     pub error: Vec<String>,
     pub result: Option<T>,
 }
+
+// Balance Models
+
+/// Response from Kraken Balance endpoint.
+/// Maps currency codes (e.g., "USDT", "ETH") to their balance amounts as strings.
+pub type BalanceResponse = IndexMap<String, String>;
 
 // Asset Pairs (Instruments) Models
 
@@ -179,6 +185,7 @@ pub struct WebSocketToken {
 
 // Spot Private Trading Models
 
+/// Order description from QueryOrders response (full details, required fields).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderDescription {
     pub pair: String,
@@ -189,6 +196,15 @@ pub struct OrderDescription {
     pub price2: String,
     pub leverage: String,
     pub order: String,
+    pub close: Option<String>,
+}
+
+/// Order description from AddOrder response (simpler, with optional fields).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddOrderDescription {
+    #[serde(default)]
+    pub order: Option<String>,
+    #[serde(default)]
     pub close: Option<String>,
 }
 
@@ -208,7 +224,7 @@ pub struct SpotOrder {
     pub price: String,
     pub stopprice: Option<String>,
     pub limitprice: Option<String>,
-    pub trigger: Option<String>,
+    pub trigger: Option<KrakenSpotTrigger>,
     pub misc: String,
     pub oflags: String,
     #[serde(default)]
@@ -223,6 +239,9 @@ pub struct SpotOrder {
     pub cl_ord_id: Option<String>,
     #[serde(default)]
     pub amended: Option<bool>,
+    /// Average fill price (if returned by the API)
+    #[serde(default)]
+    pub avg_price: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -283,7 +302,7 @@ pub struct SpotTradesHistoryResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpotAddOrderResponse {
-    pub descr: Option<OrderDescription>,
+    pub descr: Option<AddOrderDescription>,
     #[serde(default)]
     pub txid: Vec<String>,
     #[serde(default)]
@@ -298,8 +317,13 @@ pub struct SpotCancelOrderResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotCancelOrderBatchResponse {
+    pub count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpotEditOrderResponse {
-    pub descr: Option<OrderDescription>,
+    pub descr: Option<AddOrderDescription>,
     pub txid: Option<String>,
     #[serde(default)]
     pub originaltxid: Option<String>,
@@ -313,9 +337,12 @@ pub struct SpotEditOrderResponse {
     pub orders_cancelled: Option<i32>,
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
+/// Response from `POST /0/private/AmendOrder`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotAmendOrderResponse {
+    /// The amend transaction ID.
+    pub amend_id: String,
+}
 
 #[cfg(test)]
 mod tests {

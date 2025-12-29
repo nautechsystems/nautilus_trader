@@ -86,7 +86,7 @@ impl PositionId {
 
 impl Debug for PositionId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
+        write!(f, "\"{}\"", self.0)
     }
 }
 impl Display for PositionId {
@@ -95,9 +95,6 @@ impl Display for PositionId {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

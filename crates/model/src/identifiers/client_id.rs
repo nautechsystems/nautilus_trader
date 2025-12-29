@@ -78,7 +78,7 @@ impl ClientId {
 
 impl Debug for ClientId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
+        write!(f, "\"{}\"", self.0)
     }
 }
 
@@ -88,9 +88,6 @@ impl Display for ClientId {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

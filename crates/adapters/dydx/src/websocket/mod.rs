@@ -47,10 +47,9 @@ pub mod error;
 pub mod handler;
 pub mod messages;
 pub mod parse;
-pub mod types;
 
-// Re-exports
 pub use client::DydxWebSocketClient;
-pub use enums::{DydxWsChannel, DydxWsOperation};
+pub use enums::{
+    DydxWsChannel, DydxWsMessage, DydxWsMessageType, DydxWsOperation, NautilusWsMessage,
+};
 pub use error::{DydxWebSocketError, DydxWsError, DydxWsResult};
-pub use messages::{DydxWsMessage, NautilusWsMessage};

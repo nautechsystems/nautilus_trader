@@ -124,11 +124,11 @@ def test_own_book_order_repr():
     )
 
     expected_repr = (
-        'OwnBookOrder(trader_id=TRADER-001, client_order_id=O-12345, venue_order_id=Some(u!("1")), side=BUY, price=100.00, size=10, '
+        'OwnBookOrder(trader_id=TRADER-001, client_order_id=O-12345, venue_order_id=Some("1"), side=BUY, price=100.00, size=10, '
         "order_type=LIMIT, time_in_force=GTC, status=ACCEPTED, ts_last=2, ts_accepted=2, ts_submitted=1, ts_init=1)"
     )
     assert repr(order) == expected_repr
-    assert str(order) == 'TRADER-001,O-12345,Some(u!("1")),BUY,100.00,10,LIMIT,GTC,ACCEPTED,2,2,1,1'
+    assert str(order) == 'TRADER-001,O-12345,Some("1"),BUY,100.00,10,LIMIT,GTC,ACCEPTED,2,2,1,1'
 
 
 # ------------------------------------------------------------------------------

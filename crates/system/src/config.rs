@@ -23,6 +23,7 @@ use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::identifiers::TraderId;
+#[cfg(feature = "streaming")]
 use nautilus_persistence::config::StreamingConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
@@ -66,6 +67,7 @@ pub trait NautilusKernelConfig: Debug {
     /// Returns the portfolio configuration.
     fn portfolio(&self) -> Option<PortfolioConfig>;
     /// Returns the configuration for streaming to feather files.
+    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig>;
 }
 
@@ -109,6 +111,7 @@ pub struct KernelConfig {
     /// The portfolio configuration.
     pub portfolio: Option<PortfolioConfig>,
     /// The configuration for streaming to feather files.
+    #[cfg(feature = "streaming")]
     pub streaming: Option<StreamingConfig>,
 }
 
@@ -185,6 +188,7 @@ impl NautilusKernelConfig for KernelConfig {
         self.portfolio.clone()
     }
 
+    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
@@ -211,6 +215,7 @@ impl Default for KernelConfig {
             risk_engine: None,
             exec_engine: None,
             portfolio: None,
+            #[cfg(feature = "streaming")]
             streaming: None,
         }
     }

@@ -28,7 +28,7 @@ use crate::{
     http::error::{Error, Result},
 };
 
-// Define the Agent struct for L1 signing using alloy_sol_types
+// Define the Agent struct for L1 signing
 alloy_sol_types::sol! {
     #[derive(Debug, Serialize, Deserialize)]
     struct Agent {
@@ -313,10 +313,6 @@ impl HyperliquidEip712Signer {
         Ok(address)
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

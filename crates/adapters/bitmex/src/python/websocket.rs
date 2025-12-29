@@ -42,6 +42,7 @@
 //! - `RwLock` is preferred over Mutex (many reads, few writes).
 
 use futures_util::StreamExt;
+use nautilus_common::live::get_runtime;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::bar::BarType,
@@ -67,23 +68,7 @@ impl BitmexWebSocketClient {
         heartbeat: Option<u64>,
         testnet: bool,
     ) -> PyResult<Self> {
-        // If both api_key and api_secret are None, try to load from environment
-        let (final_api_key, final_api_secret) = if api_key.is_none() && api_secret.is_none() {
-            // Choose environment variables based on testnet flag
-            let (key_var, secret_var) = if testnet {
-                ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
-            } else {
-                ("BITMEX_API_KEY", "BITMEX_API_SECRET")
-            };
-
-            let env_key = std::env::var(key_var).ok();
-            let env_secret = std::env::var(secret_var).ok();
-            (env_key, env_secret)
-        } else {
-            (api_key, api_secret)
-        };
-
-        Self::new(url, final_api_key, final_api_secret, account_id, heartbeat)
+        Self::new_with_env(url, api_key, api_secret, account_id, heartbeat, testnet)
             .map_err(to_pyvalue_err)
     }
 
@@ -165,7 +150,7 @@ impl BitmexWebSocketClient {
 
             let stream = client.stream();
 
-            tokio::spawn(async move {
+            get_runtime().spawn(async move {
                 let _client = client; // Keep client alive for the entire duration
                 tokio::pin!(stream);
 

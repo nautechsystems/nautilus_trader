@@ -432,9 +432,9 @@ impl Order for MarketToLimitOrder {
 
         self.core.apply(event)?;
 
-        if is_order_filled && self.price.is_some() {
-            self.core.set_slippage(self.price.unwrap());
-        };
+        if is_order_filled && let Some(price) = self.price {
+            self.core.set_slippage(price);
+        }
 
         Ok(())
     }
@@ -558,9 +558,6 @@ impl From<OrderInitialized> for MarketToLimitOrder {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

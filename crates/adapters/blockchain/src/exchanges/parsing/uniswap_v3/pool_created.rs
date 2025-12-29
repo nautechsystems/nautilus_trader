@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::{Address, U256};
-use nautilus_model::defi::rpc::RpcLog;
+use nautilus_model::defi::{PoolIdentifier, rpc::RpcLog};
+use ustr::Ustr;
 
 use crate::{
     events::pool_created::PoolCreatedEvent,
@@ -71,6 +72,7 @@ pub fn parse_pool_created_event_hypersync(log: HypersyncLog) -> anyhow::Result<P
             token,
             token1,
             pool_address,
+            PoolIdentifier::Address(Ustr::from(&pool_address.to_string())), // For V2/V3, pool_identifier = pool_address
             Some(fee),
             Some(tick_spacing),
         ))
@@ -116,14 +118,12 @@ pub fn parse_pool_created_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedE
         token0,
         token1,
         pool_address,
+        PoolIdentifier::Address(Ustr::from(&pool_address.to_string())), // For V2/V3, pool_identifier = pool_address
         Some(fee),
         Some(tick_spacing),
     ))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::{fixture, rstest};
@@ -250,8 +250,8 @@ mod tests {
             "0x838930cfe7502dd36b0b1ebbef8001fbf94f3bfb"
         );
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
-            "0xb9fc136980d98c034a529aadbd5651c087365d5f"
+            event.pool_identifier.to_string(),
+            "0xB9Fc136980D98C034a529AadbD5651c087365D5f"
         );
         assert_eq!(event.fee, Some(3000));
         assert_eq!(event.tick_spacing, Some(60));
@@ -272,8 +272,8 @@ mod tests {
             "0xbe5381d826375492e55e05039a541eb2cb978e76"
         );
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
-            "0x7d25de0bb3e4e4d5f7b399db5a0bca9f60dd66e4"
+            event.pool_identifier.to_string(),
+            "0x7d25DE0bB3e4E4d5F7b399db5A0BCa9F60dD66e4"
         );
         assert_eq!(event.fee, Some(500));
         assert_eq!(event.tick_spacing, Some(10));
@@ -295,8 +295,8 @@ mod tests {
             "0x838930cfe7502dd36b0b1ebbef8001fbf94f3bfb"
         );
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
-            "0xb9fc136980d98c034a529aadbd5651c087365d5f"
+            event.pool_identifier.to_string(),
+            "0xB9Fc136980D98C034a529AadbD5651c087365D5f"
         );
         assert_eq!(event.fee, Some(3000));
         assert_eq!(event.tick_spacing, Some(60));
@@ -316,8 +316,8 @@ mod tests {
             "0xbe5381d826375492e55e05039a541eb2cb978e76"
         );
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
-            "0x7d25de0bb3e4e4d5f7b399db5a0bca9f60dd66e4"
+            event.pool_identifier.to_string(),
+            "0x7d25DE0bB3e4E4d5F7b399db5A0BCa9F60dD66e4"
         );
         assert_eq!(event.fee, Some(500));
         assert_eq!(event.tick_spacing, Some(10));
@@ -337,7 +337,7 @@ mod tests {
         assert_eq!(hypersync_event.block_number, rpc_event.block_number);
         assert_eq!(hypersync_event.token0, rpc_event.token0);
         assert_eq!(hypersync_event.token1, rpc_event.token1);
-        assert_eq!(hypersync_event.pool_address, rpc_event.pool_address);
+        assert_eq!(hypersync_event.pool_identifier, rpc_event.pool_identifier);
         assert_eq!(hypersync_event.fee, rpc_event.fee);
         assert_eq!(hypersync_event.tick_spacing, rpc_event.tick_spacing);
     }
@@ -354,7 +354,7 @@ mod tests {
         assert_eq!(hypersync_event.block_number, rpc_event.block_number);
         assert_eq!(hypersync_event.token0, rpc_event.token0);
         assert_eq!(hypersync_event.token1, rpc_event.token1);
-        assert_eq!(hypersync_event.pool_address, rpc_event.pool_address);
+        assert_eq!(hypersync_event.pool_identifier, rpc_event.pool_identifier);
         assert_eq!(hypersync_event.fee, rpc_event.fee);
         assert_eq!(hypersync_event.tick_spacing, rpc_event.tick_spacing);
     }

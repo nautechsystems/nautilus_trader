@@ -40,6 +40,8 @@ jobs:
       - name: Verify capnp schemas are up-to-date
         run: make check-capnp-schemas
 
+  # Dependency license, advisory, and ban checks
+  # https://embarkstudios.github.io/cargo-deny/
   cargo-deny:
     runs-on: ubuntu-22.04
     steps:
@@ -54,12 +56,37 @@ jobs:
         with:
           persist-credentials: false
 
-      # https://github.com/EmbarkStudios/cargo-deny-action
-      - name: Run cargo-deny (advisories, licenses, sources, bans)
-        uses: EmbarkStudios/cargo-deny-action@f9cc7aa250dec5698b425dc01fbf0d745fcd1b78 # v2.0.13
+      - name: Install cargo-deny
+        uses: ./.github/actions/cargo-tool-install
         with:
-          command: check advisories licenses sources bans
-          arguments: --all-features
+          tool-name: cargo-deny
+
+      - name: Run cargo-deny (advisories, licenses, sources, bans)
+        run: cargo deny --all-features check advisories licenses sources bans
+
+  # Supply chain security auditing
+  # https://mozilla.github.io/cargo-vet/configuring-ci.html
+  cargo-vet:
+    runs-on: ubuntu-22.04
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-vet
+        uses: ./.github/actions/cargo-tool-install
+        with:
+          tool-name: cargo-vet
+
+      - name: Run cargo-vet
+        run: cargo vet --locked
 
   build-linux-x86:
     strategy:
@@ -78,13 +105,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs:
       - cargo-deny
+      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+    # yamllint disable rule:line-length
     services:
       redis:
-        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
         ports:
           - 6379:6379
         options: >-
@@ -93,7 +122,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: public.ecr.aws/docker/library/postgres:16.4-alpine
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -101,6 +130,7 @@ jobs:
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -168,21 +198,28 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause job on develop and nightly branches for now
+    # Pause job on develop, nightly, and test-ci branches for now
     # - develop: takes ~1-1.5 hrs
     # - nightly: TODO: build issue pending investigation
+    # - test-ci: skip ARM builds during CI testing
     if: >
-      !( (github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'nightly'))
-      || (github.event_name == 'pull_request' && (github.base_ref == 'develop' || github.base_ref == 'nightly')) )
+      !(
+        (github.event_name == 'push' &&
+          (github.ref_name == 'develop' || github.ref_name == 'nightly' || github.ref_name == 'test-ci'))
+        || (github.event_name == 'pull_request' &&
+          (github.base_ref == 'develop' || github.base_ref == 'nightly' || github.base_ref == 'test-ci'))
+      )
     needs:
-      - pre-commit
       - cargo-deny
+      - cargo-vet
+      - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
+    # yamllint disable rule:line-length
     services:
       redis:
-        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21
+        image: public.ecr.aws/docker/library/redis:7.4.5-alpine3.21@sha256:bb186d083732f669da90be8b0f975a37812b15e913465bb14d845db72a4e3e08
         ports:
           - 6379:6379
         options: >-
@@ -191,7 +228,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: public.ecr.aws/docker/library/postgres:16.4-alpine
+        image: public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: pass
@@ -199,6 +236,7 @@ jobs:
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -266,8 +304,9 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - pre-commit
       - cargo-deny
+      - cargo-vet
+      - pre-commit
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1
@@ -323,8 +362,9 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - pre-commit
       - cargo-deny
+      - cargo-vet
+      - pre-commit
     env:
       BUILD_MODE: release
       HIGH_PRECISION: false
@@ -658,13 +698,13 @@ jobs:
 
       - name: Create GitHub release
         id: create-release
-        # https://github.com/actions/create-release # v1.1.4
-        uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e
+        # https://github.com/softprops/action-gh-release v2.5.0
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.TAG_NAME }}
-          release_name: ${{ env.RELEASE_NAME }}
+          name: ${{ env.RELEASE_NAME }}
           draft: false
           prerelease: false
           body_path: RELEASE.md

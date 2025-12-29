@@ -207,7 +207,8 @@ impl NautilusKernelBuilder {
             risk_engine: self.risk_engine,
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
-            streaming: None, // streaming config - not exposed in builder yet
+            #[cfg(feature = "streaming")]
+            streaming: None,
         };
 
         NautilusKernel::new(self.name, config)
@@ -224,10 +225,6 @@ impl Default for NautilusKernelBuilder {
         )
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

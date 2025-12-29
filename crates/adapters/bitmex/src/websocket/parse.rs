@@ -15,7 +15,7 @@
 
 //! Parsers that convert BitMEX WebSocket payloads into Nautilus data structures.
 
-use std::{num::NonZero, str::FromStr};
+use std::num::NonZero;
 
 use ahash::AHashMap;
 use dashmap::DashMap;
@@ -675,7 +675,7 @@ pub fn parse_order_update_msg(
     let ts_event = parse_optional_datetime_to_unix_nanos(&msg.timestamp, "timestamp");
     let ts_init = get_atomic_clock_realtime().get_time_ns();
 
-    Some(nautilus_model::events::OrderUpdated::new(
+    Some(OrderUpdated::new(
         trader_id,
         strategy_id,
         instrument_id,
@@ -961,7 +961,7 @@ pub fn parse_funding_msg(msg: BitmexFundingMsg, ts_init: UnixNanos) -> Option<Fu
     let ts_event = parse_optional_datetime_to_unix_nanos(&Some(msg.timestamp), "");
 
     // Convert funding rate to Decimal
-    let rate = match Decimal::from_str(&msg.funding_rate.to_string()) {
+    let rate = match Decimal::try_from(msg.funding_rate) {
         Ok(rate) => rate,
         Err(e) => {
             tracing::error!("Failed to parse funding rate: {e}");
@@ -1052,10 +1052,6 @@ pub fn parse_margin_msg(msg: BitmexMarginMsg, instrument_id: InstrumentId) -> Ma
         instrument_id,
     )
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

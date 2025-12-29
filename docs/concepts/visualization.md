@@ -89,11 +89,11 @@ from nautilus_trader.model.currencies import USD
 create_tearsheet(
     engine=engine,
     output_path="usd_only.html",
-    currency=USD,  # Show only USD statistics
+    currency=USD,  # Currency object, shows only USD statistics
 )
 ```
 
-When `currency` is `None` (default), all currencies are displayed in the tearsheet.
+When `currency` is `None` (default), statistics for all currencies are displayed separately in the tearsheet.
 
 ## Available charts
 
@@ -145,7 +145,8 @@ is provided to `create_tearsheet()`, the benchmark is overlaid for comparison.
 import pandas as pd
 
 # Load benchmark returns (e.g., from a market index)
-benchmark_returns = pd.read_csv("sp500_returns.csv", index_col=0)["return"]
+# Index should be datetime, aligned with strategy returns timeframe
+benchmark_returns = pd.read_csv("sp500_returns.csv", index_col=0, parse_dates=True)["return"]
 
 create_tearsheet(
     engine=engine,
@@ -154,6 +155,8 @@ create_tearsheet(
     benchmark_name="S&P 500",
 )
 ```
+
+The benchmark series is plotted as-is; ensure the index aligns with your strategy's return dates for accurate comparison.
 
 ## Themes
 
@@ -244,7 +247,7 @@ config = TearsheetConfig(
 | `include_benchmark` | `bool`                        | `True`                            | Show benchmark when provided.                 |
 | `benchmark_name`    | `str`                         | `"Benchmark"`                     | Display name for benchmark.                   |
 | `height`            | `int`                         | `1500`                            | Total height in pixels.                       |
-| `show_logo`         | `bool`                        | `True`                            | Display NautilusTrader logo (not implemented).|
+| `show_logo`         | `bool`                        | `True`                            | Display NautilusTrader logo (reserved for future use).|
 | `chart_args`        | `dict[str, dict[str, Any]]`   | `None`                            | Arguments for specific charts (e.g., `bar_type` for `bars_with_fills`).|
 
 When `layout` is `None`, the grid dimensions and row heights are automatically calculated
@@ -368,11 +371,11 @@ use the lower-level API:
 ```python
 from nautilus_trader.analysis.tearsheet import create_tearsheet_from_stats
 
-# Load precomputed data
-stats_pnls = {"USD": {...}}  # Per-currency PnL statistics
-stats_returns = {...}         # Returns-based statistics
-stats_general = {...}         # General statistics
-returns = pd.Series(...)      # Returns series
+# Load precomputed data (structure matches PortfolioAnalyzer output)
+stats_pnls = {"USD": {"PnL (total)": 1500.0, "Win Rate": 0.55, ...}}  # Per-currency
+stats_returns = {"Sharpe Ratio (252 days)": 1.2, "Max Drawdown": -0.15, ...}
+stats_general = {"Avg Winner": 100.0, "Avg Loser": -50.0, ...}
+returns = pd.Series(...)  # Daily returns with datetime index
 
 create_tearsheet_from_stats(
     stats_pnls=stats_pnls,
@@ -382,6 +385,8 @@ create_tearsheet_from_stats(
     output_path="offline_analysis.html",
 )
 ```
+
+The dictionary keys should match those returned by `PortfolioAnalyzer.get_performance_stats_*()`.
 
 This approach is useful for:
 

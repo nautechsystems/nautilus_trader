@@ -56,7 +56,7 @@ use nautilus_model::{
         TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
-    orders::{Order, OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+    orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     stubs::stub_position_long,
     types::{Money, Price, Quantity},
@@ -511,7 +511,7 @@ fn test_order_filled_with_unrecognized_strategy_id(mut execution_engine: Executi
     execution_engine.process(&order_submitted_event);
 
     let different_strategy_id = StrategyId::from("RANDOM-001");
-    let order_filled_event = nautilus_model::events::OrderFilled::new(
+    let order_filled_event = OrderFilled::new(
         trader_id,
         different_strategy_id, // Different strategy ID from the order - this will cause panic
         instrument.id,
@@ -533,9 +533,7 @@ fn test_order_filled_with_unrecognized_strategy_id(mut execution_engine: Executi
         Some(Money::from("2 USD")),
     );
     // This should now log an error instead of panicking
-    execution_engine.process(&nautilus_model::events::OrderEventAny::Filled(
-        order_filled_event,
-    ));
+    execution_engine.process(&OrderEventAny::Filled(order_filled_event));
     let cache = execution_engine.cache.borrow();
     let updated_order = cache.order(&order.client_order_id()).unwrap();
     assert_eq!(
@@ -618,6 +616,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         order_list,
         exec_algorithm_id: None,
         position_id: None,
+        params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -1103,6 +1102,7 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
         venue_order_id: VenueOrderId::from("V-001"),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        params: None,
     };
 
     execution_engine.execute(&TradingCommand::CancelOrder(cancel_order));
@@ -1567,6 +1567,7 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
         trigger_price: order.trigger_price(),    // Keep same trigger price
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        params: None,
     };
     execution_engine.execute(&TradingCommand::ModifyOrder(modify_order));
     let cache = execution_engine.cache.borrow();
@@ -3326,11 +3327,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
         );
 
         let position = cache.position(&position_id).expect("Position should exist");
-        assert_eq!(
-            position.side,
-            nautilus_model::enums::PositionSide::Long,
-            "Position should be long"
-        );
+        assert_eq!(position.side, PositionSide::Long, "Position should be long");
         assert_eq!(
             position.quantity,
             Quantity::from(100_000),
@@ -3421,7 +3418,7 @@ fn test_flip_position_on_opposite_filled_same_position_sell(mut execution_engine
 
         assert_eq!(
             flipped_position.side,
-            nautilus_model::enums::PositionSide::Short,
+            PositionSide::Short,
             "Flipped position should be short"
         );
 
@@ -3562,7 +3559,7 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
         let position = cache.position(&position_id).expect("Position should exist");
         assert_eq!(
             position.side,
-            nautilus_model::enums::PositionSide::Short,
+            PositionSide::Short,
             "Position should be short"
         );
         assert_eq!(
@@ -3654,7 +3651,7 @@ fn test_flip_position_on_opposite_filled_same_position_buy(mut execution_engine:
 
         assert_eq!(
             flipped_position.side,
-            nautilus_model::enums::PositionSide::Long,
+            PositionSide::Long,
             "Flipped position should be long"
         );
 
@@ -3812,7 +3809,7 @@ fn test_flip_position_on_flat_position_then_filled_reusing_position_id(
         let position = cache.position(&position_id).expect("Position should exist");
         assert_eq!(
             position.side,
-            nautilus_model::enums::PositionSide::Short,
+            PositionSide::Short,
             "Position should be short"
         );
         assert_eq!(
@@ -3877,7 +3874,7 @@ fn test_flip_position_on_flat_position_then_filled_reusing_position_id(
 
         assert_eq!(
             cached_order3.status(),
-            nautilus_model::enums::OrderStatus::Initialized,
+            OrderStatus::Initialized,
             "Order 3 should remain initialized when using closed position ID"
         );
     }
@@ -3984,7 +3981,7 @@ fn test_flip_position_when_netting_oms(mut execution_engine: ExecutionEngine) {
         let position = cache.position(&position_id).expect("Position should exist");
         assert_eq!(
             position.side,
-            nautilus_model::enums::PositionSide::Short,
+            PositionSide::Short,
             "Position should be short"
         );
         assert_eq!(
@@ -4035,7 +4032,7 @@ fn test_flip_position_when_netting_oms(mut execution_engine: ExecutionEngine) {
     );
     assert_eq!(
         position.side,
-        nautilus_model::enums::PositionSide::Long,
+        PositionSide::Long,
         "flipped position should be long"
     );
 }
@@ -4299,6 +4296,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
         order_list: bracket,
         exec_algorithm_id: None,
         position_id: None,
+        params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -4412,7 +4410,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_no_prices_denies(
 #[case(OrderSide::Sell)]
 fn test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantity(
     mut execution_engine: ExecutionEngine,
-    #[case] order_side: nautilus_model::enums::OrderSide,
+    #[case] order_side: OrderSide,
 ) {
     let trader_id = TraderId::from("TEST-TRADER");
     let strategy_id = StrategyId::from("TEST-STRATEGY");
@@ -4550,7 +4548,7 @@ fn test_submit_order_with_quote_quantity_and_quote_tick_converts_to_base_quantit
 #[case(OrderSide::Sell)]
 fn test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quantity(
     mut execution_engine: ExecutionEngine,
-    #[case] order_side: nautilus_model::enums::OrderSide,
+    #[case] order_side: OrderSide,
 ) {
     let trader_id = TraderId::from("TEST-TRADER");
     let strategy_id = StrategyId::from("TEST-STRATEGY");
@@ -4688,7 +4686,7 @@ fn test_submit_order_with_quote_quantity_and_trade_ticks_converts_to_base_quanti
 #[case(OrderSide::Sell)]
 fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
     mut execution_engine: ExecutionEngine,
-    #[case] order_side: nautilus_model::enums::OrderSide,
+    #[case] order_side: OrderSide,
 ) {
     let trader_id = TraderId::from("TEST-TRADER");
     let strategy_id = StrategyId::from("TEST-STRATEGY");
@@ -4829,6 +4827,7 @@ fn test_submit_bracket_order_with_quote_quantity_and_ticks_converts_expected(
         order_list,
         exec_algorithm_id: None,
         position_id: None,
+        params: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
@@ -5493,6 +5492,7 @@ fn test_cancel_order_removes_from_own_book() {
         venue_order_id: VenueOrderId::from("V-001"),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        params: None,
     };
 
     let cancel_order_ask = CancelOrder {
@@ -5504,6 +5504,7 @@ fn test_cancel_order_removes_from_own_book() {
         venue_order_id: VenueOrderId::from("V-002"),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        params: None,
     };
 
     execution_engine.execute(&TradingCommand::CancelOrder(cancel_order_bid));
@@ -5657,6 +5658,7 @@ fn test_own_book_status_filtering() {
         venue_order_id: VenueOrderId::from("V-001"),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        params: None,
     };
 
     let cancel_order_ask = CancelOrder {
@@ -5668,6 +5670,7 @@ fn test_own_book_status_filtering() {
         venue_order_id: VenueOrderId::from("V-002"),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
+        params: None,
     };
 
     execution_engine.execute(&TradingCommand::CancelOrder(cancel_order_bid));
@@ -7823,7 +7826,7 @@ fn test_own_book_status_integrity_during_transitions() {
 
     #[rstest]
     fn test_get_clients_for_orders_empty_list(execution_engine: ExecutionEngine) {
-        let orders: Vec<nautilus_model::orders::OrderAny> = vec![];
+        let orders: Vec<OrderAny> = vec![];
         let clients = execution_engine.get_clients_for_orders(&orders);
         assert!(clients.is_empty());
     }

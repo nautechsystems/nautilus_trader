@@ -12,12 +12,8 @@ id = "RUSTSEC-2024-0436"
 reason = "paste crate is unmaintained but a transitive dependency via alloy"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2024-0379"
-reason = "fast-float is transitive via hypersync-client→polars-arrow (optional dependency)"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2025-0003"
-reason = "fast-float is transitive via hypersync-client→polars-arrow (optional dependency)"
+id = "RUSTSEC-2025-0134"
+reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a security vulnerability)"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0388"
@@ -33,7 +29,7 @@ reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool o
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0080"
-reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)"
+reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0081"
@@ -49,7 +45,15 @@ reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool 
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0100"
-reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)"
+reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0137"
+reason = "ruint reciprocal_mg10 unsoundness, transitive via alloy, we don't use the affected function"
+
+[[IgnoredVulns]]
+id = "GHSA-9fjq-45qv-pcm7"
+reason = "ruint unsoundness in reciprocal functions, transitive via alloy, we don't use the affected functions"
 
 # Python dependencies
 [[IgnoredVulns]]

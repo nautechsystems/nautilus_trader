@@ -166,6 +166,7 @@ cdef class BarType:
     cpdef bint is_composite(self)
     cpdef BarType standard(self)
     cpdef BarType composite(self)
+    cpdef tuple[InstrumentId, BarSpecification] id_spec_key(self)
 
 
 cdef class Bar(Data):
@@ -217,6 +218,32 @@ cdef class Bar(Data):
     cdef dict to_dict_c(Bar obj)
 
     cpdef bint is_single_price(self)
+
+
+cdef inline (QuantityRaw, QuantityRaw) compute_bar_quarter_sizes(
+    QuantityRaw volume_raw,
+    QuantityRaw min_size_raw,
+):
+    cdef QuantityRaw quarter_raw = volume_raw // 4
+
+    # Round down to nearest size_increment, ensuring minimum
+    quarter_raw = (quarter_raw // min_size_raw) * min_size_raw
+    if quarter_raw < min_size_raw:
+        quarter_raw = min_size_raw
+
+    # Calculate close size: remaining volume after 3 quarters, also rounded
+    # Protect against underflow when quarter * 3 exceeds bar volume
+    cdef QuantityRaw three_quarters = quarter_raw * 3
+    cdef QuantityRaw close_raw
+    if three_quarters >= volume_raw:
+        close_raw = min_size_raw
+    else:
+        close_raw = volume_raw - three_quarters
+        close_raw = (close_raw // min_size_raw) * min_size_raw
+        if close_raw < min_size_raw:
+            close_raw = min_size_raw
+
+    return (quarter_raw, close_raw)
 
 
 cdef class BookOrder:

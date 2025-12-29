@@ -56,6 +56,7 @@ nautilus-risk = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+indexmap = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 log = { workspace = true }

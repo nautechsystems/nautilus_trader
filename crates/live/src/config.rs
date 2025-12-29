@@ -25,6 +25,7 @@ use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::identifiers::TraderId;
+#[cfg(feature = "streaming")]
 use nautilus_persistence::config::StreamingConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
@@ -264,6 +265,7 @@ pub struct LiveNodeConfig {
     /// The portfolio configuration.
     pub portfolio: Option<PortfolioConfig>,
     /// The configuration for streaming to feather files.
+    #[cfg(feature = "streaming")]
     pub streaming: Option<StreamingConfig>,
     /// The live data engine configuration.
     pub data_engine: LiveDataEngineConfig,
@@ -295,6 +297,7 @@ impl Default for LiveNodeConfig {
             cache: None,
             msgbus: None,
             portfolio: None,
+            #[cfg(feature = "streaming")]
             streaming: None,
             data_engine: LiveDataEngineConfig::default(),
             risk_engine: LiveRiskEngineConfig::default(),
@@ -378,14 +381,11 @@ impl NautilusKernelConfig for LiveNodeConfig {
         self.portfolio.clone()
     }
 
+    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

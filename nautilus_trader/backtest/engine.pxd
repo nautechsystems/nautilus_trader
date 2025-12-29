@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
@@ -38,7 +39,9 @@ from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceRaw
+from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
@@ -250,6 +253,8 @@ cdef class SimulatedExchange:
     """If the processing order of bar prices is adaptive based on a heuristic.\n\n:returns: `bool`"""
     cdef readonly bint trade_execution
     """If trades should be processed by the matching engine(s) (and move the market).\n\n:returns: `bool`"""
+    cdef readonly bint liquidity_consumption
+    """If liquidity consumption is tracked per price level.\n\n:returns: `bool`"""
     cdef readonly uint32_t price_protection_points
     """Defines an exchange-calculated price boundary (in points) to prevent marketable orders from executing at excessively aggressive prices.\n\n:returns: `int`"""
     cdef readonly list modules
@@ -330,12 +335,9 @@ cdef class OrderMatchingEngine:
     cdef Logger _log
     cdef MessageBus _msgbus
     cdef OrderBook _book
-    cdef OrderBook _opening_auction_book
-    cdef OrderBook _closing_auction_book
     cdef FillModel _fill_model
     cdef FeeModel _fee_model
     cdef InstrumentClose _instrument_close
-    # cdef object _auction_match_algo
     cdef bint _instrument_has_expiration
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders
@@ -346,6 +348,7 @@ cdef class OrderMatchingEngine:
     cdef bint _bar_execution
     cdef bint _bar_adaptive_high_low_ordering
     cdef bint _trade_execution
+    cdef bint _liquidity_consumption
     cdef uint32_t _price_protection_points
     cdef dict _account_ids
     cdef dict _execution_bar_types
@@ -372,12 +375,19 @@ cdef class OrderMatchingEngine:
     """The message bus for the matching engine.\n\n:returns: `MessageBus`"""
 
     cdef MatchingCore _core
+    cdef uint8_t _price_prec
+    cdef uint8_t _size_prec
     cdef bint _has_targets
     cdef PriceRaw _target_bid
     cdef PriceRaw _target_ask
     cdef PriceRaw _target_last
     cdef Bar _last_bid_bar
     cdef Bar _last_ask_bar
+    cdef Quantity _last_trade_size
+    cdef bint _fill_at_market
+    cdef dict[PriceRaw, tuple[QuantityRaw, QuantityRaw]] _bid_consumption
+    cdef dict[PriceRaw, tuple[QuantityRaw, QuantityRaw]] _ask_consumption
+    cdef QuantityRaw _trade_consumption
 
     cdef int _position_count
     cdef int _order_count
@@ -406,20 +416,19 @@ cdef class OrderMatchingEngine:
     cpdef void process_trade_tick(self, TradeTick tick)
     cpdef void process_bar(self, Bar bar)
     cpdef void process_status(self, MarketStatusAction status)
-    cpdef void process_auction_book(self, OrderBook book)
     cpdef void process_instrument_close(self, InstrumentClose close)
     cdef void _process_trade_ticks_from_bar(self, Bar bar)
     cdef TradeTick _create_base_trade_tick(self, Bar bar, Quantity size)
     cdef void _process_trade_bar_open(self, Bar bar, TradeTick tick)
     cdef void _process_trade_bar_high(self, Bar bar, TradeTick tick)
     cdef void _process_trade_bar_low(self, Bar bar, TradeTick tick)
-    cdef void _process_trade_bar_close(self, Bar bar, TradeTick tick)
+    cdef void _process_trade_bar_close(self, Bar bar, TradeTick tick, Quantity close_size=*)
     cdef void _process_quote_ticks_from_bar(self)
     cdef QuoteTick _create_base_quote_tick(self, Quantity bid_size, Quantity ask_size)
     cdef void _process_quote_bar_open(self, QuoteTick tick)
     cdef void _process_quote_bar_high(self, QuoteTick tick)
     cdef void _process_quote_bar_low(self, QuoteTick tick)
-    cdef void _process_quote_bar_close(self, QuoteTick tick)
+    cdef void _process_quote_bar_close(self, QuoteTick tick, Quantity bid_close_size=*, Quantity ask_close_size=*)
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
@@ -436,9 +445,6 @@ cdef class OrderMatchingEngine:
     cdef void _process_market_if_touched_order(self, MarketIfTouchedOrder order)
     cdef void _process_limit_if_touched_order(self, LimitIfTouchedOrder order)
     cdef void _process_trailing_stop_order(self, Order order)
-    cdef void _process_auction_market_order(self, MarketOrder order)
-    cdef void _process_auction_limit_order(self, LimitOrder order)
-    cdef void _process_auction_book_order(self, BookOrder order, TimeInForce time_in_force)
     cdef void _update_limit_order(self, Order order, Quantity qty, Price price)
     cdef void _update_stop_market_order(self, Order order, Quantity qty, Price trigger_price)
     cdef void _update_stop_limit_order(self, Order order, Quantity qty, Price price, Price trigger_price)
@@ -454,6 +460,8 @@ cdef class OrderMatchingEngine:
     cpdef list determine_market_price_and_volume(self, Order order)
     cdef list determine_market_fills_with_simulation(self, Order order)
     cdef list determine_limit_fills_with_simulation(self, Order order)
+    cdef list _apply_liquidity_consumption(self, list fills, OrderSide order_side, QuantityRaw max_qty_raw=*)
+    cdef Quantity determine_trade_fill_qty(self, Order order)
     cpdef void fill_market_order(self, Order order)
     cpdef void fill_limit_order(self, Order order)
     cdef void _trail_stop_order(self, Order order)

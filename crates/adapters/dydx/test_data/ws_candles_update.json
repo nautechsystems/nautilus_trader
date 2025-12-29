@@ -1,0 +1,22 @@
+{
+  "type": "channel_data",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 4,
+  "id": "BTC-USD/1MIN",
+  "channel": "v4_candles",
+  "version": "1.0.0",
+  "contents": {
+    "startedAt": "2024-01-01T00:01:00.000Z",
+    "ticker": "BTC-USD",
+    "resolution": "1MIN",
+    "low": "43350.0",
+    "high": "43600.0",
+    "open": "43400.0",
+    "close": "43550.0",
+    "baseTokenVolume": "8.765",
+    "usdVolume": "381000.25",
+    "trades": 98,
+    "startingOpenInterest": "1000100.0",
+    "id": "candle-002"
+  }
+}

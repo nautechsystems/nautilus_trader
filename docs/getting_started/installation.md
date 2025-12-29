@@ -235,8 +235,8 @@ The `--depth 1` flag fetches just the latest commit for a faster, lightweight cl
 6. Set environment variables for PyO3 compilation (Linux and macOS only):
 
 ```bash
-# Set the library path for the Python interpreter (in this case Python 3.13.4)
-export LD_LIBRARY_PATH="$HOME/.local/share/uv/python/cpython-3.13.4-linux-x86_64-gnu/lib:$LD_LIBRARY_PATH"
+# Linux only: Set the library path for the Python interpreter
+export LD_LIBRARY_PATH="$(python -c 'import sys; print(sys.base_prefix)')/lib:$LD_LIBRARY_PATH"
 
 # Set the Python executable path for PyO3
 export PYO3_PYTHON=$(pwd)/.venv/bin/python
@@ -246,8 +246,7 @@ export PYTHONHOME=$(python -c "import sys; print(sys.base_prefix)")
 ```
 
 :::note
-Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match your system.
-Use `uv python list` to find the exact path for your Python installation.
+The `LD_LIBRARY_PATH` export is Linux-specific and not needed on macOS.
 
 The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`-installed Python.
 Without it, tests that depend on PyO3 may fail to locate the Python runtime.

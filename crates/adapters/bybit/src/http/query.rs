@@ -20,9 +20,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::enums::{
     BybitAccountType, BybitExecType, BybitInstrumentStatus, BybitKlineInterval, BybitMarginMode,
-    BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
-    BybitPositionMode, BybitProductType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
-    BybitTriggerType,
+    BybitOpenOnly, BybitOptionType, BybitOrderFilter, BybitOrderSide, BybitOrderStatus,
+    BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitProductType, BybitTimeInForce,
+    BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
 };
 
 /// Query parameters for `GET /v5/market/instruments-info`.
@@ -562,7 +562,7 @@ pub struct BybitCancelAllOrdersParams {
 /// Query parameters for `GET /v5/order/realtime`.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/order/order-list>
+/// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
 #[builder(default)]
@@ -586,10 +586,10 @@ pub struct BybitOpenOrdersParams {
     pub order_link_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
-    pub open_only: Option<i32>,
+    pub open_only: Option<BybitOpenOnly>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
-    pub order_filter: Option<String>,
+    pub order_filter: Option<BybitOrderFilter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub limit: Option<u32>,
@@ -625,10 +625,10 @@ pub struct BybitOrderHistoryParams {
     pub order_link_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
-    pub open_only: Option<i32>,
+    pub open_only: Option<BybitOpenOnly>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
-    pub order_filter: Option<String>,
+    pub order_filter: Option<BybitOrderFilter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub order_status: Option<BybitOrderStatus>,

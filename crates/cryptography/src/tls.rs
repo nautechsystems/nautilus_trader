@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use rustls::{self, ClientConfig, RootCertStore};
+use rustls::{ClientConfig, RootCertStore};
 use webpki_roots;
 
 /// Loads a TLS client configuration with certificates.

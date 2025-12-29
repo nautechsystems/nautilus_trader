@@ -21,8 +21,7 @@
 
 use std::time::Duration;
 
-use nautilus_network::http::HttpClientError;
-use reqwest::StatusCode;
+use nautilus_network::http::{HttpClientError, StatusCode};
 use thiserror::Error;
 use tokio_tungstenite::tungstenite;
 

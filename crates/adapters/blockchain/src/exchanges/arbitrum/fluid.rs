@@ -16,9 +16,11 @@
 use std::sync::LazyLock;
 
 use nautilus_model::defi::{
+    PoolIdentifier,
     chain::chains,
     dex::{AmmType, Dex, DexType},
 };
+use ustr::Ustr;
 
 use crate::{
     events::pool_created::PoolCreatedEvent,
@@ -59,6 +61,7 @@ fn parse_fluid_dex_pool_created_event_hypersync(
 
     let block_number = extract_block_number(&log)?;
     let pool_address = extract_address_from_topic(&log, 1, "pool")?;
+    let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     let supply_token_address = extract_address_from_topic(&log, 2, "supply_token")?;
     let borrow_token_address = extract_address_from_topic(&log, 3, "borrow_token")?;
 
@@ -67,6 +70,7 @@ fn parse_fluid_dex_pool_created_event_hypersync(
         supply_token_address,
         borrow_token_address,
         pool_address,
+        pool_identifier,
         None,
         None,
     ))

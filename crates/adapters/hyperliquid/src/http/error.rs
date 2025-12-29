@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_network::http::{HttpClientError, ReqwestError, StatusCode};
 use thiserror::Error;
 
 /// Comprehensive error type for Hyperliquid operations
@@ -124,7 +125,7 @@ impl Error {
     }
 
     /// Create an error from HTTP status code and body
-    pub fn from_http_status(status: reqwest::StatusCode, body: &[u8]) -> Self {
+    pub fn from_http_status(status: StatusCode, body: &[u8]) -> Self {
         let message = String::from_utf8_lossy(body).to_string();
         match status.as_u16() {
             401 | 403 => Self::auth(format!("HTTP {}: {}", status.as_u16(), message)),
@@ -136,7 +137,7 @@ impl Error {
     }
 
     /// Map reqwest errors to appropriate error types
-    pub fn from_reqwest(error: reqwest::Error) -> Self {
+    pub fn from_reqwest(error: ReqwestError) -> Self {
         if error.is_timeout() {
             Self::Timeout
         } else if let Some(status) = error.status() {
@@ -156,7 +157,7 @@ impl Error {
     }
 
     /// Map HTTP client errors to appropriate error types
-    pub fn from_http_client(error: nautilus_network::http::HttpClientError) -> Self {
+    pub fn from_http_client(error: HttpClientError) -> Self {
         Self::transport(format!("HTTP client error: {error}"))
     }
 
@@ -182,10 +183,6 @@ impl Error {
 
 /// Result type alias for Hyperliquid operations
 pub type Result<T> = std::result::Result<T, Error>;
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

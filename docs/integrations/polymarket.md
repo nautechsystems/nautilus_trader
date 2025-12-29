@@ -57,7 +57,7 @@ separately depending on the use case.
 - `PolymarketLiveExecClientFactory`: Factory for Polymarket execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as below),
+Most users will define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
 
@@ -477,11 +477,10 @@ All data fetching methods are **asynchronous** and must be called with `await`. 
 
 ### Data sources
 
-The loader fetches data from three primary sources:
+The loader fetches data from two primary sources:
 
 1. **Polymarket Gamma API** - Market metadata, instrument details, and active market listings.
-2. **Polymarket CLOB API** - Price/trade history timeseries.
-3. **DomeAPI** - Order book history snapshots (available from October 14th, 2025).
+2. **Polymarket CLOB API** - Price/trade history timeseries and order book history snapshots.
 
 ### Finding markets
 
@@ -570,11 +569,6 @@ orderbook_snapshots = await loader.fetch_orderbook_history(
 # Parse to NautilusTrader OrderBookDeltas
 deltas = loader.parse_orderbook_snapshots(orderbook_snapshots)
 ```
-
-:::note
-DomeAPI order book history is only available from **October 14th, 2025** onwards.
-For earlier data, rely on the price history endpoint.
-:::
 
 ### Fetching price history
 

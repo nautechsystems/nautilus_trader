@@ -451,6 +451,7 @@ impl OrderFactory {
         quantity: Quantity,
         entry_price: Option<Price>,
         sl_trigger_price: Price,
+        sl_trigger_type: Option<TriggerType>,
         tp_price: Price,
         entry_trigger_price: Option<Price>,
         time_in_force: Option<TimeInForce>,
@@ -614,7 +615,7 @@ impl OrderFactory {
             sl_tp_side,
             quantity,
             sl_trigger_price,
-            TriggerType::Default,
+            sl_trigger_type.unwrap_or(TriggerType::Default),
             time_in_force.unwrap_or(TimeInForce::Gtc),
             expire_time,
             true, // SL/TP should only reduce positions
@@ -677,10 +678,6 @@ impl OrderFactory {
         )
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 pub mod tests {
@@ -1089,6 +1086,7 @@ pub mod tests {
             100.into(),
             None,                    // market entry
             Price::from("45000.00"), // SL trigger
+            None,                    // sl_trigger_type
             Price::from("55000.00"), // TP price
             None,                    // no entry trigger
             Some(TimeInForce::Gtc),
@@ -1129,6 +1127,7 @@ pub mod tests {
             100.into(),
             Some(Price::from("49000.00")), // limit entry
             Price::from("45000.00"),       // SL trigger
+            None,                          // sl_trigger_type
             Price::from("55000.00"),       // TP price
             None,                          // no entry trigger
             Some(TimeInForce::Gtc),
@@ -1157,6 +1156,7 @@ pub mod tests {
             100.into(),
             None,                          // no limit price (stop-market entry)
             Price::from("45000.00"),       // SL trigger
+            None,                          // sl_trigger_type
             Price::from("55000.00"),       // TP price
             Some(Price::from("51000.00")), // entry trigger (stop entry)
             Some(TimeInForce::Gtc),
@@ -1188,6 +1188,7 @@ pub mod tests {
             100.into(),
             Some(Price::from("51000.00")), // limit entry
             Price::from("55000.00"),       // SL trigger (above entry for sell)
+            None,                          // sl_trigger_type
             Price::from("45000.00"),       // TP price (below entry for sell)
             None,
             Some(TimeInForce::Gtc),
@@ -1220,10 +1221,11 @@ pub mod tests {
             InstrumentId::from("BTCUSDT.BINANCE"),
             OrderSide::Buy,
             100.into(),
-            Some(Price::from("50000.00")),
-            Price::from("45000.00"),
-            Price::from("55000.00"),
-            None,
+            Some(Price::from("50000.00")), // entry_price
+            Price::from("45000.00"),       // sl_trigger_price
+            None,                          // sl_trigger_type
+            Price::from("55000.00"),       // tp_price
+            None,                          // entry_trigger_price
             Some(TimeInForce::Gtc),
             None,
             Some(false),

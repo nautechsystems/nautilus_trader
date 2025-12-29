@@ -196,7 +196,18 @@ async fn test_authenticated_endpoints(api_key: &str, api_secret: &str) -> anyhow
     // Test 1: Get open orders
     println!("\n1. Testing GET /v5/order/realtime (open orders)");
     match client
-        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(
+            BybitProductType::Linear,
+            Some("BTCUSDT".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
     {
         Ok(response) => {

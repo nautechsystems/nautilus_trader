@@ -17,8 +17,9 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
+use ahash::AHashMap;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -50,7 +51,7 @@ pub struct OrderManager {
     // submit_order_handler: Option<SubmitOrderHandlerAny>,
     // cancel_order_handler: Option<CancelOrderHandlerAny>,
     // modify_order_handler: Option<ModifyOrderHandlerAny>,
-    submit_order_commands: HashMap<ClientOrderId, SubmitOrder>,
+    submit_order_commands: AHashMap<ClientOrderId, SubmitOrder>,
 }
 
 impl Debug for OrderManager {
@@ -78,7 +79,7 @@ impl OrderManager {
             // submit_order_handler,
             // cancel_order_handler,
             // modify_order_handler,
-            submit_order_commands: HashMap::new(),
+            submit_order_commands: AHashMap::new(),
         }
     }
 
@@ -96,7 +97,7 @@ impl OrderManager {
 
     #[must_use]
     /// Returns a copy of all cached submit order commands.
-    pub fn get_submit_order_commands(&self) -> HashMap<ClientOrderId, SubmitOrder> {
+    pub fn get_submit_order_commands(&self) -> AHashMap<ClientOrderId, SubmitOrder> {
         self.submit_order_commands.clone()
     }
 
@@ -201,6 +202,9 @@ impl OrderManager {
 
     // Event Handlers
     /// Handles an order event by routing it to the appropriate handler method.
+    ///
+    /// Note: Only handles specific terminal/actionable events. Other events
+    /// like `OrderSubmitted`, `OrderAccepted`, etc. are no-ops for the order manager.
     pub fn handle_event(&mut self, event: OrderEventAny) {
         match event {
             OrderEventAny::Rejected(event) => self.handle_order_rejected(event),
@@ -208,7 +212,7 @@ impl OrderManager {
             OrderEventAny::Expired(event) => self.handle_order_expired(event),
             OrderEventAny::Updated(event) => self.handle_order_updated(event),
             OrderEventAny::Filled(event) => self.handle_order_filled(event),
-            _ => self.handle_position_event(event),
+            _ => {}
         }
     }
 
@@ -541,41 +545,109 @@ impl OrderManager {
         }
     }
 
-    pub fn handle_position_event(&mut self, _event: OrderEventAny) {
-        todo!()
-    }
-
     // Message sending methods
     pub fn send_emulator_command(&self, command: TradingCommand) {
-        log::info!("{CMD}{SEND} {command}");
-
+        log_cmd_send(&command);
         msgbus::send_any("OrderEmulator.execute".into(), &command);
     }
 
     pub fn send_algo_command(&self, command: SubmitOrder, exec_algorithm_id: ExecAlgorithmId) {
-        log::info!("{CMD}{SEND} {command}");
+        let id = command.strategy_id;
+        log::info!("{id} {CMD}{SEND} {command}");
 
         let endpoint = format!("{exec_algorithm_id}.execute");
         msgbus::send_any(endpoint.into(), &TradingCommand::SubmitOrder(command));
     }
 
     pub fn send_risk_command(&self, command: TradingCommand) {
-        log::info!("{CMD}{SEND} {command}");
+        log_cmd_send(&command);
         msgbus::send_any("RiskEngine.execute".into(), &command);
     }
 
     pub fn send_exec_command(&self, command: TradingCommand) {
-        log::info!("{CMD}{SEND} {command}");
+        log_cmd_send(&command);
         msgbus::send_any("ExecEngine.execute".into(), &command);
     }
 
     pub fn send_risk_event(&self, event: OrderEventAny) {
-        log::info!("{EVT}{SEND} {event}");
+        log_evt_send(&event);
         msgbus::send_any("RiskEngine.process".into(), &event);
     }
 
     pub fn send_exec_event(&self, event: OrderEventAny) {
-        log::info!("{EVT}{SEND} {event}");
+        log_evt_send(&event);
         msgbus::send_any("ExecEngine.process".into(), &event);
+    }
+}
+
+#[inline(always)]
+fn log_cmd_send(command: &TradingCommand) {
+    if let Some(id) = command.strategy_id() {
+        log::info!("{id} {CMD}{SEND} {command}");
+    } else {
+        log::info!("{CMD}{SEND} {command}");
+    }
+}
+
+#[inline(always)]
+fn log_evt_send(event: &OrderEventAny) {
+    let id = event.strategy_id();
+    log::info!("{id} {EVT}{SEND} {event}");
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::UUID4;
+    use nautilus_model::{
+        events::{OrderAccepted, OrderSubmitted},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    /// Verifies unhandled order events are no-ops and don't panic.
+    /// Previously, unhandled events would hit a todo!() panic.
+    #[rstest]
+    fn test_handle_event_unhandled_events_are_noop() {
+        let submitted = OrderEventAny::Submitted(OrderSubmitted {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            instrument_id: InstrumentId::from("BTC-USDT.OKX"),
+            client_order_id: ClientOrderId::from("O-001"),
+            account_id: AccountId::from("ACCOUNT-001"),
+            event_id: UUID4::new(),
+            ts_event: Default::default(),
+            ts_init: Default::default(),
+        });
+        let accepted = OrderEventAny::Accepted(OrderAccepted {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("STRATEGY-001"),
+            instrument_id: InstrumentId::from("BTC-USDT.OKX"),
+            client_order_id: ClientOrderId::from("O-001"),
+            venue_order_id: VenueOrderId::from("V-001"),
+            account_id: AccountId::from("ACCOUNT-001"),
+            event_id: UUID4::new(),
+            ts_event: Default::default(),
+            ts_init: Default::default(),
+            reconciliation: 0,
+        });
+
+        match submitted {
+            OrderEventAny::Rejected(_) => panic!("Should not match"),
+            OrderEventAny::Canceled(_) => panic!("Should not match"),
+            OrderEventAny::Expired(_) => panic!("Should not match"),
+            OrderEventAny::Updated(_) => panic!("Should not match"),
+            OrderEventAny::Filled(_) => panic!("Should not match"),
+            _ => {}
+        }
+        match accepted {
+            OrderEventAny::Rejected(_) => panic!("Should not match"),
+            OrderEventAny::Canceled(_) => panic!("Should not match"),
+            OrderEventAny::Expired(_) => panic!("Should not match"),
+            OrderEventAny::Updated(_) => panic!("Should not match"),
+            OrderEventAny::Filled(_) => panic!("Should not match"),
+            _ => {}
+        }
     }
 }

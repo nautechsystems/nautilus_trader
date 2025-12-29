@@ -42,34 +42,22 @@ individual order parameters (as explained below).
 
 This diagram illustrates message flow (commands and events) across the Nautilus execution components.
 
-```
-                  ┌───────────────────┐
-                  │                   │
-                  │                   │
-                  │                   │
-          ┌───────►   OrderEmulator   ├────────────┐
-          │       │                   │            │
-          │       │                   │            │
-          │       │                   │            │
-┌─────────┴──┐    └─────▲──────┬──────┘            │
-│            │          │      │           ┌───────▼────────┐   ┌─────────────────────┐   ┌─────────────────────┐
-│            │          │      │           │                │   │                     │   │                     │
-│            ├──────────┼──────┼───────────►                ├───►                     ├───►                     │
-│  Strategy  │          │      │           │                │   │                     │   │                     │
-│            │          │      │           │   RiskEngine   │   │   ExecutionEngine   │   │   ExecutionClient   │
-│            ◄──────────┼──────┼───────────┤                ◄───┤                     ◄───┤                     │
-│            │          │      │           │                │   │                     │   │                     │
-│            │          │      │           │                │   │                     │   │                     │
-└─────────┬──┘    ┌─────┴──────▼──────┐    └───────▲────────┘   └─────────────────────┘   └─────────────────────┘
-          │       │                   │            │
-          │       │                   │            │
-          │       │                   │            │
-          └───────►   ExecAlgorithm   ├────────────┘
-                  │                   │
-                  │                   │
-                  │                   │
-                  └───────────────────┘
+```mermaid
+flowchart LR
+    strategy[Strategy]
+    emulator[OrderEmulator]
+    algo[ExecAlgorithm]
+    risk[RiskEngine]
+    engine[ExecutionEngine]
+    client[ExecutionClient]
 
+    strategy <--> emulator
+    strategy <--> algo
+    strategy <--> risk
+    emulator --> risk
+    algo --> risk
+    risk <--> engine
+    engine <--> client
 ```
 
 ## Order Management System (OMS)
@@ -220,7 +208,7 @@ an execution model which determines the horizon and interval.
 
 :::info
 There is no limit to the number of execution algorithm parameters you can create. The parameters
-just need to be a dictionary with string keys and primitive values (values that can be serialized
+must be a dictionary with string keys and primitive values (values that can be serialized
 over the wire, such as ints, floats, and strings).
 :::
 
@@ -282,7 +270,7 @@ the intention is that the algorithm will then finally send the primary (original
 ### Spawned orders
 
 All secondary orders spawned from an execution algorithm will carry a `exec_spawn_id` which is
-simply the `ClientOrderId` of the primary (original) order, and whose `client_order_id`
+the `ClientOrderId` of the primary (original) order, and whose `client_order_id`
 derives from this original identifier with the following convention:
 
 - `exec_spawn_id` (primary order `client_order_id` value)

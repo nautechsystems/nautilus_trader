@@ -21,6 +21,7 @@ use std::{
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
     rc::Rc,
+    sync::Arc,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -37,7 +38,7 @@ use nautilus_model::{
         MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::BookType,
-    events::order::filled::OrderFilled,
+    events::order::{canceled::OrderCanceled, filled::OrderFilled},
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, TraderId, Venue},
     instruments::InstrumentAny,
     orderbook::OrderBook,
@@ -84,8 +85,8 @@ use crate::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
             get_custom_topic, get_funding_rate_topic, get_index_price_topic,
             get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_instruments_topic, get_mark_price_topic, get_order_fills_topic, get_quotes_topic,
-            get_trades_topic,
+            get_instruments_topic, get_mark_price_topic, get_order_cancels_topic,
+            get_order_fills_topic, get_quotes_topic, get_trades_topic,
         },
     },
     signal::Signal,
@@ -132,7 +133,7 @@ pub struct ImportableActorConfig {
     pub config: HashMap<String, serde_json::Value>,
 }
 
-type RequestCallback = Box<dyn Fn(UUID4) + Send + Sync>; // TODO: TBD
+type RequestCallback = Arc<dyn Fn(UUID4) + Send + Sync>;
 
 pub trait DataActor:
     Component + Deref<Target = DataActorCore> + DerefMut<Target = DataActorCore>
@@ -386,6 +387,16 @@ pub trait DataActor:
     /// Returns an error if handling the order filled event fails.
     #[allow(unused_variables)]
     fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving an order canceled event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the order canceled event fails.
+    #[allow(unused_variables)]
+    fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -730,6 +741,27 @@ pub trait DataActor:
         }
     }
 
+    /// Handles a received order canceled event.
+    fn handle_order_canceled(&mut self, event: &OrderCanceled) {
+        log_received(&event);
+
+        // Check for double-handling: if the event's strategy_id matches this actor's id,
+        // it means a Strategy is receiving its own cancel event through both automatic
+        // subscription and manual subscribe_order_cancels, so skip the manual handler.
+        if event.strategy_id.inner() == self.actor_id().inner() {
+            return;
+        }
+
+        if self.not_running() {
+            log_not_running(&event);
+            return;
+        }
+
+        if let Err(e) = self.on_order_canceled(event) {
+            log_error(&e);
+        }
+    }
+
     #[cfg(feature = "defi")]
     /// Handles a received block.
     fn handle_block(&mut self, block: &Block) {
@@ -927,7 +959,7 @@ pub trait DataActor:
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |quote: &QuoteTick| {
-                if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                     actor.handle_quote(quote);
                 } else {
                     log::error!("Actor {actor_id} not found for quote handling");
@@ -952,7 +984,7 @@ pub trait DataActor:
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
-                if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                     actor.handle_instrument(instrument);
                 } else {
                     log::error!("Actor {actor_id} not found for instruments handling");
@@ -977,7 +1009,7 @@ pub trait DataActor:
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
-                if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                     actor.handle_instrument(instrument);
                 } else {
                     log::error!("Actor {actor_id} not found for instrument handling");
@@ -1252,6 +1284,23 @@ pub trait DataActor:
         )));
 
         DataActorCore::subscribe_order_fills(self, topic, handler);
+    }
+
+    /// Subscribe to [`OrderCanceled`] events for the `instrument_id`.
+    fn subscribe_order_cancels(&mut self, instrument_id: InstrumentId)
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_order_cancels_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |event: &OrderCanceled| {
+                get_actor_unchecked::<Self>(&actor_id).handle_order_canceled(event);
+            },
+        )));
+
+        DataActorCore::subscribe_order_cancels(self, topic, handler);
     }
 
     #[cfg(feature = "defi")]
@@ -1574,6 +1623,14 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_order_fills(self, instrument_id);
+    }
+
+    /// Unsubscribe from [`OrderCanceled`] events for the `instrument_id`.
+    fn unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId)
+    where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_order_cancels(self, instrument_id);
     }
 
     #[cfg(feature = "defi")]
@@ -1919,7 +1976,7 @@ where
         // Register default time event handler for this actor
         let actor_id = self.actor_id().inner();
         let callback = TimeEventCallback::from(move |event: TimeEvent| {
-            if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_time_event(&event);
             } else {
                 log::error!("Actor {actor_id} not found for time event handling");
@@ -1961,6 +2018,7 @@ where
 }
 
 /// Core functionality for all actors.
+#[derive(Clone)]
 #[allow(
     dead_code,
     reason = "TODO: Under development (pending_requests, signal_classes)"
@@ -2626,6 +2684,16 @@ impl DataActorCore {
         self.add_subscription(topic, handler);
     }
 
+    /// Helper method for registering order cancels subscriptions from the trait.
+    pub fn subscribe_order_cancels(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
+    ) {
+        self.check_registered();
+        self.add_subscription(topic, handler);
+    }
+
     /// Helper method for unsubscribing from data.
     pub fn unsubscribe_data(
         &mut self,
@@ -2947,6 +3015,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_order_fills_topic(instrument_id);
+        self.remove_subscription(topic);
+    }
+
+    /// Helper method for unsubscribing from order cancels.
+    pub fn unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
+        self.check_registered();
+
+        let topic = get_order_cancels_topic(instrument_id);
         self.remove_subscription(topic);
     }
 

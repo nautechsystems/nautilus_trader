@@ -513,10 +513,6 @@ impl DataEngine {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -524,7 +520,8 @@ mod tests {
     use alloy_primitives::{Address, I256, U160, U256};
     use nautilus_model::{
         defi::{
-            DefiData, PoolFeeCollect, PoolFlash, PoolLiquidityUpdate, PoolSwap,
+            Chain, DefiData, PoolFeeCollect, PoolFlash, PoolIdentifier, PoolLiquidityUpdate,
+            PoolLiquidityUpdateType, PoolSwap,
             chain::chains,
             data::DexPoolData,
             dex::{AmmType, Dex, DexType},
@@ -542,12 +539,12 @@ mod tests {
     }
 
     #[fixture]
-    fn test_chain() -> Arc<nautilus_model::defi::Chain> {
+    fn test_chain() -> Arc<Chain> {
         Arc::new(chains::ETHEREUM.clone())
     }
 
     #[fixture]
-    fn test_dex(test_chain: Arc<nautilus_model::defi::Chain>) -> Arc<Dex> {
+    fn test_dex(test_chain: Arc<Chain>) -> Arc<Dex> {
         Arc::new(Dex::new(
             (*test_chain).clone(),
             DexType::UniswapV3,
@@ -564,7 +561,7 @@ mod tests {
 
     fn create_test_swap(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
         block: u64,
         tx_index: u32,
@@ -574,7 +571,7 @@ mod tests {
             test_chain,
             test_dex,
             test_instrument_id,
-            Address::ZERO,
+            PoolIdentifier::from_address(Address::ZERO),
             block,
             format!("0x{block:064x}"),
             tx_index,
@@ -592,19 +589,17 @@ mod tests {
 
     fn create_test_liquidity_update(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
         block: u64,
         tx_index: u32,
         log_index: u32,
     ) -> PoolLiquidityUpdate {
-        use nautilus_model::defi::PoolLiquidityUpdateType;
-
         PoolLiquidityUpdate::new(
             test_chain,
             test_dex,
             test_instrument_id,
-            Address::ZERO,
+            PoolIdentifier::from_address(Address::ZERO),
             PoolLiquidityUpdateType::Mint,
             block,
             format!("0x{block:064x}"),
@@ -623,7 +618,7 @@ mod tests {
 
     fn create_test_fee_collect(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
         block: u64,
         tx_index: u32,
@@ -633,7 +628,7 @@ mod tests {
             test_chain,
             test_dex,
             test_instrument_id,
-            Address::ZERO,
+            PoolIdentifier::from_address(Address::ZERO),
             block,
             format!("0x{block:064x}"),
             tx_index,
@@ -649,7 +644,7 @@ mod tests {
 
     fn create_test_flash(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
         block: u64,
         tx_index: u32,
@@ -659,7 +654,7 @@ mod tests {
             test_chain,
             test_dex,
             test_instrument_id,
-            Address::ZERO,
+            PoolIdentifier::from_address(Address::ZERO),
             block,
             format!("0x{block:064x}"),
             tx_index,
@@ -677,7 +672,7 @@ mod tests {
     #[rstest]
     fn test_get_event_block_position_swap(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let swap = create_test_swap(test_instrument_id, test_chain, test_dex, 100, 5, 3);
@@ -688,7 +683,7 @@ mod tests {
     #[rstest]
     fn test_get_event_block_position_liquidity_update(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let update =
@@ -700,7 +695,7 @@ mod tests {
     #[rstest]
     fn test_get_event_block_position_fee_collect(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let collect = create_test_fee_collect(test_instrument_id, test_chain, test_dex, 300, 15, 2);
@@ -711,7 +706,7 @@ mod tests {
     #[rstest]
     fn test_get_event_block_position_flash(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let flash = create_test_flash(test_instrument_id, test_chain, test_dex, 400, 20, 8);
@@ -728,7 +723,7 @@ mod tests {
     #[rstest]
     fn test_convert_and_sort_filters_non_pool_events(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let events = vec![
@@ -749,7 +744,7 @@ mod tests {
     #[rstest]
     fn test_convert_and_sort_single_event(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let swap = create_test_swap(test_instrument_id, test_chain, test_dex, 100, 5, 3);
@@ -762,7 +757,7 @@ mod tests {
     #[rstest]
     fn test_convert_and_sort_already_sorted(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let events = vec![
@@ -801,7 +796,7 @@ mod tests {
     #[rstest]
     fn test_convert_and_sort_reverse_order(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let events = vec![
@@ -840,7 +835,7 @@ mod tests {
     #[rstest]
     fn test_convert_and_sort_mixed_blocks(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let events = vec![
@@ -879,7 +874,7 @@ mod tests {
     #[rstest]
     fn test_convert_and_sort_mixed_event_types(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let events = vec![
@@ -927,7 +922,7 @@ mod tests {
     #[rstest]
     fn test_convert_and_sort_same_block_and_tx_different_log_index(
         test_instrument_id: InstrumentId,
-        test_chain: Arc<nautilus_model::defi::Chain>,
+        test_chain: Arc<Chain>,
         test_dex: Arc<Dex>,
     ) {
         let events = vec![

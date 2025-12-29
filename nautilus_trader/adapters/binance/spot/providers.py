@@ -128,16 +128,21 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading all instruments{filters_str}")
 
         try:
-            # Get current commission rates
-            if not self._is_testnet:
-                response = await self._http_wallet.query_spot_trade_fees()
-                fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
-            else:
+            # Get current commission rates (requires authentication)
+            fees_dict: dict[str, BinanceSpotTradeFee] = {}
+
+            if self._is_testnet:
                 self._log.warning(
                     "Currently not requesting actual trade fees for the SPOT testnet; "
                     "all instruments will have zero fees",
                 )
-                fees_dict = {}
+            elif self._client.api_key is None or self._client._secret is None:
+                self._log.info(
+                    "API credentials not configured; all instruments will have zero fees",
+                )
+            else:
+                response = await self._http_wallet.query_spot_trade_fees()
+                fees_dict = {fee.symbol: fee for fee in response}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -168,16 +173,18 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             PyCondition.equal(instrument_id.venue, self._venue, "instrument_id.venue", "BINANCE")
 
         try:
-            # Get current commission rates
-            if not self._is_testnet:
-                response = await self._http_wallet.query_spot_trade_fees()
-                fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
-            else:
-                fees_dict = {}
+            # Get current commission rates (requires authentication)
+            fees_dict: dict[str, BinanceSpotTradeFee] = {}
+            if self._is_testnet:
                 self._log.warning(
                     "Currently not requesting actual trade fees for the SPOT testnet; "
-                    "all instruments will have zero fees.",
+                    "all instruments will have zero fees",
                 )
+            elif self._client.api_key is None or self._client._secret is None:
+                pass
+            else:
+                response = await self._http_wallet.query_spot_trade_fees()
+                fees_dict = {fee.symbol: fee for fee in response}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -212,16 +219,18 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         symbol = str(BinanceSymbol(instrument_id.symbol.value))
 
         try:
-            # Get current commission rates
-            if not self._is_testnet:
-                response = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
-                fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
-            else:
+            # Get current commission rates (requires authentication)
+            fees_dict: dict[str, BinanceSpotTradeFee] = {}
+            if self._is_testnet:
                 self._log.warning(
                     "Currently not requesting actual trade fees for the SPOT testnet; "
                     "all instruments will have zero fees",
                 )
-                fees_dict = {}
+            elif self._client.api_key is None or self._client._secret is None:
+                pass
+            else:
+                response = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
+                fees_dict = {fee.symbol: fee for fee in response}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "

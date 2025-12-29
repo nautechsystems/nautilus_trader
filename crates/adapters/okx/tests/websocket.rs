@@ -38,10 +38,14 @@ use axum::{
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
-use nautilus_model::identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId};
+use nautilus_model::{
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    instruments::InstrumentAny,
+};
 use nautilus_okx::{
-    common::{enums::OKXInstrumentType, parse::parse_instrument_any},
-    websocket::client::OKXWebSocketClient,
+    common::{enums::OKXInstrumentType, models::OKXInstrument, parse::parse_instrument_any},
+    http::client::OKXResponse,
+    websocket::{client::OKXWebSocketClient, messages::NautilusWsMessage},
 };
 use serde_json::{Value, json};
 
@@ -82,11 +86,10 @@ fn load_json(filename: &str) -> Value {
     serde_json::from_str(&content).expect("invalid json")
 }
 
-fn load_instruments() -> Vec<nautilus_model::instruments::InstrumentAny> {
+fn load_instruments() -> Vec<InstrumentAny> {
     let payload = load_json("http_get_instruments_spot.json");
-    let response: nautilus_okx::http::client::OKXResponse<
-        nautilus_okx::common::models::OKXInstrument,
-    > = serde_json::from_value(payload).expect("invalid instrument payload");
+    let response: OKXResponse<OKXInstrument> =
+        serde_json::from_value(payload).expect("invalid instrument payload");
     let ts_init = UnixNanos::default();
     response
         .data
@@ -521,7 +524,7 @@ async fn test_trades_subscription_flow() {
         .expect("stream ended unexpectedly");
 
     match message {
-        nautilus_okx::websocket::messages::NautilusWsMessage::Data(data) => {
+        NautilusWsMessage::Data(data) => {
             assert!(!data.is_empty(), "expected trade payload");
         }
         other => panic!("unexpected message: {other:?}"),
@@ -1048,7 +1051,7 @@ async fn test_true_auto_reconnect_with_verification() {
         .expect("stream closed too early");
 
     match first {
-        nautilus_okx::websocket::messages::NautilusWsMessage::Data(payload) => {
+        NautilusWsMessage::Data(payload) => {
             assert!(!payload.is_empty());
         }
         other => panic!("unexpected message before reconnect: {other:?}"),
@@ -1069,7 +1072,7 @@ async fn test_true_auto_reconnect_with_verification() {
         .expect("stream closed after reconnect");
 
     match second {
-        nautilus_okx::websocket::messages::NautilusWsMessage::Data(payload) => {
+        NautilusWsMessage::Data(payload) => {
             assert!(!payload.is_empty());
         }
         other => panic!("unexpected message after reconnect: {other:?}"),

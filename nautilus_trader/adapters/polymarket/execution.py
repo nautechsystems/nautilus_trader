@@ -63,6 +63,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.stats import basis_points_as_percentage
@@ -316,7 +317,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         )
 
     async def _fetch_user_positions(
-        self, *, limit: int = 100, size_threshold: int = 0,
+        self,
+        *,
+        limit: int = 100,
+        size_threshold: int = 0,
     ) -> list[dict[str, Any]]:
         """
         Fetch all current positions for the configured user using the Polymarket Data
@@ -610,14 +614,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
         params = TradeParams()
         if command.instrument_id:
             condition_id = get_polymarket_condition_id(command.instrument_id)
-            asset_id = get_polymarket_token_id(command.instrument_id)
             params.market = condition_id
-            params.asset_id = asset_id
+            # Note: We intentionally don't filter by asset_id here because the API
+            # filters by TAKER's asset_id, which would miss maker fills from cross-asset
+            # matches (e.g., YES maker matched against NO taker)
 
         if command.start is not None:
-            params.after = int(nanos_to_secs(command.start))
+            params.after = int(command.start.timestamp())
         if command.end is not None:
-            params.before = int(nanos_to_secs(command.end))
+            params.before = int(command.end.timestamp())
 
         details = []
         if command.instrument_id:
@@ -705,23 +710,27 @@ class PolymarketExecutionClient(LiveExecutionClient):
         raw = msgspec.json.encode(json_obj)
         polymarket_trade = self._decoder_trade_report.decode(raw)
 
-        instrument_id = get_polymarket_instrument_id(
-            polymarket_trade.market,
-            polymarket_trade.asset_id,
-        )
-        instrument = self._cache.instrument(instrument_id)
-        if instrument is None:
-            self._log.warning(
-                f"Cannot handle trade report: instrument {instrument_id} not found "
-                f"(market={polymarket_trade.market}, asset_id={polymarket_trade.asset_id})",
-            )
-            return
-
         filled_user_order_ids = polymarket_trade.get_filled_user_order_ids(
             self._wallet_address,
             self._api_key,
         )
+
         for order_id in filled_user_order_ids:
+            asset_id = polymarket_trade.get_asset_id(order_id)
+            instrument_id = get_polymarket_instrument_id(polymarket_trade.market, asset_id)
+
+            # Filter by instrument_id if specified in command
+            if command.instrument_id is not None and instrument_id != command.instrument_id:
+                continue
+
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.warning(
+                    f"Cannot handle trade report: instrument {instrument_id} not found "
+                    f"(market={polymarket_trade.market}, asset_id={asset_id})",
+                )
+                continue
+
             venue_order_id = polymarket_trade.venue_order_id(order_id)
 
             if command.venue_order_id is not None and venue_order_id != command.venue_order_id:
@@ -806,7 +815,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 params,
             )
             quantities[instrument_id] = Quantity.from_raw(
-                usdce_from_units(int(response["balance"])).raw, precision=USDC_POS.precision,
+                usdce_from_units(int(response["balance"])).raw,
+                precision=USDC_POS.precision,
             )
 
         return quantities
@@ -1461,7 +1471,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         commission = float(last_qty * last_px) * basis_points_as_percentage(
             float(msg.get_fee_rate_bps(order_id)),
         )
-        ts_event = millis_to_nanos(int(msg.match_time))
+        ts_event = secs_to_nanos(int(msg.match_time))
 
         self.generate_order_filled(
             strategy_id=strategy_id,

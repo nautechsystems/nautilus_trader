@@ -372,7 +372,7 @@ class TestSimulatedExchange:
             instrument=USDJPY_SIM,
             bid_price=12.0,
             ask_price=13.0,
-            bid_size=100_000,  # <-- Size enough to fill remaining quantity
+            bid_size=150_000,  # <-- Different size to trigger change detection
             ask_size=200_000,
         )
         self.exchange.process_quote_tick(tick)

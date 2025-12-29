@@ -1,0 +1,44 @@
+{
+  "type": "subscribed",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 1,
+  "channel": "v4_subaccounts",
+  "id": "dydx1abc123def456ghi789jkl012mno345pqr678stu/0",
+  "contents": {
+    "subaccount": {
+      "address": "dydx1abc123def456ghi789jkl012mno345pqr678stu",
+      "subaccountNumber": 0,
+      "equity": "125000.50",
+      "freeCollateral": "100000.25",
+      "openPerpetualPositions": {
+        "BTC-USD": {
+          "market": "BTC-USD",
+          "status": "OPEN",
+          "side": "LONG",
+          "size": "0.5",
+          "maxSize": "1.0",
+          "entryPrice": "43000.0",
+          "exitPrice": null,
+          "realizedPnl": "125.50",
+          "unrealizedPnl": "125.00",
+          "createdAt": "2024-01-01T00:00:00.000Z",
+          "closedAt": null,
+          "sumOpen": "0.5",
+          "sumClose": "0.0",
+          "netFunding": "-10.25"
+        }
+      },
+      "assetPositions": {
+        "USDC": {
+          "symbol": "USDC",
+          "side": "LONG",
+          "size": "100000.0",
+          "assetId": "0"
+        }
+      },
+      "marginEnabled": true,
+      "updatedAtHeight": "12345700",
+      "latestProcessedBlockHeight": "12345700"
+    }
+  }
+}

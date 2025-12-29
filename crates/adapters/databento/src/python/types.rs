@@ -290,3 +290,28 @@ impl DatabentoStatistics {
         Ok(dict.into())
     }
 }
+
+/// Subscription acknowledgement from the Databento gateway.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
+)]
+#[derive(Debug, Clone)]
+pub struct DatabentoSubscriptionAck {
+    #[pyo3(get)]
+    pub schema: String,
+    #[pyo3(get)]
+    pub message: String,
+    #[pyo3(get)]
+    pub ts_received: u64,
+}
+
+impl From<crate::types::SubscriptionAckEvent> for DatabentoSubscriptionAck {
+    fn from(event: crate::types::SubscriptionAckEvent) -> Self {
+        Self {
+            schema: event.schema,
+            message: event.message,
+            ts_received: event.ts_received.as_u64(),
+        }
+    }
+}

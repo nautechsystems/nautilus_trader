@@ -17,10 +17,11 @@
 
 use std::str::FromStr;
 
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::{InstrumentId, Symbol},
-    types::{Currency, Price, Quantity},
+    types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -89,31 +90,6 @@ pub fn time_in_force_to_proto_with_post_only(
     }
 }
 
-/// Returns a currency from the internal map or creates a new crypto currency.
-///
-/// If the code is empty, logs a warning with context and returns USDC as fallback.
-/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
-/// which automatically registers newly listed dYdX assets.
-fn get_currency_with_context(code: &str, context: Option<&str>) -> Currency {
-    let trimmed = code.trim();
-    let ctx = context.unwrap_or("unknown");
-
-    if trimmed.is_empty() {
-        tracing::warn!("Empty currency code for context {ctx}, defaulting to USDC as fallback");
-        return Currency::USDC();
-    }
-
-    Currency::get_or_create_crypto(trimmed)
-}
-
-/// Returns a currency from the given code.
-///
-/// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes.
-#[must_use]
-pub fn get_currency(code: &str) -> Currency {
-    get_currency_with_context(code, None)
-}
-
 /// Parses a dYdX instrument ID from a ticker string.
 ///
 /// dYdX v4 only lists perpetual markets, with tickers in the format
@@ -167,12 +143,18 @@ pub fn parse_decimal(value: &str, field_name: &str) -> anyhow::Result<Decimal> {
     })
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
+/// Converts [`UnixNanos`] to seconds as `i64` using integer division.
+///
+/// Uses pure integer arithmetic to avoid floating-point precision loss that can
+/// occur when converting large nanosecond timestamps (e.g., order expiry times).
+#[must_use]
+pub fn nanos_to_secs_i64(nanos: UnixNanos) -> i64 {
+    (nanos.as_u64() / NANOSECONDS_IN_SECOND) as i64
+}
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::types::Currency;
     use rstest::rstest;
 
     use super::*;
@@ -225,10 +207,10 @@ mod tests {
 
     #[rstest]
     fn test_get_currency() {
-        let btc = get_currency("BTC");
+        let btc = Currency::get_or_create_crypto("BTC");
         assert_eq!(btc.code.as_str(), "BTC");
 
-        let usdc = get_currency("USDC");
+        let usdc = Currency::get_or_create_crypto("USDC");
         assert_eq!(usdc.code.as_str(), "USDC");
     }
 
@@ -258,5 +240,19 @@ mod tests {
     fn test_parse_decimal() {
         let decimal = parse_decimal("0.001", "test_decimal").unwrap();
         assert_eq!(decimal.to_string(), "0.001");
+    }
+
+    #[rstest]
+    fn test_nanos_to_secs_i64() {
+        assert_eq!(nanos_to_secs_i64(UnixNanos::from(0)), 0);
+        assert_eq!(nanos_to_secs_i64(UnixNanos::from(1_000_000_000)), 1);
+        assert_eq!(nanos_to_secs_i64(UnixNanos::from(1_500_000_000)), 1);
+        assert_eq!(nanos_to_secs_i64(UnixNanos::from(1_999_999_999)), 1);
+        assert_eq!(nanos_to_secs_i64(UnixNanos::from(2_000_000_000)), 2);
+        // Test with a realistic order expiry timestamp (2024-01-01 00:00:00 UTC)
+        assert_eq!(
+            nanos_to_secs_i64(UnixNanos::from(1_704_067_200_000_000_000)),
+            1_704_067_200
+        );
     }
 }

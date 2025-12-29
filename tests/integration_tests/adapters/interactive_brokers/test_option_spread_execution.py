@@ -128,6 +128,7 @@ class TestOptionSpreadExecution:
         from nautilus_trader.model.identifiers import Symbol
         from nautilus_trader.model.identifiers import Venue
         from nautilus_trader.model.instruments import OptionContract
+        from nautilus_trader.model.instruments import OptionSpread
         from nautilus_trader.model.objects import Currency
         from nautilus_trader.model.objects import Price
         from nautilus_trader.model.objects import Quantity
@@ -170,8 +171,8 @@ class TestOptionSpreadExecution:
             ts_init=0,
         )
 
-        # Create a simple spread instrument for testing
-        self.option_spread = OptionContract(
+        # Create a spread instrument for testing (must be OptionSpread for is_spread() to return True)
+        self.option_spread = OptionSpread(
             instrument_id=InstrumentId(Symbol("(1)E1AQ5 C6400_(2)E1AQ5 P6440"), Venue("XCME")),
             raw_symbol=Symbol("(1)E1AQ5 C6400_(2)E1AQ5 P6440"),
             asset_class=AssetClass.EQUITY,
@@ -181,10 +182,9 @@ class TestOptionSpreadExecution:
             multiplier=Quantity.from_int(100),
             lot_size=Quantity.from_int(1),
             underlying="E1AQ5",
-            option_kind=OptionKind.CALL,  # Doesn't matter for spread
+            strategy_type="VERTICAL",
             activation_ns=0,
             expiration_ns=1640995200000000000,  # 2022-01-01
-            strike_price=Price.from_str("0.0"),  # Doesn't matter for spread
             ts_event=0,
             ts_init=0,
         )

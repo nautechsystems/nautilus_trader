@@ -46,7 +46,8 @@ use super::{
     enums::BybitWsOperation,
     error::{BybitWsError, create_bybit_timeout_error, should_retry_bybit_error},
     messages::{
-        BybitWebSocketError, BybitWsHeader, BybitWsMessage, BybitWsRequest, NautilusWsMessage,
+        BybitWebSocketError, BybitWsAuthResponse, BybitWsHeader, BybitWsMessage, BybitWsRequest,
+        BybitWsResponse, BybitWsSubscriptionMsg, NautilusWsMessage,
     },
     parse::{
         parse_kline_topic, parse_millis_i64, parse_orderbook_deltas, parse_orderbook_quote,
@@ -57,7 +58,11 @@ use super::{
 };
 use crate::{
     common::{
-        consts::BYBIT_NAUTILUS_BROKER_ID,
+        consts::{
+            BYBIT_NAUTILUS_BROKER_ID, BYBIT_TOPIC_EXECUTION, BYBIT_TOPIC_KLINE, BYBIT_TOPIC_ORDER,
+            BYBIT_TOPIC_ORDERBOOK, BYBIT_TOPIC_POSITION, BYBIT_TOPIC_PUBLIC_TRADE,
+            BYBIT_TOPIC_TICKERS, BYBIT_TOPIC_TRADE, BYBIT_TOPIC_WALLET,
+        },
         enums::{BybitProductType, BybitTimeInForce, BybitWsOrderRequestOp},
         parse::{make_bybit_symbol, parse_price_with_precision, parse_quantity_with_precision},
     },
@@ -165,6 +170,7 @@ pub(super) struct FeedHandler {
     account_id: Option<AccountId>,
     mm_level: Arc<AtomicU8>,
     product_type: Option<BybitProductType>,
+    bars_timestamp_on_close: bool,
     quote_cache: QuoteCache,
     funding_cache: FundingCache,
     retry_manager: RetryManager<BybitWsError>,
@@ -186,6 +192,7 @@ impl FeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         account_id: Option<AccountId>,
         product_type: Option<BybitProductType>,
+        bars_timestamp_on_close: bool,
         mm_level: Arc<AtomicU8>,
         auth_tracker: AuthTracker,
         subscriptions: SubscriptionState,
@@ -203,6 +210,7 @@ impl FeedHandler {
             account_id,
             mm_level,
             product_type,
+            bars_timestamp_on_close,
             quote_cache: QuoteCache::new(),
             funding_cache,
             retry_manager: create_websocket_retry_manager(),
@@ -754,7 +762,7 @@ impl FeedHandler {
                     }
                 };
 
-                Self::classify_bybit_message(&value).or(Some(BybitWsMessage::Raw(value)))
+                Some(classify_bybit_message(value))
             }
             Message::Binary(msg) => {
                 tracing::debug!("Raw binary: {msg:?}");
@@ -766,104 +774,6 @@ impl FeedHandler {
             }
             _ => None,
         }
-    }
-
-    pub(crate) fn classify_bybit_message(value: &serde_json::Value) -> Option<BybitWsMessage> {
-        use super::{
-            enums::BybitWsOperation,
-            messages::{
-                BybitWsAuthResponse, BybitWsOrderResponse, BybitWsResponse, BybitWsSubscriptionMsg,
-            },
-        };
-
-        if let Ok(op) = serde_json::from_value::<BybitWsOperation>(
-            value.get("op").cloned().unwrap_or(serde_json::Value::Null),
-        ) && op == BybitWsOperation::Auth
-            && let Ok(auth) = serde_json::from_value::<BybitWsAuthResponse>(value.clone())
-        {
-            let is_success = auth.success.unwrap_or(false) || auth.ret_code.unwrap_or(-1) == 0;
-            if is_success {
-                return Some(BybitWsMessage::Auth(auth));
-            }
-            let resp = BybitWsResponse {
-                op: Some(auth.op.clone()),
-                topic: None,
-                success: auth.success,
-                conn_id: auth.conn_id.clone(),
-                req_id: None,
-                ret_code: auth.ret_code,
-                ret_msg: auth.ret_msg,
-            };
-            let error = BybitWebSocketError::from_response(&resp);
-            return Some(BybitWsMessage::Error(error));
-        }
-
-        if let Some(success) = value.get("success").and_then(serde_json::Value::as_bool) {
-            if success {
-                if let Ok(msg) = serde_json::from_value::<BybitWsSubscriptionMsg>(value.clone()) {
-                    return Some(BybitWsMessage::Subscription(msg));
-                }
-            } else if let Ok(resp) = serde_json::from_value::<BybitWsResponse>(value.clone()) {
-                let error = BybitWebSocketError::from_response(&resp);
-                return Some(BybitWsMessage::Error(error));
-            }
-        }
-
-        if let Some(op) = value.get("op").and_then(serde_json::Value::as_str)
-            && op.starts_with("order.")
-            && let Ok(order_resp) = serde_json::from_value::<BybitWsOrderResponse>(value.clone())
-        {
-            return Some(BybitWsMessage::OrderResponse(order_resp));
-        }
-
-        if let Some(topic) = value.get("topic").and_then(serde_json::Value::as_str) {
-            if topic.starts_with("orderbook")
-                && let Ok(msg) = serde_json::from_value(value.clone())
-            {
-                return Some(BybitWsMessage::Orderbook(msg));
-            } else if (topic.contains("publicTrade") || topic.starts_with("trade"))
-                && let Ok(msg) = serde_json::from_value(value.clone())
-            {
-                return Some(BybitWsMessage::Trade(msg));
-            } else if topic.starts_with("kline")
-                && let Ok(msg) = serde_json::from_value(value.clone())
-            {
-                return Some(BybitWsMessage::Kline(msg));
-            } else if topic.starts_with("tickers") {
-                // Option symbols have format: BTC-6JAN23-17500-C (with hyphens, date, strike, and C/P)
-                if let Some(symbol) = value
-                    .get("data")
-                    .and_then(|d| d.get("symbol"))
-                    .and_then(|s| s.as_str())
-                    && symbol.contains('-')
-                    && symbol.matches('-').count() >= 3
-                    && let Ok(msg) = serde_json::from_value(value.clone())
-                {
-                    return Some(BybitWsMessage::TickerOption(msg));
-                }
-                if let Ok(msg) = serde_json::from_value(value.clone()) {
-                    return Some(BybitWsMessage::TickerLinear(msg));
-                }
-            } else if topic.starts_with("order")
-                && let Ok(msg) = serde_json::from_value(value.clone())
-            {
-                return Some(BybitWsMessage::AccountOrder(msg));
-            } else if topic.starts_with("execution")
-                && let Ok(msg) = serde_json::from_value(value.clone())
-            {
-                return Some(BybitWsMessage::AccountExecution(msg));
-            } else if topic.starts_with("wallet")
-                && let Ok(msg) = serde_json::from_value(value.clone())
-            {
-                return Some(BybitWsMessage::AccountWallet(msg));
-            } else if topic.starts_with("position")
-                && let Ok(msg) = serde_json::from_value(value.clone())
-            {
-                return Some(BybitWsMessage::AccountPosition(msg));
-            }
-        }
-
-        None
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -966,7 +876,13 @@ impl FeedHandler {
                             if !kline.confirm {
                                 continue;
                             }
-                            match parse_ws_kline_bar(kline, instrument, bar_type, false, ts_init) {
+                            match parse_ws_kline_bar(
+                                kline,
+                                instrument,
+                                bar_type,
+                                self.bars_timestamp_on_close,
+                                ts_init,
+                            ) {
                                 Ok(bar) => data_vec.push(Data::Bar(bar)),
                                 Err(e) => tracing::error!("Error parsing kline to bar: {e}"),
                             }
@@ -1052,14 +968,16 @@ impl FeedHandler {
 
                     // Extract funding rate if available
                     if msg.data.funding_rate.is_some() && msg.data.next_funding_time.is_some() {
-                        let cache_key = (
-                            msg.data.funding_rate.clone(),
-                            msg.data.next_funding_time.clone(),
-                        );
-
                         let should_publish = {
                             let cache = funding_cache.read().await;
-                            cache.get(&symbol) != Some(&cache_key)
+                            match cache.get(&symbol) {
+                                Some((cached_rate, cached_time)) => {
+                                    cached_rate.as_ref() != msg.data.funding_rate.as_ref()
+                                        || cached_time.as_ref()
+                                            != msg.data.next_funding_time.as_ref()
+                                }
+                                None => true,
+                            }
                         };
 
                         if should_publish {
@@ -1070,6 +988,10 @@ impl FeedHandler {
                                 ts_init,
                             ) {
                                 Ok(funding) => {
+                                    let cache_key = (
+                                        msg.data.funding_rate.clone(),
+                                        msg.data.next_funding_time.clone(),
+                                    );
                                     funding_cache.write().await.insert(symbol, cache_key);
                                     result.push(NautilusWsMessage::FundingRates(vec![funding]));
                                 }
@@ -1513,9 +1435,118 @@ impl FeedHandler {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
+/// Classifies a parsed JSON value into a typed Bybit WebSocket message.
+///
+/// Returns `Raw(value)` if no specific type matches.
+pub fn classify_bybit_message(value: serde_json::Value) -> BybitWsMessage {
+    if let Some(op_val) = value.get("op") {
+        if let Ok(op) = serde_json::from_value::<BybitWsOperation>(op_val.clone())
+            && op == BybitWsOperation::Auth
+            && let Ok(auth) = serde_json::from_value::<BybitWsAuthResponse>(value.clone())
+        {
+            let is_success = auth.success.unwrap_or(false) || auth.ret_code.unwrap_or(-1) == 0;
+            if is_success {
+                return BybitWsMessage::Auth(auth);
+            }
+            let resp = BybitWsResponse {
+                op: Some(auth.op.clone()),
+                topic: None,
+                success: auth.success,
+                conn_id: auth.conn_id.clone(),
+                req_id: None,
+                ret_code: auth.ret_code,
+                ret_msg: auth.ret_msg,
+            };
+            let error = BybitWebSocketError::from_response(&resp);
+            return BybitWsMessage::Error(error);
+        }
+
+        if let Some(op_str) = op_val.as_str()
+            && op_str.starts_with("order.")
+        {
+            return serde_json::from_value::<BybitWsOrderResponse>(value.clone()).map_or_else(
+                |_| BybitWsMessage::Raw(value),
+                BybitWsMessage::OrderResponse,
+            );
+        }
+    }
+
+    if let Some(success) = value.get("success").and_then(serde_json::Value::as_bool) {
+        if success {
+            return serde_json::from_value::<BybitWsSubscriptionMsg>(value.clone())
+                .map_or_else(|_| BybitWsMessage::Raw(value), BybitWsMessage::Subscription);
+        }
+        return serde_json::from_value::<BybitWsResponse>(value.clone()).map_or_else(
+            |_| BybitWsMessage::Raw(value),
+            |resp| {
+                let error = BybitWebSocketError::from_response(&resp);
+                BybitWsMessage::Error(error)
+            },
+        );
+    }
+
+    // Most common path for market data
+    if let Some(topic) = value.get("topic").and_then(serde_json::Value::as_str) {
+        if topic.starts_with(BYBIT_TOPIC_ORDERBOOK) {
+            return serde_json::from_value(value.clone())
+                .map_or_else(|_| BybitWsMessage::Raw(value), BybitWsMessage::Orderbook);
+        }
+
+        if topic.contains(BYBIT_TOPIC_PUBLIC_TRADE) || topic.starts_with(BYBIT_TOPIC_TRADE) {
+            return serde_json::from_value(value.clone())
+                .map_or_else(|_| BybitWsMessage::Raw(value), BybitWsMessage::Trade);
+        }
+
+        if topic.starts_with(BYBIT_TOPIC_KLINE) {
+            return serde_json::from_value(value.clone())
+                .map_or_else(|_| BybitWsMessage::Raw(value), BybitWsMessage::Kline);
+        }
+
+        if topic.starts_with(BYBIT_TOPIC_TICKERS) {
+            // Option symbols: BTC-6JAN23-17500-C (date, strike, C/P)
+            let is_option = value
+                .get("data")
+                .and_then(|d| d.get("symbol"))
+                .and_then(|s| s.as_str())
+                .is_some_and(|symbol| symbol.contains('-') && symbol.matches('-').count() >= 3);
+
+            if is_option {
+                return serde_json::from_value(value.clone())
+                    .map_or_else(|_| BybitWsMessage::Raw(value), BybitWsMessage::TickerOption);
+            }
+            return serde_json::from_value(value.clone())
+                .map_or_else(|_| BybitWsMessage::Raw(value), BybitWsMessage::TickerLinear);
+        }
+
+        if topic.starts_with(BYBIT_TOPIC_ORDER) {
+            return serde_json::from_value(value.clone())
+                .map_or_else(|_| BybitWsMessage::Raw(value), BybitWsMessage::AccountOrder);
+        }
+
+        if topic.starts_with(BYBIT_TOPIC_EXECUTION) {
+            return serde_json::from_value(value.clone()).map_or_else(
+                |_| BybitWsMessage::Raw(value),
+                BybitWsMessage::AccountExecution,
+            );
+        }
+
+        if topic.starts_with(BYBIT_TOPIC_WALLET) {
+            return serde_json::from_value(value.clone()).map_or_else(
+                |_| BybitWsMessage::Raw(value),
+                BybitWsMessage::AccountWallet,
+            );
+        }
+
+        if topic.starts_with(BYBIT_TOPIC_POSITION) {
+            return serde_json::from_value(value.clone()).map_or_else(
+                |_| BybitWsMessage::Raw(value),
+                BybitWsMessage::AccountPosition,
+            );
+        }
+    }
+
+    BybitWsMessage::Raw(value)
+}
 
 #[cfg(test)]
 mod tests {
@@ -1540,6 +1571,7 @@ mod tests {
             out_tx,
             None,
             None,
+            true,
             Arc::new(AtomicU8::new(0)),
             auth_tracker,
             subscriptions,

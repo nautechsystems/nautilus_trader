@@ -1,0 +1,262 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2515,
+  "result": {
+    "id": 10,
+    "email": "user@example.com",
+    "system_name": "user",
+    "username": "user",
+    "block_rfq_self_match_prevention": true,
+    "creation_timestamp": 1687352432143,
+    "type": "main",
+    "referrer_id": null,
+    "login_enabled": false,
+    "security_keys_enabled": false,
+    "mmp_enabled": false,
+    "interuser_transfers_enabled": false,
+    "self_trading_reject_mode": "cancel_maker",
+    "self_trading_extended_to_subaccounts": false,
+    "summaries": [
+      {
+        "currency": "BTC",
+        "delta_total_map": {
+          "btc_usd": 31.594357699
+        },
+        "margin_balance": 302.62729214,
+        "futures_session_rpl": -0.03258105,
+        "options_session_rpl": 0,
+        "estimated_liquidation_ratio_map": {
+          "btc_usd": 0.1009872222854525
+        },
+        "session_upl": 0.05271555,
+        "estimated_liquidation_ratio": 0.10098722,
+        "options_gamma_map": {
+          "btc_usd": 0.00001
+        },
+        "options_vega": 0.0858,
+        "options_value": -0.0086,
+        "available_withdrawal_funds": 301.35396172,
+        "projected_delta_total": 32.613978,
+        "maintenance_margin": 0.8857841,
+        "total_pl": -0.33084225,
+        "limits": {
+          "limits_per_currency": false,
+          "non_matching_engine": {
+            "burst": 1500,
+            "rate": 1000
+          },
+          "matching_engine": {
+            "trading": {
+              "total": {
+                "burst": 250,
+                "rate": 200
+              }
+            },
+            "spot": {
+              "burst": 250,
+              "rate": 200
+            },
+            "quotes": {
+              "burst": 500,
+              "rate": 500
+            },
+            "max_quotes": {
+              "burst": 10,
+              "rate": 10
+            },
+            "guaranteed_quotes": {
+              "burst": 2,
+              "rate": 2
+            },
+            "cancel_all": {
+              "burst": 250,
+              "rate": 200
+            }
+          }
+        },
+        "projected_maintenance_margin": 0.7543841,
+        "available_funds": 301.38059622,
+        "options_delta": -1.01962,
+        "balance": 302.60065765,
+        "equity": 302.61869214,
+        "futures_session_upl": 0.05921555,
+        "fee_balance": 0,
+        "options_session_upl": -0.0065,
+        "projected_initial_margin": 1.01529592,
+        "options_theta": 15.97071,
+        "portfolio_margining_enabled": false,
+        "cross_collateral_enabled": false,
+        "margin_model": "segregated_sm",
+        "options_vega_map": {
+          "btc_usd": 0.0858
+        },
+        "futures_pl": -0.32434225,
+        "options_pl": -0.0065,
+        "initial_margin": 1.24669592,
+        "spot_reserve": 0,
+        "delta_total": 31.602958,
+        "options_gamma": 0.00001,
+        "session_rpl": -0.03258105,
+        "fees": [
+          {
+            "value": {
+              "default": {
+                "type": "fixed",
+                "taker": 0.00035,
+                "maker": -0.0001
+              },
+              "block_trade": 0.3
+            },
+            "kind": "perpetual",
+            "index_name": "btc_usd"
+          },
+          {
+            "value": {
+              "default": {
+                "type": "relative",
+                "taker": 0.625,
+                "maker": 0.625
+              },
+              "block_trade": 0.625
+            },
+            "kind": "option",
+            "index_name": "btc_usd"
+          },
+          {
+            "value": {
+              "default": {
+                "type": "fixed",
+                "taker": 0.00035,
+                "maker": -0.0001
+              },
+              "block_trade": 0.3
+            },
+            "kind": "future",
+            "index_name": "btc_usd"
+          }
+        ]
+      },
+      {
+        "currency": "ETH",
+        "futures_session_upl": 0,
+        "portfolio_margining_enabled": false,
+        "available_funds": 99.999598,
+        "initial_margin": 0.000402,
+        "futures_session_rpl": 0,
+        "options_gamma": 0,
+        "balance": 100,
+        "options_vega_map": {},
+        "session_upl": 0,
+        "fee_balance": 0,
+        "delta_total_map": {
+          "eth_usd": 0
+        },
+        "projected_maintenance_margin": 0,
+        "options_gamma_map": {},
+        "projected_delta_total": 0,
+        "margin_model": "segregated_sm",
+        "futures_pl": 0,
+        "options_theta": 0,
+        "limits": {
+          "limits_per_currency": false,
+          "non_matching_engine": {
+            "burst": 1500,
+            "rate": 1000
+          },
+          "matching_engine": {
+            "trading": {
+              "total": {
+                "burst": 250,
+                "rate": 200
+              }
+            },
+            "spot": {
+              "burst": 250,
+              "rate": 200
+            },
+            "quotes": {
+              "burst": 500,
+              "rate": 500
+            },
+            "max_quotes": {
+              "burst": 10,
+              "rate": 10
+            },
+            "guaranteed_quotes": {
+              "burst": 2,
+              "rate": 2
+            },
+            "cancel_all": {
+              "burst": 250,
+              "rate": 200
+            }
+          }
+        },
+        "options_delta": 0,
+        "equity": 100,
+        "projected_initial_margin": 0.0002,
+        "estimated_liquidation_ratio_map": {
+          "eth_usd": 0
+        },
+        "spot_reserve": 0.0002,
+        "cross_collateral_enabled": false,
+        "available_withdrawal_funds": 99.999597,
+        "delta_total": 0,
+        "options_session_upl": 0,
+        "maintenance_margin": 0,
+        "options_theta_map": {},
+        "additional_reserve": 0,
+        "estimated_liquidation_ratio": 0,
+        "options_pl": 0,
+        "options_session_rpl": 0,
+        "options_vega": 0,
+        "total_pl": 0,
+        "session_rpl": 0,
+        "options_value": 0,
+        "margin_balance": 100,
+        "fees": [
+          {
+            "value": {
+              "default": {
+                "type": "fixed",
+                "taker": 0.00025,
+                "maker": -0.00005
+              },
+              "block_trade": 0.2
+            },
+            "kind": "perpetual",
+            "index_name": "eth_usd"
+          },
+          {
+            "value": {
+              "default": {
+                "type": "relative",
+                "taker": 0.5,
+                "maker": 0.5
+              },
+              "block_trade": 0.5
+            },
+            "kind": "option",
+            "index_name": "eth_usd"
+          },
+          {
+            "value": {
+              "default": {
+                "type": "fixed",
+                "taker": 0.00025,
+                "maker": -0.00005
+              },
+              "block_trade": 0.2
+            },
+            "kind": "future",
+            "index_name": "eth_usd"
+          }
+        ]
+      }
+    ]
+  },
+  "testnet": false,
+  "usIn": 1687352432000000,
+  "usOut": 1687352432005000,
+  "usDiff": 5000
+}

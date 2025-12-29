@@ -21,7 +21,9 @@ use std::sync::Arc;
 use bytes::Bytes;
 use nautilus_core::UnixNanos;
 #[cfg(feature = "defi")]
-use nautilus_model::defi::{AmmType, Dex, DexType, Pool, PoolProfiler, Token, chain::chains};
+use nautilus_model::defi::{
+    AmmType, Dex, DexType, Pool, PoolIdentifier, PoolProfiler, Token, chain::chains,
+};
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, BarType, FundingRateUpdate, MarkPriceUpdate, QuoteTick, TradeTick},
@@ -98,9 +100,8 @@ fn test_cache_general_when_no_database(mut cache: Cache) {
 // -- EXECUTION -------------------------------------------------------------------------------
 
 #[rstest]
-#[tokio::test]
-async fn test_cache_orders_when_no_database(mut cache: Cache) {
-    assert!(cache.cache_orders().await.is_ok());
+fn test_cache_orders_when_no_database(mut cache: Cache) {
+    assert!(futures::executor::block_on(cache.cache_orders()).is_ok());
 }
 
 #[rstest]
@@ -608,9 +609,8 @@ fn test_correct_order_indexing(mut cache: Cache) {
 }
 
 #[rstest]
-#[tokio::test]
-async fn test_cache_positions_when_no_database(mut cache: Cache) {
-    assert!(cache.cache_positions().await.is_ok());
+fn test_cache_positions_when_no_database(mut cache: Cache) {
+    assert!(futures::executor::block_on(cache.cache_positions()).is_ok());
 }
 
 #[rstest]
@@ -668,15 +668,13 @@ fn test_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
 // -- DATA ------------------------------------------------------------------------------------
 
 #[rstest]
-#[tokio::test]
-async fn test_cache_currencies_when_no_database(mut cache: Cache) {
-    assert!(cache.cache_currencies().await.is_ok());
+fn test_cache_currencies_when_no_database(mut cache: Cache) {
+    assert!(futures::executor::block_on(cache.cache_currencies()).is_ok());
 }
 
 #[rstest]
-#[tokio::test]
-async fn test_cache_instruments_when_no_database(mut cache: Cache) {
-    assert!(cache.cache_instruments().await.is_ok());
+fn test_cache_instruments_when_no_database(mut cache: Cache) {
+    assert!(futures::executor::block_on(cache.cache_instruments()).is_ok());
 }
 
 #[rstest]
@@ -716,9 +714,8 @@ fn test_instruments_when_some(mut cache: Cache) {
 }
 
 #[rstest]
-#[tokio::test]
-async fn test_cache_synthetics_when_no_database(mut cache: Cache) {
-    assert!(cache.cache_synthetics().await.is_ok());
+fn test_cache_synthetics_when_no_database(mut cache: Cache) {
+    assert!(futures::executor::block_on(cache.cache_synthetics()).is_ok());
 }
 
 #[rstest]
@@ -801,12 +798,17 @@ fn test_pool() -> Pool {
         6,
     );
 
+    let pool_address = "0x11b815efB8f581194ae79006d24E0d814B7697F6"
+        .parse()
+        .unwrap();
+    let pool_identifier: PoolIdentifier = "0x11b815efB8f581194ae79006d24E0d814B7697F6"
+        .parse()
+        .unwrap();
     Pool::new(
         chain,
         Arc::new(dex),
-        "0x11b815efB8f581194ae79006d24E0d814B7697F6"
-            .parse()
-            .unwrap(),
+        pool_address,
+        pool_identifier,
         12345678,
         token0,
         token1,
@@ -1185,9 +1187,8 @@ fn test_bars_when_some(mut cache: Cache) {
 // -- ACCOUNT ---------------------------------------------------------------------------------
 
 #[rstest]
-#[tokio::test]
-async fn test_cache_accounts_when_no_database(mut cache: Cache) {
-    assert!(cache.cache_accounts().await.is_ok());
+fn test_cache_accounts_when_no_database(mut cache: Cache) {
+    assert!(futures::executor::block_on(cache.cache_accounts()).is_ok());
 }
 
 #[rstest]
@@ -1557,7 +1558,7 @@ fn test_purge_open_position_skips_purge() {
 
 #[rstest]
 fn test_purge_closed_positions_does_not_purge_reopened_position() {
-    // Arrange: Create a position that goes FLAT then reopens
+    // Create a position that goes FLAT then reopens
     // This test verifies the fix for the race condition where positions that were
     // previously closed but later reopened were incorrectly purged
 
@@ -1661,7 +1662,7 @@ fn test_purge_closed_positions_does_not_purge_reopened_position() {
     assert_eq!(position.ts_closed, None); // Close timestamp should be reset
     assert!(cache.is_position_open(&position_id));
 
-    // Act: Attempt to purge closed positions
+    // Attempt to purge closed positions
     // This should NOT purge our position even though it was closed before,
     // because it's currently OPEN
     // Use a timestamp far in the future to ensure any old ts_closed would trigger purge
@@ -1670,7 +1671,7 @@ fn test_purge_closed_positions_does_not_purge_reopened_position() {
         0, // No buffer
     );
 
-    // Assert: Position should still exist because it's currently OPEN
+    // Position should still exist because it's currently OPEN
     assert!(cache.position_exists(&position_id));
     assert!(cache.position(&position_id).is_some());
     assert!(cache.is_position_open(&position_id));
@@ -2340,7 +2341,7 @@ fn test_position_flip_netting_mode_cleans_up_closed_index() {
         .add_position(position_reopened.clone(), OmsType::Netting)
         .unwrap();
 
-    // Assert: The reopened position should be in open index, NOT closed index
+    // The reopened position should be in open index, NOT closed index
     assert!(position_reopened.is_long());
     assert!(!position_reopened.is_closed());
     assert!(
@@ -2369,7 +2370,7 @@ fn test_position_flip_netting_mode_cleans_up_closed_index() {
 
 #[rstest]
 fn test_add_trades_same_timestamp_adds_all(mut cache: Cache) {
-    // Arrange - multiple trades at same timestamp (e.g., large order sweeping levels)
+    // multiple trades at same timestamp (e.g., large order sweeping levels)
     let ts = UnixNanos::from(1000);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
@@ -2403,11 +2404,10 @@ fn test_add_trades_same_timestamp_adds_all(mut cache: Cache) {
         ts,
     );
 
-    // Act
     cache.add_trade(trade1).unwrap();
     cache.add_trades(&[trade2, trade3]).unwrap();
 
-    // Assert - all three trades should be in cache
+    // all three trades should be in cache
     let result = cache.trades(&instrument_id).unwrap();
     assert_eq!(
         result.len(),
@@ -2418,7 +2418,7 @@ fn test_add_trades_same_timestamp_adds_all(mut cache: Cache) {
 
 #[rstest]
 fn test_add_quotes_same_timestamp_adds_all(mut cache: Cache) {
-    // Arrange - multiple quotes at same timestamp
+    // multiple quotes at same timestamp
     let ts = UnixNanos::from(1000);
     let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
@@ -2452,11 +2452,10 @@ fn test_add_quotes_same_timestamp_adds_all(mut cache: Cache) {
         ts,
     );
 
-    // Act
     cache.add_quote(quote1).unwrap();
     cache.add_quotes(&[quote2, quote3]).unwrap();
 
-    // Assert - all three quotes should be in cache
+    // all three quotes should be in cache
     let result = cache.quotes(&instrument_id).unwrap();
     assert_eq!(
         result.len(),
@@ -2467,7 +2466,7 @@ fn test_add_quotes_same_timestamp_adds_all(mut cache: Cache) {
 
 #[rstest]
 fn test_add_bars_same_timestamp_adds_all(mut cache: Cache) {
-    // Arrange - multiple bars at same timestamp
+    // multiple bars at same timestamp
     let ts = UnixNanos::from(1000);
     let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
 
@@ -2504,11 +2503,10 @@ fn test_add_bars_same_timestamp_adds_all(mut cache: Cache) {
         ts,
     );
 
-    // Act
     cache.add_bar(bar1).unwrap();
     cache.add_bars(&[bar2, bar3]).unwrap();
 
-    // Assert - all three bars should be in cache
+    // all three bars should be in cache
     let result = cache.bars(&bar_type).unwrap();
     assert_eq!(
         result.len(),

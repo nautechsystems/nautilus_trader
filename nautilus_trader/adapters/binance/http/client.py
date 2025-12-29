@@ -44,10 +44,12 @@ class BinanceHttpClient:
     ----------
     clock : LiveClock
         The clock for the client.
-    api_key : str
+    api_key : str, optional
         The Binance API key for requests.
-    api_secret : str
+        If ``None``, the client will work for public market data only.
+    api_secret : str, optional
         The Binance API secret for signed requests.
+        If ``None``, the client will work for public market data only.
     key_type : BinanceKeyType, default 'HMAC'
         The private key cryptographic algorithm type.
     rsa_private_key : str, optional
@@ -68,8 +70,8 @@ class BinanceHttpClient:
     def __init__(
         self,
         clock: LiveClock,
-        api_key: str,
-        api_secret: str,
+        api_key: str | None,
+        api_secret: str | None,
         base_url: str,
         key_type: BinanceKeyType = BinanceKeyType.HMAC,
         rsa_private_key: str | None = None,
@@ -80,10 +82,10 @@ class BinanceHttpClient:
     ) -> None:
         self._clock: LiveClock = clock
         self._log: Logger = Logger(type(self).__name__)
-        self._key: str = api_key
+        self._key: str | None = api_key
 
         self._base_url: str = base_url
-        self._secret: str = api_secret
+        self._secret: str | None = api_secret
         self._key_type: BinanceKeyType = key_type
         self._rsa_private_key: str | None = rsa_private_key
         self._ed25519_private_key: bytes | None = None
@@ -96,8 +98,9 @@ class BinanceHttpClient:
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
             "User-Agent": nautilus_trader.NAUTILUS_USER_AGENT,
-            "X-MBX-APIKEY": api_key,
         }
+        if api_key:
+            self._headers["X-MBX-APIKEY"] = api_key
         self._client = HttpClient(
             keyed_quotas=ratelimiter_quotas or [],
             default_quota=ratelimiter_default_quota,
@@ -117,13 +120,13 @@ class BinanceHttpClient:
         return self._base_url
 
     @property
-    def api_key(self) -> str:
+    def api_key(self) -> str | None:
         """
         Return the Binance API key being used by the client.
 
         Returns
         -------
-        str
+        str or None
 
         """
         return self._key
@@ -141,6 +144,8 @@ class BinanceHttpClient:
         str
 
         """
+        if self._key is None:
+            return ""
         return mask_api_key(self._key)
 
     @property
@@ -160,6 +165,9 @@ class BinanceHttpClient:
         return urllib.parse.urlencode(params)
 
     def _get_sign(self, data: str) -> str:
+        if self._secret is None:
+            raise ValueError("Cannot sign request: api_secret not configured")
+
         match self._key_type:
             case BinanceKeyType.HMAC:
                 return hmac_signature(self._secret, data)

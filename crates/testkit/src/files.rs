@@ -218,6 +218,14 @@ fn download_file(
     timeout_secs: u64,
     retry_config: Option<RetryConfig>,
 ) -> anyhow::Result<()> {
+    // Validate HTTPS for security in production builds,
+    // HTTP is intentionally allowed in test builds for local test servers (127.0.0.1),
+    // CodeQL flags this as "non-https-url" but it's a deliberate design choice for testkit.
+    #[cfg(not(test))]
+    if !url.starts_with("https://") {
+        anyhow::bail!("URL must use HTTPS protocol for security: {url}");
+    }
+
     println!("Downloading file from {url} to {filepath:?}");
 
     if let Some(parent) = filepath.parent() {
@@ -354,9 +362,6 @@ fn update_sha256_checksums(
     Ok(())
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{

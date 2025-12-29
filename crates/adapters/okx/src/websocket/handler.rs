@@ -40,11 +40,12 @@ use ahash::AHashMap;
 use dashmap::DashMap;
 use nautilus_core::{AtomicTime, UUID4, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    enums::{OrderStatus, OrderType, TimeInForce},
-    events::{AccountState, OrderCancelRejected, OrderModifyRejected, OrderRejected},
+    enums::{OrderStatus, OrderType},
+    events::{
+        AccountState, OrderAccepted, OrderCancelRejected, OrderModifyRejected, OrderRejected,
+    },
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    reports::OrderStatusReport,
     types::{Money, Quantity},
 };
 use nautilus_network::{
@@ -65,7 +66,10 @@ use super::{
         OKXWsRequest, WsAmendOrderParams, WsCancelAlgoOrderParamsBuilder,
         WsCancelOrderParamsBuilder, WsMassCancelParams, WsPostAlgoOrderParams, WsPostOrderParams,
     },
-    parse::{parse_algo_order_msg, parse_book_msg_vec, parse_order_msg, parse_ws_message_data},
+    parse::{
+        OrderStateSnapshot, ParsedOrderEvent, parse_algo_order_msg, parse_book_msg_vec,
+        parse_order_event, parse_order_msg, parse_ws_message_data,
+    },
     subscription::topic_from_websocket_arg,
 };
 use crate::{
@@ -75,12 +79,13 @@ use crate::{
             should_retry_error_code,
         },
         enums::{
-            OKXBookAction, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXSide,
-            OKXTargetCurrency, OKXTradeMode,
+            OKXBookAction, OKXInstrumentType, OKXOrderStatus, OKXSide, OKXTargetCurrency,
+            OKXTradeMode,
         },
         parse::{
-            determine_order_type, okx_instrument_type, parse_account_state, parse_client_order_id,
-            parse_millisecond_timestamp, parse_position_status_report, parse_price, parse_quantity,
+            determine_order_type, is_market_price, okx_instrument_type, parse_account_state,
+            parse_client_order_id, parse_millisecond_timestamp, parse_position_status_report,
+            parse_price, parse_quantity,
         },
     },
     http::models::{OKXAccount, OKXPosition},
@@ -214,10 +219,11 @@ pub(super) struct OKXWsFeedHandler {
     pending_messages: VecDeque<NautilusWsMessage>,
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
-    emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>,
+    emitted_order_accepted: AHashMap<VenueOrderId, ()>,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
     fee_cache: AHashMap<Ustr, Money>,           // Key is order ID
     filled_qty_cache: AHashMap<Ustr, Quantity>, // Key is order ID
+    order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot>,
     funding_rate_cache: AHashMap<Ustr, (Ustr, u64)>, // Cache (funding_rate, funding_time) by inst_id
     last_account_state: Option<AccountState>,
     request_id_counter: AtomicU64,
@@ -234,7 +240,6 @@ impl OKXWsFeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
         client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
-        emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>,
         auth_tracker: AuthTracker,
         subscriptions_state: SubscriptionState,
     ) -> Self {
@@ -256,10 +261,11 @@ impl OKXWsFeedHandler {
             pending_messages: VecDeque::new(),
             active_client_orders,
             client_id_aliases,
-            emitted_order_accepted,
+            emitted_order_accepted: AHashMap::new(),
             instruments_cache: AHashMap::new(),
             fee_cache: AHashMap::new(),
             filled_qty_cache: AHashMap::new(),
+            order_state_cache: AHashMap::new(),
             funding_rate_cache: AHashMap::new(),
             last_account_state: None,
             request_id_counter: AtomicU64::new(0),
@@ -267,14 +273,13 @@ impl OKXWsFeedHandler {
     }
 
     pub(super) fn is_stopped(&self) -> bool {
-        self.signal.load(std::sync::atomic::Ordering::Relaxed)
+        self.signal.load(std::sync::atomic::Ordering::Acquire)
     }
 
     pub(super) fn send(&self, msg: NautilusWsMessage) -> Result<(), ()> {
         self.out_tx.send(msg).map_err(|_| ())
     }
 
-    /// Sends a WebSocket message with retry logic.
     async fn send_with_retry(
         &self,
         payload: String,
@@ -305,7 +310,6 @@ impl OKXWsFeedHandler {
         }
     }
 
-    /// Sends a pong response to OKX.
     pub(super) async fn send_pong(&self) -> anyhow::Result<()> {
         match self.send_with_retry(TEXT_PONG.to_string(), None).await {
             Ok(()) => {
@@ -329,12 +333,13 @@ impl OKXWsFeedHandler {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
-                            tracing::info!("Handler received WebSocket client");
+                            tracing::debug!("Handler received WebSocket client");
                             self.inner = Some(client);
                         }
                         HandlerCommand::Disconnect => {
-                            tracing::info!("Handler disconnecting WebSocket client");
+                            tracing::debug!("Handler disconnecting WebSocket client");
                             self.inner = None;
+                            return None;
                         }
                         HandlerCommand::Authenticate { payload } => {
                             if let Err(e) = self.send_with_retry(payload, Some(vec![OKX_RATE_LIMIT_KEY_SUBSCRIPTION.to_string()])).await {
@@ -487,7 +492,7 @@ impl OKXWsFeedHandler {
                 }
 
                 _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                    if self.signal.load(std::sync::atomic::Ordering::Relaxed) {
+                    if self.signal.load(std::sync::atomic::Ordering::Acquire) {
                         tracing::debug!("Stop signal received during idle period");
                         return None;
                     }
@@ -855,7 +860,10 @@ impl OKXWsFeedHandler {
                         | OrderStatus::Filled
                         | OrderStatus::Rejected,
                 ) {
+                    self.emitted_order_accepted
+                        .remove(&status_report.venue_order_id);
                     if let Some(client_order_id) = status_report.client_order_id {
+                        self.order_state_cache.remove(&client_order_id);
                         self.active_client_orders.remove(&client_order_id);
                         self.client_id_aliases.remove(&client_order_id);
                     }
@@ -884,7 +892,7 @@ impl OKXWsFeedHandler {
 
             if op == OKXWsOperation::BatchCancelOrders {
                 tracing::debug!(
-                    "Batch cancel operation successful: id={id:?} cancelled_count={}",
+                    "Batch cancel operation successful: id={id:?} cancel_count={}",
                     data.len()
                 );
 
@@ -927,13 +935,13 @@ impl OKXWsFeedHandler {
                 && let Some(request_id) = &id
                 && let Some(instrument_id) = self.pending_mass_cancel_requests.remove(request_id)
             {
-                tracing::info!(
+                tracing::debug!(
                     "Mass cancel operation successful for instrument: {}",
                     instrument_id
                 );
             } else if op == OKXWsOperation::Order
                 && let Some(request_id) = &id
-                && let Some((params, client_order_id, _trader_id, _strategy_id, instrument_id)) =
+                && let Some((params, client_order_id, trader_id, strategy_id, instrument_id)) =
                     self.pending_place_requests.remove(request_id)
             {
                 let (venue_order_id, ts_accepted) = if let Some(first) = data.first() {
@@ -982,7 +990,7 @@ impl OKXWsFeedHandler {
                                 // not base currency (ETH). We can't accurately parse the
                                 // base quantity without the fill price, so we skip the
                                 // synthetic OrderAccepted and rely on the orders channel
-                                tracing::info!(
+                                tracing::debug!(
                                     "Skipping synthetic OrderAccepted for {} quote-sized order: client_order_id={client_order_id}, venue_order_id={venue_order_id:?}",
                                     if is_explicit_quote_sized {
                                         "explicit"
@@ -993,77 +1001,43 @@ impl OKXWsFeedHandler {
                                 return None;
                             }
 
-                            let order_side = order_params.side.into();
-                            let time_in_force = match order_params.ord_type {
-                                OKXOrderType::Fok => TimeInForce::Fok,
-                                OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
-                                    TimeInForce::Ioc
-                                }
-                                _ => TimeInForce::Gtc,
+                            let Some(v_order_id) = venue_order_id else {
+                                tracing::error!(
+                                    "No venue_order_id for accepted order: client_order_id={client_order_id}"
+                                );
+                                return None;
                             };
 
-                            let size_precision = instrument.size_precision();
-                            let quantity = match parse_quantity(&order_params.sz, size_precision) {
-                                Ok(q) => q,
-                                Err(e) => {
-                                    tracing::error!(
-                                        "Failed to parse quantity for accepted order: {e}"
-                                    );
-                                    return None;
-                                }
-                            };
+                            // Check if already emitted from orders channel push
+                            if self.emitted_order_accepted.contains_key(&v_order_id) {
+                                tracing::debug!(
+                                    "Skipping duplicate OrderAccepted from operation response for venue_order_id={v_order_id}"
+                                );
+                                return None;
+                            }
+                            self.emitted_order_accepted.insert(v_order_id, ());
 
-                            let filled_qty = Quantity::zero(size_precision);
-
-                            let mut report = OrderStatusReport::new(
-                                self.account_id,
+                            let accepted = OrderAccepted::new(
+                                trader_id,
+                                strategy_id,
                                 instrument_id,
-                                Some(client_order_id),
-                                venue_order_id.unwrap_or_else(|| VenueOrderId::new("PENDING")),
-                                order_side,
-                                order_type,
-                                time_in_force,
-                                OrderStatus::Accepted,
-                                quantity,
-                                filled_qty,
+                                client_order_id,
+                                v_order_id,
+                                self.account_id,
+                                UUID4::new(),
                                 ts_accepted,
-                                ts_accepted, // ts_last same as ts_accepted for new orders
                                 ts_init,
-                                None, // Generate UUID4 automatically
+                                false, // Not from reconciliation
                             );
-
-                            if let Some(px) = &order_params.px
-                                && !px.is_empty()
-                                && let Ok(price) = parse_price(px, instrument.price_precision())
-                            {
-                                report = report.with_price(price);
-                            }
-
-                            if let Some(true) = order_params.reduce_only {
-                                report = report.with_reduce_only(true);
-                            }
-
-                            if order_type == OrderType::Limit
-                                && order_params.ord_type == OKXOrderType::PostOnly
-                            {
-                                report = report.with_post_only(true);
-                            }
-
-                            if let Some(ref v_order_id) = venue_order_id {
-                                self.emitted_order_accepted.insert(*v_order_id, ());
-                            }
 
                             tracing::debug!(
-                                "Order accepted: client_order_id={client_order_id}, venue_order_id={:?}",
-                                venue_order_id
+                                "Order accepted: client_order_id={client_order_id}, venue_order_id={v_order_id}"
                             );
 
-                            return Some(NautilusWsMessage::ExecutionReports(vec![
-                                ExecutionReport::Order(report),
-                            ]));
+                            return Some(NautilusWsMessage::OrderAccepted(accepted));
                         }
                         PendingOrderParams::Algo(_) => {
-                            tracing::info!(
+                            tracing::debug!(
                                 "Algo order placement confirmed: client_order_id={client_order_id}, venue_order_id={:?}",
                                 venue_order_id
                             );
@@ -1350,30 +1324,33 @@ impl OKXWsFeedHandler {
         data: Value,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
-        match serde_json::from_value::<Vec<OKXAccount>>(data) {
-            Ok(accounts) => {
-                if let Some(account) = accounts.first() {
-                    match parse_account_state(account, self.account_id, ts_init) {
-                        Ok(account_state) => {
-                            if let Some(last_account_state) = &self.last_account_state
-                                && account_state.has_same_balances_and_margins(last_account_state)
-                            {
-                                return None;
-                            }
-                            self.last_account_state = Some(account_state.clone());
-                            Some(NautilusWsMessage::AccountUpdate(account_state))
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to parse account state: {e}");
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            }
+        let Value::Array(arr) = data else {
+            tracing::error!("Account data is not an array");
+            return None;
+        };
+
+        let first = arr.into_iter().next()?;
+
+        let account: OKXAccount = match serde_json::from_value(first) {
+            Ok(acc) => acc,
             Err(e) => {
                 tracing::error!("Failed to parse account data: {e}");
+                return None;
+            }
+        };
+
+        match parse_account_state(&account, self.account_id, ts_init) {
+            Ok(account_state) => {
+                if let Some(last_account_state) = &self.last_account_state
+                    && account_state.has_same_balances_and_margins(last_account_state)
+                {
+                    return None;
+                }
+                self.last_account_state = Some(account_state.clone());
+                Some(NautilusWsMessage::AccountUpdate(account_state))
+            }
+            Err(e) => {
+                tracing::error!("Failed to parse account state: {e}");
                 None
             }
         }
@@ -1385,29 +1362,18 @@ impl OKXWsFeedHandler {
                 tracing::debug!("Received {} position update(s)", positions.len());
 
                 for position in positions {
-                    let instrument_id =
-                        match InstrumentId::from_as_ref(format!("{}.OKX", position.inst_id)) {
-                            Ok(id) => id,
-                            Err(e) => {
-                                tracing::error!(
-                                    "Failed to parse instrument ID from {}: {e}",
-                                    position.inst_id
-                                );
-                                continue;
-                            }
-                        };
-
                     let instrument = match self.instruments_cache.get(&position.inst_id) {
                         Some(inst) => inst,
                         None => {
                             tracing::warn!(
                                 "Received position update for unknown instrument {}, skipping",
-                                instrument_id
+                                position.inst_id
                             );
                             continue;
                         }
                     };
 
+                    let instrument_id = instrument.id();
                     let size_precision = instrument.size_precision();
 
                     match parse_position_status_report(
@@ -1474,84 +1440,220 @@ impl OKXWsFeedHandler {
             let effective_client_id =
                 self.register_client_order_aliases(&raw_child, &parent_from_msg);
 
-            match parse_order_msg(
-                &msg,
-                self.account_id,
-                &self.instruments_cache,
-                &self.fee_cache,
-                &self.filled_qty_cache,
-                ts_init,
-            ) {
-                Ok(report) => {
-                    tracing::debug!("Successfully parsed execution report: {:?}", report);
+            let Some(instrument) = self.instruments_cache.get(&msg.inst_id) else {
+                tracing::error!(
+                    "No instrument found for inst_id: {inst_id}",
+                    inst_id = msg.inst_id
+                );
+                continue;
+            };
+            let price_precision = instrument.price_precision();
+            let size_precision = instrument.size_precision();
 
-                    let is_duplicate_accepted =
-                        if let ExecutionReport::Order(ref status_report) = report {
-                            if status_report.order_status == OrderStatus::Accepted {
-                                self.emitted_order_accepted
-                                    .contains_key(&status_report.venue_order_id)
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
+            let order_metadata = effective_client_id
+                .and_then(|cid| self.active_client_orders.get(&cid).map(|e| *e.value()));
 
-                    if is_duplicate_accepted {
-                        tracing::debug!(
-                            "Skipping duplicate OrderAccepted for venue_order_id={}",
-                            if let ExecutionReport::Order(ref r) = report {
-                                r.venue_order_id.to_string()
-                            } else {
-                                "unknown".to_string()
-                            }
+            let previous_fee = self.fee_cache.get(&msg.ord_id).copied();
+            let previous_filled_qty = self.filled_qty_cache.get(&msg.ord_id).copied();
+            let previous_state =
+                effective_client_id.and_then(|cid| self.order_state_cache.get(&cid).cloned());
+
+            // SAFETY: order_metadata being Some implies effective_client_id is Some
+            if let (Some((trader_id, strategy_id, _instrument_id)), Some(canonical_client_id)) =
+                (order_metadata, effective_client_id)
+            {
+                match parse_order_event(
+                    &msg,
+                    canonical_client_id,
+                    self.account_id,
+                    trader_id,
+                    strategy_id,
+                    instrument,
+                    previous_fee,
+                    previous_filled_qty,
+                    previous_state.as_ref(),
+                    ts_init,
+                ) {
+                    Ok(event) => {
+                        self.process_parsed_order_event(
+                            event,
+                            &msg,
+                            price_precision,
+                            size_precision,
+                            canonical_client_id,
+                            &raw_child,
+                            &mut exec_reports,
                         );
-                        continue;
                     }
-
-                    if let ExecutionReport::Order(ref status_report) = report
-                        && status_report.order_status == OrderStatus::Accepted
-                    {
-                        self.emitted_order_accepted
-                            .insert(status_report.venue_order_id, ());
-                    }
-
-                    let adjusted =
-                        self.adjust_execution_report(report, &effective_client_id, &raw_child);
-
-                    // Clean up tracking for terminal states
-                    if let ExecutionReport::Order(ref status_report) = adjusted
-                        && matches!(
-                            status_report.order_status,
-                            OrderStatus::Filled
-                                | OrderStatus::Canceled
-                                | OrderStatus::Expired
-                                | OrderStatus::Rejected
-                        )
-                    {
-                        self.emitted_order_accepted
-                            .remove(&status_report.venue_order_id);
-                    }
-
-                    self.update_caches_with_report(&adjusted);
-                    exec_reports.push(adjusted);
+                    Err(e) => tracing::error!("Failed to parse order event: {e}"),
                 }
-                Err(e) => tracing::error!("Failed to parse order message: {e}"),
+            } else {
+                // External order or not tracked - use old parse_order_msg for backward compatibility
+                match parse_order_msg(
+                    &msg,
+                    self.account_id,
+                    &self.instruments_cache,
+                    &self.fee_cache,
+                    &self.filled_qty_cache,
+                    ts_init,
+                ) {
+                    Ok(report) => {
+                        tracing::debug!("Parsed external order as execution report: {report:?}");
+                        let adjusted =
+                            self.adjust_execution_report(report, &effective_client_id, &raw_child);
+                        self.update_caches_with_report(&adjusted);
+                        exec_reports.push(adjusted);
+                    }
+                    Err(e) => tracing::error!("Failed to parse order message: {e}"),
+                }
             }
         }
 
         if !exec_reports.is_empty() {
             tracing::debug!(
-                "Pushing {} execution report(s) to message queue",
-                exec_reports.len()
+                "Pushing {count} execution report(s) to message queue",
+                count = exec_reports.len()
             );
             self.pending_messages
                 .push_back(NautilusWsMessage::ExecutionReports(exec_reports));
-        } else {
-            tracing::debug!("No execution reports generated from order messages");
         }
 
         self.pending_messages.pop_front()
+    }
+
+    /// Processes a parsed order event and emits the appropriate message.
+    #[allow(clippy::too_many_arguments)]
+    fn process_parsed_order_event(
+        &mut self,
+        event: ParsedOrderEvent,
+        msg: &OKXOrderMsg,
+        price_precision: u8,
+        size_precision: u8,
+        canonical_client_id: ClientOrderId,
+        raw_child: &Option<ClientOrderId>,
+        exec_reports: &mut Vec<ExecutionReport>,
+    ) {
+        let venue_order_id = VenueOrderId::new(msg.ord_id);
+
+        match event {
+            ParsedOrderEvent::Accepted(accepted) => {
+                if self.emitted_order_accepted.contains_key(&venue_order_id) {
+                    tracing::debug!(
+                        "Skipping duplicate OrderAccepted for venue_order_id={venue_order_id}"
+                    );
+                    return;
+                }
+                self.emitted_order_accepted.insert(venue_order_id, ());
+                self.update_order_state_cache(
+                    &canonical_client_id,
+                    msg,
+                    price_precision,
+                    size_precision,
+                );
+
+                self.pending_messages
+                    .push_back(NautilusWsMessage::OrderAccepted(accepted));
+            }
+            ParsedOrderEvent::Canceled(canceled) => {
+                self.cleanup_terminal_order(&canonical_client_id, &venue_order_id);
+                self.pending_messages
+                    .push_back(NautilusWsMessage::OrderCanceled(canceled));
+            }
+            ParsedOrderEvent::Expired(expired) => {
+                self.cleanup_terminal_order(&canonical_client_id, &venue_order_id);
+                self.pending_messages
+                    .push_back(NautilusWsMessage::OrderExpired(expired));
+            }
+            ParsedOrderEvent::Triggered(triggered) => {
+                self.update_order_state_cache(
+                    &canonical_client_id,
+                    msg,
+                    price_precision,
+                    size_precision,
+                );
+                self.pending_messages
+                    .push_back(NautilusWsMessage::OrderTriggered(triggered));
+            }
+            ParsedOrderEvent::Updated(updated) => {
+                self.update_order_state_cache(
+                    &canonical_client_id,
+                    msg,
+                    price_precision,
+                    size_precision,
+                );
+                self.pending_messages
+                    .push_back(NautilusWsMessage::OrderUpdated(updated));
+            }
+            ParsedOrderEvent::Fill(fill_report) => {
+                let effective_client_id = Some(canonical_client_id);
+                let adjusted = self.adjust_execution_report(
+                    ExecutionReport::Fill(fill_report),
+                    &effective_client_id,
+                    raw_child,
+                );
+                self.update_caches_with_report(&adjusted);
+
+                if msg.state == OKXOrderStatus::Filled {
+                    self.cleanup_terminal_order(&canonical_client_id, &venue_order_id);
+                }
+
+                exec_reports.push(adjusted);
+            }
+            ParsedOrderEvent::StatusOnly(status_report) => {
+                let effective_client_id = Some(canonical_client_id);
+                let adjusted = self.adjust_execution_report(
+                    ExecutionReport::Order(*status_report),
+                    &effective_client_id,
+                    raw_child,
+                );
+                self.update_caches_with_report(&adjusted);
+                exec_reports.push(adjusted);
+            }
+        }
+    }
+
+    /// Updates the order state cache for detecting future updates.
+    fn update_order_state_cache(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        msg: &OKXOrderMsg,
+        price_precision: u8,
+        size_precision: u8,
+    ) {
+        let venue_order_id = VenueOrderId::new(msg.ord_id);
+        let quantity = parse_quantity(&msg.sz, size_precision).ok();
+        let price = if !is_market_price(&msg.px) {
+            parse_price(&msg.px, price_precision).ok()
+        } else {
+            None
+        };
+
+        if let Some(qty) = quantity {
+            self.order_state_cache.insert(
+                *client_order_id,
+                OrderStateSnapshot {
+                    venue_order_id,
+                    quantity: qty,
+                    price,
+                },
+            );
+        }
+    }
+
+    /// Cleans up tracking state for terminal orders.
+    fn cleanup_terminal_order(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: &VenueOrderId,
+    ) {
+        self.emitted_order_accepted.remove(venue_order_id);
+        self.order_state_cache.remove(client_order_id);
+        self.active_client_orders.remove(client_order_id);
+        self.client_id_aliases.remove(client_order_id);
+        self.client_id_aliases.retain(|_, v| *v != *client_order_id);
+
+        self.fee_cache.remove(&venue_order_id.inner());
+        self.filled_qty_cache.remove(&venue_order_id.inner());
     }
 
     fn handle_algo_orders_data(
@@ -2384,18 +2486,26 @@ pub fn is_post_only_rejection(code: &str, data: &[Value]) -> bool {
     false
 }
 
+/// Case-insensitive substring check.
+#[inline]
+fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
 /// Determines if an OKX WebSocket error should trigger a retry.
 fn should_retry_okx_error(error: &OKXWsError) -> bool {
     match error {
         OKXWsError::OkxError { error_code, .. } => should_retry_error_code(error_code),
         OKXWsError::TungsteniteError(_) => true, // Network errors are retryable
         OKXWsError::ClientError(msg) => {
-            // Retry on timeout and connection errors (case-insensitive)
-            let msg_lower = msg.to_lowercase();
-            msg_lower.contains("timeout")
-                || msg_lower.contains("timed out")
-                || msg_lower.contains("connection")
-                || msg_lower.contains("network")
+            // Retry on timeout and connection errors
+            contains_ignore_ascii_case(msg, "timeout")
+                || contains_ignore_ascii_case(msg, "timed out")
+                || contains_ignore_ascii_case(msg, "connection")
+                || contains_ignore_ascii_case(msg, "network")
         }
         OKXWsError::AuthenticationError(_)
         | OKXWsError::JsonError(_)
@@ -2411,13 +2521,56 @@ fn create_okx_timeout_error(msg: String) -> OKXWsError {
     OKXWsError::ClientError(msg)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, atomic::AtomicBool};
+
+    use ahash::AHashMap;
+    use dashmap::DashMap;
+    use nautilus_model::{
+        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+        types::{Money, Quantity},
+    };
+    use nautilus_network::websocket::{AuthTracker, SubscriptionState};
     use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::{NautilusWsMessage, OKXWsFeedHandler};
+    use crate::websocket::parse::OrderStateSnapshot;
+
+    const OKX_WS_TOPIC_DELIMITER: char = ':';
+
+    #[allow(clippy::type_complexity)]
+    fn create_test_handler() -> (
+        OKXWsFeedHandler,
+        tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>,
+        Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
+        Arc<DashMap<ClientOrderId, ClientOrderId>>,
+    ) {
+        let account_id = AccountId::new("OKX-001");
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let active_client_orders = Arc::new(DashMap::new());
+        let client_id_aliases = Arc::new(DashMap::new());
+        let auth_tracker = AuthTracker::new();
+        let subscriptions_state = SubscriptionState::new(OKX_WS_TOPIC_DELIMITER);
+
+        let handler = OKXWsFeedHandler::new(
+            account_id,
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            active_client_orders.clone(),
+            client_id_aliases.clone(),
+            auth_tracker,
+            subscriptions_state,
+        );
+
+        (handler, out_rx, active_client_orders, client_id_aliases)
+    }
 
     #[rstest]
     fn test_is_post_only_rejection_detects_by_code() {
@@ -2438,5 +2591,709 @@ mod tests {
             "sMsg": "Insufficient balance"
         })];
         assert!(!super::is_post_only_rejection("50000", &data));
+    }
+
+    #[rstest]
+    fn test_cleanup_alias_removes_canonical_entry() {
+        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
+        let canonical = ClientOrderId::new("PARENT-001");
+        aliases.insert(canonical, canonical);
+
+        aliases.remove(&canonical);
+        aliases.retain(|_, v| *v != canonical);
+
+        assert!(!aliases.contains_key(&canonical));
+        assert!(aliases.is_empty());
+    }
+
+    #[rstest]
+    fn test_cleanup_alias_removes_child_alias_pointing_to_canonical() {
+        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
+        let canonical = ClientOrderId::new("PARENT-001");
+        let child = ClientOrderId::new("CHILD-001");
+        aliases.insert(canonical, canonical);
+        aliases.insert(child, canonical);
+
+        aliases.remove(&canonical);
+        aliases.retain(|_, v| *v != canonical);
+
+        assert!(!aliases.contains_key(&canonical));
+        assert!(!aliases.contains_key(&child));
+        assert!(aliases.is_empty());
+    }
+
+    #[rstest]
+    fn test_cleanup_alias_does_not_affect_unrelated_entries() {
+        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
+        let canonical1 = ClientOrderId::new("PARENT-001");
+        let child1 = ClientOrderId::new("CHILD-001");
+        let canonical2 = ClientOrderId::new("PARENT-002");
+        let child2 = ClientOrderId::new("CHILD-002");
+        aliases.insert(canonical1, canonical1);
+        aliases.insert(child1, canonical1);
+        aliases.insert(canonical2, canonical2);
+        aliases.insert(child2, canonical2);
+
+        aliases.remove(&canonical1);
+        aliases.retain(|_, v| *v != canonical1);
+
+        assert!(!aliases.contains_key(&canonical1));
+        assert!(!aliases.contains_key(&child1));
+        assert!(aliases.contains_key(&canonical2));
+        assert!(aliases.contains_key(&child2));
+        assert_eq!(aliases.len(), 2);
+    }
+
+    #[rstest]
+    fn test_cleanup_alias_handles_multiple_children() {
+        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
+        let canonical = ClientOrderId::new("PARENT-001");
+        let child1 = ClientOrderId::new("CHILD-001");
+        let child2 = ClientOrderId::new("CHILD-002");
+        let child3 = ClientOrderId::new("CHILD-003");
+        aliases.insert(canonical, canonical);
+        aliases.insert(child1, canonical);
+        aliases.insert(child2, canonical);
+        aliases.insert(child3, canonical);
+
+        aliases.remove(&canonical);
+        aliases.retain(|_, v| *v != canonical);
+
+        assert!(aliases.is_empty());
+    }
+
+    #[rstest]
+    fn test_cleanup_removes_from_all_caches() {
+        let emitted_accepted: DashMap<VenueOrderId, ()> = DashMap::new();
+        let order_state_cache: AHashMap<ClientOrderId, u32> = AHashMap::new();
+        let active_orders: DashMap<ClientOrderId, ()> = DashMap::new();
+        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
+        let fee_cache: AHashMap<Ustr, f64> = AHashMap::new();
+        let filled_qty_cache: AHashMap<Ustr, f64> = AHashMap::new();
+        let canonical = ClientOrderId::new("PARENT-001");
+        let child = ClientOrderId::new("CHILD-001");
+        let venue_id = VenueOrderId::new("VENUE-001");
+
+        emitted_accepted.insert(venue_id, ());
+        let mut order_state = order_state_cache;
+        order_state.insert(canonical, 1);
+        active_orders.insert(canonical, ());
+        aliases.insert(canonical, canonical);
+        aliases.insert(child, canonical);
+        let mut fees = fee_cache;
+        fees.insert(venue_id.inner(), 0.001);
+        let mut filled = filled_qty_cache;
+        filled.insert(venue_id.inner(), 1.0);
+
+        emitted_accepted.remove(&venue_id);
+        order_state.remove(&canonical);
+        active_orders.remove(&canonical);
+        aliases.remove(&canonical);
+        aliases.retain(|_, v| *v != canonical);
+        fees.remove(&venue_id.inner());
+        filled.remove(&venue_id.inner());
+
+        assert!(emitted_accepted.is_empty());
+        assert!(order_state.is_empty());
+        assert!(active_orders.is_empty());
+        assert!(aliases.is_empty());
+        assert!(fees.is_empty());
+        assert!(filled.is_empty());
+    }
+
+    #[rstest]
+    fn test_alias_registration_parent_with_child() {
+        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
+        let parent = ClientOrderId::new("PARENT-001");
+        let child = ClientOrderId::new("CHILD-001");
+        aliases.insert(parent, parent);
+        aliases.insert(child, parent);
+
+        assert_eq!(*aliases.get(&parent).unwrap(), parent);
+        assert_eq!(*aliases.get(&child).unwrap(), parent);
+    }
+
+    #[rstest]
+    fn test_alias_registration_standalone_order() {
+        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
+        let order_id = ClientOrderId::new("ORDER-001");
+        aliases.insert(order_id, order_id);
+
+        assert_eq!(*aliases.get(&order_id).unwrap(), order_id);
+    }
+
+    #[rstest]
+    fn test_alias_lookup_returns_canonical() {
+        let aliases: DashMap<ClientOrderId, ClientOrderId> = DashMap::new();
+        let canonical = ClientOrderId::new("PARENT-001");
+        let child = ClientOrderId::new("CHILD-001");
+
+        aliases.insert(canonical, canonical);
+        aliases.insert(child, canonical);
+
+        let resolved = aliases.get(&child).map(|v| *v);
+        assert_eq!(resolved, Some(canonical));
+    }
+
+    #[rstest]
+    fn test_handler_register_client_order_aliases_with_parent() {
+        let (handler, _out_rx, _active, client_id_aliases) = create_test_handler();
+
+        let child = Some(ClientOrderId::new("CHILD-001"));
+        let parent = Some(ClientOrderId::new("PARENT-001"));
+
+        let result = handler.register_client_order_aliases(&child, &parent);
+
+        assert_eq!(result, Some(ClientOrderId::new("PARENT-001")));
+        assert!(client_id_aliases.contains_key(&ClientOrderId::new("PARENT-001")));
+        assert!(client_id_aliases.contains_key(&ClientOrderId::new("CHILD-001")));
+        assert_eq!(
+            *client_id_aliases
+                .get(&ClientOrderId::new("CHILD-001"))
+                .unwrap(),
+            ClientOrderId::new("PARENT-001")
+        );
+    }
+
+    #[rstest]
+    fn test_handler_register_client_order_aliases_without_parent() {
+        let (handler, _out_rx, _active, client_id_aliases) = create_test_handler();
+
+        let child = Some(ClientOrderId::new("ORDER-001"));
+        let parent: Option<ClientOrderId> = None;
+
+        let result = handler.register_client_order_aliases(&child, &parent);
+
+        assert_eq!(result, Some(ClientOrderId::new("ORDER-001")));
+        assert!(client_id_aliases.contains_key(&ClientOrderId::new("ORDER-001")));
+        assert_eq!(
+            *client_id_aliases
+                .get(&ClientOrderId::new("ORDER-001"))
+                .unwrap(),
+            ClientOrderId::new("ORDER-001")
+        );
+    }
+
+    #[rstest]
+    fn test_handler_cleanup_terminal_order_removes_all_state() {
+        let (mut handler, _out_rx, active_client_orders, client_id_aliases) = create_test_handler();
+
+        let canonical = ClientOrderId::new("PARENT-001");
+        let child = ClientOrderId::new("CHILD-001");
+        let venue_id = VenueOrderId::new("VENUE-001");
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("STRATEGY-001");
+        let instrument_id = InstrumentId::from("ETH-USDT-PERP.OKX");
+
+        active_client_orders.insert(canonical, (trader_id, strategy_id, instrument_id));
+        client_id_aliases.insert(canonical, canonical);
+        client_id_aliases.insert(child, canonical);
+        handler
+            .fee_cache
+            .insert(venue_id.inner(), Money::from("0.001 USDT"));
+        handler
+            .filled_qty_cache
+            .insert(venue_id.inner(), Quantity::from("1.0"));
+        handler.order_state_cache.insert(
+            canonical,
+            OrderStateSnapshot {
+                venue_order_id: venue_id,
+                quantity: Quantity::from("1.0"),
+                price: None,
+            },
+        );
+
+        handler.cleanup_terminal_order(&canonical, &venue_id);
+
+        assert!(!active_client_orders.contains_key(&canonical));
+        assert!(!client_id_aliases.contains_key(&canonical));
+        assert!(!client_id_aliases.contains_key(&child));
+        assert!(!handler.fee_cache.contains_key(&venue_id.inner()));
+        assert!(!handler.filled_qty_cache.contains_key(&venue_id.inner()));
+        assert!(!handler.order_state_cache.contains_key(&canonical));
+    }
+
+    #[rstest]
+    fn test_handler_cleanup_terminal_order_removes_multiple_children() {
+        let (mut handler, _out_rx, _active, client_id_aliases) = create_test_handler();
+
+        let canonical = ClientOrderId::new("PARENT-001");
+        let child1 = ClientOrderId::new("CHILD-001");
+        let child2 = ClientOrderId::new("CHILD-002");
+        let child3 = ClientOrderId::new("CHILD-003");
+        let venue_id = VenueOrderId::new("VENUE-001");
+
+        client_id_aliases.insert(canonical, canonical);
+        client_id_aliases.insert(child1, canonical);
+        client_id_aliases.insert(child2, canonical);
+        client_id_aliases.insert(child3, canonical);
+
+        handler.cleanup_terminal_order(&canonical, &venue_id);
+
+        assert!(!client_id_aliases.contains_key(&canonical));
+        assert!(!client_id_aliases.contains_key(&child1));
+        assert!(!client_id_aliases.contains_key(&child2));
+        assert!(!client_id_aliases.contains_key(&child3));
+        assert!(client_id_aliases.is_empty());
+    }
+
+    #[rstest]
+    fn test_handler_cleanup_does_not_affect_other_orders() {
+        let (mut handler, _out_rx, active_client_orders, client_id_aliases) = create_test_handler();
+
+        let canonical1 = ClientOrderId::new("PARENT-001");
+        let child1 = ClientOrderId::new("CHILD-001");
+        let venue_id1 = VenueOrderId::new("VENUE-001");
+
+        let canonical2 = ClientOrderId::new("PARENT-002");
+        let child2 = ClientOrderId::new("CHILD-002");
+        let venue_id2 = VenueOrderId::new("VENUE-002");
+
+        let trader_id = TraderId::new("TRADER-001");
+        let strategy_id = StrategyId::new("STRATEGY-001");
+        let instrument_id = InstrumentId::from("ETH-USDT-PERP.OKX");
+
+        active_client_orders.insert(canonical1, (trader_id, strategy_id, instrument_id));
+        active_client_orders.insert(canonical2, (trader_id, strategy_id, instrument_id));
+        client_id_aliases.insert(canonical1, canonical1);
+        client_id_aliases.insert(child1, canonical1);
+        client_id_aliases.insert(canonical2, canonical2);
+        client_id_aliases.insert(child2, canonical2);
+        handler
+            .fee_cache
+            .insert(venue_id1.inner(), Money::from("0.001 USDT"));
+        handler
+            .fee_cache
+            .insert(venue_id2.inner(), Money::from("0.002 USDT"));
+
+        handler.cleanup_terminal_order(&canonical1, &venue_id1);
+
+        assert!(!active_client_orders.contains_key(&canonical1));
+        assert!(!client_id_aliases.contains_key(&canonical1));
+        assert!(!client_id_aliases.contains_key(&child1));
+        assert!(!handler.fee_cache.contains_key(&venue_id1.inner()));
+
+        assert!(active_client_orders.contains_key(&canonical2));
+        assert!(client_id_aliases.contains_key(&canonical2));
+        assert!(client_id_aliases.contains_key(&child2));
+        assert!(handler.fee_cache.contains_key(&venue_id2.inner()));
+    }
+
+    // ==================================================================================
+    // Channel routing integration tests
+    // ==================================================================================
+
+    mod channel_routing {
+        use nautilus_core::nanos::UnixNanos;
+        use nautilus_model::{
+            identifiers::{InstrumentId, Symbol},
+            instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
+            types::{Currency, Price, Quantity},
+        };
+        use rstest::rstest;
+        use ustr::Ustr;
+
+        use super::*;
+        use crate::{
+            common::{enums::OKXBookAction, testing::load_test_json},
+            websocket::{enums::OKXWsChannel, messages::OKXWsMessage},
+        };
+
+        fn create_spot_instrument() -> InstrumentAny {
+            let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+            InstrumentAny::CurrencyPair(CurrencyPair::new(
+                instrument_id,
+                Symbol::from("BTC-USDT"),
+                Currency::BTC(),
+                Currency::USDT(),
+                2,
+                8,
+                Price::from("0.01"),
+                Quantity::from("0.00000001"),
+                None, // multiplier
+                None, // lot_size
+                None, // max_quantity
+                None, // min_quantity
+                None, // max_notional
+                None, // min_notional
+                None, // max_price
+                None, // min_price
+                None, // margin_init
+                None, // margin_maint
+                None, // maker_fee
+                None, // taker_fee
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ))
+        }
+
+        fn create_swap_instrument() -> InstrumentAny {
+            let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+            InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+                instrument_id,
+                Symbol::from("BTC-USDT-SWAP"),
+                Currency::BTC(),
+                Currency::USDT(),
+                Currency::USDT(),
+                false,
+                2,
+                8,
+                Price::from("0.01"),
+                Quantity::from("0.00000001"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ))
+        }
+
+        fn create_handler_with_instruments(instruments: Vec<InstrumentAny>) -> OKXWsFeedHandler {
+            let (mut handler, _, _, _) = create_test_handler();
+            for inst in instruments {
+                handler
+                    .instruments_cache
+                    .insert(inst.symbol().inner(), inst);
+            }
+            handler
+        }
+
+        #[rstest]
+        fn test_parse_raw_message_ticker_channel() {
+            let json = load_test_json("ws_tickers.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            match msg {
+                OKXWsMessage::Data { arg, data } => {
+                    assert!(
+                        matches!(arg.channel, OKXWsChannel::Tickers),
+                        "Expected Tickers channel"
+                    );
+                    assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT")));
+                    assert!(data.is_array());
+                }
+                _ => panic!("Expected OKXWsMessage::Data variant"),
+            }
+        }
+
+        #[rstest]
+        fn test_parse_raw_message_trades_channel() {
+            let json = load_test_json("ws_trades.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            match msg {
+                OKXWsMessage::Data { arg, data } => {
+                    assert!(
+                        matches!(arg.channel, OKXWsChannel::Trades),
+                        "Expected Trades channel"
+                    );
+                    assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USD")));
+                    assert!(data.is_array());
+                }
+                _ => panic!("Expected OKXWsMessage::Data variant"),
+            }
+        }
+
+        #[rstest]
+        fn test_parse_raw_message_books_channel() {
+            let json = load_test_json("ws_books_snapshot.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            match msg {
+                OKXWsMessage::BookData { arg, action, data } => {
+                    assert!(
+                        matches!(arg.channel, OKXWsChannel::Books),
+                        "Expected Books channel"
+                    );
+                    assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT")));
+                    assert!(
+                        matches!(action, OKXBookAction::Snapshot),
+                        "Expected snapshot action"
+                    );
+                    assert!(!data.is_empty());
+                }
+                _ => panic!("Expected OKXWsMessage::BookData variant"),
+            }
+        }
+
+        #[rstest]
+        fn test_parse_raw_message_candle_channel() {
+            let json = load_test_json("ws_candle.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            match msg {
+                OKXWsMessage::Data { arg, data } => {
+                    // Candle channel variant is Candle1Day for "candle1D"
+                    assert!(
+                        matches!(arg.channel, OKXWsChannel::Candle1Day),
+                        "Expected Candle1Day channel, got {:?}",
+                        arg.channel
+                    );
+                    assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT")));
+                    assert!(data.is_array());
+                }
+                _ => panic!("Expected OKXWsMessage::Data variant"),
+            }
+        }
+
+        #[rstest]
+        fn test_parse_raw_message_funding_rate_channel() {
+            let json = load_test_json("ws_funding_rate.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            match msg {
+                OKXWsMessage::Data { arg, data } => {
+                    assert!(
+                        matches!(arg.channel, OKXWsChannel::FundingRate),
+                        "Expected FundingRate channel"
+                    );
+                    assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT-SWAP")));
+                    assert!(data.is_array());
+                }
+                _ => panic!("Expected OKXWsMessage::Data variant"),
+            }
+        }
+
+        #[rstest]
+        fn test_parse_raw_message_bbo_tbt_channel() {
+            let json = load_test_json("ws_bbo_tbt.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            match msg {
+                OKXWsMessage::Data { arg, data } => {
+                    assert!(
+                        matches!(arg.channel, OKXWsChannel::BboTbt),
+                        "Expected BboTbt channel"
+                    );
+                    assert!(data.is_array());
+                }
+                _ => panic!("Expected OKXWsMessage::Data variant"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_other_channel_data_tickers() {
+            let mut handler = create_handler_with_instruments(vec![create_spot_instrument()]);
+            let json = load_test_json("ws_tickers.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::Data { arg, data } = msg else {
+                panic!("Expected OKXWsMessage::Data");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_other_channel_data(arg.channel, arg.inst_id, data, ts_init);
+
+            assert!(result.is_some());
+            match result.unwrap() {
+                NautilusWsMessage::Data(payloads) => {
+                    assert!(!payloads.is_empty(), "Should produce data payloads");
+                }
+                other => panic!("Expected NautilusWsMessage::Data, got {other:?}"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_other_channel_data_trades() {
+            // Create instrument with BTC-USD symbol (matches test data)
+            let instrument_id = InstrumentId::from("BTC-USD.OKX");
+            let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
+                instrument_id,
+                Symbol::from("BTC-USD"),
+                Currency::BTC(),
+                Currency::USD(),
+                1,
+                8,
+                Price::from("0.1"),
+                Quantity::from("0.00000001"),
+                None, // multiplier
+                None, // lot_size
+                None, // max_quantity
+                None, // min_quantity
+                None, // max_notional
+                None, // min_notional
+                None, // max_price
+                None, // min_price
+                None, // margin_init
+                None, // margin_maint
+                None, // maker_fee
+                None, // taker_fee
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ));
+
+            let mut handler = create_handler_with_instruments(vec![instrument]);
+            let json = load_test_json("ws_trades.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::Data { arg, data } = msg else {
+                panic!("Expected OKXWsMessage::Data");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_other_channel_data(arg.channel, arg.inst_id, data, ts_init);
+
+            assert!(result.is_some());
+            match result.unwrap() {
+                NautilusWsMessage::Data(payloads) => {
+                    assert!(!payloads.is_empty(), "Should produce trade data payloads");
+                }
+                other => panic!("Expected NautilusWsMessage::Data, got {other:?}"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_book_data_snapshot() {
+            let handler = create_handler_with_instruments(vec![create_spot_instrument()]);
+            let json = load_test_json("ws_books_snapshot.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::BookData { arg, action, data } = msg else {
+                panic!("Expected OKXWsMessage::BookData");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_book_data(arg, action, data, ts_init);
+
+            assert!(result.is_some());
+            match result.unwrap() {
+                NautilusWsMessage::Data(payloads) => {
+                    assert!(!payloads.is_empty(), "Should produce order book payloads");
+                }
+                other => panic!("Expected NautilusWsMessage::Data, got {other:?}"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_book_data_update() {
+            let handler = create_handler_with_instruments(vec![create_spot_instrument()]);
+            let json = load_test_json("ws_books_update.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::BookData { arg, action, data } = msg else {
+                panic!("Expected OKXWsMessage::BookData");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_book_data(arg, action, data, ts_init);
+
+            assert!(result.is_some());
+            match result.unwrap() {
+                NautilusWsMessage::Data(payloads) => {
+                    assert!(
+                        !payloads.is_empty(),
+                        "Should produce order book delta payloads"
+                    );
+                }
+                other => panic!("Expected NautilusWsMessage::Data, got {other:?}"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_other_channel_data_candles() {
+            let mut handler = create_handler_with_instruments(vec![create_spot_instrument()]);
+            let json = load_test_json("ws_candle.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::Data { arg, data } = msg else {
+                panic!("Expected OKXWsMessage::Data");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_other_channel_data(arg.channel, arg.inst_id, data, ts_init);
+
+            assert!(result.is_some());
+            match result.unwrap() {
+                NautilusWsMessage::Data(payloads) => {
+                    assert!(!payloads.is_empty(), "Should produce bar data payloads");
+                }
+                other => panic!("Expected NautilusWsMessage::Data, got {other:?}"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_other_channel_data_funding_rate() {
+            let mut handler = create_handler_with_instruments(vec![create_swap_instrument()]);
+            let json = load_test_json("ws_funding_rate.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::Data { arg, data } = msg else {
+                panic!("Expected OKXWsMessage::Data");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_other_channel_data(arg.channel, arg.inst_id, data, ts_init);
+
+            // Funding rate returns FundingRates variant when rate changes
+            assert!(result.is_none() || matches!(result, Some(NautilusWsMessage::FundingRates(_))));
+        }
+
+        #[rstest]
+        fn test_handle_account_data_parses_successfully() {
+            let mut handler = create_handler_with_instruments(vec![]);
+            let json = load_test_json("ws_account.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::Data { data, .. } = msg else {
+                panic!("Expected OKXWsMessage::Data");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_account_data(data, ts_init);
+
+            assert!(result.is_some());
+            match result.unwrap() {
+                NautilusWsMessage::AccountUpdate(account_state) => {
+                    assert!(
+                        !account_state.balances.is_empty(),
+                        "Should have balance data"
+                    );
+                }
+                other => panic!("Expected NautilusWsMessage::AccountUpdate, got {other:?}"),
+            }
+        }
+
+        #[rstest]
+        fn test_handle_other_channel_data_missing_instrument() {
+            let mut handler = create_handler_with_instruments(vec![]);
+            let json = load_test_json("ws_tickers.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::Data { arg, data } = msg else {
+                panic!("Expected OKXWsMessage::Data");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_other_channel_data(arg.channel, arg.inst_id, data, ts_init);
+
+            // Should return None when instrument is not in cache
+            assert!(result.is_none());
+        }
+
+        #[rstest]
+        fn test_handle_book_data_missing_instrument() {
+            let handler = create_handler_with_instruments(vec![]);
+            let json = load_test_json("ws_books_snapshot.json");
+            let msg: OKXWsMessage = serde_json::from_str(&json).unwrap();
+
+            let OKXWsMessage::BookData { arg, action, data } = msg else {
+                panic!("Expected OKXWsMessage::BookData");
+            };
+
+            let ts_init = UnixNanos::from(1_000_000_000u64);
+            let result = handler.handle_book_data(arg, action, data, ts_init);
+
+            // Should return None when instrument is not in cache
+            assert!(result.is_none());
+        }
     }
 }

@@ -61,7 +61,7 @@ def test_position_hash_str_repr():
         order=order,
         instrument=AUDUSD_SIM,
         position_id=PositionId("P-123456"),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("1.00001"),
     )
 
@@ -84,7 +84,7 @@ def test_position_snapshot():
         order=order,
         instrument=AUDUSD_SIM,
         position_id=PositionId("P-123456"),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("1.00001"),
     )
 
@@ -284,7 +284,7 @@ def test_position_partial_fills_with_sell_order() -> None:
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_str("1.00001"),
         last_qty=Quantity.from_int(50_000),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     fill2 = TestEventsProviderPyo3.order_filled(
         instrument=instrument,
@@ -334,7 +334,7 @@ def test_position_filled_with_buy_order_then_sell_order():
 
     fill2 = OrderFilled(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=order.instrument_id,
         client_order_id=order.client_order_id,
         venue_order_id=VenueOrderId("2"),
@@ -397,7 +397,7 @@ def test_position_filled_with_sell_order_then_buy_order():
         instrument=instrument,
         order=order1,
         position_id=PositionId("P-19700101-000000-000-001-1"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=AUDUSD_SIM, fill=fill1)
     fill2 = TestEventsProviderPyo3.order_filled(
@@ -522,14 +522,14 @@ def test_position_long_with_multiple_filled_orders():
         instrument=instrument,
         order=order1,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
-        trade_id=TradeId("1"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     fill2 = TestEventsProviderPyo3.order_filled(
         instrument=instrument,
         order=order2,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("1.00001"),
         trade_id=TradeId("2"),
     )
@@ -537,7 +537,7 @@ def test_position_long_with_multiple_filled_orders():
         instrument=instrument,
         order=order3,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("1.00010"),
         trade_id=TradeId("3"),
     )
@@ -582,9 +582,9 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order1,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(100),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill1)
     order2 = TestOrderProviderPyo3.market_order(
@@ -596,7 +596,7 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order2,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(99),
         trade_id=TradeId("2"),
     )
@@ -613,7 +613,7 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order3,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(101),
         trade_id=TradeId("3"),
     )
@@ -630,7 +630,7 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order4,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(105),
         trade_id=TradeId("4"),
     )
@@ -647,7 +647,7 @@ def test_pnl_calculation_from_trading_technologies_example():
         instrument=instrument,
         order=order5,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(103),
         trade_id=TradeId("5"),
     )
@@ -674,7 +674,7 @@ def test_position_closed_and_reopened() -> None:
     position = Position(instrument=AUDUSD_SIM, fill=fill1)
     fill2 = OrderFilled(
         trader_id=order.trader_id,
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=order.instrument_id,
         client_order_id=order.client_order_id,
         venue_order_id=VenueOrderId("2"),
@@ -698,7 +698,7 @@ def test_position_closed_and_reopened() -> None:
 
     fill3 = OrderFilled(
         trader_id=order.trader_id,
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=order.instrument_id,
         client_order_id=order.client_order_id,
         venue_order_id=VenueOrderId("2"),
@@ -758,9 +758,9 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order1,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10000),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill1)
     order2 = TestOrderProviderPyo3.market_order(
@@ -772,7 +772,7 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order2,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(9999),
         trade_id=TradeId("2"),
     )
@@ -789,7 +789,7 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order3,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10001),
         trade_id=TradeId("3"),
     )
@@ -806,7 +806,7 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order4,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10003),
         trade_id=TradeId("4"),
     )
@@ -824,7 +824,7 @@ def test_position_realized_pnl_with_interleaved_order_sides():
         instrument=instrument,
         order=order5,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10005),
         trade_id=TradeId("5"),
     )
@@ -846,9 +846,9 @@ def test_calculate_pnl_when_given_position_side_flat_returns_zero():
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     result = position.calculate_pnl(10500.0, 10500.0, Quantity.from_int(100_000))
@@ -866,9 +866,9 @@ def test_calculate_pnl_for_long_position_win() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.calculate_pnl(
@@ -896,9 +896,9 @@ def test_calculate_pnl_for_long_position_loss() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.calculate_pnl(
@@ -926,9 +926,9 @@ def test_calculate_pnl_for_short_position_winning() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
 
@@ -956,9 +956,9 @@ def test_calculate_pnl_for_short_position_loss() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.calculate_pnl(
@@ -986,9 +986,9 @@ def test_calculate_pnl_for_inverse1() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_int(10000),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.calculate_pnl(
@@ -1014,9 +1014,9 @@ def test_calculate_pnl_for_inverse2() -> None:
         instrument=instrument,
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("375.95"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
 
@@ -1041,7 +1041,7 @@ def test_calculate_unrealized_pnl_for_long() -> None:
         order=order1,
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_int(10500),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     fill2 = TestEventsProviderPyo3.order_filled(
         instrument=instrument,
@@ -1072,7 +1072,7 @@ def test_calculate_unrealized_pnl_for_short() -> None:
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_str("10505.60"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.unrealized_pnl(Price.from_str("10407.15"))
@@ -1094,7 +1094,7 @@ def test_calculate_unrealized_pnl_for_long_inverse() -> None:
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_str("10500.00"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.unrealized_pnl(Price.from_str("11505.60"))
@@ -1117,7 +1117,7 @@ def test_calculate_unrealized_pnl_for_short_inverse() -> None:
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_str("15500.00"),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
     pnl = position.unrealized_pnl(Price.from_str("12506.65"))
@@ -1151,7 +1151,7 @@ def test_signed_qty_decimal_qty_for_equity(
         order,
         instrument=instrument,
         position_id=PositionId("P-123456"),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         last_px=Price.from_str("100"),
     )
 
@@ -1166,7 +1166,7 @@ def test_position_adjustment_creation_and_serialization() -> None:
     # Arrange
     adjustment = PositionAdjusted(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=TestIdProviderPyo3.audusd_id(),
         position_id=PositionId("P-123456"),
         account_id=TestIdProviderPyo3.account_id(),
@@ -1205,14 +1205,14 @@ def test_position_with_adjustments_tracking() -> None:
         order=order,
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_int(50000),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
     )
     position = Position(instrument=instrument, fill=fill)
 
     # Act
     adjustment = PositionAdjusted(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=instrument.id,
         position_id=TestIdProviderPyo3.position_id(),
         account_id=TestIdProviderPyo3.account_id(),
@@ -1240,7 +1240,7 @@ def test_position_adjustment_funding_only_no_quantity_change() -> None:
     # Arrange & Act
     adjustment = PositionAdjusted(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=TestIdProviderPyo3.btcusdt_binance_id(),
         position_id=PositionId("P-123456"),
         account_id=TestIdProviderPyo3.account_id(),
@@ -1269,7 +1269,7 @@ def test_position_adjustment_json_serialization_round_trip() -> None:
     # Arrange
     adjustment = PositionAdjusted(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=TestIdProviderPyo3.audusd_id(),
         position_id=PositionId("P-123456"),
         account_id=TestIdProviderPyo3.account_id(),
@@ -1304,7 +1304,7 @@ def test_position_adjustment_funding_json_serialization() -> None:
     # Arrange
     adjustment = PositionAdjusted(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=TestIdProviderPyo3.btcusdt_binance_id(),
         position_id=PositionId("P-123456"),
         account_id=TestIdProviderPyo3.account_id(),
@@ -1349,7 +1349,7 @@ def test_position_close_and_reopen_clears_adjustments() -> None:
         client_order_id=buy_order.client_order_id,
         venue_order_id=VenueOrderId("1"),
         account_id=TestIdProviderPyo3.account_id(),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
         position_id=TestIdProviderPyo3.position_id(),
         order_side=OrderSide.BUY,
         order_type=OrderType.MARKET,
@@ -1457,7 +1457,7 @@ def test_position_purge_events_clears_adjustments() -> None:
         client_order_id=order1_id,
         venue_order_id=VenueOrderId("1"),
         account_id=TestIdProviderPyo3.account_id(),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
         position_id=TestIdProviderPyo3.position_id(),
         order_side=OrderSide.BUY,
         order_type=OrderType.MARKET,
@@ -1528,12 +1528,12 @@ def test_position_sell_base_currency_commission_reduces_short() -> None:
     # Create a SELL fill with base currency (BTC) commission
     sell_fill = OrderFilled(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=instrument.id,
         client_order_id=ClientOrderId("O-001"),
         venue_order_id=VenueOrderId("1"),
         account_id=TestIdProviderPyo3.account_id(),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
         position_id=TestIdProviderPyo3.position_id(),
         order_side=OrderSide.SELL,
         order_type=OrderType.MARKET,
@@ -1579,12 +1579,12 @@ def test_position_flattens_with_quote_currency_commission_on_close() -> None:
     # BUY fill with base currency commission
     fill1 = OrderFilled(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=instrument.id,
         client_order_id=ClientOrderId("O-001"),
         venue_order_id=VenueOrderId("1"),
         account_id=TestIdProviderPyo3.account_id(),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
         position_id=TestIdProviderPyo3.position_id(),
         order_side=OrderSide.BUY,
         order_type=OrderType.MARKET,
@@ -1610,7 +1610,7 @@ def test_position_flattens_with_quote_currency_commission_on_close() -> None:
     # Act: Close by selling position.quantity with QUOTE currency commission (realistic)
     fill2 = OrderFilled(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=instrument.id,
         client_order_id=ClientOrderId("O-002"),
         venue_order_id=VenueOrderId("2"),
@@ -1656,12 +1656,12 @@ def test_position_flattens_with_base_currency_commission_on_close() -> None:
     # BUY fill with base currency commission
     fill1 = OrderFilled(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=instrument.id,
         client_order_id=ClientOrderId("O-001"),
         venue_order_id=VenueOrderId("1"),
         account_id=TestIdProviderPyo3.account_id(),
-        trade_id=TradeId("1"),
+        trade_id=TestIdProviderPyo3.trade_id(),
         position_id=TestIdProviderPyo3.position_id(),
         order_side=OrderSide.BUY,
         order_type=OrderType.MARKET,
@@ -1687,7 +1687,7 @@ def test_position_flattens_with_base_currency_commission_on_close() -> None:
     # Act: Sell exact quantity with base currency commission
     fill2 = OrderFilled(
         trader_id=TestIdProviderPyo3.trader_id(),
-        strategy_id=StrategyId("S-001"),
+        strategy_id=TestIdProviderPyo3.strategy_id(),
         instrument_id=instrument.id,
         client_order_id=ClientOrderId("O-002"),
         venue_order_id=VenueOrderId("2"),

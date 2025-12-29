@@ -32,8 +32,7 @@ macro_rules! impl_serialization_for_identifier {
                 D: Deserializer<'de>,
             {
                 let value_str: &str = Deserialize::deserialize(deserializer)?;
-                let value: $ty = value_str.into();
-                Ok(value)
+                Self::new_checked(value_str).map_err(serde::de::Error::custom)
             }
         }
     };

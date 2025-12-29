@@ -6,6 +6,7 @@ permissions: # Principle of least privilege
   security-events: write # Required for CodeQL to upload SARIF
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [master]
   schedule:

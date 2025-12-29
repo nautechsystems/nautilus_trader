@@ -44,6 +44,13 @@ const BECH32_PREFIX_DYDX: &str = "dydx";
 ///
 /// This `Wallet` uses the Cosmos ATOM derivation path to generate dYdX addresses.
 ///
+/// # Security
+///
+/// The `Seed` type from bip32 implements `Drop` for secure cleanup of seed material.
+///
+/// Note: Deriving `zeroize::ZeroizeOnDrop` is not possible because `bip32::Seed` does not
+/// expose the `zeroize::Zeroize` trait (it uses internal Drop-based cleanup).
+///
 /// See also [Mastering Bitcoin](https://github.com/bitcoinbook/bitcoinbook/blob/develop/ch05_wallets.adoc).
 pub struct Wallet {
     seed: Seed,

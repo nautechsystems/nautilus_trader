@@ -1,0 +1,11 @@
+{
+  "feed": "trade",
+  "product_id": "PI_XBTUSD",
+  "uid": "05af78ac-a774-478c-a50c-8b9c234e071e",
+  "side": "sell",
+  "type": "fill",
+  "seq": 653355,
+  "time": 1612266317519,
+  "qty": 15000,
+  "price": 34969.5
+}

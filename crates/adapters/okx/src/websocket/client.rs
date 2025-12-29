@@ -36,7 +36,7 @@ use ahash::AHashSet;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
-use nautilus_common::live::runtime::get_runtime;
+use nautilus_common::live::get_runtime;
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
@@ -49,6 +49,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
+    http::USER_AGENT,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{
@@ -56,7 +57,6 @@ use nautilus_network::{
         WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
-use reqwest::header::USER_AGENT;
 use serde_json::Value;
 use tokio_tungstenite::tungstenite::Error;
 use tokio_util::sync::CancellationToken;
@@ -134,7 +134,7 @@ pub const OKX_RATE_LIMIT_KEY_AMEND: &str = "amend";
 #[derive(Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx")
 )]
 pub struct OKXWebSocketClient {
     url: String,
@@ -155,7 +155,6 @@ pub struct OKXWebSocketClient {
     subscriptions_state: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
     active_client_orders: Arc<DashMap<ClientOrderId, (TraderId, StrategyId, InstrumentId)>>,
-    emitted_order_accepted: Arc<DashMap<VenueOrderId, ()>>, // Track orders we've already emitted OrderAccepted for
     client_id_aliases: Arc<DashMap<ClientOrderId, ClientOrderId>>,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     cancellation_token: CancellationToken,
@@ -239,7 +238,6 @@ impl OKXWebSocketClient {
             subscriptions_state,
             request_id_counter: Arc::new(AtomicU64::new(1)),
             active_client_orders: Arc::new(DashMap::new()),
-            emitted_order_accepted: Arc::new(DashMap::new()),
             client_id_aliases: Arc::new(DashMap::new()),
             instruments_cache: Arc::new(DashMap::new()),
             cancellation_token: CancellationToken::new(),
@@ -327,14 +325,14 @@ impl OKXWebSocketClient {
     pub fn is_active(&self) -> bool {
         let connection_mode_arc = self.connection_mode.load();
         ConnectionMode::from_atomic(&connection_mode_arc).is_active()
-            && !self.signal.load(Ordering::Relaxed)
+            && !self.signal.load(Ordering::Acquire)
     }
 
     /// Returns a value indicating whether the client is closed.
     pub fn is_closed(&self) -> bool {
         let connection_mode_arc = self.connection_mode.load();
         ConnectionMode::from_atomic(&connection_mode_arc).is_closed()
-            || self.signal.load(Ordering::Relaxed)
+            || self.signal.load(Ordering::Acquire)
     }
 
     /// Caches multiple instruments.
@@ -408,8 +406,6 @@ impl OKXWebSocketClient {
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: self.heartbeat,
             heartbeat_msg: Some(TEXT_PING.to_string()),
-            message_handler: Some(message_handler),
-            ping_handler: Some(ping_handler),
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default
             reconnect_delay_max_ms: None,     // Use default
@@ -431,6 +427,8 @@ impl OKXWebSocketClient {
 
         let client = WebSocketClient::connect(
             config,
+            Some(message_handler),
+            Some(ping_handler),
             None, // post_reconnection
             keyed_quotas,
             Some(*OKX_WS_CONNECTION_QUOTA), // Default quota for connection operations
@@ -463,7 +461,6 @@ impl OKXWebSocketClient {
 
         let signal = self.signal.clone();
         let active_client_orders = self.active_client_orders.clone();
-        let emitted_order_accepted = self.emitted_order_accepted.clone();
         let auth_tracker = self.auth_tracker.clone();
         let subscriptions_state = self.subscriptions_state.clone();
         let client_id_aliases = self.client_id_aliases.clone();
@@ -488,7 +485,6 @@ impl OKXWebSocketClient {
                     msg_tx,
                     active_client_orders,
                     client_id_aliases,
-                    emitted_order_accepted,
                     auth_tracker.clone(),
                     subscriptions_state.clone(),
                 );
@@ -558,7 +554,7 @@ impl OKXWebSocketClient {
                 loop {
                     match handler.next().await {
                         Some(NautilusWsMessage::Reconnected) => {
-                            if signal.load(Ordering::Relaxed) {
+                            if signal.load(Ordering::Acquire) {
                                 continue;
                             }
 
@@ -655,7 +651,7 @@ impl OKXWebSocketClient {
                                 );
                                 break;
                             }
-                            tracing::warn!("WebSocket stream ended unexpectedly");
+                            tracing::debug!("WebSocket stream closed");
                             break;
                         }
                     }
@@ -796,7 +792,7 @@ impl OKXWebSocketClient {
     pub async fn close(&mut self) -> Result<(), Error> {
         log::debug!("Starting close process");
 
-        self.signal.store(true, Ordering::Relaxed);
+        self.signal.store(true, Ordering::Release);
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
             log::warn!("Failed to send disconnect command to handler: {e}");
@@ -1093,7 +1089,7 @@ impl OKXWebSocketClient {
             return Ok(());
         }
 
-        tracing::info!("Subscribing to instrument type {inst_type:?} for {instrument_id}");
+        tracing::debug!("Subscribing to instrument type {inst_type:?} for {instrument_id}");
         self.subscribe_instruments(inst_type).await
     }
 
@@ -2461,10 +2457,6 @@ impl OKXWebSocketClient {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
@@ -2765,18 +2757,18 @@ mod tests {
             cancel_source: None,
             cancel_source_reason: None,
             category: OKXOrderCategory::Normal,
-            ccy: ustr::Ustr::from("USDT"),
+            ccy: Ustr::from("USDT"),
             cl_ord_id: "order-1".to_string(),
             algo_cl_ord_id: None,
             fee: None,
-            fee_ccy: ustr::Ustr::from("USDT"),
+            fee_ccy: Ustr::from("USDT"),
             fill_px: "0".to_string(),
             fill_sz: "0".to_string(),
             fill_time: 0,
-            inst_id: ustr::Ustr::from("ETH-USDT-SWAP"),
+            inst_id: Ustr::from("ETH-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             lever: "1".to_string(),
-            ord_id: ustr::Ustr::from("123456"),
+            ord_id: Ustr::from("123456"),
             ord_type: OKXOrderType::Limit,
             pnl: "0".to_string(),
             pos_side: OKXPositionSide::Net,

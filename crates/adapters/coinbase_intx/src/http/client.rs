@@ -41,10 +41,9 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpClientError},
+    http::{HttpClient, HttpClientError, Method, StatusCode, USER_AGENT},
     ratelimiter::quota::Quota,
 };
-use reqwest::{Method, StatusCode, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ustr::Ustr;
 
@@ -619,7 +618,7 @@ impl CoinbaseIntxHttpInnerClient {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx")
 )]
 pub struct CoinbaseIntxHttpClient {
     pub(crate) inner: Arc<CoinbaseIntxHttpInnerClient>,

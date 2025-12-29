@@ -170,10 +170,16 @@ impl QuoteTick {
         match price_type {
             PriceType::Bid => self.bid_price,
             PriceType::Ask => self.ask_price,
-            PriceType::Mid => Price::from_raw(
-                (self.bid_price.raw + self.ask_price.raw) / 2,
-                cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
-            ),
+            PriceType::Mid => {
+                // Calculate mid avoiding overflow
+                let a = self.bid_price.raw;
+                let b = self.ask_price.raw;
+                let mid_raw = (a / 2) + (b / 2) + ((a % 2 + b % 2) / 2);
+                Price::from_raw(
+                    mid_raw,
+                    cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
+                )
+            }
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }
@@ -188,10 +194,16 @@ impl QuoteTick {
         match price_type {
             PriceType::Bid => self.bid_size,
             PriceType::Ask => self.ask_size,
-            PriceType::Mid => Quantity::from_raw(
-                (self.bid_size.raw + self.ask_size.raw) / 2,
-                cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
-            ),
+            PriceType::Mid => {
+                // Calculate mid avoiding overflow
+                let a = self.bid_size.raw;
+                let b = self.ask_size.raw;
+                let mid_raw = (a / 2) + (b / 2) + ((a % 2 + b % 2) / 2);
+                Quantity::from_raw(
+                    mid_raw,
+                    cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
+                )
+            }
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }
@@ -220,9 +232,6 @@ impl HasTsInit for QuoteTick {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
 

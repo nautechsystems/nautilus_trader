@@ -36,74 +36,14 @@ from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.live.config import LiveDataClientConfig
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.persistence.funcs import parse_filters_expr
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.config import NautilusKernelConfig
-
-
-def parse_filters_expr(s: str | None):
-    """
-    Parse a pyarrow.dataset filter expression from a string.
-
-    >>> parse_filters_expr('field("Currency") == "CHF"')
-    <pyarrow.dataset.Expression (Currency == "CHF")>
-
-    >>> parse_filters_expr("print('hello')")
-
-    >>> parse_filters_expr("None")
-
-    """
-    import re
-
-    from pyarrow.dataset import field
-
-    if not s:
-        return None
-
-    # Normalise single-quoted filters so our regex only has to reason about
-    # the double-quoted form produced by Nautilus itself. If the expression
-    # already contains double quotes we leave it unchanged to avoid corrupting
-    # mixed quoting scenarios.
-    if "'" in s and '"' not in s:
-        s = s.replace("'", '"')
-
-    # Security: Only allow very specific PyArrow field expressions
-    # Pattern matches: field("name") == "value", field("name") != "value", etc.
-    # Optional opening/closing parentheses are allowed around each comparison so
-    # we can safely compose expressions such as
-    #     (field("Currency") == "CHF") | (field("Symbol") == "USD")
-    # Supported grammar (regex-validated):
-    #     [ '(' ] field("name") <op> "literal" [ ')' ] ( ( '|' | '&' ) ... )*
-    safe_pattern = (
-        r"^(\()?"
-        r'field\("[^"]+"\)\s*[!=<>]+\s*"[^"]*"'
-        r"(\))?"
-        r'(\s*[|&]\s*(\()?field\("[^"]+"\)\s*[!=<>]+\s*"[^"]*"(\))?)*$'
-    )
-
-    if not re.match(safe_pattern, s.strip()):
-        raise ValueError(
-            f"Filter expression '{s}' is not allowed. Only field() comparisons are permitted.",
-        )
-
-    try:
-        # For now, rely on the regex validation above to guarantee safety and
-        # evaluate the expression in a minimal global namespace that only exposes
-        # the `field` helper. Built-ins are intentionally left untouched because
-        # PyArrow requires access to them (for example it imports `decimal` under
-        # the hood). Stripping them leads to a hard crash inside the C++ layer
-        # of Arrow. The expression is still safe because the regex prevents any
-        # reference other than the allowed `field(...)` comparisons.
-        allowed_globals = {"field": field}
-        return eval(s, allowed_globals, {})  # noqa: S307
-
-    except Exception as e:
-        raise ValueError(f"Failed to parse filter expression '{s}': {e}")
 
 
 class BacktestVenueConfig(NautilusConfig, frozen=True):
@@ -165,6 +105,10 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
     trade_execution : bool, default False
         If trades should be processed by the matching engine(s) (and move the market).
+    liquidity_consumption : bool, default False
+        If liquidity consumption should be tracked per price level. When enabled, fills
+        consume available liquidity which resets when fresh data arrives at that level.
+        When disabled, each iteration can fill against the full book liquidity independently.
     allow_cash_borrowing : bool, default False
         If borrowing is allowed for cash accounts (negative balances).
     frozen_account : bool, default False
@@ -198,6 +142,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     bar_execution: bool = True
     bar_adaptive_high_low_ordering: bool = False
     trade_execution: bool = False
+    liquidity_consumption: bool = False
     allow_cash_borrowing: bool = False
     frozen_account: bool = False
     price_protection_points: int = 0
@@ -228,7 +173,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         The end time for the data configuration.
         Can be an ISO 8601 format datetime string, or UNIX nanoseconds integer.
     filter_expr : str, optional
-        The additional filter expressions for the data catalog query.
+        The additional filter expressions for a data catalog query that uses pyarrow.
     client_id : str, optional
         The client ID for the data configuration.
     metadata : dict or callable, optional
@@ -276,7 +221,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             return self.data_cls
 
     @property
-    def query(self) -> dict[str, Any]:  # noqa: C901
+    def query(self) -> dict[str, Any]:
         """
         Return a catalog query object for the configuration.
 
@@ -285,47 +230,28 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         dict[str, Any]
 
         """
-        filter_expr: str | None = None
+        identifiers = []
 
         if self.data_cls is Bar:
-            used_bar_types = []
+            if self.bar_types:
+                identifiers = [str(bar_type) for bar_type in self.bar_types]
+            elif self.instrument_id and self.bar_spec:
+                identifiers = [f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"]
+            elif self.instrument_ids and self.bar_spec:
+                identifiers = [f"{instrument_id}-{self.bar_spec}-EXTERNAL" for instrument_id in self.instrument_ids]
 
-            if self.instrument_id is not None and self.bar_spec is not None:
-                bar_type = f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"
-                used_bar_types = [bar_type]
-            elif self.bar_types is not None:
-                used_bar_types = self.bar_types
-            elif self.instrument_ids is not None and self.bar_spec is not None:
-                for instrument_id in self.instrument_ids:
-                    used_bar_types.append(f"{instrument_id}-{self.bar_spec}-EXTERNAL")
-
-            if len(used_bar_types) > 0:
-                filter_expr = f'(field("bar_type") == "{used_bar_types[0]}")'
-
-                for bar_type in used_bar_types[1:]:
-                    filter_expr = f'{filter_expr} | (field("bar_type") == "{bar_type}")'
-        else:
-            filter_expr = self.filter_expr
-
-        used_identifiers = None
-
-        if self.instrument_id is not None:
-            used_identifiers = [self.instrument_id]
-        elif self.instrument_ids is not None:
-            used_identifiers = self.instrument_ids
-        elif self.bar_types is not None:
-            bar_types: list[BarType] = [
-                BarType.from_str(bar_type) if type(bar_type) is str else bar_type
-                for bar_type in self.bar_types
-            ]
-            used_identifiers = [bar_type.instrument_id for bar_type in bar_types]
+        if not identifiers:
+            if self.instrument_id:
+                identifiers = [self.instrument_id]
+            elif self.instrument_ids:
+                identifiers = self.instrument_ids
 
         return {
             "data_cls": self.data_type,
-            "identifiers": used_identifiers,
+            "identifiers": identifiers,
             "start": self.start_time,
             "end": self.end_time,
-            "filter_expr": parse_filters_expr(filter_expr),
+            "filter_expr": parse_filters_expr(self.filter_expr),
             "metadata": self.metadata,
         }
 
@@ -484,8 +410,6 @@ class FillModelConfig(NautilusConfig, frozen=True):
     ----------
     prob_fill_on_limit : float, default 1.0
         The probability of limit order filling if the market rests on its price.
-    prob_fill_on_stop : float, default 1.0
-        The probability of stop orders filling if the market rests on its price.
     prob_slippage : float, default 0.0
         The probability of order fill prices slipping by one tick.
     random_seed : int, optional
@@ -494,7 +418,6 @@ class FillModelConfig(NautilusConfig, frozen=True):
     """
 
     prob_fill_on_limit: float = 1.0
-    prob_fill_on_stop: float = 1.0
     prob_slippage: float = 0.0
     random_seed: int | None = None
 

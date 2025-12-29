@@ -85,17 +85,18 @@ cdef class MakerTakerFeeModel(FeeModel):
         Price fill_px,
         Instrument instrument,
     ):
-        cdef double notional = instrument.notional_value(
+        cdef Money notional = instrument.notional_value(
             quantity=fill_qty,
             price=fill_px,
             use_quote_for_inverse=False,
-        ).as_f64_c()
+        )
 
-        cdef double commission_f64
+        # Use Decimal arithmetic to avoid floating-point precision issues
+        cdef object commission_value
         if order.liquidity_side == LiquiditySide.MAKER:
-            commission_f64 = notional * float(instrument.maker_fee)
+            commission_value = notional.as_decimal() * instrument.maker_fee
         elif order.liquidity_side == LiquiditySide.TAKER:
-            commission_f64 = notional * float(instrument.taker_fee)
+            commission_value = notional.as_decimal() * instrument.taker_fee
         else:
             raise ValueError(
                 f"invalid `LiquiditySide`, was {liquidity_side_to_str(order.liquidity_side)}"
@@ -103,9 +104,9 @@ cdef class MakerTakerFeeModel(FeeModel):
 
         cdef Money commission
         if instrument.is_inverse:  # Not using quote for inverse (see above):
-            commission = Money(commission_f64, instrument.base_currency)
+            commission = Money(commission_value, instrument.base_currency)
         else:
-            commission = Money(commission_f64, instrument.quote_currency)
+            commission = Money(commission_value, instrument.quote_currency)
 
         return commission
 

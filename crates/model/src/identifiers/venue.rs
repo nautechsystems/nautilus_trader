@@ -161,7 +161,7 @@ impl Venue {
 
 impl Debug for Venue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
+        write!(f, "\"{}\"", self.0)
     }
 }
 
@@ -198,9 +198,6 @@ pub fn validate_blockchain_venue(venue_part: &str) -> anyhow::Result<()> {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

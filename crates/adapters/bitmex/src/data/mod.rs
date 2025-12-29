@@ -25,10 +25,9 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use nautilus_common::{
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
         DataEvent,
         data::{
@@ -43,7 +42,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_data::client::DataClient;
@@ -154,7 +153,7 @@ impl BitmexDataClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 tracing::error!("{context}: {e:?}");
             }
@@ -169,7 +168,7 @@ impl BitmexDataClient {
         let instruments = Arc::clone(&self.instruments);
         let cancellation = self.cancellation_token.clone();
 
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             tokio::pin!(stream);
 
             loop {
@@ -296,7 +295,7 @@ impl BitmexDataClient {
         let client_id = self.client_id;
         let http_client = self.http_client.clone();
 
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             let http_client = http_client;
             loop {
                 let sleep = tokio::time::sleep(interval);
@@ -340,13 +339,6 @@ impl BitmexDataClient {
         self.instrument_refresh_active = true;
         Ok(())
     }
-}
-
-fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
-    value
-        .and_then(|dt| dt.timestamp_nanos_opt())
-        .and_then(|nanos| u64::try_from(nanos).ok())
-        .map(UnixNanos::from)
 }
 
 #[async_trait::async_trait(?Send)]
@@ -837,7 +829,7 @@ impl DataClient for BitmexDataClient {
         let clock = self.clock;
         let active_only = self.config.active_only;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             let http_client = http;
             match http_client
                 .request_instruments(active_only)
@@ -912,7 +904,7 @@ impl DataClient for BitmexDataClient {
         let params = request.params.clone();
         let clock = self.clock;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match http_client
                 .request_instrument(instrument_id)
                 .await
@@ -963,7 +955,7 @@ impl DataClient for BitmexDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match http
                 .request_trades(instrument_id, start, end, limit)
                 .await
@@ -1005,7 +997,7 @@ impl DataClient for BitmexDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match http
                 .request_bars(bar_type, start, end, limit, false)
                 .await

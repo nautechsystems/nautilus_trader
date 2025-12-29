@@ -35,22 +35,55 @@ Top-of-book data, such as `QuoteTick`, `TradeTick` and `Bar`, can also be used f
 
 ## Instruments
 
-The following instrument definitions are available:
+NautilusTrader supports a variety of instrument types across spot, derivatives, and specialty markets:
 
-- `Betting`: Represents an instrument in a betting market.
-- `BinaryOption`: Represents a generic binary option instrument.
-- `Cfd`: Represents a Contract for Difference (CFD) instrument.
-- `Commodity`:  Represents a commodity instrument in a spot/cash market.
-- `CryptoFuture`: Represents a deliverable futures contract instrument, with crypto assets as underlying and for settlement.
-- `CryptoPerpetual`: Represents a crypto perpetual futures contract instrument (a.k.a. perpetual swap).
-- `CurrencyPair`: Represents a generic currency pair instrument in a spot/cash market.
-- `Equity`: Represents a generic equity instrument.
-- `FuturesContract`: Represents a generic deliverable futures contract instrument.
-- `FuturesSpread`: Represents a generic deliverable futures spread instrument.
-- `Index`: Represents a generic index instrument.
-- `OptionContract`: Represents a generic option contract instrument.
-- `OptionSpread`: Represents a generic option spread instrument.
-- `Synthetic`: Represents a synthetic instrument with prices derived from component instruments using a formula.
+```mermaid
+flowchart TD
+    I[Instrument Types]
+    I --> Spot
+    I --> Derivatives
+    I --> Other
+
+    Spot --> Equity
+    Spot --> CurrencyPair
+    Spot --> Commodity
+    Spot --> IndexInstrument
+
+    Derivatives --> Futures
+    Derivatives --> Options
+    Derivatives --> Cfd
+
+    Futures --> FuturesContract
+    Futures --> FuturesSpread
+    Futures --> CryptoFuture
+    Futures --> CryptoPerpetual
+
+    Options --> OptionContract
+    Options --> OptionSpread
+    Options --> CryptoOption
+    Options --> BinaryOption
+
+    Other --> BettingInstrument
+    Other --> SyntheticInstrument
+```
+
+| Instrument           | Description                                                                      |
+|----------------------|----------------------------------------------------------------------------------|
+| `Equity`             | Generic equity instrument.                                                       |
+| `CurrencyPair`       | Currency pair in a spot/cash market.                                             |
+| `Commodity`          | Commodity in a spot/cash market.                                                 |
+| `IndexInstrument`    | Spot index (reference price, not directly tradable).                             |
+| `FuturesContract`    | Generic deliverable futures contract.                                            |
+| `FuturesSpread`      | Deliverable futures spread.                                                      |
+| `CryptoFuture`       | Deliverable futures with crypto assets as underlying and settlement.             |
+| `CryptoPerpetual`    | Crypto perpetual futures (perpetual swap).                                       |
+| `OptionContract`     | Generic option contract.                                                         |
+| `OptionSpread`       | Generic option spread.                                                           |
+| `CryptoOption`       | Crypto option contract.                                                          |
+| `BinaryOption`       | Binary option instrument.                                                        |
+| `Cfd`                | Contract for Difference (CFD).                                                   |
+| `BettingInstrument`  | Instrument in a betting market.                                                  |
+| `SyntheticInstrument`| Synthetic instrument with prices derived from component instruments via formula. |
 
 ## Bars and aggregation
 
@@ -99,16 +132,6 @@ The platform implements various aggregation methods:
 | `WEEK`             | Aggregation of time intervals with week granularity.                       | Time         |
 | `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
 | `YEAR`             | Aggregation of time intervals with year granularity.                       | Time         |
-
-:::note
-The following bar aggregations are not currently implemented:
-
-- `VOLUME_IMBALANCE`
-- `VOLUME_RUNS`
-- `VALUE_IMBALANCE`
-- `VALUE_RUNS`
-
-:::
 
 ### Types of aggregation
 
@@ -373,7 +396,7 @@ These timestamps serve distinct purposes and help maintain precise timing inform
 | Custom event     | Time when event conditions actually occurred.         | Time when the event object was created (if internal event) or received (if external event) in Nautilus. |
 
 :::note
-The `ts_init` field represents a more general concept than just the "time of reception" for events.
+The `ts_init` field represents a more general concept than "time of reception" for events.
 It denotes the timestamp when an object, such as a data point or command, was initialized within Nautilus.
 This distinction is important because `ts_init` is not exclusive to "received events" — it applies to any internal
 initialization process.
@@ -464,6 +487,44 @@ of the Nautilus core, currently in development.
 **These PyO3 provided data objects are not compatible where the legacy Cython objects are currently used (e.g., adding directly to a `BacktestEngine`).**
 :::
 
+### Fixed-point precision and raw values
+
+NautilusTrader uses fixed-point arithmetic for `Price` and `Quantity` types to ensure precise financial calculations without floating-point errors. Understanding how raw values work is essential when creating data or working with catalogs.
+
+#### Raw value requirements
+
+When constructing `Price` or `Quantity` using `from_raw()`, the raw value **must** be a valid multiple of the scale factor for the given precision. Valid raw values should come from:
+
+- Accessing the `.raw` field of an existing value (e.g., `price.raw`).
+- Using the Nautilus fixed-point conversion functions.
+- Values from Nautilus-produced Arrow data.
+
+:::warning
+Raw values that are not valid multiples will cause a panic. The raw value must be divisible by `10^(FIXED_PRECISION - precision)` where `FIXED_PRECISION` is 9 (standard mode) or 16 (high-precision mode).
+:::
+
+#### Legacy catalog data and floating-point errors
+
+Data written to catalogs using V2 wranglers before 16th December 2025 may contain raw values with floating-point precision errors. This occurred because the wranglers used:
+
+```python
+int(value * FIXED_SCALAR)  # Introduces floating-point errors
+```
+
+For example, `int(0.67068 * 1e9)` produces `670680000000001` instead of the expected `670680000000000`. The correct approach is:
+
+```python
+round(value * 10**precision) * scale  # Correct precision-aware conversion
+```
+
+#### Automatic correction during catalog reads
+
+To maintain backward compatibility with existing catalog data, the Arrow decode path automatically corrects raw values by rounding them to the nearest valid multiple. This ensures that legacy catalogs continue to work without requiring data migration.
+
+:::note
+This automatic correction adds a small amount of overhead during data decoding. In a future version, once catalogs have been repaired or migrated, this correction will become opt-in. A catalog repair/migration script may be provided to permanently fix legacy data.
+:::
+
 ### Transformation pipeline
 
 **Process flow**:
@@ -475,17 +536,16 @@ of the Nautilus core, currently in development.
 
 The following diagram illustrates how raw data is transformed into Nautilus data structures:
 
-```
-  ┌──────────┐    ┌──────────────────────┐                  ┌──────────────────────┐
-  │          │    │                      │                  │                      │
-  │          │    │                      │                  │                      │
-  │ Raw data │    │                      │  `pd.DataFrame`  │                      │
-  │ (CSV)    ├───►│      DataLoader      ├─────────────────►│     DataWrangler     ├───► Nautilus `list[Data]`
-  │          │    │                      │                  │                      │
-  │          │    │                      │                  │                      │
-  │          │    │                      │                  │                      │
-  └──────────┘    └──────────────────────┘                  └──────────────────────┘
+```mermaid
+flowchart LR
+    raw["Raw data (CSV)"]
+    loader[DataLoader]
+    wrangler[DataWrangler]
+    output["Nautilus list[Data]"]
 
+    raw --> loader
+    loader -->|"pd.DataFrame"| wrangler
+    wrangler --> output
 ```
 
 Concretely, this would involve:
@@ -1614,7 +1674,7 @@ def subscribe_to_greeks(self):
     self.subscribe_data(DataType(GreeksData))
 
 def on_data(self, data):
-    if isinstance(GreeksData):
+    if isinstance(data, GreeksData):
         print("Data", data)
 ```
 

@@ -44,6 +44,7 @@ from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import OrderSideParser
 from nautilus_trader.adapters.betfair.common import is_session_error
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
+from nautilus_trader.adapters.betfair.constants import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
@@ -202,7 +203,9 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def _connect(self) -> None:
         await self._client.connect()
 
-        # Connections and start-up checks
+        # Sync before stream connects to prevent duplicate fills from full image
+        self._sync_fill_caches_from_orders()
+
         self._log.debug(
             "Connecting to stream, checking account currency and loading venue ID mapping...",
         )
@@ -230,6 +233,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._update_account_task = None
 
         await self._client.reconnect()
+        self._sync_fill_caches_from_orders()
         await self._stream.reconnect()
 
         account_state = await self.request_account_state()
@@ -272,6 +276,27 @@ class BetfairExecutionClient(LiveExecutionClient):
         else:
             # Other Betfair API errors (PERMISSION_DENIED, INSUFFICIENT_FUNDS, etc.)
             self._log.error(f"Betfair API error: {error}")
+
+    def _sync_fill_caches_from_orders(self) -> None:
+        orders = self._cache.orders(venue=BETFAIR_VENUE)
+        synced_count = 0
+
+        for order in orders:
+            if order.filled_qty > 0:
+                self._filled_qty_cache[order.client_order_id] = order.filled_qty
+
+                existing_trade_ids = set(self._published_executions[order.client_order_id])
+                for trade_id in order.trade_ids:
+                    if trade_id not in existing_trade_ids:
+                        self._published_executions[order.client_order_id].append(trade_id)
+
+                synced_count += 1
+
+        if synced_count > 0:
+            self._log.info(
+                f"Synced fill caches from {synced_count} order(s) with existing fills",
+                LogColor.BLUE,
+            )
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
@@ -1108,7 +1133,6 @@ class BetfairExecutionClient(LiveExecutionClient):
             return
 
         order = self._cache.order(client_order_id=client_order_id)
-        order = self._cache.order(client_order_id=client_order_id)
         if order is None:
             self._log.error(
                 f"Cannot handle update: order not found for {client_order_id!r}",
@@ -1122,18 +1146,28 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             return
 
-        # Check for any portion executed
-        if unmatched_order.sm and unmatched_order.sm > order.filled_qty:
+        sm_qty = betfair_float_to_quantity(unmatched_order.sm) if unmatched_order.sm else None
+        if sm_qty is not None and sm_qty > order.filled_qty:
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
                 fill_qty = self._determine_fill_qty(unmatched_order, order)
                 if fill_qty == 0:
-                    self._log.warning(f"Fill size determined as zero for {unmatched_order}")
+                    self._log.debug(
+                        f"Fill size determined as zero for {unmatched_order}, "
+                        f"sm={unmatched_order.sm}, order.filled_qty={order.filled_qty}",
+                    )
                     return
 
-                # Determine fill price and convert to `Price`. A ValueError can be raised if the
-                # incoming price is outside the bounds accepted by `Price`. Guard this to ensure
-                # a single bad message does not bubble up and break stream processing.
+                potential_filled = order.filled_qty + fill_qty
+                if potential_filled > order.quantity:
+                    self._log.warning(
+                        f"Rejecting potential overfill for {client_order_id!r}: "
+                        f"order.quantity={order.quantity}, order.filled_qty={order.filled_qty}, "
+                        f"fill_qty={fill_qty}, would result in filled_qty={potential_filled}. "
+                        f"sm={unmatched_order.sm}",
+                    )
+                    return
+
                 fill_price = None
 
                 try:
@@ -1193,18 +1227,28 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             return
 
-        # Check for fill
-        if unmatched_order.sm and unmatched_order.sm > order.filled_qty:
+        sm_qty = betfair_float_to_quantity(unmatched_order.sm) if unmatched_order.sm else None
+        if sm_qty is not None and sm_qty > order.filled_qty:
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
                 fill_qty = self._determine_fill_qty(unmatched_order, order)
                 if fill_qty == 0:
-                    self._log.warning(f"Fill size determined as zero for {unmatched_order}")
+                    self._log.debug(
+                        f"Fill size determined as zero for {unmatched_order}, "
+                        f"sm={unmatched_order.sm}, order.filled_qty={order.filled_qty}",
+                    )
                     return
 
-                # Determine fill price and convert to `Price`. A ValueError can be raised if the
-                # incoming price is outside the bounds accepted by `Price`. Guard this to ensure
-                # a single bad message does not bubble up and break stream processing.
+                potential_filled = order.filled_qty + fill_qty
+                if potential_filled > order.quantity:
+                    self._log.warning(
+                        f"Rejecting potential overfill for {client_order_id!r}: "
+                        f"order.quantity={order.quantity}, order.filled_qty={order.filled_qty}, "
+                        f"fill_qty={fill_qty}, would result in filled_qty={potential_filled}. "
+                        f"sm={unmatched_order.sm}",
+                    )
+                    return
+
                 fill_price = None
 
                 try:
@@ -1349,13 +1393,21 @@ class BetfairExecutionClient(LiveExecutionClient):
                 return price
 
     def _determine_fill_qty(self, unmatched_order: UnmatchedOrder, order: Order) -> Quantity:
-        prev_filled_qty = self._filled_qty_cache.get(order.client_order_id)
-        fill_qty = betfair_float_to_quantity((unmatched_order.sm or 0) - (prev_filled_qty or 0))
+        total_matched_qty = betfair_float_to_quantity(unmatched_order.sm or 0.0)
 
-        total_matched_qty = betfair_float_to_quantity(unmatched_order.sm)
+        # Use max of cache and order state to handle startup/reconnect
+        cache_filled_qty = self._filled_qty_cache.get(order.client_order_id)
+        baseline_qty = (
+            max(cache_filled_qty, order.filled_qty) if cache_filled_qty else order.filled_qty
+        )
+
+        if total_matched_qty <= baseline_qty:
+            return Quantity.zero(BETFAIR_QUANTITY_PRECISION)
+
+        fill_qty = Quantity(total_matched_qty - baseline_qty, BETFAIR_QUANTITY_PRECISION)
 
         if total_matched_qty >= order.quantity:
-            self._filled_qty_cache.pop(order.client_order_id, None)  # Done
+            self._filled_qty_cache.pop(order.client_order_id, None)
         else:
             self._filled_qty_cache[order.client_order_id] = total_matched_qty
 

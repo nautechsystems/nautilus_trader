@@ -1,0 +1,27 @@
+{
+  "feed": "book_snapshot",
+  "product_id": "PI_XBTUSD",
+  "timestamp": 1612269825817,
+  "seq": 326072249,
+  "tickSize": null,
+  "bids": [
+    {
+      "price": 34892.5,
+      "qty": 6385
+    },
+    {
+      "price": 34892,
+      "qty": 10924
+    }
+  ],
+  "asks": [
+    {
+      "price": 34911.5,
+      "qty": 20598
+    },
+    {
+      "price": 34912,
+      "qty": 2300
+    }
+  ]
+}

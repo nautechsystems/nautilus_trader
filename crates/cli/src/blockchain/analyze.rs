@@ -19,9 +19,11 @@ use nautilus_blockchain::{
     config::BlockchainDataClientConfig,
     data::core::BlockchainDataClientCore,
     exchanges::{find_dex_type_case_insensitive, get_supported_dexes_for_chain},
+    rpc::providers::check_infura_rpc_provider,
 };
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
-use nautilus_model::defi::{chain::Chain, validation::validate_address};
+use nautilus_model::defi::{PoolIdentifier, chain::Chain, validation::validate_address};
+use ustr::Ustr;
 
 use crate::opt::DatabaseConfig;
 
@@ -70,17 +72,16 @@ pub async fn run_analyze_pool(
         database.password,
         database.database,
     );
-    // Get RPC HTTP URL from CLI argument or environment variable
+    // Get RPC HTTP URL: CLI arg, Infura provider, OR RPC_HTTP_URL env var
     let rpc_http_url = rpc_url
+        .or_else(|| check_infura_rpc_provider(&chain.name))
         .or_else(|| std::env::var("RPC_HTTP_URL").ok())
-        .unwrap_or_default();
-
-    log::info!("Using RPC HTTP URL: '{rpc_http_url}'");
-    if rpc_http_url.is_empty() {
-        log::warn!(
-            "No RPC HTTP URL provided via --rpc-url or RPC_HTTP_URL environment variable - some operations may fail"
-        );
-    }
+        .unwrap_or_else(|| {
+            panic!(
+                "No RPC URL provided for {}. Set --rpc-url, INFURA_API_KEY, or RPC_HTTP_URL",
+                chain.name
+            )
+        });
 
     let config = BlockchainDataClientConfig::new(
         Arc::new(chain.to_owned()),
@@ -102,8 +103,10 @@ pub async fn run_analyze_pool(
         .register_dex_exchange(dex_type)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to register DEX exchange: {e}"))?;
+
+    let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     data_client
-        .sync_pool_events(&dex_type, &pool_address, from_block, to_block, reset)
+        .sync_pool_events(&dex_type, pool_identifier, from_block, to_block, reset)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to sync pool events: {e}"))?;
 
@@ -111,7 +114,7 @@ pub async fn run_analyze_pool(
     log::info!("Profiling pool events from database...");
     let pool = data_client
         .cache
-        .get_pool(&pool_address)
+        .get_pool(&pool_identifier)
         .expect("Pool not found in cache")
         .clone();
     let (profiler, already_valid) = data_client.bootstrap_latest_pool_profiler(&pool).await?;
@@ -125,7 +128,7 @@ pub async fn run_analyze_pool(
     );
     data_client
         .cache
-        .add_pool_snapshot(&pool.address, &snapshot)
+        .add_pool_snapshot(&pool.dex.name, &pool.pool_identifier, &snapshot)
         .await?;
     log::info!("Saved complete pool snapshot to database");
     data_client

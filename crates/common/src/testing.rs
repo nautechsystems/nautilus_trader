@@ -35,8 +35,10 @@ use crate::logging::{
 ///
 /// Returns an error if initializing the logger fails.
 pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow::Result<LogGuard> {
-    let mut config = LoggerConfig::default();
-    config.stdout_level = stdout_level.unwrap_or(log::LevelFilter::Trace);
+    let config = LoggerConfig {
+        stdout_level: stdout_level.unwrap_or(log::LevelFilter::Trace),
+        ..Default::default()
+    };
     init_logging(
         TraderId::default(),
         UUID4::new(),

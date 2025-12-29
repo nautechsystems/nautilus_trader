@@ -22,7 +22,7 @@
 //! Key responsibilities handled internally:
 //! • Request signing and header composition for private routes (HMAC-SHA256).
 //! • Rate-limiting based on the public OKX specification.
-//! • Zero-copy deserialization of large JSON payloads into domain models.
+//! • Deserialization of JSON payloads into domain models.
 //! • Conversion of raw exchange errors into the rich [`OKXHttpError`] enum.
 //!
 //! # Official documentation
@@ -60,11 +60,10 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::HttpClient,
+    http::{HttpClient, Method, StatusCode, USER_AGENT},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
-use reqwest::{Method, StatusCode, header::USER_AGENT};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
@@ -411,15 +410,18 @@ impl OKXRawHttpClient {
         authenticate: bool,
     ) -> Result<Vec<T>, OKXHttpError> {
         let url = format!("{}{path}", self.base_url);
-        let endpoint = path.to_string();
-        let method_clone = method.clone();
-        let body_clone = body.clone();
+
+        // Pre-compute rate limit keys once outside the retry closure
+        let rate_keys: Vec<String> = Self::rate_limit_keys(path)
+            .into_iter()
+            .map(|k| k.to_string())
+            .collect();
 
         let operation = || {
             let url = url.clone();
-            let method = method_clone.clone();
-            let body = body_clone.clone();
-            let endpoint = endpoint.clone();
+            let method = method.clone();
+            let body = body.clone();
+            let rate_keys = rate_keys.clone();
 
             async move {
                 // Serialize params to query string for signing (if needed)
@@ -433,9 +435,9 @@ impl OKXRawHttpClient {
 
                 // Build full path with query string for signing
                 let full_path = if query_string.is_empty() {
-                    endpoint.clone()
+                    path.to_string()
                 } else {
-                    format!("{endpoint}?{query_string}")
+                    format!("{path}?{query_string}")
                 };
 
                 let mut headers = if authenticate {
@@ -449,10 +451,6 @@ impl OKXRawHttpClient {
                     headers.insert("Content-Type".to_string(), "application/json".to_string());
                 }
 
-                let rate_keys = Self::rate_limit_keys(endpoint.as_str())
-                    .into_iter()
-                    .map(|k| k.to_string())
-                    .collect();
                 let resp = self
                     .client
                     .request_with_params(
@@ -538,7 +536,7 @@ impl OKXRawHttpClient {
 
         self.retry_manager
             .execute_with_retry_with_cancel(
-                endpoint.as_str(),
+                path,
                 operation,
                 should_retry,
                 create_error,
@@ -984,7 +982,7 @@ impl OKXRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.okx")
 )]
 pub struct OKXHttpClient {
     pub(crate) inner: Arc<OKXRawHttpClient>,
@@ -1323,6 +1321,9 @@ impl OKXHttpClient {
             }
 
             // Determine which fee fields to use based on contract type
+            // OKX fee rate convention: positive = rebate, negative = commission
+            // Nautilus convention: negative = rebate, positive = commission
+            // Negate to convert between conventions
             let (maker_fee, taker_fee) = if let Some(ref fee_rate) = fee_rate_opt {
                 let is_usdt_margined = inst.ct_type == OKXContractType::Linear;
                 let (maker_str, taker_str) = if is_usdt_margined {
@@ -1332,12 +1333,12 @@ impl OKXHttpClient {
                 };
 
                 let maker = if !maker_str.is_empty() {
-                    Decimal::from_str(maker_str).ok()
+                    Decimal::from_str(maker_str).ok().map(|v| -v)
                 } else {
                     None
                 };
                 let taker = if !taker_str.is_empty() {
-                    Decimal::from_str(taker_str).ok()
+                    Decimal::from_str(taker_str).ok().map(|v| -v)
                 } else {
                     None
                 };
@@ -1421,6 +1422,9 @@ impl OKXHttpClient {
             }
         };
 
+        // OKX fee rate convention: positive = rebate, negative = commission
+        // Nautilus convention: negative = rebate, positive = commission
+        // Negate to convert between conventions
         let (maker_fee, taker_fee) = if let Some(ref fee_rate) = fee_rate_opt {
             let is_usdt_margined = raw_inst.ct_type == OKXContractType::Linear;
             let (maker_str, taker_str) = if is_usdt_margined {
@@ -1430,12 +1434,12 @@ impl OKXHttpClient {
             };
 
             let maker = if !maker_str.is_empty() {
-                Decimal::from_str(maker_str).ok()
+                Decimal::from_str(maker_str).ok().map(|v| -v)
             } else {
                 None
             };
             let taker = if !taker_str.is_empty() {
-                Decimal::from_str(taker_str).ok()
+                Decimal::from_str(taker_str).ok().map(|v| -v)
             } else {
                 None
             };

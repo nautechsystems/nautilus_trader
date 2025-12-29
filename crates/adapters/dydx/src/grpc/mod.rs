@@ -42,7 +42,6 @@ pub mod order;
 pub mod types;
 pub mod wallet;
 
-// Re-exports
 pub use builder::TxBuilder;
 pub use client::{DydxGrpcClient, Height, TxHash};
 pub use order::{

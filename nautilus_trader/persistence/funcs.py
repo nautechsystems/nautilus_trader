@@ -90,3 +90,63 @@ def combine_filters(*filters):
             expr = expr & f
 
         return expr
+
+
+def parse_filters_expr(s: str | None):
+    """
+    Parse a pyarrow.dataset filter expression from a string.
+
+    >>> parse_filters_expr('field("Currency") == "CHF"')
+    <pyarrow.dataset.Expression (Currency == "CHF")>
+
+    >>> parse_filters_expr("print('hello')")
+
+    >>> parse_filters_expr("None")
+
+    """
+    import re
+
+    from pyarrow.dataset import field
+
+    if not s:
+        return None
+
+    # Normalise single-quoted filters so our regex only has to reason about
+    # the double-quoted form produced by Nautilus itself. If the expression
+    # already contains double quotes we leave it unchanged to avoid corrupting
+    # mixed quoting scenarios.
+    if "'" in s and '"' not in s:
+        s = s.replace("'", '"')
+
+    # Security: Only allow very specific PyArrow field expressions
+    # Pattern matches: field("name") == "value", field("name") != "value", etc.
+    # Optional opening/closing parentheses are allowed around each comparison so
+    # we can safely compose expressions such as
+    #     (field("Currency") == "CHF") | (field("Symbol") == "USD")
+    # Supported grammar (regex-validated):
+    #     [ '(' ] field("name") <op> "literal" [ ')' ] ( ( '|' | '&' ) ... )*
+    safe_pattern = (
+        r"^(\()?"
+        r'field\("[^"]+"\)\s*[!=<>]+\s*"[^"]*"'
+        r"(\))?"
+        r'(\s*[|&]\s*(\()?field\("[^"]+"\)\s*[!=<>]+\s*"[^"]*"(\))?)*$'
+    )
+
+    if not re.match(safe_pattern, s.strip()):
+        raise ValueError(
+            f"Filter expression '{s}' is not allowed. Only field() comparisons are permitted.",
+        )
+
+    try:
+        # For now, rely on the regex validation above to guarantee safety and
+        # evaluate the expression in a minimal global namespace that only exposes
+        # the `field` helper. Built-ins are intentionally left untouched because
+        # PyArrow requires access to them (for example it imports `decimal` under
+        # the hood). Stripping them leads to a hard crash inside the C++ layer
+        # of Arrow. The expression is still safe because the regex prevents any
+        # reference other than the allowed `field(...)` comparisons.
+        allowed_globals = {"field": field}
+        return eval(s, allowed_globals, {})  # noqa: S307
+
+    except Exception as e:
+        raise ValueError(f"Failed to parse filter expression '{s}': {e}")

@@ -19,7 +19,7 @@
 //! in this file.
 
 use ahash::AHashMap;
-use nautilus_core::{UnixNanos, datetime::secs_to_nanos};
+use nautilus_core::{UnixNanos, datetime::secs_to_nanos_unchecked};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
@@ -183,6 +183,23 @@ impl BaseAccount {
             .insert(currency, total_commissions + commission.as_f64());
     }
 
+    /// Returns the total commission for the specified currency.
+    #[must_use]
+    pub fn commission(&self, currency: &Currency) -> Option<Money> {
+        self.commissions
+            .get(currency)
+            .map(|&amount| Money::new(amount, *currency))
+    }
+
+    /// Returns a map of all commissions by currency.
+    #[must_use]
+    pub fn commissions(&self) -> AHashMap<Currency, Money> {
+        self.commissions
+            .iter()
+            .map(|(currency, &amount)| (*currency, Money::new(amount, *currency)))
+            .collect()
+    }
+
     pub fn base_apply(&mut self, event: AccountState) {
         self.update_balances(event.balances.clone());
         self.events.push(event);
@@ -196,7 +213,7 @@ impl BaseAccount {
     ///
     /// Panics if the purging implementation is changed and all events are purged.
     pub fn base_purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64) {
-        let lookback_ns = UnixNanos::from(secs_to_nanos(lookback_secs as f64));
+        let lookback_ns = UnixNanos::from(secs_to_nanos_unchecked(lookback_secs as f64));
 
         let mut retained_events = Vec::new();
 

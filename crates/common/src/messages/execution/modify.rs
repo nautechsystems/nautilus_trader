@@ -16,6 +16,7 @@
 use std::fmt::Display;
 
 use derive_builder::Builder;
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -38,6 +39,7 @@ pub struct ModifyOrder {
     pub trigger_price: Option<Price>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl ModifyOrder {
@@ -47,7 +49,7 @@ impl ModifyOrder {
     ///
     /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         trader_id: TraderId,
         client_id: ClientId,
         strategy_id: StrategyId,
@@ -59,6 +61,7 @@ impl ModifyOrder {
         trigger_price: Option<Price>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
@@ -72,6 +75,7 @@ impl ModifyOrder {
             trigger_price,
             command_id,
             ts_init,
+            params,
         })
     }
 }
@@ -96,8 +100,5 @@ impl Display for ModifyOrder {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {}

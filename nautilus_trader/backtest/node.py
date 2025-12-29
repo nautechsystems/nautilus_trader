@@ -404,6 +404,7 @@ class BacktestNode:
                 bar_execution=venue_config.bar_execution,
                 bar_adaptive_high_low_ordering=venue_config.bar_adaptive_high_low_ordering,
                 trade_execution=venue_config.trade_execution,
+                liquidity_consumption=venue_config.liquidity_consumption,
                 allow_cash_borrowing=venue_config.allow_cash_borrowing,
                 price_protection_points=get_price_protection_points(venue_config),
             )
@@ -529,6 +530,9 @@ class BacktestNode:
         # Create session for entire stream
         session = DataBackendSession(chunk_size=chunk_size)
 
+        # Cache file lists per catalog and data type to avoid repeated filesystem operations
+        cached_file_lists: dict[tuple[str, str | None, type], list[str]] = {}
+
         # Add query for all data configs
         for config in data_configs:
             catalog = self.load_catalog(config)
@@ -560,12 +564,26 @@ class BacktestNode:
                     for instrument_id in config.instrument_ids:
                         used_bar_types.append(f"{instrument_id}-{config.bar_spec}-EXTERNAL")
 
+            # Cache file list for this catalog/data type pair if not already cached
+            cache_key = (config.catalog_path, config.catalog_fs_protocol, config.data_type)
+            if cache_key not in cached_file_lists:
+                cached_file_lists[cache_key] = catalog.get_file_list_from_data_cls(config.data_type)
+
+            filter_files = catalog.filter_files(
+                data_cls=config.data_type,
+                file_paths=cached_file_lists[cache_key],
+                identifiers=(used_bar_types or used_instrument_ids),
+                start=used_start,
+                end=used_end,
+            )
+
             session = catalog.backend_session(
                 data_cls=config.data_type,
                 identifiers=(used_bar_types or used_instrument_ids),
                 start=used_start,
                 end=used_end,
                 session=session,
+                files=filter_files,
             )
 
         # Stream data

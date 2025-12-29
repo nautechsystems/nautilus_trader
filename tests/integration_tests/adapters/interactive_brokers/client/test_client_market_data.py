@@ -31,6 +31,7 @@ from ibapi.common import TickAttribLast
 
 from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscription
+from nautilus_trader.adapters.interactive_brokers.client.market_data import MAX_VALID_TICK_SIZE
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -349,6 +350,114 @@ async def test_ib_bar_to_nautilus_bar(ib_client):
     assert result.ts_event == 1704067200000000000
     assert result.ts_init == 1704067205000000000
     assert result.is_revision is False
+
+
+@pytest.mark.asyncio
+async def test_ib_bar_to_nautilus_bar_invalid_data(ib_client):
+    """
+    Test that invalid bar data (e.g., low > open) returns None instead of raising an
+    exception.
+
+    This prevents the strategy from crashing when IB sends corrupt data during extended
+    hours.
+
+    """
+    # Arrange
+    bar_type_str = "AAPL.NASDAQ-5-SECOND-BID-INTERNAL"
+    bar_type = BarType.from_str(bar_type_str)
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+    ts_init = 1704067205000000000
+
+    # Test case 1: low > open (the specific case from the issue)
+    bar_invalid_low_gt_open = BarData()
+    bar_invalid_low_gt_open.date = "1704067200"
+    bar_invalid_low_gt_open.open = 425.32
+    bar_invalid_low_gt_open.high = 425.70
+    bar_invalid_low_gt_open.low = 425.67  # low > open
+    bar_invalid_low_gt_open.close = 425.50
+    bar_invalid_low_gt_open.volume = Decimal(100)
+    bar_invalid_low_gt_open.wap = Decimal(-1)
+    bar_invalid_low_gt_open.barCount = -1
+
+    # Act
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_low_gt_open, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
+
+    # Test case 2: high < open
+    bar_invalid_high_lt_open = BarData()
+    bar_invalid_high_lt_open.date = "1704067200"
+    bar_invalid_high_lt_open.open = 425.50
+    bar_invalid_high_lt_open.high = 425.30  # high < open
+    bar_invalid_high_lt_open.low = 425.20
+    bar_invalid_high_lt_open.close = 425.40
+    bar_invalid_high_lt_open.volume = Decimal(100)
+    bar_invalid_high_lt_open.wap = Decimal(-1)
+    bar_invalid_high_lt_open.barCount = -1
+
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_high_lt_open, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
+
+    # Test case 3: high < low
+    bar_invalid_high_lt_low = BarData()
+    bar_invalid_high_lt_low.date = "1704067200"
+    bar_invalid_high_lt_low.open = 425.40
+    bar_invalid_high_lt_low.high = 425.30  # high < low
+    bar_invalid_high_lt_low.low = 425.50
+    bar_invalid_high_lt_low.close = 425.45
+    bar_invalid_high_lt_low.volume = Decimal(100)
+    bar_invalid_high_lt_low.wap = Decimal(-1)
+    bar_invalid_high_lt_low.barCount = -1
+
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_high_lt_low, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
+
+    # Test case 4: low > close
+    bar_invalid_low_gt_close = BarData()
+    bar_invalid_low_gt_close.date = "1704067200"
+    bar_invalid_low_gt_close.open = 425.40
+    bar_invalid_low_gt_close.high = 425.50
+    bar_invalid_low_gt_close.low = 425.45  # low > close
+    bar_invalid_low_gt_close.close = 425.42
+    bar_invalid_low_gt_close.volume = Decimal(100)
+    bar_invalid_low_gt_close.wap = Decimal(-1)
+    bar_invalid_low_gt_close.barCount = -1
+
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_low_gt_close, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
+
+    # Test case 5: high < close
+    bar_invalid_high_lt_close = BarData()
+    bar_invalid_high_lt_close.date = "1704067200"
+    bar_invalid_high_lt_close.open = 425.40
+    bar_invalid_high_lt_close.high = 425.45  # high < close
+    bar_invalid_high_lt_close.low = 425.35
+    bar_invalid_high_lt_close.close = 425.50
+    bar_invalid_high_lt_close.volume = Decimal(100)
+    bar_invalid_high_lt_close.wap = Decimal(-1)
+    bar_invalid_high_lt_close.barCount = -1
+
+    result = await ib_client._ib_bar_to_nautilus_bar(
+        bar_type, bar_invalid_high_lt_close, ts_init, is_revision=False,
+    )
+
+    # Assert
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -902,30 +1011,288 @@ async def test_realtimeBar(ib_client):
     ib_client._handle_data.assert_called_once_with(bar)
 
 
-@pytest.mark.skip(reason="Slow test - takes 60+ seconds")
 @pytest.mark.asyncio
-async def test_get_price_retrieval(ib_client):
+async def test_process_tick_price_invalid_price_ignored(ib_client):
     """
-    Test case for retrieving price data.
+    Test that invalid price (-1.0) is ignored when there's already a valid price.
     """
     # Arrange
-    # Set up the request ID and mock the necessary methods
-    ib_client._request_id_seq = 999
-    contract = IBTestContractStubs.aapl_equity_ib_contract()
-    tick_type = "MidPoint"
-    ib_client._eclient.reqMktData = MagicMock()
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {1: {}}
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+
+    # First, set a valid bid price
+    ib_client._subscription_tick_data[1][1] = 100.0  # BID_PRICE
+
+    # Act - Try to set invalid price (-1.0) for bid price
+    await ib_client.process_tick_price(
+        req_id=1,
+        tick_type=1,  # BID_PRICE
+        price=-1.0,
+        attrib=None,
+    )
+
+    # Assert - Invalid price should be ignored, original price should remain
+    assert ib_client._subscription_tick_data[1][1] == 100.0
+    ib_client._handle_data.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_tick_price_invalid_price_first_allowed(ib_client):
+    """
+    Test that invalid price (-1.0) is allowed when it's the first price received.
+    """
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {1: {}}
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+
+    # Act - Set invalid price as first price (should be allowed)
+    await ib_client.process_tick_price(
+        req_id=1,
+        tick_type=1,  # BID_PRICE
+        price=-1.0,
+        attrib=None,
+    )
+
+    # Assert - Invalid price should be stored
+    assert ib_client._subscription_tick_data[1][1] == -1.0
+
+
+@pytest.mark.asyncio
+async def test_process_tick_size_negative_size_ignored(ib_client):
+    """
+    Test that negative sizes are ignored.
+    """
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {1: {}}
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+
+    # Act - Try to set negative size
+    await ib_client.process_tick_size(
+        req_id=1,
+        tick_type=0,  # BID_SIZE
+        size=Decimal(-100),
+    )
+
+    # Assert - Negative size should be ignored
+    assert 0 not in ib_client._subscription_tick_data[1]
+    ib_client._handle_data.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_tick_size_extremely_large_size_ignored(ib_client):
+    """
+    Test that extremely large sizes (> MAX_VALID_TICK_SIZE) are ignored.
+    """
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {1: {}}
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+
+    # Act - Try to set extremely large size
+    invalid_size = MAX_VALID_TICK_SIZE + Decimal(1)
+    await ib_client.process_tick_size(
+        req_id=1,
+        tick_type=0,  # BID_SIZE
+        size=invalid_size,
+    )
+
+    # Assert - Extremely large size should be ignored
+    assert 0 not in ib_client._subscription_tick_data[1]
+    ib_client._handle_data.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_tick_size_valid_size_accepted(ib_client):
+    """
+    Test that valid sizes are accepted and stored.
+    """
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {1: {}}
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+
+    # Act - Set valid size
+    await ib_client.process_tick_size(
+        req_id=1,
+        tick_type=0,  # BID_SIZE
+        size=Decimal(100),
+    )
+
+    # Assert - Valid size should be stored
+    assert ib_client._subscription_tick_data[1][0] == 100
+
+
+@pytest.mark.asyncio
+async def test_try_create_quote_tick_all_values_present(ib_client):
+    """
+    Test that quote tick is created when all four values (bid_price, ask_price,
+    bid_size, ask_size) are present.
+    """
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {
+        1: {
+            0: 100,  # BID_SIZE
+            1: 100.01,  # BID_PRICE
+            2: 100.02,  # ASK_PRICE
+            3: 200,  # ASK_SIZE
+        },
+    }
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
 
     # Act
-    # Call the method to get the price
-    await ib_client.get_price(contract, tick_type)
+    await ib_client._try_create_quote_tick_from_market_data(mock_subscription, 1)
 
-    # Assert
-    # Verify that the market data request was made with the correct parameters
-    ib_client._eclient.reqMktData.assert_called_once_with(
-        999,
-        contract,
-        tick_type,
-        False,
-        False,
-        [],
+    # Assert - Quote tick should be created
+    ib_client._handle_data.assert_called_once()
+    call_args = ib_client._handle_data.call_args[0][0]
+    assert isinstance(call_args, QuoteTick)
+    assert call_args.bid_price == Price(100.01, precision=2)
+    assert call_args.ask_price == Price(100.02, precision=2)
+    assert call_args.bid_size == Quantity(100, precision=0)
+    assert call_args.ask_size == Quantity(200, precision=0)
+
+
+@pytest.mark.asyncio
+async def test_try_create_quote_tick_missing_size_not_created(ib_client):
+    """
+    Test that quote tick is NOT created when sizes are missing (None).
+    """
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {
+        1: {
+            1: 100.01,  # BID_PRICE
+            2: 100.02,  # ASK_PRICE
+            # Missing sizes (0 and 3)
+        },
+    }
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+
+    # Act
+    await ib_client._try_create_quote_tick_from_market_data(mock_subscription, 1)
+
+    # Assert - Quote tick should NOT be created
+    ib_client._handle_data.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_try_create_quote_tick_missing_price_not_created(ib_client):
+    """
+    Test that quote tick is NOT created when prices are missing (None).
+    """
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {
+        1: {
+            0: 100,  # BID_SIZE
+            3: 200,  # ASK_SIZE
+            # Missing prices (1 and 2)
+        },
+    }
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+
+    # Act
+    await ib_client._try_create_quote_tick_from_market_data(mock_subscription, 1)
+
+    # Assert - Quote tick should NOT be created
+    ib_client._handle_data.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_tick_price_and_size_creates_quote_tick(ib_client):
+    """
+    Test that processing both price and size data creates a quote tick when all values
+    are present.
+    """
+    # Arrange
+    ib_client._clock.set_time(1704067205000000000)
+    mock_subscription = Mock(spec=Subscription)
+    mock_subscription.name = ["AAPL.NASDAQ"]
+    ib_client._subscriptions = Mock()
+    ib_client._subscriptions.get.return_value = mock_subscription
+    ib_client._handle_data = AsyncMock()
+    ib_client._subscription_tick_data = {1: {}}
+    ib_client._cache.add_instrument(IBTestContractStubs.aapl_instrument())
+
+    # Act - Process bid price
+    await ib_client.process_tick_price(
+        req_id=1,
+        tick_type=1,  # BID_PRICE
+        price=100.01,
+        attrib=None,
     )
+
+    # Process ask price
+    await ib_client.process_tick_price(
+        req_id=1,
+        tick_type=2,  # ASK_PRICE
+        price=100.02,
+        attrib=None,
+    )
+
+    # Process bid size
+    await ib_client.process_tick_size(
+        req_id=1,
+        tick_type=0,  # BID_SIZE
+        size=Decimal(100),
+    )
+
+    # Process ask size (this should trigger quote tick creation)
+    await ib_client.process_tick_size(
+        req_id=1,
+        tick_type=3,  # ASK_SIZE
+        size=Decimal(200),
+    )
+
+    # Assert - Quote tick should be created after all values are present
+    assert ib_client._handle_data.call_count == 1
+    call_args = ib_client._handle_data.call_args[0][0]
+    assert isinstance(call_args, QuoteTick)
+    assert call_args.bid_price == Price(100.01, precision=2)
+    assert call_args.ask_price == Price(100.02, precision=2)
+    assert call_args.bid_size == Quantity(100, precision=0)
+    assert call_args.ask_size == Quantity(200, precision=0)

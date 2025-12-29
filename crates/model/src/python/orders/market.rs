@@ -325,9 +325,7 @@ impl MarketOrder {
         let time_in_force = get_required_parsed(values, "time_in_force", |s| {
             s.parse::<TimeInForce>().map_err(|e| e.to_string())
         })?;
-        let init_id = get_required_parsed(values, "init_id", |s| {
-            s.parse::<UUID4>().map_err(|e| e.to_string())
-        })?;
+        let init_id = get_required_parsed(values, "init_id", |s| s.parse::<UUID4>())?;
         let ts_init = get_required::<u64>(values, "ts_init")?;
         let is_reduce_only = get_required::<bool>(values, "is_reduce_only")?;
         let is_quote_quantity = get_required::<bool>(values, "is_quote_quantity")?;

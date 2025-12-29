@@ -218,16 +218,16 @@ impl OrderStatus {
             (Self::Submitted, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::Submitted, OrderEventAny::Canceled(_)) => Self::Canceled,  // FOK and IOC cases
             (Self::Submitted, OrderEventAny::Accepted(_)) => Self::Accepted,
-            (Self::Submitted, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::Submitted, OrderEventAny::Updated(_)) => Self::Submitted,
+            (Self::Submitted, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::Accepted, OrderEventAny::Rejected(_)) => Self::Rejected,  // StopLimit order
             (Self::Accepted, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::Accepted, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::Accepted, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::Accepted, OrderEventAny::Triggered(_)) => Self::Triggered,
+            (Self::Accepted, OrderEventAny::Updated(_)) => Self::Accepted,  // Updates should preserve state
             (Self::Accepted, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::Accepted, OrderEventAny::Filled(_)) => Self::Filled,
-            (Self::Accepted, OrderEventAny::Updated(_)) => Self::Accepted,  // Updates should preserve state
             (Self::Canceled, OrderEventAny::Filled(_)) => Self::Filled,  // Real world possibility
             (Self::PendingUpdate, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::PendingUpdate, OrderEventAny::Accepted(_)) => Self::Accepted,
@@ -251,12 +251,14 @@ impl OrderStatus {
             (Self::Triggered, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::Triggered, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::Triggered, OrderEventAny::Filled(_)) => Self::Filled,
+            (Self::Triggered, OrderEventAny::Updated(_)) => Self::Triggered,
             (Self::PartiallyFilled, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::PartiallyFilled, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::PartiallyFilled, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::PartiallyFilled, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::PartiallyFilled, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::PartiallyFilled, OrderEventAny::Accepted(_)) => Self::Accepted,
+            (Self::PartiallyFilled, OrderEventAny::Updated(_)) => Self::PartiallyFilled,
             _ => return Err(OrderError::InvalidStateTransition),
         };
         Ok(new_state)
@@ -341,8 +343,10 @@ pub trait Order: 'static + Send {
     fn events(&self) -> Vec<&OrderEventAny>;
 
     fn last_event(&self) -> &OrderEventAny {
-        // SAFETY: Unwrap safe as `Order` specification guarantees at least one event (`OrderInitialized`)
-        self.events().last().unwrap()
+        // SAFETY: Order specification guarantees at least one event (OrderInitialized)
+        self.events()
+            .last()
+            .expect("Order invariant violated: no events")
     }
 
     fn event_count(&self) -> usize {
@@ -403,7 +407,7 @@ pub trait Order: 'static + Send {
                 .is_some_and(|spawn_id| self.client_order_id() == spawn_id)
     }
 
-    fn is_secondary(&self) -> bool {
+    fn is_spawned(&self) -> bool {
         self.exec_algorithm_id().is_some()
             && self
                 .exec_spawn_id()
@@ -476,11 +480,6 @@ pub trait Order: 'static + Send {
 
     fn is_pending_cancel(&self) -> bool {
         self.status() == OrderStatus::PendingCancel
-    }
-
-    fn is_spawned(&self) -> bool {
-        self.exec_spawn_id()
-            .is_some_and(|exec_spawn_id| exec_spawn_id != self.client_order_id())
     }
 
     fn to_own_book_order(&self) -> OwnBookOrder {
@@ -709,8 +708,8 @@ impl OrderCore {
             OrderEventAny::Accepted(event) => self.accepted(event),
             OrderEventAny::PendingUpdate(event) => self.pending_update(event),
             OrderEventAny::PendingCancel(event) => self.pending_cancel(event),
-            OrderEventAny::ModifyRejected(event) => self.modify_rejected(event),
-            OrderEventAny::CancelRejected(event) => self.cancel_rejected(event),
+            OrderEventAny::ModifyRejected(event) => self.modify_rejected(event)?,
+            OrderEventAny::CancelRejected(event) => self.cancel_rejected(event)?,
             OrderEventAny::Updated(event) => self.updated(event),
             OrderEventAny::Triggered(event) => self.triggered(event),
             OrderEventAny::Canceled(event) => self.canceled(event),
@@ -759,16 +758,14 @@ impl OrderCore {
         // Do nothing else
     }
 
-    fn modify_rejected(&mut self, _event: &OrderModifyRejected) {
-        self.status = self
-            .previous_status
-            .unwrap_or_else(|| panic!("{}", OrderError::NoPreviousState));
+    fn modify_rejected(&mut self, _event: &OrderModifyRejected) -> Result<(), OrderError> {
+        self.status = self.previous_status.ok_or(OrderError::NoPreviousState)?;
+        Ok(())
     }
 
-    fn cancel_rejected(&mut self, _event: &OrderCancelRejected) {
-        self.status = self
-            .previous_status
-            .unwrap_or_else(|| panic!("{}", OrderError::NoPreviousState));
+    fn cancel_rejected(&mut self, _event: &OrderCancelRejected) -> Result<(), OrderError> {
+        self.status = self.previous_status.ok_or(OrderError::NoPreviousState)?;
+        Ok(())
     }
 
     fn triggered(&mut self, _event: &OrderTriggered) {}
@@ -929,9 +926,6 @@ impl OrderCore {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -944,6 +938,7 @@ mod tests {
             accepted::OrderAcceptedBuilder, canceled::OrderCanceledBuilder,
             denied::OrderDeniedBuilder, filled::OrderFilledBuilder,
             initialized::OrderInitializedBuilder, submitted::OrderSubmittedBuilder,
+            triggered::OrderTriggeredBuilder, updated::OrderUpdatedBuilder,
         },
         orders::MarketOrder,
     };
@@ -1124,11 +1119,11 @@ mod tests {
             .into();
 
         assert!(order.is_primary());
-        assert!(!order.is_secondary());
+        assert!(!order.is_spawned());
     }
 
     #[rstest]
-    fn test_order_is_secondary() {
+    fn test_order_is_spawned() {
         let order: MarketOrder = OrderInitializedBuilder::default()
             .exec_algorithm_id(Some(ExecAlgorithmId::from("ALGO-001")))
             .exec_spawn_id(Some(ClientOrderId::from("O-002")))
@@ -1138,7 +1133,7 @@ mod tests {
             .into();
 
         assert!(!order.is_primary());
-        assert!(order.is_secondary());
+        assert!(order.is_spawned());
     }
 
     #[rstest]
@@ -1521,5 +1516,68 @@ mod tests {
         assert_eq!(order.filled_qty(), Quantity::from(100_000));
         assert_eq!(order.status(), OrderStatus::Filled);
         assert_eq!(order.trade_ids.len(), 2);
+    }
+
+    #[rstest]
+    fn test_partially_filled_order_can_be_updated() {
+        // Test that a partially filled order can receive an Updated event
+        // and remain in PartiallyFilled status
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let partial_fill = OrderFilledBuilder::default()
+            .last_qty(Quantity::from(40_000))
+            .build()
+            .unwrap();
+        let updated = OrderUpdatedBuilder::default()
+            .quantity(Quantity::from(80_000)) // Reduce to 80k (still > 40k filled)
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(partial_fill)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(40_000));
+
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.quantity(), Quantity::from(80_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(40_000)); // 80k - 40k filled
+    }
+
+    #[rstest]
+    fn test_triggered_order_can_be_updated() {
+        // Test that a triggered order can receive an Updated event
+        // and remain in Triggered status
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let triggered = OrderTriggeredBuilder::default().build().unwrap();
+        let updated = OrderUpdatedBuilder::default()
+            .quantity(Quantity::from(80_000))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Triggered(triggered)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Triggered);
+
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Triggered);
+        assert_eq!(order.quantity(), Quantity::from(80_000));
     }
 }

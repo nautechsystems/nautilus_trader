@@ -1,0 +1,23 @@
+{
+  "type": "channel_data",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 5,
+  "channel": "v4_markets",
+  "version": "1.0.0",
+  "contents": {
+    "oraclePrices": {
+      "BTC-USD": {
+        "oraclePrice": "43300.00",
+        "effectiveAt": "2024-01-01T00:01:00.000Z",
+        "effectiveAtHeight": "12345679",
+        "marketId": 0
+      },
+      "ETH-USD": {
+        "oraclePrice": "2255.00",
+        "effectiveAt": "2024-01-01T00:01:00.000Z",
+        "effectiveAtHeight": "12345679",
+        "marketId": 1
+      }
+    }
+  }
+}

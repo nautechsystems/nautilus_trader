@@ -144,9 +144,7 @@ impl AccountState {
             balances,
             margins,
             reported,
-            get_required_parsed(values, "event_id", |s| {
-                UUID4::from_str(&s).map_err(|e| e.to_string())
-            })?,
+            get_required_parsed(values, "event_id", |s| UUID4::from_str(&s))?,
             ts_event.into(),
             ts_init.into(),
             Some(get_required_parsed(values, "base_currency", |s| {

@@ -27,10 +27,12 @@ pub struct KrakenResponse<T> {
 }
 
 impl<T> KrakenResponse<T> {
+    /// Returns true if the response indicates success.
     pub fn is_success(&self) -> bool {
         self.success || (self.error.is_none() || self.error.as_ref().is_some_and(|e| e.is_empty()))
     }
 
+    /// Returns the error message if present.
     pub fn error_message(&self) -> Option<String> {
         self.error
             .as_ref()

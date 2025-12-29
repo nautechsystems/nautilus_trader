@@ -18,7 +18,7 @@
 use std::convert::TryFrom;
 
 use anyhow::Context;
-use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick,
@@ -42,6 +42,7 @@ use super::messages::{
     BybitWsTickerOptionMsg, BybitWsTrade,
 };
 use crate::common::{
+    consts::BYBIT_TOPIC_KLINE,
     enums::{
         BybitOrderStatus, BybitOrderType, BybitStopOrderType, BybitTimeInForce,
         BybitTriggerDirection,
@@ -74,9 +75,9 @@ pub fn parse_topic(topic: &str) -> anyhow::Result<Vec<&str>> {
 /// Returns an error if the topic format is invalid.
 pub fn parse_kline_topic(topic: &str) -> anyhow::Result<(&str, &str)> {
     let parts = parse_topic(topic)?;
-    if parts.len() != 3 || parts[0] != "kline" {
+    if parts.len() != 3 || parts[0] != BYBIT_TOPIC_KLINE {
         anyhow::bail!(
-            "Invalid kline topic format: expected 'kline.{{interval}}.{{symbol}}', was '{topic}'"
+            "Invalid kline topic format: expected '{BYBIT_TOPIC_KLINE}.{{interval}}.{{symbol}}', was '{topic}'"
         );
     }
     Ok((parts[1], parts[2]))
@@ -126,7 +127,13 @@ pub fn parse_orderbook_deltas(
     let sequence = u64::try_from(depth.seq)
         .context("received negative sequence in Bybit order book message")?;
 
-    let mut deltas = Vec::new();
+    let total_levels = depth.b.len() + depth.a.len();
+    let capacity = if is_snapshot {
+        total_levels + 1
+    } else {
+        total_levels
+    };
+    let mut deltas = Vec::with_capacity(capacity);
 
     if is_snapshot {
         deltas.push(OrderBookDelta::clear(
@@ -136,8 +143,6 @@ pub fn parse_orderbook_deltas(
             ts_init,
         ));
     }
-
-    let total_levels = depth.b.len() + depth.a.len();
     let mut processed = 0_usize;
 
     let mut push_level = |values: &[String], side: OrderSide| -> anyhow::Result<()> {
@@ -364,7 +369,10 @@ pub(crate) fn parse_millis_i64(value: i64, field: &str) -> anyhow::Result<UnixNa
     if value < 0 {
         Err(anyhow::anyhow!("{field} must be non-negative, was {value}"))
     } else {
-        parse_millis_timestamp(&value.to_string(), field)
+        let nanos = (value as u64)
+            .checked_mul(NANOSECONDS_IN_MILLISECOND)
+            .ok_or_else(|| anyhow::anyhow!("millisecond timestamp overflowed"))?;
+        Ok(UnixNanos::from(nanos))
     }
 }
 
@@ -783,10 +791,6 @@ pub fn parse_ws_account_state(
     ))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -983,7 +987,9 @@ mod tests {
     }
 
     #[rstest]
-    fn parse_ws_kline_into_bar() {
+    #[case::timestamp_on_open(false, 1_672_324_800_000_000_000)]
+    #[case::timestamp_on_close(true, 1_672_325_100_000_000_000)]
+    fn parse_ws_kline_into_bar(#[case] timestamp_on_close: bool, #[case] expected_ts_event: u64) {
         use std::num::NonZero;
 
         let instrument = linear_instrument();
@@ -998,7 +1004,7 @@ mod tests {
         };
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
 
-        let bar = parse_ws_kline_bar(kline, &instrument, bar_type, false, TS).unwrap();
+        let bar = parse_ws_kline_bar(kline, &instrument, bar_type, timestamp_on_close, TS).unwrap();
 
         assert_eq!(bar.bar_type, bar_type);
         assert_eq!(bar.open, instrument.make_price(16649.5));
@@ -1006,7 +1012,7 @@ mod tests {
         assert_eq!(bar.low, instrument.make_price(16608.0));
         assert_eq!(bar.close, instrument.make_price(16677.0));
         assert_eq!(bar.volume, instrument.make_qty(2.081, None));
-        assert_eq!(bar.ts_event, UnixNanos::new(1_672_324_800_000_000_000));
+        assert_eq!(bar.ts_event, UnixNanos::new(expected_ts_event));
         assert_eq!(bar.ts_init, TS);
     }
 
@@ -1128,10 +1134,10 @@ mod tests {
             serde_json::from_str(&instruments_json).unwrap();
         let eth_def = &instruments_response.result.list[1]; // ETHUSDT is second in the list
         let fee_rate = crate::http::models::BybitFeeRate {
-            symbol: ustr::Ustr::from("ETHUSDT"),
+            symbol: Ustr::from("ETHUSDT"),
             taker_fee_rate: "0.00055".to_string(),
             maker_fee_rate: "0.0001".to_string(),
-            base_coin: Some(ustr::Ustr::from("ETH")),
+            base_coin: Some(Ustr::from("ETH")),
         };
         let instrument =
             crate::common::parse::parse_linear_instrument(eth_def, &fee_rate, TS, TS).unwrap();

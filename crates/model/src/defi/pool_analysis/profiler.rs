@@ -336,7 +336,7 @@ impl PoolProfiler {
             self.pool.chain.clone(),
             self.pool.dex.clone(),
             self.pool.instrument_id,
-            self.pool.address,
+            self.pool.pool_identifier,
             block.number,
             block.transaction_hash,
             block.transaction_index,
@@ -882,7 +882,7 @@ impl PoolProfiler {
             self.pool.chain.clone(),
             self.pool.dex.clone(),
             self.pool.instrument_id,
-            self.pool.address,
+            self.pool.pool_identifier,
             PoolLiquidityUpdateType::Mint,
             block.number,
             block.transaction_hash,
@@ -992,7 +992,7 @@ impl PoolProfiler {
             self.pool.chain.clone(),
             self.pool.dex.clone(),
             self.pool.instrument_id,
-            self.pool.address,
+            self.pool.pool_identifier,
             PoolLiquidityUpdateType::Burn,
             block.number,
             block.transaction_hash,
@@ -1032,7 +1032,6 @@ impl PoolProfiler {
         ) {
             return Ok(());
         }
-
         let position_key =
             PoolPosition::get_position_key(&collect.owner, collect.tick_lower, collect.tick_upper);
         if let Some(position) = self.positions.get_mut(&position_key) {
@@ -1135,7 +1134,7 @@ impl PoolProfiler {
             self.pool.chain.clone(),
             self.pool.dex.clone(),
             self.pool.instrument_id,
-            self.pool.address,
+            self.pool.pool_identifier,
             block.number,
             block.transaction_hash,
             block.transaction_index,

@@ -15,6 +15,8 @@
 
 //! BitMEX-specific enumerations shared by HTTP and WebSocket components.
 
+use std::borrow::Cow;
+
 use nautilus_model::enums::{
     ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
 };
@@ -567,7 +569,12 @@ impl From<BitmexLiquidityIndicator> for LiquiditySide {
     }
 }
 
-/// Represents BitMEX instrument types.
+/// Represents BitMEX instrument types (CFI codes).
+///
+/// The CFI (Classification of Financial Instruments) code is a 6-character code
+/// following ISO 10962 standard that classifies financial instruments.
+///
+/// See: <https://support.bitmex.com/hc/en-gb/articles/6299296145565-What-are-the-Typ-Values-for-Instrument-endpoint>
 #[derive(
     Copy,
     Clone,
@@ -583,18 +590,29 @@ impl From<BitmexLiquidityIndicator> for LiquiditySide {
 )]
 #[serde(rename_all = "UPPERCASE")]
 pub enum BitmexInstrumentType {
+    /// Legacy futures (settled).
     #[serde(rename = "FXXXS")]
-    Unknown1, // TODO: Determine name (option)
+    LegacyFutures,
 
+    /// Legacy futures (settled, variant).
+    #[serde(rename = "FXXXN")]
+    LegacyFuturesN,
+
+    /// Futures spreads (settled).
     #[serde(rename = "FMXXS")]
-    Unknown2, // TODO: Determine name (option)
+    FuturesSpreads,
 
     /// Prediction Markets (non-standardized financial future on index, cash settled).
     /// CFI code FFICSX - traders predict outcomes of events.
     #[serde(rename = "FFICSX")]
     PredictionMarket,
 
-    /// Perpetual Contracts.
+    /// Stock-based Perpetual Contracts (e.g., SPY, equity derivatives).
+    /// CFI code FFSCSX - financial future on stocks, cash settled.
+    #[serde(rename = "FFSCSX")]
+    StockPerpetual,
+
+    /// Perpetual Contracts (crypto).
     #[serde(rename = "FFWCSX")]
     PerpetualContract,
 
@@ -602,13 +620,29 @@ pub enum BitmexInstrumentType {
     #[serde(rename = "FFWCSF")]
     PerpetualContractFx,
 
-    /// Spot.
+    /// Futures (calendar futures, cash settled).
+    #[serde(rename = "FFCCSX")]
+    Futures,
+
+    /// Spot trading pairs.
     #[serde(rename = "IFXXXP")]
     Spot,
 
-    /// Futures.
-    #[serde(rename = "FFCCSX")]
-    Futures,
+    /// Call options (European, cash settled).
+    #[serde(rename = "OCECCS")]
+    CallOption,
+
+    /// Put options (European, cash settled).
+    #[serde(rename = "OPECCS")]
+    PutOption,
+
+    /// Swap rate contracts (yield products).
+    #[serde(rename = "SRMCSX")]
+    SwapRate,
+
+    /// Reference basket contracts.
+    #[serde(rename = "RCSXXX")]
+    ReferenceBasket,
 
     /// BitMEX Basket Index.
     #[serde(rename = "MRBXXX")]
@@ -629,6 +663,14 @@ pub enum BitmexInstrumentType {
     /// BitMEX Volatility Index.
     #[serde(rename = "MRIXXX")]
     VolatilityIndex,
+
+    /// BitMEX Stock/Securities Index.
+    #[serde(rename = "MRSXXX")]
+    StockIndex,
+
+    /// BitMEX Yield/Dividend Index.
+    #[serde(rename = "MRVDXX")]
+    YieldIndex,
 }
 
 /// Represents the different types of instrument subscriptions available on BitMEX.
@@ -661,16 +703,16 @@ pub enum BitmexProductType {
 }
 
 impl BitmexProductType {
-    /// Converts the product type to its websocket subscription string
+    /// Converts the product type to its websocket subscription string.
     #[must_use]
-    pub fn to_subscription(&self) -> String {
+    pub fn to_subscription(&self) -> Cow<'static, str> {
         match self {
-            Self::All => "instrument".to_string(),
-            Self::Specific(symbol) => format!("instrument:{symbol}"),
-            Self::Contracts => "CONTRACTS".to_string(),
-            Self::Indices => "INDICES".to_string(),
-            Self::Derivatives => "DERIVATIVES".to_string(),
-            Self::Spot => "SPOT".to_string(),
+            Self::All => Cow::Borrowed("instrument"),
+            Self::Specific(symbol) => Cow::Owned(format!("instrument:{symbol}")),
+            Self::Contracts => Cow::Borrowed("CONTRACTS"),
+            Self::Indices => Cow::Borrowed("INDICES"),
+            Self::Derivatives => Cow::Borrowed("DERIVATIVES"),
+            Self::Spot => Cow::Borrowed("SPOT"),
         }
     }
 }
@@ -726,7 +768,17 @@ pub enum BitmexTickDirection {
 
 /// Represents the state of an instrument.
 #[derive(
-    Clone, Debug, Display, PartialEq, Eq, AsRefStr, EnumIter, EnumString, Serialize, Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    PartialEq,
+    Eq,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum BitmexInstrumentState {
     /// Instrument is open for trading.
@@ -737,6 +789,8 @@ pub enum BitmexInstrumentState {
     Unlisted,
     /// Instrument is settled.
     Settled,
+    /// Instrument is delisted.
+    Delisted,
 }
 
 /// Represents the fair price calculation method.
@@ -759,15 +813,13 @@ pub enum BitmexFairMethod {
 pub enum BitmexMarkMethod {
     /// Fair price.
     FairPrice,
+    /// Fair price for stock-based perpetuals.
+    FairPriceStox,
     /// Last price.
     LastPrice,
     /// Composite index.
     CompositeIndex,
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -838,6 +890,7 @@ mod tests {
 
     #[rstest]
     fn test_instrument_type_serialization() {
+        // Tradeable instruments
         assert_eq!(
             serde_json::to_string(&BitmexInstrumentType::PerpetualContract).unwrap(),
             r#""FFWCSX""#
@@ -847,6 +900,10 @@ mod tests {
             r#""FFWCSF""#
         );
         assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::StockPerpetual).unwrap(),
+            r#""FFSCSX""#
+        );
+        assert_eq!(
             serde_json::to_string(&BitmexInstrumentType::Spot).unwrap(),
             r#""IFXXXP""#
         );
@@ -854,6 +911,42 @@ mod tests {
             serde_json::to_string(&BitmexInstrumentType::Futures).unwrap(),
             r#""FFCCSX""#
         );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::PredictionMarket).unwrap(),
+            r#""FFICSX""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::CallOption).unwrap(),
+            r#""OCECCS""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::PutOption).unwrap(),
+            r#""OPECCS""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::SwapRate).unwrap(),
+            r#""SRMCSX""#
+        );
+
+        // Legacy instruments
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::LegacyFutures).unwrap(),
+            r#""FXXXS""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::LegacyFuturesN).unwrap(),
+            r#""FXXXN""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::FuturesSpreads).unwrap(),
+            r#""FMXXS""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::ReferenceBasket).unwrap(),
+            r#""RCSXXX""#
+        );
+
+        // Index types
         assert_eq!(
             serde_json::to_string(&BitmexInstrumentType::BasketIndex).unwrap(),
             r#""MRBXXX""#
@@ -875,13 +968,18 @@ mod tests {
             r#""MRIXXX""#
         );
         assert_eq!(
-            serde_json::to_string(&BitmexInstrumentType::PredictionMarket).unwrap(),
-            r#""FFICSX""#
+            serde_json::to_string(&BitmexInstrumentType::StockIndex).unwrap(),
+            r#""MRSXXX""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BitmexInstrumentType::YieldIndex).unwrap(),
+            r#""MRVDXX""#
         );
     }
 
     #[rstest]
     fn test_instrument_type_deserialization() {
+        // Tradeable instruments
         assert_eq!(
             serde_json::from_str::<BitmexInstrumentType>(r#""FFWCSX""#).unwrap(),
             BitmexInstrumentType::PerpetualContract
@@ -891,6 +989,10 @@ mod tests {
             BitmexInstrumentType::PerpetualContractFx
         );
         assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""FFSCSX""#).unwrap(),
+            BitmexInstrumentType::StockPerpetual
+        );
+        assert_eq!(
             serde_json::from_str::<BitmexInstrumentType>(r#""IFXXXP""#).unwrap(),
             BitmexInstrumentType::Spot
         );
@@ -898,6 +1000,42 @@ mod tests {
             serde_json::from_str::<BitmexInstrumentType>(r#""FFCCSX""#).unwrap(),
             BitmexInstrumentType::Futures
         );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""FFICSX""#).unwrap(),
+            BitmexInstrumentType::PredictionMarket
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""OCECCS""#).unwrap(),
+            BitmexInstrumentType::CallOption
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""OPECCS""#).unwrap(),
+            BitmexInstrumentType::PutOption
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""SRMCSX""#).unwrap(),
+            BitmexInstrumentType::SwapRate
+        );
+
+        // Legacy instruments
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""FXXXS""#).unwrap(),
+            BitmexInstrumentType::LegacyFutures
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""FXXXN""#).unwrap(),
+            BitmexInstrumentType::LegacyFuturesN
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""FMXXS""#).unwrap(),
+            BitmexInstrumentType::FuturesSpreads
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""RCSXXX""#).unwrap(),
+            BitmexInstrumentType::ReferenceBasket
+        );
+
+        // Index types
         assert_eq!(
             serde_json::from_str::<BitmexInstrumentType>(r#""MRBXXX""#).unwrap(),
             BitmexInstrumentType::BasketIndex
@@ -919,8 +1057,12 @@ mod tests {
             BitmexInstrumentType::VolatilityIndex
         );
         assert_eq!(
-            serde_json::from_str::<BitmexInstrumentType>(r#""FFICSX""#).unwrap(),
-            BitmexInstrumentType::PredictionMarket
+            serde_json::from_str::<BitmexInstrumentType>(r#""MRSXXX""#).unwrap(),
+            BitmexInstrumentType::StockIndex
+        );
+        assert_eq!(
+            serde_json::from_str::<BitmexInstrumentType>(r#""MRVDXX""#).unwrap(),
+            BitmexInstrumentType::YieldIndex
         );
 
         // Error case

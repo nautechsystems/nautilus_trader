@@ -1,0 +1,6 @@
+{
+  "type": "error",
+  "message": "Invalid subscription: channel 'invalid_channel' not found",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 1
+}

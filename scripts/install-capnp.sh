@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Desired version for Linux build (should match what developers use on macOS/etc)
-CAPNP_VERSION="1.2.0"
+# Read version from capnp-version file (single source of truth)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CAPNP_VERSION_FILE="$REPO_ROOT/capnp-version"
+
+if [[ -f "$CAPNP_VERSION_FILE" ]]; then
+  CAPNP_VERSION=$(cat "$CAPNP_VERSION_FILE" | tr -d '[:space:]')
+else
+  echo "Error: capnp-version file not found at $CAPNP_VERSION_FILE"
+  exit 1
+fi
 
 # Detect OS
 OS="$(uname -s)"
@@ -31,9 +40,9 @@ if [[ "${OS_TYPE}" == "Linux" ]]; then
   pushd "$TMP_DIR"
 
   echo "Downloading Cap'n Proto ${CAPNP_VERSION}..."
-  curl --retry 5 --retry-delay 5 -sO https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz
-  tar zxf capnproto-c++-${CAPNP_VERSION}.tar.gz
-  cd capnproto-c++-${CAPNP_VERSION}
+  curl --retry 5 --retry-delay 5 -sO "https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz"
+  tar zxf "capnproto-c++-${CAPNP_VERSION}.tar.gz"
+  cd "capnproto-c++-${CAPNP_VERSION}"
 
   echo "Configuring and building..."
   INSTALL_PREFIX="${CAPNP_PREFIX:-/usr/local}"
@@ -60,27 +69,58 @@ if [[ "${OS_TYPE}" == "Linux" ]]; then
   rm -rf "$TMP_DIR"
 
 elif [[ "${OS_TYPE}" == "macOS" ]]; then
-  echo "Installing Cap'n Proto via Homebrew on macOS..."
-  if ! command -v brew &> /dev/null; then
-    echo "Error: Homebrew is not installed."
-    exit 1
+  echo "Installing Cap'n Proto on macOS..."
+
+  # Check if already installed with correct version
+  if command -v capnp &> /dev/null; then
+    INSTALLED_VER=$(capnp --version | awk '{print $NF}')
+    if [[ "$INSTALLED_VER" == "$CAPNP_VERSION" ]]; then
+      echo "Cap'n Proto $CAPNP_VERSION is already installed."
+      exit 0
+    fi
+    echo "Installed version ($INSTALLED_VER) differs from required ($CAPNP_VERSION)"
   fi
 
-  # Retry brew install as it can sometimes fail transiently
-  MAX_ATTEMPTS=5
-  for ((i = 1; i <= MAX_ATTEMPTS; i++)); do
-    if brew install capnp; then
-      echo "Brew install succeeded."
-      break
-    fi
+  # Try Homebrew first
+  if command -v brew &> /dev/null; then
+    echo "Trying Homebrew..."
+    MAX_ATTEMPTS=3
+    for ((i = 1; i <= MAX_ATTEMPTS; i++)); do
+      if brew install capnp 2> /dev/null || brew upgrade capnp 2> /dev/null; then
+        INSTALLED_VER=$(capnp --version | awk '{print $NF}')
+        if [[ "$INSTALLED_VER" == "$CAPNP_VERSION" ]]; then
+          echo "Homebrew installed correct version."
+          break
+        else
+          echo "Homebrew version ($INSTALLED_VER) differs from required ($CAPNP_VERSION)"
+          echo "Building from source instead..."
+          break
+        fi
+      fi
+      echo "Brew install failed, retrying... (Attempt $i/$MAX_ATTEMPTS)"
+      sleep 5
+    done
+  fi
 
-    echo "Brew install failed, retrying... (Attempt $i/$MAX_ATTEMPTS)"
-    if [ $i -eq $MAX_ATTEMPTS ]; then
-      echo "Error: Brew install failed after $MAX_ATTEMPTS attempts."
-      exit 1
-    fi
-    sleep 5
-  done
+  # Verify version, build from source if needed
+  INSTALLED_VER=$(capnp --version 2> /dev/null | awk '{print $NF}' || echo "")
+  if [[ "$INSTALLED_VER" != "$CAPNP_VERSION" ]]; then
+    echo "Building Cap'n Proto ${CAPNP_VERSION} from source on macOS..."
+
+    TMP_DIR=$(mktemp -d)
+    pushd "$TMP_DIR"
+
+    curl --retry 5 --retry-delay 5 -sO "https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz"
+    tar zxf "capnproto-c++-${CAPNP_VERSION}.tar.gz"
+    cd "capnproto-c++-${CAPNP_VERSION}"
+
+    ./configure --prefix=/usr/local --disable-static
+    make -j"$(sysctl -n hw.ncpu)"
+    sudo make install
+
+    popd
+    rm -rf "$TMP_DIR"
+  fi
 
 else
   echo "Unsupported OS: ${OS_TYPE}"

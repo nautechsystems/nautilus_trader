@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::{dyn_abi::SolType, primitives::Address, sol};
-use nautilus_model::defi::{SharedDex, rpc::RpcLog};
+use nautilus_model::defi::{PoolIdentifier, SharedDex, rpc::RpcLog};
+use ustr::Ustr;
 
 use crate::{
     events::flash::FlashEvent,
@@ -81,10 +82,11 @@ pub fn parse_flash_event_hypersync(
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
+        let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
 
         Ok(FlashEvent::new(
             dex,
-            pool_address,
+            pool_identifier,
             extract_block_number(&log)?,
             extract_transaction_hash(&log)?,
             extract_transaction_index(&log)?,
@@ -125,9 +127,11 @@ pub fn parse_flash_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Fla
         Err(e) => anyhow::bail!("Failed to decode flash event data: {e}"),
     };
 
+    let pool_address = rpc_helpers::extract_address(log)?;
+    let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     Ok(FlashEvent::new(
         dex,
-        rpc_helpers::extract_address(log)?,
+        pool_identifier,
         rpc_helpers::extract_block_number(log)?,
         rpc_helpers::extract_transaction_hash(log)?,
         rpc_helpers::extract_transaction_index(log)?,
@@ -141,9 +145,6 @@ pub fn parse_flash_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Fla
     ))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use alloy::primitives::U256;
@@ -166,7 +167,7 @@ mod tests {
             "transaction_hash": "0x4d345a8cae1e39654904bb7ca04e552b0fc8728ed68a28563ea4b151b96262aa",
             "block_hash": null,
             "block_number": "0xfe9d5ce",
-            "address": "0x4cef551255ec96d89fec975446301b5c4e164c59",
+            "address": "0x4CEf551255EC96d89feC975446301b5C4e164C59",
             "data": "0x00000000000000000000000000000000000000000000002c55804c34816b99060000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000220c6ab9806365120000000000000000000000000000000000000000000000000000000000000000",
             "topics": [
                 "0xbdbdb71d7860376ba52b25a5028beea23581364a40522f6bcfb86bb1f2dca633",
@@ -187,7 +188,7 @@ mod tests {
             "transactionHash": "0x4d345a8cae1e39654904bb7ca04e552b0fc8728ed68a28563ea4b151b96262aa",
             "blockHash": "0xf10a01cbc75fccad0384a7447f37f06bfb01fbd08d7541a6e5f558ff9bc31ea4",
             "blockNumber": "0xfe9d5ce",
-            "address": "0x4cef551255ec96d89fec975446301b5c4e164c59",
+            "address": "0x4CEf551255EC96d89feC975446301b5C4e164C59",
             "data": "0x00000000000000000000000000000000000000000000002c55804c34816b99060000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000220c6ab9806365120000000000000000000000000000000000000000000000000000000000000000",
             "topics": [
                 "0xbdbdb71d7860376ba52b25a5028beea23581364a40522f6bcfb86bb1f2dca633",
@@ -204,8 +205,8 @@ mod tests {
         let event = parse_flash_event_hypersync(dex, hypersync_log).unwrap();
 
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
-            "0x4cef551255ec96d89fec975446301b5c4e164c59"
+            event.pool_identifier.to_string(),
+            "0x4CEf551255EC96d89feC975446301b5C4e164C59"
         );
         assert_eq!(
             event.sender.to_string().to_lowercase(),
@@ -230,8 +231,8 @@ mod tests {
         let event = parse_flash_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
-            "0x4cef551255ec96d89fec975446301b5c4e164c59"
+            event.pool_identifier.to_string(),
+            "0x4CEf551255EC96d89feC975446301b5C4e164C59"
         );
         assert_eq!(
             event.sender.to_string().to_lowercase(),
@@ -256,7 +257,7 @@ mod tests {
         let event_hypersync = parse_flash_event_hypersync(dex.clone(), hypersync_log).unwrap();
         let event_rpc = parse_flash_event_rpc(dex, &rpc_log).unwrap();
 
-        assert_eq!(event_hypersync.pool_address, event_rpc.pool_address);
+        assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);
         assert_eq!(event_hypersync.sender, event_rpc.sender);
         assert_eq!(event_hypersync.recipient, event_rpc.recipient);
         assert_eq!(event_hypersync.amount0, event_rpc.amount0);

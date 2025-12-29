@@ -22,8 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use super::enums::DydxWsChannel;
-use crate::schemas::ws::DydxWsMessageType;
+use super::enums::{DydxWsChannel, DydxWsMessageType};
 
 /// Result type for dYdX WebSocket operations.
 pub type DydxWsResult<T> = Result<T, DydxWsError>;

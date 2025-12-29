@@ -17,6 +17,8 @@
 #[derive(Debug, Clone)]
 pub struct OrderMatchingEngineConfig {
     pub bar_execution: bool,
+    pub trade_execution: bool,
+    pub liquidity_consumption: bool,
     pub reject_stop_orders: bool,
     pub support_gtd_orders: bool,
     pub support_contingent_orders: bool,
@@ -29,8 +31,11 @@ pub struct OrderMatchingEngineConfig {
 impl OrderMatchingEngineConfig {
     /// Creates a new default [`OrderMatchingEngineConfig`] instance.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         bar_execution: bool,
+        trade_execution: bool,
+        liquidity_consumption: bool,
         reject_stop_orders: bool,
         support_gtd_orders: bool,
         support_contingent_orders: bool,
@@ -40,6 +45,8 @@ impl OrderMatchingEngineConfig {
     ) -> Self {
         Self {
             bar_execution,
+            trade_execution,
+            liquidity_consumption,
             reject_stop_orders,
             support_gtd_orders,
             support_contingent_orders,
@@ -67,6 +74,8 @@ impl Default for OrderMatchingEngineConfig {
     fn default() -> Self {
         Self {
             bar_execution: false,
+            trade_execution: false,
+            liquidity_consumption: false,
             reject_stop_orders: false,
             support_gtd_orders: false,
             support_contingent_orders: false,

@@ -55,7 +55,6 @@ criterion = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
-static_assertions = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
@@ -74,4 +73,19 @@ harness = false
 [[bench]]
 name = "uuid"
 path = "benches/uuid.rs"
+harness = false
+
+[[bench]]
+name = "stack_str"
+path = "benches/stack_str.rs"
+harness = false
+
+[[bench]]
+name = "stack_str_iai"
+path = "benches/stack_str_iai.rs"
+harness = false
+
+[[bench]]
+name = "identifier_comparison"
+path = "benches/identifier_comparison.rs"
 harness = false

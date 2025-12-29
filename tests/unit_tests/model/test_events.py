@@ -56,7 +56,6 @@ from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -84,7 +83,7 @@ class TestModelEvents:
             free=Money(1525000, USD),
         )
         event = AccountState(
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,
@@ -121,7 +120,7 @@ class TestModelEvents:
             instrument_id=AUDUSD_SIM.id,
         )
         event = AccountState(
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,
@@ -266,7 +265,7 @@ class TestModelEvents:
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -292,7 +291,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -317,7 +316,7 @@ class TestModelEvents:
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             reason="INSUFFICIENT_MARGIN",
             ts_event=0,
             event_id=uuid,
@@ -343,7 +342,7 @@ class TestModelEvents:
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             reason="POST_ONLY_WOULD_EXECUTE",
             ts_event=0,
             event_id=uuid,
@@ -371,7 +370,7 @@ class TestModelEvents:
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             reason="INSUFFICIENT_MARGIN",
             ts_event=0,
             event_id=uuid,
@@ -394,7 +393,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -420,7 +419,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -446,7 +445,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -472,7 +471,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -498,7 +497,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=None,
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -524,7 +523,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -550,7 +549,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=None,
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -576,7 +575,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             reason="ORDER_DOES_NOT_EXIST",
             ts_event=0,
             event_id=uuid,
@@ -603,7 +602,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=None,
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             reason="ORDER_DOES_NOT_EXIST",
             ts_event=0,
             event_id=uuid,
@@ -630,7 +629,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             reason="ORDER_DOES_NOT_EXIST",
             ts_event=0,
             event_id=uuid,
@@ -657,7 +656,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=None,
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             reason="ORDER_DOES_NOT_EXIST",
             ts_event=0,
             event_id=uuid,
@@ -684,7 +683,7 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             quantity=Quantity.from_int(500_000),
             price=Price.from_str("1.95000"),
             trigger_price=None,
@@ -713,8 +712,8 @@ class TestModelEvents:
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            account_id=AccountId("SIM-000"),
-            trade_id=TradeId("1"),
+            account_id=TestIdStubs.account_id(),
+            trade_id=TestIdStubs.trade_id(),
             position_id=PositionId("2"),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
@@ -759,7 +758,7 @@ class TestModelEvents:
 
         # Create AccountState which should copy the balance
         account_state = AccountState(
-            account_id=AccountId("SIM-000"),
+            account_id=TestIdStubs.account_id(),
             account_type=AccountType.CASH,
             base_currency=USD,
             reported=True,
@@ -800,8 +799,8 @@ class TestPositionEvents:
     def setup(self):
         # Fixture Setup
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER-000"),
-            strategy_id=StrategyId("S-001"),
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
             clock=TestClock(),
         )
 
@@ -817,7 +816,7 @@ class TestPositionEvents:
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -849,7 +848,7 @@ class TestPositionEvents:
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -863,7 +862,7 @@ class TestPositionEvents:
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00011"),
         )
 
@@ -896,7 +895,7 @@ class TestPositionEvents:
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -910,7 +909,7 @@ class TestPositionEvents:
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
+            strategy_id=TestIdStubs.strategy_id(),
             last_px=Price.from_str("1.00011"),
         )
 
@@ -935,8 +934,8 @@ class TestPositionEvents:
         # Arrange
         uuid = UUID4()
         event = PositionAdjusted(
-            trader_id=TraderId("TESTER-000"),
-            strategy_id=StrategyId("S-001"),
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
             instrument_id=InstrumentId.from_str("BTC/USDT.BINANCE"),
             position_id=PositionId("P-123456"),
             account_id=AccountId("BINANCE-001"),
@@ -956,8 +955,8 @@ class TestPositionEvents:
         # Arrange
         uuid = UUID4()
         event = PositionAdjusted(
-            trader_id=TraderId("TESTER-000"),
-            strategy_id=StrategyId("S-001"),
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
             instrument_id=InstrumentId.from_str("BTC/USD.BITMEX"),
             position_id=PositionId("P-123456"),
             account_id=AccountId("BITMEX-001"),

@@ -43,7 +43,10 @@ impl TraderId {
     ///
     /// # Errors
     ///
-    /// Returns an error if `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// Returns an error if:
+    /// - `value` is not a valid ASCII string.
+    /// - `value` does not contain a hyphen '-' separator.
+    /// - Either the name or tag part (before/after the hyphen) is empty.
     ///
     /// # Notes
     ///
@@ -52,6 +55,18 @@ impl TraderId {
         let value = value.as_ref();
         check_valid_string_ascii(value, stringify!(value))?;
         check_string_contains(value, "-", stringify!(value))?;
+
+        if let Some((name, tag)) = value.rsplit_once('-') {
+            anyhow::ensure!(
+                !name.is_empty(),
+                "`value` name part (before '-') cannot be empty"
+            );
+            anyhow::ensure!(
+                !tag.is_empty(),
+                "`value` tag part (after '-') cannot be empty"
+            );
+        }
+
         Ok(Self(Ustr::from(value)))
     }
 
@@ -96,7 +111,7 @@ impl TraderId {
 
 impl Debug for TraderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
+        write!(f, "\"{}\"", self.0)
     }
 }
 
@@ -106,9 +121,6 @@ impl Display for TraderId {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -124,5 +136,27 @@ mod tests {
     #[rstest]
     fn test_get_tag(trader_id: TraderId) {
         assert_eq!(trader_id.get_tag(), "001");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "name part (before '-') cannot be empty")]
+    fn test_new_with_empty_name_panics() {
+        let _ = TraderId::new("-001");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "tag part (after '-') cannot be empty")]
+    fn test_new_with_empty_tag_panics() {
+        let _ = TraderId::new("TRADER-");
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_name_returns_error() {
+        assert!(TraderId::new_checked("-001").is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_with_empty_tag_returns_error() {
+        assert!(TraderId::new_checked("TRADER-").is_err());
     }
 }

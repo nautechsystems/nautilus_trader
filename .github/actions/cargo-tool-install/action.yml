@@ -1,0 +1,60 @@
+name: cargo-tool-install
+description: Install a cargo tool with caching
+
+inputs:
+  tool-name:
+    description: The cargo tool to install (e.g., cargo-deny, cargo-vet)
+    required: true
+
+outputs:
+  version:
+    description: The installed tool version
+    value: ${{ steps.get-version.outputs.version }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get tool version
+      id: get-version
+      shell: bash
+      env:
+        TOOL_NAME: ${{ inputs.tool-name }}
+      run: |
+        VERSION=$(bash scripts/cargo-tool-version.sh "$TOOL_NAME")
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "TOOL_VERSION=$VERSION" >> "$GITHUB_ENV"
+        echo "TOOL_NAME=$TOOL_NAME" >> "$GITHUB_ENV"
+
+    - name: Get Rust toolchain version
+      shell: bash
+      run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
+
+    # https://github.com/actions-rust-lang/setup-rust-toolchain
+    - name: Set up Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+      with:
+        toolchain: ${{ env.TOOLCHAIN }}
+        override: true
+
+    # https://github.com/actions/cache
+    - name: Cache tool binary
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: ${{ runner.tool_cache }}/${{ inputs.tool-name }}
+        key: ${{ inputs.tool-name }}-bin-${{ env.TOOL_VERSION }}
+
+    - name: Add tool to PATH
+      shell: bash
+      env:
+        TOOL_CACHE: ${{ runner.tool_cache }}
+      run: echo "$TOOL_CACHE/$TOOL_NAME/bin" >> "$GITHUB_PATH"
+
+    - name: Install tool
+      shell: bash
+      env:
+        TOOL_CACHE: ${{ runner.tool_cache }}
+      run: |
+        cargo install --locked \
+          --root "$TOOL_CACHE/$TOOL_NAME" \
+          --version "$TOOL_VERSION" \
+          "$TOOL_NAME"

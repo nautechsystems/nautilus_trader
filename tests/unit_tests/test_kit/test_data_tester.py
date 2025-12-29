@@ -1838,7 +1838,7 @@ def test_on_order_book_depth_calls_without_error(
         clock=clock,
     )
 
-    depth = TestDataStubs.order_book_depth10(instrument_id)
+    depth = TestDataStubs.order_book_depth10(instrument_id=instrument_id)
 
     # Act & Assert - should not raise
     tester.on_order_book_depth(depth)

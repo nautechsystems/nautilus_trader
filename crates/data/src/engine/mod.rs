@@ -67,7 +67,7 @@ use nautilus_core::{
     correctness::{
         FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
     },
-    datetime::millis_to_nanos,
+    datetime::millis_to_nanos_unchecked,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
@@ -81,6 +81,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
 };
+#[cfg(feature = "streaming")]
 use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use ustr::Ustr;
 
@@ -107,6 +108,7 @@ pub struct DataEngine {
     pub(crate) external_clients: AHashSet<ClientId>,
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
+    #[cfg(feature = "streaming")]
     catalogs: AHashMap<Ustr, ParquetDataCatalog>,
     routing_map: IndexMap<Venue, ClientId>,
     book_intervals: AHashMap<NonZeroUsize, AHashSet<InstrumentId>>,
@@ -152,6 +154,7 @@ impl DataEngine {
             external_clients,
             clients: IndexMap::new(),
             default_client: None,
+            #[cfg(feature = "streaming")]
             catalogs: AHashMap::new(),
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
@@ -198,8 +201,9 @@ impl DataEngine {
     /// # Panics
     ///
     /// Panics if a catalog with the same `name` has already been registered.
+    #[cfg(feature = "streaming")]
     pub fn register_catalog(&mut self, catalog: ParquetDataCatalog, name: Option<String>) {
-        let name = Ustr::from(&name.unwrap_or("catalog_0".to_string()));
+        let name = Ustr::from(name.as_deref().unwrap_or("catalog_0"));
 
         check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
 
@@ -726,7 +730,8 @@ impl DataEngine {
             DataResponse::Quotes(resp) => self.handle_quotes(&resp.data),
             DataResponse::Trades(resp) => self.handle_trades(&resp.data),
             DataResponse::Bars(resp) => self.handle_bars(&resp.data),
-            _ => todo!(),
+            DataResponse::Book(resp) => self.handle_book_response(&resp.data),
+            _ => todo!("Handle other response types"),
         }
 
         msgbus::send_response(resp.correlation_id(), &resp);
@@ -964,7 +969,7 @@ impl DataEngine {
 
         if first_for_interval {
             // Initialize snapshotter and schedule its timer
-            let interval_ns = millis_to_nanos(cmd.interval_ms.get() as f64);
+            let interval_ns = millis_to_nanos_unchecked(cmd.interval_ms.get() as f64);
             let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id, cmd.interval_ms);
 
             let snap_info = BookSnapshotInfo {
@@ -1185,6 +1190,18 @@ impl DataEngine {
 
     fn handle_bars(&self, bars: &[Bar]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(bars) {
+            log_error_on_cache_insert(&e);
+        }
+    }
+
+    fn handle_book_response(&self, book: &OrderBook) {
+        log::debug!("Adding order book {} to cache", book.instrument_id);
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_order_book(book.clone())
+        {
             log_error_on_cache_insert(&e);
         }
     }

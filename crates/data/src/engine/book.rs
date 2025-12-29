@@ -90,7 +90,11 @@ impl MessageHandler for BookUpdater {
                         log::error!("Failed to apply deltas: {e}");
                     }
                 }
-                Data::Depth10(depth) => book.apply_depth(depth),
+                Data::Depth10(depth) => {
+                    if let Err(e) = book.apply_depth(depth) {
+                        log::error!("Failed to apply depth: {e}");
+                    }
+                }
                 _ => log::error!("Invalid data type for book update, was {data:?}"),
             }
         }

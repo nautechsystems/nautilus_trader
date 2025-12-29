@@ -48,6 +48,7 @@ class BinanceFuturesContractType(Enum):
     NEXT_QUARTER = "NEXT_QUARTER"
     PERPETUAL_DELIVERING = "PERPETUAL_DELIVERING"
     CURRENT_QUARTER_DELIVERING = "CURRENT_QUARTER DELIVERING"  # Underscore omission intentional
+    TRADIFI_PERPETUAL = "TRADIFI_PERPETUAL"  # TradFi-Perps (stock/commodity perpetuals)
 
 
 @unique
@@ -126,6 +127,7 @@ class BinanceFuturesEventType(Enum):
     STRATEGY_UPDATE = "STRATEGY_UPDATE"
     GRID_UPDATE = "GRID_UPDATE"
     CONDITIONAL_ORDER_TRIGGER_REJECT = "CONDITIONAL_ORDER_TRIGGER_REJECT"
+    ALGO_UPDATE = "ALGO_UPDATE"
 
 
 class BinanceFuturesEnumParser(BinanceEnumParser):

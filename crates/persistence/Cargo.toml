@@ -22,6 +22,12 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [features]
 default = []
+cloud = [
+  "object_store/aws",
+  "object_store/azure",
+  "object_store/gcp",
+  "object_store/http",
+]
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
@@ -36,6 +42,7 @@ python = [
   "nautilus-model/python",
   "nautilus-serialization/python",
   "pyo3",
+  "cloud",
 ]
 high-precision = [
   "nautilus-model/high-precision",
@@ -56,7 +63,6 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
 binary-heap-plus = { workspace = true }
-chrono = { workspace = true }
 compare = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }

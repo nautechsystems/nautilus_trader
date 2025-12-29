@@ -15,6 +15,8 @@
 
 //! Shared parsing helpers that transform BitMEX payloads into Nautilus types.
 
+use std::borrow::Cow;
+
 use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -324,14 +326,13 @@ pub const fn parse_position_side(current_qty: Option<i64>) -> PositionSide {
 ///
 /// For other currencies, converts to uppercase.
 #[must_use]
-pub fn map_bitmex_currency(bitmex_currency: &str) -> String {
+pub fn map_bitmex_currency(bitmex_currency: &str) -> Cow<'static, str> {
     match bitmex_currency {
-        "XBt" => "XBT".to_string(),
-        "USDt" => "USDT".to_string(),
-        "LAMp" => "USDT".to_string(), // Map test currency to USDT
-        "RLUSd" => "RLUSD".to_string(),
-        "MAMUSd" => "MAMUSD".to_string(),
-        other => other.to_uppercase(),
+        "XBt" => Cow::Borrowed("XBT"),
+        "USDt" | "LAMp" => Cow::Borrowed("USDT"), // LAMp is test currency
+        "RLUSd" => Cow::Borrowed("RLUSD"),
+        "MAMUSd" => Cow::Borrowed("MAMUSD"),
+        other => Cow::Owned(other.to_uppercase()),
     }
 }
 
@@ -451,10 +452,6 @@ pub fn parse_account_state(
         None,
     ))
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

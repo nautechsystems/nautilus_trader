@@ -50,4 +50,34 @@ if [ $VIOLATIONS -gt 0 ]; then
 fi
 
 echo "✓ All PyO3 naming conventions are valid"
+
+# Check adapter module naming
+echo "Checking adapter pyclass module names..."
+ADAPTER_VIOLATIONS=0
+
+# Find pyclass declarations in adapters/ that use generic ".adapters" module instead of specific adapter name
+while IFS=: read -r file line_num _; do
+  [[ -z "$file" ]] && continue
+
+  # Extract expected adapter name from path (e.g., crates/adapters/okx/... -> okx)
+  if [[ "$file" =~ crates/adapters/([^/]+)/ ]]; then
+    expected="${BASH_REMATCH[1]}"
+    # Convert underscores to match crate naming (e.g., coinbase_intx)
+    echo -e "${RED}Error:${NC} pyclass uses generic '.adapters' module in $file:$line_num"
+    echo "  Expected module ending: .$expected\""
+    echo
+    ADAPTER_VIOLATIONS=$((ADAPTER_VIOLATIONS + 1))
+  fi
+done < <(rg -n 'pyo3::pyclass\(.*module\s*=\s*"[^"]*\.adapters"' crates/adapters --type rust 2> /dev/null || true)
+
+if [ $ADAPTER_VIOLATIONS -gt 0 ]; then
+  echo -e "${RED}Found $ADAPTER_VIOLATIONS adapter module naming violation(s)${NC}"
+  echo
+  echo "Convention:"
+  echo "  - Adapter pyclasses must use the specific adapter module, not '.adapters'"
+  echo "  - Example: module = \"nautilus_trader.core.nautilus_pyo3.okx\" (not .adapters)"
+  exit 1
+fi
+
+echo "✓ All adapter pyclass module names are valid"
 exit 0

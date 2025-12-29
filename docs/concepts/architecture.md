@@ -1,17 +1,11 @@
 # Architecture
 
-Welcome to the architectural overview of NautilusTrader.
+This guide covers the architectural principles and structure of NautilusTrader:
 
-This guide dives deep into the foundational principles, structures, and designs that underpin
-the platform. Whether you're a developer, system architect, or just curious about the inner workings
-of NautilusTrader, this section covers:
-
-- The design philosophy that drives decisions and shapes the system's evolution.
-- The overarching system architecture providing a bird's-eye view of the entire system framework.
-- How the framework is organized to facilitate modularity and maintainability.
-- The code structure that ensures readability and scalability.
-- A breakdown of component organization and interaction to understand how different parts communicate and collaborate.
-- And finally, the implementation techniques that are crucial for performance, reliability, and robustness.
+- Design philosophy and quality attributes.
+- Core components and how they interact.
+- Environment contexts (backtest, sandbox, live).
+- Framework organization and code structure.
 
 :::note
 Throughout the documentation, the term *"Nautilus system boundary"* refers to operations within
@@ -67,22 +61,27 @@ Further reading: [High Assurance Rust](https://highassurance.rs/).
 
 ### Crash-only design
 
-NautilusTrader embraces [crash-only design](https://en.wikipedia.org/wiki/Crash-only_software),
-a philosophy where *"the only way to stop the system is to crash it"*, and *"the only way to bring it
-up is to recover from a crash"*. This approach simplifies state management and improves reliability
-by eliminating the complexity of graceful shutdown code paths that are rarely tested.
+NautilusTrader draws inspiration from [crash-only design](https://en.wikipedia.org/wiki/Crash-only_software)
+principles, particularly for handling unrecoverable faults. The core insight is that systems which
+can recover cleanly from crashes are more robust than those with separate (and rarely tested)
+graceful shutdown paths.
 
 Key principles:
 
-- **Single code path** - Recovery from crash is the primary (and only) initialization path, ensuring it is well-tested.
-- **No graceful shutdown** - The system does not attempt complex cleanup procedures that may fail or hang.
+- **Unified recovery path** - Startup and crash recovery share the same code path, ensuring it is well-tested.
 - **Externalized state** - Critical state is persisted externally (database, message bus) so crashes do not lose data.
 - **Fast restart** - The system is designed to restart quickly after a crash, minimizing downtime.
 - **Idempotent operations** - Operations are designed to be safely retried after restart.
+- **Fail-fast for unrecoverable errors** - Data corruption or invariant violations trigger immediate termination rather than attempting to continue in a compromised state.
+
+:::note
+The system does provide graceful shutdown flows (`stop`, `dispose`) for normal operation. These
+tear down clients, persist state, and flush writers. The crash-only philosophy applies specifically
+to *unrecoverable faults* where attempting graceful cleanup could cause further damage.
+:::
 
 This design complements the [fail-fast policy](#data-integrity-and-fail-fast-policy), where
-unrecoverable errors (data corruption, invariant violations) result in immediate process termination
-rather than attempting to continue in a compromised state.
+unrecoverable errors result in immediate process termination.
 
 **References:**
 
@@ -197,7 +196,7 @@ High-performance in-memory storage system that:
 
 - Stores instruments, accounts, orders, positions, and more.
 - Provides performant fetching capabilities for trading components.
-- Maintains consist state across the system.
+- Maintains consistent state across the system.
 - Supports both read and write operations with optimized access patterns.
 
 #### `DataEngine`
@@ -271,32 +270,180 @@ Understanding how data and execution flow through the system is crucial for effe
 
 #### Component state management
 
-All components follow a finite state machine pattern with well-defined states:
+All components follow a finite state machine pattern. The `ComponentState` enum defines both stable states and transitional states:
 
-- **PRE_INITIALIZED**: Component is created but not yet wired up to the system.
-- **READY**: Component is configured and wired up, but not yet running.
-- **RUNNING**: Component is actively processing messages and performing operations.
-- **STOPPED**: Component has been gracefully stopped and is no longer processing.
-- **DEGRADED**: Component is running but with reduced functionality due to errors.
-- **FAULTED**: Component has encountered a critical error and cannot continue.
-- **DISPOSED**: Component has been cleaned up and resources have been released.
+```mermaid
+stateDiagram-v2
+    [*] --> PRE_INITIALIZED
+
+    PRE_INITIALIZED --> READY : register()
+
+    READY --> STARTING : start()
+    STARTING --> RUNNING
+
+    RUNNING --> STOPPING : stop()
+    STOPPING --> STOPPED
+
+    STOPPED --> STARTING : start()
+    STOPPED --> RESETTING : reset()
+    RESETTING --> READY
+
+    RUNNING --> RESUMING : resume()
+    RESUMING --> RUNNING
+
+    RUNNING --> DEGRADING : degrade()
+    DEGRADING --> DEGRADED
+
+    DEGRADED --> STOPPING : stop()
+    DEGRADED --> FAULTING : fault()
+
+    RUNNING --> FAULTING : fault()
+    FAULTING --> FAULTED
+
+    STOPPED --> DISPOSING : dispose()
+    FAULTED --> DISPOSING : dispose()
+    DISPOSING --> DISPOSED
+
+    DISPOSED --> [*]
+```
+
+**Stable states:**
+
+- **PRE_INITIALIZED**: Component is instantiated but not yet ready to fulfill its specification.
+- **READY**: Component is configured and able to be started.
+- **RUNNING**: Component is operating normally and can fulfill its specification.
+- **STOPPED**: Component has successfully stopped.
+- **DEGRADED**: Component has degraded and may not meet its full specification.
+- **FAULTED**: Component has shut down due to a detected fault.
+- **DISPOSED**: Component has shut down and released all of its resources.
+
+**Transitional states:**
+
+- **STARTING**: Component is executing its actions on `start`.
+- **STOPPING**: Component is executing its actions on `stop`.
+- **RESUMING**: Component is being started again after its initial start.
+- **RESETTING**: Component is executing its actions on `reset`.
+- **DISPOSING**: Component is executing its actions on `dispose`.
+- **DEGRADING**: Component is executing its actions on `degrade`.
+- **FAULTING**: Component is executing its actions on `fault`.
+
+Transitional states are brief intermediate states that occur during state transitions. Components should not remain in transitional states for extended periods.
+
+#### Actor vs Component traits
+
+At the Rust implementation level, the system distinguishes between two complementary traits:
+
+```mermaid
+classDiagram
+    class Actor {
+        <<trait>>
+        +id() Ustr
+        +handle(message)
+    }
+
+    class Component {
+        <<trait>>
+        +component_id() ComponentId
+        +state() ComponentState
+        +register()
+        +start()
+        +stop()
+        +reset()
+        +dispose()
+    }
+
+    class ActorRegistry {
+        +insert(actor)
+        +get(id) ActorRef
+    }
+
+    class ComponentRegistry {
+        +insert(component)
+        +get(id) ComponentRef
+    }
+
+    Actor <|.. Throttler : implements
+    Actor <|.. Strategy : implements
+    Component <|.. Strategy : implements
+    Component <|.. DataEngine : implements
+    Component <|.. ExecutionEngine : implements
+
+    ActorRegistry --> Actor : manages
+    ComponentRegistry --> Component : manages
+
+    class Throttler {
+        Actor only
+    }
+
+    class Strategy {
+        Actor + Component
+    }
+
+    class DataEngine {
+        Component only
+    }
+
+    class ExecutionEngine {
+        Component only
+    }
+```
+
+**`Actor` trait** - Message dispatch:
+
+- Provides the `handle` method for receiving messages dispatched through the actor registry.
+- Enables type-safe lookup and message dispatch by actor ID.
+- Used by components that need to receive targeted messages (strategies, throttlers).
+
+**`Component` trait** - Lifecycle management:
+
+- Manages state transitions (`start`, `stop`, `reset`, `dispose`).
+- Provides registration with the system kernel (`register`).
+- Tracks component state via the finite state machine described above.
+- Used by all system components that need lifecycle management.
+
+:::note
+All components can publish and subscribe to messages via the `MessageBus` directly - this is independent of the `Actor` trait. The `Actor` trait specifically enables the registry-based message dispatch pattern where messages are routed to a specific actor by ID.
+:::
+
+This separation allows:
+
+- **Actor-only**: Lightweight message handlers without lifecycle (e.g., `Throttler`).
+- **Component-only**: System infrastructure with lifecycle but using direct MessageBus pub/sub (e.g., `DataEngine`, `ExecutionEngine`).
+- **Both traits**: Trading strategies that need lifecycle management AND targeted message dispatch.
+
+The traits are managed by separate registries to support their different access patterns - lifecycle methods are called sequentially, while message handlers may be invoked re-entrantly during callbacks.
 
 ### Messaging
 
 To facilitate modularity and loose coupling, an extremely efficient `MessageBus` passes messages (data, commands and events) between components.
 
-From a high level architectural view, it's important to understand that the platform has been designed to run efficiently
-on a single thread, for both backtesting and live trading. Much research and testing
-resulted in arriving at this design, as it was found the overhead of context switching between threads
-didn't actually result in improved performance.
+#### Threading model
 
-When considering the logic of how your algo trading will work within the system boundary, you can expect each component to consume messages
-in a deterministic synchronous way (*similar* to the [actor model](https://en.wikipedia.org/wiki/Actor_model)).
+Within a node, the *kernel* consumes and dispatches messages on a single thread. The kernel encompasses:
+
+- The `MessageBus` and actor callback dispatch.
+- Strategy logic and order management.
+- Risk engine checks and execution coordination.
+- Cache reads and writes.
+
+This single-threaded core ensures deterministic event processing and maintains backtest-live parity—strategies
+behave identically whether running against historical data or live markets. Components consume messages
+synchronously in a pattern *similar* to the [actor model](https://en.wikipedia.org/wiki/Actor_model).
 
 :::note
 Of interest is the LMAX exchange architecture, which achieves award winning performance running on
 a single thread. You can read about their *disruptor* pattern based architecture in [this interesting article](https://martinfowler.com/articles/lmax.html) by Martin Fowler.
 :::
+
+Background services use separate threads or async runtimes:
+
+- **Network I/O** - WebSocket connections, REST clients, and async data feeds.
+- **Persistence** - DataFusion queries and database operations via multi-threaded Tokio runtime.
+- **Adapters** - Async adapter operations via thread pool executors.
+
+These services communicate results back to the kernel via the `MessageBus`. The bus itself is thread-local,
+so each thread has its own instance, with cross-thread communication occurring through channels that
+ultimately deliver events to the single-threaded core.
 
 ## Framework organization
 
@@ -342,31 +489,98 @@ Python bindings for the Rust core are provided by statically linking the Rust li
 
 ### Dependency flow
 
+```mermaid
+flowchart TB
+    subgraph trader["nautilus_trader<br/>Python / Cython"]
+    end
+
+    subgraph core["nautilus_core<br/>Rust"]
+    end
+
+    trader -->|"C API"| core
 ```
-┌─────────────────────────┐
-│                         │
-│                         │
-│     nautilus_trader     │
-│                         │
-│     Python / Cython     │
-│                         │
-│                         │
-└────────────┬────────────┘
- C API       │
-             │
-             │
-             │
- C API       ▼
-┌─────────────────────────┐
-│                         │
-│                         │
-│      nautilus_core      │
-│                         │
-│          Rust           │
-│                         │
-│                         │
-└─────────────────────────┘
+
+### Rust crates
+
+The `crates/` directory contains the Rust implementation organized into focused crates with clear dependency boundaries.
+Feature flags control optional functionality - for example, `streaming` enables persistence for catalog-based data streaming,
+and `cloud` enables cloud storage backends (S3, Azure, GCP).
+
+Dependency flow (arrows point to dependencies):
+
+```mermaid
+flowchart BT
+    subgraph Foundation
+        core
+        model
+        common
+        system
+        trading
+    end
+
+    subgraph Infrastructure
+        serialization
+        network
+        cryptography
+        persistence
+    end
+
+    subgraph Engines
+        data
+        execution
+        portfolio
+        risk
+    end
+
+    subgraph Runtime
+        live
+        backtest
+    end
+
+    adapters
+    pyo3
+
+    model --> core
+    common --> core
+    common --> model
+    system --> common
+    trading --> common
+    serialization --> model
+    network --> common
+    network --> cryptography
+    persistence --> serialization
+    data --> common
+    execution --> common
+    portfolio --> common
+    risk --> portfolio
+    live --> system
+    live --> trading
+    backtest --> system
+    backtest --> persistence
+    adapters --> live
+    adapters --> network
+    pyo3 --> adapters
 ```
+
+**Crate categories:**
+
+| Category       | Crates                                                    | Purpose                                                  |
+|----------------|-----------------------------------------------------------|----------------------------------------------------------|
+| Foundation     | `core`, `model`, `common`, `system`, `trading`            | Primitives, domain model, kernel, actor & strategy base. |
+| Engines        | `data`, `execution`, `portfolio`, `risk`                  | Core trading engine components.                          |
+| Infrastructure | `serialization`, `network`, `cryptography`, `persistence` | Encoding, networking, signing, storage.                  |
+| Runtime        | `live`, `backtest`                                        | Environment-specific node implementations.               |
+| External       | `adapters/*`                                              | Venue and data integrations.                             |
+| Bindings       | `pyo3`                                                    | Python bindings.                                         |
+
+**Feature flags:**
+
+| Feature     | Crates                     | Effect                                                     |
+|-------------|----------------------------|------------------------------------------------------------|
+| `streaming` | `data`, `system`, `live`   | Enables `persistence` dependency for catalog streaming.    |
+| `cloud`     | `persistence`              | Enables cloud storage backends (S3, Azure, GCP, HTTP).     |
+| `python`    | most crates                | Enables PyO3 bindings (auto-enables `streaming`, `cloud`). |
+| `defi`      | `common`, `model`, `data`  | Enables DeFi/blockchain data types.                        |
 
 :::note
 Both Rust and Cython are build dependencies. The binary wheels produced from a build do not require

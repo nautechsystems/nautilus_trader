@@ -3,20 +3,21 @@
 The `Instrument` base class represents the core specification for any tradable asset/contract. There are
 currently a number of subclasses representing a range of *asset classes* and *instrument classes* which are supported by the platform:
 
-- `Equity` (listed shares or ETFs traded on cash markets)
-- `FuturesContract` (deliverable futures contract with defined underlying, expiry, and multiplier)
-- `FuturesSpread` (exchange-defined multi-leg futures strategy—e.g., calendar or inter-commodity—quoted as one instrument)
-- `OptionContract` (exchange-traded option—put or call—on an underlying with strike and expiry)
-- `OptionSpread` (exchange-defined multi-leg options strategy—e.g., vertical, calendar, straddle—quoted as one instrument)
-- `BinaryOption` (fixed-payout option that settles to 0 or 1 based on a binary outcome)
-- `Cfd` (over-the-counter Contract for Difference that tracks an underlying and is cash-settled)
-- `Commodity` (spot commodity instrument—e.g., gold or oil—traded in cash markets)
-- `CurrencyPair` (spot FX or crypto pair in BASE/QUOTE format traded in cash markets)
-- `CryptoOption` (option on a crypto underlying with crypto quote/settlement; supports inverse or quanto styles)
-- `CryptoPerpetual` (perpetual futures contract—aka perpetual swap—on crypto with no expiry; can be inverse or quanto-settled)
-- `CryptoFuture` (dated, deliverable crypto futures contract with fixed expiry, underlying crypto, and settlement currency)
-- `IndexInstrument` (spot index calculated from constituents; used as a reference price and not directly tradable)
-- `BettingInstrument` (a sports/gaming market selection—e.g., team or runner—tradable on betting venues)
+- `Equity`: Listed shares or ETFs traded on cash markets.
+- `CurrencyPair`: Spot FX or crypto pair in BASE/QUOTE format traded in cash markets.
+- `Commodity`: Spot commodity instrument (e.g., gold or oil) traded in cash markets.
+- `IndexInstrument`: Spot index calculated from constituents; used as a reference price and not directly tradable.
+- `FuturesContract`: Deliverable futures contract with defined underlying, expiry, and multiplier.
+- `FuturesSpread`: Exchange-defined multi-leg futures strategy (e.g., calendar or inter-commodity) quoted as one instrument.
+- `CryptoFuture`: Dated, deliverable crypto futures contract with fixed expiry, underlying crypto, and settlement currency.
+- `CryptoPerpetual`: Perpetual futures contract (perpetual swap) on crypto with no expiry; can be inverse or quanto-settled.
+- `OptionContract`: Exchange-traded option (put or call) on an underlying with strike and expiry.
+- `OptionSpread`: Exchange-defined multi-leg options strategy (e.g., vertical, calendar, straddle) quoted as one instrument.
+- `CryptoOption`: Option on a crypto underlying with crypto quote/settlement; supports inverse or quanto styles.
+- `BinaryOption`: Fixed-payout option that settles to 0 or 1 based on a binary outcome.
+- `Cfd`: Over-the-counter Contract for Difference that tracks an underlying and is cash-settled.
+- `BettingInstrument`: Sports/gaming market selection (e.g., team or runner) tradable on betting venues.
+- `SyntheticInstrument`: Synthetic instrument with prices derived from component instruments using a formula.
 
 ## Symbology
 
@@ -176,7 +177,7 @@ To understand trading on margin, let’s start with some key terms:
 - Each contract represents 125,000 EUR (EUR is base currency, USD is quote currency).
 - If the current market price is 1.1000, the notional value equals 125,000 EUR × 1.1000 (price of EUR/USD) = 137,500 USD.
 
-**Leverage** (`leverage`): The ratio that determines how much market exposure you can control relative to your account deposit. For example, with 10× leverage, you can control 10,000 USD worth of positions with just 1,000 USD in your account.
+**Leverage** (`leverage`): The ratio that determines how much market exposure you can control relative to your account deposit. For example, with 10× leverage, you can control 10,000 USD worth of positions with 1,000 USD in your account.
 
 **Initial Margin** (`margin_init`): The margin rate required to open a position. It represents the minimum amount of funds that must be available in your account to open new positions. This is only a pre-check — no funds are actually locked.
 
@@ -190,6 +191,17 @@ self.portfolio.balances_locked(venue)
 
 - Maker Fee (`maker_fee`): A fee (typically lower) charged when you "make" liquidity by placing an order that remains on the order book. For example, a limit buy order below the current price adds liquidity, and the *maker* fee applies when it fills.
 - Taker Fee (`taker_fee`): A fee (typically higher) charged when you "take" liquidity by placing an order that executes immediately. For instance, a market buy order or a limit buy above the current price removes liquidity, and the *taker* fee applies.
+
+**Fee rate sign convention**: Nautilus uses a consistent sign convention for fee rates across all adapters and the backtesting engine:
+
+- **Positive fee rate** = commission (fee charged, reducing account balance).
+- **Negative fee rate** = rebate (fee earned, increasing account balance).
+
+For example, a maker fee of `-0.00025` means you receive a 0.025% rebate for providing liquidity, while a taker fee of `0.00075` means you pay a 0.075% commission for taking liquidity.
+
+:::note
+Different exchanges use different sign conventions in their APIs. Nautilus adapters normalize these to the convention above. If you're manually specifying fee rates for backtesting, ensure you follow this convention.
+:::
 
 :::tip
 Not all exchanges or instruments implement maker/taker fees. If absent, set both `maker_fee` and `taker_fee` to 0 for the `Instrument` (e.g., `FuturesContract`, `Equity`, `CurrencyPair`, `Commodity`, `Cfd`, `BinaryOption`, `BettingInstrument`).
@@ -386,11 +398,11 @@ The `instrument_id` for the synthetic instrument in the above example will be st
 It's also possible to update a synthetic instrument formulas at any time. The following example
 shows how to achieve this with an actor/strategy.
 
-```
+```python
 # Recover the synthetic instrument from the cache (assuming `synthetic_id` was assigned)
 synthetic = self.cache.synthetic(self._synthetic_id)
 
-# Update the formula, here is a simple example of just taking the average
+# Update the formula to take the average
 new_formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"
 synthetic.change_formula(new_formula)
 

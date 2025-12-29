@@ -1,0 +1,20 @@
+{
+  "feed": "open_orders_snapshot",
+  "account": "e258dba9-4dd4-4da5-bfef-75beb91c098e",
+  "orders": [
+    {
+      "instrument": "PI_XBTUSD",
+      "time": 1612275024153,
+      "last_update_time": 1612275024153,
+      "qty": 1000,
+      "filled": 0,
+      "limit_price": 34900,
+      "stop_price": 13789,
+      "type": "stop",
+      "order_id": "723ba95f-13b7-418b-8fcf-ab7ba6620555",
+      "direction": 1,
+      "reduce_only": false,
+      "triggerSignal": "last"
+    }
+  ]
+}

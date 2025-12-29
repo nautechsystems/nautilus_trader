@@ -17,8 +17,52 @@
 //!
 //! This module provides constants and functions that enforce a fixed-point precision strategy,
 //! ensuring consistent precision and scaling across various types and calculations.
+//!
+//! # Raw value requirements
+//!
+//! When constructing value types like [`Price`] or [`Quantity`] using `from_raw`, the raw value
+//! **must** be a valid multiple of the scale factor for the given precision. Valid raw values
+//! should ideally come from:
+//!
+//! - Accessing the `.raw` field of an existing value (e.g., `price.raw`)
+//! - Using the fixed-point conversion functions in this module
+//! - Values from Nautilus-produced Arrow data
+//!
+//! Raw values that are not valid multiples will cause a panic on construction in debug builds,
+//! and may result in incorrect values in release builds.
+//!
+//! # Legacy catalog data and floating-point errors
+//!
+//! Data written to catalogs using V2 wranglers before 16th December 2025 may contain raw values with
+//! floating-point precision errors. This occurred because the wranglers used:
+//!
+//! ```text
+//! int(value * FIXED_SCALAR)  # Introduces floating-point errors
+//! ```
+//!
+//! instead of the correct precision-aware approach:
+//!
+//! ```text
+//! round(value * 10^precision) * scale  # Correct
+//! ```
+//!
+//! # Raw value correction
+//!
+//! To handle legacy data with floating-point errors, the Arrow decode path uses correction
+//! functions ([`correct_raw_i64`], [`correct_raw_i128`], etc.) to round raw values to the
+//! nearest valid multiple. This ensures backward compatibility with existing catalogs.
+//!
+//! **Note:** This correction adds a small amount of overhead during decoding. In a future
+//! version, once catalogs have been repaired or migrated, this correction will become opt-in.
+//!
+//! [`Price`]: crate::types::Price
+//! [`Quantity`]: crate::types::Quantity
+
+use std::fmt::Display;
 
 use nautilus_core::correctness::FAILED;
+
+use crate::types::{price::PriceRaw, quantity::QuantityRaw};
 
 /// Indicates if high-precision mode is enabled.
 ///
@@ -92,6 +136,41 @@ pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0; // 10^(16-9)
 pub const PRECISION_DIFF_SCALAR: f64 = 1.0;
 
 // -----------------------------------------------------------------------------
+// POWERS_OF_10 (lookup table for fast validation)
+// -----------------------------------------------------------------------------
+
+/// Precomputed powers of 10 for fast scale lookup.
+///
+/// Index i contains 10^i. Table covers 10^0 through 10^16 (sufficient for FIXED_PRECISION).
+/// Used by `check_fixed_raw_*` functions to avoid runtime exponentiation.
+const POWERS_OF_10: [u64; 17] = [
+    1,                      // 10^0
+    10,                     // 10^1
+    100,                    // 10^2
+    1_000,                  // 10^3
+    10_000,                 // 10^4
+    100_000,                // 10^5
+    1_000_000,              // 10^6
+    10_000_000,             // 10^7
+    100_000_000,            // 10^8
+    1_000_000_000,          // 10^9
+    10_000_000_000,         // 10^10
+    100_000_000_000,        // 10^11
+    1_000_000_000_000,      // 10^12
+    10_000_000_000_000,     // 10^13
+    100_000_000_000_000,    // 10^14
+    1_000_000_000_000_000,  // 10^15
+    10_000_000_000_000_000, // 10^16
+];
+
+// Compile-time verification that FIXED_PRECISION is within table bounds.
+// We index POWERS_OF_10[FIXED_PRECISION] when precision=0, so need strict `<`.
+const _: () = assert!(
+    (FIXED_PRECISION as usize) < POWERS_OF_10.len(),
+    "FIXED_PRECISION exceeds POWERS_OF_10 table size"
+);
+
+// -----------------------------------------------------------------------------
 
 /// The maximum precision that can be safely used with f64-based constructors.
 ///
@@ -107,7 +186,9 @@ pub const MAX_FLOAT_PRECISION: u8 = 16;
 ///
 /// # Errors
 ///
-/// Returns an error if `precision` exceeds [`FIXED_PRECISION`].
+/// Returns an error if `precision` exceeds the maximum allowed:
+/// - With `defi` feature: [`WEI_PRECISION`](crate::defi::WEI_PRECISION) (18)
+/// - Without `defi` feature: [`FIXED_PRECISION`]
 pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     #[cfg(feature = "defi")]
     if precision > crate::defi::WEI_PRECISION {
@@ -122,6 +203,344 @@ pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// Raw value validation
+// -----------------------------------------------------------------------------
+
+/// Returns `Ok(true)` if validation should be skipped, `Ok(false)` to proceed.
+///
+/// Validation is skipped when precision >= FIXED_PRECISION because every bit of the raw
+/// value is significant. For precision > FIXED_PRECISION without the defi feature,
+/// a debug assertion fires to surface potential misuse during development.
+#[inline(always)]
+fn should_skip_validation(precision: u8) -> anyhow::Result<bool> {
+    if precision == FIXED_PRECISION {
+        return Ok(true);
+    }
+
+    if precision > FIXED_PRECISION {
+        // Only assert when defi feature is disabled - with defi, 18dp is legitimate
+        #[cfg(not(feature = "defi"))]
+        debug_assert!(
+            false,
+            "precision {precision} exceeds FIXED_PRECISION {FIXED_PRECISION}: \
+             raw value validation is not possible at this precision"
+        );
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+/// Builds the error for invalid fixed-point raw values (cold path).
+#[cold]
+fn invalid_raw_error(
+    raw: impl Display,
+    precision: u8,
+    remainder: impl Display,
+    scale: impl Display,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "Invalid fixed-point raw value {raw} for precision {precision}: \
+         remainder {remainder} when divided by scale {scale}. \
+         Raw value should be a multiple of {scale}. \
+         This indicates data corruption or incorrect precision/scaling upstream"
+    )
+}
+
+/// Checks that a raw unsigned fixed-point value has no spurious bits beyond the precision scale.
+///
+/// For a given precision P where P < FIXED_PRECISION, valid raw values must be exact
+/// multiples of 10^(FIXED_PRECISION - P). Any non-zero remainder indicates data corruption
+/// or incorrect scaling upstream.
+///
+/// # Precision limits
+///
+/// This check only validates when `precision < FIXED_PRECISION`:
+/// - When `precision == FIXED_PRECISION`, every bit of the raw value is significant and
+///   the check passes trivially (no "extra" bits to validate).
+/// - When `precision > FIXED_PRECISION` (possible with defi feature allowing up to 18dp),
+///   validation is not possible because the requested precision exceeds our internal
+///   representation. A debug assertion will fire to surface this during development.
+///
+/// **Important**: For defi 18dp values, this check provides NO protection against incorrectly scaled
+/// raw values. The inherent limitation is that we cannot detect if a 16dp raw is incorrectly
+/// labeled as 18dp, since both would appear valid at full internal precision.
+///
+/// # Example
+///
+/// With FIXED_PRECISION=9 and precision=0:
+/// - Valid: raw=120_000_000_000 (120 * 10^9, divisible by 10^9)
+/// - Invalid: raw=119_582_001_968_421_736 (remainder 968_421_736 when divided by 10^9)
+///
+/// # Errors
+///
+/// Returns an error if the raw value has non-zero bits beyond the precision scale
+/// (only when `precision < FIXED_PRECISION`).
+#[inline(always)]
+pub fn check_fixed_raw_u128(raw: u128, precision: u8) -> anyhow::Result<()> {
+    if should_skip_validation(precision)? {
+        return Ok(());
+    }
+
+    let exp = usize::from(FIXED_PRECISION - precision);
+    let scale = u128::from(POWERS_OF_10[exp]);
+    let remainder = raw % scale;
+
+    if remainder != 0 {
+        return Err(invalid_raw_error(raw, precision, remainder, scale));
+    }
+
+    Ok(())
+}
+
+/// Checks that a raw unsigned fixed-point value (64-bit) has no spurious bits.
+///
+/// Uses direct u64 arithmetic for better performance than widening to u128.
+/// See [`check_fixed_raw_u128`] for full documentation on precision limits and behavior.
+///
+/// # Errors
+///
+/// Returns an error if the raw value has non-zero bits beyond the precision scale.
+#[inline(always)]
+pub fn check_fixed_raw_u64(raw: u64, precision: u8) -> anyhow::Result<()> {
+    if should_skip_validation(precision)? {
+        return Ok(());
+    }
+
+    let exp = usize::from(FIXED_PRECISION - precision);
+    let scale = POWERS_OF_10[exp];
+    let remainder = raw % scale;
+
+    if remainder != 0 {
+        return Err(invalid_raw_error(raw, precision, remainder, scale));
+    }
+
+    Ok(())
+}
+
+/// Checks that a raw signed fixed-point value has no spurious bits beyond the precision scale.
+///
+/// For a given precision P where P < FIXED_PRECISION, valid raw values must be exact
+/// multiples of 10^(FIXED_PRECISION - P). Any non-zero remainder indicates data corruption
+/// or incorrect scaling upstream.
+///
+/// # Precision limits
+///
+/// This check only validates when `precision < FIXED_PRECISION`:
+/// - When `precision == FIXED_PRECISION`, every bit of the raw value is significant and
+///   the check passes trivially (no "extra" bits to validate).
+/// - When `precision > FIXED_PRECISION` (possible with defi feature allowing up to 18dp),
+///   validation is not possible because the requested precision exceeds our internal
+///   representation. A debug assertion will fire to surface this during development.
+///
+/// **Important**: For defi 18dp values, this check provides NO protection against incorrectly scaled
+/// raw values. The inherent limitation is that we cannot detect if a 16dp raw is incorrectly
+/// labeled as 18dp, since both would appear valid at full internal precision.
+///
+/// # Example
+///
+/// With FIXED_PRECISION=9 and precision=0:
+/// - Valid: raw=120_000_000_000 (120 * 10^9, divisible by 10^9)
+/// - Invalid: raw=119_582_001_968_421_736 (remainder 968_421_736 when divided by 10^9)
+///
+/// # Errors
+///
+/// Returns an error if the raw value has non-zero bits beyond the precision scale
+/// (only when `precision < FIXED_PRECISION`).
+#[inline(always)]
+pub fn check_fixed_raw_i128(raw: i128, precision: u8) -> anyhow::Result<()> {
+    if should_skip_validation(precision)? {
+        return Ok(());
+    }
+
+    let exp = usize::from(FIXED_PRECISION - precision);
+    let scale = i128::from(POWERS_OF_10[exp]);
+    let remainder = raw % scale;
+
+    if remainder != 0 {
+        return Err(invalid_raw_error(raw, precision, remainder, scale));
+    }
+
+    Ok(())
+}
+
+/// Checks that a raw signed fixed-point value (64-bit) has no spurious bits.
+///
+/// Uses direct i64 arithmetic for better performance than widening to i128.
+/// See [`check_fixed_raw_i128`] for full documentation on precision limits and behavior.
+///
+/// # Errors
+///
+/// Returns an error if the raw value has non-zero bits beyond the precision scale.
+#[inline(always)]
+pub fn check_fixed_raw_i64(raw: i64, precision: u8) -> anyhow::Result<()> {
+    if should_skip_validation(precision)? {
+        return Ok(());
+    }
+
+    let exp = usize::from(FIXED_PRECISION - precision);
+    let scale = POWERS_OF_10[exp] as i64;
+    let remainder = raw % scale;
+
+    if remainder != 0 {
+        return Err(invalid_raw_error(raw, precision, remainder, scale));
+    }
+
+    Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// Raw value correction functions
+// -----------------------------------------------------------------------------
+// These functions round raw values to the nearest valid multiple of the scale
+// factor for a given precision. This is needed when reading data from catalogs
+// or other sources that may have been created with floating-point precision
+// errors (e.g., `int(value * FIXED_SCALAR)` instead of the correct
+// `round(value * 10^precision) * scale` approach).
+
+/// Rounds a raw `u128` value to the nearest valid multiple of the scale for the given precision.
+///
+/// This corrects raw values that have spurious bits beyond the precision scale, which can occur
+/// from floating-point conversion errors during data creation.
+#[must_use]
+pub fn correct_raw_u128(raw: u128, precision: u8) -> u128 {
+    if precision >= FIXED_PRECISION {
+        return raw;
+    }
+    let exp = usize::from(FIXED_PRECISION - precision);
+    let scale = u128::from(POWERS_OF_10[exp]);
+    let half_scale = scale / 2;
+    let remainder = raw % scale;
+    if remainder == 0 {
+        raw
+    } else if remainder >= half_scale {
+        raw + (scale - remainder)
+    } else {
+        raw - remainder
+    }
+}
+
+/// Rounds a raw `u64` value to the nearest valid multiple of the scale for the given precision.
+///
+/// This corrects raw values that have spurious bits beyond the precision scale, which can occur
+/// from floating-point conversion errors during data creation.
+#[must_use]
+pub fn correct_raw_u64(raw: u64, precision: u8) -> u64 {
+    if precision >= FIXED_PRECISION {
+        return raw;
+    }
+    let exp = usize::from(FIXED_PRECISION - precision);
+    let scale = POWERS_OF_10[exp];
+    let half_scale = scale / 2;
+    let remainder = raw % scale;
+    if remainder == 0 {
+        raw
+    } else if remainder >= half_scale {
+        raw + (scale - remainder)
+    } else {
+        raw - remainder
+    }
+}
+
+/// Rounds a raw `i128` value to the nearest valid multiple of the scale for the given precision.
+///
+/// This corrects raw values that have spurious bits beyond the precision scale, which can occur
+/// from floating-point conversion errors during data creation.
+#[must_use]
+pub fn correct_raw_i128(raw: i128, precision: u8) -> i128 {
+    if precision >= FIXED_PRECISION {
+        return raw;
+    }
+    let exp = usize::from(FIXED_PRECISION - precision);
+    let scale = i128::from(POWERS_OF_10[exp]);
+    let half_scale = scale / 2;
+    let remainder = raw % scale;
+    if remainder == 0 {
+        raw
+    } else if raw >= 0 {
+        if remainder >= half_scale {
+            raw + (scale - remainder)
+        } else {
+            raw - remainder
+        }
+    } else {
+        // For negative values, remainder is negative
+        if remainder.abs() >= half_scale {
+            raw - (scale + remainder)
+        } else {
+            raw - remainder
+        }
+    }
+}
+
+/// Rounds a raw `i64` value to the nearest valid multiple of the scale for the given precision.
+///
+/// This corrects raw values that have spurious bits beyond the precision scale, which can occur
+/// from floating-point conversion errors during data creation.
+#[must_use]
+pub fn correct_raw_i64(raw: i64, precision: u8) -> i64 {
+    if precision >= FIXED_PRECISION {
+        return raw;
+    }
+    let exp = usize::from(FIXED_PRECISION - precision);
+    let scale = POWERS_OF_10[exp] as i64;
+    let half_scale = scale / 2;
+    let remainder = raw % scale;
+    if remainder == 0 {
+        raw
+    } else if raw >= 0 {
+        if remainder >= half_scale {
+            raw + (scale - remainder)
+        } else {
+            raw - remainder
+        }
+    } else {
+        // For negative values, remainder is negative
+        if remainder.abs() >= half_scale {
+            raw - (scale + remainder)
+        } else {
+            raw - remainder
+        }
+    }
+}
+
+/// Rounds a raw price value to the nearest valid multiple of the scale for the given precision.
+///
+/// This is a type-aliased wrapper that calls the appropriate underlying function based on
+/// whether the `high-precision` feature is enabled. Use this when working with `PriceRaw` values
+/// to ensure consistent feature-flag handling.
+#[must_use]
+#[inline]
+pub fn correct_price_raw(raw: PriceRaw, precision: u8) -> PriceRaw {
+    #[cfg(feature = "high-precision")]
+    {
+        correct_raw_i128(raw, precision)
+    }
+    #[cfg(not(feature = "high-precision"))]
+    {
+        correct_raw_i64(raw, precision)
+    }
+}
+
+/// Rounds a raw quantity value to the nearest valid multiple of the scale for the given precision.
+///
+/// This is a type-aliased wrapper that calls the appropriate underlying function based on
+/// whether the `high-precision` feature is enabled. Use this when working with `QuantityRaw` values
+/// to ensure consistent feature-flag handling.
+#[must_use]
+#[inline]
+pub fn correct_quantity_raw(raw: QuantityRaw, precision: u8) -> QuantityRaw {
+    #[cfg(feature = "high-precision")]
+    {
+        correct_raw_u128(raw, precision)
+    }
+    #[cfg(not(feature = "high-precision"))]
+    {
+        correct_raw_u64(raw, precision)
+    }
 }
 
 /// Converts an `f64` value to a raw fixed-point `i64` representation with a specified precision.
@@ -210,9 +629,6 @@ pub fn fixed_u128_to_f64(value: u128) -> f64 {
     (value as f64) / FIXED_SCALAR
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "high-precision")]
 #[cfg(test)]
 mod tests {
@@ -247,7 +663,7 @@ mod tests {
         for precision in 0..=FIXED_PRECISION {
             let fixed = f64_to_fixed_i128(value, precision);
             let result = fixed_i128_to_f64(fixed);
-            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001));
         }
     }
 
@@ -295,7 +711,7 @@ mod tests {
         for precision in 0..=FIXED_PRECISION {
             let fixed = f64_to_fixed_u128(value, precision);
             let result = fixed_u128_to_f64(fixed);
-            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001));
         }
     }
 
@@ -509,6 +925,67 @@ mod tests {
         let result = fixed_u128_to_f64(value);
         assert_eq!(result, (value as f64) / FIXED_SCALAR);
     }
+
+    // -------------------------------------------------------------------------
+    // Raw value validation tests (high-precision: FIXED_PRECISION = 16)
+    // -------------------------------------------------------------------------
+
+    #[rstest]
+    #[case(0, 0)] // Zero is always valid
+    #[case(0, 10_000_000_000_000_000)] // 1 * 10^16 at precision 0
+    #[case(0, 1_200_000_000_000_000_000)] // 120 * 10^16 at precision 0
+    #[case(8, 12_345_678_900_000_000)] // 123456789 * 10^8 at precision 8
+    #[case(15, 1_234_567_890_123_450)] // Multiple of 10 at precision 15
+    fn test_check_fixed_raw_u128_valid(#[case] precision: u8, #[case] raw: u128) {
+        assert!(check_fixed_raw_u128(raw, precision).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 1)] // Not multiple of 10^16
+    #[case(0, 9_999_999_999_999_999)] // One less than scale
+    #[case(0, 10_000_000_000_000_001)] // One more than 10^16
+    #[case(8, 12_345_678_900_000_001)] // Not multiple of 10^8
+    #[case(15, 1_234_567_890_123_451)] // Not multiple of 10
+    fn test_check_fixed_raw_u128_invalid(#[case] precision: u8, #[case] raw: u128) {
+        assert!(check_fixed_raw_u128(raw, precision).is_err());
+    }
+
+    #[rstest]
+    fn test_check_fixed_raw_u128_at_max_precision() {
+        // At FIXED_PRECISION (16), validation is skipped
+        assert!(check_fixed_raw_u128(0, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_u128(1, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_u128(123_456_789, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_u128(u128::MAX, FIXED_PRECISION).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(0, 10_000_000_000_000_000)]
+    #[case(0, -10_000_000_000_000_000)]
+    #[case(8, 12_345_678_900_000_000)]
+    #[case(8, -12_345_678_900_000_000)]
+    fn test_check_fixed_raw_i128_valid(#[case] precision: u8, #[case] raw: i128) {
+        assert!(check_fixed_raw_i128(raw, precision).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 1)]
+    #[case(0, -1)]
+    #[case(0, 9_999_999_999_999_999)]
+    #[case(0, -9_999_999_999_999_999)]
+    fn test_check_fixed_raw_i128_invalid(#[case] precision: u8, #[case] raw: i128) {
+        assert!(check_fixed_raw_i128(raw, precision).is_err());
+    }
+
+    #[rstest]
+    fn test_check_fixed_raw_i128_at_max_precision() {
+        assert!(check_fixed_raw_i128(0, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_i128(1, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_i128(-1, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_i128(i128::MAX, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_i128(i128::MIN, FIXED_PRECISION).is_ok());
+    }
 }
 
 #[cfg(not(feature = "high-precision"))]
@@ -534,7 +1011,7 @@ mod tests {
         for precision in 0..=FIXED_PRECISION {
             let fixed = f64_to_fixed_i64(value, precision);
             let result = fixed_i64_to_f64(fixed);
-            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001));
         }
     }
 
@@ -572,7 +1049,7 @@ mod tests {
         for precision in 0..=FIXED_PRECISION {
             let fixed = f64_to_fixed_u64(value, precision);
             let result = fixed_u64_to_f64(fixed);
-            assert!(approx_eq!(f64, value, result, epsilon = 0.001, ulps = 16));
+            assert!(approx_eq!(f64, value, result, epsilon = 0.001));
         }
     }
 
@@ -746,5 +1223,63 @@ mod tests {
     ) {
         let result = fixed_u64_to_f64(value);
         assert_eq!(result, (value as f64) / FIXED_SCALAR);
+    }
+
+    #[rstest]
+    #[case(0, 0)] // Zero is always valid
+    #[case(0, 1_000_000_000)] // 1 * 10^9 at precision 0
+    #[case(0, 120_000_000_000)] // 120 * 10^9 at precision 0
+    #[case(2, 123_450_000_000)] // 12345 * 10^7 at precision 2
+    #[case(8, 1_234_567_890)] // 123456789 * 10 at precision 8
+    fn test_check_fixed_raw_u64_valid(#[case] precision: u8, #[case] raw: u64) {
+        assert!(check_fixed_raw_u64(raw, precision).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 1)] // Not multiple of 10^9
+    #[case(0, 999_999_999)] // One less than scale
+    #[case(0, 1_000_000_001)] // One more than 10^9
+    #[case(0, 119_582_001_968_421_736)] // The original bug case
+    #[case(2, 123_456_789_000)] // Not multiple of 10^7
+    #[case(8, 1_234_567_891)] // Not multiple of 10
+    fn test_check_fixed_raw_u64_invalid(#[case] precision: u8, #[case] raw: u64) {
+        assert!(check_fixed_raw_u64(raw, precision).is_err());
+    }
+
+    #[rstest]
+    fn test_check_fixed_raw_u64_at_max_precision() {
+        // At FIXED_PRECISION, validation is skipped - any value is valid
+        assert!(check_fixed_raw_u64(0, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_u64(1, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_u64(123_456_789, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_u64(u64::MAX, FIXED_PRECISION).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(0, 1_000_000_000)]
+    #[case(0, -1_000_000_000)]
+    #[case(2, 123_450_000_000)]
+    #[case(2, -123_450_000_000)]
+    fn test_check_fixed_raw_i64_valid(#[case] precision: u8, #[case] raw: i64) {
+        assert!(check_fixed_raw_i64(raw, precision).is_ok());
+    }
+
+    #[rstest]
+    #[case(0, 1)]
+    #[case(0, -1)]
+    #[case(0, 999_999_999)]
+    #[case(0, -999_999_999)]
+    fn test_check_fixed_raw_i64_invalid(#[case] precision: u8, #[case] raw: i64) {
+        assert!(check_fixed_raw_i64(raw, precision).is_err());
+    }
+
+    #[rstest]
+    fn test_check_fixed_raw_i64_at_max_precision() {
+        assert!(check_fixed_raw_i64(0, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_i64(1, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_i64(-1, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_i64(i64::MAX, FIXED_PRECISION).is_ok());
+        assert!(check_fixed_raw_i64(i64::MIN, FIXED_PRECISION).is_ok());
     }
 }

@@ -22,20 +22,20 @@ By default, log events with an 'INFO' `LogLevel` and higher are written to stdou
 
 Log level (`LogLevel`) values include (and generally match Rust's `tracing` level filters).
 
-Python loggers expose the following levels:
+The following log levels are supported:
 
-- `OFF`
-- `TRACE` (can be set as a filter level, but not directly generated from Python)
-- `DEBUG`
-- `INFO`
-- `WARNING`
-- `ERROR`
+- `OFF` - Disable logging.
+- `TRACE` - Most verbose; only emitted by Rust components (cannot be generated from Python).
+- `DEBUG` - Detailed diagnostic information.
+- `INFO` - General operational messages.
+- `WARNING` - Potential issues that don't prevent operation.
+- `ERROR` - Errors that may affect functionality.
 
-:::warning
-The Python `Logger` does not provide a `trace()` method; `TRACE` level logs are only emitted by the underlying Rust components and cannot be generated directly from Python code. However, you can set `TRACE` as a logging level filter to see trace logs from Rust components.
+:::tip
+You can set `TRACE` as a filter level to capture trace logs from Rust components, even though Python code cannot emit them directly.
+:::
 
 See the `LoggingConfig` [API Reference](../api_reference/config.md#class-loggingconfig) for further details.
-:::
 
 Logging can be configured in the following ways:
 
@@ -61,7 +61,12 @@ Log messages are written to the console via stdout/stderr writers. The minimum l
 
 Log files are written to the current working directory by default. The naming convention and rotation behavior are configurable and follow specific patterns based on your settings.
 
-You can specify a custom log directory using `log_directory` and/or a custom file basename using `log_file_name`. Log files are always suffixed with `.log` (plain text) or `.json` (JSON).
+You can specify a custom log directory using `log_directory` and/or a custom file basename using `log_file_name`.
+
+**Log file formats:**
+
+- `None` (default) - Plain text format with `.log` extension.
+- `"json"` - JSON format with `.json` extension, useful for log aggregation tools.
 
 For detailed information about log file naming conventions and rotation behavior, see the [Log file rotation](#log-file-rotation) and [Log file naming convention](#log-file-naming-convention) sections below.
 
@@ -77,6 +82,7 @@ Rotation behavior depends on both the presence of a size limit and whether a cus
   - At each UTC date change (midnight), the current log file is closed and a new one is started, creating one file per UTC day.
 - **No rotation**:
   - When a custom `log_file_name` is provided without a `log_file_max_size`, logs continue to append to the same file.
+  - Note: Size-based rotation takes precedence - if both a custom name and size limit are provided, rotation still occurs.
 - **Backup file management**:
   - Controlled by the `log_file_max_backup_count` parameter (default: 5), limiting the total number of rotated files kept.
   - When this limit is exceeded, the oldest backup files are automatically removed.
@@ -212,7 +218,7 @@ The logging system uses reference counting to track active `LogGuard` instances:
 - **Counter increments**: When a new `LogGuard` is created, an atomic counter is incremented.
 - **Counter decrements**: When a `LogGuard` is dropped, the counter is decremented.
 - **Logging thread termination**: When the counter reaches zero (last `LogGuard` dropped), the logging thread is properly joined to ensure all pending log messages are written before the process terminates.
-- **Maximum guards**: The system supports up to 255 concurrent `LogGuard` instances. Attempting to create more will cause a panic.
+- **Maximum guards**: The system supports up to 255 concurrent `LogGuard` instances. Attempting to create more raises a `RuntimeError`.
 
 This mechanism ensures that:
 
@@ -263,7 +269,7 @@ for i in range(number_of_backtests):
 ### Steps
 
 - **Initialize LogGuard once**: The `LogGuard` is obtained from the first engine (`engine.get_log_guard()`) and is retained throughout the process. This ensures that the logging subsystem remains active.
-- **Dispose engines safely**: Each engine is safely disposed of after its backtest completes, without affecting the logging subsystem.
+- **Dispose engines safely**: Each engine is safely disposed of after its backtest completes. The `LogGuard` remains valid after `engine.dispose()` - only the engine is cleaned up, not the logging subsystem.
 - **Reuse LogGuard**: The same `LogGuard` instance is reused for subsequent engines, preventing the logging subsystem from shutting down prematurely.
 
 ### Considerations

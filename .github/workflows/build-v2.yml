@@ -42,6 +42,8 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
+  # Dependency license, advisory, and ban checks
+  # https://embarkstudios.github.io/cargo-deny/
   cargo-deny:
     runs-on: ubuntu-22.04
     steps:
@@ -56,17 +58,43 @@ jobs:
         with:
           persist-credentials: false
 
-      # https://github.com/EmbarkStudios/cargo-deny-action
-      - name: Run cargo-deny (advisories, licenses, sources, bans)
-        uses: EmbarkStudios/cargo-deny-action@f9cc7aa250dec5698b425dc01fbf0d745fcd1b78 # v2.0.13
+      - name: Install cargo-deny
+        uses: ./.github/actions/cargo-tool-install
         with:
-          command: check advisories licenses sources bans
-          arguments: --all-features
+          tool-name: cargo-deny
+
+      - name: Run cargo-deny (advisories, licenses, sources, bans)
+        run: cargo deny --all-features check advisories licenses sources bans
+
+  # Supply chain security auditing
+  # https://mozilla.github.io/cargo-vet/configuring-ci.html
+  cargo-vet:
+    runs-on: ubuntu-22.04
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-vet
+        uses: ./.github/actions/cargo-tool-install
+        with:
+          tool-name: cargo-vet
+
+      - name: Run cargo-vet
+        run: cargo vet --locked
 
   build:
     needs:
-      - pre-commit
       - cargo-deny
+      - cargo-vet
+      - pre-commit
     strategy:
       fail-fast: false
       matrix:

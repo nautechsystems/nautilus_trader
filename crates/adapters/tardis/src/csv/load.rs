@@ -131,61 +131,87 @@ pub fn load_deltas<P: AsRef<Path>>(
     let mut current_price_precision = price_precision.unwrap_or(0);
     let mut current_size_precision = size_precision.unwrap_or(0);
     let mut last_ts_event = UnixNanos::default();
+    let mut last_is_snapshot = false;
 
     let mut reader = create_csv_reader(filepath)?;
     let mut record = StringRecord::new();
 
     while reader.read_record(&mut record)? {
-        let data: TardisBookUpdateRecord = record.deserialize(None)?;
-
-        // Update precisions dynamically if not explicitly set
-        let price_updated =
-            update_precision_if_needed(&mut current_price_precision, data.price, price_precision);
-        let size_updated =
-            update_precision_if_needed(&mut current_size_precision, data.amount, size_precision);
-
-        // If precision increased, update all previous deltas
-        if price_updated || size_updated {
-            update_deltas_precision(
-                &mut deltas,
-                price_precision,
-                size_precision,
-                current_price_precision,
-                current_size_precision,
-            );
+        if let Some(limit) = limit
+            && deltas.len() >= limit
+        {
+            break;
         }
 
-        let delta = parse_delta_record(
+        let data: TardisBookUpdateRecord = record.deserialize(None)?;
+
+        update_precision_if_needed(&mut current_price_precision, data.price, price_precision);
+        update_precision_if_needed(&mut current_size_precision, data.amount, size_precision);
+
+        // Insert CLEAR on snapshot boundary to reset order book state
+        if data.is_snapshot && !last_is_snapshot {
+            let clear_instrument_id =
+                instrument_id.unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
+            let ts_event = parse_timestamp(data.timestamp);
+            let ts_init = parse_timestamp(data.local_timestamp);
+
+            if last_ts_event != ts_event
+                && let Some(last_delta) = deltas.last_mut()
+            {
+                last_delta.flags = RecordFlag::F_LAST.value();
+            }
+            last_ts_event = ts_event;
+
+            let clear_delta = OrderBookDelta::clear(clear_instrument_id, 0, ts_event, ts_init);
+            deltas.push(clear_delta);
+
+            if let Some(limit) = limit
+                && deltas.len() >= limit
+            {
+                break;
+            }
+        }
+        last_is_snapshot = data.is_snapshot;
+
+        let delta = match parse_delta_record(
             &data,
             current_price_precision,
             current_size_precision,
             instrument_id,
-        );
+        ) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!("Skipping invalid delta record: {e}");
+                continue;
+            }
+        };
 
-        // Check if timestamp is different from last timestamp
         let ts_event = delta.ts_event;
         if last_ts_event != ts_event
             && let Some(last_delta) = deltas.last_mut()
         {
-            // Set previous delta flags as F_LAST
             last_delta.flags = RecordFlag::F_LAST.value();
         }
 
         last_ts_event = ts_event;
 
         deltas.push(delta);
-
-        if let Some(limit) = limit
-            && deltas.len() >= limit
-        {
-            break;
-        }
     }
 
     // Set F_LAST flag for final delta
     if let Some(last_delta) = deltas.last_mut() {
         last_delta.flags = RecordFlag::F_LAST.value();
     }
+
+    // Update all deltas to use the final (maximum) precision discovered
+    // This is done once at the end instead of on every precision change (O(n) vs O(n²))
+    update_deltas_precision(
+        &mut deltas,
+        price_precision,
+        size_precision,
+        current_price_precision,
+        current_size_precision,
+    );
 
     Ok(deltas)
 }
@@ -264,7 +290,8 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
             Some(id) => *id,
             None => parse_instrument_id(&data.exchange, data.symbol),
         };
-        let flags = RecordFlag::F_LAST.value();
+        // Mark as both snapshot and last (consistent with streaming implementation)
+        let flags = RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value();
         let sequence = 0; // Sequence not available
         let ts_event = parse_timestamp(data.timestamp);
         let ts_init = parse_timestamp(data.local_timestamp);
@@ -420,7 +447,8 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
             Some(id) => *id,
             None => parse_instrument_id(&data.exchange, data.symbol),
         };
-        let flags = RecordFlag::F_LAST.value();
+        // Mark as both snapshot and last (consistent with streaming implementation)
+        let flags = RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value();
         let sequence = 0; // Sequence not available
         let ts_event = parse_timestamp(data.timestamp);
         let ts_init = parse_timestamp(data.local_timestamp);
@@ -558,16 +586,12 @@ pub fn load_quotes<P: AsRef<Path>>(
     while reader.read_record(&mut record)? {
         let data: TardisQuoteRecord = record.deserialize(None)?;
 
-        // Update precisions dynamically if not explicitly set
-        let mut precision_updated = false;
-
         if price_precision.is_none()
             && let Some(bid_price) = data.bid_price
         {
             let inferred_price_precision = infer_precision(bid_price).min(FIXED_PRECISION);
             if inferred_price_precision > current_price_precision {
                 current_price_precision = inferred_price_precision;
-                precision_updated = true;
             }
         }
 
@@ -577,19 +601,7 @@ pub fn load_quotes<P: AsRef<Path>>(
             let inferred_size_precision = infer_precision(bid_amount).min(FIXED_PRECISION);
             if inferred_size_precision > current_size_precision {
                 current_size_precision = inferred_size_precision;
-                precision_updated = true;
             }
-        }
-
-        // If precision increased, update all previous quotes
-        if precision_updated {
-            update_quotes_precision(
-                &mut quotes,
-                price_precision,
-                size_precision,
-                current_price_precision,
-                current_size_precision,
-            );
         }
 
         let quote = parse_quote_record(
@@ -607,6 +619,16 @@ pub fn load_quotes<P: AsRef<Path>>(
             break;
         }
     }
+
+    // Update all quotes to use the final (maximum) precision discovered
+    // This is done once at the end instead of on every precision change (O(n) vs O(n²))
+    update_quotes_precision(
+        &mut quotes,
+        price_precision,
+        size_precision,
+        current_price_precision,
+        current_size_precision,
+    );
 
     Ok(quotes)
 }
@@ -641,14 +663,10 @@ pub fn load_trades<P: AsRef<Path>>(
     while reader.read_record(&mut record)? {
         let data: TardisTradeRecord = record.deserialize(None)?;
 
-        // Update precisions dynamically if not explicitly set
-        let mut precision_updated = false;
-
         if price_precision.is_none() {
             let inferred_price_precision = infer_precision(data.price).min(FIXED_PRECISION);
             if inferred_price_precision > current_price_precision {
                 current_price_precision = inferred_price_precision;
-                precision_updated = true;
             }
         }
 
@@ -656,19 +674,7 @@ pub fn load_trades<P: AsRef<Path>>(
             let inferred_size_precision = infer_precision(data.amount).min(FIXED_PRECISION);
             if inferred_size_precision > current_size_precision {
                 current_size_precision = inferred_size_precision;
-                precision_updated = true;
             }
-        }
-
-        // If precision increased, update all previous trades
-        if precision_updated {
-            update_trades_precision(
-                &mut trades,
-                price_precision,
-                size_precision,
-                current_price_precision,
-                current_size_precision,
-            );
         }
 
         let size = Quantity::new_checked(data.amount, current_size_precision)?;
@@ -687,6 +693,16 @@ pub fn load_trades<P: AsRef<Path>>(
             log::warn!("Skipping zero-sized trade: {data:?}");
         }
     }
+
+    // Update all trades to use the final (maximum) precision discovered
+    // This is done once at the end instead of on every precision change (O(n) vs O(n²))
+    update_trades_precision(
+        &mut trades,
+        price_precision,
+        size_precision,
+        current_price_precision,
+        current_size_precision,
+    );
 
     Ok(trades)
 }
@@ -730,9 +746,6 @@ pub fn load_funding_rates<P: AsRef<Path>>(
     Ok(funding_rates)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -776,9 +789,11 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
 
         let deltas = load_deltas(&temp_file, None, None, None, None).unwrap();
 
-        assert_eq!(deltas.len(), 5);
+        // 5 data rows + 1 CLEAR delta at start (first row is snapshot)
+        assert_eq!(deltas.len(), 6);
 
-        for (i, delta) in deltas.iter().enumerate() {
+        // Skip the CLEAR delta at index 0
+        for (i, delta) in deltas.iter().skip(1).enumerate() {
             assert_eq!(
                 delta.order.price.precision, 4,
                 "Price precision should be 4 for delta {i}",
@@ -790,28 +805,31 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         }
 
         // Test exact values to ensure retroactive precision updates work correctly
-        assert_eq!(deltas[0].order.price, parse_price(50000.0, 4));
-        assert_eq!(deltas[0].order.size, Quantity::new(1.0, 1));
+        // Index 0 is CLEAR, data starts at index 1
+        assert_eq!(deltas[0].action, BookAction::Clear);
 
-        assert_eq!(deltas[1].order.price, parse_price(49999.5, 4));
-        assert_eq!(deltas[1].order.size, Quantity::new(2.0, 1));
+        assert_eq!(deltas[1].order.price, parse_price(50000.0, 4));
+        assert_eq!(deltas[1].order.size, Quantity::new(1.0, 1));
 
-        assert_eq!(deltas[2].order.price, parse_price(50000.12, 4));
-        assert_eq!(deltas[2].order.size, Quantity::new(1.5, 1));
+        assert_eq!(deltas[2].order.price, parse_price(49999.5, 4));
+        assert_eq!(deltas[2].order.size, Quantity::new(2.0, 1));
 
-        assert_eq!(deltas[3].order.price, parse_price(49999.123, 4));
-        assert_eq!(deltas[3].order.size, Quantity::new(3.0, 1));
+        assert_eq!(deltas[3].order.price, parse_price(50000.12, 4));
+        assert_eq!(deltas[3].order.size, Quantity::new(1.5, 1));
 
-        assert_eq!(deltas[4].order.price, parse_price(50000.1234, 4));
-        assert_eq!(deltas[4].order.size, Quantity::new(0.5, 1));
+        assert_eq!(deltas[4].order.price, parse_price(49999.123, 4));
+        assert_eq!(deltas[4].order.size, Quantity::new(3.0, 1));
+
+        assert_eq!(deltas[5].order.price, parse_price(50000.1234, 4));
+        assert_eq!(deltas[5].order.size, Quantity::new(0.5, 1));
 
         assert_eq!(
-            deltas[0].order.price.precision,
-            deltas[4].order.price.precision
+            deltas[1].order.price.precision,
+            deltas[5].order.price.precision
         );
         assert_eq!(
-            deltas[0].order.size.precision,
-            deltas[2].order.size.precision
+            deltas[1].order.size.precision,
+            deltas[3].order.size.precision
         );
 
         std::fs::remove_file(&temp_file).ok();
@@ -828,19 +846,25 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         let deltas =
             load_deltas(filepath, price_precision, size_precision, None, Some(100)).unwrap();
 
-        assert_eq!(deltas.len(), 15);
+        // 15 data rows + 1 CLEAR delta at start (first row is snapshot)
+        assert_eq!(deltas.len(), 16);
+
+        // Index 0 is CLEAR delta
+        assert_eq!(deltas[0].action, BookAction::Clear);
+
+        // Index 1 is first data delta
         assert_eq!(
-            deltas[0].instrument_id,
+            deltas[1].instrument_id,
             InstrumentId::from("BTC-PERPETUAL.DERIBIT")
         );
-        assert_eq!(deltas[0].action, BookAction::Add);
-        assert_eq!(deltas[0].order.side, OrderSide::Sell);
-        assert_eq!(deltas[0].order.price, Price::from("6421.5"));
-        assert_eq!(deltas[0].order.size, Quantity::from("18640"));
-        assert_eq!(deltas[0].flags, 0);
-        assert_eq!(deltas[0].sequence, 0);
-        assert_eq!(deltas[0].ts_event, 1585699200245000000);
-        assert_eq!(deltas[0].ts_init, 1585699200355684000);
+        assert_eq!(deltas[1].action, BookAction::Add);
+        assert_eq!(deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas[1].order.price, Price::from("6421.5"));
+        assert_eq!(deltas[1].order.size, Quantity::from("18640"));
+        assert_eq!(deltas[1].flags, 0);
+        assert_eq!(deltas[1].sequence, 0);
+        assert_eq!(deltas[1].ts_event, 1585699200245000000);
+        assert_eq!(deltas[1].ts_init, 1585699200355684000);
     }
 
     #[rstest]
@@ -872,7 +896,11 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(depths[0].asks[0].order_id, 0);
         assert_eq!(depths[0].bid_counts[0], 1);
         assert_eq!(depths[0].ask_counts[0], 1);
-        assert_eq!(depths[0].flags, 128);
+        // F_SNAPSHOT (32) | F_LAST (128) = 160
+        assert_eq!(
+            depths[0].flags,
+            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+        );
         assert_eq!(depths[0].ts_event, 1598918403696000000);
         assert_eq!(depths[0].ts_init, 1598918403810979000);
         assert_eq!(depths[0].sequence, 0);
@@ -912,7 +940,11 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(depths[0].asks[0].order_id, 0);
         assert_eq!(depths[0].bid_counts[0], 1);
         assert_eq!(depths[0].ask_counts[0], 1);
-        assert_eq!(depths[0].flags, 128);
+        // F_SNAPSHOT (32) | F_LAST (128) = 160
+        assert_eq!(
+            depths[0].flags,
+            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+        );
         assert_eq!(depths[0].ts_event, 1598918403696000000);
         assert_eq!(depths[0].ts_init, 1598918403810979000);
         assert_eq!(depths[0].sequence, 0);
@@ -1016,9 +1048,12 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
     pub fn test_load_deltas_from_local_file() {
         let filepath = get_test_data_path("csv/deltas_1.csv");
         let deltas = load_deltas(filepath, Some(1), Some(0), None, None).unwrap();
-        assert_eq!(deltas.len(), 2);
-        assert_eq!(deltas[0].order.price, Price::from("6421.5"));
-        assert_eq!(deltas[1].order.size, Quantity::from("10000"));
+
+        // 2 data rows + 1 CLEAR delta at start (first row is snapshot)
+        assert_eq!(deltas.len(), 3);
+        assert_eq!(deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas[1].order.price, Price::from("6421.5"));
+        assert_eq!(deltas[2].order.size, Quantity::from("10000"));
     }
 
     #[rstest]
@@ -1125,8 +1160,11 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
             assert_eq!(first.ask_counts[i], 0);
         }
 
-        // Check metadata
-        assert_eq!(first.flags, 128); // F_SNAPSHOT flag
+        // Check metadata - F_SNAPSHOT (32) | F_LAST (128) = 160
+        assert_eq!(
+            first.flags,
+            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+        );
         assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
         assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
         assert_eq!(first.sequence, 0);
@@ -1222,8 +1260,11 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
             assert_eq!(first.ask_counts[i], 1);
         }
 
-        // Check metadata
-        assert_eq!(first.flags, 128); // F_SNAPSHOT flag
+        // Check metadata - F_SNAPSHOT (32) | F_LAST (128) = 160
+        assert_eq!(
+            first.flags,
+            RecordFlag::F_SNAPSHOT.value() | RecordFlag::F_LAST.value()
+        );
         assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
         assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
         assert_eq!(first.sequence, 0);
@@ -1274,5 +1315,70 @@ binance-futures,BTCUSDT,1000000,2000000,\
         assert_eq!(depth.asks[0].size, Quantity::from("1.0"));
 
         std::fs::remove_file(temp_file).unwrap();
+    }
+
+    #[rstest]
+    fn test_load_deltas_limit_includes_clear_deltas() {
+        // Test that limit counts total emitted deltas (including CLEARs)
+        // When limit=5, we should get exactly 5 deltas: 1 CLEAR + 4 data deltas
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+binance-futures,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.0,0.5
+binance-futures,BTCUSDT,1640995202000000,1640995202100000,false,ask,50002.0,1.5
+binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49998.0,0.5
+binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50003.0,2.0
+binance-futures,BTCUSDT,1640995205000000,1640995205100000,false,bid,49997.0,0.5";
+
+        let temp_file = std::env::temp_dir().join("test_load_deltas_limit.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // Load with limit=5 (should emit exactly 5 deltas including CLEAR)
+        let deltas = load_deltas(&temp_file, Some(1), Some(1), None, Some(5)).unwrap();
+
+        // Should have exactly 5 deltas: 1 CLEAR + 4 data deltas
+        assert_eq!(deltas.len(), 5);
+        assert_eq!(deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas[1].action, BookAction::Add);
+        assert_eq!(deltas[2].action, BookAction::Add);
+        assert_eq!(deltas[3].action, BookAction::Update);
+        assert_eq!(deltas[4].action, BookAction::Update);
+
+        // Verify the last delta is from the 4th CSV record (49999.0 bid)
+        assert_eq!(deltas[3].order.price, parse_price(49999.0, 1));
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_deltas_limit_stops_at_clear() {
+        // Test that limit=1 with snapshot data returns only the CLEAR delta
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0";
+
+        let temp_file = std::env::temp_dir().join("test_load_deltas_limit_stops_at_clear.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // Load with limit=1 should only get the CLEAR delta
+        let deltas = load_deltas(&temp_file, Some(1), Some(1), None, Some(1)).unwrap();
+
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].action, BookAction::Clear);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_deltas_limit_with_mid_day_snapshot() {
+        // Test limit behavior when there's a mid-day snapshot
+        // The limit counts total emitted deltas including CLEARs
+        let filepath = get_test_data_path("csv/deltas_with_snapshot.csv");
+        let deltas = load_deltas(filepath, Some(1), Some(1), None, Some(5)).unwrap();
+
+        // With limit=5, we get exactly 5 deltas
+        // First snapshot inserts CLEAR, then we get 4 more data deltas
+        assert_eq!(deltas.len(), 5);
+        assert_eq!(deltas[0].action, BookAction::Clear);
     }
 }

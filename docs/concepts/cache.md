@@ -26,14 +26,14 @@ The Cache serves multiple key purposes:
 - In live contexts, the engine applies updates asynchronously, so you might see a brief delay between an event and its appearance in the `Cache`.
 - All data flows through the `Cache` before reaching your strategy’s callbacks – see the diagram below:
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌───────────────────────┐
-│                 │     │                 │     │                 │     │                       │
-│                 │     │                 │     │                 │     │   Strategy callback:  │
-│      Data       ├─────►   DataEngine    ├─────►     Cache       ├─────►                       │
-│                 │     │                 │     │                 │     │   on_data(...)        │
-│                 │     │                 │     │                 │     │                       │
-└─────────────────┘     └─────────────────┘     └─────────────────┘     └───────────────────────┘
+```mermaid
+flowchart LR
+    data[Data]
+    engine[DataEngine]
+    cache[Cache]
+    callback["Strategy callback:<br/>on_data(...)"]
+
+    data --> engine --> cache --> callback
 ```
 
 ### Basic example
@@ -41,7 +41,7 @@ The Cache serves multiple key purposes:
 Within a strategy, you can access the `Cache` through `self.cache`. Here’s a typical example:
 
 :::note
-Anywhere you find `self`, it refers mostly to the `Strategy` itself.
+Within a `Strategy` class, `self` refers to the strategy instance.
 :::
 
 ```python

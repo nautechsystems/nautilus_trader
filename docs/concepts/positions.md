@@ -53,7 +53,7 @@ A position closes when the net quantity becomes zero (`FLAT`). At closure:
 - The closing order ID is recorded.
 - Duration is calculated from open to close.
 - Final realized PnL is computed.
-- In `NETTING` OMS, the engine preserves closed position state through snapshots to maintain historical PnL (see [Position snapshotting](#position-snapshotting)).
+- In `NETTING` OMS, when the position later reopens, the engine snapshots the closed state to preserve historical PnL (see [Position snapshotting](#position-snapshotting)).
 
 ## Order fill aggregation
 
@@ -160,6 +160,7 @@ In `HEDGING` mode, multiple positions can exist for the same instrument:
 - Each position has a unique position ID.
 - Positions are tracked independently.
 - No automatic netting across positions.
+- Closed positions remain in cache history but do not reopen; new fills create new positions.
 
 :::warning
 When using `HEDGING` mode, be aware of increased margin requirements as each position
@@ -266,6 +267,8 @@ position.unrealized_pnl(last_price)  # Using last traded price
 position.unrealized_pnl(bid_price)   # Conservative for LONG positions
 position.unrealized_pnl(ask_price)   # Conservative for SHORT positions
 ```
+
+Returns `Money(0, settlement_currency)` for `FLAT` positions regardless of the price provided.
 
 ### Total PnL
 
@@ -425,8 +428,8 @@ For implementation details, see `test_position_pnl_precision_*` tests in `crates
 
 :::note
 For regulatory compliance or audit trails requiring exact decimal arithmetic, consider using `Decimal`
-types from external libraries. Very small amounts below `f64` epsilon (~1e-15) may round to zero,
-though this does not affect realistic trading scenarios with standard currency precisions.
+types from external libraries. Very small amounts below `f64` epsilon (~1e-15) may round to zero.
+This does not affect realistic trading scenarios with standard currency precisions (typically 2-9 decimals).
 :::
 
 ## Integration with other components

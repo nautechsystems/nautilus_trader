@@ -29,7 +29,7 @@ use nautilus_common::{
     live::clock::LiveClock,
 };
 use nautilus_model::{
-    data::greeks::GreeksData,
+    data::{PortfolioGreeks, greeks::GreeksData},
     enums::PositionSide,
     identifiers::{InstrumentId, TraderId},
 };
@@ -100,9 +100,7 @@ impl GreeksActor {
     }
 
     /// Calculates portfolio greeks.
-    pub fn calculate_portfolio_greeks(
-        &self,
-    ) -> anyhow::Result<nautilus_model::data::greeks::PortfolioGreeks> {
+    pub fn calculate_portfolio_greeks(&self) -> anyhow::Result<PortfolioGreeks> {
         // Example parameters
         let underlyings = None;
         let venue = None;
@@ -122,7 +120,6 @@ impl GreeksActor {
         let beta_weights = None;
         let greeks_filter = None;
 
-        // Calculate portfolio greeks
         self.greeks_calculator.portfolio_greeks(
             underlyings,
             venue,
@@ -147,7 +144,6 @@ impl GreeksActor {
 
     /// Subscribes to greeks data for a specific underlying.
     pub fn subscribe_to_greeks(&self, underlying: &str) {
-        // Subscribe to greeks data
         self.greeks_calculator
             .subscribe_greeks::<fn(GreeksData)>(underlying, None);
     }
@@ -169,7 +165,6 @@ impl DerefMut for GreeksActor {
 
 impl DataActor for GreeksActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        // Subscribe to greeks data for SPY
         self.subscribe_to_greeks("SPY");
         Ok(())
     }
@@ -179,7 +174,6 @@ impl DataActor for GreeksActor {
     }
 
     fn on_data(&mut self, data: &dyn std::any::Any) -> anyhow::Result<()> {
-        // Handle received data
         if let Some(greeks_data) = data.downcast_ref::<GreeksData>() {
             println!("Received greeks data: {greeks_data:?}");
         }

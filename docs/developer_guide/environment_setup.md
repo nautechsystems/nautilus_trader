@@ -9,6 +9,10 @@ For development we recommend using the PyCharm *Professional* edition IDE, as it
 NautilusTrader uses increasingly more [Rust](https://www.rust-lang.org), so Rust should be installed on your system as well
 ([installation guide](https://www.rust-lang.org/tools/install)).
 
+[Cap'n Proto](https://capnproto.org/) is required for serialization schema compilation. The required
+version is specified in the `capnp-version` file in the repository root. Ubuntu's default package
+is typically too old, so you may need to install from source (see below).
+
 :::info
 NautilusTrader *must* compile and run on **Linux, macOS, and Windows**. Please keep portability in
 mind (use `std::path::Path`, avoid Bash-isms in shell scripts, etc.).
@@ -53,20 +57,37 @@ make pre-commit
 
 Make sure the Rust compiler reports **zero errors** – broken builds slow everyone down.
 
-3. **Required for Rust tests**: When using Python installed via `uv`, set the `PYTHONHOME` environment variable for Rust tests to work correctly:
+3. **Required for Rust/PyO3 (Linux and macOS)**: When using Python installed via `uv` on Linux or macOS, set the following environment variables:
 
 ```bash
-# Get the Python home path
-PYTHON_HOME=$(python -c "import sys; print(sys.base_prefix)")
-
 # Add to your shell configuration (e.g., ~/.zshrc or ~/.bashrc)
-export PYTHONHOME="$PYTHON_HOME"
+
+# Linux only: Set the library path for the Python interpreter
+export LD_LIBRARY_PATH="$(python -c 'import sys; print(sys.base_prefix)')/lib:$LD_LIBRARY_PATH"
+
+# Set the Python executable path for PyO3
+export PYO3_PYTHON=$(pwd)/.venv/bin/python
+
+# Set the Python home path (required for Rust tests)
+export PYTHONHOME=$(python -c "import sys; print(sys.base_prefix)")
 ```
 
 :::note
-The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`-installed Python.
-Without it, tests that depend on PyO3 may fail to locate the Python runtime.
+The `LD_LIBRARY_PATH` export is Linux-specific and not needed on macOS or Windows.
+
+- `PYO3_PYTHON` tells PyO3 which Python interpreter to use, reducing unnecessary recompilation.
+- `PYTHONHOME` is required when running `make cargo-test` with a `uv`-installed Python.
+  Without it, tests that depend on PyO3 may fail to locate the Python runtime.
+
 :::
+
+To verify your environment is configured correctly:
+
+```bash
+python -c "import sys; print('Python:', sys.executable, sys.version)"
+echo "PYO3_PYTHON: $PYO3_PYTHON"
+echo "PYTHONHOME: $PYTHONHOME"
+```
 
 ## Builds
 
@@ -89,6 +110,50 @@ To compile in debug mode, use:
 make build-debug
 ```
 
+## Cap'n Proto
+
+[Cap'n Proto](https://capnproto.org/) is required for serialization schema compilation.
+The required version is defined in the `capnp-version` file in the repository root.
+
+On **macOS**, install via Homebrew:
+
+```bash
+brew install capnp
+```
+
+Verify the installed version matches `capnp-version`. If Homebrew provides an older version,
+install from source using the Linux instructions below.
+
+On **Ubuntu/Linux**, the default package is typically too old. Install from source:
+
+```bash
+CAPNP_VERSION=$(cat capnp-version)
+cd ~
+wget https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz
+tar xzf capnproto-c++-${CAPNP_VERSION}.tar.gz
+cd capnproto-c++-${CAPNP_VERSION}
+./configure
+make -j$(nproc)
+sudo make install
+sudo ldconfig
+```
+
+Verify installation:
+
+```bash
+capnp --version
+```
+
+On **Windows**, install via Chocolatey:
+
+```bash
+choco install capnproto
+```
+
+Verify the installed version matches `capnp-version`. If Chocolatey provides an older version,
+see the [Cap'n Proto installation guide](https://capnproto.org/install.html) for alternative
+installation methods.
+
 ## Faster builds
 
 The cranelift backends reduces build time significantly for dev, testing and IDE checks. However, cranelift is available on the nightly toolchain and needs extra configuration. Install the nightly toolchain
@@ -101,6 +166,10 @@ rustup override set stable # reset to stable
 ```
 
 Activate the nightly feature and use "cranelift" backend for dev and testing profiles in workspace `Cargo.toml`. You can apply the below patch using `git apply <patch>`. You can remove it using `git apply -R <patch>` before pushing changes.
+
+:::warning
+Do not commit these changes. The cranelift patch is for local development only and will break CI if pushed.
+:::
 
 ```
 diff --git a/Cargo.toml b/Cargo.toml
@@ -190,6 +259,16 @@ CREATE DATABASE
 The Nautilus CLI is a command-line interface tool for interacting with the NautilusTrader ecosystem.
 It offers commands for managing the PostgreSQL database and handling various trading operations.
 
+:::warning
+On Linux systems with GNOME desktop, the `nautilus` command typically refers to the GNOME file manager (`/usr/bin/nautilus`).
+After installing the NautilusTrader CLI, you may need to ensure the Cargo binary takes precedence by either:
+
+- Adding an alias to your shell config: `alias nautilus="$HOME/.cargo/bin/nautilus"`
+- Using the full path: `~/.cargo/bin/nautilus`
+- Ensuring `~/.cargo/bin` appears before `/usr/bin` in your `PATH`
+
+:::
+
 :::note
 The Nautilus CLI command is only supported on UNIX-like systems.
 :::
@@ -215,7 +294,7 @@ either through command-line arguments or a `.env` file located in the root direc
 
 - `--host` or `POSTGRES_HOST` for the database host
 - `--port` or `POSTGRES_PORT` for the database port
-- `--user` or `POSTGRES_USER` for the root administrator (typically the postgres user)
+- `--user` or `POSTGRES_USERNAME` for the root administrator (typically the postgres user)
 - `--password` or `POSTGRES_PASSWORD` for the root administrator's password
 - `--database` or `POSTGRES_DATABASE` for both the database **name and the new user** with privileges to that database
     (e.g., if you provide `nautilus` as the value, a new user named nautilus will be created with the password from `POSTGRES_PASSWORD`, and the `nautilus` database will be bootstrapped with this user as the owner).

@@ -28,7 +28,7 @@ use indexmap::IndexMap;
 use matching::is_matching_backtracking;
 use nautilus_core::{
     UUID4,
-    correctness::{FAILED, check_predicate_true, check_valid_string_ascii},
+    correctness::{FAILED, check_predicate_true, check_valid_string_utf8},
 };
 use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize};
@@ -133,7 +133,7 @@ impl MStr<Topic> {
     /// Returns an error if the topic has white space or invalid characters.
     pub fn topic<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let topic = Ustr::from(value.as_ref());
-        check_valid_string_ascii(value, stringify!(value))?;
+        check_valid_string_utf8(value, stringify!(value))?;
         check_fully_qualified_string(&topic, stringify!(Topic))?;
 
         Ok(Self {
@@ -181,7 +181,7 @@ impl MStr<Endpoint> {
     /// Returns an error if the endpoint has white space or invalid characters.
     pub fn endpoint<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let endpoint = Ustr::from(value.as_ref());
-        check_valid_string_ascii(value, stringify!(value))?;
+        check_valid_string_utf8(value, stringify!(value))?;
         check_fully_qualified_string(&endpoint, stringify!(Endpoint))?;
 
         Ok(Self {

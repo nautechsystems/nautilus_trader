@@ -26,7 +26,7 @@ use std::{
     collections::HashMap,
     num::NonZeroU32,
     sync::{
-        Arc,
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -36,7 +36,7 @@ use dashmap::DashMap;
 use nautilus_core::{
     UnixNanos,
     consts::{NAUTILUS_TRADER, NAUTILUS_USER_AGENT},
-    env::get_env_var,
+    env::get_or_env_var_opt,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -52,11 +52,10 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::HttpClient,
+    http::{HttpClient, Method, StatusCode, USER_AGENT},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
-use reqwest::{Method, StatusCode, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -84,8 +83,8 @@ use crate::{
     },
     http::{
         parse::{
-            parse_fill_report, parse_instrument_any, parse_order_status_report,
-            parse_position_report, parse_trade, parse_trade_bin,
+            InstrumentParseResult, parse_fill_report, parse_instrument_any,
+            parse_order_status_report, parse_position_report, parse_trade, parse_trade_bin,
         },
         query::{DeleteAllOrdersParamsBuilder, GetOrderParamsBuilder, PutOrderParamsBuilder},
     },
@@ -103,6 +102,13 @@ const BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_UNAUTHENTICATED: u32 = 30;
 
 const BITMEX_GLOBAL_RATE_KEY: &str = "bitmex:global";
 const BITMEX_MINUTE_RATE_KEY: &str = "bitmex:minute";
+
+static RATE_LIMIT_KEYS: LazyLock<Vec<Ustr>> = LazyLock::new(|| {
+    vec![
+        Ustr::from(BITMEX_GLOBAL_RATE_KEY),
+        Ustr::from(BITMEX_MINUTE_RATE_KEY),
+    ]
+});
 
 /// Represents a BitMEX HTTP response.
 #[derive(Debug, Serialize, Deserialize)]
@@ -296,10 +302,7 @@ impl BitmexRawHttpClient {
     }
 
     fn rate_limit_keys() -> Vec<Ustr> {
-        vec![
-            Ustr::from(BITMEX_GLOBAL_RATE_KEY),
-            Ustr::from(BITMEX_MINUTE_RATE_KEY),
-        ]
+        RATE_LIMIT_KEYS.clone()
     }
 
     /// Cancel all pending HTTP requests.
@@ -377,14 +380,9 @@ impl BitmexRawHttpClient {
             None
         };
 
-        let full_endpoint = if let Some(ref query) = params_str {
-            if query.is_empty() {
-                endpoint.clone()
-            } else {
-                format!("{endpoint}?{query}")
-            }
-        } else {
-            endpoint.clone()
+        let full_endpoint = match params_str {
+            Some(ref query) if !query.is_empty() => format!("{endpoint}?{query}"),
+            _ => endpoint.clone(),
         };
 
         let url = format!("{}{}", self.base_url, full_endpoint);
@@ -756,7 +754,7 @@ impl BitmexRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex")
 )]
 pub struct BitmexHttpClient {
     inner: Arc<BitmexRawHttpClient>,
@@ -911,8 +909,8 @@ impl BitmexHttpClient {
             ("BITMEX_API_KEY", "BITMEX_API_SECRET")
         };
 
-        let api_key = api_key.or_else(|| get_env_var(key_var).ok());
-        let api_secret = api_secret.or_else(|| get_env_var(secret_var).ok());
+        let api_key = get_or_env_var_opt(api_key, key_var);
+        let api_secret = get_or_env_var_opt(api_secret, secret_var);
 
         // If we're trying to create an authenticated client, we need both key and secret
         if api_key.is_some() && api_secret.is_none() {
@@ -1178,7 +1176,7 @@ impl BitmexHttpClient {
     /// # Errors
     ///
     /// Returns `Ok(Some(..))` when the venue returns a definition that parses
-    /// successfully, `Ok(None)` when the instrument is unknown or the payload
+    /// successfully, `Ok(None)` when the instrument is unknown, unsupported, or the payload
     /// cannot be converted into a Nautilus `Instrument`.
     pub async fn request_instrument(
         &self,
@@ -1196,7 +1194,32 @@ impl BitmexHttpClient {
 
         let ts_init = self.generate_ts_init();
 
-        Ok(parse_instrument_any(&instrument, ts_init))
+        match parse_instrument_any(&instrument, ts_init) {
+            InstrumentParseResult::Ok(inst) => Ok(Some(*inst)),
+            InstrumentParseResult::Unsupported {
+                symbol,
+                instrument_type,
+            } => {
+                tracing::debug!(
+                    "Instrument {symbol} has unsupported type {instrument_type:?}, returning None"
+                );
+                Ok(None)
+            }
+            InstrumentParseResult::Inactive { symbol, state } => {
+                tracing::debug!("Instrument {symbol} is inactive (state={state}), returning None");
+                Ok(None)
+            }
+            InstrumentParseResult::Failed {
+                symbol,
+                instrument_type,
+                error,
+            } => {
+                tracing::error!(
+                    "Failed to parse instrument {symbol} (type={instrument_type:?}): {error}"
+                );
+                Ok(None)
+            }
+        }
     }
 
     /// Request all available instruments and parse them into Nautilus types.
@@ -1212,28 +1235,57 @@ impl BitmexHttpClient {
         let ts_init = self.generate_ts_init();
 
         let mut parsed_instruments = Vec::new();
+        let mut skipped_count = 0;
+        let mut inactive_count = 0;
         let mut failed_count = 0;
         let total_count = instruments.len();
 
         for inst in instruments {
-            if let Some(instrument_any) = parse_instrument_any(&inst, ts_init) {
-                parsed_instruments.push(instrument_any);
-            } else {
-                failed_count += 1;
-                tracing::error!(
-                    "Failed to parse instrument: symbol={}, type={:?}, state={:?} - instrument will not be cached",
-                    inst.symbol,
-                    inst.instrument_type,
-                    inst.state
-                );
+            match parse_instrument_any(&inst, ts_init) {
+                InstrumentParseResult::Ok(instrument_any) => {
+                    parsed_instruments.push(*instrument_any);
+                }
+                InstrumentParseResult::Unsupported {
+                    symbol,
+                    instrument_type,
+                } => {
+                    skipped_count += 1;
+                    tracing::debug!(
+                        "Skipping unsupported instrument type: symbol={symbol}, type={instrument_type:?}"
+                    );
+                }
+                InstrumentParseResult::Inactive { symbol, state } => {
+                    inactive_count += 1;
+                    tracing::debug!("Skipping inactive instrument: symbol={symbol}, state={state}");
+                }
+                InstrumentParseResult::Failed {
+                    symbol,
+                    instrument_type,
+                    error,
+                } => {
+                    failed_count += 1;
+                    tracing::error!(
+                        "Failed to parse instrument: symbol={symbol}, type={instrument_type:?}, error={error}"
+                    );
+                }
             }
+        }
+
+        if skipped_count > 0 {
+            tracing::info!(
+                "Skipped {skipped_count} unsupported instrument type(s) out of {total_count} total"
+            );
+        }
+
+        if inactive_count > 0 {
+            tracing::info!(
+                "Skipped {inactive_count} inactive instrument(s) out of {total_count} total"
+            );
         }
 
         if failed_count > 0 {
             tracing::error!(
-                "Instrument parse failures: {} failed out of {} total ({}  successfully parsed)",
-                failed_count,
-                total_count,
+                "Instrument parse failures: {failed_count} failed out of {total_count} total ({} successfully parsed)",
                 parsed_instruments.len()
             );
         }
@@ -1324,9 +1376,8 @@ impl BitmexHttpClient {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let ts_init = nautilus_core::nanos::UnixNanos::from(
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64,
-        );
+        let ts_init =
+            UnixNanos::from(chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64);
 
         // Convert HTTP Margin to WebSocket MarginMsg for parsing
         let margin_msg = BitmexMarginMsg {
@@ -2160,10 +2211,6 @@ impl BitmexHttpClient {
         parse_position_report(response, &instrument, ts_init)
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

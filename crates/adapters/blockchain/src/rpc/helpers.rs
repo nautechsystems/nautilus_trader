@@ -21,8 +21,6 @@
 use alloy::primitives::Address;
 use nautilus_model::defi::rpc::RpcLog;
 
-use crate::exchanges::parsing::core;
-
 /// Decode hex string (with or without 0x prefix) to bytes.
 ///
 /// # Errors
@@ -125,7 +123,10 @@ pub fn extract_topic_bytes(log: &RpcLog, index: usize) -> anyhow::Result<Vec<u8>
     decode_hex(hex)
 }
 
-/// Extract address from topic at index (using shared core logic).
+/// Extract address from topic at index.
+///
+/// In Ethereum event logs, indexed address parameters are stored as 32-byte
+/// values with the 20-byte address right-aligned (padded with zeros on the left).
 ///
 /// # Errors
 ///
@@ -137,7 +138,12 @@ pub fn extract_address_from_topic(
 ) -> anyhow::Result<Address> {
     let bytes = extract_topic_bytes(log, index)
         .map_err(|_| anyhow::anyhow!("Missing {description} address in topic{index}"))?;
-    core::extract_address_from_bytes(&bytes)
+    anyhow::ensure!(
+        bytes.len() >= 32,
+        "Topic must be at least 32 bytes, got {}",
+        bytes.len()
+    );
+    Ok(Address::from_slice(&bytes[12..32]))
 }
 
 /// Extract data bytes from RPC log.
@@ -151,6 +157,10 @@ pub fn extract_data_bytes(log: &RpcLog) -> anyhow::Result<Vec<u8>> {
 
 /// Validate event signature from topic0.
 ///
+/// The first topic (topic0) of an Ethereum event log contains the keccak256 hash
+/// of the event signature. This function validates that the actual signature
+/// matches the expected one.
+///
 /// # Errors
 ///
 /// Returns an error if the signature doesn't match or topic0 is missing.
@@ -160,7 +170,12 @@ pub fn validate_event_signature(
     event_name: &str,
 ) -> anyhow::Result<()> {
     let sig_bytes = extract_topic_bytes(log, 0)?;
-    core::validate_signature_bytes(&sig_bytes, expected_hash, event_name)
+    let actual_hex = hex::encode(&sig_bytes);
+    anyhow::ensure!(
+        actual_hex == expected_hash,
+        "Invalid event signature for '{event_name}': expected {expected_hash}, got {actual_hex}",
+    );
+    Ok(())
 }
 
 #[cfg(test)]

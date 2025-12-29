@@ -33,6 +33,7 @@ use nautilus_model::{
 use pyo3::prelude::*;
 use time::OffsetDateTime;
 
+use super::types::DatabentoSubscriptionAck;
 use crate::{
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
     symbology::{check_consistent_symbology, infer_symbology_type, instrument_id_to_symbol_string},
@@ -98,6 +99,11 @@ impl DatabentoLiveClient {
                 }),
                 LiveMessage::Statistics(data) => Python::attach(|py| {
                     let py_obj = data.into_py_any_unwrap(py);
+                    call_python(py, &callback_pyo3, py_obj);
+                }),
+                LiveMessage::SubscriptionAck(ack) => Python::attach(|py| {
+                    let py_obj: DatabentoSubscriptionAck = ack.into();
+                    let py_obj = py_obj.into_py_any_unwrap(py);
                     call_python(py, &callback_pyo3, py_obj);
                 }),
                 LiveMessage::Close => {

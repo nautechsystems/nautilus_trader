@@ -519,10 +519,6 @@ pub fn adjust_fills_for_partial_window(
     FillAdjustmentResult::NoAdjustment
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use nautilus_model::instruments::stubs::audusd_sim;
@@ -1024,8 +1020,6 @@ mod tests {
         let result = check_position_match(dec!(10), dec!(1000), dec!(10), dec!(0), dec!(0.0001));
         assert!(!result); // Should fail because relative diff calculation with zero denominator
     }
-
-    // Tests for adjust_fills_for_partial_window
 
     #[rstest]
     fn test_adjust_fills_no_fills() {

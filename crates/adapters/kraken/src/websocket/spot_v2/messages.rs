@@ -15,22 +15,36 @@
 
 //! Data models for Kraken WebSocket v2 API messages.
 
-use nautilus_model::data::{Data, OrderBookDeltas};
+use chrono::{DateTime, Utc};
+use nautilus_model::{
+    data::{Data, OrderBookDeltas},
+    events::{OrderAccepted, OrderCanceled, OrderExpired, OrderRejected, OrderUpdated},
+    reports::{FillReport, OrderStatusReport},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
 
-use super::enums::{KrakenWsChannel, KrakenWsMessageType, KrakenWsMethod};
-use crate::common::enums::{KrakenOrderSide, KrakenOrderType};
+use super::enums::{
+    KrakenExecType, KrakenLiquidityInd, KrakenWsChannel, KrakenWsMessageType, KrakenWsMethod,
+    KrakenWsOrderStatus,
+};
+use crate::common::enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce};
 
 /// Nautilus WebSocket message types for Kraken adapter.
 #[derive(Clone, Debug)]
 pub enum NautilusWsMessage {
     Data(Vec<Data>),
     Deltas(OrderBookDeltas),
+    OrderRejected(OrderRejected),
+    OrderAccepted(OrderAccepted),
+    OrderCanceled(OrderCanceled),
+    OrderExpired(OrderExpired),
+    OrderUpdated(OrderUpdated),
+    OrderStatusReport(Box<OrderStatusReport>),
+    FillReport(Box<FillReport>),
+    Reconnected,
 }
-
-// Request messages
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsRequest {
@@ -51,10 +65,14 @@ pub struct KrakenWsParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depth: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snap_orders: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snap_trades: Option<bool>,
 }
-
-// Response messages
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method")]
@@ -102,8 +120,6 @@ pub struct KrakenWsSubscriptionResult {
     pub snapshot: Option<bool>,
 }
 
-// Data messages
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsMessage {
     pub channel: KrakenWsChannel,
@@ -112,9 +128,9 @@ pub struct KrakenWsMessage {
     pub data: Vec<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<Ustr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<DateTime<Utc>>,
 }
-
-// Ticker data
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsTickerData {
@@ -132,8 +148,6 @@ pub struct KrakenWsTickerData {
     pub change_pct: f64,
 }
 
-// Trade data
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsTradeData {
     pub symbol: Ustr,
@@ -144,8 +158,6 @@ pub struct KrakenWsTradeData {
     pub trade_id: i64,
     pub timestamp: String,
 }
-
-// Order book data
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsBookData {
@@ -164,13 +176,11 @@ pub struct KrakenWsBookLevel {
     pub qty: f64,
 }
 
-// OHLC data
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsOhlcData {
     pub symbol: Ustr,
     pub interval: u32,
-    pub timestamp: String,
+    pub interval_begin: DateTime<Utc>,
     pub open: f64,
     pub high: f64,
     pub low: f64,
@@ -180,9 +190,89 @@ pub struct KrakenWsOhlcData {
     pub trades: i64,
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
+/// Execution message from the Kraken executions channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KrakenWsExecutionData {
+    /// Execution type.
+    pub exec_type: KrakenExecType,
+    /// Kraken order ID.
+    pub order_id: String,
+    /// Client order ID (if provided when order was submitted).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Trading pair symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Order side.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side: Option<KrakenOrderSide>,
+    /// Order type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_type: Option<KrakenOrderType>,
+    /// Order quantity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_qty: Option<f64>,
+    /// Limit price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_price: Option<f64>,
+    /// Order status.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_status: Option<KrakenWsOrderStatus>,
+    /// Cumulative filled quantity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cum_qty: Option<f64>,
+    /// Cumulative cost.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cum_cost: Option<f64>,
+    /// Average fill price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avg_price: Option<f64>,
+    /// Time in force.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_in_force: Option<KrakenTimeInForce>,
+    /// Post only flag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_only: Option<bool>,
+    /// Reduce only flag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
+    /// Event timestamp (RFC3339).
+    pub timestamp: String,
+    // Trade-specific fields (present when exec_type is Trade)
+    /// Execution/trade ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exec_id: Option<String>,
+    /// Last fill quantity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_qty: Option<f64>,
+    /// Last fill price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_price: Option<f64>,
+    /// Trade cost.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost: Option<f64>,
+    /// Liquidity indicator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub liquidity_ind: Option<KrakenLiquidityInd>,
+    /// Fees array.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fees: Option<Vec<KrakenWsFee>>,
+    /// Fee in USD equivalent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fee_usd_equiv: Option<f64>,
+    /// Cancel reason (when exec_type is Canceled/Expired).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Fee information from execution messages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KrakenWsFee {
+    /// Fee asset.
+    pub asset: String,
+    /// Fee quantity.
+    pub qty: f64,
+}
 
 #[cfg(test)]
 mod tests {

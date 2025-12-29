@@ -19,7 +19,7 @@ use csv::{Reader, StringRecord};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
-    enums::{BookAction, OrderSide, RecordFlag},
+    enums::{OrderSide, RecordFlag},
     identifiers::InstrumentId,
     types::Quantity,
 };
@@ -57,8 +57,12 @@ struct DeltaStreamIterator {
     price_precision: u8,
     size_precision: u8,
     last_ts_event: UnixNanos,
+    last_is_snapshot: bool,
     limit: Option<usize>,
-    records_processed: usize,
+    deltas_emitted: usize,
+
+    /// Pending record to process in next iteration (when CLEAR filled the chunk).
+    pending_record: Option<TardisBookUpdateRecord>,
 }
 
 impl DeltaStreamIterator {
@@ -102,8 +106,10 @@ impl DeltaStreamIterator {
             price_precision: final_price_precision,
             size_precision: final_size_precision,
             last_ts_event: UnixNanos::default(),
+            last_is_snapshot: false,
             limit,
-            records_processed: 0,
+            deltas_emitted: 0,
+            pending_record: None,
         })
     }
 
@@ -139,75 +145,114 @@ impl Iterator for DeltaStreamIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(limit) = self.limit
-            && self.records_processed >= limit
+            && self.deltas_emitted >= limit
         {
             return None;
         }
 
         self.buffer.clear();
-        let mut records_read = 0;
 
-        while records_read < self.chunk_size {
-            match self.reader.read_record(&mut self.record) {
-                Ok(true) => {
-                    match self.record.deserialize::<TardisBookUpdateRecord>(None) {
-                        Ok(data) => {
-                            let delta = parse_delta_record(
-                                &data,
-                                self.price_precision,
-                                self.size_precision,
-                                self.instrument_id,
-                            );
+        loop {
+            if self.buffer.len() >= self.chunk_size {
+                break;
+            }
 
-                            // Check if timestamp is different from last timestamp
-                            if self.last_ts_event != delta.ts_event
-                                && let Some(last_delta) = self.buffer.last_mut()
-                            {
-                                last_delta.flags = RecordFlag::F_LAST.value();
-                            }
+            if let Some(limit) = self.limit
+                && self.deltas_emitted >= limit
+            {
+                break;
+            }
 
-                            assert!(
-                                !(delta.action != BookAction::Delete && delta.order.size.is_zero()),
-                                "Invalid delta: action {} when size zero, check size_precision ({}) vs data; {data:?}",
-                                delta.action,
-                                self.size_precision
-                            );
-
-                            self.last_ts_event = delta.ts_event;
-
-                            self.buffer.push(delta);
-                            records_read += 1;
-                            self.records_processed += 1;
-
-                            if let Some(limit) = self.limit
-                                && self.records_processed >= limit
-                            {
-                                break;
-                            }
-                        }
+            // Use pending record from previous iteration, or read new
+            let data = if let Some(pending) = self.pending_record.take() {
+                pending
+            } else {
+                match self.reader.read_record(&mut self.record) {
+                    Ok(true) => match self.record.deserialize::<TardisBookUpdateRecord>(None) {
+                        Ok(data) => data,
                         Err(e) => {
                             return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
                         }
+                    },
+                    Ok(false) => {
+                        if self.buffer.is_empty() {
+                            return None;
+                        }
+                        if let Some(last_delta) = self.buffer.last_mut() {
+                            last_delta.flags = RecordFlag::F_LAST.value();
+                        }
+                        return Some(Ok(self.buffer.clone()));
                     }
+                    Err(e) => return Some(Err(anyhow::anyhow!("Failed to read record: {e}"))),
                 }
-                Ok(false) => {
-                    // End of file reached
-                    if self.buffer.is_empty() {
-                        return None;
-                    }
-                    // Set F_LAST flag for final delta in chunk
-                    if let Some(last_delta) = self.buffer.last_mut() {
-                        last_delta.flags = RecordFlag::F_LAST.value();
-                    }
-                    return Some(Ok(self.buffer.clone()));
+            };
+
+            // Insert CLEAR on snapshot boundary to reset order book state
+            if data.is_snapshot && !self.last_is_snapshot {
+                let clear_instrument_id = self
+                    .instrument_id
+                    .unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
+                let ts_event = parse_timestamp(data.timestamp);
+                let ts_init = parse_timestamp(data.local_timestamp);
+
+                if self.last_ts_event != ts_event
+                    && let Some(last_delta) = self.buffer.last_mut()
+                {
+                    last_delta.flags = RecordFlag::F_LAST.value();
                 }
-                Err(e) => return Some(Err(anyhow::anyhow!("Failed to read record: {e}"))),
+                self.last_ts_event = ts_event;
+
+                let clear_delta = OrderBookDelta::clear(clear_instrument_id, 0, ts_event, ts_init);
+                self.buffer.push(clear_delta);
+                self.deltas_emitted += 1;
+
+                // Defer real delta to next chunk if constraints reached
+                if self.buffer.len() >= self.chunk_size
+                    || self.limit.is_some_and(|l| self.deltas_emitted >= l)
+                {
+                    self.last_is_snapshot = data.is_snapshot;
+                    self.pending_record = Some(data);
+                    break;
+                }
             }
+            self.last_is_snapshot = data.is_snapshot;
+
+            let delta = match parse_delta_record(
+                &data,
+                self.price_precision,
+                self.size_precision,
+                self.instrument_id,
+            ) {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::warn!("Skipping invalid delta record: {e}");
+                    continue;
+                }
+            };
+
+            if self.last_ts_event != delta.ts_event
+                && let Some(last_delta) = self.buffer.last_mut()
+            {
+                last_delta.flags = RecordFlag::F_LAST.value();
+            }
+
+            self.last_ts_event = delta.ts_event;
+
+            self.buffer.push(delta);
+            self.deltas_emitted += 1;
         }
 
         if self.buffer.is_empty() {
             None
         } else {
+            // Only set F_LAST when limit reached (stream ending), not on chunk
+            // boundary where more same-timestamp deltas may follow
+            if let Some(limit) = self.limit
+                && self.deltas_emitted >= limit
+                && let Some(last_delta) = self.buffer.last_mut()
+            {
+                last_delta.flags = RecordFlag::F_LAST.value();
+            }
             Some(Ok(self.buffer.clone()))
         }
     }
@@ -284,7 +329,6 @@ impl BatchedDeltasStreamIterator {
         let mut reader = create_csv_reader(&filepath)?;
         let mut record = StringRecord::new();
 
-        // Read the first record to get instrument_id
         let first_record = if reader.read_record(&mut record)? {
             record.deserialize::<TardisBookUpdateRecord>(None)?
         } else {
@@ -371,12 +415,18 @@ impl Iterator for BatchedDeltasStreamIterator {
             match self.reader.read_record(&mut self.record) {
                 Ok(true) => {
                     let delta = match self.record.deserialize::<TardisBookUpdateRecord>(None) {
-                        Ok(data) => parse_delta_record(
+                        Ok(data) => match parse_delta_record(
                             &data,
                             self.price_precision,
                             self.size_precision,
                             Some(self.instrument_id),
-                        ),
+                        ) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                tracing::warn!("Skipping invalid delta record: {e}");
+                                continue;
+                            }
+                        },
                         Err(e) => {
                             return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
                         }
@@ -858,7 +908,7 @@ impl Depth10StreamIterator {
     ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be opened or read.
+    /// Returns an error if the file cannot be opened or read, or if `levels` is not 5 or 25.
     pub fn new<P: AsRef<Path>>(
         filepath: P,
         chunk_size: usize,
@@ -868,6 +918,11 @@ impl Depth10StreamIterator {
         instrument_id: Option<InstrumentId>,
         limit: Option<usize>,
     ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            levels == 5 || levels == 25,
+            "Invalid levels: {levels}. Must be 5 or 25."
+        );
+
         let (final_price_precision, final_size_precision) =
             if let (Some(price_prec), Some(size_prec)) = (price_precision, size_precision) {
                 // Both precisions provided, use them directly
@@ -1379,12 +1434,13 @@ pub fn stream_funding_rates<P: AsRef<Path>>(
     FundingRateStreamIterator::new(filepath, chunk_size, instrument_id, limit)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{enums::AggressorSide, identifiers::TradeId, types::Price};
+    use nautilus_model::{
+        enums::{AggressorSide, BookAction},
+        identifiers::TradeId,
+        types::Price,
+    };
     use rstest::*;
 
     use super::*;
@@ -1417,12 +1473,13 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         let stream = stream_deltas(&temp_file, 2, Some(4), Some(1), None, None).unwrap();
         let chunks: Vec<_> = stream.collect();
 
+        // 5 data rows + 1 CLEAR = 6 deltas, in chunks of 2
         assert_eq!(chunks.len(), 3);
 
         let chunk1 = chunks[0].as_ref().unwrap();
         assert_eq!(chunk1.len(), 2);
-        assert_eq!(chunk1[0].order.price.precision, 4);
-        assert_eq!(chunk1[1].order.price.precision, 4);
+        assert_eq!(chunk1[0].action, BookAction::Clear); // CLEAR first
+        assert_eq!(chunk1[1].order.price.precision, 4); // First data delta
 
         let chunk2 = chunks[1].as_ref().unwrap();
         assert_eq!(chunk2.len(), 2);
@@ -1430,11 +1487,12 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(chunk2[1].order.price.precision, 4);
 
         let chunk3 = chunks[2].as_ref().unwrap();
-        assert_eq!(chunk3.len(), 1);
+        assert_eq!(chunk3.len(), 2);
         assert_eq!(chunk3[0].order.price.precision, 4);
+        assert_eq!(chunk3[1].order.price.precision, 4);
 
         let total_deltas: usize = chunks.iter().map(|c| c.as_ref().unwrap().len()).sum();
-        assert_eq!(total_deltas, 5);
+        assert_eq!(total_deltas, 6);
 
         std::fs::remove_file(&temp_file).ok();
     }
@@ -1773,13 +1831,21 @@ binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49999.123,3.
         let filepath = get_test_data_path("csv/deltas_1.csv");
         let mut stream = stream_deltas(filepath, 1, Some(1), Some(0), None, None).unwrap();
 
+        // With chunk_size=1, each delta gets its own chunk
+        // First chunk: CLEAR
         let chunk1 = stream.next().unwrap().unwrap();
         assert_eq!(chunk1.len(), 1);
-        assert_eq!(chunk1[0].order.price, Price::from("6421.5"));
+        assert_eq!(chunk1[0].action, BookAction::Clear);
 
+        // Second chunk: first data delta
         let chunk2 = stream.next().unwrap().unwrap();
         assert_eq!(chunk2.len(), 1);
-        assert_eq!(chunk2[0].order.size, Quantity::from("10000"));
+        assert_eq!(chunk2[0].order.price, Price::from("6421.5"));
+
+        // Third chunk: second data delta
+        let chunk3 = stream.next().unwrap().unwrap();
+        assert_eq!(chunk3.len(), 1);
+        assert_eq!(chunk3[0].order.size, Quantity::from("10000"));
 
         assert!(stream.next().is_none());
     }
@@ -1868,6 +1934,274 @@ binance,BTCUSDT,1640995204000000,1640995204100000,trade5,buy,50000.1234,0.5";
         // Verify we get exactly 3 records
         let total_trades: usize = chunks.iter().map(|c| c.as_ref().unwrap().len()).sum();
         assert_eq!(total_trades, 3);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_depth10_invalid_levels_error_at_construction() {
+        let temp_file = std::env::temp_dir().join("test_depth10_invalid_levels.csv");
+        std::fs::write(&temp_file, "exchange,symbol,timestamp,local_timestamp\n").unwrap();
+
+        let result = Depth10StreamIterator::new(&temp_file, 10, 10, None, None, None, None);
+        assert!(result.is_err());
+        let err_msg = result.err().unwrap().to_string();
+        assert!(
+            err_msg.contains("Invalid levels"),
+            "Error should mention 'Invalid levels': {err_msg}"
+        );
+
+        let result = Depth10StreamIterator::new(&temp_file, 10, 3, None, None, None, None);
+        assert!(result.is_err());
+
+        let result = Depth10StreamIterator::new(&temp_file, 10, 5, None, None, None, None);
+        assert!(result.is_ok());
+
+        let result = Depth10StreamIterator::new(&temp_file, 10, 25, None, None, None, None);
+        assert!(result.is_ok());
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_stream_deltas_with_mid_snapshot_inserts_clear() {
+        // CSV with:
+        // - Initial snapshot (is_snapshot=true) at start
+        // - Some deltas (is_snapshot=false)
+        // - Mid-day snapshot (is_snapshot=true) - should trigger CLEAR
+        // - Back to deltas (is_snapshot=false)
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+binance-futures,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.0,0.5
+binance-futures,BTCUSDT,1640995202000000,1640995202100000,false,ask,50002.0,1.5
+binance-futures,BTCUSDT,1640995300000000,1640995300100000,true,bid,50100.0,3.0
+binance-futures,BTCUSDT,1640995300000000,1640995300100000,true,ask,50101.0,4.0
+binance-futures,BTCUSDT,1640995301000000,1640995301100000,false,bid,50099.0,1.0";
+
+        let temp_file = std::env::temp_dir().join("test_stream_deltas_mid_snapshot.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let stream = stream_deltas(&temp_file, 100, Some(1), Some(1), None, None).unwrap();
+        let all_deltas: Vec<_> = stream.flat_map(|chunk| chunk.unwrap()).collect();
+
+        let clear_count = all_deltas
+            .iter()
+            .filter(|d| d.action == BookAction::Clear)
+            .count();
+
+        // Should have 2 CLEAR deltas: initial snapshot + mid-day snapshot
+        assert_eq!(
+            clear_count, 2,
+            "Expected 2 CLEAR deltas (initial + mid-day snapshot), got {clear_count}"
+        );
+
+        // Verify CLEAR positions:
+        // 0=CLEAR, 1=Add, 2=Add, 3=Update, 4=Update, 5=CLEAR, 6=Add, 7=Add, 8=Update
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+        assert_eq!(all_deltas[5].action, BookAction::Clear);
+
+        // CLEAR deltas should NOT have F_LAST when followed by same-timestamp deltas
+        assert_eq!(
+            all_deltas[0].flags & RecordFlag::F_LAST.value(),
+            0,
+            "CLEAR at index 0 should not have F_LAST flag"
+        );
+        assert_eq!(
+            all_deltas[5].flags & RecordFlag::F_LAST.value(),
+            0,
+            "CLEAR at index 5 should not have F_LAST flag"
+        );
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_load_deltas_with_mid_snapshot_inserts_clear() {
+        let filepath = get_test_data_path("csv/deltas_with_snapshot.csv");
+        let deltas = load_deltas(&filepath, Some(1), Some(1), None, None).unwrap();
+
+        let clear_count = deltas
+            .iter()
+            .filter(|d| d.action == BookAction::Clear)
+            .count();
+
+        // Should have 2 CLEAR deltas: initial snapshot + mid-day snapshot
+        assert_eq!(
+            clear_count, 2,
+            "Expected 2 CLEAR deltas (initial + mid-day snapshot), got {clear_count}"
+        );
+
+        assert_eq!(deltas[0].action, BookAction::Clear);
+
+        let second_clear_idx = deltas
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.action == BookAction::Clear)
+            .nth(1)
+            .map(|(i, _)| i)
+            .expect("Should have second CLEAR");
+
+        // 0=CLEAR, 1=Add, 2=Add, 3=Update, 4=Update, 5=Delete, 6=CLEAR
+        assert_eq!(
+            second_clear_idx, 6,
+            "Second CLEAR should be at index 6, got {second_clear_idx}"
+        );
+
+        // CLEAR deltas should NOT have F_LAST when followed by same-timestamp deltas
+        assert_eq!(
+            deltas[0].flags & RecordFlag::F_LAST.value(),
+            0,
+            "CLEAR at index 0 should not have F_LAST flag"
+        );
+        assert_eq!(
+            deltas[6].flags & RecordFlag::F_LAST.value(),
+            0,
+            "CLEAR at index 6 should not have F_LAST flag"
+        );
+    }
+
+    #[rstest]
+    fn test_stream_deltas_chunk_size_respects_clear() {
+        // Test that chunk_size applies to total emitted deltas (including CLEARs)
+        // With chunk_size=1, a snapshot boundary should emit CLEAR in one chunk
+        // and the real delta in the next chunk
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0";
+
+        let temp_file = std::env::temp_dir().join("test_stream_chunk_size_clear.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // chunk_size=1 should produce separate chunks for CLEAR and real deltas
+        let stream = stream_deltas(&temp_file, 1, Some(1), Some(1), None, None).unwrap();
+        let chunks: Vec<_> = stream.collect();
+
+        // Should have 3 chunks: [CLEAR], [data], [data]
+        assert_eq!(chunks.len(), 3, "Expected 3 chunks with chunk_size=1");
+        assert_eq!(chunks[0].as_ref().unwrap().len(), 1);
+        assert_eq!(chunks[1].as_ref().unwrap().len(), 1);
+        assert_eq!(chunks[2].as_ref().unwrap().len(), 1);
+
+        // First chunk should be CLEAR
+        assert_eq!(chunks[0].as_ref().unwrap()[0].action, BookAction::Clear);
+        // Second and third chunks should be data deltas
+        assert_eq!(chunks[1].as_ref().unwrap()[0].action, BookAction::Add);
+        assert_eq!(chunks[2].as_ref().unwrap()[0].action, BookAction::Add);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_stream_deltas_limit_stops_at_clear() {
+        // Test that limit=1 with snapshot data returns only the CLEAR delta
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0";
+
+        let temp_file = std::env::temp_dir().join("test_stream_limit_stops_at_clear.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // limit=1 should only get the CLEAR delta
+        let stream = stream_deltas(&temp_file, 100, Some(1), Some(1), None, Some(1)).unwrap();
+        let all_deltas: Vec<_> = stream.flat_map(|chunk| chunk.unwrap()).collect();
+
+        assert_eq!(all_deltas.len(), 1);
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_stream_deltas_limit_includes_clear() {
+        // Test that limit counts total emitted deltas (including CLEARs)
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+binance-futures,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.0,0.5
+binance-futures,BTCUSDT,1640995202000000,1640995202100000,false,ask,50002.0,1.5
+binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49998.0,0.5";
+
+        let temp_file = std::env::temp_dir().join("test_stream_limit_includes_clear.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // limit=4 should get exactly 4 deltas: 1 CLEAR + 3 data deltas
+        let stream = stream_deltas(&temp_file, 100, Some(1), Some(1), None, Some(4)).unwrap();
+        let all_deltas: Vec<_> = stream.flat_map(|chunk| chunk.unwrap()).collect();
+
+        assert_eq!(all_deltas.len(), 4);
+        assert_eq!(all_deltas[0].action, BookAction::Clear);
+        assert_eq!(all_deltas[1].action, BookAction::Add);
+        assert_eq!(all_deltas[2].action, BookAction::Add);
+        assert_eq!(all_deltas[3].action, BookAction::Update);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_stream_deltas_limit_sets_f_last() {
+        // Test that F_LAST is set on the final delta when limit is reached
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+binance-futures,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.0,0.5
+binance-futures,BTCUSDT,1640995202000000,1640995202100000,false,ask,50002.0,1.5
+binance-futures,BTCUSDT,1640995203000000,1640995203100000,false,bid,49998.0,0.5";
+
+        let temp_file = std::env::temp_dir().join("test_stream_limit_f_last.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // limit=3 should get 3 deltas with F_LAST on the last one
+        let stream = stream_deltas(&temp_file, 100, Some(1), Some(1), None, Some(3)).unwrap();
+        let chunks: Vec<_> = stream.collect();
+
+        // Should have 1 chunk with 3 deltas
+        assert_eq!(chunks.len(), 1);
+        let deltas = chunks[0].as_ref().unwrap();
+        assert_eq!(deltas.len(), 3);
+
+        // Final delta should have F_LAST flag
+        assert_eq!(
+            deltas[2].flags & RecordFlag::F_LAST.value(),
+            RecordFlag::F_LAST.value(),
+            "Final delta should have F_LAST flag when limit is reached"
+        );
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_stream_deltas_chunk_boundary_no_f_last() {
+        // Test that F_LAST is NOT set when only chunk_size boundary is hit (more data follows)
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,false,bid,50000.0,1.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,false,ask,50001.0,2.0
+binance-futures,BTCUSDT,1640995200000000,1640995200100000,false,bid,49999.0,0.5";
+
+        let temp_file = std::env::temp_dir().join("test_stream_chunk_no_f_last.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        // chunk_size=2, no limit - first chunk should NOT have F_LAST (more data follows)
+        let mut stream = stream_deltas(&temp_file, 2, Some(1), Some(1), None, None).unwrap();
+
+        let chunk1 = stream.next().unwrap().unwrap();
+        assert_eq!(chunk1.len(), 2);
+
+        // First chunk's last delta should NOT have F_LAST (more data follows with same timestamp)
+        assert_eq!(
+            chunk1[1].flags & RecordFlag::F_LAST.value(),
+            0,
+            "Mid-stream chunk should not have F_LAST flag"
+        );
+
+        // Second chunk exists and has F_LAST (end of file)
+        let chunk2 = stream.next().unwrap().unwrap();
+        assert_eq!(chunk2.len(), 1);
+        assert_eq!(
+            chunk2[0].flags & RecordFlag::F_LAST.value(),
+            RecordFlag::F_LAST.value(),
+            "Final chunk at EOF should have F_LAST flag"
+        );
 
         std::fs::remove_file(&temp_file).ok();
     }

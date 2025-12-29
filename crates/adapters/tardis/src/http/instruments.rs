@@ -60,7 +60,7 @@ pub fn create_currency_pair(
         multiplier,
         Some(size_increment),
         None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
+        Some(Quantity::from(info.min_trade_amount.to_string())),
         None,
         None,
         None,
@@ -106,7 +106,7 @@ pub fn create_crypto_perpetual(
         multiplier,
         Some(size_increment),
         None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
+        Some(Quantity::from(info.min_trade_amount.to_string())),
         None,
         None,
         None,
@@ -156,7 +156,7 @@ pub fn create_crypto_future(
         multiplier,
         Some(size_increment),
         None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
+        Some(Quantity::from(info.min_trade_amount.to_string())),
         None,
         None,
         None,
@@ -173,10 +173,9 @@ pub fn create_crypto_future(
 #[allow(clippy::too_many_arguments)]
 /// Create a crypto option instrument definition.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the `option_type` field of `InstrumentInfo` is `None`.
-#[must_use]
+/// Returns an error if the `option_type` or `strike_price` field of `InstrumentInfo` is `None`.
 pub fn create_crypto_option(
     info: &TardisInstrumentInfo,
     instrument_id: InstrumentId,
@@ -192,25 +191,32 @@ pub fn create_crypto_option(
     taker_fee: Decimal,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> InstrumentAny {
+) -> anyhow::Result<InstrumentAny> {
     let is_inverse = info.inverse.unwrap_or(false);
 
-    InstrumentAny::CryptoOption(CryptoOption::new(
+    let option_type = info.option_type.ok_or_else(|| {
+        anyhow::anyhow!(
+            "CryptoOption missing `option_type` field for instrument: {}",
+            info.id
+        )
+    })?;
+
+    let strike_price = info.strike_price.ok_or_else(|| {
+        anyhow::anyhow!(
+            "CryptoOption missing `strike_price` field for instrument: {}",
+            info.id
+        )
+    })?;
+
+    Ok(InstrumentAny::CryptoOption(CryptoOption::new(
         instrument_id,
         raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(parse_settlement_currency(info, is_inverse).as_str()),
         is_inverse,
-        parse_option_kind(
-            info.option_type
-                .expect("CryptoOption should have `option_type` field"),
-        ),
-        Price::new(
-            info.strike_price
-                .expect("CryptoOption should have `strike_price` field"),
-            price_increment.precision,
-        ),
+        parse_option_kind(option_type),
+        Price::new(strike_price, price_increment.precision),
         activation,
         expiration,
         price_increment.precision,
@@ -220,7 +226,7 @@ pub fn create_crypto_option(
         multiplier,
         Some(size_increment),
         None,
-        Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
+        Some(Quantity::from(info.min_trade_amount.to_string())),
         None,
         None,
         None,
@@ -231,7 +237,7 @@ pub fn create_crypto_option(
         Some(taker_fee),
         ts_event,
         ts_init,
-    ))
+    )))
 }
 
 /// Checks if an instrument is available and valid based on time constraints.

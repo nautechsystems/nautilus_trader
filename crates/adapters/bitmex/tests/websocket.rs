@@ -35,7 +35,7 @@ use axum::{
 };
 use nautilus_bitmex::websocket::client::BitmexWebSocketClient;
 use nautilus_common::testing::wait_until_async;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, InstrumentId};
 use rstest::rstest;
 use serde_json::json;
 
@@ -727,7 +727,7 @@ async fn test_subscribe_to_public_data() {
     client.connect().await.unwrap();
 
     // Subscribe to trades
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
 
     wait_until_async(
@@ -773,7 +773,7 @@ async fn test_subscribe_to_orderbook() {
     client.connect().await.unwrap();
 
     // Subscribe to order book and trades (test multiple subscriptions)
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_book(instrument_id).await.unwrap();
     client.subscribe_trades(instrument_id).await.unwrap();
 
@@ -878,7 +878,7 @@ async fn test_reconnection_scenario() {
     // Connect and subscribe to some channels
     client.connect().await.unwrap();
 
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
     client.subscribe_book(instrument_id).await.unwrap();
     client.subscribe_positions().await.unwrap();
@@ -915,7 +915,7 @@ async fn test_reconnection_scenario() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send a message to trigger the server loop to process the drop flag
-    let eth_id = nautilus_model::identifiers::InstrumentId::from("ETHUSD.BITMEX");
+    let eth_id = InstrumentId::from("ETHUSD.BITMEX");
     let _ = client.subscribe_trades(eth_id).await;
 
     // Wait for auth request to be sent (indicates reconnection happened)
@@ -990,7 +990,7 @@ async fn test_unsubscribe() {
 
     // Connect and subscribe
     client.connect().await.unwrap();
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
 
     wait_until_async(
@@ -1078,8 +1078,8 @@ async fn test_multiple_symbols_subscription() {
     client.connect().await.unwrap();
 
     // Subscribe to multiple symbols
-    let xbt_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
-    let eth_id = nautilus_model::identifiers::InstrumentId::from("ETHUSD.BITMEX");
+    let xbt_id = InstrumentId::from("XBTUSD.BITMEX");
+    let eth_id = InstrumentId::from("ETHUSD.BITMEX");
 
     client.subscribe_trades(xbt_id).await.unwrap();
     client.subscribe_trades(eth_id).await.unwrap();
@@ -1136,7 +1136,7 @@ async fn test_true_auto_reconnect_with_verification() {
     // Initial connect and subscribe to both public and private channels
     client.connect().await.unwrap();
 
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
     client.subscribe_book(instrument_id).await.unwrap();
     client.subscribe_positions().await.unwrap();
@@ -1190,7 +1190,7 @@ async fn test_true_auto_reconnect_with_verification() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send a message to trigger the server loop to process the drop flag
-    let sol_id = nautilus_model::identifiers::InstrumentId::from("SOLUSD.BITMEX");
+    let sol_id = InstrumentId::from("SOLUSD.BITMEX");
     let _ = client.subscribe_trades(sol_id).await;
 
     // Wait for auth call increment to detect reconnection
@@ -1328,8 +1328,8 @@ async fn test_subscription_restoration_tracking() {
     // Connect and make specific subscriptions
     client.connect().await.unwrap();
 
-    let xbt_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
-    let eth_id = nautilus_model::identifiers::InstrumentId::from("ETHUSD.BITMEX");
+    let xbt_id = InstrumentId::from("XBTUSD.BITMEX");
+    let eth_id = InstrumentId::from("ETHUSD.BITMEX");
 
     client.subscribe_trades(xbt_id).await.unwrap();
     client.subscribe_book(xbt_id).await.unwrap();
@@ -1409,7 +1409,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
 
     client.connect().await.unwrap();
 
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
     client.subscribe_positions().await.unwrap();
 
@@ -1437,7 +1437,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send a message to trigger the server loop to process the drop flag
-    let sol_id = nautilus_model::identifiers::InstrumentId::from("SOLUSD.BITMEX");
+    let sol_id = InstrumentId::from("SOLUSD.BITMEX");
     let _ = client.subscribe_trades(sol_id).await;
 
     client.wait_until_active(10.0).await.unwrap();
@@ -1493,7 +1493,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send a message to trigger the server loop to process the drop flag
-    let doge_id = nautilus_model::identifiers::InstrumentId::from("DOGEUSD.BITMEX");
+    let doge_id = InstrumentId::from("DOGEUSD.BITMEX");
     let _ = client.subscribe_trades(doge_id).await;
 
     client.wait_until_active(10.0).await.unwrap();
@@ -1529,7 +1529,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
 
     client.connect().await.unwrap();
 
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
     client.subscribe_positions().await.unwrap();
 
@@ -1563,7 +1563,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send a message to trigger the server loop to process the drop flag
-    let eth_id = nautilus_model::identifiers::InstrumentId::from("ETHUSD.BITMEX");
+    let eth_id = InstrumentId::from("ETHUSD.BITMEX");
     let _ = client.subscribe_trades(eth_id).await;
 
     // Wait for auth request to be sent (indicates reconnection happened)
@@ -1653,7 +1653,7 @@ async fn test_unauthenticated_private_channel_rejection() {
     assert!(result.is_err());
 
     // Public channels should still work
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     let result = client.subscribe_trades(instrument_id).await;
     assert!(result.is_ok());
 
@@ -1679,7 +1679,7 @@ async fn test_heartbeat_timeout_reconnection() {
     // Connect with heartbeat enabled
     client.connect().await.unwrap();
 
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
 
     // Wait for initial connection
@@ -1717,7 +1717,7 @@ async fn test_rapid_consecutive_reconnections() {
     // Initial connection with subscriptions
     client.connect().await.unwrap();
 
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
     client.subscribe_book(instrument_id).await.unwrap();
     client.subscribe_positions().await.unwrap();
@@ -1752,9 +1752,8 @@ async fn test_rapid_consecutive_reconnections() {
         state.drop_next_connection.store(true, Ordering::Relaxed);
 
         // Send a message to trigger the server loop to process the drop flag
-        let trigger_id = nautilus_model::identifiers::InstrumentId::from(
-            format!("{}.BITMEX", trigger_symbols[cycle - 1]).as_str(),
-        );
+        let trigger_id =
+            InstrumentId::from(format!("{}.BITMEX", trigger_symbols[cycle - 1]).as_str());
         let _ = client.subscribe_trades(trigger_id).await;
 
         // Wait for auth call increment to detect reconnection
@@ -1836,8 +1835,8 @@ async fn test_multiple_partial_subscription_failures() {
 
     client.connect().await.unwrap();
 
-    let xbt_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
-    let eth_id = nautilus_model::identifiers::InstrumentId::from("ETHUSD.BITMEX");
+    let xbt_id = InstrumentId::from("XBTUSD.BITMEX");
+    let eth_id = InstrumentId::from("ETHUSD.BITMEX");
 
     // Subscribe to multiple channels
     client.subscribe_trades(xbt_id).await.unwrap();
@@ -1876,7 +1875,7 @@ async fn test_multiple_partial_subscription_failures() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send a subscribe to trigger the server loop to process the drop flag
-    let sol_id = nautilus_model::identifiers::InstrumentId::from("SOLUSD.BITMEX");
+    let sol_id = InstrumentId::from("SOLUSD.BITMEX");
     client.subscribe_trades(sol_id).await.unwrap();
 
     // Wait for automatic reconnection and subscription retry
@@ -1937,7 +1936,7 @@ async fn test_reconnection_race_condition() {
 
     client.connect().await.unwrap();
 
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
     client.subscribe_positions().await.unwrap();
 
@@ -1951,7 +1950,7 @@ async fn test_reconnection_race_condition() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send a message to trigger the server loop to process the drop flag
-    let eth_id = nautilus_model::identifiers::InstrumentId::from("ETHUSD.BITMEX");
+    let eth_id = InstrumentId::from("ETHUSD.BITMEX");
     let _ = client.subscribe_trades(eth_id).await;
 
     // Wait a bit for reconnection to start but not complete (due to auth delay)
@@ -1961,7 +1960,7 @@ async fn test_reconnection_race_condition() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send another message to trigger the drop on the reconnecting connection
-    let sol_id = nautilus_model::identifiers::InstrumentId::from("SOLUSD.BITMEX");
+    let sol_id = InstrumentId::from("SOLUSD.BITMEX");
     let _ = client.subscribe_trades(sol_id).await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -2139,7 +2138,7 @@ async fn test_is_active_false_during_reconnection() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send a message to trigger the server loop to process the drop flag
-    let eth_id = nautilus_model::identifiers::InstrumentId::from("ETHUSD.BITMEX");
+    let eth_id = InstrumentId::from("ETHUSD.BITMEX");
     let _ = client.subscribe_trades(eth_id).await;
 
     // Small delay for disconnect to be processed
@@ -2182,7 +2181,7 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
 
     client.connect().await.unwrap();
 
-    let instrument_id = nautilus_model::identifiers::InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
     client.subscribe_trades(instrument_id).await.unwrap();
     client.subscribe_positions().await.unwrap();
 
@@ -2202,7 +2201,7 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
 
     client.unsubscribe_positions().await.unwrap();
 
-    nautilus_common::testing::wait_until_async(
+    wait_until_async(
         || {
             let state = state.clone();
             async move {
@@ -2237,7 +2236,7 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
     state.drop_next_connection.store(true, Ordering::Relaxed);
 
     // Send a message to trigger the server loop to process the drop flag
-    let eth_id = nautilus_model::identifiers::InstrumentId::from("ETHUSD.BITMEX");
+    let eth_id = InstrumentId::from("ETHUSD.BITMEX");
     let _ = client.subscribe_trades(eth_id).await;
 
     // Wait for reconnection and subscription restoration

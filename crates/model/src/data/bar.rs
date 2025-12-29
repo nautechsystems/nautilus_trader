@@ -577,6 +577,16 @@ impl BarType {
             } => *aggregation_source,
         }
     }
+
+    /// Returns the instrument ID and bar specification as a tuple key.
+    ///
+    /// Useful as a hashmap key when aggregation source should be ignored,
+    /// such as for indicator registration where INTERNAL and EXTERNAL bars
+    /// should trigger the same indicators.
+    #[must_use]
+    pub fn id_spec_key(&self) -> (InstrumentId, BarSpecification) {
+        (self.instrument_id(), self.spec())
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -892,9 +902,6 @@ impl HasTsInit for Bar {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -1304,6 +1311,26 @@ mod tests {
         assert_eq!(bar_type1, bar_type1);
         assert_eq!(bar_type1, bar_type2);
         assert_ne!(bar_type1, bar_type3);
+    }
+
+    #[rstest]
+    fn test_bar_type_id_spec_key_ignores_aggregation_source() {
+        let bar_type_external = BarType::from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL").unwrap();
+        let bar_type_internal = BarType::from_str("ESM4.XCME-1-MINUTE-LAST-INTERNAL").unwrap();
+
+        // Full equality should differ
+        assert_ne!(bar_type_external, bar_type_internal);
+
+        // id_spec_key should be the same
+        assert_eq!(
+            bar_type_external.id_spec_key(),
+            bar_type_internal.id_spec_key()
+        );
+
+        // Verify key components
+        let (instrument_id, spec) = bar_type_external.id_spec_key();
+        assert_eq!(instrument_id, bar_type_external.instrument_id());
+        assert_eq!(spec, bar_type_external.spec());
     }
 
     #[rstest]

@@ -221,6 +221,9 @@ class BinanceOrderStatus(Enum):
     EXPIRED_IN_MATCH = "EXPIRED_IN_MATCH"
     NEW_INSURANCE = "NEW_INSURANCE"  # Liquidation with Insurance Fund
     NEW_ADL = "NEW_ADL"  # Counterparty Liquidation
+    TRIGGERING = "TRIGGERING"  # Algo order forwarded to matching engine
+    TRIGGERED = "TRIGGERED"  # Algo order successfully placed in matching engine
+    FINISHED = "FINISHED"  # Algo order triggered order filled or canceled
 
 
 @unique
@@ -478,6 +481,7 @@ class BinanceErrorCode(Enum):
     ADJUST_LEVERAGE_COMPLIANCE_FAILED = -4403
 
     INVALID_PEG_OFFSET_TYPE = 1211
+    STOP_ORDER_SWITCH_ALGO = -4120
 
     FOK_ORDER_REJECT = -5021
     GTX_ORDER_REJECT = -5022
@@ -512,6 +516,9 @@ class BinanceEnumParser:
             BinanceOrderStatus.NEW_INSURANCE: OrderStatus.FILLED,
             BinanceOrderStatus.EXPIRED: OrderStatus.EXPIRED,
             BinanceOrderStatus.EXPIRED_IN_MATCH: OrderStatus.CANCELED,  # Canceled due self-trade prevention (STP)
+            BinanceOrderStatus.TRIGGERING: OrderStatus.ACCEPTED,  # Algo order forwarding to matching engine
+            BinanceOrderStatus.TRIGGERED: OrderStatus.ACCEPTED,  # Algo order placed in matching engine
+            # FINISHED intentionally omitted - requires aq field to determine filled vs canceled
         }
 
         self.ext_to_int_order_side = {

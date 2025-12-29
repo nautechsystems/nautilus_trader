@@ -34,11 +34,8 @@ use axum::{
     routing::get,
 };
 use nautilus_bybit::{
-    common::{
-        credential::Credential,
-        enums::{
-            BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
-        },
+    common::enums::{
+        BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
     },
     websocket::{
         client::BybitWebSocketClient,
@@ -449,6 +446,33 @@ fn load_test_data(filename: &str) -> serde_json::Value {
     serde_json::from_str(&content).expect("Failed to parse test data")
 }
 
+fn make_linear_pair(raw_symbol: &str, base: &str, quote: &str) -> CurrencyPair {
+    CurrencyPair::new(
+        format!("{raw_symbol}-LINEAR.BYBIT").into(),
+        raw_symbol.into(),
+        Currency::from(base),
+        Currency::from(quote),
+        2,
+        5,
+        Price::from("0.01"),
+        Quantity::from("0.00001"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        0.into(),
+        0.into(),
+    )
+}
+
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/v5/public/linear", get(handle_websocket))
@@ -543,10 +567,10 @@ async fn test_private_client_authentication() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -575,10 +599,10 @@ async fn test_authentication_failure() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("invalid_key", "invalid_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("invalid_key".to_string()),
+        Some("invalid_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -913,10 +937,10 @@ async fn test_reauth_after_disconnect() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -945,10 +969,10 @@ async fn test_login_failure_emits_error() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("invalid_key", "invalid_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("invalid_key".to_string()),
+        Some("invalid_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -1252,10 +1276,10 @@ async fn test_private_orders_subscription() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -1281,10 +1305,10 @@ async fn test_private_executions_subscription() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -1310,10 +1334,10 @@ async fn test_private_wallet_subscription() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -1456,10 +1480,10 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
 
     state.set_auth_delay(500).await;
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -1632,10 +1656,16 @@ async fn test_sends_pong_for_text_ping_message() {
 #[cfg(test)]
 mod conditional_order_tests {
     use nautilus_bybit::{
-        common::enums::{BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce},
-        websocket::messages::BybitWsPlaceOrderParams,
+        common::enums::{
+            BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce, BybitTriggerType,
+        },
+        websocket::{client::BybitWebSocketClient, messages::BybitWsPlaceOrderParams},
     };
-    use nautilus_model::{enums::OrderType, types::Price};
+    use nautilus_model::{
+        enums::{OrderSide, OrderType, TimeInForce},
+        identifiers::{ClientOrderId, InstrumentId},
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
 
     #[rstest]
@@ -1796,13 +1826,6 @@ mod conditional_order_tests {
         trigger_price: Option<Price>,
         price: Option<Price>,
     ) -> BybitWsPlaceOrderParams {
-        use nautilus_bybit::websocket::client::BybitWebSocketClient;
-        use nautilus_model::{
-            enums::OrderSide,
-            identifiers::{ClientOrderId, InstrumentId},
-            types::Quantity,
-        };
-
         let client = BybitWebSocketClient::new_public(None, None);
 
         let nautilus_side = match side {
@@ -1820,7 +1843,7 @@ mod conditional_order_tests {
                 order_type,
                 Quantity::from("0.01"),
                 false, // is_quote_quantity
-                Some(nautilus_model::enums::TimeInForce::Gtc),
+                Some(TimeInForce::Gtc),
                 price,
                 trigger_price,
                 None,  // post_only
@@ -1836,8 +1859,6 @@ mod conditional_order_tests {
         price: Option<Price>,
         reduce_only: Option<bool>,
     ) -> BybitWsPlaceOrderParams {
-        use nautilus_bybit::common::enums::BybitTriggerType;
-
         let is_stop_order = matches!(
             order_type,
             OrderType::StopMarket
@@ -1924,10 +1945,10 @@ async fn test_is_active_lifecycle() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_key", "test_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -1960,10 +1981,10 @@ async fn test_is_active_false_after_close() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_key", "test_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -2032,10 +2053,10 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url.clone()),
         None,
     );
@@ -2140,10 +2161,10 @@ async fn test_batch_place_orders_with_cache_keys() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -2158,32 +2179,7 @@ async fn test_batch_place_orders_with_cache_keys() {
     .await;
 
     // Cache instrument with proper key format (symbol-PRODUCT_TYPE)
-    let btc = Currency::from("BTC");
-    let usdt = Currency::from("USDT");
-    let btcusdt_linear = CurrencyPair::new(
-        "BTCUSDT-LINEAR.BYBIT".into(),
-        "BTCUSDT".into(),
-        btc,
-        usdt,
-        2,
-        5,
-        Price::from("0.01"),
-        Quantity::from("0.00001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    );
+    let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
     client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
 
     // Create batch place orders with raw symbol (will be converted to cache key internally)
@@ -2237,10 +2233,10 @@ async fn test_batch_amend_orders() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -2286,10 +2282,10 @@ async fn test_batch_cancel_orders() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
 
-    let credential = Credential::new("test_api_key", "test_api_secret");
     let mut client = BybitWebSocketClient::new_private(
         BybitEnvironment::Mainnet,
-        credential,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
         Some(ws_url),
         None,
     );
@@ -2302,6 +2298,15 @@ async fn test_batch_cancel_orders() {
         Duration::from_secs(5),
     )
     .await;
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+
+    // Cache instruments so cancel registration can resolve instrument IDs
+    let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
+    let ethusdt_linear = make_linear_pair("ETHUSDT", "ETH", "USDT");
+    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
+    client.cache_instrument(InstrumentAny::CurrencyPair(ethusdt_linear));
 
     let orders = vec![
         BybitWsCancelOrderParams {
@@ -2318,9 +2323,131 @@ async fn test_batch_cancel_orders() {
         },
     ];
 
-    let result = client.batch_cancel_orders(orders).await;
+    let result = client
+        .batch_cancel_orders(trader_id, strategy_id, orders)
+        .await;
 
     assert!(result.is_ok(), "Batch cancel orders should succeed");
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_orders_chunking_over_20() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/private");
+
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
+    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
+
+    // 25 orders forces chunking into batches of 20 + 5
+    let orders: Vec<BybitWsCancelOrderParams> = (0..25)
+        .map(|i| BybitWsCancelOrderParams {
+            category: BybitProductType::Linear,
+            symbol: Ustr::from("BTCUSDT"),
+            order_id: Some(format!("order-{i}")),
+            order_link_id: Some(format!("client-order-{i}")),
+        })
+        .collect();
+
+    let result = client
+        .batch_cancel_orders(trader_id, strategy_id, orders)
+        .await;
+
+    assert!(result.is_ok(), "Batch cancel with chunking should succeed");
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_orders_empty_list() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/private");
+
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let orders: Vec<BybitWsCancelOrderParams> = vec![];
+
+    let result = client
+        .batch_cancel_orders(trader_id, strategy_id, orders)
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "Batch cancel with empty list should succeed"
+    );
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_build_cancel_order_params_requires_order_id() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/private");
+
+    let mut client = BybitWebSocketClient::new_private(
+        BybitEnvironment::Mainnet,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(ws_url),
+        None,
+    );
+
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let btcusdt_linear = make_linear_pair("BTCUSDT", "BTC", "USDT");
+    client.cache_instrument(InstrumentAny::CurrencyPair(btcusdt_linear));
+
+    let result =
+        client.build_cancel_order_params(BybitProductType::Linear, btcusdt_linear.id, None, None);
+
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Either venue_order_id or client_order_id must be provided")
+    );
 
     client.close().await.unwrap();
 }

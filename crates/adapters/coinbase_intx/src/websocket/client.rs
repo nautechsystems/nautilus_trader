@@ -25,7 +25,7 @@ use ahash::{AHashMap, AHashSet};
 use chrono::Utc;
 use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
-use nautilus_common::{live::runtime::get_runtime, logging::log_task_stopped};
+use nautilus_common::{live::get_runtime, logging::log_task_stopped};
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, env::get_or_env_var, time::get_atomic_clock_realtime,
 };
@@ -34,8 +34,10 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
-use nautilus_network::websocket::{MessageReader, WebSocketClient, WebSocketConfig};
-use reqwest::header::USER_AGENT;
+use nautilus_network::{
+    http::USER_AGENT,
+    websocket::{MessageReader, WebSocketClient, WebSocketConfig},
+};
 use tokio_tungstenite::tungstenite::{Error, Message};
 use ustr::Ustr;
 
@@ -59,7 +61,7 @@ use crate::{
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase_intx")
 )]
 pub struct CoinbaseIntxWebSocketClient {
     url: String,
@@ -149,11 +151,7 @@ impl CoinbaseIntxWebSocketClient {
         self.inner
             .try_read()
             .ok()
-            .and_then(|guard| {
-                guard
-                    .as_ref()
-                    .map(nautilus_network::websocket::WebSocketClient::is_active)
-            })
+            .and_then(|guard| guard.as_ref().map(WebSocketClient::is_active))
             .unwrap_or(false)
     }
 
@@ -163,11 +161,7 @@ impl CoinbaseIntxWebSocketClient {
         self.inner
             .try_read()
             .ok()
-            .and_then(|guard| {
-                guard
-                    .as_ref()
-                    .map(nautilus_network::websocket::WebSocketClient::is_closed)
-            })
+            .and_then(|guard| guard.as_ref().map(WebSocketClient::is_closed))
             .unwrap_or(true)
     }
 
@@ -208,16 +202,14 @@ impl CoinbaseIntxWebSocketClient {
         let post_reconnect = Arc::new(move || {
             let client = client.clone();
 
-            tokio::spawn(async move { client.resubscribe_all().await });
+            get_runtime().spawn(async move { client.resubscribe_all().await });
         });
 
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
-            message_handler: None, // Will be handled by the returned reader
             heartbeat: self.heartbeat,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default
             reconnect_delay_max_ms: None,     // Use default

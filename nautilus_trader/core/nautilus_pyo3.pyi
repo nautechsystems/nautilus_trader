@@ -4570,23 +4570,25 @@ class WebSocketConfig:
     def __init__(
         self,
         url: str,
-        handler: Callable[..., Any],
         headers: list[tuple[str, str]],
         heartbeat: int | None = None,
         heartbeat_msg: str | None = None,
-        ping_handler: Callable[..., Any] | None = None,
         reconnect_timeout_ms: int | None = 10_000,
         reconnect_delay_initial_ms: int | None = 2_000,
         reconnect_delay_max_ms: int | None = 30_000,
         reconnect_backoff_factor: float | None = 1.5,
         reconnect_jitter_ms: int | None = 100,
+        reconnect_max_attempts: int | None = None,
     ) -> None: ...
 
 class WebSocketClient:
     @classmethod
     def connect(
         cls,
+        loop_: Any,
         config: WebSocketConfig,
+        handler: Callable[..., Any],
+        ping_handler: Callable[..., Any] | None = None,
         post_reconnection: Callable[..., None] | None = None,
         keyed_quotas: list[tuple[str, Quota]] = [],
         default_quota: Quota | None = None,
@@ -5760,6 +5762,98 @@ class BybitMarginAction(Enum):
     REPAY = "repay"
     GET_BORROW_AMOUNT = "get_borrow_amount"
 
+class BybitOpenOnly(Enum):
+    OpenOnly = 0
+    ClosedRecent = 1
+
+class BybitOrderFilter(Enum):
+    Order = "Order"
+    StopOrder = "StopOrder"
+    TpslOrder = "tpslOrder"
+    OcoOrder = "OcoOrder"
+    BidirectionalTpslOrder = "BidirectionalTpslOrder"
+
+class BybitOrderSide(Enum):
+    Unknown = "Unknown"
+    Buy = "Buy"
+    Sell = "Sell"
+
+class BybitOrderStatus(Enum):
+    Created = "Created"
+    New = "New"
+    Rejected = "Rejected"
+    PartiallyFilled = "PartiallyFilled"
+    PartiallyFilledCanceled = "PartiallyFilledCanceled"
+    Filled = "Filled"
+    Canceled = "Canceled"
+    Untriggered = "Untriggered"
+    Triggered = "Triggered"
+    Deactivated = "Deactivated"
+
+class BybitOrderType(Enum):
+    Market = "Market"
+    Limit = "Limit"
+    Unknown = "Unknown"
+
+class BybitCancelType(Enum):
+    CancelByUser = "CancelByUser"
+    CancelByReduceOnly = "CancelByReduceOnly"
+    CancelByPrepareLackOfMargin = "CancelByPrepareLackOfMargin"
+    CancelByPrepareOrderFilter = "CancelByPrepareOrderFilter"
+    CancelByPrepareOrderMarginCheckFailed = "CancelByPrepareOrderMarginCheckFailed"
+    CancelByPrepareOrderCommission = "CancelByPrepareOrderCommission"
+    CancelByPrepareOrderRms = "CancelByPrepareOrderRms"
+    CancelByPrepareOrderOther = "CancelByPrepareOrderOther"
+    CancelByRiskLimit = "CancelByRiskLimit"
+    CancelOnDisconnect = "CancelOnDisconnect"
+    CancelByStopOrdersExceeded = "CancelByStopOrdersExceeded"
+    CancelByPzMarketClose = "CancelByPzMarketClose"
+    CancelByMarginCheckFailed = "CancelByMarginCheckFailed"
+    CancelByPzTakeover = "CancelByPzTakeover"
+    CancelByAdmin = "CancelByAdmin"
+    CancelByTpSlTsClear = "CancelByTpSlTsClear"
+    CancelByAmendNotModified = "CancelByAmendNotModified"
+    CancelByPzCancel = "CancelByPzCancel"
+    CancelByCrossSelfMatch = "CancelByCrossSelfMatch"
+    CancelBySelfMatchPrevention = "CancelBySelfMatchPrevention"
+    Other = "Other"
+
+class BybitStopOrderType(Enum):
+    NONE = "None"
+    Unknown = "Unknown"
+    TakeProfit = "TakeProfit"
+    StopLoss = "StopLoss"
+    TrailingStop = "TrailingStop"
+    Stop = "Stop"
+    PartialTakeProfit = "PartialTakeProfit"
+    PartialStopLoss = "PartialStopLoss"
+    TpslOrder = "TpslOrder"
+    OcoOrder = "OcoOrder"
+    MmRateClose = "MmRateClose"
+    BidirectionalTpslOrder = "BidirectionalTpslOrder"
+
+class BybitTriggerType(Enum):
+    NONE = "None"
+    LastPrice = "LastPrice"
+    IndexPrice = "IndexPrice"
+    MarkPrice = "MarkPrice"
+
+class BybitTriggerDirection(Enum):
+    NONE = 0
+    RisesTo = 1
+    FallsTo = 2
+
+class BybitTpSlMode(Enum):
+    Full = "Full"
+    Partial = "Partial"
+    Unknown = "Unknown"
+
+class BybitTimeInForce(Enum):
+    GTC = "GTC"
+    IOC = "IOC"
+    FOK = "FOK"
+    PostOnly = "PostOnly"
+
 class BybitMarginBorrowResult:
     def __init__(
         self,
@@ -5829,6 +5923,104 @@ class BybitMarginStatusResult:
 class BybitPositionMode(Enum):
     MergedSingle = 0
     BothSides = 3
+
+class BybitServerTime:
+    @property
+    def time_second(self) -> str: ...
+    @property
+    def time_nano(self) -> str: ...
+
+class BybitOrder:
+    @property
+    def order_id(self) -> str: ...
+    @property
+    def order_link_id(self) -> str: ...
+    @property
+    def block_trade_id(self) -> str | None: ...
+    @property
+    def symbol(self) -> str: ...
+    @property
+    def price(self) -> str: ...
+    @property
+    def qty(self) -> str: ...
+    @property
+    def side(self) -> BybitOrderSide: ...
+    @property
+    def is_leverage(self) -> str: ...
+    @property
+    def position_idx(self) -> int: ...
+    @property
+    def order_status(self) -> BybitOrderStatus: ...
+    @property
+    def cancel_type(self) -> BybitCancelType: ...
+    @property
+    def reject_reason(self) -> str: ...
+    @property
+    def avg_price(self) -> str | None: ...
+    @property
+    def leaves_qty(self) -> str: ...
+    @property
+    def leaves_value(self) -> str: ...
+    @property
+    def cum_exec_qty(self) -> str: ...
+    @property
+    def cum_exec_value(self) -> str: ...
+    @property
+    def cum_exec_fee(self) -> str: ...
+    @property
+    def time_in_force(self) -> BybitTimeInForce: ...
+    @property
+    def order_type(self) -> BybitOrderType: ...
+    @property
+    def stop_order_type(self) -> BybitStopOrderType: ...
+    @property
+    def order_iv(self) -> str | None: ...
+    @property
+    def trigger_price(self) -> str: ...
+    @property
+    def take_profit(self) -> str: ...
+    @property
+    def stop_loss(self) -> str: ...
+    @property
+    def tp_trigger_by(self) -> BybitTriggerType: ...
+    @property
+    def sl_trigger_by(self) -> BybitTriggerType: ...
+    @property
+    def trigger_direction(self) -> BybitTriggerDirection: ...
+    @property
+    def trigger_by(self) -> BybitTriggerType: ...
+    @property
+    def last_price_on_created(self) -> str: ...
+    @property
+    def reduce_only(self) -> bool: ...
+    @property
+    def close_on_trigger(self) -> bool: ...
+    @property
+    def smp_type(self) -> str: ...
+    @property
+    def smp_group(self) -> int: ...
+    @property
+    def smp_order_id(self) -> str: ...
+    @property
+    def tpsl_mode(self) -> BybitTpSlMode | None: ...
+    @property
+    def tp_limit_price(self) -> str: ...
+    @property
+    def sl_limit_price(self) -> str: ...
+    @property
+    def place_type(self) -> str: ...
+    @property
+    def created_time(self) -> str: ...
+    @property
+    def updated_time(self) -> str: ...
+
+class BybitOrderCursorList:
+    @property
+    def list(self) -> list[BybitOrder]: ...
+    @property
+    def next_page_cursor(self) -> str | None: ...
+    @property
+    def category(self) -> BybitProductType | None: ...
 
 class BybitTickerData:
     @property
@@ -5904,6 +6096,43 @@ class BybitAccountDetails:
     @property
     def created_at(self) -> str: ...
 
+class BybitRawHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        demo: bool = False,
+        testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        recv_window_ms: int | None = None,
+        proxy_url: str | None = None,
+    ) -> None: ...
+    @property
+    def base_url(self) -> str: ...
+    @property
+    def api_key(self) -> str | None: ...
+    @property
+    def recv_window_ms(self) -> int: ...
+    def cancel_all_requests(self) -> None: ...
+    async def get_server_time(self) -> BybitServerTime: ...
+    async def get_open_orders(
+        self,
+        category: BybitProductType,
+        symbol: str | None = None,
+        base_coin: str | None = None,
+        settle_coin: str | None = None,
+        order_id: str | None = None,
+        order_link_id: str | None = None,
+        open_only: BybitOpenOnly | None = None,
+        order_filter: BybitOrderFilter | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> BybitOrderCursorList: ...
+
 class BybitHttpClient:
     def __init__(
         self,
@@ -5919,8 +6148,6 @@ class BybitHttpClient:
         recv_window_ms: int | None = None,
         proxy_url: str | None = None,
     ) -> None: ...
-    @staticmethod
-    def from_env() -> BybitHttpClient: ...
     @property
     def base_url(self) -> str: ...
     @property
@@ -5985,9 +6212,9 @@ class BybitHttpClient:
     ) -> list[Bar]: ...
     async def request_fee_rates(
         self,
-        account_type: BybitAccountType,
-        account_id: AccountId,
-        instrument_id: InstrumentId | None = None,
+        product_type: BybitProductType,
+        symbol: str | None = None,
+        base_coin: str | None = None,
     ) -> list[Any]: ...
     async def request_account_state(
         self,
@@ -6065,14 +6292,6 @@ class BybitHttpClient:
         quantity: Quantity | None = None,
         price: Price | None = None,
     ) -> OrderStatusReport: ...
-    async def batch_cancel_orders(
-        self,
-        account_id: AccountId,
-        product_type: BybitProductType,
-        instrument_ids: list[InstrumentId],
-        client_order_ids: list[ClientOrderId | None],
-        venue_order_ids: list[VenueOrderId | None],
-    ) -> list[OrderStatusReport]: ...
 
 class BybitWebSocketClient:
     @staticmethod
@@ -6098,14 +6317,15 @@ class BybitWebSocketClient:
         url: str | None = None,
         heartbeat: int | None = None,
     ) -> BybitWebSocketClient: ...
-    def subscription_count(self) -> int: ...
     @property
     def api_key_masked(self) -> str | None: ...
+    def subscription_count(self) -> int: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
     def set_account_id(self, account_id: AccountId) -> None: ...
     def set_mm_level(self, mm_level: int) -> None: ...
+    def set_bars_timestamp_on_close(self, value: bool) -> None: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
-    async def is_active(self) -> bool: ...
-    async def is_closed(self) -> bool: ...
     async def connect(self, callback: Any) -> None: ...
     async def close(self) -> None: ...
     async def wait_until_active(self, timeout_secs: float) -> None: ...
@@ -6151,8 +6371,8 @@ class BybitWebSocketClient:
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId | None = None,
-        client_order_id: ClientOrderId | None = None,
         quantity: Quantity | None = None,
         price: Price | None = None,
     ) -> None: ...
@@ -6162,8 +6382,8 @@ class BybitWebSocketClient:
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId | None = None,
-        client_order_id: ClientOrderId | None = None,
     ) -> None: ...
     async def batch_place_orders(
         self,
@@ -6179,12 +6399,9 @@ class BybitWebSocketClient:
     ) -> None: ...
     async def batch_cancel_orders(
         self,
-        product_type: BybitProductType,
         trader_id: TraderId,
         strategy_id: StrategyId,
-        instrument_ids: list[InstrumentId],
-        venue_order_ids: list[VenueOrderId | None],
-        client_order_ids: list[ClientOrderId | None],
+        orders: list[BybitWsCancelOrderParams],
     ) -> None: ...
     def build_place_order_params(
         self,
@@ -6211,6 +6428,13 @@ class BybitWebSocketClient:
         quantity: Quantity | None = None,
         price: Price | None = None,
     ) -> BybitWsAmendOrderParams: ...
+    def build_cancel_order_params(
+        self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId | None = None,
+        client_order_id: ClientOrderId | None = None,
+    ) -> BybitWsCancelOrderParams: ...
 
 class BybitWsPlaceOrderParams:
     category: BybitProductType
@@ -6252,6 +6476,12 @@ class BybitWsAmendOrderParams:
     stop_loss: str | None
     tp_trigger_by: str | None
     sl_trigger_by: str | None
+
+class BybitWsCancelOrderParams:
+    category: BybitProductType
+    symbol: str
+    order_id: str | None
+    order_link_id: str | None
 
 def get_bybit_http_base_url(environment: BybitEnvironment) -> str: ...
 def get_bybit_ws_url_public(
@@ -6343,6 +6573,14 @@ class DatabentoStatistics:
     def ts_recv(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
+
+class DatabentoSubscriptionAck:
+    @property
+    def schema(self) -> str: ...
+    @property
+    def message(self) -> str: ...
+    @property
+    def ts_received(self) -> int: ...
 
 class DatabentoDataLoader:
     def __init__(
@@ -6605,6 +6843,162 @@ class DatabentoLiveClient:
         callback_pyo3: Callable,
     ) -> Awaitable[None]: ...
     def close(self) -> None: ...
+
+# Deribit
+
+class DeribitHttpClient:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        is_testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
+    ) -> None: ...
+    @property
+    def is_testnet(self) -> bool: ...
+    def is_initialized(self) -> bool: ...
+    def cache_instruments(self, instruments: list[Instrument]) -> None: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
+    async def request_instruments(
+        self,
+        currency: DeribitCurrency,
+        kind: DeribitInstrumentKind | None = None,
+    ) -> list[Instrument]: ...
+    async def request_instrument(self, instrument_id: InstrumentId) -> Instrument: ...
+    async def request_trades(
+        self,
+        instrument_id: InstrumentId,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[TradeTick]: ...
+    async def request_bars(
+        self,
+        bar_type: BarType,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[Bar]: ...
+    async def request_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        depth: int | None = None,
+    ) -> OrderBook: ...
+    async def request_account_state(self, account_id: AccountId) -> AccountState: ...
+
+class DeribitWebSocketClient:
+    def __init__(
+        self,
+        url: str | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        heartbeat_interval: int | None = None,
+        is_testnet: bool = False,
+    ) -> None: ...
+    @staticmethod
+    def new_public(is_testnet: bool) -> DeribitWebSocketClient: ...
+    @staticmethod
+    def with_credentials(is_testnet: bool) -> DeribitWebSocketClient: ...
+    @property
+    def url(self) -> str: ...
+    @property
+    def is_testnet(self) -> bool: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
+    def has_credentials(self) -> bool: ...
+    def is_authenticated(self) -> bool: ...
+    def cancel_all_requests(self) -> None: ...
+    def cache_instruments(self, instruments: list[Instrument]) -> None: ...
+    def cache_instrument(self, instrument: Instrument) -> None: ...
+    async def connect(
+        self,
+        instruments: list[Instrument],
+        callback: Callable,
+    ) -> None: ...
+    async def wait_until_active(self, timeout_secs: float) -> None: ...
+    async def close(self) -> None: ...
+    async def authenticate(self, session_name: str | None = None) -> None: ...
+    async def authenticate_session(self) -> None: ...
+    async def subscribe_trades(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_trades_raw(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_trades(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_book(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_book_raw(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_book(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_ticker(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_ticker_raw(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_ticker(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe(self, channels: list[str]) -> None: ...
+    async def unsubscribe(self, channels: list[str]) -> None: ...
+
+def get_deribit_http_base_url(is_testnet: bool) -> str: ...
+def get_deribit_ws_url(is_testnet: bool) -> str: ...
+
+class DeribitCurrency(Enum):
+    BTC = "BTC"
+    ETH = "ETH"
+    USDC = "USDC"
+    USDT = "USDT"
+    EURR = "EURR"
+    ANY = "ANY"
+
+class DeribitInstrumentKind(Enum):
+    FUTURE = "FUTURE"
+    OPTION = "OPTION"
+    SPOT = "SPOT"
+    FUTURE_COMBO = "FUTURE_COMBO"
+    OPTION_COMBO = "OPTION_COMBO"
+
+class DeribitOptionType(Enum):
+    CALL = "CALL"
+    PUT = "PUT"
+
+class DeribitUpdateInterval(Enum):
+    RAW = "RAW"
+    MS100 = "MS100"
+    AGG2 = "AGG2"
+
+class DeribitWsChannel(Enum):
+    TRADES = "TRADES"
+    BOOK = "BOOK"
+    TICKER = "TICKER"
+    QUOTE = "QUOTE"
+    PRICE_INDEX = "PRICE_INDEX"
+    PRICE_RANKING = "PRICE_RANKING"
+    VOLATILITY_INDEX = "VOLATILITY_INDEX"
+    ESTIMATED_EXPIRATION_PRICE = "ESTIMATED_EXPIRATION_PRICE"
+    PERPETUAL = "PERPETUAL"
 
 # Tardis
 
@@ -7641,8 +8035,8 @@ class HyperliquidWebSocketClient:
     ) -> None: ...
     @property
     def url(self) -> str: ...
-    async def is_active(self) -> bool: ...
-    async def is_closed(self) -> bool: ...
+    def is_active(self) -> bool: ...
+    def is_closed(self) -> bool: ...
     async def connect(self, instruments: list[Any], callback: Callable) -> None: ...
     async def wait_until_active(self, timeout_secs: float) -> None: ...
     async def close(self) -> None: ...
@@ -7680,7 +8074,7 @@ class HyperliquidWebSocketClient:
 
 class KrakenEnvironment(Enum):
     MAINNET = "mainnet"
-    TESTNET = "testnet"
+    DEMO = "demo"
 
 class KrakenProductType(Enum):
     SPOT = "spot"
@@ -7692,12 +8086,13 @@ class KrakenSpotHttpClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        testnet: bool = False,
+        demo: bool = False,
         timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         proxy_url: str | None = None,
+        max_requests_per_second: int | None = None,
     ) -> None: ...
     @property
     def base_url(self) -> str: ...
@@ -7707,6 +8102,8 @@ class KrakenSpotHttpClient:
     def api_key_masked(self) -> str | None: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
     def cancel_all_requests(self) -> None: ...
+    def set_use_spot_position_reports(self, value: bool) -> None: ...
+    def set_spot_positions_quote_currency(self, currency: str) -> None: ...
     async def get_server_time(self) -> str: ...
     async def request_instruments(
         self,
@@ -7715,17 +8112,74 @@ class KrakenSpotHttpClient:
     async def request_trades(
         self,
         instrument_id: InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[TradeTick]: ...
     async def request_bars(
         self,
         bar_type: BarType,
-        start: int | None = None,
-        end: int | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[Bar]: ...
+    async def request_account_state(self, account_id: AccountId) -> AccountState: ...
+    async def request_order_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        open_only: bool = False,
+    ) -> list[OrderStatusReport]: ...
+    async def request_fill_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+    ) -> list[FillReport]: ...
+    async def request_position_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[PositionStatusReport]: ...
+    async def submit_order(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        expire_time: int | None = None,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        reduce_only: bool = False,
+        post_only: bool = False,
+    ) -> VenueOrderId: ...
+    async def modify_order(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        quantity: Quantity | None = None,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+    ) -> VenueOrderId: ...
+    async def cancel_order(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> None: ...
+    async def cancel_all_orders(self) -> int: ...
+    async def cancel_orders_batch(
+        self,
+        venue_order_ids: list[VenueOrderId],
+    ) -> int: ...
 
 class KrakenFuturesHttpClient:
     def __init__(
@@ -7733,12 +8187,13 @@ class KrakenFuturesHttpClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url: str | None = None,
-        testnet: bool = False,
+        demo: bool = False,
         timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         proxy_url: str | None = None,
+        max_requests_per_second: int | None = None,
     ) -> None: ...
     @property
     def base_url(self) -> str: ...
@@ -7754,32 +8209,89 @@ class KrakenFuturesHttpClient:
     async def request_trades(
         self,
         instrument_id: InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[TradeTick]: ...
     async def request_bars(
         self,
         bar_type: BarType,
-        start: int | None = None,
-        end: int | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
         limit: int | None = None,
     ) -> list[Bar]: ...
-    async def request_bars_with_tick_type(
+    async def request_account_state(
         self,
-        bar_type: BarType,
-        start: int | None = None,
-        end: int | None = None,
-        limit: int | None = None,
-        tick_type: str | None = None,
-    ) -> list[Bar]: ...
+        account_id: AccountId,
+    ) -> AccountState: ...
+    async def request_order_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        open_only: bool = False,
+    ) -> list[OrderStatusReport]: ...
+    async def request_fill_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+    ) -> list[FillReport]: ...
+    async def request_position_status_reports(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId | None = None,
+    ) -> list[PositionStatusReport]: ...
+    async def submit_order(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        reduce_only: bool = False,
+        post_only: bool = False,
+    ) -> OrderStatusReport: ...
+    async def modify_order(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        quantity: Quantity | None = None,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+    ) -> VenueOrderId: ...
+    async def cancel_order(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> None: ...
+    async def cancel_all_orders(
+        self,
+        instrument_id: InstrumentId | None = None,
+    ) -> int: ...
+    async def cancel_orders_batch(
+        self,
+        venue_order_ids: list[VenueOrderId],
+    ) -> int: ...
 
 class KrakenSpotWebSocketClient:
     def __init__(
         self,
         environment: KrakenEnvironment | None = None,
+        private: bool = False,
         base_url: str | None = None,
         heartbeat_secs: int | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...
@@ -7788,8 +8300,20 @@ class KrakenSpotWebSocketClient:
     def is_closed(self) -> bool: ...
     def get_subscriptions(self) -> list[str]: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
+    def set_account_id(self, account_id: AccountId) -> None: ...
+    def cache_client_order(
+        self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId | None,
+        instrument_id: InstrumentId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+    ) -> None: ...
+    def cancel_all_requests(self) -> None: ...
     async def connect(self, instruments: list[Instrument], callback: Callable) -> None: ...
     async def wait_until_active(self, timeout_secs: float) -> None: ...
+    async def authenticate(self) -> None: ...
+    async def send_ping(self) -> None: ...
     async def disconnect(self) -> None: ...
     async def close(self) -> None: ...
     async def subscribe_book(
@@ -7800,11 +8324,15 @@ class KrakenSpotWebSocketClient:
     async def subscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
     async def subscribe_trades(self, instrument_id: InstrumentId) -> None: ...
     async def subscribe_bars(self, bar_type: BarType) -> None: ...
+    async def subscribe_executions(
+        self,
+        snap_orders: bool = True,
+        snap_trades: bool = True,
+    ) -> None: ...
     async def unsubscribe_book(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_trades(self, instrument_id: InstrumentId) -> None: ...
     async def unsubscribe_bars(self, bar_type: BarType) -> None: ...
-    async def send_ping(self) -> None: ...
 
 class KrakenFuturesWebSocketClient:
     def __init__(
@@ -7812,33 +8340,55 @@ class KrakenFuturesWebSocketClient:
         environment: KrakenEnvironment | None = None,
         base_url: str | None = None,
         heartbeat_secs: int | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
     ) -> None: ...
+    @property
+    def has_credentials(self) -> bool: ...
     @property
     def url(self) -> str: ...
     def is_closed(self) -> bool: ...
+    def is_active(self) -> bool: ...
+    async def wait_until_active(self, timeout_secs: float) -> None: ...
+    async def authenticate(self) -> None: ...
     def cache_instruments(self, instruments: list[Instrument]) -> None: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
-    async def connect(self, callback: Callable) -> None: ...
+    def set_account_id(self, account_id: AccountId) -> None: ...
+    def cache_client_order(
+        self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId | None,
+        instrument_id: InstrumentId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+    ) -> None: ...
+    def sign_challenge(self, challenge: str) -> str: ...
+    async def connect(
+        self, instruments: list[Instrument], callback: Callable[..., Any]
+    ) -> None: ...
     async def disconnect(self) -> None: ...
     async def close(self) -> None: ...
-    async def subscribe_mark_price(self, product_id: str) -> None: ...
-    async def unsubscribe_mark_price(self, product_id: str) -> None: ...
-    async def subscribe_index_price(self, product_id: str) -> None: ...
-    async def unsubscribe_index_price(self, product_id: str) -> None: ...
+    async def authenticate_with_challenge(self, challenge: str) -> None: ...
+    async def set_auth_credentials(
+        self, original_challenge: str, signed_challenge: str
+    ) -> None: ...
+    async def subscribe_mark_price(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_mark_price(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_index_price(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_index_price(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_trades(self, instrument_id: InstrumentId) -> None: ...
+    async def unsubscribe_trades(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_book(
+        self, instrument_id: InstrumentId, depth: int | None = None
+    ) -> None: ...
+    async def unsubscribe_book(self, instrument_id: InstrumentId) -> None: ...
+    async def subscribe_open_orders(self) -> None: ...
+    async def subscribe_fills(self) -> None: ...
+    async def subscribe_executions(self) -> None: ...
 
 def kraken_product_type_from_symbol(symbol: str) -> KrakenProductType: ...
-def get_kraken_http_base_url(
-    product_type: KrakenProductType,
-    environment: KrakenEnvironment,
-) -> str: ...
-def get_kraken_ws_public_url(
-    product_type: KrakenProductType,
-    environment: KrakenEnvironment,
-) -> str: ...
-def get_kraken_ws_private_url(
-    product_type: KrakenProductType,
-    environment: KrakenEnvironment,
-) -> str: ...
 
 # Greeks
 

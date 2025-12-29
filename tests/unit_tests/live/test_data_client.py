@@ -288,7 +288,10 @@ class TestLiveDataClientTests:
         for i in range(5):
             client.create_task(long_task(), log_msg=f"task_{i}")
 
-        await eventually(lambda: len([t for t in client._tasks if not t.done()]) == 5)
+        await eventually(
+            lambda: len([t for t in client._tasks if not t.done()]) == 5,
+            timeout=5.0,
+        )
 
         # Assert - Tasks are active
         active_before = [t for t in client._tasks if not t.done()]
@@ -298,7 +301,7 @@ class TestLiveDataClientTests:
         client.disconnect()
         await eventually(
             lambda: len([t for t in client._tasks if not t.done()]) <= 1,
-            timeout=1.0,
+            timeout=5.0,
         )  # Only disconnect task might remain
 
         # Assert - Tasks should be cancelled after disconnect

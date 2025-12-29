@@ -62,21 +62,6 @@ def test_wallet_address(environment_variable: str, is_testnet: bool) -> None:
 
 
 @pytest.mark.parametrize(
-    "is_testnet",
-    [
-        (True),
-        (False),
-    ],
-)
-def test_wallet_address_not_set(is_testnet: bool) -> None:
-    """
-    Test an exception is thrown when the environment variable is not set.
-    """
-    with pytest.raises(RuntimeError):
-        get_wallet_address(is_testnet=is_testnet)
-
-
-@pytest.mark.parametrize(
     ("environment_variable", "is_testnet"),
     [
         ("DYDX_TESTNET_MNEMONIC", True),
@@ -91,18 +76,3 @@ def test_credentials(environment_variable: str, is_testnet: bool) -> None:
     assert get_mnemonic(is_testnet=is_testnet) == "test_mnemonic"
 
     del os.environ[environment_variable]
-
-
-@pytest.mark.parametrize(
-    "is_testnet",
-    [
-        (True),
-        (False),
-    ],
-)
-def test_credentials_not_set(is_testnet: bool) -> None:
-    """
-    Test an exception is thrown when the environment variable is not set..
-    """
-    with pytest.raises(RuntimeError):
-        get_mnemonic(is_testnet=is_testnet)

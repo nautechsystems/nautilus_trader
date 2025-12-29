@@ -685,8 +685,7 @@ class ExecTester(Strategy):
             current_trigger = self.get_order_trigger_price(self.buy_stop_order)
             if current_trigger and current_trigger != trigger_price:
                 if self.config.modify_stop_orders_to_maintain_offset:
-                    # Modification not supported for all stop order types
-                    self.log.warning("Stop order modification not yet implemented")
+                    self.modify_stop_order(self.buy_stop_order, trigger_price, limit_price)
                 elif self.config.cancel_replace_stop_orders_to_maintain_offset:
                     self.cancel_order(self.buy_stop_order)
                     self.submit_stop_order(OrderSide.BUY, trigger_price, limit_price)
@@ -733,22 +732,36 @@ class ExecTester(Strategy):
             current_trigger = self.get_order_trigger_price(self.sell_stop_order)
             if current_trigger and current_trigger != trigger_price:
                 if self.config.modify_stop_orders_to_maintain_offset:
-                    # Modification not supported for all stop order types
-                    self.log.warning("Stop order modification not yet implemented")
+                    self.modify_stop_order(self.sell_stop_order, trigger_price, limit_price)
                 elif self.config.cancel_replace_stop_orders_to_maintain_offset:
                     self.cancel_order(self.sell_stop_order)
                     self.submit_stop_order(OrderSide.SELL, trigger_price, limit_price)
 
     def get_order_trigger_price(self, order: Order) -> Price | None:
-        """
-        Get the trigger price for stop/conditional orders.
-        """
         if isinstance(
             order,
             StopMarketOrder | StopLimitOrder | MarketIfTouchedOrder | LimitIfTouchedOrder,
         ):
             return order.trigger_price
         return None
+
+    def modify_stop_order(
+        self,
+        order: Order,
+        trigger_price: Price,
+        limit_price: Price | None = None,
+    ) -> None:
+        if isinstance(order, StopMarketOrder | MarketIfTouchedOrder):
+            # Market-type stops only have trigger price
+            self.modify_order(order, trigger_price=trigger_price)
+        elif isinstance(order, StopLimitOrder | LimitIfTouchedOrder):
+            # Limit-type stops have both trigger and limit price
+            if limit_price is not None:
+                self.modify_order(order, price=limit_price, trigger_price=trigger_price)
+            else:
+                self.modify_order(order, trigger_price=trigger_price)
+        else:
+            self.log.warning(f"Cannot modify order of type {type(order).__name__}")
 
     def on_stop(self) -> None:  # noqa: C901 (too complex)
         """

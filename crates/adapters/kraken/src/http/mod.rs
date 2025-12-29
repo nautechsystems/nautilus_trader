@@ -27,5 +27,11 @@ pub mod spot;
 
 // Re-exports
 pub use error::KrakenHttpError;
-pub use futures::client::{KrakenFuturesHttpClient, KrakenFuturesRawHttpClient};
-pub use spot::client::{KrakenSpotHttpClient, KrakenSpotRawHttpClient};
+pub use futures::{
+    client::{KrakenFuturesHttpClient, KrakenFuturesRawHttpClient},
+    query::*,
+};
+pub use spot::{
+    client::{KrakenSpotHttpClient, KrakenSpotRawHttpClient},
+    query::*,
+};

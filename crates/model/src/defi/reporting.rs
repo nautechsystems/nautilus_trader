@@ -17,7 +17,7 @@
 
 use std::{fmt::Display, time::Instant};
 
-use thousands::Separable;
+use nautilus_core::formatting::Separable;
 
 #[derive(Debug, Clone)]
 pub enum BlockchainSyncReportItems {

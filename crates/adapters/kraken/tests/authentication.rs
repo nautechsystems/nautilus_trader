@@ -77,6 +77,7 @@ async fn test_http_client_get_websockets_token() {
         None,
         None,
         None,
+        None,
     )
     .unwrap();
 

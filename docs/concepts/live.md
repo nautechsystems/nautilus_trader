@@ -52,8 +52,8 @@ config = TradingNodeConfig(
     trader_id="MyTrader-001",
 
     # Component configurations
-    cache: CacheConfig(),
-    message_bus: MessageBusConfig(),
+    cache=CacheConfig(),
+    message_bus=MessageBusConfig(),
     data_engine=LiveDataEngineConfig(),
     risk_engine=LiveRiskEngineConfig(),
     exec_engine=LiveExecEngineConfig(),
@@ -381,6 +381,16 @@ Execution reconciliation is the process of aligning the external state of realit
 (both closed and open) with the system's internal state built from events.
 This process is primarily applicable to live trading, which is why only the `LiveExecutionEngine` has reconciliation capability.
 
+:::note Terminology
+An **in-flight order** is one awaiting venue acknowledgement:
+
+- `SUBMITTED` - initial submission, awaiting accept/reject.
+- `PENDING_UPDATE` - modification requested, awaiting confirmation.
+- `PENDING_CANCEL` - cancellation requested, awaiting confirmation.
+
+These orders are monitored by the continuous reconciliation loop to detect stale or lost messages.
+:::
+
 There are two main scenarios for reconciliation:
 
 - **Previous cached execution state**: Where cached execution state exists, information from reports is used to generate missing events to align the state.
@@ -417,6 +427,10 @@ a strategy to resume its operations and continue managing existing open orders f
 Orders generated with strategy ID `EXTERNAL` and tag `RECONCILIATION` during position reconciliation are internal to the engine and cannot be claimed via `external_order_claims`.
 They exist solely to align position discrepancies and should not be managed by user strategies.
 
+:::tip
+To detect external orders in your strategy, check `order.strategy_id.value == "EXTERNAL"`. These orders are included in portfolio calculations and position tracking like any other order.
+:::
+
 For a full list of live trading options see the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liveexecengineconfig).
 
 ### Reconciliation procedure
@@ -427,6 +441,20 @@ methods to produce an execution mass status:
 - `generate_order_status_reports`
 - `generate_fill_reports`
 - `generate_position_status_reports`
+
+```mermaid
+flowchart TD
+    Start[Startup Reconciliation] --> Fetch[Fetch venue reports<br/>orders, fills, positions]
+    Fetch --> Dup{Duplicate<br/>order IDs?}
+    Dup -->|Yes| Fail[Reconciliation fails]
+    Dup -->|No| Orders[Order Reconciliation<br/>align order states, generate missing events]
+    Orders --> Fills[Fill Reconciliation<br/>verify fills, generate missing OrderFilled events]
+    Fills --> Pos[Position Reconciliation<br/>compare net positions per instrument]
+    Pos --> Match{Positions<br/>match venue?}
+    Match -->|Yes| Done[Reconciliation complete<br/>system ready for trading]
+    Match -->|No| Gen[Generate missing orders<br/>strategy: EXTERNAL, tag: RECONCILIATION]
+    Gen --> Done
+```
 
 The system state is then reconciled with the reports, which represent external "reality":
 

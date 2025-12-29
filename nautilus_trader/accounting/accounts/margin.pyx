@@ -29,6 +29,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport MarginBalance
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
 
@@ -473,7 +474,14 @@ cdef class MarginAccount(Account):
     cdef void _recalculate_balance(self, Currency currency):
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            raise RuntimeError("cannot recalculate balance when no current balance")
+            # Initialize zero balance if none exists - can occur when account
+            # state doesn't include a balance for the position's cost currency
+            current_balance = AccountBalance(
+                Money(0, currency),
+                Money(0, currency),
+                Money(0, currency),
+            )
+            self._balances[currency] = current_balance
 
         total_margin = Decimal()
 

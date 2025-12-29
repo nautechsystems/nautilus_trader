@@ -219,7 +219,13 @@ impl FileWriter {
         };
 
         let file_path =
-            Self::create_log_file_path(&file_config, &trader_id, &instance_id, json_format);
+            match Self::create_log_file_path(&file_config, &trader_id, &instance_id, json_format) {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::error!("Error creating log directory: {e}");
+                    return None;
+                }
+            };
 
         match File::options()
             .create(true)
@@ -258,7 +264,7 @@ impl FileWriter {
         trader_id: &str,
         instance_id: &str,
         is_json_format: bool,
-    ) -> PathBuf {
+    ) -> Result<PathBuf, io::Error> {
         let utc_now = Utc::now();
 
         let basename = match file_config.file_name.as_ref() {
@@ -287,12 +293,12 @@ impl FileWriter {
 
         if let Some(directory) = file_config.directory.as_ref() {
             file_path.push(directory);
-            create_dir_all(&file_path).expect("Failed to create directories for log file");
+            create_dir_all(&file_path)?;
         }
 
         file_path.push(basename);
         file_path.set_extension(suffix);
-        file_path
+        Ok(file_path)
     }
 
     #[must_use]
@@ -311,16 +317,21 @@ impl FileWriter {
     }
 
     fn rotate_file(&mut self) {
-        // Flush current file
         self.flush();
 
-        // Create new file
-        let new_path = Self::create_log_file_path(
+        let new_path = match Self::create_log_file_path(
             &self.file_config,
             &self.trader_id,
             &self.instance_id,
             self.json_format,
-        );
+        ) {
+            Ok(path) => path,
+            Err(e) => {
+                tracing::error!("Error creating log directory for rotation: {e}");
+                return;
+            }
+        };
+
         match File::options().create(true).append(true).open(&new_path) {
             Ok(new_file) => {
                 // Rotate existing file
@@ -336,12 +347,11 @@ impl FileWriter {
                 }
 
                 self.buf = BufWriter::new(new_file);
-                self.path = new_path;
+                self.path = new_path.clone();
+                tracing::info!("Rotated log file, now logging to: {}", new_path.display());
             }
             Err(e) => tracing::error!("Error creating log file: {e}"),
         }
-
-        tracing::info!("Rotated log file, now logging to: {}", self.path.display());
     }
 }
 
@@ -417,13 +427,10 @@ fn strip_nonprinting_except_newline(s: &str) -> String {
 
 fn strip_ansi_codes(s: &str) -> String {
     let re = ANSI_RE.get_or_init(|| Regex::new(r"\x1B\[[0-9;?=]*[A-Za-z]|\x1B\].*?\x07").unwrap());
-    let no_controls = strip_nonprinting_except_newline(s);
-    re.replace_all(&no_controls, "").to_string()
+    // Strip ANSI codes first (while \x1B is still present), then remove other control chars
+    let no_ansi = re.replace_all(s, "");
+    strip_nonprinting_except_newline(&no_ansi)
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -479,13 +486,159 @@ mod tests {
 
     #[rstest]
     #[case("Plain text", "Plain text")]
-    #[case("\x1B[31mRed\x1B[0m", "[31mRed[0m")]
-    #[case("\x1B[1;32mBold Green\x1B[0m", "[1;32mBold Green[0m")]
-    #[case("Before\x1B[0mAfter", "Before[0mAfter")]
-    #[case("\x1B]0;Title\x07Content", "]0;TitleContent")]
-    #[case("Text\t\x1B[31mRed\x1B[0m", "Text[31mRed[0m")]
+    #[case("\x1B[31mRed\x1B[0m", "Red")]
+    #[case("\x1B[1;32mBold Green\x1B[0m", "Bold Green")]
+    #[case("Before\x1B[0mAfter", "BeforeAfter")]
+    #[case("\x1B]0;Title\x07Content", "Content")]
+    #[case("Text\t\x1B[31mRed\x1B[0m", "TextRed")]
     fn test_strip_ansi_codes(#[case] input: &str, #[case] expected: &str) {
         let result = strip_ansi_codes(input);
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_file_writer_unwritable_directory_returns_none() {
+        let config = FileWriterConfig {
+            directory: Some("/nonexistent/path/that/should/not/exist".to_string()),
+            file_name: Some("test".to_string()),
+            file_format: None,
+            file_rotate: None,
+        };
+
+        let writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+        );
+
+        assert!(writer.is_none());
+    }
+
+    #[rstest]
+    fn test_file_writer_directory_is_file_returns_none() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("not_a_directory");
+        std::fs::write(&file_path, "I am a file").unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(file_path.to_str().unwrap().to_string()),
+            file_name: Some("test".to_string()),
+            file_format: None,
+            file_rotate: None,
+        };
+
+        let writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+        );
+
+        assert!(writer.is_none());
+    }
+
+    #[rstest]
+    fn test_file_writer_unrecognized_format_defaults_to_text() {
+        let temp_dir = tempdir().unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_name: Some("test".to_string()),
+            file_format: Some("invalid_format".to_string()),
+            file_rotate: None,
+        };
+
+        let writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+        )
+        .unwrap();
+
+        assert!(!writer.json_format);
+        assert!(writer.path.extension().unwrap() == "log");
+    }
+
+    #[rstest]
+    fn test_file_writer_json_format() {
+        let temp_dir = tempdir().unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_name: Some("test".to_string()),
+            file_format: Some("json".to_string()),
+            file_rotate: None,
+        };
+
+        let writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+        )
+        .unwrap();
+
+        assert!(writer.json_format);
+        assert!(writer.path.extension().unwrap() == "json");
+    }
+
+    #[rstest]
+    fn test_stdout_writer_filters_error_level() {
+        let writer = StdoutWriter::new(LevelFilter::Info, true);
+
+        // Error level should NOT be enabled for stdout (goes to stderr)
+        let error_line = LogLine {
+            timestamp: 0.into(),
+            level: log::Level::Error,
+            color: crate::enums::LogColor::Normal,
+            component: ustr::Ustr::from("Test"),
+            message: "error".to_string(),
+        };
+        assert!(!writer.enabled(&error_line));
+
+        // Info level should be enabled
+        let info_line = LogLine {
+            timestamp: 0.into(),
+            level: log::Level::Info,
+            color: crate::enums::LogColor::Normal,
+            component: ustr::Ustr::from("Test"),
+            message: "info".to_string(),
+        };
+        assert!(writer.enabled(&info_line));
+
+        // Debug should NOT be enabled when stdout level is Info
+        let debug_line = LogLine {
+            timestamp: 0.into(),
+            level: log::Level::Debug,
+            color: crate::enums::LogColor::Normal,
+            component: ustr::Ustr::from("Test"),
+            message: "debug".to_string(),
+        };
+        assert!(!writer.enabled(&debug_line));
+    }
+
+    #[rstest]
+    fn test_stderr_writer_only_enables_error_level() {
+        let writer = StderrWriter::new(true);
+
+        let error_line = LogLine {
+            timestamp: 0.into(),
+            level: log::Level::Error,
+            color: crate::enums::LogColor::Normal,
+            component: ustr::Ustr::from("Test"),
+            message: "error".to_string(),
+        };
+        assert!(writer.enabled(&error_line));
+
+        let warn_line = LogLine {
+            timestamp: 0.into(),
+            level: log::Level::Warn,
+            color: crate::enums::LogColor::Normal,
+            component: ustr::Ustr::from("Test"),
+            message: "warn".to_string(),
+        };
+        assert!(!writer.enabled(&warn_line));
     }
 }

@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     identifiers::{
@@ -39,7 +40,7 @@ pub struct SubmitOrder {
     pub order: OrderAny,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
 }
@@ -51,7 +52,7 @@ impl SubmitOrder {
     ///
     /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         trader_id: TraderId,
         client_id: ClientId,
         strategy_id: StrategyId,
@@ -61,7 +62,7 @@ impl SubmitOrder {
         order: OrderAny,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
         command_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -106,6 +107,7 @@ pub struct SubmitOrderList {
     pub order_list: OrderList,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
+    pub params: Option<IndexMap<String, String>>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
 }
@@ -127,6 +129,7 @@ impl SubmitOrderList {
         order_list: OrderList,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
+        params: Option<IndexMap<String, String>>,
         command_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
@@ -140,6 +143,7 @@ impl SubmitOrderList {
             order_list,
             exec_algorithm_id,
             position_id,
+            params,
             command_id,
             ts_init,
         })

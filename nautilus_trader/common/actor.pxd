@@ -32,6 +32,7 @@ from nautilus_trader.data.messages cimport RequestData
 from nautilus_trader.indicators.base cimport Indicator
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarSpecification
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport FundingRateUpdate
@@ -42,6 +43,7 @@ from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport ClientId
@@ -65,7 +67,7 @@ cdef class Actor(Component):
     cdef list[Indicator] _indicators
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_quotes
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_trades
-    cdef dict[BarType, list[Indicator]] _indicators_for_bars
+    cdef dict[tuple[InstrumentId, BarSpecification], list[Indicator]] _indicators_for_bars
 
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the actor.\n\n:returns: `PortfolioFacade`"""
@@ -111,6 +113,7 @@ cdef class Actor(Component):
     cpdef void on_signal(self, signal)
     cpdef void on_historical_data(self, data)
     cpdef void on_order_filled(self, OrderFilled event)
+    cpdef void on_order_canceled(self, OrderCanceled event)
     cpdef void on_event(self, Event event)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
@@ -190,6 +193,7 @@ cdef class Actor(Component):
     cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_order_fills(self, InstrumentId instrument_id)
+    cpdef void subscribe_order_cancels(self, InstrumentId instrument_id)
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*, InstrumentId instrument_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
@@ -205,6 +209,7 @@ cdef class Actor(Component):
     cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_order_fills(self, InstrumentId instrument_id)
+    cpdef void unsubscribe_order_cancels(self, InstrumentId instrument_id)
     cpdef void publish_data(self, DataType data_type, Data data)
     cpdef void publish_signal(self, str name, value, uint64_t ts_event=*)
     cpdef void subscribe_signal(self, str name=*)
@@ -223,6 +228,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_instrument(
         self,
@@ -234,6 +240,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_instruments(
         self,
@@ -245,6 +252,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_order_book_snapshot(
         self,
@@ -254,6 +262,7 @@ cdef class Actor(Component):
         callback=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_order_book_depth(
         self,
@@ -267,6 +276,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_quote_ticks(
         self,
@@ -279,6 +289,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_trade_ticks(
         self,
@@ -291,6 +302,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_bars(
         self,
@@ -303,6 +315,7 @@ cdef class Actor(Component):
         bint update_catalog=*,
         dict[str, object] params=*,
         bint join_request=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_aggregated_bars(
         self,
@@ -316,6 +329,7 @@ cdef class Actor(Component):
         bint update_subscriptions=*,
         bint update_catalog=*,
         dict[str, object] params=*,
+        UUID4 request_id=*,
     )
     cpdef UUID4 request_join(
         self,
@@ -326,6 +340,7 @@ cdef class Actor(Component):
         Venue venue=*,
         callback=*,
         dict[str, object] params=*,
+        UUID4 request_id=*,
     )
     cpdef bint is_pending_request(self, UUID4 request_id)
     cpdef bint has_pending_requests(self)
@@ -362,10 +377,12 @@ cdef class Actor(Component):
     cpdef void _handle_quote_ticks_response(self, DataResponse response)
     cpdef void _handle_trade_ticks_response(self, DataResponse response)
     cpdef void _handle_order_book_depth_response(self, DataResponse response)
+    cpdef void _handle_order_book_snapshot_response(self, DataResponse response)
     cpdef void _handle_bars_response(self, DataResponse response)
     cpdef void _handle_aggregated_bars_response(self, DataResponse response)
     cpdef void _unsubscribe_historical_aggregated_bars(self, tuple bar_types, bint include_external_data = *)
     cpdef void _handle_order_filled(self, OrderFilled fill)
+    cpdef void _handle_order_canceled(self, OrderCanceled event)
     cpdef void _finish_response(self, UUID4 request_id)
     cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick)
     cpdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick)

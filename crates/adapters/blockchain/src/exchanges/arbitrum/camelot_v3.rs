@@ -17,9 +17,11 @@ use std::sync::LazyLock;
 
 use alloy::primitives::Address;
 use nautilus_model::defi::{
+    PoolIdentifier,
     chain::chains,
     dex::{AmmType, Dex, DexType},
 };
+use ustr::Ustr;
 
 use crate::{
     events::pool_created::PoolCreatedEvent,
@@ -67,12 +69,13 @@ fn parse_camelot_v3_pool_created_event_hypersync(
 
         // Extract pool address (only 32 bytes)
         let pool_address = Address::from_slice(&data_bytes[12..32]);
-
+        let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
         Ok(PoolCreatedEvent::new(
             block_number,
             token,
             token1,
             pool_address,
+            pool_identifier,
             None,
             None,
         ))

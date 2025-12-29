@@ -1,0 +1,36 @@
+{
+  "requestId": "http_get_trades-req",
+  "status": "success",
+  "isoTimestamp": "2025-12-08T16:12:00.000Z",
+  "result": {
+    "trades": [
+      {
+        "id": "03f89a550000000200000002",
+        "side": "BUY",
+        "size": "0.0001",
+        "price": "89942",
+        "type": "LIMIT",
+        "createdAt": "2025-12-08T16:11:30.590Z",
+        "createdAtHeight": "66624085"
+      },
+      {
+        "id": "03f89a53000000020000000e",
+        "side": "BUY",
+        "size": "0.0365",
+        "price": "89970",
+        "type": "LIMIT",
+        "createdAt": "2025-12-08T16:11:29.425Z",
+        "createdAtHeight": "66624083"
+      },
+      {
+        "id": "03f89a53000000020000000b",
+        "side": "BUY",
+        "size": "0.1763",
+        "price": "89969",
+        "type": "LIMIT",
+        "createdAt": "2025-12-08T16:11:29.425Z",
+        "createdAtHeight": "66624083"
+      }
+    ]
+  }
+}

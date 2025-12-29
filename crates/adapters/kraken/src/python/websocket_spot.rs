@@ -42,17 +42,21 @@
 //! - Always clone before async blocks for lifetime requirements.
 
 use futures_util::StreamExt;
+use nautilus_common::live::get_runtime;
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
-    identifiers::InstrumentId,
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, prelude::*};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::enums::KrakenEnvironment,
+    common::{
+        enums::{KrakenEnvironment, KrakenProductType},
+        urls::get_kraken_ws_private_url,
+    },
     config::KrakenDataClientConfig,
     websocket::spot_v2::{client::KrakenSpotWebSocketClient, messages::NautilusWsMessage},
 };
@@ -60,16 +64,40 @@ use crate::{
 #[pymethods]
 impl KrakenSpotWebSocketClient {
     #[new]
-    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=None))]
+    #[pyo3(signature = (environment=None, private=false, base_url=None, heartbeat_secs=None, api_key=None, api_secret=None))]
     fn py_new(
         environment: Option<KrakenEnvironment>,
+        private: bool,
         base_url: Option<String>,
         heartbeat_secs: Option<u64>,
+        api_key: Option<String>,
+        api_secret: Option<String>,
     ) -> PyResult<Self> {
+        let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
+
+        let (resolved_api_key, resolved_api_secret) =
+            crate::common::credential::KrakenCredential::resolve_spot(api_key, api_secret)
+                .map(|c| c.into_parts())
+                .map(|(k, s)| (Some(k), Some(s)))
+                .unwrap_or((None, None));
+
+        let (ws_public_url, ws_private_url) = if private {
+            // Use provided URL or default to the private endpoint
+            let private_url = base_url.unwrap_or_else(|| {
+                get_kraken_ws_private_url(KrakenProductType::Spot, env).to_string()
+            });
+            (None, Some(private_url))
+        } else {
+            (base_url, None)
+        };
+
         let config = KrakenDataClientConfig {
-            environment: environment.unwrap_or(KrakenEnvironment::Mainnet),
-            ws_public_url: base_url,
+            environment: env,
+            ws_public_url,
+            ws_private_url,
             heartbeat_interval_secs: heartbeat_secs,
+            api_key: resolved_api_key,
+            api_secret: resolved_api_secret,
             ..Default::default()
         };
 
@@ -111,6 +139,24 @@ impl KrakenSpotWebSocketClient {
         Ok(())
     }
 
+    #[pyo3(name = "set_account_id")]
+    fn py_set_account_id(&self, account_id: AccountId) {
+        self.set_account_id(account_id);
+    }
+
+    #[pyo3(name = "cache_client_order")]
+    fn py_cache_client_order(
+        &self,
+        client_order_id: ClientOrderId,
+        _venue_order_id: Option<VenueOrderId>,
+        instrument_id: InstrumentId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+    ) {
+        // Note: venue_order_id not used for spot yet, but kept for API consistency
+        self.cache_client_order(client_order_id, instrument_id, trader_id, strategy_id);
+    }
+
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
@@ -139,7 +185,7 @@ impl KrakenSpotWebSocketClient {
 
             let stream = client.stream();
 
-            tokio::spawn(async move {
+            get_runtime().spawn(async move {
                 tokio::pin!(stream);
 
                 while let Some(msg) = stream.next().await {
@@ -160,6 +206,77 @@ impl KrakenSpotWebSocketClient {
                                 );
                                 call_python(py, &callback, py_obj);
                             });
+                        }
+                        NautilusWsMessage::OrderRejected(event) => {
+                            Python::attach(|py| match event.into_py_any(py) {
+                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to convert OrderRejected to Python: {e}"
+                                    );
+                                }
+                            });
+                        }
+                        NautilusWsMessage::OrderAccepted(event) => {
+                            Python::attach(|py| match event.into_py_any(py) {
+                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to convert OrderAccepted to Python: {e}"
+                                    );
+                                }
+                            });
+                        }
+                        NautilusWsMessage::OrderCanceled(event) => {
+                            Python::attach(|py| match event.into_py_any(py) {
+                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to convert OrderCanceled to Python: {e}"
+                                    );
+                                }
+                            });
+                        }
+                        NautilusWsMessage::OrderExpired(event) => {
+                            Python::attach(|py| match event.into_py_any(py) {
+                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to convert OrderExpired to Python: {e}"
+                                    );
+                                }
+                            });
+                        }
+                        NautilusWsMessage::OrderUpdated(event) => {
+                            Python::attach(|py| match event.into_py_any(py) {
+                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to convert OrderUpdated to Python: {e}"
+                                    );
+                                }
+                            });
+                        }
+                        NautilusWsMessage::OrderStatusReport(report) => {
+                            Python::attach(|py| match (*report).into_py_any(py) {
+                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to convert OrderStatusReport to Python: {e}"
+                                    );
+                                }
+                            });
+                        }
+                        NautilusWsMessage::FillReport(report) => {
+                            Python::attach(|py| match (*report).into_py_any(py) {
+                                Ok(py_obj) => call_python(py, &callback, py_obj),
+                                Err(e) => {
+                                    tracing::error!("Failed to convert FillReport to Python: {e}");
+                                }
+                            });
+                        }
+                        NautilusWsMessage::Reconnected => {
+                            tracing::info!("WebSocket reconnected");
                         }
                     }
                 }
@@ -202,6 +319,16 @@ impl KrakenSpotWebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client.disconnect().await.map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "send_ping")]
+    fn py_send_ping<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.send_ping().await.map_err(to_pyruntime_err)?;
             Ok(())
         })
     }
@@ -285,6 +412,25 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    #[pyo3(name = "subscribe_executions")]
+    #[pyo3(signature = (snap_orders=true, snap_trades=true))]
+    fn py_subscribe_executions<'py>(
+        &self,
+        py: Python<'py>,
+        snap_orders: bool,
+        snap_trades: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_executions(snap_orders, snap_trades)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "unsubscribe_book")]
     fn py_unsubscribe_book<'py>(
         &self,
@@ -349,16 +495,6 @@ impl KrakenSpotWebSocketClient {
                 .unsubscribe_bars(bar_type)
                 .await
                 .map_err(to_pyruntime_err)?;
-            Ok(())
-        })
-    }
-
-    #[pyo3(name = "send_ping")]
-    fn py_send_ping<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            client.send_ping().await.map_err(to_pyruntime_err)?;
             Ok(())
         })
     }

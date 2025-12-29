@@ -26,10 +26,11 @@ from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.model.functions cimport asset_class_from_str
 from nautilus_trader.model.functions cimport asset_class_to_str
-from nautilus_trader.model.functions cimport instrument_class_from_str
 from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport generic_spread_id_to_list
+from nautilus_trader.model.identifiers cimport is_generic_spread_id
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Price
@@ -217,6 +218,35 @@ cdef class FuturesSpread(Instrument):
 
         """
         return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
+
+    cpdef bint is_spread(self):
+        """
+        Return whether the instrument is a spread instrument.
+
+        Returns
+        -------
+        bool
+
+        """
+        return True
+
+    cpdef list legs(self):
+        """
+        Return the list of leg tuples (instrument_id, ratio) for this spread.
+
+        If the instrument ID corresponds to a generic spread ID, returns the
+        parsed legs using generic_spread_id_to_list. Otherwise returns an empty list.
+
+        Returns
+        -------
+        list[tuple[InstrumentId, int]]
+            List of tuples containing (instrument_id, ratio) for each leg.
+
+        """
+        if is_generic_spread_id(self.id):
+            return generic_spread_id_to_list(self.id)
+
+        return [(self.id, 1)]
 
     @staticmethod
     cdef FuturesSpread from_dict_c(dict values):

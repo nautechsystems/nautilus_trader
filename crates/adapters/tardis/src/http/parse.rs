@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
-
 use chrono::{DateTime, Utc};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -55,7 +53,13 @@ pub fn parse_instrument_any(
             parse_future_instrument(info, effective, ts_init, normalize_symbols)
         }
         TardisInstrumentType::Option => {
-            parse_option_instrument(info, effective, ts_init, normalize_symbols)
+            match parse_option_instrument(info, effective, ts_init, normalize_symbols) {
+                Ok(instruments) => instruments,
+                Err(e) => {
+                    tracing::error!("Failed to parse option instrument: {e}");
+                    vec![]
+                }
+            }
         }
     }
 }
@@ -518,7 +522,7 @@ fn parse_option_instrument(
     effective: Option<UnixNanos>,
     ts_init: Option<UnixNanos>,
     normalize_symbols: bool,
-) -> Vec<InstrumentAny> {
+) -> anyhow::Result<Vec<InstrumentAny>> {
     let instrument_id = if normalize_symbols {
         normalize_instrument_id(&info.exchange, info.id, &info.instrument_type, info.inverse)
     } else {
@@ -557,7 +561,7 @@ fn parse_option_instrument(
         taker_fee,
         ts_event,
         ts_init.unwrap_or(ts_event),
-    )];
+    )?];
 
     if let Some(changes) = &info.changes {
         // Sort changes newest to oldest
@@ -612,7 +616,7 @@ fn parse_option_instrument(
                 taker_fee,
                 ts_event,
                 ts_init.unwrap_or(ts_event),
-            )];
+            )?];
         } else {
             // Historical view with all states
             for (i, change) in sorted_changes.iter().enumerate() {
@@ -658,7 +662,7 @@ fn parse_option_instrument(
                     taker_fee,
                     ts_event,
                     ts_init.unwrap_or(ts_event),
-                ));
+                )?);
             }
 
             // Sort in ascending (chronological) order
@@ -666,7 +670,7 @@ fn parse_option_instrument(
         }
     }
 
-    instruments
+    Ok(instruments)
 }
 
 /// Parses the price increment from the given `value`.
@@ -695,15 +699,28 @@ fn parse_multiplier(value: Option<f64>) -> Option<Quantity> {
 }
 
 /// Parses the fee rate from the given `value`.
+/// Returns zero for invalid f64 values (NaN, infinity).
 fn parse_fee_rate(value: f64) -> Decimal {
-    Decimal::from_str(&value.to_string()).expect("Invalid decimal value")
+    Decimal::try_from(value).unwrap_or_else(|e| {
+        tracing::warn!("Invalid fee rate value {value}: {e}, defaulting to zero");
+        Decimal::ZERO
+    })
 }
 
 /// Parses the given RFC 3339 datetime string (UTC) into a `UnixNanos` timestamp.
 /// If `value` is `None`, then defaults to the UNIX epoch (0 nanoseconds).
+/// Timestamps before UNIX epoch (negative values) default to 0.
 fn parse_datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> UnixNanos {
     value
-        .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64))
+        .map(|dt| {
+            let nanos = dt.timestamp_nanos_opt().unwrap_or(0);
+            if nanos < 0 {
+                tracing::warn!("Timestamp {dt} is before UNIX epoch, defaulting to 0");
+                UnixNanos::default()
+            } else {
+                UnixNanos::from(nanos as u64)
+            }
+        })
         .unwrap_or_default()
 }
 
@@ -721,9 +738,6 @@ pub fn parse_settlement_currency(info: &TardisInstrumentInfo, is_inverse: bool) 
         .to_uppercase()
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};

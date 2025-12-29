@@ -18,7 +18,10 @@
 use nautilus_core::UnixNanos;
 
 use super::ladder::BookPrice;
-use crate::enums::{BookType, OrderSide};
+use crate::{
+    enums::{BookType, OrderSide},
+    identifiers::InstrumentId,
+};
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum InvalidBookOperation {
@@ -44,4 +47,6 @@ pub enum BookIntegrityError {
     TooManyOrders(OrderSide, usize),
     #[error("Integrity error: number of {0} levels > 1 for L1_MBP book, was {1}")]
     TooManyLevels(OrderSide, usize),
+    #[error("Integrity error: instrument ID mismatch: book={0}, delta={1}")]
+    InstrumentMismatch(InstrumentId, InstrumentId),
 }

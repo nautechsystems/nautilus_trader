@@ -56,6 +56,10 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 
+# Used to invalidate abnormal tick sizes that can signal data issues
+MAX_VALID_TICK_SIZE = Decimal("1e12")
+
+
 class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     """
     Handles market data requests, subscriptions and data processing for the
@@ -780,6 +784,14 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if req_id not in self._subscription_tick_data:
             self._subscription_tick_data[req_id] = {}
 
+        # Skip invalid price in most cases (IB uses -1.0 to indicate unavailable/invalid prices)
+        # But option spreads can have negative prices, in this case the size of a quote will invalidate the quote
+        if price == -1.0 and self._subscription_tick_data[req_id].get(tick_type, 0.0) > 0.0:
+            self._log.warning(
+                f"Ignoring invalid tick price: {price} for req_id={req_id}, tick_type={tick_type}",
+            )
+            return
+
         # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
         self._subscription_tick_data[req_id][tick_type] = price
 
@@ -797,6 +809,14 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         Process tick size data from reqMktData for spread instruments.
         """
         if not (subscription := self._subscriptions.get(req_id=req_id)):
+            return
+
+        # Skip invalid sizes (negative or extremely large values)
+        # IB may send invalid sizes when prices are invalid
+        if size < 0 or size > MAX_VALID_TICK_SIZE:
+            self._log.warning(
+                f"Ignoring invalid tick size: {size} for req_id={req_id}, tick_type={tick_type}",
+            )
             return
 
         # Store the size data for this subscription
@@ -823,12 +843,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         tick_data = self._subscription_tick_data[req_id]
 
         # IB tick types: 0=BID_SIZE, 1=BID_PRICE, 2=ASK_PRICE, 3=ASK_SIZE
-        bid_size = tick_data.get(0, 1)
+        bid_size = tick_data.get(0)
         bid_price = tick_data.get(1)
         ask_price = tick_data.get(2)
-        ask_size = tick_data.get(3, 1)
+        ask_size = tick_data.get(3)
 
-        if bid_price is not None and ask_price is not None:
+        # Validate that both prices are present and valid (positive)
+        if (
+            bid_price is not None
+            and ask_price is not None
+            and bid_size is not None
+            and ask_size is not None
+        ):
             # Create quote tick
             instrument_id = InstrumentId.from_str(subscription.name[0])
             instrument = self._cache.instrument(instrument_id)
@@ -884,6 +910,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         converted_high = ib_price_to_nautilus_price(high, price_magnifier)
         converted_low = ib_price_to_nautilus_price(low, price_magnifier)
         converted_close = ib_price_to_nautilus_price(close, price_magnifier)
+
+        # Validate bar data integrity BEFORE creating Bar object
+        # IB sometimes sends corrupt data during extended hours
+        if not self._validate_bar_prices(
+            bar_type=bar_type,
+            open_price=converted_open,
+            high_price=converted_high,
+            low_price=converted_low,
+            close_price=converted_close,
+            bar_identifier=f"time={time}",
+        ):
+            return
 
         bar = Bar(
             bar_type=bar_type,
@@ -1270,7 +1308,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         bar: BarData,
         ts_init: int,
         is_revision: bool = False,
-    ) -> Bar:
+    ) -> Bar | None:
         """
         Convert Interactive Brokers bar data to NautilusTrader's bar type.
 
@@ -1287,7 +1325,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         Returns
         -------
-        Bar
+        Bar | None
+            The converted bar, or None if the bar data is invalid (e.g., low > open during extended hours).
 
         """
         instrument = self._cache.instrument(bar_type.instrument_id)
@@ -1308,6 +1347,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         converted_high = ib_price_to_nautilus_price(bar.high, price_magnifier)
         converted_low = ib_price_to_nautilus_price(bar.low, price_magnifier)
         converted_close = ib_price_to_nautilus_price(bar.close, price_magnifier)
+
+        # Validate bar data integrity BEFORE creating Bar object
+        # IB sometimes sends corrupt data during extended hours
+        if not self._validate_bar_prices(
+            bar_type=bar_type,
+            open_price=converted_open,
+            high_price=converted_high,
+            low_price=converted_low,
+            close_price=converted_close,
+            bar_identifier=f"bar.date={bar.date}",
+        ):
+            return None
 
         return Bar(
             bar_type=bar_type,
@@ -1418,6 +1469,57 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             ts = pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc)
 
         return ts.value
+
+    def _validate_bar_prices(
+        self,
+        bar_type: BarType,
+        open_price: float,
+        high_price: float,
+        low_price: float,
+        close_price: float,
+        bar_identifier: str,
+    ) -> bool:
+        if high_price < open_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"high ({high_price}) < open ({open_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        if high_price < low_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"high ({high_price}) < low ({low_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        if high_price < close_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"high ({high_price}) < close ({close_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        if low_price > close_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"low ({low_price}) > close ({close_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        if low_price > open_price:
+            self._log.warning(
+                f"Invalid bar from IB for {bar_type.instrument_id}: "
+                f"low ({low_price}) > open ({open_price}), "
+                f"{bar_identifier}, skipping bar",
+            )
+            return False
+
+        return True
 
     async def process_update_mkt_depth_l2(
         self,

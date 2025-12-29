@@ -39,7 +39,7 @@ use tokio::{
 
 use super::{
     decode::{decode_imbalance_msg, decode_statistics_msg, decode_status_msg},
-    types::{DatabentoImbalance, DatabentoStatistics},
+    types::{DatabentoImbalance, DatabentoStatistics, SubscriptionAckEvent},
 };
 use crate::{
     decode::{decode_instrument_def_msg, decode_record},
@@ -64,6 +64,7 @@ pub enum LiveMessage {
     Status(InstrumentStatus),
     Imbalance(DatabentoImbalance),
     Statistics(DatabentoStatistics),
+    SubscriptionAck(SubscriptionAckEvent),
     Error(anyhow::Error),
     Close,
 }
@@ -420,7 +421,9 @@ impl DatabentoFeedHandler {
             if let Some(msg) = record.get::<dbn::ErrorMsg>() {
                 handle_error_msg(msg);
             } else if let Some(msg) = record.get::<dbn::SystemMsg>() {
-                handle_system_msg(msg);
+                if let Some(ack) = handle_system_msg(msg, ts_init) {
+                    self.send_msg(LiveMessage::SubscriptionAck(ack)).await;
+                }
             } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
                 // Remove instrument ID index as the raw symbol may have changed
                 instrument_id_map.remove(&msg.hd.instrument_id);
@@ -641,9 +644,51 @@ fn handle_error_msg(msg: &dbn::ErrorMsg) {
     tracing::error!("{msg:?}");
 }
 
-/// Handles Databento system messages by logging them.
-fn handle_system_msg(msg: &dbn::SystemMsg) {
-    tracing::debug!("{msg:?}");
+/// Handles Databento system messages, returning a subscription ack event if applicable.
+fn handle_system_msg(msg: &dbn::SystemMsg, ts_received: UnixNanos) -> Option<SubscriptionAckEvent> {
+    match msg.code() {
+        Ok(dbn::SystemCode::SubscriptionAck) => {
+            let message = msg.msg().unwrap_or("<invalid utf-8>");
+            tracing::info!("Subscription acknowledged: {message}");
+
+            let schema = parse_ack_message(message);
+
+            Some(SubscriptionAckEvent {
+                schema,
+                message: message.to_string(),
+                ts_received,
+            })
+        }
+        Ok(dbn::SystemCode::Heartbeat) => {
+            tracing::trace!("Heartbeat received");
+            None
+        }
+        Ok(dbn::SystemCode::SlowReaderWarning) => {
+            let message = msg.msg().unwrap_or("<invalid utf-8>");
+            tracing::warn!("Slow reader warning: {message}");
+            None
+        }
+        Ok(dbn::SystemCode::ReplayCompleted) => {
+            let message = msg.msg().unwrap_or("<invalid utf-8>");
+            tracing::info!("Replay completed: {message}");
+            None
+        }
+        _ => {
+            tracing::debug!("{msg:?}");
+            None
+        }
+    }
+}
+
+/// Parses a subscription ack message to extract the schema.
+fn parse_ack_message(message: &str) -> String {
+    // Format: "Subscription request N for <schema> data succeeded"
+    message
+        .strip_prefix("Subscription request ")
+        .and_then(|rest| rest.split_once(" for "))
+        .and_then(|(_, after_num)| after_num.strip_suffix(" data succeeded"))
+        .map(|schema| schema.trim().to_string())
+        .unwrap_or_default()
 }
 
 /// Handles symbol mapping messages and updates the instrument ID map.
@@ -854,10 +899,6 @@ fn handle_record(
         bars_timestamp_on_close,
     )
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

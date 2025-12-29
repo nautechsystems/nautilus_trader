@@ -14,14 +14,23 @@
 # -------------------------------------------------------------------------------------------------
 
 import pkgutil
+from decimal import Decimal
 
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerData
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAlgoUpdateWrapper
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesTradeLiteMsg
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateWrapper
+from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -96,12 +105,6 @@ class TestBinanceWebSocketParsing:
         wrapper = decoder.decode(raw)
 
         # Act: Parse to OrderStatusReport
-        from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
-        from nautilus_trader.core.datetime import millis_to_nanos
-        from nautilus_trader.model.identifiers import AccountId
-        from nautilus_trader.model.identifiers import ClientOrderId
-        from nautilus_trader.model.identifiers import VenueOrderId
-
         enum_parser = BinanceSpotEnumParser()
         report = wrapper.data.parse_to_order_status_report(
             account_id=AccountId("BINANCE-001"),
@@ -114,10 +117,6 @@ class TestBinanceWebSocketParsing:
         )
 
         # Assert: Status should be FILLED, not ACCEPTED
-        from decimal import Decimal
-
-        from nautilus_trader.model.enums import OrderStatus
-
         assert report.order_status == OrderStatus.FILLED
         assert report.filled_qty.as_decimal() == Decimal(wrapper.data.z)
         assert report.quantity.as_decimal() == Decimal(wrapper.data.q)
@@ -134,12 +133,6 @@ class TestBinanceWebSocketParsing:
         wrapper = decoder.decode(raw)
 
         # Act: Parse to OrderStatusReport
-        from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
-        from nautilus_trader.core.datetime import millis_to_nanos
-        from nautilus_trader.model.identifiers import AccountId
-        from nautilus_trader.model.identifiers import ClientOrderId
-        from nautilus_trader.model.identifiers import VenueOrderId
-
         enum_parser = BinanceSpotEnumParser()
         report = wrapper.data.parse_to_order_status_report(
             account_id=AccountId("BINANCE-001"),
@@ -152,8 +145,6 @@ class TestBinanceWebSocketParsing:
         )
 
         # Assert: Status should be REJECTED (not crash with RuntimeError)
-        from nautilus_trader.model.enums import OrderStatus
-
         assert report.order_status == OrderStatus.REJECTED
         assert wrapper.data.X == BinanceOrderStatus.REJECTED
         assert wrapper.data.r == "GTX_ORDER_REJECT"
@@ -170,12 +161,6 @@ class TestBinanceWebSocketParsing:
         wrapper = decoder.decode(raw)
 
         # Act: Parse to OrderStatusReport
-        from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
-        from nautilus_trader.core.datetime import millis_to_nanos
-        from nautilus_trader.model.identifiers import AccountId
-        from nautilus_trader.model.identifiers import ClientOrderId
-        from nautilus_trader.model.identifiers import VenueOrderId
-
         enum_parser = BinanceSpotEnumParser()
         report = wrapper.data.parse_to_order_status_report(
             account_id=AccountId("BINANCE-001"),
@@ -188,8 +173,6 @@ class TestBinanceWebSocketParsing:
         )
 
         # Assert: Status should be PENDING_CANCEL (not crash with RuntimeError)
-        from nautilus_trader.model.enums import OrderStatus
-
         assert report.order_status == OrderStatus.PENDING_CANCEL
         assert wrapper.data.X == BinanceOrderStatus.PENDING_CANCEL
 
@@ -210,9 +193,6 @@ class TestBinanceWebSocketParsing:
         assert wrapper.data.e.value == "executionReport"
         assert wrapper.data.x == BinanceExecutionType.TRADE
         assert wrapper.data.L == "0.00000000"  # Last filled price is zero
-
-        from decimal import Decimal
-
         assert Decimal(wrapper.data.L) == 0
 
     def test_parse_spot_execution_report_calculated(self):
@@ -236,9 +216,6 @@ class TestBinanceWebSocketParsing:
         assert wrapper.data.l == "0.01000000"
         assert wrapper.data.L == "49500.00000000"
         assert wrapper.data.m is False  # Liquidations are taker
-
-        from decimal import Decimal
-
         assert Decimal(wrapper.data.L) > 0
 
     def test_parse_spot_execution_report_trade_prevention(self):
@@ -263,3 +240,118 @@ class TestBinanceWebSocketParsing:
         assert wrapper.data.z == "0.00000000"  # No actual fill occurred
         assert wrapper.data.t == -1  # No trade ID
         assert wrapper.data.V == "EXPIRE_MAKER"  # Self-Trade Prevention Mode
+
+    def test_parse_futures_algo_update_triggering(self):
+        # Arrange: Load ALGO_UPDATE with TRIGGERING status
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_algo_update_triggering.json",
+        )
+        assert raw
+
+        # Act
+        decoder = msgspec.json.Decoder(BinanceFuturesAlgoUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Assert
+        assert wrapper.data.o.X == BinanceOrderStatus.TRIGGERING
+        assert wrapper.data.o.caid == "O-20251211-053131-TEST-000-1"
+        assert wrapper.data.o.aid == 1000000033225453
+        assert wrapper.data.o.s == "DOGEUSDT"
+        assert wrapper.data.o.ai == ""  # Empty when triggering
+
+    def test_parse_futures_algo_update_triggered(self):
+        # Arrange: Load ALGO_UPDATE with TRIGGERED status
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_algo_update_triggered.json",
+        )
+        assert raw
+
+        # Act
+        decoder = msgspec.json.Decoder(BinanceFuturesAlgoUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Assert
+        assert wrapper.data.o.X == BinanceOrderStatus.TRIGGERED
+        assert wrapper.data.o.caid == "O-20251211-053131-TEST-000-1"
+        assert wrapper.data.o.aid == 1000000033225453
+        assert wrapper.data.o.ai == "88937381063"  # New order ID from matching engine
+        assert wrapper.data.o.ap == "0"
+        assert wrapper.data.o.aq == "0"
+        assert wrapper.data.o.act == "MARKET"
+
+    def test_parse_futures_algo_update_finished(self):
+        # Arrange: Load ALGO_UPDATE with FINISHED status
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_algo_update_finished.json",
+        )
+        assert raw
+
+        # Act
+        decoder = msgspec.json.Decoder(BinanceFuturesAlgoUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Assert
+        assert wrapper.data.o.X == BinanceOrderStatus.FINISHED
+        assert wrapper.data.o.caid == "O-20251211-053131-TEST-000-1"
+        assert wrapper.data.o.aid == 1000000033225453
+        assert wrapper.data.o.ai == "88937381063"
+        assert wrapper.data.o.ap == "0.13856"  # Average fill price
+        assert wrapper.data.o.aq == "38"  # Executed quantity
+
+    def test_parse_futures_algo_update_to_order_status_report(self):
+        # Arrange: Load ALGO_UPDATE with FINISHED status and parse to report
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_algo_update_finished.json",
+        )
+        assert raw
+
+        decoder = msgspec.json.Decoder(BinanceFuturesAlgoUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Act: Parse to OrderStatusReport
+        enum_parser = BinanceFuturesEnumParser()
+        report = wrapper.data.o._parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=ETHUSDT.id,
+            client_order_id=ClientOrderId(wrapper.data.o.caid),
+            venue_order_id=VenueOrderId(str(wrapper.data.o.aid)),
+            ts_event=millis_to_nanos(wrapper.data.T),
+            ts_init=0,
+            enum_parser=enum_parser,
+        )
+
+        # Assert: Status should be FILLED, filled_qty and avg_px populated
+        assert report.order_status == OrderStatus.FILLED
+        assert report.filled_qty.as_decimal() == Decimal(38)
+        assert report.avg_px == Decimal("0.13856")
+
+    def test_parse_futures_algo_update_finished_canceled_to_order_status_report(self):
+        # Arrange: Load ALGO_UPDATE with FINISHED status but aq=0 (canceled)
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_algo_update_finished_canceled.json",
+        )
+        assert raw
+
+        decoder = msgspec.json.Decoder(BinanceFuturesAlgoUpdateWrapper)
+        wrapper = decoder.decode(raw)
+
+        # Act: Parse to OrderStatusReport
+        enum_parser = BinanceFuturesEnumParser()
+        report = wrapper.data.o._parse_to_order_status_report(
+            account_id=AccountId("BINANCE-001"),
+            instrument_id=ETHUSDT.id,
+            client_order_id=ClientOrderId(wrapper.data.o.caid),
+            venue_order_id=VenueOrderId(str(wrapper.data.o.aid)),
+            ts_event=millis_to_nanos(wrapper.data.T),
+            ts_init=0,
+            enum_parser=enum_parser,
+        )
+
+        # Assert: Status should be CANCELED (aq=0 means no fills)
+        assert report.order_status == OrderStatus.CANCELED
+        assert report.filled_qty.as_decimal() == 0

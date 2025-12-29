@@ -51,6 +51,7 @@ use crate::ffi::abort_on_panic;
 #[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
+    // SAFETY: Caller guarantees ptr is borrowed from a valid Python UTF-8 str
     Python::attach(|py| unsafe { Bound::from_borrowed_ptr(py, ptr).to_string() })
 }
 
@@ -66,6 +67,7 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 #[must_use]
 pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
     assert!(!ptr.is_null(), "`ptr` was NULL");
+    // SAFETY: Caller guarantees ptr is valid per function contract
     let cstr = unsafe { CStr::from_ptr(ptr) };
     Ustr::from(cstr.to_str().expect("CStr::from_ptr failed"))
 }
@@ -84,6 +86,7 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
 #[must_use]
 pub unsafe fn cstr_to_bytes<'a>(ptr: *const c_char) -> &'a [u8] {
     assert!(!ptr.is_null(), "`ptr` was NULL");
+    // SAFETY: Caller guarantees ptr is valid per function contract
     let cstr = unsafe { CStr::from_ptr(ptr) };
     cstr.to_bytes()
 }
@@ -96,12 +99,13 @@ pub unsafe fn cstr_to_bytes<'a>(ptr: *const c_char) -> &'a [u8] {
 ///
 /// # Panics
 ///
-/// Panics if `ptr` is null.
+/// Panics if `ptr` is not null but not a valid UTF-8 C string.
 #[must_use]
 pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
     if ptr.is_null() {
         None
     } else {
+        // SAFETY: Caller guarantees ptr is valid per function contract
         Some(unsafe { cstr_to_ustr(ptr) })
     }
 }
@@ -120,6 +124,7 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
 #[must_use]
 pub unsafe fn cstr_as_str<'a>(ptr: *const c_char) -> &'a str {
     assert!(!ptr.is_null(), "`ptr` was NULL");
+    // SAFETY: Caller guarantees ptr is valid per function contract
     let cstr = unsafe { CStr::from_ptr(ptr) };
     cstr.to_str().expect("C string contains invalid UTF-8")
 }
@@ -139,6 +144,7 @@ pub unsafe fn optional_cstr_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
     if ptr.is_null() {
         None
     } else {
+        // SAFETY: Caller guarantees ptr is valid per function contract
         Some(unsafe { cstr_as_str(ptr) })
     }
 }
@@ -166,14 +172,12 @@ pub fn str_to_cstr(s: &str) -> *const c_char {
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
     abort_on_panic(|| {
         assert!(!ptr.is_null(), "`ptr` was NULL");
+        // SAFETY: Caller guarantees ptr was allocated by str_to_cstr
         let cstring = unsafe { CString::from_raw(ptr.cast_mut()) };
         drop(cstring);
     });
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "python")]

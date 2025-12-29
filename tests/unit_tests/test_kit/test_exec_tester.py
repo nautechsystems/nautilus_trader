@@ -2739,6 +2739,143 @@ def test_stop_order_cancel_replace_on_price_move(
     assert tester.buy_stop_order.trigger_price == expected_new_trigger
 
 
+def test_stop_order_modify_on_price_move(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+    mocker,
+):
+    """
+    Test that stop orders are modified in-place when price moves.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.STOP_MARKET,
+        stop_offset_ticks=10,
+        modify_stop_orders_to_maintain_offset=True,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    modify_spy = mocker.spy(tester, "modify_order")
+
+    tester.on_start()
+
+    quote1 = TestDataStubs.quote_tick(instrument, bid_price=100.0, ask_price=101.0)
+    tester.on_quote_tick(quote1)
+
+    stop_order = tester.buy_stop_order
+    stop_order.apply(TestEventStubs.order_submitted(stop_order))
+    stop_order.apply(
+        TestEventStubs.order_accepted(
+            stop_order,
+            venue_order_id=VenueOrderId("V-001"),
+        ),
+    )
+
+    # Act
+    quote2 = TestDataStubs.quote_tick(instrument, bid_price=102.0, ask_price=103.0)
+    tester.on_quote_tick(quote2)
+
+    # Assert - modify_order called, not cancel/replace
+    assert modify_spy.call_count == 1
+    modify_call = modify_spy.call_args
+    assert modify_call[0][0] == stop_order
+    expected_new_trigger = instrument.make_price(
+        Decimal("103.0") + (instrument.price_increment * 10),
+    )
+    assert modify_call[1]["trigger_price"] == expected_new_trigger
+
+
+def test_stop_limit_order_modify_on_price_move(
+    trader_id,
+    portfolio,
+    msgbus,
+    cache,
+    clock,
+    instrument,
+    instrument_id,
+    setup_environment,
+    mocker,
+):
+    """
+    Test that stop limit orders are modified with both trigger and limit price.
+    """
+    # Arrange
+    config = ExecTesterConfig(
+        instrument_id=instrument_id,
+        order_qty=Decimal("0.01"),
+        enable_stop_buys=True,
+        enable_stop_sells=False,
+        stop_order_type=OrderType.STOP_LIMIT,
+        stop_offset_ticks=10,
+        stop_limit_offset_ticks=5,
+        modify_stop_orders_to_maintain_offset=True,
+    )
+
+    tester = ExecTester(config)
+    tester.register(
+        trader_id=trader_id,
+        portfolio=portfolio,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    modify_spy = mocker.spy(tester, "modify_order")
+
+    tester.on_start()
+
+    quote1 = TestDataStubs.quote_tick(instrument, bid_price=100.0, ask_price=101.0)
+    tester.on_quote_tick(quote1)
+
+    stop_order = tester.buy_stop_order
+    assert isinstance(stop_order, StopLimitOrder)
+
+    stop_order.apply(TestEventStubs.order_submitted(stop_order))
+    stop_order.apply(
+        TestEventStubs.order_accepted(
+            stop_order,
+            venue_order_id=VenueOrderId("V-001"),
+        ),
+    )
+
+    # Act
+    quote2 = TestDataStubs.quote_tick(instrument, bid_price=102.0, ask_price=103.0)
+    tester.on_quote_tick(quote2)
+
+    # Assert - modify called with both trigger_price and price
+    assert modify_spy.call_count == 1
+    modify_call = modify_spy.call_args
+    assert modify_call[0][0] == stop_order
+
+    expected_new_trigger = instrument.make_price(
+        Decimal("103.0") + (instrument.price_increment * 10),
+    )
+    assert modify_call[1]["trigger_price"] == expected_new_trigger
+
+    expected_new_limit = instrument.make_price(
+        expected_new_trigger + (instrument.price_increment * 5),
+    )
+    assert modify_call[1]["price"] == expected_new_limit
+
+
 def test_stop_order_with_emulation_trigger(
     trader_id,
     portfolio,

@@ -27,6 +27,17 @@ use ustr::Ustr;
 
 use super::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
 
+/// Subscription acknowledgement event from the Databento gateway.
+#[derive(Debug, Clone)]
+pub struct SubscriptionAckEvent {
+    /// The schema that was acknowledged.
+    pub schema: String,
+    /// The raw message from the gateway.
+    pub message: String,
+    /// Timestamp when the ack was received.
+    pub ts_received: UnixNanos,
+}
+
 /// Represents a Databento publisher ID.
 pub type PublisherId = u16;
 

@@ -17,8 +17,9 @@
 
 use std::{
     any::Any,
-    cell::RefCell,
+    cell::{RefCell, UnsafeCell},
     collections::HashMap,
+    fmt::Debug,
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -48,13 +49,13 @@ use pyo3::{exceptions::PyValueError, prelude::*, types::PyDict};
 
 use crate::{
     actor::{
-        DataActor,
+        Actor, DataActor,
         data_actor::{DataActorConfig, DataActorCore, ImportableActorConfig},
-        registry::try_get_actor_unchecked,
+        registry::{get_actor_registry, try_get_actor_unchecked},
     },
     cache::Cache,
     clock::Clock,
-    component::Component,
+    component::{Component, get_component_registry},
     enums::ComponentState,
     python::{cache::PyCache, clock::PyClock, logging::PyLogger},
     signal::Signal,
@@ -125,22 +126,30 @@ impl ImportableActorConfig {
     }
 }
 
-#[allow(non_camel_case_types)]
-#[pyo3::pyclass(
-    module = "nautilus_trader.common",
-    name = "DataActor",
-    unsendable,
-    subclass
-)]
-#[derive(Debug)]
-pub struct PyDataActor {
+/// Inner state of PyDataActor, shared between Python wrapper and Rust registries.
+///
+/// This type holds the actual actor state and implements all the actor traits.
+/// It is wrapped in `Rc<UnsafeCell<>>` to allow shared ownership between Python
+/// and the global registries without copying.
+pub struct PyDataActorInner {
     core: DataActorCore,
     py_self: Option<Py<PyAny>>,
     clock: PyClock,
     logger: PyLogger,
 }
 
-impl Deref for PyDataActor {
+impl Debug for PyDataActorInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PyDataActorInner")
+            .field("core", &self.core)
+            .field("py_self", &self.py_self.as_ref().map(|_| "<Py<PyAny>>"))
+            .field("clock", &self.clock)
+            .field("logger", &self.logger)
+            .finish()
+    }
+}
+
+impl Deref for PyDataActorInner {
     type Target = DataActorCore;
 
     fn deref(&self) -> &Self::Target {
@@ -148,9 +157,387 @@ impl Deref for PyDataActor {
     }
 }
 
-impl DerefMut for PyDataActor {
+impl DerefMut for PyDataActorInner {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
+    }
+}
+
+impl PyDataActorInner {
+    fn dispatch_on_start(&self) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method0(py, "on_start"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_stop(&mut self) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method0(py, "on_stop"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_resume(&mut self) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method0(py, "on_resume"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_reset(&mut self) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method0(py, "on_reset"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_dispose(&mut self) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method0(py, "on_dispose"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_degrade(&mut self) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method0(py, "on_degrade"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_fault(&mut self) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method0(py, "on_fault"))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_time_event(&mut self, event: TimeEvent) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_time_event", (event.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method1(py, "on_data", (data,)))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_signal(&mut self, signal: &Signal) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_signal", (signal.clone().into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_instrument(&mut self, instrument: Py<PyAny>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method1(py, "on_instrument", (instrument,)))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_quote", (quote.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_trade(&mut self, trade: TradeTick) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_trade", (trade.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_bar(&mut self, bar: Bar) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method1(py, "on_bar", (bar.into_py_any_unwrap(py),)))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_book_deltas(&mut self, deltas: OrderBookDeltas) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_book_deltas", (deltas.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_book(&mut self, book: &OrderBook) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_book", (book.clone().into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_mark_price(&mut self, mark_price: MarkPriceUpdate) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_index_price", (index_price.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(
+                    py,
+                    "on_funding_rate",
+                    (funding_rate.into_py_any_unwrap(py),),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_instrument_status(&mut self, data: InstrumentStatus) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_instrument_status", (data.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_instrument_close(&mut self, update: InstrumentClose) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_instrument_close", (update.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method1(py, "on_historical_data", (data,)))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_quotes: Vec<_> = quotes
+                    .into_iter()
+                    .map(|q| q.into_py_any_unwrap(py))
+                    .collect();
+                py_self.call_method1(py, "on_historical_quotes", (py_quotes,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_trades(&mut self, trades: Vec<TradeTick>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_trades: Vec<_> = trades
+                    .into_iter()
+                    .map(|t| t.into_py_any_unwrap(py))
+                    .collect();
+                py_self.call_method1(py, "on_historical_trades", (py_trades,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_bars: Vec<_> = bars.into_iter().map(|b| b.into_py_any_unwrap(py)).collect();
+                py_self.call_method1(py, "on_historical_bars", (py_bars,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_mark_prices(
+        &mut self,
+        mark_prices: Vec<MarkPriceUpdate>,
+    ) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_prices: Vec<_> = mark_prices
+                    .into_iter()
+                    .map(|p| p.into_py_any_unwrap(py))
+                    .collect();
+                py_self.call_method1(py, "on_historical_mark_prices", (py_prices,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_index_prices(
+        &mut self,
+        index_prices: Vec<IndexPriceUpdate>,
+    ) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_prices: Vec<_> = index_prices
+                    .into_iter()
+                    .map(|p| p.into_py_any_unwrap(py))
+                    .collect();
+                py_self.call_method1(py, "on_historical_index_prices", (py_prices,))
+            })?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn dispatch_on_block(&mut self, block: Block) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_block", (block.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn dispatch_on_pool(&mut self, pool: Pool) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_pool", (pool.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn dispatch_on_pool_swap(&mut self, swap: PoolSwap) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_pool_swap", (swap.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn dispatch_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(
+                    py,
+                    "on_pool_liquidity_update",
+                    (update.into_py_any_unwrap(py),),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn dispatch_on_pool_fee_collect(&mut self, collect: PoolFeeCollect) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_pool_fee_collect", (collect.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn dispatch_on_pool_flash(&mut self, flash: PoolFlash) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_pool_flash", (flash.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+}
+
+/// Python-facing wrapper for DataActor.
+///
+/// This wrapper holds shared ownership of `PyDataActorInner` via `Rc<UnsafeCell<>>`.
+/// Both Python (through this wrapper) and the global registries share the same
+/// underlying actor instance, ensuring mutations are visible from both sides.
+#[allow(non_camel_case_types)]
+#[pyo3::pyclass(
+    module = "nautilus_trader.common",
+    name = "DataActor",
+    unsendable,
+    subclass
+)]
+pub struct PyDataActor {
+    inner: Rc<UnsafeCell<PyDataActorInner>>,
+}
+
+impl Debug for PyDataActor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PyDataActor")
+            .field("inner", &self.inner())
+            .finish()
+    }
+}
+
+impl PyDataActor {
+    /// Returns a reference to the inner actor state.
+    ///
+    /// # Safety
+    ///
+    /// This is safe for single-threaded use. The `UnsafeCell` allows interior
+    /// mutability which is required for the registries to mutate the actor.
+    #[inline]
+    #[allow(unsafe_code)]
+    pub(crate) fn inner(&self) -> &PyDataActorInner {
+        unsafe { &*self.inner.get() }
+    }
+
+    /// Returns a mutable reference to the inner actor state.
+    ///
+    /// # Safety
+    ///
+    /// This is safe for single-threaded use. Callers must ensure no aliasing
+    /// mutable references exist.
+    #[inline]
+    #[allow(unsafe_code, clippy::mut_from_ref)]
+    pub(crate) fn inner_mut(&self) -> &mut PyDataActorInner {
+        unsafe { &mut *self.inner.get() }
+    }
+}
+
+impl Deref for PyDataActor {
+    type Target = DataActorCore;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner().core
+    }
+}
+
+impl DerefMut for PyDataActor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner_mut().core
     }
 }
 
@@ -162,11 +549,15 @@ impl PyDataActor {
         let clock = PyClock::new_test(); // Temporary clock, will be updated on registration
         let logger = PyLogger::new(core.actor_id().as_str());
 
-        Self {
+        let inner = PyDataActorInner {
             core,
             py_self: None,
             clock,
             logger,
+        };
+
+        Self {
+            inner: Rc::new(UnsafeCell::new(inner)),
         }
     }
 
@@ -177,7 +568,7 @@ impl PyDataActor {
     /// for Python inheritance to work correctly, allowing Python subclasses to override
     /// DataActor methods and have them called by the Rust system.
     pub fn set_python_instance(&mut self, py_obj: Py<PyAny>) {
-        self.py_self = Some(py_obj);
+        self.inner_mut().py_self = Some(py_obj);
     }
 
     /// Updates the actor_id in both the core config and the actor_id field.
@@ -189,27 +580,29 @@ impl PyDataActor {
     /// inconsistent state where the actor is registered under one ID but its internal actor_id
     /// field contains another, breaking message routing and lifecycle management.
     pub fn set_actor_id(&mut self, actor_id: ActorId) {
-        self.core.config.actor_id = Some(actor_id);
-        self.core.actor_id = actor_id;
+        let inner = self.inner_mut();
+        inner.core.config.actor_id = Some(actor_id);
+        inner.core.actor_id = actor_id;
     }
 
     /// Updates the log_events setting in the core config.
     pub fn set_log_events(&mut self, log_events: bool) {
-        self.core.config.log_events = log_events;
+        self.inner_mut().core.config.log_events = log_events;
     }
 
     /// Updates the log_commands setting in the core config.
     pub fn set_log_commands(&mut self, log_commands: bool) {
-        self.core.config.log_commands = log_commands;
+        self.inner_mut().core.config.log_commands = log_commands;
     }
+
     /// Returns the memory address of this instance as a hexadecimal string.
     pub fn mem_address(&self) -> String {
-        self.core.mem_address()
+        self.inner().core.mem_address()
     }
 
     /// Returns a value indicating whether the actor has been registered with a trader.
     pub fn is_registered(&self) -> bool {
-        self.core.is_registered()
+        self.inner().core.is_registered()
     }
 
     /// Register the actor with a trader.
@@ -223,14 +616,15 @@ impl PyDataActor {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<()> {
-        self.core.register(trader_id, clock, cache)?;
+        let inner = self.inner_mut();
+        inner.core.register(trader_id, clock, cache)?;
 
-        self.clock = PyClock::from_rc(self.core.clock_rc());
+        inner.clock = PyClock::from_rc(inner.core.clock_rc());
 
         // Register default time event handler for this actor
-        let actor_id = self.actor_id().inner();
+        let actor_id = inner.actor_id().inner();
         let callback = TimeEventCallback::from(move |event: TimeEvent| {
-            if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+            if let Some(mut actor) = try_get_actor_unchecked::<PyDataActorInner>(&actor_id) {
                 if let Err(e) = actor.on_time_event(&event) {
                     log::error!("Python time event handler failed for actor {actor_id}: {e}");
                 }
@@ -239,50 +633,68 @@ impl PyDataActor {
             }
         });
 
-        self.clock.inner_mut().register_default_handler(callback);
+        inner.clock.inner_mut().register_default_handler(callback);
 
-        self.initialize()
+        inner.initialize()
+    }
+
+    /// Registers this actor in the global component and actor registries.
+    ///
+    /// Clones the internal `Rc` and inserts into both registries. This ensures
+    /// Python and the registries share the exact same actor instance.
+    pub fn register_in_global_registries(&self) {
+        let inner = self.inner();
+        let component_id = inner.component_id().inner();
+        let actor_id = Actor::id(inner);
+
+        let inner_ref: Rc<UnsafeCell<PyDataActorInner>> = self.inner.clone();
+
+        let component_trait_ref: Rc<UnsafeCell<dyn Component>> = inner_ref.clone();
+        get_component_registry().insert(component_id, component_trait_ref);
+
+        let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
+        get_actor_registry().insert(actor_id, actor_trait_ref);
     }
 }
 
-impl DataActor for PyDataActor {
+impl DataActor for PyDataActorInner {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        self.py_on_start()
+        self.dispatch_on_start()
             .map_err(|e| anyhow::anyhow!("Python on_start failed: {e}"))
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.py_on_stop()
+        self.dispatch_on_stop()
             .map_err(|e| anyhow::anyhow!("Python on_stop failed: {e}"))
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
-        self.py_on_resume()
+        self.dispatch_on_resume()
             .map_err(|e| anyhow::anyhow!("Python on_resume failed: {e}"))
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
-        self.py_on_reset()
+        self.dispatch_on_reset()
             .map_err(|e| anyhow::anyhow!("Python on_reset failed: {e}"))
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
-        self.py_on_dispose()
+        self.dispatch_on_dispose()
             .map_err(|e| anyhow::anyhow!("Python on_dispose failed: {e}"))
     }
 
     fn on_degrade(&mut self) -> anyhow::Result<()> {
-        self.py_on_degrade()
+        self.dispatch_on_degrade()
             .map_err(|e| anyhow::anyhow!("Python on_degrade failed: {e}"))
     }
 
     fn on_fault(&mut self) -> anyhow::Result<()> {
-        self.py_on_fault()
+        self.dispatch_on_fault()
             .map_err(|e| anyhow::anyhow!("Python on_fault failed: {e}"))
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        self.py_on_time_event(event.clone())
+        self.dispatch_on_time_event(event.clone())
             .map_err(|e| anyhow::anyhow!("Python on_time_event failed: {e}"))
     }
 
@@ -293,13 +705,13 @@ impl DataActor for PyDataActor {
             // For now, we'll pass None and let Python subclasses handle specific data types
             let py_data = py.None();
 
-            self.py_on_data(py_data)
+            self.dispatch_on_data(py_data)
                 .map_err(|e| anyhow::anyhow!("Python on_data failed: {e}"))
         })
     }
 
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
-        self.py_on_signal(signal)
+        self.dispatch_on_signal(signal)
             .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
     }
 
@@ -307,122 +719,122 @@ impl DataActor for PyDataActor {
         Python::attach(|py| {
             let py_instrument = instrument_any_to_pyobject(py, instrument.clone())
                 .map_err(|e| anyhow::anyhow!("Failed to convert InstrumentAny to Python: {e}"))?;
-            self.py_on_instrument(py_instrument)
+            self.dispatch_on_instrument(py_instrument)
                 .map_err(|e| anyhow::anyhow!("Python on_instrument failed: {e}"))
         })
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        self.py_on_quote(*quote)
+        self.dispatch_on_quote(*quote)
             .map_err(|e| anyhow::anyhow!("Python on_quote failed: {e}"))
     }
 
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
-        self.py_on_trade(*tick)
+        self.dispatch_on_trade(*tick)
             .map_err(|e| anyhow::anyhow!("Python on_trade failed: {e}"))
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
-        self.py_on_bar(*bar)
+        self.dispatch_on_bar(*bar)
             .map_err(|e| anyhow::anyhow!("Python on_bar failed: {e}"))
     }
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
-        self.py_on_book_deltas(deltas.clone())
+        self.dispatch_on_book_deltas(deltas.clone())
             .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
     }
 
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
-        self.py_on_book(order_book)
+        self.dispatch_on_book(order_book)
             .map_err(|e| anyhow::anyhow!("Python on_book failed: {e}"))
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
-        self.py_on_mark_price(*mark_price)
+        self.dispatch_on_mark_price(*mark_price)
             .map_err(|e| anyhow::anyhow!("Python on_mark_price failed: {e}"))
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
-        self.py_on_index_price(*index_price)
+        self.dispatch_on_index_price(*index_price)
             .map_err(|e| anyhow::anyhow!("Python on_index_price failed: {e}"))
     }
 
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
-        self.py_on_funding_rate(*funding_rate)
+        self.dispatch_on_funding_rate(*funding_rate)
             .map_err(|e| anyhow::anyhow!("Python on_funding_rate failed: {e}"))
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
-        self.py_on_instrument_status(*data)
+        self.dispatch_on_instrument_status(*data)
             .map_err(|e| anyhow::anyhow!("Python on_instrument_status failed: {e}"))
     }
 
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
-        self.py_on_instrument_close(*update)
+        self.dispatch_on_instrument_close(*update)
             .map_err(|e| anyhow::anyhow!("Python on_instrument_close failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
     fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
-        self.py_on_block(block.clone())
+        self.dispatch_on_block(block.clone())
             .map_err(|e| anyhow::anyhow!("Python on_block failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool(&mut self, pool: &Pool) -> anyhow::Result<()> {
-        self.py_on_pool(pool.clone())
+        self.dispatch_on_pool(pool.clone())
             .map_err(|e| anyhow::anyhow!("Python on_pool failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
-        self.py_on_pool_swap(swap.clone())
+        self.dispatch_on_pool_swap(swap.clone())
             .map_err(|e| anyhow::anyhow!("Python on_pool_swap failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
-        self.py_on_pool_liquidity_update(update.clone())
+        self.dispatch_on_pool_liquidity_update(update.clone())
             .map_err(|e| anyhow::anyhow!("Python on_pool_liquidity_update failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_fee_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
-        self.py_on_pool_fee_collect(collect.clone())
+        self.dispatch_on_pool_fee_collect(collect.clone())
             .map_err(|e| anyhow::anyhow!("Python on_pool_fee_collect failed: {e}"))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_flash(&mut self, flash: &PoolFlash) -> anyhow::Result<()> {
-        self.py_on_pool_flash(flash.clone())
+        self.dispatch_on_pool_flash(flash.clone())
             .map_err(|e| anyhow::anyhow!("Python on_pool_flash failed: {e}"))
     }
 
     fn on_historical_data(&mut self, _data: &dyn Any) -> anyhow::Result<()> {
         Python::attach(|py| {
             let py_data = py.None();
-            self.py_on_historical_data(py_data)
+            self.dispatch_on_historical_data(py_data)
                 .map_err(|e| anyhow::anyhow!("Python on_historical_data failed: {e}"))
         })
     }
 
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
-        self.py_on_historical_quotes(quotes.to_vec())
+        self.dispatch_on_historical_quotes(quotes.to_vec())
             .map_err(|e| anyhow::anyhow!("Python on_historical_quotes failed: {e}"))
     }
 
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
-        self.py_on_historical_trades(trades.to_vec())
+        self.dispatch_on_historical_trades(trades.to_vec())
             .map_err(|e| anyhow::anyhow!("Python on_historical_trades failed: {e}"))
     }
 
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
-        self.py_on_historical_bars(bars.to_vec())
+        self.dispatch_on_historical_bars(bars.to_vec())
             .map_err(|e| anyhow::anyhow!("Python on_historical_bars failed: {e}"))
     }
 
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
-        self.py_on_historical_mark_prices(mark_prices.to_vec())
+        self.dispatch_on_historical_mark_prices(mark_prices.to_vec())
             .map_err(|e| anyhow::anyhow!("Python on_historical_mark_prices failed: {e}"))
     }
 
@@ -430,7 +842,7 @@ impl DataActor for PyDataActor {
         &mut self,
         index_prices: &[IndexPriceUpdate],
     ) -> anyhow::Result<()> {
-        self.py_on_historical_index_prices(index_prices.to_vec())
+        self.dispatch_on_historical_index_prices(index_prices.to_vec())
             .map_err(|e| anyhow::anyhow!("Python on_historical_index_prices failed: {e}"))
     }
 }
@@ -446,429 +858,263 @@ impl PyDataActor {
     #[getter]
     #[pyo3(name = "clock")]
     fn py_clock(&self) -> PyResult<PyClock> {
-        if !self.core.is_registered() {
+        let inner = self.inner();
+        if !inner.core.is_registered() {
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                 "Actor must be registered with a trader before accessing clock",
             ))
         } else {
-            Ok(self.clock.clone())
+            Ok(inner.clock.clone())
         }
     }
 
     #[getter]
     #[pyo3(name = "cache")]
     fn py_cache(&self) -> PyResult<PyCache> {
-        if !self.core.is_registered() {
+        let inner = self.inner();
+        if !inner.core.is_registered() {
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                 "Actor must be registered with a trader before accessing cache",
             ))
         } else {
-            Ok(PyCache::from_rc(self.core.cache_rc()))
+            Ok(PyCache::from_rc(inner.core.cache_rc()))
         }
     }
 
     #[getter]
     #[pyo3(name = "log")]
     fn py_log(&self) -> PyLogger {
-        self.logger.clone()
+        self.inner().logger.clone()
     }
 
     #[getter]
     #[pyo3(name = "actor_id")]
     fn py_actor_id(&self) -> ActorId {
-        self.actor_id
+        self.inner().core.actor_id
     }
 
     #[getter]
     #[pyo3(name = "trader_id")]
     fn py_trader_id(&self) -> Option<TraderId> {
-        self.trader_id()
+        self.inner().core.trader_id()
     }
 
     #[pyo3(name = "state")]
     fn py_state(&self) -> ComponentState {
-        self.state()
+        Component::state(self.inner())
     }
 
     #[pyo3(name = "is_ready")]
     fn py_is_ready(&self) -> bool {
-        self.is_ready()
+        Component::is_ready(self.inner())
     }
 
     #[pyo3(name = "is_running")]
     fn py_is_running(&self) -> bool {
-        self.is_running()
+        Component::is_running(self.inner())
     }
 
     #[pyo3(name = "is_stopped")]
     fn py_is_stopped(&self) -> bool {
-        self.is_stopped()
+        Component::is_stopped(self.inner())
     }
 
     #[pyo3(name = "is_degraded")]
     fn py_is_degraded(&self) -> bool {
-        self.is_degraded()
+        Component::is_degraded(self.inner())
     }
 
     #[pyo3(name = "is_faulted")]
     fn py_is_faulted(&self) -> bool {
-        self.is_faulted()
+        Component::is_faulted(self.inner())
     }
 
     #[pyo3(name = "is_disposed")]
     fn py_is_disposed(&self) -> bool {
-        self.is_disposed()
+        Component::is_disposed(self.inner())
     }
 
     #[pyo3(name = "start")]
     fn py_start(&mut self) -> PyResult<()> {
-        self.start().map_err(to_pyruntime_err)
+        Component::start(self.inner_mut()).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "stop")]
     fn py_stop(&mut self) -> PyResult<()> {
-        self.stop().map_err(to_pyruntime_err)
+        Component::stop(self.inner_mut()).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "resume")]
     fn py_resume(&mut self) -> PyResult<()> {
-        self.resume().map_err(to_pyruntime_err)
+        Component::resume(self.inner_mut()).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) -> PyResult<()> {
-        self.reset().map_err(to_pyruntime_err)
+        Component::reset(self.inner_mut()).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) -> PyResult<()> {
-        self.dispose().map_err(to_pyruntime_err)
+        Component::dispose(self.inner_mut()).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "degrade")]
     fn py_degrade(&mut self) -> PyResult<()> {
-        self.degrade().map_err(to_pyruntime_err)
+        Component::degrade(self.inner_mut()).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "fault")]
     fn py_fault(&mut self) -> PyResult<()> {
-        self.fault().map_err(to_pyruntime_err)
+        Component::fault(self.inner_mut()).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "shutdown_system")]
     #[pyo3(signature = (reason=None))]
     fn py_shutdown_system(&self, reason: Option<String>) -> PyResult<()> {
-        self.shutdown_system(reason);
+        self.inner().core.shutdown_system(reason);
         Ok(())
     }
 
     #[pyo3(name = "on_start")]
     fn py_on_start(&self) -> PyResult<()> {
-        // Dispatch to Python instance's on_start method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method0(py, "on_start"))?;
-        }
-        Ok(())
+        self.inner().dispatch_on_start()
     }
 
     #[pyo3(name = "on_stop")]
     fn py_on_stop(&mut self) -> PyResult<()> {
-        // Dispatch to Python instance's on_stop method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method0(py, "on_stop"))?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_stop()
     }
 
     #[pyo3(name = "on_resume")]
     fn py_on_resume(&mut self) -> PyResult<()> {
-        // Dispatch to Python instance's on_resume method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method0(py, "on_resume"))?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_resume()
     }
 
     #[pyo3(name = "on_reset")]
     fn py_on_reset(&mut self) -> PyResult<()> {
-        // Dispatch to Python instance's on_reset method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method0(py, "on_reset"))?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_reset()
     }
 
     #[pyo3(name = "on_dispose")]
     fn py_on_dispose(&mut self) -> PyResult<()> {
-        // Dispatch to Python instance's on_dispose method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method0(py, "on_dispose"))?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_dispose()
     }
 
     #[pyo3(name = "on_degrade")]
     fn py_on_degrade(&mut self) -> PyResult<()> {
-        // Dispatch to Python instance's on_degrade method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method0(py, "on_degrade"))?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_degrade()
     }
 
     #[pyo3(name = "on_fault")]
     fn py_on_fault(&mut self) -> PyResult<()> {
-        // Dispatch to Python instance's on_fault method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method0(py, "on_fault"))?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_fault()
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_time_event")]
     fn py_on_time_event(&mut self, event: TimeEvent) -> PyResult<()> {
-        // Dispatch to Python instance's on_time_event method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_time_event", (event.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_time_event(event)
     }
 
     #[pyo3(name = "on_data")]
     fn py_on_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
-        // Dispatch to Python instance's on_data method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method1(py, "on_data", (data,)))?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_data(data)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_signal")]
     fn py_on_signal(&mut self, signal: &Signal) -> PyResult<()> {
-        // Dispatch to Python instance's on_signal method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_signal", (signal.clone().into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_signal(signal)
     }
 
     #[pyo3(name = "on_instrument")]
     fn py_on_instrument(&mut self, instrument: Py<PyAny>) -> PyResult<()> {
-        // Dispatch to Python instance's on_instrument method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method1(py, "on_instrument", (instrument,)))?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_instrument(instrument)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_quote")]
     fn py_on_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
-        // Dispatch to Python instance's on_quote method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_quote", (quote.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_quote(quote)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_trade")]
     fn py_on_trade(&mut self, trade: TradeTick) -> PyResult<()> {
-        // Dispatch to Python instance's on_trade method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_trade", (trade.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_trade(trade)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_bar")]
     fn py_on_bar(&mut self, bar: Bar) -> PyResult<()> {
-        // Dispatch to Python instance's on_bar method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method1(py, "on_bar", (bar.into_py_any_unwrap(py),)))?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_bar(bar)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_book_deltas")]
     fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) -> PyResult<()> {
-        // Dispatch to Python instance's on_book_deltas method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_book_deltas", (deltas.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_book_deltas(deltas)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_book")]
     fn py_on_book(&mut self, book: &OrderBook) -> PyResult<()> {
-        // Dispatch to Python instance's on_book method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_book", (book.clone().into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_book(book)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_mark_price")]
     fn py_on_mark_price(&mut self, mark_price: MarkPriceUpdate) -> PyResult<()> {
-        // Dispatch to Python instance's on_mark_price method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_mark_price(mark_price)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_index_price")]
     fn py_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
-        // Dispatch to Python instance's on_index_price method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_index_price", (index_price.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_index_price(index_price)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_funding_rate")]
     fn py_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> PyResult<()> {
-        // Dispatch to Python instance's on_index_price method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_funding_rate",
-                    (funding_rate.into_py_any_unwrap(py),),
-                )
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_funding_rate(funding_rate)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_status")]
     fn py_on_instrument_status(&mut self, status: InstrumentStatus) -> PyResult<()> {
-        // Dispatch to Python instance's on_instrument_status method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_instrument_status", (status.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_instrument_status(status)
     }
 
-    #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_close")]
     fn py_on_instrument_close(&mut self, close: InstrumentClose) -> PyResult<()> {
-        // Dispatch to Python instance's on_instrument_close method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_instrument_close", (close.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_instrument_close(close)
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
     #[pyo3(name = "on_block")]
     fn py_on_block(&mut self, block: Block) -> PyResult<()> {
-        // Dispatch to Python instance's on_instrument_close method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_block", (block.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_block(block)
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
     #[pyo3(name = "on_pool")]
     fn py_on_pool(&mut self, pool: Pool) -> PyResult<()> {
-        // Dispatch to Python instance's on_pool method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_pool", (pool.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_pool(pool)
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
     #[pyo3(name = "on_pool_swap")]
     fn py_on_pool_swap(&mut self, swap: PoolSwap) -> PyResult<()> {
-        // Dispatch to Python instance's on_pool_swap method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_pool_swap", (swap.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_pool_swap(swap)
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
     #[pyo3(name = "on_pool_liquidity_update")]
     fn py_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) -> PyResult<()> {
-        // Dispatch to Python instance's on_pool_liquidity_update method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_pool_liquidity_update",
-                    (update.into_py_any_unwrap(py),),
-                )
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_pool_liquidity_update(update)
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
     #[pyo3(name = "on_pool_fee_collect")]
     fn py_on_pool_fee_collect(&mut self, update: PoolFeeCollect) -> PyResult<()> {
-        // Dispatch to Python instance's on_pool_fee_collect method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_pool_fee_collect", (update.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_pool_fee_collect(update)
     }
 
     #[cfg(feature = "defi")]
-    #[allow(unused_variables)]
     #[pyo3(name = "on_pool_flash")]
     fn py_on_pool_flash(&mut self, flash: PoolFlash) -> PyResult<()> {
-        // Dispatch to Python instance's on_pool_flash method if available
-        if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_pool_flash", (flash.into_py_any_unwrap(py),))
-            })?;
-        }
-        Ok(())
+        self.inner_mut().dispatch_on_pool_flash(flash)
     }
 
     #[pyo3(name = "subscribe_data")]
@@ -879,7 +1125,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_data(data_type, client_id, params);
+        DataActor::subscribe_data(self.inner_mut(), data_type, client_id, params);
         Ok(())
     }
 
@@ -891,7 +1137,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_instruments(venue, client_id, params);
+        DataActor::subscribe_instruments(self.inner_mut(), venue, client_id, params);
         Ok(())
     }
 
@@ -903,7 +1149,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_instrument(instrument_id, client_id, params);
+        DataActor::subscribe_instrument(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -919,7 +1165,15 @@ impl PyDataActor {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         let depth = depth.and_then(NonZeroUsize::new);
-        self.subscribe_book_deltas(instrument_id, book_type, depth, client_id, managed, params);
+        DataActor::subscribe_book_deltas(
+            self.inner_mut(),
+            instrument_id,
+            book_type,
+            depth,
+            client_id,
+            managed,
+            params,
+        );
         Ok(())
     }
 
@@ -938,7 +1192,8 @@ impl PyDataActor {
         let interval_ms = NonZeroUsize::new(interval_ms)
             .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
 
-        self.subscribe_book_at_interval(
+        DataActor::subscribe_book_at_interval(
+            self.inner_mut(),
             instrument_id,
             book_type,
             depth,
@@ -957,7 +1212,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_quotes(instrument_id, client_id, params);
+        DataActor::subscribe_quotes(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -969,7 +1224,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_trades(instrument_id, client_id, params);
+        DataActor::subscribe_trades(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -981,7 +1236,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_bars(bar_type, client_id, params);
+        DataActor::subscribe_bars(self.inner_mut(), bar_type, client_id, params);
         Ok(())
     }
 
@@ -993,7 +1248,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_mark_prices(instrument_id, client_id, params);
+        DataActor::subscribe_mark_prices(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1005,7 +1260,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_index_prices(instrument_id, client_id, params);
+        DataActor::subscribe_index_prices(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1017,7 +1272,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_instrument_status(instrument_id, client_id, params);
+        DataActor::subscribe_instrument_status(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1029,14 +1284,21 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_instrument_close(instrument_id, client_id, params);
+        DataActor::subscribe_instrument_close(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
     #[pyo3(name = "subscribe_order_fills")]
     #[pyo3(signature = (instrument_id))]
     fn py_subscribe_order_fills(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
-        self.subscribe_order_fills(instrument_id);
+        DataActor::subscribe_order_fills(self.inner_mut(), instrument_id);
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_order_cancels")]
+    #[pyo3(signature = (instrument_id))]
+    fn py_subscribe_order_cancels(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
+        DataActor::subscribe_order_cancels(self.inner_mut(), instrument_id);
         Ok(())
     }
 
@@ -1049,7 +1311,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_blocks(chain, client_id, params);
+        DataActor::subscribe_blocks(self.inner_mut(), chain, client_id, params);
         Ok(())
     }
 
@@ -1062,7 +1324,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_pool(instrument_id, client_id, params);
+        DataActor::subscribe_pool(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1075,7 +1337,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_pool_swaps(instrument_id, client_id, params);
+        DataActor::subscribe_pool_swaps(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1088,7 +1350,12 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_pool_liquidity_updates(instrument_id, client_id, params);
+        DataActor::subscribe_pool_liquidity_updates(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
         Ok(())
     }
 
@@ -1101,7 +1368,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_pool_fee_collects(instrument_id, client_id, params);
+        DataActor::subscribe_pool_fee_collects(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1114,7 +1381,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.subscribe_pool_flash_events(instrument_id, client_id, params);
+        DataActor::subscribe_pool_flash_events(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1133,9 +1400,16 @@ impl PyDataActor {
         let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
-        let request_id = self
-            .request_data(data_type, client_id, start, end, limit, params)
-            .map_err(to_pyvalue_err)?;
+        let request_id = DataActor::request_data(
+            self.inner_mut(),
+            data_type,
+            client_id,
+            start,
+            end,
+            limit,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
@@ -1152,9 +1426,15 @@ impl PyDataActor {
         let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
-        let request_id = self
-            .request_instrument(instrument_id, start, end, client_id, params)
-            .map_err(to_pyvalue_err)?;
+        let request_id = DataActor::request_instrument(
+            self.inner_mut(),
+            instrument_id,
+            start,
+            end,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
@@ -1171,9 +1451,9 @@ impl PyDataActor {
         let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
-        let request_id = self
-            .request_instruments(venue, start, end, client_id, params)
-            .map_err(to_pyvalue_err)?;
+        let request_id =
+            DataActor::request_instruments(self.inner_mut(), venue, start, end, client_id, params)
+                .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
@@ -1188,9 +1468,14 @@ impl PyDataActor {
     ) -> PyResult<String> {
         let depth = depth.and_then(NonZeroUsize::new);
 
-        let request_id = self
-            .request_book_snapshot(instrument_id, depth, client_id, params)
-            .map_err(to_pyvalue_err)?;
+        let request_id = DataActor::request_book_snapshot(
+            self.inner_mut(),
+            instrument_id,
+            depth,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
@@ -1209,9 +1494,16 @@ impl PyDataActor {
         let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
-        let request_id = self
-            .request_quotes(instrument_id, start, end, limit, client_id, params)
-            .map_err(to_pyvalue_err)?;
+        let request_id = DataActor::request_quotes(
+            self.inner_mut(),
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
@@ -1230,9 +1522,16 @@ impl PyDataActor {
         let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
-        let request_id = self
-            .request_trades(instrument_id, start, end, limit, client_id, params)
-            .map_err(to_pyvalue_err)?;
+        let request_id = DataActor::request_trades(
+            self.inner_mut(),
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
@@ -1251,9 +1550,16 @@ impl PyDataActor {
         let start = start.map(|ts| UnixNanos::from(ts).to_datetime_utc());
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
-        let request_id = self
-            .request_bars(bar_type, start, end, limit, client_id, params)
-            .map_err(to_pyvalue_err)?;
+        let request_id = DataActor::request_bars(
+            self.inner_mut(),
+            bar_type,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
@@ -1265,7 +1571,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_data(data_type, client_id, params);
+        DataActor::unsubscribe_data(self.inner_mut(), data_type, client_id, params);
         Ok(())
     }
 
@@ -1277,7 +1583,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_instruments(venue, client_id, params);
+        DataActor::unsubscribe_instruments(self.inner_mut(), venue, client_id, params);
         Ok(())
     }
 
@@ -1289,7 +1595,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_instrument(instrument_id, client_id, params);
+        DataActor::unsubscribe_instrument(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1301,7 +1607,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_book_deltas(instrument_id, client_id, params);
+        DataActor::unsubscribe_book_deltas(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1317,7 +1623,13 @@ impl PyDataActor {
         let interval_ms = NonZeroUsize::new(interval_ms)
             .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
 
-        self.unsubscribe_book_at_interval(instrument_id, interval_ms, client_id, params);
+        DataActor::unsubscribe_book_at_interval(
+            self.inner_mut(),
+            instrument_id,
+            interval_ms,
+            client_id,
+            params,
+        );
         Ok(())
     }
 
@@ -1329,7 +1641,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_quotes(instrument_id, client_id, params);
+        DataActor::unsubscribe_quotes(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1341,7 +1653,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_trades(instrument_id, client_id, params);
+        DataActor::unsubscribe_trades(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1353,7 +1665,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_bars(bar_type, client_id, params);
+        DataActor::unsubscribe_bars(self.inner_mut(), bar_type, client_id, params);
         Ok(())
     }
 
@@ -1365,7 +1677,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_mark_prices(instrument_id, client_id, params);
+        DataActor::unsubscribe_mark_prices(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1377,7 +1689,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_index_prices(instrument_id, client_id, params);
+        DataActor::unsubscribe_index_prices(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1389,7 +1701,12 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_instrument_status(instrument_id, client_id, params);
+        DataActor::unsubscribe_instrument_status(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
         Ok(())
     }
 
@@ -1401,14 +1718,21 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_instrument_close(instrument_id, client_id, params);
+        DataActor::unsubscribe_instrument_close(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
     #[pyo3(name = "unsubscribe_order_fills")]
     #[pyo3(signature = (instrument_id))]
     fn py_unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
-        self.unsubscribe_order_fills(instrument_id);
+        DataActor::unsubscribe_order_fills(self.inner_mut(), instrument_id);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_order_cancels")]
+    #[pyo3(signature = (instrument_id))]
+    fn py_unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId) -> PyResult<()> {
+        DataActor::unsubscribe_order_cancels(self.inner_mut(), instrument_id);
         Ok(())
     }
 
@@ -1421,7 +1745,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_blocks(chain, client_id, params);
+        DataActor::unsubscribe_blocks(self.inner_mut(), chain, client_id, params);
         Ok(())
     }
 
@@ -1434,7 +1758,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_pool(instrument_id, client_id, params);
+        DataActor::unsubscribe_pool(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1447,7 +1771,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_pool_swaps(instrument_id, client_id, params);
+        DataActor::unsubscribe_pool_swaps(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -1460,7 +1784,12 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_pool_liquidity_updates(instrument_id, client_id, params);
+        DataActor::unsubscribe_pool_liquidity_updates(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
         Ok(())
     }
 
@@ -1473,7 +1802,12 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_pool_fee_collects(instrument_id, client_id, params);
+        DataActor::unsubscribe_pool_fee_collects(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
         Ok(())
     }
 
@@ -1486,7 +1820,12 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.unsubscribe_pool_flash_events(instrument_id, client_id, params);
+        DataActor::unsubscribe_pool_flash_events(
+            self.inner_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
         Ok(())
     }
 
@@ -1536,9 +1875,6 @@ impl PyDataActor {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{
@@ -1551,23 +1887,26 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    #[cfg(feature = "defi")]
     use alloy_primitives::{I256, U160};
     use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
     #[cfg(feature = "defi")]
     use nautilus_model::defi::{
-        AmmType, Block, Blockchain, Chain, Dex, DexType, Pool, PoolLiquidityUpdate, PoolSwap, Token,
+        AmmType, Block, Blockchain, Chain, Dex, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate,
+        PoolSwap, Token,
     };
     use nautilus_model::{
         data::{
             Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
             OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
         },
-        enums::BookType,
-        identifiers::{ClientId, TraderId, Venue},
+        enums::{AggressorSide, BookType, InstrumentCloseType, MarketStatusAction},
+        identifiers::{ClientId, TradeId, TraderId, Venue},
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
         types::{Price, Quantity},
     };
+    use pyo3::{Py, PyAny, PyResult, Python, ffi::c_str, types::PyAnyMethods};
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -1718,7 +2057,6 @@ mod tests {
     ) {
         let mut actor = create_registered_actor(clock, cache, trader_id);
 
-        // Verify subscription methods execute without error
         assert!(
             actor
                 .py_subscribe_data(data_type.clone(), Some(client_id), None)
@@ -1739,28 +2077,6 @@ mod tests {
                 .py_unsubscribe_quotes(audusd_sim.id, Some(client_id), None)
                 .is_ok()
         );
-    }
-
-    // Test that Rust actor wrapper correctly calls through to Python actor lifecycle methods.
-    //
-    // This test should verify that when lifecycle methods (on_start, on_stop, on_dispose)
-    // are called on the Rust actor wrapper, they correctly invoke the corresponding methods
-    // on the underlying Python actor object via PyO3.
-    //
-    // TODO: Complete implementation and test all lifecycle method call-throughs.
-    // Related: Python-Rust actor bridging layer
-    #[ignore = "Under development - Python actor lifecycle integration"]
-    #[rstest]
-    fn test_lifecycle_methods_pass_through(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        trader_id: TraderId,
-    ) {
-        let mut actor = create_registered_actor(clock, cache, trader_id);
-
-        assert!(actor.py_start().is_ok());
-        assert!(actor.py_stop().is_ok());
-        assert!(actor.py_dispose().is_ok());
     }
 
     #[rstest]
@@ -1828,13 +2144,9 @@ mod tests {
         assert_eq!(state, ComponentState::Ready);
     }
 
-    // Test actor that tracks method calls for verification
-
-    // Global call tracker for tests
     static CALL_TRACKER: std::sync::LazyLock<Arc<Mutex<HashMap<String, i32>>>> =
         std::sync::LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
-    // Test actor that overrides Python methods to track calls
     #[derive(Debug)]
     struct TestDataActor {
         inner: PyDataActor,
@@ -1866,104 +2178,104 @@ mod tests {
     impl Deref for TestDataActor {
         type Target = DataActorCore;
         fn deref(&self) -> &Self::Target {
-            &self.inner.core
+            &self.inner.inner().core
         }
     }
 
     impl DerefMut for TestDataActor {
         fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.inner.core
+            &mut self.inner.inner_mut().core
         }
     }
 
     impl DataActor for TestDataActor {
         fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
             self.track_call("on_time_event");
-            self.inner.on_time_event(event)
+            self.inner.inner_mut().on_time_event(event)
         }
 
         fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
             self.track_call("on_data");
-            self.inner.on_data(data)
+            self.inner.inner_mut().on_data(data)
         }
 
         fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
             self.track_call("on_signal");
-            self.inner.on_signal(signal)
+            self.inner.inner_mut().on_signal(signal)
         }
 
         fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
             self.track_call("on_instrument");
-            self.inner.on_instrument(instrument)
+            self.inner.inner_mut().on_instrument(instrument)
         }
 
         fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
             self.track_call("on_quote");
-            self.inner.on_quote(quote)
+            self.inner.inner_mut().on_quote(quote)
         }
 
         fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
             self.track_call("on_trade");
-            self.inner.on_trade(trade)
+            self.inner.inner_mut().on_trade(trade)
         }
 
         fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
             self.track_call("on_bar");
-            self.inner.on_bar(bar)
+            self.inner.inner_mut().on_bar(bar)
         }
 
         fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
             self.track_call("on_book");
-            self.inner.on_book(book)
+            self.inner.inner_mut().on_book(book)
         }
 
         fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
             self.track_call("on_book_deltas");
-            self.inner.on_book_deltas(deltas)
+            self.inner.inner_mut().on_book_deltas(deltas)
         }
 
         fn on_mark_price(&mut self, update: &MarkPriceUpdate) -> anyhow::Result<()> {
             self.track_call("on_mark_price");
-            self.inner.on_mark_price(update)
+            self.inner.inner_mut().on_mark_price(update)
         }
 
         fn on_index_price(&mut self, update: &IndexPriceUpdate) -> anyhow::Result<()> {
             self.track_call("on_index_price");
-            self.inner.on_index_price(update)
+            self.inner.inner_mut().on_index_price(update)
         }
 
         fn on_instrument_status(&mut self, update: &InstrumentStatus) -> anyhow::Result<()> {
             self.track_call("on_instrument_status");
-            self.inner.on_instrument_status(update)
+            self.inner.inner_mut().on_instrument_status(update)
         }
 
         fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
             self.track_call("on_instrument_close");
-            self.inner.on_instrument_close(update)
+            self.inner.inner_mut().on_instrument_close(update)
         }
 
         #[cfg(feature = "defi")]
         fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
             self.track_call("on_block");
-            self.inner.on_block(block)
+            self.inner.inner_mut().on_block(block)
         }
 
         #[cfg(feature = "defi")]
         fn on_pool(&mut self, pool: &Pool) -> anyhow::Result<()> {
             self.track_call("on_pool");
-            self.inner.on_pool(pool)
+            self.inner.inner_mut().on_pool(pool)
         }
 
         #[cfg(feature = "defi")]
         fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
             self.track_call("on_pool_swap");
-            self.inner.on_pool_swap(swap)
+            self.inner.inner_mut().on_pool_swap(swap)
         }
 
         #[cfg(feature = "defi")]
         fn on_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
             self.track_call("on_pool_liquidity_update");
-            self.inner.on_pool_liquidity_update(update)
+            self.inner.inner_mut().on_pool_liquidity_update(update)
         }
     }
 
@@ -2039,7 +2351,7 @@ mod tests {
 
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
 
-        assert!(rust_actor.on_instrument(&instrument).is_ok());
+        assert!(rust_actor.inner_mut().on_instrument(&instrument).is_ok());
     }
 
     #[rstest]
@@ -2063,7 +2375,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        assert!(rust_actor.on_quote(&quote).is_ok());
+        assert!(rust_actor.inner_mut().on_quote(&quote).is_ok());
     }
 
     #[rstest]
@@ -2081,13 +2393,13 @@ mod tests {
             audusd_sim.id,
             Price::from("1.0000"),
             Quantity::from("100000"),
-            nautilus_model::enums::AggressorSide::Buyer,
+            AggressorSide::Buyer,
             "T123".to_string().into(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
 
-        assert!(rust_actor.on_trade(&trade).is_ok());
+        assert!(rust_actor.inner_mut().on_trade(&trade).is_ok());
     }
 
     #[rstest]
@@ -2114,7 +2426,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        assert!(rust_actor.on_bar(&bar).is_ok());
+        assert!(rust_actor.inner_mut().on_bar(&bar).is_ok());
     }
 
     #[rstest]
@@ -2129,7 +2441,7 @@ mod tests {
         rust_actor.register(trader_id, clock, cache).unwrap();
 
         let book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
-        assert!(rust_actor.on_book(&book).is_ok());
+        assert!(rust_actor.inner_mut().on_book(&book).is_ok());
     }
 
     #[rstest]
@@ -2147,7 +2459,7 @@ mod tests {
             OrderBookDelta::clear(audusd_sim.id, 0, UnixNanos::default(), UnixNanos::default());
         let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
 
-        assert!(rust_actor.on_book_deltas(&deltas).is_ok());
+        assert!(rust_actor.inner_mut().on_book_deltas(&deltas).is_ok());
     }
 
     #[rstest]
@@ -2168,7 +2480,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        assert!(rust_actor.on_mark_price(&mark_price).is_ok());
+        assert!(rust_actor.inner_mut().on_mark_price(&mark_price).is_ok());
     }
 
     #[rstest]
@@ -2189,7 +2501,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        assert!(rust_actor.on_index_price(&index_price).is_ok());
+        assert!(rust_actor.inner_mut().on_index_price(&index_price).is_ok());
     }
 
     #[rstest]
@@ -2205,7 +2517,7 @@ mod tests {
 
         let status = InstrumentStatus::new(
             audusd_sim.id,
-            nautilus_model::enums::MarketStatusAction::Trading,
+            MarketStatusAction::Trading,
             UnixNanos::default(),
             UnixNanos::default(),
             None,
@@ -2215,7 +2527,7 @@ mod tests {
             None,
         );
 
-        assert!(rust_actor.on_instrument_status(&status).is_ok());
+        assert!(rust_actor.inner_mut().on_instrument_status(&status).is_ok());
     }
 
     #[rstest]
@@ -2232,12 +2544,12 @@ mod tests {
         let close = InstrumentClose::new(
             audusd_sim.id,
             Price::from("1.0000"),
-            nautilus_model::enums::InstrumentCloseType::EndOfSession,
+            InstrumentCloseType::EndOfSession,
             UnixNanos::default(),
             UnixNanos::default(),
         );
 
-        assert!(rust_actor.on_instrument_close(&close).is_ok());
+        assert!(rust_actor.inner_mut().on_instrument_close(&close).is_ok());
     }
 
     #[cfg(feature = "defi")]
@@ -2309,12 +2621,17 @@ mod tests {
             "Wrapped Ether".into(),
             18,
         );
+        let pool_address = "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"
+            .parse()
+            .unwrap();
+        let pool_identifier: PoolIdentifier = "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"
+            .parse()
+            .unwrap();
         let pool = Arc::new(Pool::new(
             chain.clone(),
             dex.clone(),
-            "0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8"
-                .parse()
-                .unwrap(),
+            pool_address,
+            pool_identifier,
             12345,
             token0,
             token1,
@@ -2327,7 +2644,7 @@ mod tests {
             chain,
             dex,
             pool.instrument_id,
-            pool.address,
+            pool.pool_identifier,
             12345,
             "0xabc123".to_string(),
             0,
@@ -2346,7 +2663,7 @@ mod tests {
             100,
         );
 
-        assert!(rust_actor.on_pool_swap(&swap).is_ok());
+        assert!(rust_actor.inner_mut().on_pool_swap(&swap).is_ok());
     }
 
     #[cfg(feature = "defi")]
@@ -2371,9 +2688,692 @@ mod tests {
             Some(Blockchain::Ethereum),
         );
 
-        // Test that the Rust trait method forwards to Python without error
-        // Note: We test on_block here since PoolLiquidityUpdate construction is complex
-        // and the goal is just to verify the forwarding mechanism works
-        assert!(rust_actor.on_block(&block).is_ok());
+        // We test on_block since PoolLiquidityUpdate construction is complex
+        assert!(rust_actor.inner_mut().on_block(&block).is_ok());
+    }
+
+    // ========================================================================
+    // Python dispatch verification tests
+    //
+    // These tests verify that when py_self is set, the Rust trait methods
+    // correctly dispatch to the Python instance's overridden methods.
+    // ========================================================================
+
+    const TRACKING_ACTOR_CODE: &std::ffi::CStr = c_str!(
+        r#"
+class TrackingActor:
+    """A mock Python actor that tracks all method calls."""
+
+    def __init__(self):
+        self.calls = []
+
+    def _record(self, method_name, *args):
+        self.calls.append((method_name, args))
+
+    def was_called(self, method_name):
+        return any(call[0] == method_name for call in self.calls)
+
+    def call_count(self, method_name):
+        return sum(1 for call in self.calls if call[0] == method_name)
+
+    def on_start(self):
+        self._record("on_start")
+
+    def on_stop(self):
+        self._record("on_stop")
+
+    def on_resume(self):
+        self._record("on_resume")
+
+    def on_reset(self):
+        self._record("on_reset")
+
+    def on_dispose(self):
+        self._record("on_dispose")
+
+    def on_degrade(self):
+        self._record("on_degrade")
+
+    def on_fault(self):
+        self._record("on_fault")
+
+    def on_time_event(self, event):
+        self._record("on_time_event", event)
+
+    def on_data(self, data):
+        self._record("on_data", data)
+
+    def on_signal(self, signal):
+        self._record("on_signal", signal)
+
+    def on_instrument(self, instrument):
+        self._record("on_instrument", instrument)
+
+    def on_quote(self, quote):
+        self._record("on_quote", quote)
+
+    def on_trade(self, trade):
+        self._record("on_trade", trade)
+
+    def on_bar(self, bar):
+        self._record("on_bar", bar)
+
+    def on_book(self, book):
+        self._record("on_book", book)
+
+    def on_book_deltas(self, deltas):
+        self._record("on_book_deltas", deltas)
+
+    def on_mark_price(self, update):
+        self._record("on_mark_price", update)
+
+    def on_index_price(self, update):
+        self._record("on_index_price", update)
+
+    def on_funding_rate(self, update):
+        self._record("on_funding_rate", update)
+
+    def on_instrument_status(self, status):
+        self._record("on_instrument_status", status)
+
+    def on_instrument_close(self, close):
+        self._record("on_instrument_close", close)
+
+    def on_historical_data(self, data):
+        self._record("on_historical_data", data)
+
+    def on_historical_quotes(self, quotes):
+        self._record("on_historical_quotes", quotes)
+
+    def on_historical_trades(self, trades):
+        self._record("on_historical_trades", trades)
+
+    def on_historical_bars(self, bars):
+        self._record("on_historical_bars", bars)
+
+    def on_historical_mark_prices(self, prices):
+        self._record("on_historical_mark_prices", prices)
+
+    def on_historical_index_prices(self, prices):
+        self._record("on_historical_index_prices", prices)
+"#
+    );
+
+    fn create_tracking_python_actor(py: Python<'_>) -> PyResult<Py<PyAny>> {
+        py.run(TRACKING_ACTOR_CODE, None, None)?;
+        let tracking_actor_class = py.eval(c_str!("TrackingActor"), None, None)?;
+        let instance = tracking_actor_class.call0()?;
+        Ok(instance.unbind())
+    }
+
+    fn python_method_was_called(py_actor: &Py<PyAny>, py: Python<'_>, method_name: &str) -> bool {
+        py_actor
+            .call_method1(py, "was_called", (method_name,))
+            .and_then(|r| r.extract::<bool>(py))
+            .unwrap_or(false)
+    }
+
+    fn python_method_call_count(py_actor: &Py<PyAny>, py: Python<'_>, method_name: &str) -> i32 {
+        py_actor
+            .call_method1(py, "call_count", (method_name,))
+            .and_then(|r| r.extract::<i32>(py))
+            .unwrap_or(0)
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_start(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let result = DataActor::on_start(rust_actor.inner_mut());
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_start"));
+            assert_eq!(python_method_call_count(&py_actor, py, "on_start"), 1);
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_stop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let result = DataActor::on_stop(rust_actor.inner_mut());
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_stop"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_resume(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let result = DataActor::on_resume(rust_actor.inner_mut());
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_resume"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_reset(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let result = DataActor::on_reset(rust_actor.inner_mut());
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_reset"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_dispose(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let result = DataActor::on_dispose(rust_actor.inner_mut());
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_dispose"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_degrade(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let result = DataActor::on_degrade(rust_actor.inner_mut());
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_degrade"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_fault(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let result = DataActor::on_fault(rust_actor.inner_mut());
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_fault"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_signal(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let signal = Signal::new(
+                Ustr::from("test_signal"),
+                "1.0".to_string(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+
+            let result = rust_actor.inner_mut().on_signal(&signal);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_signal"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_time_event(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let time_event = TimeEvent::new(
+                Ustr::from("test_timer"),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+
+            let result = rust_actor.inner_mut().on_time_event(&time_event);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_time_event"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_instrument(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+            let result = rust_actor.inner_mut().on_instrument(&instrument);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_instrument"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_quote(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let quote = QuoteTick::new(
+                audusd_sim.id,
+                Price::from("1.00000"),
+                Price::from("1.00001"),
+                Quantity::from(100_000),
+                Quantity::from(100_000),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+
+            let result = rust_actor.inner_mut().on_quote(&quote);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_quote"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_trade(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let trade = TradeTick::new(
+                audusd_sim.id,
+                Price::from("1.00000"),
+                Quantity::from(100_000),
+                AggressorSide::Buyer,
+                TradeId::new("123456"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+
+            let result = rust_actor.inner_mut().on_trade(&trade);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_trade"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_bar(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let bar_type =
+                BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
+            let bar = Bar::new(
+                bar_type,
+                Price::from("1.00000"),
+                Price::from("1.00010"),
+                Price::from("0.99990"),
+                Price::from("1.00005"),
+                Quantity::from(100_000),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+
+            let result = rust_actor.inner_mut().on_bar(&bar);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_bar"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_book(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+
+            let result = rust_actor.inner_mut().on_book(&book);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_book"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_book_deltas(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let delta =
+                OrderBookDelta::clear(audusd_sim.id, 0, UnixNanos::default(), UnixNanos::default());
+            let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
+
+            let result = rust_actor.inner_mut().on_book_deltas(&deltas);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_book_deltas"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_mark_price(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let mark_price = MarkPriceUpdate::new(
+                audusd_sim.id,
+                Price::from("1.00000"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+
+            let result = rust_actor.inner_mut().on_mark_price(&mark_price);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_mark_price"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_index_price(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let index_price = IndexPriceUpdate::new(
+                audusd_sim.id,
+                Price::from("1.00000"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+
+            let result = rust_actor.inner_mut().on_index_price(&index_price);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(&py_actor, py, "on_index_price"));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_instrument_status(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let status = InstrumentStatus::new(
+                audusd_sim.id,
+                MarketStatusAction::Trading,
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+
+            let result = rust_actor.inner_mut().on_instrument_status(&status);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(
+                &py_actor,
+                py,
+                "on_instrument_status"
+            ));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_on_instrument_close(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let close = InstrumentClose::new(
+                audusd_sim.id,
+                Price::from("1.00000"),
+                InstrumentCloseType::EndOfSession,
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+
+            let result = rust_actor.inner_mut().on_instrument_close(&close);
+
+            assert!(result.is_ok());
+            assert!(python_method_was_called(
+                &py_actor,
+                py,
+                "on_instrument_close"
+            ));
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_multiple_calls_tracked(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let py_actor = create_tracking_python_actor(py).unwrap();
+
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.set_python_instance(py_actor.clone_ref(py));
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            let quote = QuoteTick::new(
+                audusd_sim.id,
+                Price::from("1.00000"),
+                Price::from("1.00001"),
+                Quantity::from(100_000),
+                Quantity::from(100_000),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+
+            rust_actor.inner_mut().on_quote(&quote).unwrap();
+            rust_actor.inner_mut().on_quote(&quote).unwrap();
+            rust_actor.inner_mut().on_quote(&quote).unwrap();
+
+            assert_eq!(python_method_call_count(&py_actor, py, "on_quote"), 3);
+        });
+    }
+
+    #[rstest]
+    fn test_python_dispatch_no_call_when_py_self_not_set(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        pyo3::Python::initialize();
+        Python::attach(|_py| {
+            let mut rust_actor = PyDataActor::new(None);
+            rust_actor.register(trader_id, clock, cache).unwrap();
+
+            // When py_self is None, the dispatch returns Ok(()) without calling Python
+            let result = DataActor::on_start(rust_actor.inner_mut());
+            assert!(result.is_ok());
+        });
     }
 }

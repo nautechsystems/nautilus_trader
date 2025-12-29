@@ -14,7 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::{dyn_abi::SolType, primitives::Address, sol};
-use nautilus_model::defi::{SharedDex, rpc::RpcLog};
+use nautilus_model::defi::{PoolIdentifier, SharedDex, rpc::RpcLog};
+use ustr::Ustr;
 
 use crate::{
     events::burn::BurnEvent,
@@ -94,9 +95,10 @@ pub fn parse_burn_event_hypersync(dex: SharedDex, log: HypersyncLog) -> anyhow::
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
+        let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
         Ok(BurnEvent::new(
             dex,
-            pool_address,
+            pool_identifier,
             extract_block_number(&log)?,
             extract_transaction_hash(&log)?,
             extract_transaction_index(&log)?,
@@ -144,9 +146,11 @@ pub fn parse_burn_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Burn
         Err(e) => anyhow::bail!("Failed to decode burn event data: {e}"),
     };
 
+    let pool_address = rpc_helpers::extract_address(log)?;
+    let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     Ok(BurnEvent::new(
         dex,
-        rpc_helpers::extract_address(log)?,
+        pool_identifier,
         rpc_helpers::extract_block_number(log)?,
         rpc_helpers::extract_transaction_hash(log)?,
         rpc_helpers::extract_transaction_index(log)?,
@@ -160,9 +164,6 @@ pub fn parse_burn_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Burn
     ))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use alloy::primitives::U256;
@@ -186,7 +187,7 @@ mod tests {
             "transaction_hash": "0x0c70f6d6bcf8508ba620b9d1250c95ad67108e35707c5d7456349ea207051bae",
             "block_hash": null,
             "block_number": "0x175a6484",
-            "address": "0xd13040d4fe917ee704158cfcb3338dcd2838b245",
+            "address": "0xd13040d4fe917EE704158CfCB3338dCd2838B245",
             "data": "0x00000000000000000000000000000000000000000002bc997c8ea58d3a8521ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000065b33ff853688eb",
             "topics": [
                 "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c",
@@ -208,7 +209,7 @@ mod tests {
             "transactionHash": "0x0c70f6d6bcf8508ba620b9d1250c95ad67108e35707c5d7456349ea207051bae",
             "blockHash": "0xe925eaa1f5178ceedfa24043a974edb928ddab7195600b6b99ff5403fbf13c8b",
             "blockNumber": "0x175a6484",
-            "address": "0xd13040d4fe917ee704158cfcb3338dcd2838b245",
+            "address": "0xd13040d4fe917EE704158CfCB3338dCd2838B245",
             "data": "0x00000000000000000000000000000000000000000002bc997c8ea58d3a8521ec0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000065b33ff853688eb",
             "topics": [
                 "0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c",
@@ -226,8 +227,8 @@ mod tests {
         let event = parse_burn_event_hypersync(dex, hypersync_log).unwrap();
 
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
-            "0xd13040d4fe917ee704158cfcb3338dcd2838b245"
+            event.pool_identifier.to_string(),
+            "0xd13040d4fe917EE704158CfCB3338dCd2838B245"
         );
         assert_eq!(
             event.owner.to_string().to_lowercase(),
@@ -249,8 +250,8 @@ mod tests {
         let event = parse_burn_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
-            event.pool_address.to_string().to_lowercase(),
-            "0xd13040d4fe917ee704158cfcb3338dcd2838b245"
+            event.pool_identifier.to_string(),
+            "0xd13040d4fe917EE704158CfCB3338dCd2838B245"
         );
         assert_eq!(
             event.owner.to_string().to_lowercase(),
@@ -272,7 +273,7 @@ mod tests {
         let event_hypersync = parse_burn_event_hypersync(dex.clone(), hypersync_log).unwrap();
         let event_rpc = parse_burn_event_rpc(dex, &rpc_log).unwrap();
 
-        assert_eq!(event_hypersync.pool_address, event_rpc.pool_address);
+        assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);
         assert_eq!(event_hypersync.owner, event_rpc.owner);
         assert_eq!(event_hypersync.tick_lower, event_rpc.tick_lower);
         assert_eq!(event_hypersync.tick_upper, event_rpc.tick_upper);

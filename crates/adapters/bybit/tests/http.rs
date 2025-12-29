@@ -15,7 +15,7 @@
 
 //! Integration tests for Bybit HTTP client using a mock server.
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     Router,
@@ -35,12 +35,15 @@ use nautilus_bybit::{
         },
     },
 };
+use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
+    data::BarType,
     enums::PositionSideSpecified,
     identifiers::AccountId,
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
+use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -65,6 +68,22 @@ impl Default for TestServerState {
             history_requests: Arc::new(tokio::sync::Mutex::new(0)),
         }
     }
+}
+
+/// Wait for the test server to be ready by polling a health endpoint.
+async fn wait_for_server(addr: SocketAddr, path: &str) {
+    let health_url = format!("http://{addr}{path}");
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 }
 
 // Load test data from existing files
@@ -715,7 +734,7 @@ async fn start_test_server()
     });
 
     // Give server time to start
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    wait_for_server(addr, "/v5/market/time").await;
     Ok((addr, state))
 }
 
@@ -914,7 +933,18 @@ async fn test_authenticated_endpoint_requires_credentials() {
 
     // Should fail when trying to call authenticated endpoint without credentials
     let result = client
-        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(
+            BybitProductType::Linear,
+            Some("BTCUSDT".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await;
     assert!(result.is_err());
 }
@@ -942,7 +972,18 @@ async fn test_rate_limiting_returns_error() {
     let mut last_error = None;
     for _ in 0..10 {
         match client
-            .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+            .get_open_orders(
+                BybitProductType::Linear,
+                Some("BTCUSDT".to_owned()),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .await
         {
             Ok(_) => continue,
@@ -979,7 +1020,18 @@ async fn test_get_open_orders_with_symbol() {
     .unwrap();
 
     let response = client
-        .get_open_orders(BybitProductType::Linear, Some("BTCUSDT"))
+        .get_open_orders(
+            BybitProductType::Linear,
+            Some("BTCUSDT".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -1007,7 +1059,18 @@ async fn test_get_open_orders_without_symbol() {
     .unwrap();
 
     let response = client
-        .get_open_orders(BybitProductType::Linear, None)
+        .get_open_orders(
+            BybitProductType::Linear,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -1191,7 +1254,7 @@ async fn start_reconciliation_test_server()
         axum::serve(listener, router).await.unwrap();
     });
 
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    wait_for_server(addr, "/v5/market/time").await;
     Ok((addr, state))
 }
 
@@ -1881,5 +1944,387 @@ async fn test_request_order_status_reports_with_time_filtering() {
     assert!(
         queries.len() >= 2,
         "Should have called history endpoint at least twice (one per settle coin)"
+    );
+}
+
+// =====================================================
+// Tests for request_tickers
+// =====================================================
+
+#[tokio::test]
+#[ignore] // Requires real Bybit API access
+async fn test_request_tickers_spot_live() {
+    use nautilus_bybit::http::query::BybitTickersParamsBuilder;
+
+    let client = BybitHttpClient::new(None, None, None, None, None, None, None).unwrap();
+
+    let params = BybitTickersParamsBuilder::default()
+        .category(BybitProductType::Spot)
+        .build()
+        .unwrap();
+
+    let tickers = client.request_tickers(&params).await.unwrap();
+
+    // Verify we got data
+    assert!(!tickers.is_empty(), "Should receive at least one ticker");
+
+    // Verify data structure for spot tickers
+    for ticker in tickers.iter().take(5) {
+        // All tickers should have basic fields
+        assert!(!ticker.symbol.is_empty(), "Symbol should not be empty");
+        assert!(
+            !ticker.last_price.is_empty(),
+            "Last price should not be empty"
+        );
+        assert!(
+            !ticker.bid1_price.is_empty(),
+            "Bid price should not be empty"
+        );
+        assert!(
+            !ticker.ask1_price.is_empty(),
+            "Ask price should not be empty"
+        );
+        assert!(
+            !ticker.volume24h.is_empty(),
+            "Volume 24h should not be empty"
+        );
+        assert!(
+            !ticker.turnover24h.is_empty(),
+            "Turnover 24h should not be empty"
+        );
+
+        // Spot tickers should NOT have these fields
+        assert!(
+            ticker.open_interest.is_none(),
+            "Spot ticker should not have open_interest"
+        );
+        assert!(
+            ticker.funding_rate.is_none(),
+            "Spot ticker should not have funding_rate"
+        );
+        assert!(
+            ticker.next_funding_time.is_none(),
+            "Spot ticker should not have next_funding_time"
+        );
+        assert!(
+            ticker.mark_price.is_none(),
+            "Spot ticker should not have mark_price"
+        );
+        assert!(
+            ticker.index_price.is_none(),
+            "Spot ticker should not have index_price"
+        );
+    }
+
+    println!("[SUCCESS] Fetched {} spot tickers", tickers.len());
+}
+
+#[tokio::test]
+#[ignore] // Requires real Bybit API access
+async fn test_request_tickers_linear_live() {
+    use nautilus_bybit::http::query::BybitTickersParamsBuilder;
+
+    let client = BybitHttpClient::new(None, None, None, None, None, None, None).unwrap();
+
+    let params = BybitTickersParamsBuilder::default()
+        .category(BybitProductType::Linear)
+        .build()
+        .unwrap();
+
+    let tickers = client.request_tickers(&params).await.unwrap();
+
+    // Verify we got data
+    assert!(
+        !tickers.is_empty(),
+        "Should receive at least one linear ticker"
+    );
+
+    // Verify data structure for linear tickers
+    for ticker in tickers.iter().take(5) {
+        // All tickers should have basic fields
+        assert!(!ticker.symbol.is_empty(), "Symbol should not be empty");
+        assert!(
+            !ticker.last_price.is_empty(),
+            "Last price should not be empty"
+        );
+        assert!(
+            !ticker.bid1_price.is_empty(),
+            "Bid price should not be empty"
+        );
+        assert!(
+            !ticker.ask1_price.is_empty(),
+            "Ask price should not be empty"
+        );
+        assert!(
+            !ticker.volume24h.is_empty(),
+            "Volume 24h should not be empty"
+        );
+        assert!(
+            !ticker.turnover24h.is_empty(),
+            "Turnover 24h should not be empty"
+        );
+
+        // Linear tickers SHOULD have these fields
+        assert!(
+            ticker.open_interest.is_some(),
+            "Linear ticker should have open_interest"
+        );
+        assert!(
+            ticker.funding_rate.is_some(),
+            "Linear ticker should have funding_rate"
+        );
+        assert!(
+            ticker.next_funding_time.is_some(),
+            "Linear ticker should have next_funding_time"
+        );
+        assert!(
+            ticker.mark_price.is_some(),
+            "Linear ticker should have mark_price"
+        );
+        assert!(
+            ticker.index_price.is_some(),
+            "Linear ticker should have index_price"
+        );
+
+        // Verify fields are not empty
+        let open_interest = ticker.open_interest.as_ref().unwrap();
+        assert!(
+            !open_interest.is_empty(),
+            "Open interest should not be empty"
+        );
+
+        let funding_rate = ticker.funding_rate.as_ref().unwrap();
+        assert!(!funding_rate.is_empty(), "Funding rate should not be empty");
+
+        let next_funding_time = ticker.next_funding_time.as_ref().unwrap();
+        assert!(
+            !next_funding_time.is_empty(),
+            "Next funding time should not be empty"
+        );
+
+        let mark_price = ticker.mark_price.as_ref().unwrap();
+        assert!(!mark_price.is_empty(), "Mark price should not be empty");
+
+        let index_price = ticker.index_price.as_ref().unwrap();
+        assert!(!index_price.is_empty(), "Index price should not be empty");
+    }
+
+    println!("[SUCCESS] Fetched {} linear tickers", tickers.len());
+}
+
+#[tokio::test]
+#[ignore] // Requires real Bybit API access
+async fn test_request_tickers_inverse_live() {
+    use nautilus_bybit::http::query::BybitTickersParamsBuilder;
+
+    let client = BybitHttpClient::new(None, None, None, None, None, None, None).unwrap();
+
+    let params = BybitTickersParamsBuilder::default()
+        .category(BybitProductType::Inverse)
+        .build()
+        .unwrap();
+
+    let tickers = client.request_tickers(&params).await.unwrap();
+
+    // Verify we got data
+    assert!(
+        !tickers.is_empty(),
+        "Should receive at least one inverse ticker"
+    );
+
+    // Verify data structure for inverse tickers (similar to linear)
+    for ticker in tickers.iter().take(5) {
+        // All tickers should have basic fields
+        assert!(!ticker.symbol.is_empty(), "Symbol should not be empty");
+        assert!(
+            !ticker.last_price.is_empty(),
+            "Last price should not be empty"
+        );
+
+        // Inverse tickers SHOULD have these fields (similar to linear)
+        assert!(
+            ticker.open_interest.is_some(),
+            "Inverse ticker should have open_interest"
+        );
+        assert!(
+            ticker.funding_rate.is_some(),
+            "Inverse ticker should have funding_rate"
+        );
+        assert!(
+            ticker.mark_price.is_some(),
+            "Inverse ticker should have mark_price"
+        );
+        assert!(
+            ticker.index_price.is_some(),
+            "Inverse ticker should have index_price"
+        );
+    }
+
+    println!("[SUCCESS] Fetched {} inverse tickers", tickers.len());
+}
+
+#[tokio::test]
+#[ignore] // Requires real Bybit API access
+async fn test_request_tickers_with_symbol_filter() {
+    use nautilus_bybit::http::query::BybitTickersParamsBuilder;
+
+    let client = BybitHttpClient::new(None, None, None, None, None, None, None).unwrap();
+
+    // Test with specific symbol
+    let params = BybitTickersParamsBuilder::default()
+        .category(BybitProductType::Linear)
+        .symbol("BTCUSDT".to_string())
+        .build()
+        .unwrap();
+
+    let tickers = client.request_tickers(&params).await.unwrap();
+
+    // Should only get BTCUSDT ticker
+    assert_eq!(tickers.len(), 1, "Should receive exactly one ticker");
+    assert_eq!(
+        tickers[0].symbol.as_str(),
+        "BTCUSDT",
+        "Symbol should be BTCUSDT"
+    );
+
+    // Verify it has all linear ticker fields
+    let ticker = &tickers[0];
+    assert!(ticker.open_interest.is_some());
+    assert!(ticker.funding_rate.is_some());
+    assert!(ticker.next_funding_time.is_some());
+    assert!(ticker.mark_price.is_some());
+    assert!(ticker.index_price.is_some());
+
+    println!("[SUCCESS] Fetched ticker for BTCUSDT with all expected fields");
+}
+
+/// Handler that returns only a partial bar on first page, then closed bars on second page.
+async fn handle_get_klines_partial_first_page(
+    query: Query<HashMap<String, String>>,
+    State(state): State<TestServerState>,
+) -> impl IntoResponse {
+    if !query.contains_key("category") || !query.contains_key("symbol") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "retCode": 10001,
+                "retMsg": "Missing required parameters",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    let mut count = state.request_count.lock().await;
+    *count += 1;
+    let page = *count;
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    let bar_duration_ms = 60_000i64;
+    let partial_bar_start = (now_ms / bar_duration_ms) * bar_duration_ms;
+
+    if page == 1 {
+        Json(json!({
+            "retCode": 0,
+            "retMsg": "OK",
+            "result": {
+                "category": "linear",
+                "symbol": "BTCUSDT",
+                "list": [
+                    [partial_bar_start.to_string(), "100000", "100100", "99900", "100050", "1000", "100000000"]
+                ]
+            },
+            "retExtInfo": {},
+            "time": now_ms
+        }))
+        .into_response()
+    } else {
+        let closed_bar_2_start = partial_bar_start - 2 * bar_duration_ms;
+        let closed_bar_1_start = partial_bar_start - 3 * bar_duration_ms;
+
+        Json(json!({
+            "retCode": 0,
+            "retMsg": "OK",
+            "result": {
+                "category": "linear",
+                "symbol": "BTCUSDT",
+                "list": [
+                    [closed_bar_2_start.to_string(), "99800", "99900", "99700", "99850", "600", "60000000"],
+                    [closed_bar_1_start.to_string(), "99700", "99800", "99600", "99750", "500", "50000000"]
+                ]
+            },
+            "retExtInfo": {},
+            "time": now_ms
+        }))
+        .into_response()
+    }
+}
+
+fn create_partial_first_page_test_router(state: TestServerState) -> Router {
+    Router::new()
+        .route("/v5/market/time", get(handle_get_server_time))
+        .route("/v5/market/instruments-info", get(handle_get_instruments))
+        .route(
+            "/v5/market/kline",
+            get(handle_get_klines_partial_first_page),
+        )
+        .with_state(state)
+}
+
+async fn start_partial_first_page_test_server()
+-> Result<(SocketAddr, TestServerState), Box<dyn std::error::Error + Send + Sync>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = TestServerState::default();
+    let router = create_partial_first_page_test_router(state.clone());
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    wait_for_server(addr, "/v5/market/time").await;
+
+    Ok((addr, state))
+}
+
+/// Tests that pagination continues when first page only has partial bars (P1 bug fix).
+#[rstest]
+#[tokio::test]
+async fn test_request_bars_continues_pagination_when_first_page_only_partial() {
+    let (addr, state) = start_partial_first_page_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client =
+        BybitHttpClient::new(Some(base_url), Some(60), None, None, None, None, None).unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None)
+        .await
+        .unwrap();
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-1-MINUTE-LAST-EXTERNAL");
+    let bars = client
+        .request_bars(BybitProductType::Linear, bar_type, None, None, None, true)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        bars.len(),
+        2,
+        "Should continue pagination and return closed bars from second page"
+    );
+    let request_count = *state.request_count.lock().await;
+    assert!(
+        request_count >= 2,
+        "Should have made at least 2 requests to paginate past partial bars"
     );
 }

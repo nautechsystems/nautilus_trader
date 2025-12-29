@@ -15,11 +15,13 @@
 
 use std::{
     collections::hash_map::DefaultHasher,
-    ffi::{CStr, CString, c_char},
+    ffi::{CString, c_char},
     hash::{Hash, Hasher},
 };
 
-use crate::identifiers::trade_id::TradeId;
+use nautilus_core::StackStr;
+
+use crate::identifiers::TradeId;
 
 /// Returns a Nautilus identifier from a C string pointer.
 ///
@@ -28,14 +30,13 @@ use crate::identifiers::trade_id::TradeId;
 /// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
-    let value = unsafe { CStr::from_ptr(ptr).to_owned() };
-    TradeId::from(value)
+    TradeId::new(unsafe { StackStr::from_c_ptr(ptr) }.as_str())
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
     let mut hasher = DefaultHasher::new();
-    id.value.hash(&mut hasher);
+    id.hash(&mut hasher);
     hasher.finish()
 }
 

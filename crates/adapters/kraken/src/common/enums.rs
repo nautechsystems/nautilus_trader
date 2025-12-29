@@ -19,6 +19,7 @@ use nautilus_model::enums::{OrderSide, OrderStatus, OrderType};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumString, FromRepr};
 
+/// Kraken API environment (mainnet or demo).
 #[derive(
     Clone,
     Copy,
@@ -49,9 +50,10 @@ use strum::{AsRefStr, Display, EnumString, FromRepr};
 pub enum KrakenEnvironment {
     #[default]
     Mainnet,
-    Testnet,
+    Demo,
 }
 
+/// Kraken product type (spot or futures).
 #[derive(
     Clone,
     Copy,
@@ -85,6 +87,7 @@ pub enum KrakenProductType {
     Futures,
 }
 
+/// Kraken spot order type.
 #[derive(
     Clone,
     Copy,
@@ -125,6 +128,7 @@ pub enum KrakenOrderType {
     SettlePosition,
 }
 
+/// Kraken order side (buy or sell).
 #[derive(
     Clone,
     Copy,
@@ -150,6 +154,7 @@ pub enum KrakenOrderSide {
     Sell,
 }
 
+/// Kraken time-in-force for orders.
 #[derive(
     Clone,
     Copy,
@@ -182,6 +187,7 @@ pub enum KrakenTimeInForce {
     GoodTilDate,
 }
 
+/// Kraken order status.
 #[derive(
     Clone,
     Copy,
@@ -210,6 +216,7 @@ pub enum KrakenOrderStatus {
     Expired,
 }
 
+/// Kraken position side (long or short).
 #[derive(
     Clone,
     Copy,
@@ -235,6 +242,7 @@ pub enum KrakenPositionSide {
     Short,
 }
 
+/// Kraken trading pair status.
 #[derive(
     Clone,
     Copy,
@@ -271,6 +279,7 @@ pub enum KrakenPairStatus {
     ReduceOnly,
 }
 
+/// Kraken system status.
 #[derive(
     Clone,
     Copy,
@@ -302,6 +311,7 @@ pub enum KrakenSystemStatus {
     PostOnly,
 }
 
+/// Kraken asset class.
 #[derive(
     Clone,
     Copy,
@@ -326,6 +336,7 @@ pub enum KrakenAssetClass {
     Currency,
 }
 
+/// Kraken futures order type.
 #[derive(
     Clone,
     Copy,
@@ -350,12 +361,21 @@ pub enum KrakenFuturesOrderType {
     #[serde(rename = "lmt")]
     #[strum(serialize = "lmt")]
     Limit,
+    #[serde(rename = "ioc")]
+    #[strum(serialize = "ioc")]
+    Ioc,
+    #[serde(rename = "post")]
+    #[strum(serialize = "post")]
+    Post,
     #[serde(rename = "mkt")]
     #[strum(serialize = "mkt")]
     Market,
     #[serde(rename = "stp")]
     #[strum(serialize = "stp")]
     Stop,
+    #[serde(rename = "stop")]
+    #[strum(serialize = "stop")]
+    StopLower,
     #[serde(rename = "take_profit")]
     #[strum(serialize = "take_profit")]
     TakeProfit,
@@ -364,6 +384,37 @@ pub enum KrakenFuturesOrderType {
     StopLoss,
 }
 
+/// Event types from Kraken Futures sendorder/editorder responses.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(ascii_case_insensitive, serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum KrakenFuturesOrderEventType {
+    /// Order was placed.
+    Place,
+    /// Order was executed (filled).
+    Execution,
+    /// Order was rejected.
+    Reject,
+    /// Order was cancelled.
+    Cancel,
+    /// Order was edited.
+    Edit,
+}
+
+/// Kraken futures order status.
 #[derive(
     Clone,
     Copy,
@@ -392,6 +443,36 @@ pub enum KrakenFuturesOrderStatus {
     Expired,
 }
 
+/// Kraken futures trigger signal type.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+)]
+#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+pub enum KrakenTriggerSignal {
+    #[serde(rename = "last", alias = "last_price")]
+    Last,
+    #[serde(rename = "mark", alias = "mark_price")]
+    Mark,
+    #[serde(rename = "index", alias = "index_price")]
+    Index,
+}
+
+/// Trigger reference price for Kraken spot conditional orders.
 #[derive(
     Clone,
     Copy,
@@ -412,12 +493,14 @@ pub enum KrakenFuturesOrderStatus {
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
-pub enum KrakenTriggerSignal {
+pub enum KrakenSpotTrigger {
+    /// Last traded price in the order book.
     Last,
-    Mark,
+    /// Index price for the broader market.
     Index,
 }
 
+/// Kraken fill type (maker or taker).
 #[derive(
     Clone,
     Copy,
@@ -443,6 +526,7 @@ pub enum KrakenFillType {
     Taker,
 }
 
+/// Kraken API result status.
 #[derive(
     Clone,
     Copy,
@@ -466,6 +550,110 @@ pub enum KrakenFillType {
 pub enum KrakenApiResult {
     Success,
     Error,
+}
+
+/// Kraken futures instrument type.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(ascii_case_insensitive, serialize_all = "snake_case")]
+pub enum KrakenInstrumentType {
+    /// Inverse perpetual futures (e.g., PI_XBTUSD).
+    FuturesInverse,
+    /// Flexible/linear perpetual futures (e.g., PF_XBTUSD).
+    FlexibleFutures,
+}
+
+/// Kraken futures send order status.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+)]
+#[serde(rename_all = "camelCase")]
+#[strum(ascii_case_insensitive, serialize_all = "camelCase")]
+pub enum KrakenSendStatus {
+    /// Order was successfully placed.
+    Placed,
+    /// Order was cancelled.
+    Cancelled,
+    /// Order was edited.
+    Edited,
+    /// Order not found.
+    NotFound,
+    /// Insufficient available funds.
+    InsufficientAvailableFunds,
+    /// Invalid order type.
+    InvalidOrderType,
+    /// Invalid size.
+    InvalidSize,
+    /// Would cause liquidation.
+    WouldCauseLiquidation,
+    /// Post-only order would have crossed.
+    PostWouldExecute,
+    /// Reduce-only order would increase position.
+    ReduceOnlyWouldIncreasePosition,
+}
+
+/// Kraken futures trigger side for conditional orders.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Display,
+    AsRefStr,
+    EnumString,
+    FromRepr,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", eq, eq_int)
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(ascii_case_insensitive, serialize_all = "snake_case")]
+pub enum KrakenTriggerSide {
+    /// Trigger when price goes above the trigger price.
+    #[serde(rename = "trigger_above")]
+    #[strum(serialize = "trigger_above")]
+    TriggerAbove,
+    /// Trigger when price goes below the trigger price.
+    #[serde(rename = "trigger_below")]
+    #[strum(serialize = "trigger_below")]
+    TriggerBelow,
 }
 
 impl From<KrakenOrderSide> for OrderSide {
@@ -506,11 +694,23 @@ impl From<KrakenOrderStatus> for OrderStatus {
 impl From<KrakenFuturesOrderType> for OrderType {
     fn from(value: KrakenFuturesOrderType) -> Self {
         match value {
-            KrakenFuturesOrderType::Limit => Self::Limit,
+            KrakenFuturesOrderType::Limit
+            | KrakenFuturesOrderType::Ioc
+            | KrakenFuturesOrderType::Post => Self::Limit,
             KrakenFuturesOrderType::Market => Self::Market,
-            KrakenFuturesOrderType::Stop => Self::StopMarket,
+            KrakenFuturesOrderType::Stop | KrakenFuturesOrderType::StopLower => Self::StopMarket,
             KrakenFuturesOrderType::TakeProfit => Self::MarketIfTouched,
             KrakenFuturesOrderType::StopLoss => Self::StopMarket,
+        }
+    }
+}
+
+impl From<OrderSide> for KrakenOrderSide {
+    fn from(value: OrderSide) -> Self {
+        match value {
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
+            OrderSide::NoOrderSide => Self::Buy, // Default fallback
         }
     }
 }

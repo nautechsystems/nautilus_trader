@@ -457,9 +457,7 @@ impl StopLimitOrder {
         })?;
         let tags = get_optional::<Vec<String>>(values, "tags")?
             .map(|vec| vec.iter().map(|s| Ustr::from(s)).collect());
-        let init_id = get_required_parsed(values, "init_id", |s| {
-            s.parse::<UUID4>().map_err(|e| e.to_string())
-        })?;
+        let init_id = get_required_parsed(values, "init_id", |s| s.parse::<UUID4>())?;
         let ts_init = get_required::<u64>(values, "ts_init")?;
         let stop_limit_order = Self::new(
             trader_id,

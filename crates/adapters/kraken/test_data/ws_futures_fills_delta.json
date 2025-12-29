@@ -1,0 +1,23 @@
+{
+  "feed": "fills",
+  "username": "6a70e882-4405-4dc5-9c49-010ddf2a6746",
+  "fills": [
+    {
+      "instrument": "PF_ETHUSD",
+      "time": 1765185437003,
+      "price": 3162.0,
+      "seq": 1,
+      "buy": true,
+      "qty": 0.001,
+      "remaining_order_qty": 0.0,
+      "order_id": "a08aed17-f1a6-4db6-876c-2de5df84951c",
+      "cli_ord_id": "b661bad0-7037-4b73-9e07-a65b515e4ef7",
+      "fill_id": "6a22a3fb-e18e-4e76-b841-8689735c9158",
+      "fill_type": "taker",
+      "fee_paid": 0.001581,
+      "fee_currency": "USD",
+      "taker_order_type": "market",
+      "order_type": "market"
+    }
+  ]
+}

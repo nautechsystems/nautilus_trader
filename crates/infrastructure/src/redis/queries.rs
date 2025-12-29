@@ -33,6 +33,8 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use ustr::Ustr;
 
+use super::get_index_key;
+
 // Collection keys
 const INDEX: &str = "index";
 const GENERAL: &str = "general";
@@ -729,7 +731,7 @@ impl DatabaseQueries {
     }
 
     async fn read_index(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
-        let index_key = Self::get_index_key(key)?;
+        let index_key = get_index_key(key)?;
         match index_key {
             INDEX_ORDER_IDS => Self::read_set(conn, key).await,
             INDEX_ORDER_POSITION => Self::read_hset(conn, key).await,
@@ -770,14 +772,6 @@ impl DatabaseQueries {
     async fn read_list(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
         Ok(result)
-    }
-
-    fn get_index_key(key: &str) -> anyhow::Result<&str> {
-        key.split_once(REDIS_DELIMITER)
-            .map(|(_, index_key)| index_key)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
-            })
     }
 }
 

@@ -1425,7 +1425,7 @@ class TestOrderEmulatorWithOrderLists:
         self.exchange.process(0)
 
         # Act
-        new_quantity = Quantity.from_int(5)
+        new_quantity = ETHUSDT_PERP_BINANCE.make_qty(5)
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         strategy.modify_order(tp_order, new_quantity)
         self.exchange.process(0)
@@ -1504,7 +1504,7 @@ class TestOrderEmulatorWithOrderLists:
         self.exchange.process(0)
 
         # Act
-        new_quantity = Quantity.from_int(5)
+        new_quantity = ETHUSDT_PERP_BINANCE.make_qty(5)
         sl_order = self.cache.order(bracket.orders[1].client_order_id)
         strategy.modify_order(sl_order, new_quantity)
         self.exchange.process(0)

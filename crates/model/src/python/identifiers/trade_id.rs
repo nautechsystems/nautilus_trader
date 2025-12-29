@@ -15,7 +15,6 @@
 
 use std::{
     collections::hash_map::DefaultHasher,
-    ffi::CString,
     hash::{Hash, Hasher},
 };
 
@@ -27,7 +26,7 @@ use pyo3::{
     types::{PyString, PyTuple},
 };
 
-use crate::identifiers::trade_id::{TRADE_ID_LEN, TradeId};
+use crate::identifiers::TradeId;
 
 #[pymethods]
 impl TradeId {
@@ -40,14 +39,7 @@ impl TradeId {
         let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
         let value_str = binding.cast::<PyString>()?.extract::<&str>()?;
-
-        // TODO: Extract this to single function
-        let c_string = CString::new(value_str).expect("`CString` conversion failed");
-        let bytes = c_string.as_bytes_with_nul();
-        let mut value = [0; TRADE_ID_LEN];
-        value[..bytes.len()].copy_from_slice(bytes);
-        self.value = value;
-
+        *self = Self::new(value_str);
         Ok(())
     }
 
@@ -96,8 +88,8 @@ impl TradeId {
     }
 
     #[getter]
-    fn value(&self) -> String {
-        self.to_string()
+    fn value(&self) -> &str {
+        self.as_str()
     }
 
     #[staticmethod]

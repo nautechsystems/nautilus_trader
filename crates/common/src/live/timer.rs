@@ -135,7 +135,7 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
-    /// Panics if Rust-based callback system is active and no time event sender has been set.
+    /// Panics if using a Rust callback (`Rust` or `RustLocal`) without a `TimeEventSender`.
     #[allow(unused_variables)]
     pub fn start(&mut self) {
         let event_name = self.name;
@@ -220,7 +220,7 @@ impl LiveTimer {
                     TimeEventCallback::Python(ref callback) => {
                         call_python_with_time_event(event, callback);
                     }
-                    TimeEventCallback::Rust(_) => {
+                    TimeEventCallback::Rust(_) | TimeEventCallback::RustLocal(_) => {
                         debug_assert!(
                             sender.is_some(),
                             "LiveTimer with Rust callback requires TimeEventSender"
@@ -284,9 +284,6 @@ fn call_python_with_time_event(event: TimeEvent, callback: &Py<PyAny>) {
     });
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{num::NonZeroU64, sync::Arc};

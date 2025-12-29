@@ -44,10 +44,19 @@ Cargo's build cache is keyed by the exact combination of features, profiles, and
 |-----------------------------|----------------------------------|-----------|-----------------|-------------|----------------|
 | `cargo-test`                | `ffi,python,high-precision,defi` | `nextest` | ✓ (implicit)    | n/a         | Run tests.     |
 | `cargo-clippy` (pre-commit) | `ffi,python,high-precision,defi` | `nextest` | ✓               | n/a         | Lint all code. |
-| `cargo-doc` (pre-commit)    | `ffi,python,high-precision,defi` | `nextest` | n/a             | ✓           | Lint docs.     |
 
-These targets share the same feature set and profile, allowing cargo to reuse compiled artifacts between linting, testing, and doc checking without rebuilds.
+These targets share the same feature set and profile, allowing cargo to reuse compiled artifacts between linting and testing without rebuilds.
 The `nextest` profile is used to align with the workflow of the majority of core maintainers who use cargo-nextest for running tests.
+
+### Documentation builds
+
+Documentation is built separately using `make docs-rust`, which runs:
+
+```bash
+cargo +nightly doc --all-features --no-deps --workspace
+```
+
+This uses the nightly toolchain and `--all-features` rather than the aligned feature set above, so it does not share build artifacts with testing/linting.
 
 ### Separate target (Python extension building)
 
@@ -231,11 +240,55 @@ The `check_error_conventions.sh` and `check_anyhow_usage.sh` pre-commit hooks en
 Use consistent async/await patterns:
 
 1. **Async function naming**: No special suffix is required; prefer natural names.
-2. **Tokio usage**: Use `tokio::spawn` for fire-and-forget work, and document when that background task is expected to finish.
+2. **Tokio usage**: Fully qualify tokio types (e.g., `tokio::time::timeout`). See [Adapter runtime patterns](#adapter-runtime-patterns) for spawn rules.
 3. **Error handling**: Return `anyhow::Result` from async functions to match the synchronous conventions.
 4. **Cancellation safety**: Call out whether the function is cancellation-safe and what invariants still hold when it is cancelled.
 5. **Stream handling**: Use `tokio_stream` (or `futures::Stream`) for async iterators to make back-pressure explicit.
 6. **Timeout patterns**: Wrap network or long-running awaits with timeouts (`tokio::time::timeout`) and propagate or handle the timeout error.
+
+### Adapter runtime patterns
+
+Adapter crates (under `crates/adapters/`) require special handling for spawning async tasks due to Python FFI compatibility:
+
+1. **Use `get_runtime().spawn()` instead of `tokio::spawn()`**: When called from Python threads (which have no Tokio context), `tokio::spawn()` panics because it relies on thread-local storage. The global runtime pattern provides an explicit reference accessible from any thread.
+
+   ```rust
+   use nautilus_common::live::get_runtime;
+
+   // Correct - works from Python threads
+   get_runtime().spawn(async move {
+       // async work
+   });
+
+   // Incorrect - panics from Python threads
+   tokio::spawn(async move {
+       // async work
+   });
+   ```
+
+2. **Use the shorter import path**: Import `get_runtime` from the `live` module re-export, not the full path:
+
+   ```rust
+   // Preferred - shorter path via re-export
+   use nautilus_common::live::get_runtime;
+
+   // Avoid - unnecessarily verbose
+   use nautilus_common::live::runtime::get_runtime;
+   ```
+
+3. **Use `get_runtime().block_on()` for sync-to-async bridges**: When synchronous code needs to call async functions in adapters:
+
+   ```rust
+   fn sync_method(&self) -> anyhow::Result<()> {
+       get_runtime().block_on(self.async_implementation())
+   }
+   ```
+
+4. **Tests are exempt**: Test code using `#[tokio::test]` creates its own runtime context, so `tokio::spawn()` works correctly. The enforcement hook skips test files and test modules.
+
+:::info Automated enforcement
+The `check_tokio_usage.sh` pre-commit hook enforces these adapter runtime patterns automatically.
+:::
 
 ### Attribute patterns
 
@@ -459,6 +512,8 @@ pub use crate::identifiers::{
 
 ### Documentation standards
 
+Use third-person declarative voice for all doc comments (e.g., "Returns the account ID" not "Return the account ID").
+
 #### Module-Level documentation
 
 All modules must have module-level documentation starting with a brief description:
@@ -600,7 +655,7 @@ impl Send for MessageBus {
 
 ## Python bindings
 
-Python bindings are provided via Cython and [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
+Python bindings are provided via [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
 
 ### PyO3 naming conventions
 
@@ -631,29 +686,6 @@ The `check_pyo3_conventions.sh` pre-commit hook enforces the `py_` prefix for Py
 :::info Automated enforcement
 The `check_testing_conventions.sh` pre-commit hook enforces the use of `#[rstest]` over `#[test]`.
 :::
-
-#### Test organization
-
-Use consistent test module structure with section separators:
-
-```rust
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-    use super::*;
-    use crate::identifiers::{Symbol, stubs::*};
-
-    #[rstest]
-    fn test_string_reprs(symbol_eth_perp: Symbol) {
-        assert_eq!(symbol_eth_perp.as_str(), "ETH-PERP");
-        assert_eq!(format!("{symbol_eth_perp}"), "ETH-PERP");
-    }
-}
-```
 
 #### Parameterized testing
 
@@ -808,7 +840,7 @@ of interoperating between Cython and Rust. The ability to step outside the bound
 implement many of the most fundamental features of the Rust language itself, just as C and C++ are used to implement
 their own standard libraries.
 
-Great care will be taken with the use of Rusts `unsafe` facility - which just enables a small set of additional language features, thereby changing
+Great care will be taken with the use of Rusts `unsafe` facility - which enables a small set of additional language features, thereby changing
 the contract between the interface and caller, shifting some responsibility for guaranteeing correctness
 from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding *any* undefined behavior.
 The definition for what the Rust language designers consider undefined behavior can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).
@@ -817,25 +849,51 @@ The definition for what the Rust language designers consider undefined behavior 
 
 To maintain correctness, any use of `unsafe` Rust must follow our policy:
 
-- If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`.
-and covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
+- If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`,
+  covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
 - Document why each function is `unsafe` in its doc comment's Safety section, and cover all `unsafe` blocks with unit tests.
-- Always include a `SAFETY:` comment explaining why the unsafe operation is valid:
-
-```rust
-// SAFETY: Message bus is not meant to be passed between threads
-#[allow(unsafe_code)]
-
-unsafe impl Send for MessageBus {}
-```
-
+- Always include a `SAFETY:` comment explaining why the unsafe operation is valid.
 - **Crate-level lint** – every crate that exposes FFI symbols enables
   `#![deny(unsafe_op_in_unsafe_fn)]`. Even inside an `unsafe fn`, each pointer dereference or
   other dangerous operation must be wrapped in its own `unsafe { … }` block.
-
 - **CVec contract** – for raw vectors that cross the FFI boundary read the
   [FFI Memory Contract](ffi.md). Foreign code becomes the owner of the allocation and **must**
   call the matching `vec_drop_*` function exactly once.
+
+### Categories of unsafe code
+
+The codebase uses unsafe Rust in these categories:
+
+1. **FFI boundaries** – Raw pointer operations for C interop. See [FFI documentation](ffi.md).
+2. **Interior mutability** – `UnsafeCell` for thread-local registries with controlled access patterns.
+3. **Unsafe Send/Sync** – Types that are not inherently thread-safe but satisfy trait bounds
+   through runtime invariants (e.g., single-threaded access guaranteed by architecture).
+
+### Unsafe Send/Sync requirements
+
+When implementing `Send` or `Sync` unsafely:
+
+1. Document exactly which fields violate the trait requirements.
+2. Explain the runtime mechanism that ensures safety (e.g., single-threaded event loop).
+3. Include a `WARNING` stating that violating the invariant is undefined behavior.
+4. Prefer runtime enforcement (assertions, `Result` returns) over documentation-only guarantees.
+
+```rust
+// SAFETY: Contains Rc<RefCell<...>> which is not thread-safe.
+// Single-threaded access guaranteed by the backtest engine architecture.
+// WARNING: Actually sending across threads is undefined behavior.
+#[allow(unsafe_code)]
+unsafe impl Send for BacktestDataClient {}
+```
+
+### Defense in depth
+
+Where unsafe code relies on invariants, add defense mechanisms:
+
+- **Type verification**: Check types at runtime before casting (e.g., `TypeId` comparison).
+- **Debug assertions**: Catch memory corruption early in debug builds.
+- **RAII guards**: Ensure cleanup on both normal return and panic paths.
+- **Runtime checks**: Fail fast when invariants are violated rather than proceeding unsafely.
 
 ## Tooling configuration
 
@@ -879,27 +937,20 @@ This feature is opt-in to avoid requiring the Cap'n Proto compiler for standard 
 
 ### Installing Cap'n Proto
 
-Install the Cap'n Proto compiler before working with schemas:
+Install the Cap'n Proto compiler before working with schemas. The required version is
+specified in the `capnp-version` file in the repository root.
 
-**macOS:**
+See the [Environment Setup](environment_setup.md#capn-proto) guide for detailed installation
+instructions for each platform.
 
-```bash
-brew install capnp
-```
-
-**Linux (Debian/Ubuntu):**
-
-```bash
-sudo apt-get install capnproto
-```
-
-**Windows:**
-See the [Cap'n Proto installation guide](https://capnproto.org/install.html).
+:::warning
+Ubuntu's default `capnproto` package is too old. Linux users must install from source.
+:::
 
 Verify installation:
 
 ```bash
-capnp --version  # Should show version 1.0.0 or later
+capnp --version  # Should match the version in capnp-version
 ```
 
 ### Schema development workflow

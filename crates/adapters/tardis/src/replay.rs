@@ -24,7 +24,9 @@ use arrow::record_batch::RecordBatch;
 use chrono::{DateTime, Duration, NaiveDate};
 use futures_util::{StreamExt, future::join_all, pin_mut};
 use heck::ToSnakeCase;
-use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, parsing::precision_from_str};
+use nautilus_core::{
+    UnixNanos, datetime::unix_nanos_to_iso8601, formatting::Separable, parsing::precision_from_str,
+};
 use nautilus_model::{
     data::{
         Bar, BarType, Data, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
@@ -38,12 +40,11 @@ use nautilus_serialization::arrow::{
     trades_to_arrow_record_batch_bytes,
 };
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
-use thousands::Separable;
 use ustr::Ustr;
 
 use super::{enums::TardisExchange, http::models::TardisInstrumentInfo};
 use crate::{
-    config::TardisReplayConfig,
+    config::{BookSnapshotOutput, TardisReplayConfig},
     http::TardisHttpClient,
     machine::{TardisMachineClient, types::TardisInstrumentMiniInfo},
     parse::{normalize_instrument_id, parse_instrument_id},
@@ -139,9 +140,18 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     let normalize_symbols = config.normalize_symbols.unwrap_or(true);
     tracing::info!("normalize_symbols={normalize_symbols}");
 
+    let book_snapshot_output = config
+        .book_snapshot_output
+        .clone()
+        .unwrap_or(BookSnapshotOutput::Deltas);
+    tracing::info!("book_snapshot_output={book_snapshot_output:?}");
+
     let http_client = TardisHttpClient::new(None, None, None, normalize_symbols)?;
-    let mut machine_client =
-        TardisMachineClient::new(config.tardis_ws_url.as_deref(), normalize_symbols)?;
+    let mut machine_client = TardisMachineClient::new(
+        config.tardis_ws_url.as_deref(),
+        normalize_symbols,
+        book_snapshot_output,
+    )?;
 
     let info_map = gather_instruments_info(&config, &http_client).await;
 
@@ -205,10 +215,20 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                         handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path);
                     }
                     Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
-                    Data::Delta(_) => {
-                        panic!("Individual delta message not implemented (or required)")
+                    Data::Delta(delta) => {
+                        tracing::warn!(
+                            "Skipping individual delta message for {} (use Deltas batch instead)",
+                            delta.instrument_id
+                        );
                     }
-                    _ => panic!("Not implemented"),
+                    Data::MarkPriceUpdate(_)
+                    | Data::IndexPriceUpdate(_)
+                    | Data::InstrumentClose(_) => {
+                        tracing::debug!(
+                            "Skipping unsupported data type for instrument {}",
+                            msg.instrument_id()
+                        );
+                    }
                 }
 
                 msg_count += 1;
@@ -276,7 +296,7 @@ fn handle_deltas_msg(
     }
 
     map.entry(deltas.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(100_000))
         .extend(&*deltas.deltas);
 }
 
@@ -299,7 +319,7 @@ fn handle_depth10_msg(
     }
 
     map.entry(depth10.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(100_000))
         .push(depth10);
 }
 
@@ -322,7 +342,7 @@ fn handle_quote_msg(
     }
 
     map.entry(quote.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(100_000))
         .push(quote);
 }
 
@@ -345,7 +365,7 @@ fn handle_trade_msg(
     }
 
     map.entry(trade.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(100_000))
         .push(trade);
 }
 
@@ -368,7 +388,7 @@ fn handle_bar_msg(
     }
 
     map.entry(bar.bar_type)
-        .or_insert_with(|| Vec::with_capacity(1_000_000))
+        .or_insert_with(|| Vec::with_capacity(100_000))
         .push(bar);
 }
 
@@ -393,11 +413,12 @@ fn batch_and_write_depths(
     date: NaiveDate,
     path: &Path,
 ) {
-    let typename = stringify!(OrderBookDepth10);
+    // Use "order_book_depths" to match catalog path prefix
+    let typename = "order_book_depths";
     match book_depth10_to_arrow_record_batch_bytes(depths) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
+            tracing::error!("Error converting OrderBookDepth10 to Arrow: {e:?}");
         }
     }
 }
@@ -564,9 +585,6 @@ fn write_parquet_local(batch: RecordBatch, file_path: &Path) -> anyhow::Result<(
     Ok(())
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
-// Tests
-///////////////////////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};

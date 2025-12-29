@@ -21,8 +21,7 @@
 //! the client (e.g., missing credentials, network errors, unexpected status
 //! codes, etc.).
 
-use nautilus_network::http::HttpClientError;
-use reqwest::StatusCode;
+use nautilus_network::http::{HttpClientError, StatusCode};
 use serde::Deserialize;
 use thiserror::Error;
 

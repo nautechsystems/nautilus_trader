@@ -31,6 +31,7 @@
 //! The system supports a maximum of 255 concurrent `LogGuard` instances. Attempting to create
 //! more will cause a panic.
 
+pub mod config;
 pub mod headers;
 pub mod logger;
 pub mod macros;
@@ -43,6 +44,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
+use ahash::AHashMap;
 use log::LevelFilter;
 // Re-exports
 pub use macros::{log_debug, log_error, log_info, log_trace, log_warn};
@@ -129,12 +131,13 @@ pub fn init_tracing() -> anyhow::Result<()> {
     if let Ok(v) = env::var("RUST_LOG") {
         let env_filter = EnvFilter::new(v.clone());
 
-        tracing_subscriber::fmt()
+        if tracing_subscriber::fmt()
             .with_env_filter(env_filter)
             .try_init()
-            .map_err(|e| anyhow::anyhow!("Failed to initialize tracing subscriber: {e}"))?;
-
-        println!("Initialized tracing logs with RUST_LOG={v}");
+            .is_ok()
+        {
+            println!("Initialized tracing logs with RUST_LOG={v}");
+        }
     }
     Ok(())
 }
@@ -164,15 +167,7 @@ pub fn init_logging(
     config: LoggerConfig,
     file_config: FileWriterConfig,
 ) -> anyhow::Result<LogGuard> {
-    // Only set these after successful initialization
-    let is_colored = config.is_colored;
-    let guard = Logger::init_with_config(trader_id, instance_id, config, file_config)?;
-
-    // Set flags only after successful initialization
-    LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
-    LOGGING_COLORED.store(is_colored, Ordering::Relaxed);
-
-    Ok(guard)
+    Logger::init_with_config(trader_id, instance_id, config, file_config)
 }
 
 #[must_use]
@@ -208,10 +203,10 @@ pub fn parse_level_filter_str(s: &str) -> anyhow::Result<LevelFilter> {
 /// Returns an error if a JSON value in the map is not a string or is not a valid log level.
 pub fn parse_component_levels(
     original_map: Option<HashMap<String, serde_json::Value>>,
-) -> anyhow::Result<HashMap<Ustr, LevelFilter>> {
+) -> anyhow::Result<AHashMap<Ustr, LevelFilter>> {
     match original_map {
         Some(map) => {
-            let mut new_map = HashMap::new();
+            let mut new_map = AHashMap::new();
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
                 let s = value.as_str().ok_or_else(|| {
@@ -224,7 +219,7 @@ pub fn parse_component_levels(
             }
             Ok(new_map)
         }
-        None => Ok(HashMap::new()),
+        None => Ok(AHashMap::new()),
     }
 }
 
@@ -358,5 +353,44 @@ mod tests {
     fn test_parse_component_levels_none_returns_empty() {
         let result = parse_component_levels(None).unwrap();
         assert_eq!(result.len(), 0);
+    }
+
+    #[rstest]
+    fn test_logging_clock_set_static_mode() {
+        logging_clock_set_static_mode();
+        assert!(!LOGGING_REALTIME.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    fn test_logging_clock_set_realtime_mode() {
+        logging_clock_set_realtime_mode();
+        assert!(LOGGING_REALTIME.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    fn test_logging_clock_set_static_time() {
+        let test_time: u64 = 1_700_000_000_000_000_000;
+        logging_clock_set_static_time(test_time);
+        let clock = get_atomic_clock_static();
+        assert_eq!(clock.get_time_ns(), test_time);
+    }
+
+    #[rstest]
+    fn test_logging_set_bypass() {
+        logging_set_bypass();
+        assert!(LOGGING_BYPASSED.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    fn test_map_log_level_to_filter() {
+        assert_eq!(map_log_level_to_filter(LogLevel::Off), LevelFilter::Off);
+        assert_eq!(map_log_level_to_filter(LogLevel::Trace), LevelFilter::Trace);
+        assert_eq!(map_log_level_to_filter(LogLevel::Debug), LevelFilter::Debug);
+        assert_eq!(map_log_level_to_filter(LogLevel::Info), LevelFilter::Info);
+        assert_eq!(
+            map_log_level_to_filter(LogLevel::Warning),
+            LevelFilter::Warn
+        );
+        assert_eq!(map_log_level_to_filter(LogLevel::Error), LevelFilter::Error);
     }
 }

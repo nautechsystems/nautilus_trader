@@ -22,13 +22,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = []
-defi = [
-  "dep:alloy-primitives",
-  "dep:nautilus-blockchain",
-  "nautilus-model/defi",
-]
+defi = ["dep:nautilus-blockchain", "nautilus-model/defi"]
 
 [dependencies]
+nautilus-core = { workspace = true }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
 nautilus-model = { workspace = true }
 nautilus-blockchain = { workspace = true, features = [
@@ -43,8 +40,7 @@ log = { workspace = true }
 simple_logger = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-
-alloy-primitives = { workspace = true, optional = true }
+ustr = { workspace = true }
 
 [[bin]]
 name = "nautilus"

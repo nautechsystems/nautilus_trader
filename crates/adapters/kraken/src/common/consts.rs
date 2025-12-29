@@ -39,6 +39,6 @@ pub const KRAKEN_SPOT_WS_PRIVATE_URL: &str = "wss://ws-auth.kraken.com/v2";
 pub const KRAKEN_FUTURES_HTTP_URL: &str = "https://futures.kraken.com";
 pub const KRAKEN_FUTURES_WS_URL: &str = "wss://futures.kraken.com/ws/v1";
 
-// Testnet URLs
-pub const KRAKEN_FUTURES_TESTNET_HTTP_URL: &str = "https://demo-futures.kraken.com";
-pub const KRAKEN_FUTURES_TESTNET_WS_URL: &str = "wss://demo-futures.kraken.com/ws/v1";
+// Demo URLs
+pub const KRAKEN_FUTURES_DEMO_HTTP_URL: &str = "https://demo-futures.kraken.com";
+pub const KRAKEN_FUTURES_DEMO_WS_URL: &str = "wss://demo-futures.kraken.com/ws/v1";

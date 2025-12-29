@@ -26,6 +26,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
+from nautilus_trader.data.aggregation cimport SpreadQuoteAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport DataCommand
@@ -93,7 +94,9 @@ cdef class DataEngine(Component):
     cdef readonly dict[ClientId, DataClient] _clients
     cdef readonly dict[Venue, DataClient] _routing_map
     cdef readonly dict _order_book_intervals
-    cdef readonly dict[BarType, BarAggregator] _bar_aggregators
+    cdef readonly dict[tuple[BarType, UUID4], BarAggregator] _bar_aggregators
+    cdef readonly dict[tuple[InstrumentId, UUID4], SpreadQuoteAggregator] _spread_quote_aggregators
+    cdef readonly dict[InstrumentId, list] _spread_quote_aggregator_handlers
     cdef readonly dict[InstrumentId, list[SyntheticInstrument]] _synthetic_quote_feeds
     cdef readonly dict[InstrumentId, list[SyntheticInstrument]] _synthetic_trade_feeds
     cdef readonly list[InstrumentId] _subscribed_synthetic_quotes
@@ -109,6 +112,8 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, RequestData] _requests
     cdef readonly dict[UUID4, UUID4] _parent_long_request_id
     cdef readonly dict[UUID4, UUID4] _parent_join_request_id
+    cdef readonly dict[UUID4, UUID4] _parent_request_id
+    cdef readonly bint _disable_historical_cache
 
     cdef TopicCache _topic_cache
 
@@ -138,7 +143,6 @@ cdef class DataEngine(Component):
     cpdef bint check_disconnected(self)
     cpdef set[ClientId] get_external_client_ids(self)
     cpdef bint _is_backtest_client(self, DataClient client)
-    cpdef bint is_live_mode(self)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -229,6 +233,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_long_request_response(self, DataResponse response)
     cpdef void _finalize_long_request(self, UUID4 main_request_id)
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request)
+    cpdef void _handle_spread_quote_tick_request(self, RequestQuoteTicks request)
+    cpdef void _finalize_spread_quote_request(self, DataResponse response)
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request)
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request)
     cpdef void _handle_request_data(self, DataClient client, RequestData request)
@@ -274,15 +280,31 @@ cdef class DataEngine(Component):
 
 # -- INTERNAL - Bar Aggregators --------------------------------------------------------------------
 
+    cdef tuple _get_bar_aggregator_key(self, BarType bar_type, UUID4 request_id = *)
+    cdef tuple _get_spread_quote_aggregator_key(self, InstrumentId spread_instrument_id, UUID4 request_id = *)
+    cdef list _get_bar_types_from_aggregators(self)
     cpdef void _init_historical_aggregators(self, RequestData request)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
-    cpdef BarAggregator _create_bar_aggregator(self, BarType bar_type, dict params)
-    cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *)
+    cpdef void _create_bar_aggregator(self, BarType bar_type, dict params, UUID4 request_id = *)
+    cpdef void _setup_bar_aggregator(self, BarType bar_type, bint historical = *, UUID4 request_id = *)
     cpdef void _subscribe_bar_aggregator(self, MarketDataClient client, SubscribeBars command)
-    cpdef void _handle_aggregated_bars(self, DataResponse response)
+    cpdef void _finalize_aggregated_bars_request(self, DataResponse response)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
-    cpdef void _dispose_bar_aggregator(self, BarType bar_type, bint historical = *)
-    cpdef void _unsubscribe_aggregator(self, MarketDataClient client, UnsubscribeBars command)
+    cpdef void _dispose_bar_aggregator(self, BarType bar_type, bint historical = *, UUID4 request_id = *)
+    cpdef void _unsubscribe_bar_aggregator(self, MarketDataClient client, UnsubscribeBars command)
+    cpdef bint _should_request_aggregated_bars(self, RequestData request)
+
+# -- INTERNAL - Spread Quote Aggregators ----------------------------------------------------------
+
+    cpdef void _start_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command)
+    cpdef void _subscribe_spread_quote_aggregator(self, MarketDataClient client, SubscribeQuoteTicks command)
+    cpdef void _create_spread_quote_aggregator(self, InstrumentId spread_instrument_id, dict params, UUID4 request_id = *)
+    cpdef void _setup_spread_quote_aggregator(self, InstrumentId spread_instrument_id, bint historical = *, UUID4 request_id = *)
+    cpdef void _handle_spread_quote(self, Data quote)
+    cpdef void _stop_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command)
+    cpdef void _dispose_spread_quote_aggregator(self, InstrumentId spread_instrument_id, bint historical=*, UUID4 request_id = *)
+    cpdef void _unsubscribe_spread_quote_aggregator(self, MarketDataClient client, UnsubscribeQuoteTicks command)
+    cpdef bint _should_request_spread_quote_ticks(self, RequestQuoteTicks request)
 
 cdef class SnapshotInfo:
     cdef InstrumentId instrument_id

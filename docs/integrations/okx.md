@@ -42,7 +42,7 @@ The OKX adapter includes multiple components, which can be used separately or to
 - `OKXLiveExecClientFactory`: Factory for OKX execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as shown below),
+Most users will define a configuration for a live trading node (as shown below),
 and won’t need to work directly with these lower-level components.
 :::
 
@@ -464,7 +464,27 @@ Or pass them directly in the configuration (not recommended for production).
 
 ## Demo trading
 
-OKX provides a demo trading environment for testing strategies without real funds. To use demo mode, set `is_demo=True` in your client configuration:
+OKX provides a demo trading environment for testing strategies without real funds.
+
+### Setting up a demo account
+
+1. Log into your OKX account at [okx.com](https://www.okx.com).
+2. Navigate to **Trade** → **Demo Trading**.
+3. Go to **Personal Center** within Demo Trading.
+4. Select **Demo Trading API** and create a new API key.
+5. Note down your demo API key, secret, and passphrase.
+
+You can provide demo credentials through environment variables:
+
+```bash
+export OKX_API_KEY="your_demo_api_key"
+export OKX_API_SECRET="your_demo_api_secret"
+export OKX_API_PASSPHRASE="your_demo_passphrase"
+```
+
+### Configuration
+
+Set `is_demo=True` in your client configuration:
 
 ```python
 config = TradingNodeConfig(
@@ -487,10 +507,9 @@ When demo mode is enabled:
 
 - REST API requests include the `x-simulated-trading: 1` header.
 - WebSocket connections use demo endpoints (`wspap.okx.com`).
-- The same API credentials are used as production.
 
 :::note
-You must use API keys created specifically for demo trading. Production API keys will not work in demo mode.
+Demo API keys are separate from production keys. You must create API keys specifically for demo trading through the Demo Trading interface—production API keys will not work in demo mode.
 :::
 
 ## Rate limiting

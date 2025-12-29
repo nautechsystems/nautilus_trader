@@ -54,7 +54,7 @@ use nautilus_dydx::{
 };
 use nautilus_model::{
     data::{BarSpecification, BarType, Data},
-    enums::{BarAggregation, BookType, PriceType},
+    enums::{AggregationSource, BarAggregation, BookType, PriceType},
     identifiers::{ClientId, InstrumentId},
 };
 use tracing::level_filters::LevelFilter;
@@ -153,11 +153,7 @@ async fn test_connect_and_subscribe(
         aggregation: BarAggregation::Minute,
         price_type: PriceType::Last,
     };
-    let bar_type = BarType::new(
-        instrument_id,
-        bar_spec,
-        nautilus_model::enums::AggregationSource::External,
-    );
+    let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
     let subscribe_bars = SubscribeBars::new(
         bar_type,
         Some(client_id),
@@ -217,11 +213,7 @@ async fn test_request_historical_bars(
         aggregation: BarAggregation::Minute,
         price_type: PriceType::Last,
     };
-    let bar_type = BarType::new(
-        instrument_id,
-        bar_spec,
-        nautilus_model::enums::AggregationSource::External,
-    );
+    let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
 
     let now = chrono::Utc::now();
     let small_start = Some(now - chrono::Duration::hours(1));
@@ -432,11 +424,7 @@ async fn test_complete_data_flow(
         aggregation: BarAggregation::Minute,
         price_type: PriceType::Last,
     };
-    let bar_type = BarType::new(
-        instrument_id,
-        bar_spec,
-        nautilus_model::enums::AggregationSource::External,
-    );
+    let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
     let subscribe_bars = SubscribeBars::new(
         bar_type,
         Some(client_id),

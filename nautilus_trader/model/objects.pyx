@@ -449,10 +449,22 @@ cdef class Quantity:
 
         Handles up to 16 decimals of precision (in high-precision mode).
 
+        .. warning::
+
+            This method is primarily for **internal use** and advanced scenarios.
+            Most users should use the standard constructor, ``from_str()``, or
+            ``from_int()`` instead.
+
+            The raw value **must** be a valid multiple of the scale factor for
+            the given precision (divisible by 10^(FIXED_PRECISION - precision)).
+            See the documentation for details:
+            https://nautilustrader.io/docs/nightly/concepts/data#fixed-point-precision-and-raw-values
+
         Parameters
         ----------
         raw : int
-            The raw fixed-point quantity value.
+            The raw fixed-point quantity value. Must be a valid multiple of the
+            scale factor for the given precision.
         precision : uint8_t
             The precision for the quantity. Use a precision of 0 for whole numbers
             (no fractional units).
@@ -920,10 +932,21 @@ cdef class Price:
 
         Handles up to 16 decimals of precision (in high-precision mode).
 
+        .. warning::
+
+            This method is primarily for **internal use** and advanced scenarios.
+            Most users should use the standard constructor or ``from_str()`` instead.
+
+            The raw value **must** be a valid multiple of the scale factor for
+            the given precision (divisible by 10^(FIXED_PRECISION - precision)).
+            See the documentation for details:
+            https://nautilustrader.io/docs/nightly/concepts/data#fixed-point-precision-and-raw-values
+
         Parameters
         ----------
         raw : int
-            The raw fixed-point price value.
+            The raw fixed-point price value. Must be a valid multiple of the
+            scale factor for the given precision.
         precision : uint8_t
             The precision for the price. Use a precision of 0 for whole numbers
             (no fractional units).

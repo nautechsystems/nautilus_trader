@@ -13,6 +13,33 @@ The following applies to **all** source files (Rust, Python, Cython, shell, etc.
 - Lines should generally stay below **100 characters**; wrap thoughtfully when necessary.
 - Prefer American English spelling (`color`, `serialize`, `behavior`).
 
+### Shell script portability
+
+Shell scripts in this repository use **bash** (not POSIX sh) and must be portable across **Linux** and **macOS**. User-facing scripts (e.g., `scripts/cli/install.sh`) must also work on **Windows** via Git Bash or WSL.
+
+**Shebang**: Always use `#!/usr/bin/env bash` for portability.
+
+**Common pitfalls**: GNU and BSD utilities differ between Linux and macOS:
+
+| Command              | Linux (GNU)       | macOS (BSD)       | Portable solution                        |
+|----------------------|-------------------|-------------------|------------------------------------------|
+| `sed -i`             | `sed -i 's/…'`    | `sed -i '' 's/…'` | Use backup extension: `sed -i.bak 's/…'` |
+| `stat` (file size)   | `stat -c%s file`  | `stat -f%z file`  | Detect with `stat --version`             |
+| `sha256sum`          | `sha256sum file`  | N/A               | Use `shasum -a 256` or detect            |
+| `readlink -f`        | Works             | N/A               | Avoid, or use `realpath`                 |
+| `grep -P` (PCRE)     | Works             | N/A               | Use `-E` (extended regex) instead        |
+| `date` (nanoseconds) | `date +%N`        | N/A               | Use `$RANDOM` for cache-busting          |
+
+**Bash version**: macOS ships with bash 3.2; avoid bash 4+ features in user-facing scripts:
+
+| Feature                           | Bash version | Alternative                      |
+|-----------------------------------|--------------|----------------------------------|
+| Associative arrays (`declare -A`) | 4.0+         | Use files or simple arrays       |
+| `readarray` / `mapfile`           | 4.0+         | Use `while read` loops           |
+| `${var,,}` / `${var^^}` (case)    | 4.0+         | Use `tr '[:upper:]' '[:lower:]'` |
+
+**CI scripts** (`scripts/ci/*`) run on Linux runners, so bash 4+ and GNU tools are acceptable there.
+
 ### Comment conventions
 
 1. Generally leave **one blank line above** every comment block or docstring so it is visually separated from code.
@@ -37,6 +64,14 @@ documentation feel natural to end-users.
    - ✅ `"Expected string, was {type(value)}"`
 
 2. **Spelling**: Use "hardcoded" (single word) rather than "hard-coded" or "hard coded" – this is the more modern and accepted spelling.
+
+### Naming conventions
+
+1. **Internal fields**: Abbreviations are acceptable for private/internal fields (e.g., `_price_prec`, `_size_prec`) to keep hot-path code concise.
+
+2. **User-facing API**: Use full, descriptive names for public properties, function parameters, return types, and metric names/labels (e.g., `price_precision`, `size_precision`). This prevents abbreviated terminology from leaking into dashboards or alerts.
+
+3. **Error messages and logs**: Use full words for clarity (e.g., "price precision" not "price prec"). The user should never see abbreviated terminology.
 
 ### Formatting
 

@@ -226,8 +226,8 @@ pub fn create_instrument_from_def(
     let raw_symbol = Symbol::new(def.base);
     let base_currency = get_currency(&def.base);
     let quote_currency = get_currency(&def.quote);
-    let price_increment = Price::from(&def.tick_size.to_string());
-    let size_increment = Quantity::from(&def.lot_size.to_string());
+    let price_increment = Price::from(def.tick_size.to_string());
+    let size_increment = Quantity::from(def.lot_size.to_string());
 
     match def.market_type {
         HyperliquidMarketType::Spot => Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
@@ -599,10 +599,6 @@ pub fn parse_position_status_report(
         avg_px_open,
     ))
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

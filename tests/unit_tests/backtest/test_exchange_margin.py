@@ -52,6 +52,7 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderPendingCancel
@@ -2766,6 +2767,46 @@ class TestSimulatedExchangeMarginAccount:
         assert order.status == OrderStatus.EXPIRED
         assert len(self.exchange.get_open_orders()) == 0
 
+    def test_expire_order_generates_event_with_correct_account_id(self) -> None:
+        # Arrange: Prepare market
+        tick1 = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick1)
+        self.exchange.process_quote_tick(tick1)
+
+        order = self.strategy.order_factory.stop_market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            _USDJPY_SIM.make_price(96.711),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        tick2 = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=96.709,
+            ask_price=96.710,
+            ts_event=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_init=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+        )
+
+        # Act
+        self.exchange.process_quote_tick(tick2)
+
+        # Assert
+        assert order.status == OrderStatus.EXPIRED
+        # Verify the OrderExpired event has correct account_id (regression test for GH-3272)
+        expired_event = order.last_event
+        assert isinstance(expired_event, OrderExpired)
+        assert expired_event.account_id == self.exchange.get_account().id
+
     def test_process_quote_tick_fills_buy_stop_order(self) -> None:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
@@ -2993,7 +3034,8 @@ class TestSimulatedExchangeMarginAccount:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == Price.from_str("90.000")
+        # Stop market order fills at current bid price (89.997), not trigger price (90.000)
+        assert order.avg_px == 89.997
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
     def test_process_quote_tick_fills_sell_limit_order(self) -> None:
@@ -3452,6 +3494,186 @@ class TestSimulatedExchangeMarginAccount:
         # Assert
         assert entry.status == OrderStatus.ACCEPTED
         assert entry.quantity == 200_000
+
+    def test_stop_market_buy_triggers_during_bar_high_fills_at_trigger_price(self) -> None:
+        # Arrange
+        bar1 = Bar(
+            bar_type=BarType.from_str(f"{_USDJPY_SIM.id.value}-1-MINUTE-LAST-EXTERNAL"),
+            open=Price.from_str("90.000"),
+            high=Price.from_str("90.010"),
+            low=Price.from_str("89.990"),
+            close=Price.from_str("90.005"),
+            volume=Quantity.from_int(20_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(bar1)
+        self.exchange.process_bar(bar1)
+
+        order = self.strategy.order_factory.stop_market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("90.015"),  # Trigger above current market
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        assert order.status == OrderStatus.ACCEPTED
+
+        # Act: Bar high moves through trigger price (no gap at open)
+        bar2 = Bar(
+            bar_type=BarType.from_str(f"{_USDJPY_SIM.id.value}-1-MINUTE-LAST-EXTERNAL"),
+            open=Price.from_str("90.005"),
+            high=Price.from_str("90.020"),
+            low=Price.from_str("90.000"),
+            close=Price.from_str("90.018"),
+            volume=Quantity.from_int(20_000),
+            ts_event=60_000_000_000,
+            ts_init=60_000_000_000,
+        )
+        self.clock.advance_time(60_000_000_000)
+        self.data_engine.process(bar2)
+        self.exchange.process_bar(bar2)
+
+        # Assert: Fills at trigger price when market moves through
+        assert order.status == OrderStatus.FILLED
+        assert order.avg_px == pytest.approx(90.015, abs=0.001)
+
+    def test_stop_market_sell_triggers_during_bar_low_fills_at_trigger_price(self) -> None:
+        # Arrange
+        bar1 = Bar(
+            bar_type=BarType.from_str(f"{_USDJPY_SIM.id.value}-1-MINUTE-LAST-EXTERNAL"),
+            open=Price.from_str("90.000"),
+            high=Price.from_str("90.010"),
+            low=Price.from_str("89.990"),
+            close=Price.from_str("90.000"),
+            volume=Quantity.from_int(20_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(bar1)
+        self.exchange.process_bar(bar1)
+
+        order = self.strategy.order_factory.stop_market(
+            _USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("89.985"),  # Trigger below current market
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        assert order.status == OrderStatus.ACCEPTED
+
+        # Act: Bar low moves through trigger price (no gap at open)
+        bar2 = Bar(
+            bar_type=BarType.from_str(f"{_USDJPY_SIM.id.value}-1-MINUTE-LAST-EXTERNAL"),
+            open=Price.from_str("90.000"),
+            high=Price.from_str("90.005"),
+            low=Price.from_str("89.980"),
+            close=Price.from_str("89.990"),
+            volume=Quantity.from_int(20_000),
+            ts_event=60_000_000_000,
+            ts_init=60_000_000_000,
+        )
+        self.clock.advance_time(60_000_000_000)
+        self.data_engine.process(bar2)
+        self.exchange.process_bar(bar2)
+
+        # Assert: Fills at trigger price when market moves through
+        assert order.status == OrderStatus.FILLED
+        assert order.avg_px == pytest.approx(89.985, abs=0.001)
+
+    def test_stop_market_buy_triggers_at_bar_open_gap_fills_at_market_price(self) -> None:
+        # Arrange
+        bar1 = Bar(
+            bar_type=BarType.from_str(f"{_USDJPY_SIM.id.value}-1-MINUTE-LAST-EXTERNAL"),
+            open=Price.from_str("90.000"),
+            high=Price.from_str("90.010"),
+            low=Price.from_str("89.990"),
+            close=Price.from_str("90.005"),
+            volume=Quantity.from_int(20_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(bar1)
+        self.exchange.process_bar(bar1)
+
+        order = self.strategy.order_factory.stop_market(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("90.015"),  # Trigger above current market
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        assert order.status == OrderStatus.ACCEPTED
+
+        # Act: Bar gaps up past trigger price at open
+        bar2 = Bar(
+            bar_type=BarType.from_str(f"{_USDJPY_SIM.id.value}-1-MINUTE-LAST-EXTERNAL"),
+            open=Price.from_str("90.025"),
+            high=Price.from_str("90.030"),
+            low=Price.from_str("90.020"),
+            close=Price.from_str("90.028"),
+            volume=Quantity.from_int(20_000),
+            ts_event=60_000_000_000,
+            ts_init=60_000_000_000,
+        )
+        self.clock.advance_time(60_000_000_000)
+        self.data_engine.process(bar2)
+        self.exchange.process_bar(bar2)
+
+        # Assert: Fills at market price (gap scenario)
+        assert order.status == OrderStatus.FILLED
+        assert order.avg_px == pytest.approx(90.025, abs=0.001)
+
+    def test_stop_market_sell_triggers_at_bar_open_gap_fills_at_market_price(self) -> None:
+        # Arrange
+        bar1 = Bar(
+            bar_type=BarType.from_str(f"{_USDJPY_SIM.id.value}-1-MINUTE-LAST-EXTERNAL"),
+            open=Price.from_str("90.000"),
+            high=Price.from_str("90.010"),
+            low=Price.from_str("89.990"),
+            close=Price.from_str("89.995"),
+            volume=Quantity.from_int(20_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(bar1)
+        self.exchange.process_bar(bar1)
+
+        order = self.strategy.order_factory.stop_market(
+            _USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("89.985"),  # Trigger below current market
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        assert order.status == OrderStatus.ACCEPTED
+
+        # Act: Bar gaps down past trigger price at open
+        bar2 = Bar(
+            bar_type=BarType.from_str(f"{_USDJPY_SIM.id.value}-1-MINUTE-LAST-EXTERNAL"),
+            open=Price.from_str("89.975"),
+            high=Price.from_str("89.980"),
+            low=Price.from_str("89.970"),
+            close=Price.from_str("89.972"),
+            volume=Quantity.from_int(20_000),
+            ts_event=60_000_000_000,
+            ts_init=60_000_000_000,
+        )
+        self.clock.advance_time(60_000_000_000)
+        self.data_engine.process(bar2)
+        self.exchange.process_bar(bar2)
+
+        # Assert: Fills at market price (gap scenario)
+        assert order.status == OrderStatus.FILLED
+        assert order.avg_px == pytest.approx(89.975, abs=0.001)
 
 
 class TestSimulatedExchangeL1:

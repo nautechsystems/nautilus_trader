@@ -27,7 +27,7 @@ From the repository root:
 make pytest
 # or
 uv run --active --no-sync pytest --new-first --failed-first
-# or simply
+# or
 pytest
 ```
 
@@ -38,6 +38,8 @@ make test-performance
 # or
 uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
 ```
+
+The `--benchmark-disable-gc` flag prevents garbage collection from skewing results. Run performance tests in isolation (not with unit tests) to avoid interference.
 
 ### Rust tests
 
@@ -78,14 +80,15 @@ make cargo-test-crate-nautilus-serialization FEATURES="capnp"
 - **Group assertions** when possible: perform all setup/act steps first, then assert together to avoid the act-assert-act smell.
 - Use `unwrap`, `expect`, or direct `panic!`/`assert` calls inside tests; clarity and conciseness matter more than defensive error handling here.
 
+For Rust-specific test conventions (module structure, `#[rstest]`, parameterization), see the [Rust guide](rust.md#testing-conventions).
+
 ## Waiting for asynchronous effects
 
 When waiting for background work to complete, prefer the polling helpers `await eventually(...)` from `nautilus_trader.test_kit.functions` and `wait_until_async(...)` from `nautilus_common::testing` instead of arbitrary sleeps. They surface failures faster and reduce flakiness in CI because they stop as soon as the condition is satisfied or time out with a useful error.
 
 ## Mocks
 
-Use lightweight collaborators as mocks to keep the suite simple and avoid heavy mocking frameworks.
-We still rely on `MagicMock` in specific cases where it provides the most convenient tooling.
+Prefer hand-written stubs that return fixed values over mocking frameworks. Use `MagicMock` only when you need to assert call counts/arguments or simulate complex state changes. Avoid mocking the objects you're actually testing.
 
 ## Code coverage
 

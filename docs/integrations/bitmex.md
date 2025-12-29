@@ -29,7 +29,7 @@ on the use case.
 - `BitmexLiveExecClientFactory`: Factory for BitMEX execution clients (used by the trading node builder).
 
 :::note
-Most users will simply define a configuration for a live trading node (as below),
+Most users will define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
 
@@ -54,6 +54,7 @@ NautilusTrader integration guide.
 |-------------------|-----------|---------|-----------------------------------------------------|
 | Spot              | ✓         | ✓       | Limited pairs, unified wallet with derivatives.     |
 | Perpetual Swaps   | ✓         | ✓       | Inverse and linear contracts available.             |
+| Stock Perpetuals  | -         | -       | *Not yet supported*. Currently on testnet only.     |
 | Futures           | ✓         | ✓       | Traditional fixed expiration contracts.             |
 | Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying.      |
 | Prediction Markets| ✓         | ✓       | Event-based contracts, 0-100 pricing, USDT settled. |
@@ -75,6 +76,25 @@ BitMEX has discontinued their options products to focus on their core derivative
 - **Traditional futures**: Fixed expiration date contracts.
 - **Quanto futures**: Contracts settled in a different currency than the underlying.
 - **Prediction markets**: Event-based derivatives (e.g., P_FTXZ26, P_SBFJAILZ26) allowing traders to speculate on outcomes across crypto, finance, and other events. No leverage, priced 0-100, settled in USDT.
+- **Stock perpetuals**: Equity-based perpetuals (e.g., SPYUSDT, CRCLUSDT). *Currently on testnet only; not yet supported by this adapter.*
+
+### Instrument type codes (CFI)
+
+BitMEX uses CFI (Classification of Financial Instruments) codes following the ISO 10962 standard.
+The adapter recognizes the following instrument type codes:
+
+| Code     | Type                 | Status      | Description                                     |
+|----------|----------------------|-------------|-------------------------------------------------|
+| `FFWCSX` | Perpetual Contract   | Supported   | Crypto-based perpetual swaps (e.g., XBTUSD).    |
+| `FFWCSF` | Perpetual FX         | Supported   | FX-based perpetual contracts.                   |
+| `FFCCSX` | Futures              | Supported   | Calendar futures with fixed expiration.         |
+| `FFICSX` | Prediction Market    | Supported   | Event-based prediction contracts.               |
+| `IFXXXP` | Spot                 | Supported   | Spot trading pairs.                             |
+| `FFSCSX` | Stock Perpetual      | Unsupported | Stock/equity-based perpetuals. Testnet only.    |
+| `SRMCSX` | Swap Rate            | Unsupported | Yield-based swap products (historical).         |
+| `MR****` | Index                | Reference   | BitMEX indices (non-tradeable, for price ref).  |
+
+See [BitMEX Typ Values](https://support.bitmex.com/hc/en-gb/articles/6299296145565-What-are-the-Typ-Values-for-Instrument-endpoint) for more details.
 
 ## Symbology
 

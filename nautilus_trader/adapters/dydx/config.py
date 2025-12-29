@@ -87,6 +87,10 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum delay (milliseconds) between retries.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
+    track_cancel_timeout_secs : float, default 60
+        The maximum time (seconds) to track an order after sending a cancel request.
+    track_cancel_interval_secs : float, default 0.1
+        The interval (seconds) between checking the order status after sending a cancel request.
 
     """
 
@@ -100,3 +104,5 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
     proxy_url: str | None = None
+    track_cancel_timeout_secs: float = 60
+    track_cancel_interval_secs: float = 0.1

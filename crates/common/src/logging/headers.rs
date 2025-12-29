@@ -22,8 +22,9 @@ use crate::{enums::LogColor, logging::log_info};
 
 #[rustfmt::skip]
 pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: Ustr) {
-    let mut sys = System::new_all();
-    sys.refresh_all();
+    let mut sys = System::new();
+    sys.refresh_cpu_all();
+    sys.refresh_memory();
 
     let c = component;
 
@@ -53,8 +54,12 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     header_sepr(c, "=================================================================");
     header_sepr(c, " SYSTEM SPECIFICATION");
     header_sepr(c, "=================================================================");
-    header_line(c, &format!("CPU architecture: {}", sys.cpus()[0].brand()));
-    header_line(c, &format!("CPU(s): {} @ {} Mhz", sys.cpus().len(), sys.cpus()[0].frequency()));
+    if let Some(cpu) = sys.cpus().first() {
+        header_line(c, &format!("CPU architecture: {}", cpu.brand()));
+        header_line(c, &format!("CPU(s): {} @ {} MHz", sys.cpus().len(), cpu.frequency()));
+    } else {
+        header_line(c, "CPU: unknown");
+    }
     header_line(c, &format!("OS: {kernel_version}{os_version}"));
 
     log_sysinfo(component);
@@ -114,8 +119,8 @@ fn python_available() -> bool {
 
 #[rustfmt::skip]
 pub fn log_sysinfo(component: Ustr) {
-    let mut sys = System::new_all();
-    sys.refresh_all();
+    let mut sys = System::new();
+    sys.refresh_memory();
 
     let c = component;
 
@@ -125,21 +130,25 @@ pub fn log_sysinfo(component: Ustr) {
     let ram_avail = ram_total - ram_used;
     let ram_avail_p = (ram_avail as f64 / ram_total as f64) * 100.0;
 
-    let swap_total = sys.total_swap();
-    let swap_used = sys.used_swap();
-    let swap_used_p = (swap_used as f64 / swap_total as f64) * 100.0;
-    let swap_avail = swap_total - swap_used;
-    let swap_avail_p = (swap_avail as f64 / swap_total as f64) * 100.0;
-
     header_sepr(c, "=================================================================");
     header_sepr(c, " MEMORY USAGE");
     header_sepr(c, "=================================================================");
     header_line(c, &format!("RAM-Total: {:.2} GiB", bytes_to_gib(ram_total)));
     header_line(c, &format!("RAM-Used: {:.2} GiB ({:.2}%)", bytes_to_gib(ram_used), ram_used_p));
     header_line(c, &format!("RAM-Avail: {:.2} GiB ({:.2}%)", bytes_to_gib(ram_avail), ram_avail_p));
-    header_line(c, &format!("Swap-Total: {:.2} GiB", bytes_to_gib(swap_total)));
-    header_line(c, &format!("Swap-Used: {:.2} GiB ({:.2}%)", bytes_to_gib(swap_used), swap_used_p));
-    header_line(c, &format!("Swap-Avail: {:.2} GiB ({:.2}%)", bytes_to_gib(swap_avail), swap_avail_p));
+
+    let swap_total = sys.total_swap();
+    if swap_total > 0 {
+        let swap_used = sys.used_swap();
+        let swap_used_p = (swap_used as f64 / swap_total as f64) * 100.0;
+        let swap_avail = swap_total.saturating_sub(swap_used);
+        let swap_avail_p = (swap_avail as f64 / swap_total as f64) * 100.0;
+        header_line(c, &format!("Swap-Total: {:.2} GiB", bytes_to_gib(swap_total)));
+        header_line(c, &format!("Swap-Used: {:.2} GiB ({:.2}%)", bytes_to_gib(swap_used), swap_used_p));
+        header_line(c, &format!("Swap-Avail: {:.2} GiB ({:.2}%)", bytes_to_gib(swap_avail), swap_avail_p));
+    } else {
+        header_line(c, "Swap: disabled");
+    }
 }
 
 fn header_sepr(c: Ustr, s: &str) {

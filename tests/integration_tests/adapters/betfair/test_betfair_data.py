@@ -21,7 +21,6 @@ import msgspec
 import pytest
 from betfair_parser.spec.streaming import stream_decode
 
-from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
@@ -50,7 +49,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -302,7 +300,7 @@ def test_orderbook_repr(data_client, mock_data_engine_process):
 
     # Assert
     ob_snap = mock_data_engine_process.call_args_list[14][0][0]
-    ob = create_betfair_order_book(InstrumentId(Symbol("1"), BETFAIR_VENUE))
+    ob = create_betfair_order_book(ob_snap.instrument_id)
     ob.apply(ob_snap)
     assert ob.best_ask_price() == betfair_float_to_price(1.71)
     assert ob.best_bid_price() == betfair_float_to_price(1.70)

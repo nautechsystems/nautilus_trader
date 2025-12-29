@@ -42,7 +42,6 @@ base64 = { workspace = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true }
 pem = { workspace = true }
-rand = { workspace = true }
 rustls = { workspace = true }
 tracing = { workspace = true }
 webpki-roots = { workspace = true }

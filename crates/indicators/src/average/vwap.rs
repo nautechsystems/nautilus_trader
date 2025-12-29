@@ -108,9 +108,6 @@ impl Display for VolumeWeightedAveragePrice {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_model::data::Bar;
@@ -289,7 +286,7 @@ mod tests {
     #[rstest]
     fn test_handle_bar_matches_update_raw(
         mut indicator_vwap: VolumeWeightedAveragePrice,
-        bar_ethusdt_binance_minute_bid: nautilus_model::data::Bar,
+        bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_vwap.handle_bar(&bar_ethusdt_binance_minute_bid);
 

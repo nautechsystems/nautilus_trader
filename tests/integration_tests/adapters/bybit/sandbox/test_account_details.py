@@ -27,7 +27,6 @@ async def main():
 
         print(f"{details.id=}")
         print(f"{details.note=}")
-        print(f"{details.api_key=}")
         print(f"{details.read_only=}")
         print(f"{details.key_type=}")
         print(f"{details.user_id=}")

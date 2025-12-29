@@ -68,13 +68,24 @@ runs:
         echo "CAPNP_PREFIX=$GITHUB_WORKSPACE/.cache/capnp" >> $GITHUB_ENV
         echo "$GITHUB_WORKSPACE/.cache/capnp/bin" >> $GITHUB_PATH
 
+    - name: Get Linux version
+      if: runner.os == 'Linux'
+      id: linux-version
+      shell: bash
+      run: echo "release=$(lsb_release -rs)" >> "$GITHUB_OUTPUT"
+
+    - name: Get capnp version from capnp-version
+      shell: bash
+      run: |
+        echo "CAPNP_VERSION=$(cat capnp-version)" >> $GITHUB_ENV
+
     - name: Cache Cap'n Proto (Linux)
       if: runner.os == 'Linux'
       id: cache-capnp
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ${{ github.workspace }}/.cache/capnp
-        key: capnp-linux-1.2.0-${{ runner.arch }}
+        key: capnp-linux-${{ steps.linux-version.outputs.release }}-${{ env.CAPNP_VERSION }}-${{ runner.arch }}
 
     - name: Install capnp
       if: runner.os == 'Linux'
@@ -157,6 +168,7 @@ runs:
       if: inputs.build-type != 'pre-commit'
       # https://github.com/Mozilla-Actions/sccache-action
       uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+      continue-on-error: true # Build continues without cache if sccache setup fails
 
     # > --------------------------------------------------
     # > Python

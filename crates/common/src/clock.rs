@@ -28,8 +28,8 @@ use chrono::{DateTime, Utc};
 use nautilus_core::{
     AtomicTime, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
+    formatting::Separable,
 };
-use thousands::Separable;
 use ustr::Ustr;
 
 use crate::timer::{
@@ -458,10 +458,9 @@ impl TestClock {
 
         let from_time_ns = self.time.get_time_ns();
 
-        // Time should be non-decreasing
         assert!(
             to_time_ns >= from_time_ns,
-            "`to_time_ns` {to_time_ns} was < `from_time_ns` {from_time_ns}"
+            "Invariant violated: time must be non-decreasing, `to_time_ns` {to_time_ns} < `from_time_ns` {from_time_ns}"
         );
 
         if set_time {
@@ -510,10 +509,9 @@ impl TestClock {
 
         let from_time_ns = self.time.get_time_ns();
 
-        // Time should be non-decreasing
         assert!(
             to_time_ns >= from_time_ns,
-            "`to_time_ns` {to_time_ns} was < `from_time_ns` {from_time_ns}"
+            "Invariant violated: time must be non-decreasing, `to_time_ns` {to_time_ns} < `from_time_ns` {from_time_ns}"
         );
 
         self.time.set_time(to_time_ns);
@@ -748,10 +746,6 @@ impl Clock for TestClock {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -890,6 +884,38 @@ mod tests {
 
         assert!(*default_called.lock().expect(MUTEX_POISONED));
         assert!(*custom_called.lock().expect(MUTEX_POISONED));
+    }
+
+    #[rstest]
+    fn test_timer_with_rust_local_callback() {
+        use std::{cell::RefCell, rc::Rc};
+
+        let mut clock = TestClock::new();
+        let call_count = Rc::new(RefCell::new(0_u32));
+        let call_count_clone = Rc::clone(&call_count);
+
+        // Create RustLocal callback using Rc (not Send/Sync)
+        let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event: TimeEvent| {
+            *call_count_clone.borrow_mut() += 1;
+        });
+
+        clock
+            .set_time_alert_ns(
+                "local_timer",
+                (*clock.timestamp_ns() + 1000).into(),
+                Some(TimeEventCallback::from(callback)),
+                None,
+            )
+            .unwrap();
+
+        let events = clock.advance_time(UnixNanos::from(*clock.timestamp_ns() + 1000), true);
+        let handlers = clock.match_handlers(events);
+
+        for handler in handlers {
+            handler.callback.call(handler.event);
+        }
+
+        assert_eq!(*call_count.borrow(), 1);
     }
 
     #[rstest]

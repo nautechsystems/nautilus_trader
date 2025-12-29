@@ -687,9 +687,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.exchange.process(0)
 
         # Act
+        new_qty = ETHUSDT_PERP_BINANCE.make_qty(5)
         self.strategy.modify_order(
             order=sl,
-            quantity=Quantity.from_int(5),
+            quantity=new_qty,
             trigger_price=sl.trigger_price,
         )
         self.exchange.process(0)
@@ -698,8 +699,8 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert en.status == OrderStatus.FILLED
         assert sl.status == OrderStatus.ACCEPTED
         assert tp.status == OrderStatus.ACCEPTED
-        assert sl.quantity == Quantity.from_int(5)
-        assert tp.quantity == Quantity.from_int(5)
+        assert sl.quantity == new_qty
+        assert tp.quantity == new_qty
         assert len(self.exchange.get_open_orders()) == 2
         assert len(self.exchange.cache.positions_open()) == 1
 

@@ -18,7 +18,7 @@ use std::{cell::RefCell, rc::Rc};
 use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
-    clock::Clock,
+    clock::{Clock, TestClock},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
         SubmitOrder, SubmitOrderList,
@@ -66,8 +66,7 @@ impl StubExecutionClient {
             venue,
             oms_type,
             is_connected: false,
-            clock: clock
-                .unwrap_or_else(|| Rc::new(RefCell::new(nautilus_common::clock::TestClock::new()))),
+            clock: clock.unwrap_or_else(|| Rc::new(RefCell::new(TestClock::new()))),
             cache: Rc::new(RefCell::new(Cache::new(None, None))),
         }
     }

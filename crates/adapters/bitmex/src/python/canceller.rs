@@ -17,6 +17,7 @@
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
+    enums::OrderSide,
     identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
     python::instruments::pyobject_to_instrument_any,
 };
@@ -171,7 +172,7 @@ impl CancelBroadcaster {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        order_side: Option<nautilus_model::enums::OrderSide>,
+        order_side: Option<OrderSide>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let broadcaster = self.clone_for_async();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {

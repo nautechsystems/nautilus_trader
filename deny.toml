@@ -5,7 +5,7 @@
 # Dependency Graph Configuration
 # =============================================================================
 [graph]
-all-features = false
+all-features = true
 no-default-features = false
 
 [output]
@@ -21,12 +21,11 @@ ignore = [
   # TODO: Monitor https://github.com/alloy-rs/alloy for migration to pastey or alternative
   { id = "RUSTSEC-2024-0436", reason = "paste crate is unmaintained but a transitive dependency via alloy" },
 
-  # fast-float has soundness issues and is unmaintained, pulled in via hypersync-client
-  # hypersync-client is optional (feature flag), so advisory only applies when feature is enabled
-  # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for polars upgrade
-  # Consider migrating to fast-float2 fork once hypersync-client updates
-  { id = "RUSTSEC-2024-0379", reason = "fast-float is transitive via hypersync-client→polars-arrow (optional dependency)" },
-  { id = "RUSTSEC-2025-0003", reason = "fast-float is transitive via hypersync-client→polars-arrow (optional dependency)" },
+  # rustls-pemfile is unmaintained, pulled in via nautilus-network and various TLS dependencies
+  # Users are encouraged to migrate to rustls-pki-types directly but dependencies haven't updated yet
+  # This is not a security vulnerability, just a maintenance status advisory
+  # TODO: Monitor upstream TLS dependencies for migration
+  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a security vulnerability)" },
 
   # unic-* crates are unmaintained, pulled in via pyo3-stub-gen→rustpython-parser
   # This is dev-time only for generating .pyi stub files, not a runtime security risk
@@ -37,6 +36,12 @@ ignore = [
   { id = "RUSTSEC-2025-0090", reason = "unic-emoji-char unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0100", reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
+
+  # ruint reciprocal_mg10 unsoundness - transitive via alloy/nybbles
+  # We do not use reciprocal_mg10 directly, and alloy only uses ruint for bigint operations
+  # No fix available upstream
+  # TODO: Monitor https://github.com/recmo/uint/issues/550 for fix
+  { id = "RUSTSEC-2025-0137", reason = "ruint via alloy, we don't use reciprocal_mg10 (not affected)" },
 ]
 
 # =============================================================================
@@ -137,11 +142,9 @@ skip = [
   { crate = "darling_macro" },
   { crate = "derive_more" },
   { crate = "derive_more-impl" },
-  { crate = "syn" },
 
-  # Compression crates - version fragmentation between polars and parquet
-  { crate = "brotli" },
-  { crate = "brotli-decompressor" },
+  # Case conversion - version fragmentation via derive_more
+  { crate = "convert_case" },
 
   # Common utility crates with version fragmentation across ecosystem
   { crate = "base64" },

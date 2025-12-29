@@ -39,14 +39,14 @@ use nautilus_execution::trailing::{
 use nautilus_model::{
     accounts::{Account, AccountAny},
     enums::{
-        InstrumentClass, OrderSide, OrderStatus, TimeInForce, TradingState, TrailingOffsetType,
-        TriggerType,
+        InstrumentClass, OrderSide, OrderStatus, PositionSide, TimeInForce, TradingState,
+        TrailingOffsetType, TriggerType,
     },
     events::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny, OrderList},
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
 };
 use nautilus_portfolio::Portfolio;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -145,7 +145,7 @@ impl RiskEngine {
             "ORDER_SUBMIT_THROTTLER".to_string(),
             success_handler,
             Some(failure_handler),
-            Ustr::from(&UUID4::new().to_string()),
+            Ustr::from(UUID4::new().as_str()),
         )
     }
 
@@ -192,7 +192,7 @@ impl RiskEngine {
             "ORDER_MODIFY_THROTTLER".to_string(),
             success_handler,
             Some(failure_handler),
-            Ustr::from(&UUID4::new().to_string()),
+            Ustr::from(UUID4::new().as_str()),
         )
     }
 
@@ -632,9 +632,39 @@ impl RiskEngine {
             AccountAny::Margin(_) => return true, // TODO: Determine risk controls for margin
         };
         let free = cash_account.balance_free(Some(instrument.quote_currency()));
+        let allow_borrowing = cash_account.allow_borrowing;
         if self.config.debug {
             log::debug!("Free cash: {free:?}");
         }
+
+        // Get net LONG position quantity for this instrument (for position-reducing sell checks),
+        // accounting for already submitted (but unfilled) SELL orders to prevent overselling.
+        let (net_long_qty_raw, pending_sell_qty_raw) = {
+            let cache = self.cache.borrow();
+            let long_qty: QuantityRaw = cache
+                .positions_open(None, Some(&instrument.id()), None, Some(PositionSide::Long))
+                .iter()
+                .map(|pos| pos.quantity.raw)
+                .sum();
+            let pending_sells: QuantityRaw = cache
+                .orders_open(None, Some(&instrument.id()), None, Some(OrderSide::Sell))
+                .iter()
+                .map(|ord| ord.leaves_qty().raw)
+                .sum();
+            (long_qty, pending_sells)
+        };
+
+        // Available quantity is long position minus pending sells
+        let available_long_qty_raw = net_long_qty_raw.saturating_sub(pending_sell_qty_raw);
+
+        if self.config.debug && net_long_qty_raw > 0 {
+            log::debug!(
+                "Net LONG qty (raw): {net_long_qty_raw}, pending sells: {pending_sell_qty_raw}, available: {available_long_qty_raw}"
+            );
+        }
+
+        // Track cumulative sell quantity to determine position-reducing vs position-opening sells
+        let mut cum_sell_qty_raw: QuantityRaw = 0;
 
         let mut cum_notional_buy: Option<Money> = None;
         let mut cum_notional_sell: Option<Money> = None;
@@ -900,7 +930,9 @@ impl RiskEngine {
                 log::debug!("Balance impact: {order_balance_impact}");
             }
 
-            if let Some(free_val) = free
+            // Skip balance check when borrowing is enabled (e.g. spot margin trading)
+            if !allow_borrowing
+                && let Some(free_val) = free
                 && (free_val.as_decimal() + order_balance_impact.as_decimal()) < Decimal::ZERO
             {
                 self.deny_order(
@@ -932,55 +964,51 @@ impl RiskEngine {
                     log::debug!("Cumulative notional BUY: {cum_notional_buy:?}");
                 }
 
-                if let (Some(free), Some(cum_notional_buy)) = (free, cum_notional_buy)
+                if !allow_borrowing
+                    && let (Some(free), Some(cum_notional_buy)) = (free, cum_notional_buy)
                     && cum_notional_buy > free
                 {
                     self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}"));
                     return false; // Denied
                 }
             } else if order.is_sell() {
-                if cash_account.base_currency.is_some() {
-                    if order.is_reduce_only() {
-                        if self.config.debug {
-                            log::debug!(
-                                "Reduce-only SELL skips cumulative notional free-balance check"
-                            );
-                        }
-                    } else {
-                        match cum_notional_sell.as_mut() {
-                            Some(cum_notional_buy_val) => {
-                                cum_notional_buy_val.raw += order_balance_impact.raw;
-                            }
-                            None => {
-                                cum_notional_sell = Some(Money::from_raw(
-                                    order_balance_impact.raw,
-                                    order_balance_impact.currency,
-                                ));
-                            }
-                        }
-                        if self.config.debug {
-                            log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
-                        }
+                let is_position_reducing_sell = order.is_reduce_only()
+                    || (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw;
+                cum_sell_qty_raw += effective_quantity.raw;
 
-                        if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
-                            && cum_notional_sell > free
-                        {
-                            self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
-                            return false; // Denied
+                if is_position_reducing_sell {
+                    if self.config.debug {
+                        log::debug!("Position-reducing SELL skips balance check");
+                    }
+                    continue;
+                }
+
+                if cash_account.base_currency.is_some() {
+                    match cum_notional_sell.as_mut() {
+                        Some(cum_notional_buy_val) => {
+                            cum_notional_buy_val.raw += order_balance_impact.raw;
                         }
+                        None => {
+                            cum_notional_sell = Some(Money::from_raw(
+                                order_balance_impact.raw,
+                                order_balance_impact.currency,
+                            ));
+                        }
+                    }
+                    if self.config.debug {
+                        log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
+                    }
+
+                    if !allow_borrowing
+                        && let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
+                        && cum_notional_sell > free
+                    {
+                        self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                        return false; // Denied
                     }
                 }
                 // Account is already of type Cash, so no check
                 else if let Some(base_currency) = base_currency {
-                    if order.is_reduce_only() {
-                        if self.config.debug {
-                            log::debug!(
-                                "Reduce-only SELL skips base-currency cumulative free check"
-                            );
-                        }
-                        continue;
-                    }
-
                     let cash_value = Money::from_raw(
                         effective_quantity
                             .raw
@@ -1014,7 +1042,8 @@ impl RiskEngine {
                     if self.config.debug {
                         log::debug!("Cumulative notional SELL: {cum_notional_sell:?}");
                     }
-                    if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
+                    if !allow_borrowing
+                        && let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell)
                         && cum_notional_sell.raw > free.raw
                     {
                         self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
@@ -1124,14 +1153,17 @@ impl RiskEngine {
             return;
         }
 
-        let mut cache = self.cache.borrow_mut();
-        if !cache.order_exists(&order.client_order_id()) {
-            cache
-                .add_order(order.clone(), None, None, false)
-                .map_err(|e| {
-                    log::error!("Cannot add order to cache: {e}");
-                })
-                .unwrap();
+        // Scope the cache borrow to avoid RefCell conflict when sending to ExecEngine
+        {
+            let mut cache = self.cache.borrow_mut();
+            if !cache.order_exists(&order.client_order_id()) {
+                cache
+                    .add_order(order.clone(), None, None, false)
+                    .map_err(|e| {
+                        log::error!("Cannot add order to cache: {e}");
+                    })
+                    .unwrap();
+            }
         }
 
         let denied = OrderEventAny::Denied(OrderDenied::new(

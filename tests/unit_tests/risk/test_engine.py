@@ -19,6 +19,7 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.messages import TradingStateChanged
@@ -1523,6 +1524,203 @@ class TestRiskEngineWithCashAccount:
         # Assert
         assert order.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
+
+    def test_submit_order_when_over_free_balance_with_borrowing_enabled_then_accepts(self):
+        # Arrange - Test that orders exceeding free balance are accepted when
+        # borrowing is enabled (e.g. spot margin trading on Bybit)
+
+        # Use a unique venue to avoid parallel test conflicts on global state
+        borrow_venue = Venue("SIM_BORROW")
+        borrow_account_id = AccountId("SIM_BORROW-001")
+
+        quote = TestDataStubs.quote_tick(_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        # Register cash borrowing for the venue BEFORE account is created
+        # This mirrors how the Bybit adapter enables spot margin borrowing
+        AccountFactory.register_cash_borrowing(borrow_venue.value)
+
+        try:
+            self.msgbus = MessageBus(
+                trader_id=self.trader_id,
+                clock=self.clock,
+            )
+            self.cache = TestComponentStubs.cache()
+            self.portfolio = Portfolio(
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+            )
+            self.exec_engine = ExecutionEngine(
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                config=ExecEngineConfig(debug=True),
+            )
+            self.risk_engine = RiskEngine(
+                portfolio=self.portfolio,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                config=RiskEngineConfig(debug=True),
+            )
+            self.exec_client = MockExecutionClient(
+                client_id=ClientId(borrow_venue.value),
+                venue=borrow_venue,
+                account_type=AccountType.CASH,
+                base_currency=USD,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+            )
+
+            self.portfolio.update_account(
+                TestEventStubs.cash_account_state(account_id=borrow_account_id),
+            )
+            self.exec_engine.register_client(self.exec_client)
+            self.cache.add_instrument(_AUDUSD_SIM)
+            self.cache.add_quote_tick(quote)
+
+            self.exec_engine.start()
+
+            strategy = Strategy()
+            strategy.register(
+                trader_id=self.trader_id,
+                portfolio=self.portfolio,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+            )
+
+            order = strategy.order_factory.market(
+                _AUDUSD_SIM.id,
+                OrderSide.BUY,
+                Quantity.from_int(10_000_000),
+            )
+
+            submit_order = SubmitOrder(
+                trader_id=self.trader_id,
+                strategy_id=strategy.id,
+                position_id=None,
+                order=order,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+
+            # Act
+            self.risk_engine.execute(submit_order)
+
+            # Assert - Order should NOT be denied because borrowing is enabled
+            assert order.status == OrderStatus.INITIALIZED
+            assert self.exec_engine.command_count == 1  # Command reaches engine
+        finally:
+            # Clean up global state to prevent leakage to other tests
+            AccountFactory.deregister_cash_borrowing(borrow_venue.value)
+
+    def test_submit_sell_order_reducing_long_position_skips_balance_check(self):
+        # Arrange (issue #3256)
+        self.exec_engine.start()
+
+        # Need enough balance to cover BUY notional + commission (100,000 * 0.00002 = 2 USD)
+        initial_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100_010, USD),
+                    Money(0, USD),
+                    Money(100_010, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(initial_state)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        entry_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        submit_entry = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=entry_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_entry)
+        self.exec_engine.process(TestEventStubs.order_submitted(entry_order))
+        self.exec_engine.process(TestEventStubs.order_accepted(entry_order))
+        fill = TestEventStubs.order_filled(entry_order, _AUDUSD_SIM)
+        self.exec_engine.process(fill)
+
+        positions = self.cache.positions_open()
+        assert len(positions) == 1, f"Expected 1 open position, found {len(positions)}"
+
+        # Simulate all cash used to buy
+        limited_state = AccountState(
+            account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(100, USD),  # Very low balance
+                    Money(0, USD),
+                    Money(100, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(limited_state)
+
+        # SELL to close position (NOT reduce_only) - selling generates cash
+        exit_order = strategy.order_factory.market(
+            _AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+        )
+
+        submit_exit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=exit_order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_exit)
+
+        # Assert
+        assert exit_order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 2
 
     def test_submit_order_list_buys_when_over_free_balance_then_denies(self):
         # Arrange - Initialize market

@@ -102,10 +102,14 @@ impl OKXDataClientConfig {
         Self::default()
     }
 
-    /// Returns `true` when all API credential fields are populated.
+    /// Returns `true` when all API credential fields are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        self.api_key.is_some() && self.api_secret.is_some() && self.api_passphrase.is_some()
+        let has_key = self.api_key.is_some() || std::env::var("OKX_API_KEY").is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var("OKX_API_SECRET").is_ok();
+        let has_passphrase =
+            self.api_passphrase.is_some() || std::env::var("OKX_API_PASSPHRASE").is_ok();
+        has_key && has_secret && has_passphrase
     }
 
     /// Returns the HTTP base URL, falling back to the default when unset.
@@ -226,10 +230,14 @@ impl OKXExecClientConfig {
         Self::default()
     }
 
-    /// Returns `true` when all API credential fields are populated.
+    /// Returns `true` when all API credential fields are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
-        self.api_key.is_some() && self.api_secret.is_some() && self.api_passphrase.is_some()
+        let has_key = self.api_key.is_some() || std::env::var("OKX_API_KEY").is_ok();
+        let has_secret = self.api_secret.is_some() || std::env::var("OKX_API_SECRET").is_ok();
+        let has_passphrase =
+            self.api_passphrase.is_some() || std::env::var("OKX_API_PASSPHRASE").is_ok();
+        has_key && has_secret && has_passphrase
     }
 
     /// Returns the HTTP base URL, falling back to the default when unset.

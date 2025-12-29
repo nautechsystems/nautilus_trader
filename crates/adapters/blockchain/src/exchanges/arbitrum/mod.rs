@@ -25,6 +25,7 @@ mod fluid;
 mod pancakeswap_v3;
 mod sushiswap_v2;
 mod sushiswap_v3;
+mod uniswap_v2;
 mod uniswap_v3;
 mod uniswap_v4;
 
@@ -34,6 +35,7 @@ pub use fluid::FLUID_DEX;
 pub use pancakeswap_v3::PANCAKESWAP_V3;
 pub use sushiswap_v2::SUSHISWAP_V2;
 pub use sushiswap_v3::SUSHISWAP_V3;
+pub use uniswap_v2::UNISWAP_V2;
 pub use uniswap_v3::UNISWAP_V3;
 pub use uniswap_v4::UNISWAP_V4;
 
@@ -46,6 +48,7 @@ pub static ARBITRUM_DEX_EXTENDED_MAP: LazyLock<HashMap<DexType, &'static DexExte
         map.insert(PANCAKESWAP_V3.name, &*PANCAKESWAP_V3);
         map.insert(SUSHISWAP_V2.dex.name, &*SUSHISWAP_V2);
         map.insert(SUSHISWAP_V3.dex.name, &*SUSHISWAP_V3);
+        map.insert(UNISWAP_V2.dex.name, &*UNISWAP_V2);
         map.insert(UNISWAP_V3.dex.name, &*UNISWAP_V3);
         map.insert(UNISWAP_V4.dex.name, &*UNISWAP_V4);
 

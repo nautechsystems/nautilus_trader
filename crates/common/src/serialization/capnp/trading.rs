@@ -15,9 +15,11 @@
 
 //! Cap'n Proto serialization for trading commands.
 
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::identifiers::{ClientId, InstrumentId, StrategyId, TraderId};
 use nautilus_serialization::{
+    base_capnp,
     capnp::{ToCapnp, order_side_to_capnp},
     trading_capnp,
 };
@@ -26,6 +28,19 @@ use crate::messages::execution::{
     BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
     SubmitOrder, SubmitOrderList, TradingCommand,
 };
+
+/// Helper function to populate a StringMap builder from an IndexMap
+fn populate_string_map<'a>(
+    builder: base_capnp::string_map::Builder<'a>,
+    params: &IndexMap<String, String>,
+) {
+    let mut entries_builder = builder.init_entries(params.len() as u32);
+    for (i, (key, value)) in params.iter().enumerate() {
+        let mut entry_builder = entries_builder.reborrow().get(i as u32);
+        entry_builder.set_key(key.as_str());
+        entry_builder.set_value(value.as_str());
+    }
+}
 
 /// Helper function to populate a TradingCommandHeader builder
 fn populate_trading_command_header<'a>(
@@ -76,6 +91,11 @@ impl<'a> ToCapnp<'a> for CancelOrder {
 
         let venue_order_id_builder = builder.reborrow().init_venue_order_id();
         self.venue_order_id.to_capnp(venue_order_id_builder);
+
+        if let Some(ref params) = self.params {
+            let params_builder = builder.reborrow().init_params();
+            populate_string_map(params_builder, params);
+        }
     }
 }
 
@@ -95,6 +115,11 @@ impl<'a> ToCapnp<'a> for CancelAllOrders {
         );
 
         builder.set_order_side(order_side_to_capnp(self.order_side));
+
+        if let Some(ref params) = self.params {
+            let params_builder = builder.reborrow().init_params();
+            populate_string_map(params_builder, params);
+        }
     }
 }
 
@@ -119,6 +144,11 @@ impl<'a> ToCapnp<'a> for BatchCancelOrders {
         for (i, cancel) in self.cancels.iter().enumerate() {
             let cancel_builder = cancellations_builder.reborrow().get(i as u32);
             cancel.to_capnp(cancel_builder);
+        }
+
+        if let Some(ref params) = self.params {
+            let params_builder = builder.reborrow().init_params();
+            populate_string_map(params_builder, params);
         }
     }
 }
@@ -157,6 +187,11 @@ impl<'a> ToCapnp<'a> for ModifyOrder {
         if let Some(ref trigger_price) = self.trigger_price {
             let trigger_price_builder = builder.reborrow().init_trigger_price();
             trigger_price.to_capnp(trigger_price_builder);
+        }
+
+        if let Some(ref params) = self.params {
+            let params_builder = builder.reborrow().init_params();
+            populate_string_map(params_builder, params);
         }
     }
 }
@@ -225,6 +260,11 @@ impl<'a> ToCapnp<'a> for SubmitOrder {
             let position_id_builder = builder.reborrow().init_position_id();
             position_id.to_capnp(position_id_builder);
         }
+
+        if let Some(ref params) = self.params {
+            let params_builder = builder.reborrow().init_params();
+            populate_string_map(params_builder, params);
+        }
     }
 }
 
@@ -255,6 +295,11 @@ impl<'a> ToCapnp<'a> for SubmitOrderList {
         if let Some(ref position_id) = self.position_id {
             let position_id_builder = builder.reborrow().init_position_id();
             position_id.to_capnp(position_id_builder);
+        }
+
+        if let Some(ref params) = self.params {
+            let params_builder = builder.reborrow().init_params();
+            populate_string_map(params_builder, params);
         }
     }
 }
@@ -299,10 +344,6 @@ impl<'a> ToCapnp<'a> for TradingCommand {
         }
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
@@ -575,6 +616,7 @@ mod tests {
             order_list,
             None,
             None,
+            None, // params
             command_id,
             ts_init,
         )

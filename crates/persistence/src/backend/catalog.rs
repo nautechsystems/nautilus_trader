@@ -74,6 +74,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use futures::StreamExt;
 use heck::ToSnakeCase;
 use itertools::Itertools;
+use nautilus_common::live::get_runtime;
 use nautilus_core::{
     UnixNanos,
     datetime::{iso8601_to_unix_nanos, unix_nanos_to_iso8601},
@@ -1079,6 +1080,9 @@ impl ParquetDataCatalog {
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix + TryFrom<Data>,
     {
+        // Reset session to allow repeated queries (streams are consumed on each query)
+        self.reset_session();
+
         let query_result = self.query::<T>(instrument_ids, start, end, where_clause, files)?;
         let all_data = query_result.collect();
 
@@ -1613,7 +1617,7 @@ impl ParquetDataCatalog {
     where
         F: std::future::Future<Output = anyhow::Result<R>>,
     {
-        let rt = nautilus_common::live::runtime::get_runtime();
+        let rt = get_runtime();
         rt.block_on(future)
     }
 }

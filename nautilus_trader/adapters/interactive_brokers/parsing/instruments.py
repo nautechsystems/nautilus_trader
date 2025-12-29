@@ -35,12 +35,16 @@ from nautilus_trader.model.enums import asset_class_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import generic_spread_id_to_list
+from nautilus_trader.model.identifiers import is_generic_spread_id
+from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.model.instruments import Cfd
 from nautilus_trader.model.instruments import Commodity
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import FuturesSpread
 from nautilus_trader.model.instruments import IndexInstrument
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionContract
@@ -205,22 +209,33 @@ FUTURES_CODE_TO_MONTH = dict(
     zip(FUTURES_MONTH_TO_CODE.values(), FUTURES_MONTH_TO_CODE.keys(), strict=False),
 )
 
+VENUES_FUT = [
+    "BELFOX",  # BE
+    "CBOT",  # US
+    "CFE",  # US
+    "CME",  # US
+    "COMEX",  # US
+    "DTB",  # DE
+    "EUREX",  # EU
+    "HKFE",  # HK
+    "ICEEU",  # UK
+    "ICEEUSOFT",  # UK
+    "IDEM",  # IT
+    "IPE",  # UK
+    "KCBT",  # US
+    "MEXDER",  # MX
+    "MGE",  # US
+    "NYBOT",  # US
+    "NYMEX",  # US
+    "OSE.JPN",  # JP
+    "SNFE",  # AU
+    "SOFFEX",  # CH
+    "VRTX",  # Global
+]
 VENUES_CASH = ["IDEALPRO"]
 VENUES_CRYPTO = ["PAXOS"]
 VENUES_OPT = ["SMART"]
-VENUES_FUT = [
-    "CBOT",  # US
-    "CME",  # US
-    "COMEX",  # US
-    "KCBT",  # US
-    "MGE",  # US
-    "NYMEX",  # US
-    "NYBOT",  # US
-    "SNFE",  # AU
-]
-VENUES_CFD = [
-    "IBCFD",  # self named, in fact mapping to "SMART" when parsing
-]
+VENUES_CFD = ["IBCFD"] # self named, in fact mapping to "SMART" when parsing
 VENUES_CMDTY = ["IBCMDTY"]  # self named, in fact mapping to "SMART" when parsing
 
 RE_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")  # "EUR/USD"
@@ -273,14 +288,14 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
         return AssetClass.EQUITY
 
 
-def contract_details_to_ib_contract_details(details: ContractDetails) -> IBContractDetails:
-    details.contract = IBContract(**details.contract.__dict__)
-    details = IBContractDetails(**details.__dict__)
+def contract_details_to_ib_contract_details(contract_details: ContractDetails) -> IBContractDetails:
+    contract_details.contract = IBContract(**contract_details.contract.__dict__)
+    contract_details = IBContractDetails(**contract_details.__dict__)
 
-    return details
+    return contract_details
 
 
-def parse_instrument(
+def parse_instrument(  # noqa: C901
     contract_details: IBContractDetails,
     venue: str,
     symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED,
@@ -295,51 +310,54 @@ def parse_instrument(
     )
 
     if security_type == "STK":
-        return parse_equity_contract(details=contract_details, instrument_id=instrument_id)
+        return parse_equity_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "IND":
-        return parse_index_contract(details=contract_details, instrument_id=instrument_id)
+        return parse_index_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type in ("FUT", "CONTFUT"):
-        return parse_futures_contract(details=contract_details, instrument_id=instrument_id)
+        return parse_futures_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type in ("OPT", "FOP"):
-        return parse_option_contract(details=contract_details, instrument_id=instrument_id)
+        return parse_option_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "CASH":
-        return parse_forex_contract(details=contract_details, instrument_id=instrument_id)
+        return parse_forex_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "CRYPTO":
-        return parse_crypto_contract(details=contract_details, instrument_id=instrument_id)
+        return parse_crypto_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "CFD":
-        return parse_cfd_contract(details=contract_details, instrument_id=instrument_id)
+        return parse_cfd_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "CMDTY":
-        return parse_commodity_contract(details=contract_details, instrument_id=instrument_id)
+        return parse_commodity_contract(contract_details=contract_details, instrument_id=instrument_id)
     elif security_type == "BAG":
-        return parse_option_spread(details=contract_details, instrument_id=instrument_id)
+        if _has_futures(contract_details.contract, contract_details_map):
+            return parse_futures_spread(contract_details=contract_details, instrument_id=instrument_id)
+        else:
+            return parse_option_spread(contract_details=contract_details, instrument_id=instrument_id)
     else:
         raise ValueError(f"Unknown {security_type=}")
 
 
 def parse_equity_contract(
-    details: IBContractDetails,
+    contract_details: IBContractDetails,
     instrument_id: InstrumentId,
 ) -> Equity:
-    price_precision: int = _tick_size_to_precision(details.minTick)
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
     timestamp = time.time_ns()
 
     return Equity(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(details.contract.localSymbol),
-        currency=Currency.from_str(details.contract.currency),
+        raw_symbol=Symbol(contract_details.contract.localSymbol),
+        currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
-        price_increment=Price(details.minTick, price_precision),
+        price_increment=Price(contract_details.minTick, price_precision),
         lot_size=Quantity.from_int(100),
-        isin=_extract_isin(details),
+        isin=_extract_isin(contract_details),
         ts_event=timestamp,
         ts_init=timestamp,
-        info=contract_details_to_dict(details),
+        info=contract_details_to_dict(contract_details),
     )
 
 
-def _extract_isin(details: IBContractDetails) -> int:
-    if details.secIdList:
-        for tag_value in details.secIdList:
+def _extract_isin(contract_details: IBContractDetails) -> int:
+    if contract_details.secIdList:
+        for tag_value in contract_details.secIdList:
             if tag_value.tag == "ISIN":
                 return tag_value.value
 
@@ -347,126 +365,128 @@ def _extract_isin(details: IBContractDetails) -> int:
 
 
 def parse_index_contract(
-    details: IBContractDetails,
+    contract_details: IBContractDetails,
     instrument_id: InstrumentId,
 ) -> IndexInstrument:
-    price_precision: int = _tick_size_to_precision(details.minTick)
-    size_precision: int = _tick_size_to_precision(details.minSize)
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
+    size_precision: int = _tick_size_to_precision(contract_details.minSize)
     timestamp = time.time_ns()
 
     return IndexInstrument(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(details.contract.localSymbol),
-        currency=Currency.from_str(details.contract.currency),
+        raw_symbol=Symbol(contract_details.contract.localSymbol),
+        currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
-        price_increment=Price(details.minTick, price_precision),
+        price_increment=Price(contract_details.minTick, price_precision),
         size_precision=size_precision,
-        size_increment=Quantity(details.sizeIncrement, size_precision),
+        size_increment=Quantity(contract_details.sizeIncrement, size_precision),
         ts_event=timestamp,
         ts_init=timestamp,
-        info=contract_details_to_dict(details),
+        info=contract_details_to_dict(contract_details),
     )
 
 
 def parse_futures_contract(
-    details: IBContractDetails,
+    contract_details: IBContractDetails,
     instrument_id: InstrumentId,
 ) -> FuturesContract:
-    price_precision: int = _tick_size_to_precision(details.minTick)
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
     timestamp = time.time_ns()
-    expiration = expiry_timestring_to_datetime(details.contract.lastTradeDateOrContractMonth)
+    expiration = expiry_timestring_to_datetime(contract_details)
     activation = expiration - pd.Timedelta(days=90)  # TODO: Make this more accurate
     raw_symbol = (
-        details.contract.localSymbol
-        if details.contract.secType == "FUT"
-        else details.contract.symbol
+        contract_details.contract.localSymbol
+        if contract_details.contract.secType == "FUT"
+        else contract_details.contract.symbol
     )  # symbol for CONTFUT
 
     return FuturesContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol(raw_symbol),
-        asset_class=sec_type_to_asset_class(details.underSecType),
-        currency=Currency.from_str(details.contract.currency),
+        asset_class=sec_type_to_asset_class(contract_details.underSecType),
+        currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
-        price_increment=Price(details.minTick, price_precision),
-        multiplier=Quantity.from_str(details.contract.multiplier),
+        price_increment=Price(contract_details.minTick, price_precision),
+        multiplier=Quantity.from_str(contract_details.contract.multiplier),
         lot_size=Quantity.from_int(1),
-        underlying=details.underSymbol,
+        underlying=contract_details.underSymbol,
         activation_ns=activation.value,
         expiration_ns=expiration.value,
         ts_event=timestamp,
         ts_init=timestamp,
-        info=contract_details_to_dict(details),
+        info=contract_details_to_dict(contract_details),
     )
 
 
 def parse_option_contract(
-    details: IBContractDetails,
+    contract_details: IBContractDetails,
     instrument_id: InstrumentId,
 ) -> OptionContract:
-    price_precision: int = _tick_size_to_precision(details.minTick)
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
     timestamp = time.time_ns()
-    asset_class = sec_type_to_asset_class(details.underSecType)
+    asset_class = sec_type_to_asset_class(contract_details.underSecType)
     option_kind = {
         "C": OptionKind.CALL,
         "P": OptionKind.PUT,
-    }[details.contract.right]
-    expiration = expiry_timestring_to_datetime(details.contract.lastTradeDateOrContractMonth)
+    }[contract_details.contract.right]
+    expiration = expiry_timestring_to_datetime(contract_details)
     activation = expiration - pd.Timedelta(days=90)  # TODO: Make this more accurate
 
     # For options, the multiplier represents the lot size (e.g., 100 shares per contract)
-    multiplier = Quantity.from_str(details.contract.multiplier)
+    multiplier = Quantity.from_str(contract_details.contract.multiplier)
 
     return OptionContract(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(details.contract.localSymbol),
+        raw_symbol=Symbol(contract_details.contract.localSymbol),
         asset_class=asset_class,
-        currency=Currency.from_str(details.contract.currency),
+        currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
-        price_increment=Price(details.minTick, price_precision),
+        price_increment=Price(contract_details.minTick, price_precision),
         multiplier=multiplier,
         lot_size=multiplier,  # For options, lot size equals multiplier
-        underlying=details.underSymbol,
-        strike_price=Price(details.contract.strike, price_precision),
+        underlying=contract_details.underSymbol,
+        strike_price=Price(contract_details.contract.strike, price_precision),
         activation_ns=activation.value,
         expiration_ns=expiration.value,
         option_kind=option_kind,
         ts_event=timestamp,
         ts_init=timestamp,
-        info=contract_details_to_dict(details),
+        info=contract_details_to_dict(contract_details),
     )
 
 
-def expiry_timestring_to_datetime(expiry: str) -> pd.Timestamp:
-    """
-    Most contract expirations are %Y%m%d format some exchanges have expirations in
-    %Y%m%d %H:%M:%S %Z.
-    """
-    if len(expiry) == 8:
-        return pd.Timestamp(expiry, tz="UTC")
-    else:
-        dt, tz = expiry.rsplit(" ", 1)
-        ts = pd.Timestamp(dt, tz=tz)
-        return ts.tz_convert("UTC")
+def expiry_timestring_to_datetime(contract_details: IBContractDetails) -> pd.Timestamp:
+    last_trade_date = contract_details.contract.lastTradeDateOrContractMonth
+    trading_hours = contract_details.tradingHours
+    tz_id = contract_details.timeZoneId
+
+    try:
+        closing_time = trading_hours.split(";")[-1].split("-")[-1].split(":")[-1]
+        local_ts = pd.to_datetime(f"{last_trade_date} {closing_time}", format="%Y%m%d %H%M")
+        utc_ts = local_ts.tz_localize(tz_id).tz_convert("UTC")
+
+        return utc_ts
+    except (IndexError, ValueError):
+        return pd.Timestamp(contract_details.contract.lastTradeDateOrContractMonth, tz="UTC")
 
 
 def parse_forex_contract(
-    details: IBContractDetails,
+    contract_details: IBContractDetails,
     instrument_id: InstrumentId,
 ) -> CurrencyPair:
-    price_precision: int = _tick_size_to_precision(details.minTick)
-    size_precision: int = _tick_size_to_precision(details.minSize)
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
+    size_precision: int = _tick_size_to_precision(contract_details.minSize)
     timestamp = time.time_ns()
 
     return CurrencyPair(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(details.contract.localSymbol),
-        base_currency=Currency.from_str(details.contract.symbol),
-        quote_currency=Currency.from_str(details.contract.currency),
+        raw_symbol=Symbol(contract_details.contract.localSymbol),
+        base_currency=Currency.from_str(contract_details.contract.symbol),
+        quote_currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
         size_precision=size_precision,
-        price_increment=Price(details.minTick, price_precision),
-        size_increment=Quantity(details.sizeIncrement, size_precision),
+        price_increment=Price(contract_details.minTick, price_precision),
+        size_increment=Quantity(contract_details.sizeIncrement, size_precision),
         lot_size=None,
         max_quantity=None,
         min_quantity=None,
@@ -480,31 +500,31 @@ def parse_forex_contract(
         taker_fee=Decimal(0),
         ts_event=timestamp,
         ts_init=timestamp,
-        info=contract_details_to_dict(details),
+        info=contract_details_to_dict(contract_details),
     )
 
 
 def parse_crypto_contract(
-    details: IBContractDetails,
+    contract_details: IBContractDetails,
     instrument_id: InstrumentId,
 ) -> CryptoPerpetual:
-    price_precision: int = _tick_size_to_precision(details.minTick)
-    size_precision: int = _tick_size_to_precision(details.minSize)
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
+    size_precision: int = _tick_size_to_precision(contract_details.minSize)
     timestamp = time.time_ns()
 
     return CryptoPerpetual(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(details.contract.localSymbol),
-        base_currency=Currency.from_str(details.contract.symbol),
-        quote_currency=Currency.from_str(details.contract.currency),
-        settlement_currency=Currency.from_str(details.contract.currency),
+        raw_symbol=Symbol(contract_details.contract.localSymbol),
+        base_currency=Currency.from_str(contract_details.contract.symbol),
+        quote_currency=Currency.from_str(contract_details.contract.currency),
+        settlement_currency=Currency.from_str(contract_details.contract.currency),
         is_inverse=True,
         price_precision=price_precision,
         size_precision=size_precision,
-        price_increment=Price(details.minTick, price_precision),
-        size_increment=Quantity(details.sizeIncrement, size_precision),
+        price_increment=Price(contract_details.minTick, price_precision),
+        size_increment=Quantity(contract_details.sizeIncrement, size_precision),
         max_quantity=None,
-        min_quantity=Quantity(details.minSize, size_precision),
+        min_quantity=Quantity(contract_details.minSize, size_precision),
         max_notional=None,
         min_notional=None,
         max_price=None,
@@ -515,29 +535,29 @@ def parse_crypto_contract(
         taker_fee=Decimal(0),
         ts_event=timestamp,
         ts_init=timestamp,
-        info=contract_details_to_dict(details),
+        info=contract_details_to_dict(contract_details),
     )
 
 
 def parse_cfd_contract(
-    details: IBContractDetails,
+    contract_details: IBContractDetails,
     instrument_id: InstrumentId,
 ) -> Cfd:
-    price_precision: int = _tick_size_to_precision(details.minTick)
-    size_precision: int = _tick_size_to_precision(details.minSize)
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
+    size_precision: int = _tick_size_to_precision(contract_details.minSize)
     timestamp = time.time_ns()
 
-    if RE_CFD_CASH.match(details.contract.localSymbol):
+    if RE_CFD_CASH.match(contract_details.contract.localSymbol):
         return Cfd(
             instrument_id=instrument_id,
-            raw_symbol=Symbol(details.contract.localSymbol),
-            asset_class=sec_type_to_asset_class(details.underSecType),
-            base_currency=Currency.from_str(details.contract.symbol),
-            quote_currency=Currency.from_str(details.contract.currency),
+            raw_symbol=Symbol(contract_details.contract.localSymbol),
+            asset_class=sec_type_to_asset_class(contract_details.underSecType),
+            base_currency=Currency.from_str(contract_details.contract.symbol),
+            quote_currency=Currency.from_str(contract_details.contract.currency),
             price_precision=price_precision,
             size_precision=size_precision,
-            price_increment=Price(details.minTick, price_precision),
-            size_increment=Quantity(details.sizeIncrement, size_precision),
+            price_increment=Price(contract_details.minTick, price_precision),
+            size_increment=Quantity(contract_details.sizeIncrement, size_precision),
             lot_size=None,
             max_quantity=None,
             min_quantity=None,
@@ -551,18 +571,18 @@ def parse_cfd_contract(
             taker_fee=Decimal(0),
             ts_event=timestamp,
             ts_init=timestamp,
-            info=contract_details_to_dict(details),
+            info=contract_details_to_dict(contract_details),
         )
     else:
         return Cfd(
             instrument_id=instrument_id,
-            raw_symbol=Symbol(details.contract.localSymbol),
-            asset_class=sec_type_to_asset_class(details.underSecType),
-            quote_currency=Currency.from_str(details.contract.currency),
+            raw_symbol=Symbol(contract_details.contract.localSymbol),
+            asset_class=sec_type_to_asset_class(contract_details.underSecType),
+            quote_currency=Currency.from_str(contract_details.contract.currency),
             price_precision=price_precision,
             size_precision=size_precision,
-            price_increment=Price(details.minTick, price_precision),
-            size_increment=Quantity(details.sizeIncrement, size_precision),
+            price_increment=Price(contract_details.minTick, price_precision),
+            size_increment=Quantity(contract_details.sizeIncrement, size_precision),
             lot_size=None,
             max_quantity=None,
             min_quantity=None,
@@ -576,27 +596,27 @@ def parse_cfd_contract(
             taker_fee=Decimal(0),
             ts_event=timestamp,
             ts_init=timestamp,
-            info=contract_details_to_dict(details),
+            info=contract_details_to_dict(contract_details),
         )
 
 
 def parse_commodity_contract(
-    details: IBContractDetails,
+    contract_details: IBContractDetails,
     instrument_id: InstrumentId,
 ) -> Commodity:
-    price_precision: int = _tick_size_to_precision(details.minTick)
-    size_precision: int = _tick_size_to_precision(details.minSize)
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
+    size_precision: int = _tick_size_to_precision(contract_details.minSize)
     timestamp = time.time_ns()
 
     return Commodity(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(details.contract.localSymbol),
+        raw_symbol=Symbol(contract_details.contract.localSymbol),
         asset_class=AssetClass.COMMODITY,
-        quote_currency=Currency.from_str(details.contract.currency),
+        quote_currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
         size_precision=size_precision,
-        price_increment=Price(details.minTick, price_precision),
-        size_increment=Quantity(details.sizeIncrement, size_precision),
+        price_increment=Price(contract_details.minTick, price_precision),
+        size_increment=Quantity(contract_details.sizeIncrement, size_precision),
         lot_size=None,
         max_quantity=None,
         min_quantity=None,
@@ -610,42 +630,43 @@ def parse_commodity_contract(
         taker_fee=Decimal(0),
         ts_event=timestamp,
         ts_init=timestamp,
-        info=contract_details_to_dict(details),
+        info=contract_details_to_dict(contract_details),
     )
 
 
 def parse_option_spread(
-    details: IBContractDetails,
+    contract_details: IBContractDetails,
     instrument_id: InstrumentId,
 ) -> OptionSpread:
     """
-    Parse an option spread from BAG contract details.
+    Parse an option spread from BAG contract contract_details.
 
-    Uses only information available from the contract details. For asset class and other
-    properties, uses the same information as would be used for individual option legs.
+    Uses only information available from the contract contract_details. For asset class
+    and other properties, uses the same information as would be used for individual
+    option legs.
 
     """
-    price_precision: int = _tick_size_to_precision(details.minTick)
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
     timestamp = time.time_ns()
 
-    # Extract underlying symbol from contract details
-    underlying = details.underSymbol or details.contract.symbol or "UNKNOWN"
+    # Extract underlying symbol from contract contract_details
+    underlying = contract_details.underSymbol or contract_details.contract.symbol or "UNKNOWN"
 
     # Determine asset class from underlying security type
     asset_class = (
-        sec_type_to_asset_class(details.underSecType) if details.underSecType else AssetClass.EQUITY
+        sec_type_to_asset_class(contract_details.underSecType) if contract_details.underSecType else AssetClass.EQUITY
     )
 
     # For options, the multiplier represents the lot size (e.g., 100 shares per contract)
-    multiplier = Quantity.from_str(details.contract.multiplier or "100")
+    multiplier = Quantity.from_str(contract_details.contract.multiplier or "100")
 
     return OptionSpread(
         instrument_id=instrument_id,
-        raw_symbol=Symbol(details.contract.localSymbol or details.contract.symbol),
+        raw_symbol=Symbol(contract_details.contract.localSymbol or contract_details.contract.symbol),
         asset_class=asset_class,
-        currency=Currency.from_str(details.contract.currency),
+        currency=Currency.from_str(contract_details.contract.currency),
         price_precision=price_precision,
-        price_increment=Price(details.minTick, price_precision),
+        price_increment=Price(contract_details.minTick, price_precision),
         multiplier=multiplier,
         lot_size=multiplier,  # For options, lot size equals multiplier
         underlying=underlying,
@@ -654,11 +675,11 @@ def parse_option_spread(
         expiration_ns=0,  # BAG contracts don't have single expiration dates
         ts_event=timestamp,
         ts_init=timestamp,
-        info=contract_details_to_dict(details),
+        info=contract_details_to_dict(contract_details),
     )
 
 
-def parse_spread_instrument_id(
+def parse_option_spread_instrument_id(
     instrument_id: InstrumentId,
     leg_contract_details: list[tuple[IBContractDetails, int]],
     clock_timestamp_ns: int | None = None,
@@ -666,7 +687,7 @@ def parse_spread_instrument_id(
     """
     Parse a spread instrument ID into an OptionSpread instrument.
 
-    Uses contract details from the first leg to determine spread properties.
+    Uses contract contract_details from the first leg to determine spread properties.
     This ensures consistency with how individual option contracts are handled.
 
     Parameters
@@ -675,7 +696,7 @@ def parse_spread_instrument_id(
         The spread instrument ID to parse.
     leg_contract_details : list[tuple[IBContractDetails, int]]
         List of (contract_details, ratio) tuples for the spread legs.
-        Contract details will be used for instrument properties.
+        Contract contract_details will be used for instrument properties.
     clock_timestamp_ns : int | None, optional
         Clock timestamp in nanoseconds. If not provided, current time is used.
 
@@ -687,18 +708,18 @@ def parse_spread_instrument_id(
     Raises
     ------
     ValueError
-        If the instrument ID cannot be parsed as a spread or no leg contract details provided.
+        If the instrument ID cannot be parsed as a spread or no leg contract contract_details provided.
 
     """
     try:
         if not leg_contract_details:
             raise ValueError("leg_contract_details must be provided")
 
-        # Use contract details from first leg
+        # Use contract contract_details from first leg
         first_details, _ = leg_contract_details[0]
         first_contract = first_details.contract
 
-        # Extract all properties from the first leg contract details
+        # Extract all properties from the first leg contract contract_details
         currency = Currency.from_str(first_contract.currency)
         underlying = first_details.underSymbol or first_contract.symbol
 
@@ -711,12 +732,13 @@ def parse_spread_instrument_id(
         else:  # OPT
             asset_class = AssetClass.EQUITY  # Equity options
 
-        # Read price increment from contract details
+        # Read price increment from contract contract_details
+        min_tick = min(leg_details.minTick for leg_details, _ in leg_contract_details)
         price_increment = Price(
-            first_details.minTick,
-            _tick_size_to_precision(first_details.minTick),
+            min_tick,
+            _tick_size_to_precision(min_tick),
         )
-        price_precision = _tick_size_to_precision(first_details.minTick)
+        price_precision = _tick_size_to_precision(min_tick)
 
         # Use provided timestamp or current time
         timestamp = clock_timestamp_ns if clock_timestamp_ns is not None else time.time_ns()
@@ -724,7 +746,7 @@ def parse_spread_instrument_id(
         # For options spreads, lot size equals multiplier (same as individual option contracts)
         lot_size = multiplier
 
-        # Create info dict with contract details for the first leg
+        # Create info dict with contract contract_details for the first leg
         # This is needed for the data client to create subscription contracts
         info = {
             "contract": {
@@ -756,9 +778,166 @@ def parse_spread_instrument_id(
         raise ValueError(f"Failed to parse spread instrument ID {instrument_id}: {e}") from e
 
 
-def contract_details_to_dict(details: IBContractDetails) -> dict:
-    dict_details = details.dict().copy()
-    dict_details["contract"] = details.contract.dict().copy()
+def _has_futures(
+    contract: IBContract,
+    contract_details_map: dict[int, IBContractDetails] | None = None,
+) -> bool:
+    # Check if a BAG contract contains at least one future leg.
+    if not contract.comboLegs or not contract_details_map:
+        return False
+
+    for combo_leg in contract.comboLegs:
+        if combo_leg.conId in contract_details_map:
+            leg_details = contract_details_map[combo_leg.conId]
+            if leg_details.contract.secType in ("FUT", "CONTFUT"):
+                return True
+
+    return False
+
+
+def parse_futures_spread(
+    contract_details: IBContractDetails,
+    instrument_id: InstrumentId,
+) -> FuturesSpread:
+    """
+    Parse a futures spread from BAG contract contract_details.
+
+    Uses only information available from the contract contract_details. For asset class
+    and other properties, uses the same information as would be used for individual
+    futures legs.
+
+    """
+    price_precision: int = _tick_size_to_precision(contract_details.minTick)
+    timestamp = time.time_ns()
+
+    # Extract underlying symbol from contract contract_details
+    underlying = contract_details.underSymbol or contract_details.contract.symbol or "UNKNOWN"
+
+    # Determine asset class from underlying security type
+    asset_class = (
+        sec_type_to_asset_class(contract_details.underSecType) if contract_details.underSecType else AssetClass.INDEX
+    )
+
+    # For futures, the multiplier is typically 1 or the contract multiplier
+    multiplier = Quantity.from_str(contract_details.contract.multiplier or "1")
+
+    return FuturesSpread(
+        instrument_id=instrument_id,
+        raw_symbol=Symbol(contract_details.contract.localSymbol or contract_details.contract.symbol),
+        asset_class=asset_class,
+        currency=Currency.from_str(contract_details.contract.currency),
+        price_precision=price_precision,
+        price_increment=Price(contract_details.minTick, price_precision),
+        multiplier=multiplier,
+        lot_size=Quantity.from_int(1),  # For futures, lot size is typically 1
+        underlying=underlying,
+        strategy_type="SPREAD",
+        activation_ns=0,  # BAG contracts don't have single expiration dates
+        expiration_ns=0,  # BAG contracts don't have single expiration dates
+        ts_event=timestamp,
+        ts_init=timestamp,
+        info=contract_details_to_dict(contract_details),
+    )
+
+
+def parse_futures_spread_instrument_id(
+    instrument_id: InstrumentId,
+    leg_contract_details: list[tuple[IBContractDetails, int]],
+    clock_timestamp_ns: int | None = None,
+) -> FuturesSpread:
+    """
+    Parse a spread instrument ID into a FuturesSpread instrument.
+
+    Uses contract contract_details from the first leg to determine spread properties.
+    This ensures consistency with how individual futures contracts are handled.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The spread instrument ID to parse.
+    leg_contract_details : list[tuple[IBContractDetails, int]]
+        List of (contract_details, ratio) tuples for the spread legs.
+        Contract contract_details will be used for instrument properties.
+    clock_timestamp_ns : int | None, optional
+        Clock timestamp in nanoseconds. If not provided, current time is used.
+
+    Returns
+    -------
+    FuturesSpread
+        The parsed futures spread instrument.
+
+    Raises
+    ------
+    ValueError
+        If the instrument ID cannot be parsed as a spread or no leg contract contract_details provided.
+
+    """
+    try:
+        if not leg_contract_details:
+            raise ValueError("leg_contract_details must be provided")
+
+        # Use contract contract_details from first leg
+        first_details, _ = leg_contract_details[0]
+        first_contract = first_details.contract
+
+        # Extract all properties from the first leg contract contract_details
+        currency = Currency.from_str(first_contract.currency)
+        underlying = first_details.underSymbol or first_contract.symbol
+
+        # Use contract multiplier
+        multiplier = Quantity.from_str(str(first_contract.multiplier))
+
+        # Determine asset class based on security type
+        asset_class = sec_type_to_asset_class(first_contract.secType)
+
+        # Read price increment from contract contract_details
+        min_tick = min(leg_details.minTick for leg_details, _ in leg_contract_details)
+        price_increment = Price(
+            min_tick,
+            _tick_size_to_precision(min_tick),
+        )
+        price_precision = _tick_size_to_precision(min_tick)
+
+        # Use provided timestamp or current time
+        timestamp = clock_timestamp_ns if clock_timestamp_ns is not None else time.time_ns()
+
+        # For futures spreads, lot size is typically 1
+        lot_size = Quantity.from_int(1)
+
+        # Create info dict with contract contract_details for the first leg
+        # This is needed for the data client to create subscription contracts
+        info = {
+            "contract": {
+                "secType": first_contract.secType,
+                "symbol": first_contract.symbol,
+                "currency": first_contract.currency,
+                "multiplier": first_contract.multiplier,
+            },
+        }
+
+        return FuturesSpread(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(instrument_id.symbol.value),
+            asset_class=asset_class,
+            currency=currency,
+            price_precision=price_precision,
+            price_increment=price_increment,
+            multiplier=multiplier,
+            lot_size=lot_size,
+            underlying=underlying,
+            strategy_type="SPREAD",
+            activation_ns=0,  # Spreads don't have single activation dates
+            expiration_ns=0,  # Spreads don't have single expiration dates
+            ts_event=timestamp,
+            ts_init=timestamp,
+            info=info,
+        )
+    except Exception as e:
+        raise ValueError(f"Failed to parse futures spread instrument ID {instrument_id}: {e}") from e
+
+def contract_details_to_dict(contract_details: IBContractDetails) -> dict:
+    dict_details = contract_details.dict().copy()
+    dict_details["contract"] = contract_details.contract.dict().copy()
 
     if dict_details.get("secIdList"):
         dict_details["secIdList"] = {
@@ -893,12 +1072,12 @@ def bag_contract_to_instrument_id(
     venue : str
         The venue for the instrument ID
     contract_details_map : dict[int, IBContractDetails] | None
-        Map of contract IDs (conIds) to their contract details for leg resolution
+        Map of contract IDs (conIds) to their contract contract_details for leg resolution
 
     Returns
     -------
     InstrumentId
-        A spread instrument ID created with InstrumentId.new_spread()
+        A spread instrument ID created with new_generic_spread_id()
 
     """
     try:
@@ -909,7 +1088,7 @@ def bag_contract_to_instrument_id(
         leg_tuples = []
 
         for combo_leg in contract.comboLegs:
-            # Get the contract details for this leg using conId
+            # Get the contract contract_details for this leg using conId
             if contract_details_map and combo_leg.conId in contract_details_map:
                 leg_contract_details = contract_details_map[combo_leg.conId]
                 leg_contract = leg_contract_details.contract
@@ -922,7 +1101,7 @@ def bag_contract_to_instrument_id(
             else:
                 raise ValueError(
                     f"Cannot resolve leg instrument ID for conId {combo_leg.conId}. "
-                    f"Contract details map not provided or incomplete.",
+                    f"Contract contract_details map not provided or incomplete.",
                 )
 
             # Determine ratio (positive for BUY, negative for SELL)
@@ -931,7 +1110,7 @@ def bag_contract_to_instrument_id(
             leg_tuples.append((leg_instrument_id, ratio))
 
         # Create the spread instrument ID
-        return InstrumentId.new_spread(leg_tuples)
+        return new_generic_spread_id(leg_tuples)
 
     except Exception as e:
         raise ValueError(f"Failed to create spread instrument ID from BAG contract {contract}: {e}")
@@ -974,7 +1153,7 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
     exchange: str,
     contract_details_map: dict[InstrumentId, IBContractDetails] | None = None,
 ) -> IBContract:
-    if instrument_id.is_spread():
+    if is_generic_spread_id(instrument_id):
         return instrument_id_to_bag_contract(instrument_id, exchange, contract_details_map)
     elif exchange in VENUES_CASH and (m := RE_CASH.match(instrument_id.symbol.value)):
         return IBContract(
@@ -1058,7 +1237,7 @@ def instrument_id_to_bag_contract(
 ) -> IBContract:
     try:
         # Parse the spread ID back to individual legs
-        leg_tuples = instrument_id.to_list()
+        leg_tuples = generic_spread_id_to_list(instrument_id)
 
         if not leg_tuples:
             raise ValueError("Spread instrument ID has no legs")
@@ -1067,15 +1246,15 @@ def instrument_id_to_bag_contract(
         combo_legs = []
 
         for leg_instrument_id, ratio in leg_tuples:
-            # Get the contract details for this leg to extract conId
+            # Get the contract contract_details for this leg to extract conId
             if contract_details_map and leg_instrument_id in contract_details_map:
                 contract_details = contract_details_map[leg_instrument_id]
                 con_id = contract_details.contract.conId
                 currency = contract_details.contract.currency
             else:
-                # If we don't have contract details, we can't create a valid BAG contract
+                # If we don't have contract contract_details, we can't create a valid BAG contract
                 raise ValueError(
-                    f"Contract details not found for leg {leg_instrument_id}. "
+                    f"Contract contract_details not found for leg {leg_instrument_id}. "
                     f"Ensure all legs are loaded in the instrument provider before creating spread.",
                 )
 

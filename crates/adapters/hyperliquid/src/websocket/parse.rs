@@ -440,10 +440,6 @@ fn parse_f64_price(
     Ok(Price::new(price, instrument.price_precision()))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -528,10 +524,7 @@ mod tests {
         let report = result.unwrap();
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.order_type, OrderType::Limit);
-        assert_eq!(
-            report.order_status,
-            nautilus_model::enums::OrderStatus::Accepted
-        );
+        assert_eq!(report.order_status, OrderStatus::Accepted);
     }
 
     #[rstest]

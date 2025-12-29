@@ -87,7 +87,7 @@ fn create_csv_reader<P: AsRef<Path>>(
                             "Failed to open file '{path_ref:?}' after {max_retries} attempts: {e}"
                         );
                     }
-                    eprintln!(
+                    tracing::warn!(
                         "Attempt {attempt}/{max_retries} failed to open file '{path_ref:?}': {e}. Retrying after {delay_ms}ms..."
                     );
                     std::thread::sleep(Duration::from_millis(delay_ms));
@@ -127,7 +127,7 @@ fn create_csv_reader<P: AsRef<Path>>(
                         "Failed to read gzip header from '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
                     );
                 }
-                eprintln!(
+                tracing::warn!(
                     "Attempt {attempt}/{MAX_RETRIES} failed to read header from '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
                 );
                 std::thread::sleep(Duration::from_millis(DELAY_MS));
@@ -148,7 +148,7 @@ fn create_csv_reader<P: AsRef<Path>>(
                         "Failed to reset file position for '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
                     );
                 }
-                eprintln!(
+                tracing::warn!(
                     "Attempt {attempt}/{MAX_RETRIES} failed to seek in '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
                 );
                 std::thread::sleep(Duration::from_millis(DELAY_MS));
@@ -191,7 +191,7 @@ fn parse_delta_record(
     price_precision: u8,
     size_precision: u8,
     instrument_id: Option<InstrumentId>,
-) -> OrderBookDelta {
+) -> anyhow::Result<OrderBookDelta> {
     let instrument_id = match instrument_id {
         Some(id) => id,
         None => parse_instrument_id(&data.exchange, data.symbol),
@@ -209,12 +209,12 @@ fn parse_delta_record(
     let ts_event = parse_timestamp(data.timestamp);
     let ts_init = parse_timestamp(data.local_timestamp);
 
-    assert!(
+    anyhow::ensure!(
         !(action != BookAction::Delete && size.is_zero()),
         "Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {data:?}"
     );
 
-    OrderBookDelta::new(
+    Ok(OrderBookDelta::new(
         instrument_id,
         action,
         order,
@@ -222,7 +222,7 @@ fn parse_delta_record(
         sequence,
         ts_event,
         ts_init,
-    )
+    ))
 }
 
 fn parse_quote_record(

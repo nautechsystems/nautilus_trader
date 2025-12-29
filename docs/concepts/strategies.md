@@ -223,7 +223,7 @@ def on_start(self) -> None:
     self.instrument = self.cache.instrument(self.instrument_id)
     if self.instrument is None:
         self.log.error(f"Could not find instrument for {self.instrument_id}")
-        self.stop()
+        self.stop()  # Transitions strategy to STOPPED state
         return
 
     # Register the indicators for updating
@@ -307,7 +307,8 @@ There are many methods available often with filtering functionality, here we go 
 
 #### Fetching data
 
-The following example shows how data can be fetched from the cache (assuming some instrument ID attribute is assigned):
+The following example shows how data can be fetched from the cache (assuming some instrument ID attribute is assigned).
+These methods return `None` if the requested data is not available.
 
 ```python
 last_quote = self.cache.quote_tick(self.instrument_id)
@@ -433,7 +434,8 @@ def buy(self) -> None:
 ```
 
 :::info
-You can specify both order emulation and an execution algorithm.
+You can specify both order emulation and an execution algorithm. In this case, the order is
+first sent to the `OrderEmulator`, and upon release is then routed to the `ExecAlgorithm`.
 :::
 
 This example submits a `MARKET` BUY order to a TWAP execution algorithm:
@@ -489,7 +491,7 @@ self.cancel_order(order)
 The following shows how to cancel a batch of orders:
 
 ```python
-from nautilus_trader.model import Order
+from nautilus_trader.model.orders import Order
 
 
 my_order_list: list[Order] = [order1, order2, order3]
@@ -643,8 +645,8 @@ configurations (such as trading different instruments), then you will need to de
 a unique `order_id_tag` for each of these strategies (as shown above).
 
 :::note
-The platform has built-in safety measures in the event that two strategies share a
-duplicated strategy ID, then an exception will be raised that the strategy ID has already been registered.
+The platform has built-in safety measures: if two strategies share a duplicated strategy ID,
+a `RuntimeError` is raised during registration indicating the strategy ID is already registered.
 :::
 
 The reason for this is that the system must be able to identify which strategy

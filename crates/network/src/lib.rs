@@ -59,6 +59,7 @@
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]
@@ -70,7 +71,6 @@ pub mod http;
 pub mod mode;
 pub mod net;
 pub mod retry;
-pub mod runtime;
 pub mod socket;
 pub mod websocket;
 

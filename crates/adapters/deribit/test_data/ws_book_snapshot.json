@@ -1,0 +1,16 @@
+{
+    "jsonrpc": "2.0",
+    "method": "subscription",
+    "params": {
+        "channel": "book.BTC-PERPETUAL.100ms",
+        "data": {
+            "type": "snapshot",
+            "instrument_name": "BTC-PERPETUAL",
+            "timestamp": 1699999999000,
+            "change_id": 123456789,
+            "prev_change_id": null,
+            "bids": [["new", 42500.0, 1000.0], ["new", 42499.5, 500.0], ["new", 42499.0, 750.0], ["new", 42498.5, 1200.0], ["new", 42498.0, 800.0]],
+            "asks": [["new", 42501.0, 800.0], ["new", 42501.5, 600.0], ["new", 42502.0, 400.0], ["new", 42502.5, 900.0], ["new", 42503.0, 550.0]]
+        }
+    }
+}

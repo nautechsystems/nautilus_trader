@@ -171,12 +171,12 @@ impl Display for AccountState {
                 .iter()
                 .map(|b| format!("{b}"))
                 .collect::<Vec<String>>()
-                .join(","),
+                .join(", "),
             self.margins
                 .iter()
                 .map(|m| format!("{m}"))
                 .collect::<Vec<String>>()
-                .join(","),
+                .join(", "),
             self.event_id
         )
     }
@@ -190,9 +190,6 @@ impl PartialEq for AccountState {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::{UUID4, UnixNanos};

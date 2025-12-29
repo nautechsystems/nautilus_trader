@@ -185,6 +185,11 @@ impl BarType {
     fn py_composite(&self) -> Self {
         self.composite()
     }
+
+    #[pyo3(name = "id_spec_key")]
+    fn py_id_spec_key(&self) -> (InstrumentId, BarSpecification) {
+        self.id_spec_key()
+    }
 }
 
 impl Bar {
@@ -424,9 +429,6 @@ impl Bar {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::python::IntoPyObjectNautilusExt;

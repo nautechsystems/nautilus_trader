@@ -85,10 +85,14 @@ impl OrderAny {
     /// Panics if the first event is not `OrderInitialized` (violates invariant).
     #[must_use]
     pub fn init_event(&self) -> &crate::events::OrderInitialized {
-        // SAFETY: Unwrap safe as Order specification guarantees at least one event (OrderInitialized)
-        match self.events().first().unwrap() {
+        // SAFETY: Order specification guarantees at least one event (OrderInitialized)
+        match self
+            .events()
+            .first()
+            .expect("Order invariant violated: no events")
+        {
             OrderEventAny::Initialized(init) => init,
-            _ => panic!("First event must be OrderInitialized"),
+            _ => panic!("Order invariant violated: first event must be OrderInitialized"),
         }
     }
 }
@@ -321,9 +325,6 @@ impl PartialEq for StopOrderAny {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use ahash::AHashMap;
 use log::LevelFilter;
 use nautilus_core::{UUID4, python::to_pyvalue_err};
 use nautilus_model::identifiers::TraderId;
@@ -145,10 +146,10 @@ pub fn py_logger_flush() {
 
 fn parse_component_levels(
     original_map: Option<std::collections::HashMap<String, String>>,
-) -> anyhow::Result<std::collections::HashMap<Ustr, LevelFilter>> {
+) -> anyhow::Result<AHashMap<Ustr, LevelFilter>> {
     match original_map {
         Some(map) => {
-            let mut new_map = std::collections::HashMap::new();
+            let mut new_map = AHashMap::new();
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
                 let level = parse_level_filter_str(&value)?;
@@ -156,7 +157,7 @@ fn parse_component_levels(
             }
             Ok(new_map)
         }
-        None => Ok(std::collections::HashMap::new()),
+        None => Ok(AHashMap::new()),
     }
 }
 

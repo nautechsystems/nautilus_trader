@@ -46,7 +46,6 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 http = { workspace = true }
 memchr = { workspace = true }
-nonzero_ext = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }

@@ -20,8 +20,7 @@
 //! The types below mirror that structure and are reused across the entire
 //! crate.
 
-use nautilus_network::http::HttpClientError;
-use reqwest::StatusCode;
+use nautilus_network::http::{HttpClientError, StatusCode};
 use serde::Deserialize;
 use thiserror::Error;
 

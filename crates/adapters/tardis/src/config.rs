@@ -17,6 +17,17 @@ use serde::{Deserialize, Serialize};
 
 use super::machine::types::ReplayNormalizedRequestOptions;
 
+/// Determines the output format for Tardis `book_snapshot_*` messages.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BookSnapshotOutput {
+    /// Convert book snapshots to `OrderBookDeltas` and write to `order_book_deltas/`.
+    #[default]
+    Deltas,
+    /// Convert book snapshots to `OrderBookDepth10` and write to `order_book_depths/`.
+    Depth10,
+}
+
 /// Provides a configuration for a Tarid Machine -> Nautilus data -> Parquet replay run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisReplayConfig {
@@ -33,4 +44,9 @@ pub struct TardisReplayConfig {
     /// Note: WebSocket proxy support is not yet implemented. This field is reserved
     /// for future functionality.
     pub ws_proxy_url: Option<String>,
+    /// The output format for `book_snapshot_*` messages.
+    ///
+    /// - `deltas`: Convert to `OrderBookDeltas` and write to `order_book_deltas/` (default).
+    /// - `depth10`: Convert to `OrderBookDepth10` and write to `order_book_depths/`.
+    pub book_snapshot_output: Option<BookSnapshotOutput>,
 }

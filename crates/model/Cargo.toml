@@ -58,7 +58,6 @@ serde_json = { workspace = true }
 strum = { workspace = true }
 tabled = { workspace = true }
 thiserror = { workspace = true }
-thousands = { workspace = true }
 ustr = { workspace = true }
 tracing = { workspace = true }
 

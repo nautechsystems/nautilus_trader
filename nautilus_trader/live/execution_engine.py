@@ -663,12 +663,6 @@ class LiveExecutionEngine(ExecutionEngine):
         order, order consistency, and position consistency checks.
         """
         try:
-            # Track last execution times (in nanoseconds)
-            ts_last_inflight_check = 0
-            ts_last_consistency_check = 0
-            ts_last_position_check = 0
-            ts_last_cache_prune = 0
-
             # Convert intervals to nanoseconds (handle None values)
             inflight_check_interval_ns = (
                 millis_to_nanos(self.inflight_check_interval_ms)
@@ -729,6 +723,14 @@ class LiveExecutionEngine(ExecutionEngine):
                     "Startup reconciliation disabled, proceeding with continuous checks",
                     LogColor.BLUE,
                 )
+
+            # Initialize timestamps to current time so first checks wait the full interval,
+            # giving execution clients time to complete their connection initialization
+            ts_now_init = self._clock.timestamp_ns()
+            ts_last_inflight_check = ts_now_init
+            ts_last_consistency_check = ts_now_init
+            ts_last_position_check = ts_now_init
+            ts_last_cache_prune = ts_now_init
 
             while True:
                 if self._is_shutting_down:
@@ -1843,25 +1845,6 @@ class LiveExecutionEngine(ExecutionEngine):
         reconciled_trades: set[TradeId] = set()
 
         # Reconcile all reported orders
-        total_ethusdt_fills = 0
-        for venue_order_id, order_report in mass_status.order_reports.items():
-            trades = mass_status.fill_reports.get(venue_order_id, [])
-            if (
-                order_report.instrument_id == InstrumentId.from_str("ETHUSDT-LINEAR.BYBIT")
-                and trades
-            ):
-                total_ethusdt_fills += len(trades)
-                for trade in trades:
-                    self._log.debug(
-                        f"Reconciling order {venue_order_id}: trade_id={trade.trade_id}, last_px={trade.last_px}",
-                    )
-
-        if total_ethusdt_fills > 0:
-            self._log.info(
-                f"Total ETHUSDT fills being reconciled: {total_ethusdt_fills}",
-                LogColor.BLUE,
-            )
-
         for venue_order_id, order_report in mass_status.order_reports.items():
             trades = mass_status.fill_reports.get(venue_order_id, [])
 
@@ -2915,7 +2898,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             if client_order_id is None:
                 # Generate external client order ID
-                client_order_id = ClientOrderId(f"O-{UUID4().value}")
+                client_order_id = ClientOrderId(UUID4().value)
 
             # Assign to report
             report.client_order_id = client_order_id
@@ -3566,8 +3549,8 @@ class LiveExecutionEngine(ExecutionEngine):
             if cached_order.filled_qty != quantity:
                 continue
 
-            # Match price if provided
-            if price is not None and cached_order.price is not None and cached_order.price != price:
+            # Match price if provided (market orders don't have price)
+            if price is not None and cached_order.has_price and cached_order.price != price:
                 continue
 
             # Match avg_px if provided

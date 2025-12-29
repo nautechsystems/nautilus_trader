@@ -31,8 +31,11 @@ use std::{
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
-use nautilus_common::live::runtime::get_runtime;
-use nautilus_core::{consts::NAUTILUS_USER_AGENT, env::get_env_var};
+use nautilus_common::live::get_runtime;
+use nautilus_core::{
+    consts::NAUTILUS_USER_AGENT,
+    env::{get_env_var, get_or_env_var_opt},
+};
 use nautilus_model::{
     data::bar::BarType,
     enums::OrderType,
@@ -40,13 +43,13 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
+    http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
         AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, WebSocketClient,
         WebSocketConfig, channel_message_handler,
     },
 };
-use reqwest::header::USER_AGENT;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -72,7 +75,7 @@ use crate::common::{
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex")
 )]
 pub struct BitmexWebSocketClient {
     url: String,
@@ -138,6 +141,36 @@ impl BitmexWebSocketClient {
             order_type_cache: Arc::new(DashMap::new()),
             order_symbol_cache: Arc::new(DashMap::new()),
         })
+    }
+
+    /// Creates a new [`BitmexWebSocketClient`] with environment variable credential resolution.
+    ///
+    /// If `api_key` or `api_secret` are not provided, they will be loaded from
+    /// environment variables based on the `testnet` flag:
+    /// - Testnet: `BITMEX_TESTNET_API_KEY`, `BITMEX_TESTNET_API_SECRET`
+    /// - Mainnet: `BITMEX_API_KEY`, `BITMEX_API_SECRET`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if only one of `api_key` or `api_secret` is provided.
+    pub fn new_with_env(
+        url: Option<String>,
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        account_id: Option<AccountId>,
+        heartbeat: Option<u64>,
+        testnet: bool,
+    ) -> anyhow::Result<Self> {
+        let (api_key_env, api_secret_env) = if testnet {
+            ("BITMEX_TESTNET_API_KEY", "BITMEX_TESTNET_API_SECRET")
+        } else {
+            ("BITMEX_API_KEY", "BITMEX_API_SECRET")
+        };
+
+        let key = get_or_env_var_opt(api_key, api_key_env);
+        let secret = get_or_env_var_opt(api_secret, api_secret_env);
+
+        Self::new(url, key, secret, account_id, heartbeat)
     }
 
     /// Creates a new authenticated [`BitmexWebSocketClient`] using environment variables.
@@ -485,8 +518,6 @@ impl BitmexWebSocketClient {
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: self.heartbeat,
             heartbeat_msg: None,
-            message_handler: Some(message_handler),
-            ping_handler: Some(ping_handler),
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default
             reconnect_delay_max_ms: None,     // Use default
@@ -498,6 +529,8 @@ impl BitmexWebSocketClient {
         let keyed_quotas = vec![];
         let client = WebSocketClient::connect(
             config,
+            Some(message_handler),
+            Some(ping_handler),
             None, // post_reconnection
             keyed_quotas,
             None, // default_quota
@@ -915,7 +948,7 @@ impl BitmexWebSocketClient {
     /// Returns an error if the WebSocket is not connected or if the subscription fails.
     pub async fn subscribe_bars(&self, bar_type: BarType) -> Result<(), BitmexWsError> {
         let topic = topic_from_bar_spec(bar_type.spec());
-        let symbol = bar_type.instrument_id().symbol.to_string();
+        let symbol = bar_type.instrument_id().symbol.inner();
         self.subscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -1082,7 +1115,7 @@ impl BitmexWebSocketClient {
     /// Returns an error if the WebSocket is not connected or if the unsubscription fails.
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> Result<(), BitmexWsError> {
         let topic = topic_from_bar_spec(bar_type.spec());
-        let symbol = bar_type.instrument_id().symbol.to_string();
+        let symbol = bar_type.instrument_id().symbol.inner();
         self.unsubscribe(vec![format!("{topic}:{symbol}")]).await
     }
 
@@ -1210,10 +1243,6 @@ impl BitmexWebSocketClient {
             .map_err(|e| BitmexWsError::ClientError(format!("Handler not available: {e}")))
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

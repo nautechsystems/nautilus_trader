@@ -414,13 +414,21 @@ class TestDataStubs:
 
     @staticmethod
     def order_book_depth10(
+        instrument: Instrument | None = None,
         instrument_id: InstrumentId | None = None,
         flags: int = 0,
         sequence: int = 0,
         ts_event: int = 0,
         ts_init: int = 0,
         levels: int = 10,
+        price_precision: int = 2,  # Override
+        size_precision: int = 0,  # Override
     ) -> OrderBookDepth10:
+        if instrument is not None:
+            instrument_id = instrument.id
+            price_precision = instrument.price_precision
+            size_precision = instrument.size_precision
+
         bids: list[BookOrder] = []
         asks: list[BookOrder] = []
 
@@ -432,8 +440,8 @@ class TestDataStubs:
         for _ in range(levels):
             order = BookOrder(
                 OrderSide.BUY,
-                Price(price, 2),
-                Quantity(quantity, 0),
+                Price(price, price_precision),
+                Quantity(quantity, size_precision),
                 order_id,
             )
 
@@ -451,8 +459,8 @@ class TestDataStubs:
         for _ in range(levels):
             order = BookOrder(
                 OrderSide.SELL,
-                Price(price, 2),
-                Quantity(quantity, 0),
+                Price(price, price_precision),
+                Quantity(quantity, size_precision),
                 order_id,
             )
 

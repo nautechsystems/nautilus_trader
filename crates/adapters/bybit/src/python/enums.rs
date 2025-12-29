@@ -260,11 +260,11 @@ impl BybitMarginMode {
 
     #[getter]
     #[must_use]
-    pub fn value(&self) -> String {
+    pub fn value(&self) -> &'static str {
         match self {
-            Self::IsolatedMargin => "ISOLATED_MARGIN".to_string(),
-            Self::RegularMargin => "REGULAR_MARGIN".to_string(),
-            Self::PortfolioMargin => "PORTFOLIO_MARGIN".to_string(),
+            Self::IsolatedMargin => "ISOLATED_MARGIN",
+            Self::RegularMargin => "REGULAR_MARGIN",
+            Self::PortfolioMargin => "PORTFOLIO_MARGIN",
         }
     }
 

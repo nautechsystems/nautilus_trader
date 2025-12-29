@@ -26,7 +26,7 @@ use nautilus_blockchain::{
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     enums::{Environment, LogColor},
-    live::runtime::get_runtime,
+    live::get_runtime,
     log_warn,
     logging::log_info,
 };
@@ -75,7 +75,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(PostgresConnectOptions::default()),
     );
 
-    let mut node = LiveNode::builder(node_name, trader_id, environment)?
+    let mut node = LiveNode::builder(trader_id, environment)?
+        .with_name(node_name)
         .with_load_state(false)
         .with_save_state(false)
         .add_data_client(

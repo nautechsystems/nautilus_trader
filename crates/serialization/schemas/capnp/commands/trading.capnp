@@ -172,12 +172,14 @@ struct SubmitOrder {
     header @0 :TradingCommandHeader;
     orderInit @1 :OrderEvents.OrderInitialized;
     positionId @2 :Identifiers.PositionId;
+    params @3 :Base.StringMap;
 }
 
 struct SubmitOrderList {
     header @0 :TradingCommandHeader;
     orderInits @1 :List(OrderEvents.OrderInitialized);
     positionId @2 :Identifiers.PositionId;
+    params @3 :Base.StringMap;
 }
 
 struct ModifyOrder {
@@ -187,22 +189,26 @@ struct ModifyOrder {
     quantity @3 :Types.Quantity;
     price @4 :Types.Price;
     triggerPrice @5 :Types.Price;
+    params @6 :Base.StringMap;
 }
 
 struct CancelOrder {
     header @0 :TradingCommandHeader;
     clientOrderId @1 :Identifiers.ClientOrderId;
     venueOrderId @2 :Identifiers.VenueOrderId;
+    params @3 :Base.StringMap;
 }
 
 struct CancelAllOrders {
     header @0 :TradingCommandHeader;
     orderSide @1 :Enums.OrderSide;
+    params @2 :Base.StringMap;
 }
 
 struct BatchCancelOrders {
     header @0 :TradingCommandHeader;
     cancellations @1 :List(CancelOrder);
+    params @2 :Base.StringMap;
 }
 
 struct QueryOrder {

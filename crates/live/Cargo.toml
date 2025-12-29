@@ -22,6 +22,7 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+streaming = ["nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -32,6 +33,7 @@ extension-module = [
   "nautilus-risk/extension-module",
   "python",
   "pyo3/extension-module",
+  "streaming",
 ]
 ffi = ["nautilus-common/ffi", "nautilus-core/ffi", "nautilus-model/ffi"]
 python = [
@@ -44,6 +46,7 @@ python = [
   "nautilus-risk/python",
   "nautilus-system/python",
   "pyo3",
+  "streaming",
 ]
 defi = ["nautilus-common/defi"]
 
@@ -57,15 +60,15 @@ nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-persistence = { workspace = true }
+nautilus-persistence = { workspace = true, optional = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-system = { workspace = true, features = ["live"] }
+nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-futures = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

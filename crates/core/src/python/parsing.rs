@@ -16,7 +16,7 @@
 //! JSON / string parsing helpers for Python inputs.
 
 use pyo3::{
-    exceptions::PyKeyError,
+    exceptions::{PyKeyError, PyValueError},
     prelude::*,
     types::{PyDict, PyList},
 };
@@ -97,7 +97,7 @@ where
     F: FnOnce(String) -> Result<T, String>,
 {
     let value_str = get_required_string(dict, key)?;
-    parser(value_str).map_err(|e| PyKeyError::new_err(format!("Failed to parse {key}: {e}")))
+    parser(value_str).map_err(|e| PyValueError::new_err(format!("Failed to parse '{key}': {e}")))
 }
 
 /// Helper function to get an optional value, parse it with a closure, and handle parse errors.
@@ -126,7 +126,7 @@ where
                 let value_str: String = value.extract()?;
                 parser(value_str)
                     .map(Some)
-                    .map_err(|e| PyKeyError::new_err(format!("Failed to parse {key}: {e}")))
+                    .map_err(|e| PyValueError::new_err(format!("Failed to parse '{key}': {e}")))
             }
         }
         None => Ok(None),

@@ -54,7 +54,10 @@ use super::{
         parse_trade_bin_msg_vec, parse_trade_msg_vec, parse_wallet_msg,
     },
 };
-use crate::common::{enums::BitmexExecType, parse::parse_contracts_quantity};
+use crate::{
+    common::{enums::BitmexExecType, parse::parse_contracts_quantity},
+    http::parse::{InstrumentParseResult, parse_instrument_any},
+};
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -832,14 +835,25 @@ impl FeedHandler {
                 for msg in data {
                     match msg.try_into() {
                         Ok(http_inst) => {
-                            match crate::http::parse::parse_instrument_any(&http_inst, ts_init) {
-                                Some(instrument_any) => {
+                            match parse_instrument_any(&http_inst, ts_init) {
+                                InstrumentParseResult::Ok(boxed) => {
+                                    let instrument_any = *boxed;
                                     let symbol = instrument_any.symbol().inner();
                                     temp_cache.insert(symbol, instrument_any.clone());
                                     instruments.push(instrument_any);
                                 }
-                                None => {
-                                    log::warn!("Failed to parse instrument from WebSocket");
+                                InstrumentParseResult::Unsupported { .. }
+                                | InstrumentParseResult::Inactive { .. } => {
+                                    // Silently skip unsupported or inactive instruments
+                                }
+                                InstrumentParseResult::Failed {
+                                    symbol,
+                                    instrument_type,
+                                    error,
+                                } => {
+                                    log::warn!(
+                                        "Failed to parse instrument {symbol} ({instrument_type:?}): {error}"
+                                    );
                                 }
                             }
                         }
@@ -1002,10 +1016,6 @@ pub(crate) fn should_retry_bitmex_error(error: &BitmexWsError) -> bool {
 pub(crate) fn create_bitmex_timeout_error(msg: String) -> BitmexWsError {
     BitmexWsError::ClientError(msg)
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

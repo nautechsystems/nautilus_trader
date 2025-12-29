@@ -43,7 +43,7 @@ The following normalized Tardis formats are supported by NautilusTrader:
 | Tardis format                                                                                                               | Nautilus data type                                                   |
 |:----------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------|
 | [book_change](https://docs.tardis.dev/api/tardis-machine#book_change)                                                       | `OrderBookDelta`                                                     |
-| [book_snapshot_*](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit) | `OrderBookDepth10`                                                   |
+| [book_snapshot_*](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit) | `OrderBookDepth10` or `OrderBookDeltas` (see [book snapshot output](#book-snapshot-output)) |
 | [quote](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit)           | `QuoteTick`                                                          |
 | [quote_10s](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit)       | `QuoteTick`                                                          |
 | [trade](https://docs.tardis.dev/api/tardis-machine#trade)                                                                   | `Trade`                                                              |
@@ -211,13 +211,14 @@ Next, ensure you have a configuration JSON file available.
 
 **Configuration JSON format**
 
-| Field               | Type              | Description                                                                         | Default                                                                                               |
-|:--------------------|:------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
-| `tardis_ws_url`     | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_MACHINE_WS_URL` env var.                                          |
-| `normalize_symbols` | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | If `null` then will default to `true`.                                                                |
-| `output_path`       | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_PATH` env var, otherwise the current working directory. |
-| `ws_proxy_url`      | string (optional) | Optional WebSocket proxy URL.                                                       | If `null` then no proxy is used.                                                                      |
-| `options`           | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                                                 |
+| Field                   | Type              | Description                                                                         | Default                                                                                               |
+|:------------------------|:------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
+| `tardis_ws_url`         | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_MACHINE_WS_URL` env var.                                          |
+| `normalize_symbols`     | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | If `null` then will default to `true`.                                                                |
+| `output_path`           | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_PATH` env var, otherwise the current working directory. |
+| `book_snapshot_output`  | string (optional) | Output format for `book_snapshot_*` data: `"deltas"` or `"depth10"`. See [book snapshot output](#book-snapshot-output). | If `null` then will default to `"deltas"`.                                                           |
+| `ws_proxy_url`          | string (optional) | Optional WebSocket proxy URL.                                                       | If `null` then no proxy is used.                                                                      |
+| `options`               | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                                                 |
 
 An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_config.json):
 
@@ -237,6 +238,42 @@ An example configuration file, `example_config.json`, is available [here](https:
       ],
       "from": "2019-10-01",
       "to": "2019-10-02"
+    }
+  ]
+}
+```
+
+### Book snapshot output
+
+The `book_snapshot_output` configuration option controls how Tardis `book_snapshot_*` messages (e.g., `book_snapshot_5_100ms`, `book_snapshot_10_1s`) are converted and stored.
+
+| Value     | Nautilus Type       | Output Directory      | Description                                                 |
+|:----------|:--------------------|:----------------------|:------------------------------------------------------------|
+| `deltas`  | `OrderBookDeltas`   | `order_book_deltas/`  | Individual price level updates with snapshot flag set (default) |
+| `depth10` | `OrderBookDepth10`  | `order_book_depths/`  | Periodic depth snapshots with up to 10 price levels        |
+
+**When to use each format:**
+
+- **`deltas` (default)**: Best when you need to reconstruct the full order book state or when working with `book_change` data. Each price level becomes a separate delta record.
+- **`depth10`**: Best for strategies that need periodic order book snapshots. More memory-efficient as each snapshot is a single record containing all levels. Snapshots with more than 10 levels will have only the first 10 preserved.
+
+**Avoiding file overwrites:**
+
+When downloading both `book_snapshot_*` and `book_change` data for the same instrument and date range, using `depth10` format ensures they are written to separate directories (`order_book_depths/` vs `order_book_deltas/`), preventing file overwrites.
+
+Example configuration with explicit format:
+
+```json
+{
+  "tardis_ws_url": "ws://localhost:8001",
+  "book_snapshot_output": "depth10",
+  "options": [
+    {
+      "exchange": "binance-futures",
+      "symbols": ["btcusdt"],
+      "data_types": ["book_snapshot_5_100ms", "book_change"],
+      "from": "2024-01-01",
+      "to": "2024-01-02"
     }
   ]
 }

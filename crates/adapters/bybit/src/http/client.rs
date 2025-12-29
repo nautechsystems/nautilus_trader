@@ -27,10 +27,12 @@ use std::{
     },
 };
 
+use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, nanos::UnixNanos, time::get_atomic_clock_realtime,
+    consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
@@ -42,11 +44,10 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::HttpClient,
+    http::{HttpClient, Method, USER_AGENT},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
-use reqwest::{Method, header::USER_AGENT};
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
@@ -61,7 +62,7 @@ use super::{
         BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrderHistoryResponse,
         BybitPlaceOrderResponse, BybitPositionListResponse, BybitServerTimeResponse,
         BybitSetLeverageResponse, BybitSetMarginModeResponse, BybitSetTradingStopResponse,
-        BybitSwitchModeResponse, BybitTradeHistoryResponse, BybitTradesResponse,
+        BybitSwitchModeResponse, BybitTickerData, BybitTradeHistoryResponse, BybitTradesResponse,
         BybitWalletBalanceResponse,
     },
     query::{
@@ -82,10 +83,10 @@ use crate::{
         consts::BYBIT_NAUTILUS_BROKER_ID,
         credential::Credential,
         enums::{
-            BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOrderSide, BybitOrderType,
-            BybitPositionMode, BybitProductType, BybitTimeInForce,
+            BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
+            BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType, BybitTimeInForce,
         },
-        models::BybitResponse,
+        models::{BybitErrorCheck, BybitResponseCheck},
         parse::{
             bar_spec_to_bybit_interval, make_bybit_symbol, parse_account_state, parse_fill_report,
             parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
@@ -122,6 +123,11 @@ const BYBIT_REPAY_ROUTE_KEY: &str = "bybit:/v5/account/no-convert-repay";
 ///
 /// This client handles request/response operations with the Bybit API,
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
+)]
+#[derive(Clone)]
 pub struct BybitRawHttpClient {
     base_url: String,
     client: HttpClient,
@@ -259,6 +265,67 @@ impl BybitRawHttpClient {
         })
     }
 
+    /// Creates a new [`BybitRawHttpClient`] with environment variable credential resolution.
+    ///
+    /// If `api_key` or `api_secret` are not provided, they will be loaded from
+    /// environment variables based on the environment flags:
+    /// - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+    /// - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+    /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_env(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        base_url: Option<String>,
+        demo: bool,
+        testnet: bool,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> Result<Self, BybitHttpError> {
+        let (api_key_env, api_secret_env) = if demo {
+            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
+        } else if testnet {
+            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
+        } else {
+            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
+        };
+
+        let key = get_or_env_var_opt(api_key, api_key_env);
+        let secret = get_or_env_var_opt(api_secret, api_secret_env);
+
+        if let (Some(k), Some(s)) = (key, secret) {
+            Self::with_credentials(
+                k,
+                s,
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
+            )
+        } else {
+            Self::new(
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
+            )
+        }
+    }
+
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([
             (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
@@ -307,7 +374,7 @@ impl BybitRawHttpClient {
         Ok(headers)
     }
 
-    async fn send_request<T: DeserializeOwned, P: Serialize>(
+    async fn send_request<T: DeserializeOwned + BybitResponseCheck, P: Serialize>(
         &self,
         method: Method,
         endpoint: &str,
@@ -392,20 +459,34 @@ impl BybitRawHttpClient {
                     });
                 }
 
-                // Parse as BybitResponse to check retCode
-                let bybit_response: BybitResponse<serde_json::Value> =
-                    serde_json::from_slice(&response.body)?;
-
-                if bybit_response.ret_code != 0 {
-                    return Err(BybitHttpError::BybitError {
-                        error_code: bybit_response.ret_code as i32,
-                        message: bybit_response.ret_msg,
-                    });
+                // Try to deserialize into the target type
+                match serde_json::from_slice::<T>(&response.body) {
+                    Ok(result) => {
+                        // Check for API-level errors
+                        if result.ret_code() != 0 {
+                            return Err(BybitHttpError::BybitError {
+                                error_code: result.ret_code() as i32,
+                                message: result.ret_msg().to_string(),
+                            });
+                        }
+                        Ok(result)
+                    }
+                    Err(json_err) => {
+                        // Deserialization failed - check if it's a Bybit error response
+                        // (error responses often have result: null which fails typed deserialization)
+                        if let Ok(error_check) =
+                            serde_json::from_slice::<BybitErrorCheck>(&response.body)
+                            && error_check.ret_code != 0
+                        {
+                            return Err(BybitHttpError::BybitError {
+                                error_code: error_check.ret_code as i32,
+                                message: error_check.ret_msg,
+                            });
+                        }
+                        // Not a Bybit error, propagate the JSON parse error
+                        Err(json_err.into())
+                    }
                 }
-
-                // Deserialize the full response
-                let result: T = serde_json::from_slice(&response.body)?;
-                Ok(result)
             }
         };
 
@@ -470,7 +551,7 @@ impl BybitRawHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn get_instruments<T: DeserializeOwned>(
+    pub async fn get_instruments<T: DeserializeOwned + BybitResponseCheck>(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<T, BybitHttpError> {
@@ -594,23 +675,62 @@ impl BybitRawHttpClient {
     ///
     /// Returns an error if the request fails or the response cannot be parsed.
     ///
+    /// # Panics
+    ///
+    /// Panics if the parameter builder fails (should never happen with valid inputs).
+    ///
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_open_orders(
         &self,
         category: BybitProductType,
-        symbol: Option<&str>,
+        symbol: Option<String>,
+        base_coin: Option<String>,
+        settle_coin: Option<String>,
+        order_id: Option<String>,
+        order_link_id: Option<String>,
+        open_only: Option<BybitOpenOnly>,
+        order_filter: Option<BybitOrderFilter>,
+        limit: Option<u32>,
+        cursor: Option<String>,
     ) -> Result<BybitOpenOrdersResponse, BybitHttpError> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Params<'a> {
-            category: BybitProductType,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            symbol: Option<&'a str>,
+        let mut builder = BybitOpenOrdersParamsBuilder::default();
+        builder.category(category);
+
+        if let Some(s) = symbol {
+            builder.symbol(s);
+        }
+        if let Some(bc) = base_coin {
+            builder.base_coin(bc);
+        }
+        if let Some(sc) = settle_coin {
+            builder.settle_coin(sc);
+        }
+        if let Some(oi) = order_id {
+            builder.order_id(oi);
+        }
+        if let Some(ol) = order_link_id {
+            builder.order_link_id(ol);
+        }
+        if let Some(oo) = open_only {
+            builder.open_only(oo);
+        }
+        if let Some(of) = order_filter {
+            builder.order_filter(of);
+        }
+        if let Some(l) = limit {
+            builder.limit(l);
+        }
+        if let Some(c) = cursor {
+            builder.cursor(c);
         }
 
-        let params = Params { category, symbol };
+        let params = builder
+            .build()
+            .expect("Failed to build BybitOpenOrdersParams");
+
         self.send_request(Method::GET, "/v5/order/realtime", Some(&params), None, true)
             .await
     }
@@ -947,7 +1067,7 @@ impl BybitRawHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/tickers>
-    pub async fn get_tickers<T: DeserializeOwned>(
+    pub async fn get_tickers<T: DeserializeOwned + BybitResponseCheck>(
         &self,
         params: &BybitTickersParams,
     ) -> Result<T, BybitHttpError> {
@@ -1014,7 +1134,7 @@ impl BybitRawHttpClient {
 /// Provides a HTTP client for connecting to the [Bybit](https://bybit.com) REST API.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bybit")
 )]
 /// High-level HTTP client that wraps the raw client and provides Nautilus domain types.
 ///
@@ -1120,6 +1240,67 @@ impl BybitHttpClient {
         })
     }
 
+    /// Creates a new [`BybitHttpClient`] with optional credentials resolved from environment variables.
+    ///
+    /// Credentials are resolved in the following order:
+    /// 1. Use provided `api_key`/`api_secret` if `Some`
+    /// 2. Fall back to environment variables based on environment:
+    ///    - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+    ///    - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+    ///    - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the retry manager cannot be created.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_env(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        base_url: Option<String>,
+        demo: bool,
+        testnet: bool,
+        timeout_secs: Option<u64>,
+        max_retries: Option<u32>,
+        retry_delay_ms: Option<u64>,
+        retry_delay_max_ms: Option<u64>,
+        recv_window_ms: Option<u64>,
+        proxy_url: Option<String>,
+    ) -> Result<Self, BybitHttpError> {
+        let (api_key_env, api_secret_env) = if demo {
+            ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET")
+        } else if testnet {
+            ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET")
+        } else {
+            ("BYBIT_API_KEY", "BYBIT_API_SECRET")
+        };
+
+        let key = get_or_env_var_opt(api_key, api_key_env);
+        let secret = get_or_env_var_opt(api_secret, api_secret_env);
+
+        match (key, secret) {
+            (Some(k), Some(s)) => Self::with_credentials(
+                k,
+                s,
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
+            ),
+            _ => Self::new(
+                base_url,
+                timeout_secs,
+                max_retries,
+                retry_delay_ms,
+                retry_delay_max_ms,
+                recv_window_ms,
+                proxy_url,
+            ),
+        }
+    }
+
     #[must_use]
     pub fn base_url(&self) -> &str {
         self.inner.base_url()
@@ -1209,7 +1390,7 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
-    pub async fn get_instruments<T: DeserializeOwned>(
+    pub async fn get_instruments<T: DeserializeOwned + BybitResponseCheck>(
         &self,
         params: &BybitInstrumentsInfoParams,
     ) -> Result<T, BybitHttpError> {
@@ -1335,12 +1516,34 @@ impl BybitHttpClient {
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_open_orders(
         &self,
         category: BybitProductType,
-        symbol: Option<&str>,
+        symbol: Option<String>,
+        base_coin: Option<String>,
+        settle_coin: Option<String>,
+        order_id: Option<String>,
+        order_link_id: Option<String>,
+        open_only: Option<BybitOpenOnly>,
+        order_filter: Option<BybitOrderFilter>,
+        limit: Option<u32>,
+        cursor: Option<String>,
     ) -> Result<BybitOpenOrdersResponse, BybitHttpError> {
-        self.inner.get_open_orders(category, symbol).await
+        self.inner
+            .get_open_orders(
+                category,
+                symbol,
+                base_coin,
+                settle_coin,
+                order_id,
+                order_link_id,
+                open_only,
+                order_filter,
+                limit,
+                cursor,
+            )
+            .await
     }
 
     /// Places a new order (requires authentication).
@@ -2220,11 +2423,8 @@ impl BybitHttpClient {
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        tracing::info!(
-            "query_order called: instrument_id={}, client_order_id={:?}, venue_order_id={:?}",
-            instrument_id,
-            client_order_id,
-            venue_order_id
+        tracing::debug!(
+            "query_order: instrument_id={instrument_id}, client_order_id={client_order_id:?}, venue_order_id={venue_order_id:?}"
         );
 
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
@@ -2254,7 +2454,7 @@ impl BybitHttpClient {
             let mut stop_params = BybitOpenOrdersParamsBuilder::default();
             stop_params.category(product_type);
             stop_params.symbol(bybit_symbol.raw_symbol().to_string());
-            stop_params.order_filter("StopOrder".to_string());
+            stop_params.order_filter(BybitOrderFilter::StopOrder);
 
             if let Some(venue_order_id) = venue_order_id {
                 stop_params.order_id(venue_order_id.to_string());
@@ -2308,7 +2508,7 @@ impl BybitHttpClient {
                 let mut stop_history_params = BybitOrderHistoryParamsBuilder::default();
                 stop_history_params.category(product_type);
                 stop_history_params.symbol(bybit_symbol.raw_symbol().to_string());
-                stop_history_params.order_filter("StopOrder".to_string());
+                stop_history_params.order_filter(BybitOrderFilter::StopOrder);
 
                 if let Some(venue_order_id) = venue_order_id {
                     stop_history_params.order_id(venue_order_id.to_string());
@@ -2416,7 +2616,7 @@ impl BybitHttpClient {
         match product_type {
             BybitProductType::Spot => {
                 // Try to get fee rates, use defaults if credentials are missing
-                let fee_map: HashMap<_, _> = {
+                let fee_map: AHashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
                     fee_params.category(product_type);
                     if let Ok(params) = fee_params.build() {
@@ -2429,12 +2629,12 @@ impl BybitHttpClient {
                                 .collect(),
                             Err(BybitHttpError::MissingCredentials) => {
                                 tracing::warn!("Missing credentials for fee rates, using defaults");
-                                HashMap::new()
+                                AHashMap::new()
                             }
                             Err(e) => return Err(e.into()),
                         }
                     } else {
-                        HashMap::new()
+                        AHashMap::new()
                     }
                 };
 
@@ -2473,7 +2673,7 @@ impl BybitHttpClient {
             }
             BybitProductType::Linear => {
                 // Try to get fee rates, use defaults if credentials are missing
-                let fee_map: HashMap<_, _> = {
+                let fee_map: AHashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
                     fee_params.category(product_type);
                     if let Ok(params) = fee_params.build() {
@@ -2486,12 +2686,12 @@ impl BybitHttpClient {
                                 .collect(),
                             Err(BybitHttpError::MissingCredentials) => {
                                 tracing::warn!("Missing credentials for fee rates, using defaults");
-                                HashMap::new()
+                                AHashMap::new()
                             }
                             Err(e) => return Err(e.into()),
                         }
                     } else {
-                        HashMap::new()
+                        AHashMap::new()
                     }
                 };
 
@@ -2530,7 +2730,7 @@ impl BybitHttpClient {
             }
             BybitProductType::Inverse => {
                 // Try to get fee rates, use defaults if credentials are missing
-                let fee_map: HashMap<_, _> = {
+                let fee_map: AHashMap<_, _> = {
                     let mut fee_params = BybitFeeRateParamsBuilder::default();
                     fee_params.category(product_type);
                     if let Ok(params) = fee_params.build() {
@@ -2543,12 +2743,12 @@ impl BybitHttpClient {
                                 .collect(),
                             Err(BybitHttpError::MissingCredentials) => {
                                 tracing::warn!("Missing credentials for fee rates, using defaults");
-                                HashMap::new()
+                                AHashMap::new()
                             }
                             Err(e) => return Err(e.into()),
                         }
                     } else {
-                        HashMap::new()
+                        AHashMap::new()
                     }
                 };
 
@@ -2622,6 +2822,42 @@ impl BybitHttpClient {
         }
 
         Ok(instruments)
+    }
+
+    /// Request ticker information for market data.
+    ///
+    /// Fetches ticker data from Bybit's `/v5/market/tickers` endpoint and returns
+    /// a unified `BybitTickerData` structure compatible with all product types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/market/tickers>
+    pub async fn request_tickers(
+        &self,
+        params: &BybitTickersParams,
+    ) -> anyhow::Result<Vec<BybitTickerData>> {
+        use super::models::{
+            BybitTickersLinearResponse, BybitTickersOptionResponse, BybitTickersSpotResponse,
+        };
+
+        match params.category {
+            BybitProductType::Spot => {
+                let response: BybitTickersSpotResponse = self.inner.get_tickers(params).await?;
+                Ok(response.result.list.into_iter().map(Into::into).collect())
+            }
+            BybitProductType::Linear | BybitProductType::Inverse => {
+                let response: BybitTickersLinearResponse = self.inner.get_tickers(params).await?;
+                Ok(response.result.list.into_iter().map(Into::into).collect())
+            }
+            BybitProductType::Option => {
+                let response: BybitTickersOptionResponse = self.inner.get_tickers(params).await?;
+                Ok(response.result.list.into_iter().map(Into::into).collect())
+            }
+        }
     }
 
     /// Request recent trade tick history for a given symbol.
@@ -2705,17 +2941,20 @@ impl BybitHttpClient {
         )?;
 
         let start_ms = start.map(|dt| dt.timestamp_millis());
-        let mut all_bars: Vec<Bar> = Vec::new();
-        let mut seen_timestamps: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        let mut seen_timestamps: AHashSet<i64> = AHashSet::new();
+        let current_time_ms = get_atomic_clock_realtime().get_time_ms() as i64;
 
         // Pagination strategy: work backwards from end time
         // - Each page fetched is older than the previous page
         // - Within each page, bars are in chronological order (oldest to newest)
-        // - We insert each new (older) page at the front to maintain overall chronological order
+        // - We collect pages in reverse order (newest first) then reverse at the end
         // Example with 2 pages:
         //   Page 1 (most recent): bars [T=2000..2999]
         //   Page 2 (older):       bars [T=1000..1999]
-        //   Result after splice:  bars [T=1000..1999, T=2000..2999] ✓ chronological
+        //   Collected: [[T=2000..2999], [T=1000..1999]]
+        //   After reverse + flatten: [T=1000..1999, T=2000..2999] ✓ chronological
+        let mut pages: Vec<Vec<Bar>> = Vec::new();
+        let mut total_bars = 0usize;
         let mut current_end = end.map(|dt| dt.timestamp_millis());
         let mut page_count = 0;
 
@@ -2743,48 +2982,64 @@ impl BybitHttpClient {
                 break;
             }
 
-            // Sort klines by start time
-            let mut sorted_klines = klines;
-            sorted_klines.sort_by_key(|k| k.start.parse::<i64>().unwrap_or(0));
+            // Parse timestamps once and pair with klines for sorting
+            let mut klines_with_ts: Vec<(i64, _)> = klines
+                .into_iter()
+                .filter_map(|k| k.start.parse::<i64>().ok().map(|ts| (ts, k)))
+                .collect();
 
-            // Parse klines to bars, filtering duplicates
-            let ts_init = self.generate_ts_init();
-            let mut new_bars = Vec::new();
+            klines_with_ts.sort_by_key(|(ts, _)| *ts);
 
-            for kline in &sorted_klines {
-                let start_time = kline.start.parse::<i64>().unwrap_or(0);
-                if !seen_timestamps.contains(&start_time)
-                    && let Ok(bar) =
-                        parse_kline_bar(kline, &instrument, bar_type, timestamp_on_close, ts_init)
-                {
-                    new_bars.push(bar);
-                }
-            }
-
-            // If no new bars were added (all were duplicates), we've reached the end
-            if new_bars.is_empty() {
+            // Check if we have any new timestamps
+            let has_new = klines_with_ts
+                .iter()
+                .any(|(ts, _)| !seen_timestamps.contains(ts));
+            if !has_new {
                 break;
             }
 
-            // Insert older pages at the front to maintain chronological order
-            // (we're fetching backwards, so each new page is older than what we already have)
-            all_bars.splice(0..0, new_bars);
-            seen_timestamps.extend(
-                sorted_klines
-                    .iter()
-                    .filter_map(|k| k.start.parse::<i64>().ok()),
-            );
+            let ts_init = self.generate_ts_init();
+            let mut page_bars = Vec::with_capacity(klines_with_ts.len());
+
+            let mut earliest_ts: Option<i64> = None;
+
+            for (start_time, kline) in &klines_with_ts {
+                // Track earliest timestamp for pagination
+                if earliest_ts.is_none_or(|ts| *start_time < ts) {
+                    earliest_ts = Some(*start_time);
+                }
+
+                let bar_end_time = interval.bar_end_time_ms(*start_time);
+                if bar_end_time > current_time_ms {
+                    continue;
+                }
+
+                if !seen_timestamps.contains(start_time)
+                    && let Ok(bar) =
+                        parse_kline_bar(kline, &instrument, bar_type, timestamp_on_close, ts_init)
+                {
+                    page_bars.push(bar);
+                    seen_timestamps.insert(*start_time);
+                }
+            }
+
+            // page_bars may be empty if all klines were partial, but pagination
+            // continues to fetch older closed bars
+            total_bars += page_bars.len();
+            pages.push(page_bars);
 
             // Check if we've reached the requested limit
             if let Some(limit_val) = limit
-                && all_bars.len() >= limit_val as usize
+                && total_bars >= limit_val as usize
             {
                 break;
             }
 
             // Move end time backwards to get earlier data
             // Set new end to be 1ms before the first bar of this page
-            let earliest_bar_time = sorted_klines[0].start.parse::<i64>().unwrap_or(0);
+            let Some(earliest_bar_time) = earliest_ts else {
+                break;
+            };
             if let Some(start_val) = start_ms
                 && earliest_bar_time <= start_val
             {
@@ -2799,7 +3054,12 @@ impl BybitHttpClient {
             }
         }
 
-        // all_bars is now in chronological order (oldest to newest)
+        // Reverse pages and flatten to get chronological order (oldest to newest)
+        let mut all_bars: Vec<Bar> = Vec::with_capacity(total_bars);
+        for page in pages.into_iter().rev() {
+            all_bars.extend(page);
+        }
+
         // If limit is specified and we have more bars, return the last N bars (most recent)
         if let Some(limit_val) = limit {
             let limit_usize = limit_val as usize;
@@ -3034,7 +3294,7 @@ impl BybitHttpClient {
                     }
                 }
 
-                let seen_order_ids: std::collections::HashSet<Ustr> =
+                let seen_order_ids: AHashSet<Ustr> =
                     open_orders.iter().map(|o| o.order_id).collect();
 
                 all_orders.extend(open_orders);
@@ -3408,10 +3668,6 @@ impl BybitHttpClient {
         Ok(reports)
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

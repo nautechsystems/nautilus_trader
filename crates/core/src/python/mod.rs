@@ -153,6 +153,7 @@ pub fn to_pyruntime_err(e: impl Display) -> PyErr {
 )]
 #[allow(unsafe_code)]
 fn py_is_pycapsule(obj: Py<PyAny>) -> bool {
+    // SAFETY: obj.as_ptr() returns a valid Python object pointer
     unsafe {
         // PyCapsule_CheckExact checks if the object is exactly a PyCapsule
         pyo3::ffi::PyCapsule_CheckExact(obj.as_ptr()) != 0

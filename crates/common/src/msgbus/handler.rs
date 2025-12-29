@@ -82,7 +82,11 @@ impl<T: 'static, F: Fn(&T) + 'static> MessageHandler for TypedMessageHandler<T, 
         if let Some(typed_msg) = message.downcast_ref::<T>() {
             (self.callback)(typed_msg);
         } else {
-            log::error!("Expected message of type {}", type_name::<T>());
+            log::error!(
+                "TypedMessageHandler downcast failed: expected {} got {:?}",
+                type_name::<T>(),
+                message.type_id()
+            );
         }
     }
 

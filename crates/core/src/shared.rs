@@ -36,7 +36,7 @@
 //!   client holds only a `WeakCell` back to the exchange.
 
 use std::{
-    cell::{Ref, RefCell, RefMut},
+    cell::{BorrowError, BorrowMutError, Ref, RefCell, RefMut},
     rc::{Rc, Weak},
 };
 
@@ -77,6 +77,22 @@ impl<T> SharedCell<T> {
     #[must_use]
     pub fn borrow_mut(&self) -> RefMut<'_, T> {
         self.0.borrow_mut()
+    }
+
+    /// Attempts to immutably borrow the inner value.
+    ///
+    /// Returns `Err` if the value is currently mutably borrowed.
+    #[inline]
+    pub fn try_borrow(&self) -> Result<Ref<'_, T>, BorrowError> {
+        self.0.try_borrow()
+    }
+
+    /// Attempts to mutably borrow the inner value.
+    ///
+    /// Returns `Err` if the value is currently borrowed (mutably or immutably).
+    #[inline]
+    pub fn try_borrow_mut(&self) -> Result<RefMut<'_, T>, BorrowMutError> {
+        self.0.try_borrow_mut()
     }
 
     /// Number of active strong references.

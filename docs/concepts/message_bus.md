@@ -248,7 +248,7 @@ Here's a quick reference to help you decide which messaging style to use:
 |:--------------------------------------------|:--------------------------------------------------------------------------------|:-------------------|
 | Custom events or system-level communication | `MessageBus` + Pub/Sub to topic                                                 | Topic + Handler management |
 | Structured trading data                     | `Actor` + Pub/Sub Data + optional `@customdataclass` if serialization is needed | New class definition inheriting from `Data` (handler `on_data` is predefined) |
-| Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Just signal name |
+| Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Signal name only |
 
 ## External publishing
 
@@ -388,8 +388,8 @@ specifying which types of messages should be excluded from external publication.
 
 ```python
 from nautilus_trader.config import MessageBusConfig
-from nautilus_trader.data import TradeTick
-from nautilus_trader.data import QuoteTick
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 
 # Create a MessageBusConfig instance with types filtering
 message_bus = MessageBusConfig(
@@ -414,40 +414,16 @@ The message bus within a `TradingNode` (node) is referred to as the "internal me
 A producer node is one which publishes messages onto an external stream (see [external publishing](#external-publishing)).
 The consumer node listens to external streams to receive and publish deserialized message payloads on its internal message bus.
 
-```
-                  ┌───────────────────────────┐
-                  │                           │
-                  │                           │
-                  │                           │
-                  │      Producer Node        │
-                  │                           │
-                  │                           │
-                  │                           │
-                  │                           │
-                  │                           │
-                  │                           │
-                  └─────────────┬─────────────┘
-                                │
-                                │
-┌───────────────────────────────▼──────────────────────────────┐
-│                                                              │
-│                            Stream                            │
-│                                                              │
-└─────────────┬────────────────────────────────────┬───────────┘
-              │                                    │
-              │                                    │
-┌─────────────▼───────────┐          ┌─────────────▼───────────┐
-│                         │          │                         │
-│                         │          │                         │
-│     Consumer Node 1     │          │     Consumer Node 2     │
-│                         │          │                         │
-│                         │          │                         │
-│                         │          │                         │
-│                         │          │                         │
-│                         │          │                         │
-│                         │          │                         │
-│                         │          │                         │
-└─────────────────────────┘          └─────────────────────────┘
+```mermaid
+flowchart TB
+    producer[Producer Node]
+    stream[Stream]
+    consumer1[Consumer Node 1]
+    consumer2[Consumer Node 2]
+
+    producer --> stream
+    stream --> consumer1
+    stream --> consumer2
 ```
 
 :::tip

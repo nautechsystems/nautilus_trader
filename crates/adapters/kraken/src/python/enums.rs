@@ -28,9 +28,9 @@ impl KrakenEnvironment {
     }
 
     #[classattr]
-    #[pyo3(name = "TESTNET")]
-    fn py_testnet() -> Self {
-        Self::Testnet
+    #[pyo3(name = "DEMO")]
+    fn py_demo() -> Self {
+        Self::Demo
     }
 }
 

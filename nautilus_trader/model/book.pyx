@@ -61,6 +61,7 @@ from nautilus_trader.core.rust.model cimport orderbook_clear_asks
 from nautilus_trader.core.rust.model cimport orderbook_clear_bids
 from nautilus_trader.core.rust.model cimport orderbook_delete
 from nautilus_trader.core.rust.model cimport orderbook_drop
+from nautilus_trader.core.rust.model cimport orderbook_get_all_crossed_levels
 from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_get_quantity_for_price
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
@@ -669,6 +670,54 @@ cdef class OrderBook(Data):
         vec_drop_fills(raw_fills_vec)
 
         return fills
+
+    cpdef list get_all_crossed_levels(self, OrderSide order_side, Price price, uint8_t size_prec):
+        """
+        Return all price levels that would be crossed by an order at the given price.
+
+        Unlike `simulate_fills`, this returns ALL crossed levels regardless of
+        order quantity. Used when liquidity consumption tracking needs visibility
+        into all available levels.
+
+        Parameters
+        ----------
+        order_side : OrderSide
+            The order side (BUY or SELL).
+        price : Price
+            The limit price to check against.
+        size_prec : uint8_t
+            The size precision for the quantities.
+
+        Returns
+        -------
+        list[(Price, Quantity)]
+
+        """
+        Condition.not_none(price, "price")
+
+        cdef CVec raw_levels_vec = orderbook_get_all_crossed_levels(
+            &self._mem,
+            order_side,
+            price._mem,
+            size_prec,
+        )
+        cdef (Price_t, Quantity_t)* raw_levels = <(Price_t, Quantity_t)*>raw_levels_vec.ptr
+        cdef list levels = []
+
+        cdef:
+            uint64_t i
+            (Price_t, Quantity_t) raw_level
+            Price level_price
+            Quantity level_size
+        for i in range(raw_levels_vec.len):
+            raw_level = raw_levels[i]
+            level_price = Price.from_mem_c(raw_level[0])
+            level_size = Quantity.from_mem_c(raw_level[1])
+            levels.append((level_price, level_size))
+
+        vec_drop_fills(raw_levels_vec)
+
+        return levels
 
     cpdef void update_quote_tick(self, QuoteTick tick):
         """

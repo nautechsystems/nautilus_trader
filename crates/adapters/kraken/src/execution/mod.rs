@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Execution client module (for future implementation).
+//! Execution client integration module.
 //!
-//! This will handle order placement, cancellation, and position management.
+//! Provides order placement, cancellation, modification, and position management
+//! for Kraken Spot and Futures markets via Rust HTTP clients exposed to Python.

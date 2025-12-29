@@ -155,13 +155,14 @@ class PolymarketWebSocketClient:
 
         config = WebSocketConfig(
             url=self._ws_url,
-            handler=self._handler,
-            heartbeat=10,
             headers=[],
+            heartbeat=10,
         )
 
         self._client = await WebSocketClient.connect(
+            loop_=self._loop,
             config=config,
+            handler=self._handler,
             post_reconnection=self.reconnect,
         )
         self._is_connecting = False

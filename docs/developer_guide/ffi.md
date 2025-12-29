@@ -48,13 +48,24 @@ once the capsule becomes unreachable. The closure/destructor is responsible
 for reconstructing the original `Box<T>` or `Vec<T>` and letting it drop.
 
 ```rust
-Python::attach(|py| {
-    // allocate the value on the heap
-    let my_data = MyStruct::new();
+use pyo3::types::PyCapsule;
 
-    // move it into the capsule and register a destructor
-    let capsule = pyo3::types::PyCapsule::new_with_destructor(py, my_data, None, |_, _| {})
-        .expect("capsule creation failed");
+Python::attach(|py| {
+    // Allocate the value on the heap
+    let my_data = Box::new(MyStruct::new());
+    let ptr = Box::into_raw(my_data);
+
+    // Move it into the capsule and register a destructor that frees the memory
+    let capsule = PyCapsule::new_with_destructor(
+        py,
+        ptr,
+        None,
+        |ptr, _| {
+            // Reconstruct the Box and let it drop, freeing the allocation
+            let _ = unsafe { Box::from_raw(ptr) };
+        },
+    )
+    .expect("capsule creation failed");
 
     // ... pass `capsule` back to Python ...
 });
@@ -69,8 +80,12 @@ this rule everywhere – adding new FFI modules must follow the same pattern.
 
 Earlier versions of the codebase shipped a generic `cvec_drop` function that always treated the
 buffer as `Vec<u8>`. Using it with any other element type causes a size-mismatch during
-deallocation and corrupts the allocator’s bookkeeping. Because the helper was not referenced
+deallocation and corrupts the allocator's bookkeeping. Because the helper was not referenced
 anywhere inside the project it has been removed to avoid accidental misuse.
+
+Instead, use the **type-specific** drop helper for your element type (e.g., `vec_drop_book_levels`,
+`vec_drop_book_orders`). If no helper exists for your type, add one following the pattern in
+`crates/core/src/ffi/cvec.rs`.
 
 ## Box-backed `*_API` wrappers (owned Rust objects)
 
@@ -98,15 +113,16 @@ Memory-safety requirements are therefore:
 
 1. Every constructor (`*_new`) **must** have a matching `*_drop` exported
     next to it.
-2. The *Python/Cython* binding must guarantee that `*_drop` is invoked
-    exactly once. Two approaches are accepted:
+2. Validate parameters before heap allocation to fail fast and avoid allocating invalid objects.
+3. The *Python/Cython* binding must guarantee that `*_drop` is invoked
+    exactly once. Two approaches exist:
 
-    • Wrap the pointer in a `PyCapsule` created with
+    • **Preferred for new code**: Wrap the pointer in a `PyCapsule` created with
       `PyCapsule::new_with_destructor`, passing a destructor that calls
       the drop helper.
 
-    • Call the helper explicitly in `__del__`/`__dealloc__` on the Python
-      side.  This is the historical pattern for most v1 Cython modules:
+    • **Legacy pattern** (v1 Cython modules only): Call the helper explicitly in
+      `__del__`/`__dealloc__` on the Python side:
 
       ```python
       cdef class OrderBook:
@@ -123,4 +139,4 @@ Memory-safety requirements are therefore:
 Whichever style is used, remember: **forgetting the drop call leaks the
 entire structure**, while calling it twice will double-free and crash.
 
-New FFI code must follow this template before it can be merged.
+New FFI code must use `PyCapsule` with destructors and follow this template before it can be merged.

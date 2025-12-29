@@ -23,6 +23,8 @@
 //!
 //! See [dYdX order types](https://help.dydx.trade/en/articles/166985-short-term-vs-long-term-order-types).
 
+#[cfg(test)]
+use chrono::Duration;
 use chrono::{DateTime, Utc};
 use nautilus_model::enums::OrderType;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -55,6 +57,9 @@ pub enum OrderGoodUntil {
 }
 
 /// Order flags indicating order lifetime and execution type.
+///
+/// See <https://docs.dydx.xyz/concepts/trading/orders#short-term-vs-long-term> for details
+/// on short-term vs long-term (stateful) orders.
 #[derive(Clone, Debug)]
 pub enum OrderFlags {
     /// Short-term order (expires by block height).
@@ -62,6 +67,9 @@ pub enum OrderFlags {
     /// Long-term order (expires by timestamp).
     LongTerm,
     /// Conditional order (triggered by trigger price).
+    ///
+    /// Conditional orders include Stop Market, Stop Limit, Take Profit Market, and Take Profit Limit.
+    /// See <https://docs.dydx.xyz/concepts/trading/orders#types> for details.
     Conditional,
 }
 
@@ -665,8 +673,8 @@ mod tests {
         let market = sample_market_params();
         let builder = OrderBuilder::new(market, "dydx1test".to_string(), 0, 7);
 
-        let now = chrono::Utc::now();
-        let until = now + chrono::Duration::hours(1);
+        let now = Utc::now();
+        let until = now + Duration::hours(1);
 
         let order = builder
             .long_term()

@@ -48,7 +48,6 @@ nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-serialization = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -61,10 +60,7 @@ chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
-hex = { workspace = true }
 indexmap = { workspace = true }
-log = { workspace = true }
-reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -102,3 +98,8 @@ path = "bin/http_spot_public.rs"
 [[bin]]
 name = "kraken-ws-spot-data"
 path = "bin/ws_spot_data.rs"
+
+# Run with `cargo bench -p nautilus-kraken --bench websocket`
+[[bench]]
+name = "websocket"
+harness = false

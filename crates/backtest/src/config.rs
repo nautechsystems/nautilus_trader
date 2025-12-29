@@ -32,6 +32,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
 };
+#[cfg(feature = "streaming")]
 use nautilus_persistence::config::StreamingConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
@@ -78,6 +79,7 @@ pub struct BacktestEngineConfig {
     /// The portfolio configuration.
     pub portfolio: Option<PortfolioConfig>,
     /// The configuration for streaming to feather files.
+    #[cfg(feature = "streaming")]
     pub streaming: Option<StreamingConfig>,
     /// If logging should be bypassed.
     pub bypass_logging: bool,
@@ -109,7 +111,7 @@ impl BacktestEngineConfig {
         risk_engine: Option<RiskEngineConfig>,
         exec_engine: Option<ExecutionEngineConfig>,
         portfolio: Option<PortfolioConfig>,
-        streaming: Option<StreamingConfig>,
+        #[cfg(feature = "streaming")] streaming: Option<StreamingConfig>,
     ) -> Self {
         Self {
             environment,
@@ -130,6 +132,7 @@ impl BacktestEngineConfig {
             risk_engine,
             exec_engine,
             portfolio,
+            #[cfg(feature = "streaming")]
             streaming,
             bypass_logging: bypass_logging.unwrap_or(false),
             run_analysis: run_analysis.unwrap_or(true),
@@ -210,6 +213,7 @@ impl NautilusKernelConfig for BacktestEngineConfig {
         self.portfolio.clone()
     }
 
+    #[cfg(feature = "streaming")]
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
@@ -236,6 +240,7 @@ impl Default for BacktestEngineConfig {
             risk_engine: None,
             exec_engine: None,
             portfolio: None,
+            #[cfg(feature = "streaming")]
             streaming: None,
             bypass_logging: false,
             run_analysis: true,

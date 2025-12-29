@@ -28,7 +28,6 @@ use crate::{
 pub mod enums;
 pub mod http_futures;
 pub mod http_spot;
-pub mod urls;
 pub mod websocket_futures;
 pub mod websocket_spot;
 
@@ -51,16 +50,11 @@ fn py_kraken_product_type_from_symbol(symbol: &str) -> KrakenProductType {
 pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KrakenEnvironment>()?;
     m.add_class::<KrakenProductType>()?;
-    // HTTP clients
     m.add_class::<KrakenSpotHttpClient>()?;
     m.add_class::<KrakenFuturesHttpClient>()?;
-    // WebSocket clients
     m.add_class::<KrakenSpotWebSocketClient>()?;
     m.add_class::<KrakenFuturesWebSocketClient>()?;
 
-    m.add_function(wrap_pyfunction!(urls::py_kraken_get_http_base_url, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::py_get_kraken_ws_public_url, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::py_get_kraken_ws_private_url, m)?)?;
     m.add_function(wrap_pyfunction!(py_kraken_product_type_from_symbol, m)?)?;
 
     Ok(())

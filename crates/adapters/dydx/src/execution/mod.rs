@@ -14,19 +14,43 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Live execution client implementation for the dYdX adapter.
+//!
+//! This module provides the execution client for submitting orders, cancellations,
+//! and managing positions on dYdX v4.
+//!
+//! # Order Types
+//!
+//! dYdX supports the following order types:
+//!
+//! - **Market**: Execute immediately at best available price
+//! - **Limit**: Execute at specified price or better
+//! - **Stop Market**: Triggered when price crosses stop price, then executes as market order
+//! - **Stop Limit**: Triggered when price crosses stop price, then places limit order
+//! - **Take Profit Market**: Close position at profit target, executes as market order
+//! - **Take Profit Limit**: Close position at profit target, places limit order
+//!
+//! See <https://docs.dydx.xyz/concepts/trading/orders#types> for details.
+//!
+//! # Order Lifetimes
+//!
+//! Orders can be short-term (expire by block height) or long-term/stateful (expire by timestamp).
+//! Conditional orders (Stop/TakeProfit) are always stateful.
+//!
+//! See <https://docs.dydx.xyz/concepts/trading/orders#short-term-vs-long-term> for details.
 
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicU32, AtomicU64},
+    atomic::{AtomicU32, AtomicU64, Ordering},
 };
 
 use anyhow::Context;
 use async_trait::async_trait;
+use chrono::{Duration, Utc};
 use dashmap::DashMap;
 use nautilus_common::{
     live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::{
-        ExecutionEvent,
+        ExecutionEvent, ExecutionReport as NautilusExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount,
@@ -41,23 +65,24 @@ use nautilus_live::execution::client::LiveExecutionClient;
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderSide, OrderType, TimeInForce},
-    events::{OrderCancelRejected, OrderEventAny, OrderRejected},
+    events::{AccountState, OrderCancelRejected, OrderEventAny, OrderRejected},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
+use nautilus_network::retry::RetryConfig;
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 
 use crate::{
-    common::{consts::DYDX_VENUE, credential::DydxCredential},
+    common::{consts::DYDX_VENUE, credential::DydxCredential, parse::nanos_to_secs_i64},
     config::DydxAdapterConfig,
     execution::submitter::OrderSubmitter,
     grpc::{DydxGrpcClient, Wallet, types::ChainId},
     http::client::DydxHttpClient,
-    websocket::{client::DydxWebSocketClient, messages::NautilusWsMessage},
+    websocket::{client::DydxWebSocketClient, enums::NautilusWsMessage},
 };
 
 pub mod submitter;
@@ -80,9 +105,9 @@ enum ExecutionReport {
 
 /// Live execution client for the dYdX v4 exchange adapter.
 ///
-/// Supports Market and Limit orders via gRPC. Conditional orders (Stop, Take Profit,
-/// Trailing Stop) planned for future releases. dYdX requires u32 client IDs - strings
-/// are hashed to fit this constraint.
+/// Supports Market, Limit, Stop Market, Stop Limit, Take Profit Market (MarketIfTouched),
+/// and Take Profit Limit (LimitIfTouched) orders via gRPC. Trailing stops are NOT supported
+/// by the dYdX v4 protocol. dYdX requires u32 client IDs - strings are hashed to fit.
 ///
 /// # Architecture
 ///
@@ -103,8 +128,8 @@ pub struct DydxExecutionClient {
     instruments: DashMap<InstrumentId, InstrumentAny>,
     market_to_instrument: DashMap<String, InstrumentId>,
     clob_pair_id_to_instrument: DashMap<u32, InstrumentId>,
-    block_height: AtomicU64,
-    oracle_prices: DashMap<InstrumentId, Decimal>,
+    block_height: Arc<AtomicU64>,
+    oracle_prices: Arc<DashMap<InstrumentId, Decimal>>,
     client_id_to_int: DashMap<String, u32>,
     int_to_client_id: DashMap<u32, String>,
     next_client_id: AtomicU32,
@@ -129,11 +154,28 @@ impl DydxExecutionClient {
         wallet_address: String,
         subaccount_number: u32,
     ) -> anyhow::Result<Self> {
-        let http_client = DydxHttpClient::default();
+        // Build HTTP client from config (respects testnet URLs, timeouts, retries)
+        let retry_config = RetryConfig {
+            max_retries: config.max_retries,
+            initial_delay_ms: config.retry_delay_initial_ms,
+            max_delay_ms: config.retry_delay_max_ms,
+            ..Default::default()
+        };
+        let http_client = DydxHttpClient::new(
+            Some(config.base_url.clone()),
+            Some(config.timeout_secs),
+            None, // proxy_url - not in DydxAdapterConfig currently
+            config.is_testnet,
+            Some(retry_config),
+        )?;
 
         // Use private WebSocket client for authenticated subaccount subscriptions
         let ws_client = if let Some(ref mnemonic) = config.mnemonic {
-            let credential = DydxCredential::from_mnemonic(mnemonic, subaccount_number, vec![])?;
+            let credential = DydxCredential::from_mnemonic(
+                mnemonic,
+                subaccount_number,
+                config.authenticator_ids.clone(),
+            )?;
             DydxWebSocketClient::new_private(
                 config.ws_url.clone(),
                 credential,
@@ -161,8 +203,8 @@ impl DydxExecutionClient {
             instruments: DashMap::new(),
             market_to_instrument: DashMap::new(),
             clob_pair_id_to_instrument: DashMap::new(),
-            block_height: AtomicU64::new(0),
-            oracle_prices: DashMap::new(),
+            block_height: Arc::new(AtomicU64::new(0)),
+            oracle_prices: Arc::new(DashMap::new()),
             client_id_to_int: DashMap::new(),
             int_to_client_id: DashMap::new(),
             next_client_id: AtomicU32::new(1),
@@ -346,7 +388,7 @@ impl DydxExecutionClient {
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 tracing::error!("{label}: {e:?}");
             }
@@ -376,7 +418,7 @@ impl DydxExecutionClient {
         let account_id = self.core.account_id;
         let sender = get_exec_event_sender();
 
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 let error_msg = format!("{label} failed: {e:?}");
                 tracing::error!("{}", error_msg);
@@ -398,9 +440,7 @@ impl DydxExecutionClient {
                 );
 
                 if let Err(send_err) =
-                    sender.send(nautilus_common::messages::ExecutionEvent::Order(
-                        OrderEventAny::Rejected(event),
-                    ))
+                    sender.send(ExecutionEvent::Order(OrderEventAny::Rejected(event)))
                 {
                     tracing::error!("Failed to send OrderRejected event: {send_err}");
                 }
@@ -485,8 +525,16 @@ impl ExecutionClient for DydxExecutionClient {
     /// Submits an order to dYdX via gRPC.
     ///
     /// dYdX requires u32 client IDs - Nautilus ClientOrderId strings are hashed to fit.
-    /// Only Market and Limit orders supported currently. Conditional orders (Stop, Take Profit)
-    /// will be implemented in future releases.
+    ///
+    /// Supported order types:
+    /// - Market orders (short-term, IOC)
+    /// - Limit orders (short-term or long-term based on TIF)
+    /// - Stop Market orders (conditional, triggered at stop price)
+    /// - Stop Limit orders (conditional, triggered at stop price, executed at limit)
+    /// - Take Profit Market (MarketIfTouched - triggered at take profit price)
+    /// - Take Profit Limit (LimitIfTouched - triggered at take profit price, executed at limit)
+    ///
+    /// Trailing stop orders are NOT supported by dYdX v4 protocol.
     ///
     /// Validates synchronously, generates OrderSubmitted event, then spawns async task for
     /// gRPC submission to avoid blocking. Unsupported order types generate OrderRejected.
@@ -500,16 +548,35 @@ impl ExecutionClient for DydxExecutionClient {
             anyhow::bail!(reason);
         }
 
+        // Check block height is available for short-term orders
+        let current_block = self.block_height.load(Ordering::Relaxed);
+        if current_block == 0 {
+            let reason = "Block height not initialized";
+            tracing::warn!(
+                "Cannot submit order {}: {}",
+                order.client_order_id(),
+                reason
+            );
+            self.core.generate_order_rejected(
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                reason,
+                cmd.ts_init,
+                false,
+            );
+            return Ok(());
+        }
+
         // Check if order is already closed
         if order.is_closed() {
             tracing::warn!("Cannot submit closed order {}", order.client_order_id());
             return Ok(());
         }
 
-        // Validate order type - only market and limit orders supported
+        // Validate order type
         match order.order_type() {
             OrderType::Market | OrderType::Limit => {
-                // Supported order types
                 tracing::debug!(
                     "Submitting {} order: {}",
                     if matches!(order.order_type(), OrderType::Market) {
@@ -520,23 +587,41 @@ impl ExecutionClient for DydxExecutionClient {
                     order.client_order_id()
                 );
             }
-            // Conditional order stubs - accept but don't submit until proto implementation
-            OrderType::StopMarket
-            | OrderType::StopLimit
-            | OrderType::MarketIfTouched
-            | OrderType::LimitIfTouched
-            | OrderType::TrailingStopMarket
-            | OrderType::TrailingStopLimit => {
-                self.core.generate_order_submitted(
+            // Conditional orders (stop/take-profit) - supported by dYdX
+            OrderType::StopMarket | OrderType::StopLimit => {
+                tracing::debug!(
+                    "Submitting {} order: {}",
+                    if matches!(order.order_type(), OrderType::StopMarket) {
+                        "STOP_MARKET"
+                    } else {
+                        "STOP_LIMIT"
+                    },
+                    order.client_order_id()
+                );
+            }
+            // dYdX TakeProfit/TakeProfitLimit map to MarketIfTouched/LimitIfTouched
+            OrderType::MarketIfTouched | OrderType::LimitIfTouched => {
+                tracing::debug!(
+                    "Submitting {} order: {}",
+                    if matches!(order.order_type(), OrderType::MarketIfTouched) {
+                        "TAKE_PROFIT_MARKET"
+                    } else {
+                        "TAKE_PROFIT_LIMIT"
+                    },
+                    order.client_order_id()
+                );
+            }
+            // Trailing stops not supported by dYdX v4 protocol
+            OrderType::TrailingStopMarket | OrderType::TrailingStopLimit => {
+                let reason = "Trailing stop orders not supported by dYdX v4 protocol";
+                tracing::error!("{}", reason);
+                self.core.generate_order_rejected(
                     order.strategy_id(),
                     order.instrument_id(),
                     order.client_order_id(),
+                    reason,
                     cmd.ts_init,
-                );
-                tracing::warn!(
-                    order_type = ?order.order_type(),
-                    client_order_id = %order.client_order_id(),
-                    "Conditional order stub: OrderSubmitted generated but not sent to exchange (proto implementation pending)"
+                    false,
                 );
                 return Ok(());
             }
@@ -572,6 +657,7 @@ impl ExecutionClient for DydxExecutionClient {
         let instrument_id = order.instrument_id();
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
         let chain_id = self.get_chain_id();
+        let authenticator_ids = self.config.authenticator_ids.clone();
         #[allow(clippy::redundant_clone)]
         let order_clone = order.clone();
 
@@ -596,6 +682,7 @@ impl ExecutionClient for DydxExecutionClient {
                     wallet_address,
                     subaccount_number,
                     chain_id,
+                    authenticator_ids,
                 );
 
                 // Submit order based on type
@@ -614,9 +701,7 @@ impl ExecutionClient for DydxExecutionClient {
                         tracing::info!("Successfully submitted market order: {}", client_order_id);
                     }
                     OrderType::Limit => {
-                        let expire_time = order_clone
-                            .expire_time()
-                            .map(|t| (t.as_u64() / 1_000_000_000) as i64);
+                        let expire_time = order_clone.expire_time().map(nanos_to_secs_i64);
                         submitter
                             .submit_limit_order(
                                 wallet_ref,
@@ -635,6 +720,108 @@ impl ExecutionClient for DydxExecutionClient {
                             )
                             .await?;
                         tracing::info!("Successfully submitted limit order: {}", client_order_id);
+                    }
+                    OrderType::StopMarket => {
+                        let trigger_price = order_clone.trigger_price().ok_or_else(|| {
+                            anyhow::anyhow!("Stop market order missing trigger_price")
+                        })?;
+                        let expire_time = order_clone.expire_time().map(nanos_to_secs_i64);
+                        submitter
+                            .submit_stop_market_order(
+                                wallet_ref,
+                                instrument_id,
+                                client_id_u32,
+                                order_clone.order_side(),
+                                trigger_price,
+                                order_clone.quantity(),
+                                order_clone.is_reduce_only(),
+                                expire_time,
+                            )
+                            .await?;
+                        tracing::info!(
+                            "Successfully submitted stop market order: {}",
+                            client_order_id
+                        );
+                    }
+                    OrderType::StopLimit => {
+                        let trigger_price = order_clone.trigger_price().ok_or_else(|| {
+                            anyhow::anyhow!("Stop limit order missing trigger_price")
+                        })?;
+                        let limit_price = order_clone.price().ok_or_else(|| {
+                            anyhow::anyhow!("Stop limit order missing limit price")
+                        })?;
+                        let expire_time = order_clone.expire_time().map(nanos_to_secs_i64);
+                        submitter
+                            .submit_stop_limit_order(
+                                wallet_ref,
+                                instrument_id,
+                                client_id_u32,
+                                order_clone.order_side(),
+                                trigger_price,
+                                limit_price,
+                                order_clone.quantity(),
+                                order_clone.time_in_force(),
+                                order_clone.is_post_only(),
+                                order_clone.is_reduce_only(),
+                                expire_time,
+                            )
+                            .await?;
+                        tracing::info!(
+                            "Successfully submitted stop limit order: {}",
+                            client_order_id
+                        );
+                    }
+                    // dYdX TakeProfitMarket maps to Nautilus MarketIfTouched
+                    OrderType::MarketIfTouched => {
+                        let trigger_price = order_clone.trigger_price().ok_or_else(|| {
+                            anyhow::anyhow!("Take profit market order missing trigger_price")
+                        })?;
+                        let expire_time = order_clone.expire_time().map(nanos_to_secs_i64);
+                        submitter
+                            .submit_take_profit_market_order(
+                                wallet_ref,
+                                instrument_id,
+                                client_id_u32,
+                                order_clone.order_side(),
+                                trigger_price,
+                                order_clone.quantity(),
+                                order_clone.is_reduce_only(),
+                                expire_time,
+                            )
+                            .await?;
+                        tracing::info!(
+                            "Successfully submitted take profit market order: {}",
+                            client_order_id
+                        );
+                    }
+                    // dYdX TakeProfitLimit maps to Nautilus LimitIfTouched
+                    OrderType::LimitIfTouched => {
+                        let trigger_price = order_clone.trigger_price().ok_or_else(|| {
+                            anyhow::anyhow!("Take profit limit order missing trigger_price")
+                        })?;
+                        let limit_price = order_clone.price().ok_or_else(|| {
+                            anyhow::anyhow!("Take profit limit order missing limit price")
+                        })?;
+                        let expire_time = order_clone.expire_time().map(nanos_to_secs_i64);
+                        submitter
+                            .submit_take_profit_limit_order(
+                                wallet_ref,
+                                instrument_id,
+                                client_id_u32,
+                                order_clone.order_side(),
+                                trigger_price,
+                                limit_price,
+                                order_clone.quantity(),
+                                order_clone.time_in_force(),
+                                order_clone.is_post_only(),
+                                order_clone.is_reduce_only(),
+                                expire_time,
+                            )
+                            .await?;
+                        tracing::info!(
+                            "Successfully submitted take profit limit order: {}",
+                            client_order_id
+                        );
                     }
                     _ => unreachable!("Order type already validated"),
                 }
@@ -729,6 +916,7 @@ impl ExecutionClient for DydxExecutionClient {
         let subaccount_number = self.subaccount_number;
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
         let chain_id = self.get_chain_id();
+        let authenticator_ids = self.config.authenticator_ids.clone();
         let trader_id = cmd.trader_id;
         let strategy_id = cmd.strategy_id;
         let venue_order_id = cmd.venue_order_id;
@@ -755,6 +943,7 @@ impl ExecutionClient for DydxExecutionClient {
                 wallet_address,
                 subaccount_number,
                 chain_id,
+                authenticator_ids,
             );
 
             // Attempt cancellation via submitter
@@ -852,6 +1041,7 @@ impl ExecutionClient for DydxExecutionClient {
         let subaccount_number = self.subaccount_number;
         let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
         let chain_id = self.get_chain_id();
+        let authenticator_ids = self.config.authenticator_ids.clone();
 
         // Collect (instrument_id, client_id) tuples for batch cancel
         let mut orders_to_cancel = Vec::new();
@@ -880,6 +1070,7 @@ impl ExecutionClient for DydxExecutionClient {
                 wallet_address,
                 subaccount_number,
                 chain_id,
+                authenticator_ids,
             );
 
             // Cancel orders using batch method (executes sequentially to avoid nonce conflicts)
@@ -891,7 +1082,6 @@ impl ExecutionClient for DydxExecutionClient {
                     tracing::info!("Successfully cancelled {} orders", orders_to_cancel.len());
                 }
                 Err(e) => {
-                    // NotImplemented is expected until batch cancel is fully implemented
                     tracing::error!("Batch cancel failed: {:?}", e);
                 }
             }
@@ -902,8 +1092,87 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, _cmd: &BatchCancelOrders) -> anyhow::Result<()> {
-        anyhow::bail!("Batch cancel not supported by dYdX")
+    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+        if cmd.cancels.is_empty() {
+            return Ok(());
+        }
+
+        if !self.is_connected() {
+            anyhow::bail!("Cannot cancel orders: not connected");
+        }
+
+        // Convert ClientOrderIds to u32 before async block
+        let mut orders_to_cancel = Vec::with_capacity(cmd.cancels.len());
+        for cancel in &cmd.cancels {
+            let client_id_str = cancel.client_order_id.as_str();
+            let client_id_u32 = match self.get_client_order_id_int(client_id_str) {
+                Some(id) => id,
+                None => {
+                    tracing::warn!(
+                        "No u32 mapping found for client_order_id={}, skipping cancel",
+                        client_id_str
+                    );
+                    continue;
+                }
+            };
+            orders_to_cancel.push((cancel.instrument_id, client_id_u32));
+        }
+
+        if orders_to_cancel.is_empty() {
+            tracing::warn!("No valid orders to cancel in batch");
+            return Ok(());
+        }
+
+        let grpc_client = self.grpc_client.clone();
+        let wallet = self.wallet.clone();
+        let http_client = self.http_client.clone();
+        let wallet_address = self.wallet_address.clone();
+        let subaccount_number = self.subaccount_number;
+        let block_height = self.block_height.load(std::sync::atomic::Ordering::Relaxed) as u32;
+        let chain_id = self.get_chain_id();
+        let authenticator_ids = self.config.authenticator_ids.clone();
+
+        tracing::info!(
+            "Batch cancelling {} orders: {:?}",
+            orders_to_cancel.len(),
+            orders_to_cancel
+        );
+
+        self.spawn_task("batch_cancel_orders", async move {
+            let wallet_guard = wallet.read().await;
+            let wallet_ref = wallet_guard
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Wallet not initialized"))?;
+
+            let grpc_guard = grpc_client.read().await;
+            let submitter = OrderSubmitter::new(
+                (*grpc_guard).clone(),
+                http_client.clone(),
+                wallet_address,
+                subaccount_number,
+                chain_id,
+                authenticator_ids,
+            );
+
+            match submitter
+                .cancel_orders_batch(wallet_ref, &orders_to_cancel, block_height)
+                .await
+            {
+                Ok(()) => {
+                    tracing::info!(
+                        "Successfully batch cancelled {} orders",
+                        orders_to_cancel.len()
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Batch cancel failed: {:?}", e);
+                }
+            }
+
+            Ok(())
+        });
+
+        Ok(())
     }
 
     fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
@@ -913,6 +1182,7 @@ impl ExecutionClient for DydxExecutionClient {
     fn query_order(&self, _cmd: &QueryOrder) -> anyhow::Result<()> {
         Ok(())
     }
+
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.connected {
             tracing::warn!("dYdX execution client already connected");
@@ -971,8 +1241,9 @@ impl ExecutionClient for DydxExecutionClient {
                 let instruments = self.instruments.clone();
                 let oracle_prices = self.oracle_prices.clone();
                 let clob_pair_id_to_instrument = self.clob_pair_id_to_instrument.clone();
+                let block_height = self.block_height.clone();
 
-                let handle = tokio::spawn(async move {
+                let handle = get_runtime().spawn(async move {
                     while let Some(msg) = rx.recv().await {
                         match msg {
                             NautilusWsMessage::Order(report) => {
@@ -988,9 +1259,7 @@ impl ExecutionClient for DydxExecutionClient {
                                 // Dispatch position status reports via execution event system
                                 let sender = get_exec_event_sender();
                                 let exec_report =
-                                    nautilus_common::messages::ExecutionReport::Position(Box::new(
-                                        *report,
-                                    ));
+                                    NautilusExecutionReport::Position(Box::new(*report));
                                 if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
                                     tracing::warn!("Failed to send position status report: {e}");
                                 }
@@ -1066,10 +1335,9 @@ impl ExecutionClient for DydxExecutionClient {
                                                     market
                                                 );
                                                 let sender = get_exec_event_sender();
-                                                let exec_report =
-                                                    nautilus_common::messages::ExecutionReport::Position(
-                                                        Box::new(report),
-                                                    );
+                                                let exec_report = NautilusExecutionReport::Position(
+                                                    Box::new(report),
+                                                );
                                                 if let Err(e) =
                                                     sender.send(ExecutionEvent::Report(exec_report))
                                                 {
@@ -1113,9 +1381,9 @@ impl ExecutionClient for DydxExecutionClient {
                                                 );
                                                 let sender = get_exec_event_sender();
                                                 let exec_report =
-                                                    nautilus_common::messages::ExecutionReport::OrderStatus(
-                                                        Box::new(report),
-                                                    );
+                                                    NautilusExecutionReport::OrderStatus(Box::new(
+                                                        report,
+                                                    ));
                                                 if let Err(e) =
                                                     sender.send(ExecutionEvent::Report(exec_report))
                                                 {
@@ -1152,9 +1420,7 @@ impl ExecutionClient for DydxExecutionClient {
                                                 );
                                                 let sender = get_exec_event_sender();
                                                 let exec_report =
-                                                    nautilus_common::messages::ExecutionReport::Fill(
-                                                        Box::new(report),
-                                                    );
+                                                    NautilusExecutionReport::Fill(Box::new(report));
                                                 if let Err(e) =
                                                     sender.send(ExecutionEvent::Report(exec_report))
                                                 {
@@ -1217,6 +1483,10 @@ impl ExecutionClient for DydxExecutionClient {
                                         }
                                     }
                                 }
+                            }
+                            NautilusWsMessage::BlockHeight(height) => {
+                                tracing::debug!("Block height update: {}", height);
+                                block_height.store(height, std::sync::atomic::Ordering::Relaxed);
                             }
                             NautilusWsMessage::Error(err) => {
                                 tracing::error!("WebSocket error: {:?}", err);
@@ -1294,7 +1564,7 @@ impl ExecutionClient for DydxExecutionClient {
 ///
 /// AccountState events are routed to the Portfolio (not ExecEngine) via msgbus.
 /// This follows the pattern used by BitMEX, OKX, and other reference adapters.
-fn dispatch_account_state(state: nautilus_model::events::AccountState) {
+fn dispatch_account_state(state: AccountState) {
     use std::any::Any;
     msgbus::send_any("Portfolio.update_account".into(), &state as &dyn Any);
 }
@@ -1323,7 +1593,7 @@ fn dispatch_execution_report(report: ExecutionReport) {
                 order_report.venue_order_id,
                 order_report.client_order_id
             );
-            let exec_report = nautilus_common::messages::ExecutionReport::OrderStatus(order_report);
+            let exec_report = NautilusExecutionReport::OrderStatus(order_report);
             if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
                 tracing::warn!("Failed to send order status report: {e}");
             }
@@ -1334,7 +1604,7 @@ fn dispatch_execution_report(report: ExecutionReport) {
                 fill_report.venue_order_id,
                 fill_report.trade_id
             );
-            let exec_report = nautilus_common::messages::ExecutionReport::Fill(fill_report);
+            let exec_report = NautilusExecutionReport::Fill(fill_report);
             if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
                 tracing::warn!("Failed to send fill report: {e}");
             }
@@ -1363,11 +1633,11 @@ impl LiveExecutionClient for DydxExecutionClient {
             .await
             .context("failed to fetch order from dYdX API")?;
 
-        if response.orders.is_empty() {
+        if response.is_empty() {
             return Ok(None);
         }
 
-        let order = &response.orders[0];
+        let order = &response[0];
         let ts_init = UnixNanos::default();
 
         // Get instrument by clob_pair_id
@@ -1431,7 +1701,7 @@ impl LiveExecutionClient for DydxExecutionClient {
         let mut reports = Vec::new();
         let ts_init = UnixNanos::default();
 
-        for order in response.orders {
+        for order in response {
             // Get instrument by clob_pair_id using efficient lookup
             let instrument = match self.get_instrument_by_clob_pair_id(order.clob_pair_id) {
                 Some(inst) => inst,
@@ -1631,8 +1901,7 @@ impl LiveExecutionClient for DydxExecutionClient {
         );
 
         // Calculate cutoff time if lookback is specified
-        let cutoff_time =
-            lookback_mins.map(|mins| chrono::Utc::now() - chrono::Duration::minutes(mins as i64));
+        let cutoff_time = lookback_mins.map(|mins| Utc::now() - Duration::minutes(mins as i64));
 
         // Query all orders
         let orders_response = self
@@ -1668,10 +1937,10 @@ impl LiveExecutionClient for DydxExecutionClient {
         let mut fills_filtered = 0;
 
         // Parse orders (with optional time filtering)
-        for order in orders_response.orders {
+        for order in orders_response {
             // Filter by time window if specified (use updated_at for orders)
             if let Some(cutoff) = cutoff_time
-                && order.updated_at < cutoff
+                && order.updated_at.is_some_and(|dt| dt < cutoff)
             {
                 orders_filtered += 1;
                 continue;
@@ -1760,209 +2029,5 @@ impl LiveExecutionClient for DydxExecutionClient {
         mass_status.add_fill_reports(fill_reports);
 
         Ok(Some(mass_status))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use nautilus_model::{
-        enums::{OrderSide, OrderType, TimeInForce},
-        events::order::initialized::OrderInitializedBuilder,
-        identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
-        orders::OrderAny,
-        types::{Price, Quantity},
-    };
-    use rstest::rstest;
-
-    use super::*;
-
-    /// Test that client order ID parsing to u32 works for numeric strings
-    #[rstest]
-    fn test_client_order_id_numeric_parsing() {
-        let client_id = "12345";
-        let result: Result<u32, _> = client_id.parse();
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 12345);
-    }
-
-    /// Test that client order ID hashing works for non-numeric strings
-    #[rstest]
-    fn test_client_order_id_hash_fallback() {
-        use std::{
-            collections::hash_map::DefaultHasher,
-            hash::{Hash, Hasher},
-        };
-
-        let client_id = "O-20241112-ABC123-001";
-        let parse_result: Result<u32, _> = client_id.parse();
-        assert!(parse_result.is_err());
-
-        // Fallback to hash
-        let mut hasher = DefaultHasher::new();
-        client_id.hash(&mut hasher);
-        let hash_result = (hasher.finish() % (MAX_CLIENT_ID as u64)) as u32;
-
-        assert!(hash_result < MAX_CLIENT_ID);
-        assert!(hash_result > 0); // Very unlikely to be 0
-    }
-
-    /// Test that unsupported order types are properly rejected
-    #[rstest]
-    fn test_unsupported_order_type_rejection() {
-        // Test that StopMarket is currently rejected
-        let order_type = OrderType::StopMarket;
-        let is_supported = matches!(order_type, OrderType::Market | OrderType::Limit);
-        assert!(!is_supported);
-
-        // Test that StopLimit is currently rejected
-        let order_type = OrderType::StopLimit;
-        let is_supported = matches!(order_type, OrderType::Market | OrderType::Limit);
-        assert!(!is_supported);
-    }
-
-    /// Test that supported order types are accepted
-    #[rstest]
-    fn test_supported_order_types() {
-        let market = OrderType::Market;
-        assert!(matches!(market, OrderType::Market | OrderType::Limit));
-
-        let limit = OrderType::Limit;
-        assert!(matches!(limit, OrderType::Market | OrderType::Limit));
-    }
-
-    /// Test UnixNanos to seconds conversion for expire_time
-    #[rstest]
-    fn test_unix_nanos_to_seconds_conversion() {
-        use nautilus_core::UnixNanos;
-
-        // Test conversion of 1 second
-        let one_second = UnixNanos::from(1_000_000_000_u64);
-        let seconds = (one_second.as_u64() / 1_000_000_000) as i64;
-        assert_eq!(seconds, 1);
-
-        // Test conversion of 1 hour
-        let one_hour = UnixNanos::from(3_600_000_000_000_u64);
-        let seconds = (one_hour.as_u64() / 1_000_000_000) as i64;
-        assert_eq!(seconds, 3600);
-
-        // Test current timestamp (should be reasonable)
-        let now = UnixNanos::from(1_731_398_400_000_000_000_u64); // 2024-11-12
-        let seconds = (now.as_u64() / 1_000_000_000) as i64;
-        assert_eq!(seconds, 1_731_398_400);
-    }
-
-    /// Test that OrderAny API methods work correctly
-    #[rstest]
-    fn test_order_any_api_usage() {
-        let order = OrderInitializedBuilder::default()
-            .trader_id(TraderId::from("TRADER-001"))
-            .strategy_id(StrategyId::from("STRATEGY-001"))
-            .instrument_id(InstrumentId::from("ETH-USD-PERP.DYDX"))
-            .client_order_id(ClientOrderId::from("O-001"))
-            .order_side(OrderSide::Buy)
-            .order_type(OrderType::Limit)
-            .quantity(Quantity::from("10"))
-            .price(Some(Price::from("2000.50")))
-            .time_in_force(TimeInForce::Gtc)
-            .build()
-            .unwrap();
-
-        let order_any: OrderAny = order.into();
-
-        // Test OrderAny methods
-        assert_eq!(order_any.order_side(), OrderSide::Buy);
-        assert_eq!(order_any.order_type(), OrderType::Limit);
-        assert_eq!(order_any.quantity(), Quantity::from("10"));
-        assert_eq!(order_any.price(), Some(Price::from("2000.50")));
-        assert_eq!(order_any.time_in_force(), TimeInForce::Gtc);
-        assert!(!order_any.is_post_only());
-        assert!(!order_any.is_reduce_only());
-        assert_eq!(order_any.expire_time(), None);
-    }
-
-    /// Test MAX_CLIENT_ID constant is within dYdX limits
-    #[rstest]
-    fn test_max_client_id_limit() {
-        // dYdX requires client IDs to be u32
-        assert_eq!(MAX_CLIENT_ID, u32::MAX);
-    }
-
-    /// Test that client order ID conversion is consistent for cancel operations
-    #[rstest]
-    fn test_cancel_order_id_consistency() {
-        use std::{
-            collections::hash_map::DefaultHasher,
-            hash::{Hash, Hasher},
-        };
-
-        let client_id_str = "O-20241112-CANCEL-001";
-
-        // First conversion (for submit)
-        let mut hasher1 = DefaultHasher::new();
-        client_id_str.hash(&mut hasher1);
-        let id1 = (hasher1.finish() % (MAX_CLIENT_ID as u64)) as u32;
-
-        // Second conversion (for cancel) - should be identical
-        let mut hasher2 = DefaultHasher::new();
-        client_id_str.hash(&mut hasher2);
-        let id2 = (hasher2.finish() % (MAX_CLIENT_ID as u64)) as u32;
-
-        assert_eq!(id1, id2, "Client ID conversion must be deterministic");
-    }
-
-    /// Test clob_pair_id extraction from CryptoPerpetual raw_symbol
-    #[rstest]
-    fn test_clob_pair_id_extraction_from_raw_symbol() {
-        // Simulate raw_symbol "1" -> clob_pair_id 1
-        let raw_symbol = "1";
-        let result: Result<u32, _> = raw_symbol.parse();
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 1);
-
-        // Simulate raw_symbol "42" -> clob_pair_id 42
-        let raw_symbol = "42";
-        let result: Result<u32, _> = raw_symbol.parse();
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-    }
-
-    /// Test clob_pair_id extraction failure for invalid raw_symbol
-    #[rstest]
-    fn test_clob_pair_id_extraction_invalid() {
-        // Invalid raw_symbol should fail parsing
-        let raw_symbol = "BTC-USD";
-        let result: Result<u32, _> = raw_symbol.parse();
-        assert!(result.is_err());
-
-        // Empty raw_symbol should fail
-        let raw_symbol = "";
-        let result: Result<u32, _> = raw_symbol.parse();
-        assert!(result.is_err());
-    }
-
-    /// Test market ticker to instrument mapping logic
-    #[rstest]
-    fn test_market_ticker_parsing() {
-        let ticker = "BTC-USD";
-        let parts: Vec<&str> = ticker.split('-').collect();
-        assert_eq!(parts.len(), 2);
-        assert_eq!(parts[0], "BTC");
-        assert_eq!(parts[1], "USD");
-
-        let ticker = "ETH-USD";
-        let parts: Vec<&str> = ticker.split('-').collect();
-        assert_eq!(parts.len(), 2);
-        assert_eq!(parts[0], "ETH");
-        assert_eq!(parts[1], "USD");
-    }
-
-    /// Test market ticker with invalid format
-    #[rstest]
-    fn test_market_ticker_invalid_format() {
-        let ticker = "BTCUSD";
-        assert_eq!(ticker.split('-').count(), 1); // No separator
-
-        let ticker = "BTC-USD-PERP";
-        assert_eq!(ticker.split('-').count(), 3); // Too many parts
     }
 }

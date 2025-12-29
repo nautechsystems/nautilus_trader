@@ -110,7 +110,15 @@ pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
         .cloned();
 
     if let Some(handler) = handler {
-        handler.0.handle(message);
+        match message {
+            DataResponse::Data(resp) => handler.0.handle(resp),
+            DataResponse::Instrument(resp) => handler.0.handle(resp.as_ref()),
+            DataResponse::Instruments(resp) => handler.0.handle(resp),
+            DataResponse::Book(resp) => handler.0.handle(resp),
+            DataResponse::Quotes(resp) => handler.0.handle(resp),
+            DataResponse::Trades(resp) => handler.0.handle(resp),
+            DataResponse::Bars(resp) => handler.0.handle(resp),
+        }
     } else {
         log::error!("send_response: handler not found for correlation_id '{correlation_id}'");
     }
@@ -127,19 +135,6 @@ pub fn publish_data(topic: &Ustr, message: Data) {
     }
 }
 
-/// Sends the response to the handler registered for the `correlation_id` (if found).
-pub fn response(correlation_id: &UUID4, message: &dyn Any) {
-    let handler = get_message_bus()
-        .borrow()
-        .get_response_handler(correlation_id)
-        .cloned();
-    if let Some(handler) = handler {
-        handler.0.handle(message);
-    } else {
-        log::error!("response: handler not found for correlation_id '{correlation_id}'");
-    }
-}
-
 pub fn register_response_handler(correlation_id: &UUID4, handler: ShareableMessageHandler) {
     if let Err(e) = get_message_bus()
         .borrow_mut()
@@ -151,15 +146,11 @@ pub fn register_response_handler(correlation_id: &UUID4, handler: ShareableMessa
 
 /// Publishes the `message` to the `topic`.
 pub fn publish(topic: MStr<Topic>, message: &dyn Any) {
-    log::trace!("Publishing topic '{topic}' {message:?}");
     let matching_subs = get_message_bus()
         .borrow_mut()
         .inner_matching_subscriptions(topic);
 
-    log::trace!("Matched {} subscriptions", matching_subs.len());
-
     for sub in matching_subs {
-        log::trace!("Matched {sub:?}");
         sub.handler.0.handle(message);
     }
 }

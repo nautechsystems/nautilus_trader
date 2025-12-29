@@ -56,9 +56,14 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
@@ -1475,7 +1480,7 @@ class OKXExecutionClient(LiveExecutionClient):
     def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
         return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)
 
-    def _handle_msg(self, msg: Any) -> None:
+    def _handle_msg(self, msg: Any) -> None:  # noqa: C901 (too complex)
         if isinstance(msg, nautilus_pyo3.OKXWebSocketError):
             self._log.error(repr(msg))
             return
@@ -1483,12 +1488,22 @@ class OKXExecutionClient(LiveExecutionClient):
         try:
             if isinstance(msg, nautilus_pyo3.AccountState):
                 self._handle_account_state(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderAccepted):
+                self._handle_order_accepted_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderCanceled):
+                self._handle_order_canceled_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderExpired):
+                self._handle_order_expired_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderRejected):
                 self._handle_order_rejected_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderCancelRejected):
                 self._handle_order_cancel_rejected_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderModifyRejected):
                 self._handle_order_modify_rejected_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderTriggered):
+                self._handle_order_triggered_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.OrderUpdated):
+                self._handle_order_updated_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.OrderStatusReport):
                 self._handle_order_status_report_pyo3(msg)
             elif isinstance(msg, nautilus_pyo3.FillReport):
@@ -1516,8 +1531,31 @@ class OKXExecutionClient(LiveExecutionClient):
             ts_event=account_state.ts_event,
         )
 
+    def _handle_order_accepted_pyo3(self, pyo3_event: nautilus_pyo3.OrderAccepted) -> None:
+        event = OrderAccepted.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_canceled_pyo3(self, pyo3_event: nautilus_pyo3.OrderCanceled) -> None:
+        event = OrderCanceled.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._clear_order_state(event.client_order_id)
+
+    def _handle_order_expired_pyo3(self, pyo3_event: nautilus_pyo3.OrderExpired) -> None:
+        event = OrderExpired.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._clear_order_state(event.client_order_id)
+
     def _handle_order_rejected_pyo3(self, pyo3_event: nautilus_pyo3.OrderRejected) -> None:
         event = OrderRejected.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+        self._clear_order_state(event.client_order_id)
+
+    def _handle_order_triggered_pyo3(self, pyo3_event: nautilus_pyo3.OrderTriggered) -> None:
+        event = OrderTriggered.from_dict(pyo3_event.to_dict())
+        self._send_order_event(event)
+
+    def _handle_order_updated_pyo3(self, pyo3_event: nautilus_pyo3.OrderUpdated) -> None:
+        event = OrderUpdated.from_dict(pyo3_event.to_dict())
         self._send_order_event(event)
 
     def _handle_order_cancel_rejected_pyo3(
@@ -1648,7 +1686,7 @@ class OKXExecutionClient(LiveExecutionClient):
             if venue_is_original_algo:
                 return
 
-            if is_order_updated(order, report):
+            if report.is_order_updated(order):
                 self.generate_order_updated(
                     strategy_id=order.strategy_id,
                     instrument_id=report.instrument_id,
@@ -1972,16 +2010,14 @@ class OKXExecutionClient(LiveExecutionClient):
             self._algo_order_ids.pop(identifier, None)
             self._algo_order_instruments.pop(identifier, None)
 
+    def _clear_order_state(self, client_order_id: ClientOrderId) -> None:
+        canonical = self._canonical_client_order_id(client_order_id) or client_order_id
+        self._algo_order_ids.pop(canonical, None)
+        self._algo_order_instruments.pop(canonical, None)
 
-def is_order_updated(order: Order, report: OrderStatusReport) -> bool:
-    if order.has_price and report.price and order.price != report.price:
-        return True
+        self._client_id_aliases.pop(canonical, None)
+        for key, value in list(self._client_id_aliases.items()):
+            if value == canonical:
+                self._client_id_aliases.pop(key, None)
 
-    if (
-        order.has_trigger_price
-        and report.trigger_price
-        and order.trigger_price != report.trigger_price
-    ):
-        return True
-
-    return order.quantity != report.quantity
+        self._client_id_children.pop(canonical, None)

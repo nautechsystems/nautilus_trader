@@ -32,9 +32,26 @@ use semver::Version;
 
 const REDIS_MIN_VERSION: &str = "6.2.0";
 const REDIS_DELIMITER: char = ':';
+const REDIS_INDEX_PATTERN: &str = ":index:";
 const REDIS_XTRIM: &str = "XTRIM";
 const REDIS_MINID: &str = "MINID";
 const REDIS_FLUSHDB: &str = "FLUSHDB";
+
+/// Extracts the index key from a full Redis key.
+///
+/// Handles keys with instance_id prefix by finding the `:index:` pattern.
+/// e.g., "trader-id:uuid:index:order_position" -> "index:order_position"
+pub(crate) fn get_index_key(key: &str) -> anyhow::Result<&str> {
+    if let Some(pos) = key.find(REDIS_INDEX_PATTERN) {
+        return Ok(&key[pos + 1..]);
+    }
+
+    if key.starts_with("index:") {
+        return Ok(key);
+    }
+
+    anyhow::bail!("Invalid index key format: {key}")
+}
 
 async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &str) {
     if let Some(handle) = handle {
@@ -114,6 +131,7 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
 
     (url, redacted_url)
 }
+
 /// Creates a new Redis connection manager based on the provided database `config` and connection name.
 ///
 /// # Errors
@@ -124,7 +142,7 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
 ///
 /// In case of reconnection issues, the connection will retry reconnection
 /// `number_of_retries` times, with an exponentially increasing delay, calculated as
-/// `rand(0 .. factor * (exponent_base ^ current-try))`.
+/// `factor * (exponent_base ^ current-try)`, bounded by `max_delay`.
 ///
 /// The new connection will time out operations after `response_timeout` has passed.
 /// Each connection attempt to the server will time out after `connection_timeout`.
@@ -139,20 +157,20 @@ pub async fn create_redis_connection(
     let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout));
     let response_timeout = Duration::from_secs(u64::from(config.response_timeout));
     let number_of_retries = config.number_of_retries;
-    let exponent_base = config.exponent_base;
-    let factor = config.factor;
+    let exponent_base = config.exponent_base as f32;
 
-    // into milliseconds
-    let max_delay = config.max_delay * 1000;
+    // Use factor as min_delay base for backoff: factor * (exponent_base ^ tries)
+    let min_delay = Duration::from_millis(config.factor);
+    let max_delay = Duration::from_secs(config.max_delay);
 
     let client = redis::Client::open(redis_url)?;
 
     let connection_manager_config = redis::aio::ConnectionManagerConfig::new()
         .set_exponent_base(exponent_base)
-        .set_factor(factor)
         .set_number_of_retries(number_of_retries)
-        .set_response_timeout(response_timeout)
-        .set_connection_timeout(connection_timeout)
+        .set_response_timeout(Some(response_timeout))
+        .set_connection_timeout(Some(connection_timeout))
+        .set_min_delay(min_delay)
         .set_max_delay(max_delay);
 
     let mut con = client
@@ -247,9 +265,6 @@ fn parse_redis_version(version_str: &str) -> anyhow::Result<Version> {
     Ok(Version::new(major, minor, patch))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -362,5 +377,29 @@ mod tests {
 
         let key = get_stream_key(trader_id, instance_id, &config);
         assert_eq!(key, format!("stream"));
+    }
+
+    #[rstest]
+    fn test_get_index_key_without_prefix() {
+        let key = "index:order_position";
+        assert_eq!(get_index_key(key).unwrap(), "index:order_position");
+    }
+
+    #[rstest]
+    fn test_get_index_key_with_trader_prefix() {
+        let key = "trader-tester-123:index:order_position";
+        assert_eq!(get_index_key(key).unwrap(), "index:order_position");
+    }
+
+    #[rstest]
+    fn test_get_index_key_with_instance_id() {
+        let key = "trader-tester-123:abc-uuid-123:index:order_position";
+        assert_eq!(get_index_key(key).unwrap(), "index:order_position");
+    }
+
+    #[rstest]
+    fn test_get_index_key_invalid() {
+        let key = "no_index_pattern";
+        assert!(get_index_key(key).is_err());
     }
 }

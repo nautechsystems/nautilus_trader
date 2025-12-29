@@ -95,7 +95,8 @@ impl HyperliquidExecutionClient {
     fn validate_order_submission(&self, order: &OrderAny) -> anyhow::Result<()> {
         // Check if instrument symbol is supported
         // Hyperliquid instruments: {base}-USD-PERP or {base}-{quote}-SPOT
-        let symbol = order.instrument_id().symbol.to_string();
+        let instrument_id = order.instrument_id();
+        let symbol = instrument_id.symbol.as_str();
         if !symbol.ends_with("-PERP") && !symbol.ends_with("-SPOT") {
             anyhow::bail!(
                 "Unsupported instrument symbol format for Hyperliquid: {symbol} (expected -PERP or -SPOT suffix)"
@@ -568,7 +569,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let price = command.price;
         let quantity = command.quantity;
-        let symbol = command.instrument_id.symbol.to_string();
+        let symbol = command.instrument_id.symbol.inner();
 
         self.spawn_task("modify_order", async move {
             use crate::{
@@ -624,8 +625,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
         tracing::debug!("Cancelling order: {:?}", command);
 
         let http_client = self.http_client.clone();
-        let client_order_id = command.client_order_id.to_string();
-        let symbol = command.instrument_id.symbol.to_string();
+        let client_order_id = command.client_order_id.inner();
+        let symbol = command.instrument_id.symbol.inner();
 
         self.spawn_task("cancel_order", async move {
             match client_order_id_to_cancel_request(&client_order_id, &symbol) {
@@ -686,9 +687,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         // Convert orders to cancel requests
         let mut cancel_requests = Vec::new();
+        let symbol = command.instrument_id.symbol.inner();
         for order in open_orders {
-            let client_order_id = order.client_order_id().to_string();
-            let symbol = command.instrument_id.symbol.to_string();
+            let client_order_id = order.client_order_id().inner();
 
             match client_order_id_to_cancel_request(&client_order_id, &symbol) {
                 Ok(req) => cancel_requests.push(req),
@@ -735,8 +736,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Convert each CancelOrder to a cancel request
         let mut cancel_requests = Vec::new();
         for cancel_cmd in &command.cancels {
-            let client_order_id = cancel_cmd.client_order_id.to_string();
-            let symbol = cancel_cmd.instrument_id.symbol.to_string();
+            let client_order_id = cancel_cmd.client_order_id.inner();
+            let symbol = cancel_cmd.instrument_id.symbol.inner();
 
             match client_order_id_to_cancel_request(&client_order_id, &symbol) {
                 Ok(req) => cancel_requests.push(req),

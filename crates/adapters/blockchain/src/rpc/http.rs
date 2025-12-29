@@ -18,8 +18,10 @@ use std::{collections::HashMap, num::NonZeroU32, str::FromStr};
 use alloy::primitives::{Address, U256};
 use bytes::Bytes;
 use nautilus_model::defi::rpc::{RpcLog, RpcNodeHttpResponse};
-use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
-use reqwest::Method;
+use nautilus_network::{
+    http::{HttpClient, Method},
+    ratelimiter::quota::Quota,
+};
 use serde::de::DeserializeOwned;
 
 use crate::rpc::error::BlockchainRpcClientError;

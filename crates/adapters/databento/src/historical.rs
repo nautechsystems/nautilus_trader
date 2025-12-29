@@ -234,8 +234,15 @@ impl DatabentoHistoricalClient {
         let dbn_schema = dbn::Schema::from_str(&schema)?;
 
         match dbn_schema {
-            dbn::Schema::Mbp1 | dbn::Schema::Bbo1S | dbn::Schema::Bbo1M => (),
-            _ => anyhow::bail!("Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m"),
+            dbn::Schema::Mbp1
+            | dbn::Schema::Bbo1S
+            | dbn::Schema::Bbo1M
+            | dbn::Schema::Cmbp1
+            | dbn::Schema::Cbbo1S
+            | dbn::Schema::Cbbo1M => (),
+            _ => anyhow::bail!(
+                "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m, cmbp-1, cbbo-1s, cbbo-1m"
+            ),
         }
 
         let range_params = GetRangeParams::builder()
@@ -282,17 +289,21 @@ impl DatabentoHistoricalClient {
             )?;
 
             match data {
-                Some(Data::Quote(quote)) => {
-                    result.push(quote);
-                    Ok(())
-                }
+                Some(Data::Quote(quote)) => result.push(quote),
+                None => {} // Skip records with undefined bid/ask prices
                 _ => anyhow::bail!("Invalid data element not `QuoteTick`, was {data:?}"),
             }
+            Ok(())
         };
 
         match dbn_schema {
             dbn::Schema::Mbp1 => {
                 while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Cmbp1 => {
+                while let Ok(Some(msg)) = decoder.decode_record::<dbn::Cmbp1Msg>().await {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }
@@ -303,6 +314,11 @@ impl DatabentoHistoricalClient {
             }
             dbn::Schema::Bbo1S => {
                 while let Ok(Some(msg)) = decoder.decode_record::<dbn::Bbo1SMsg>().await {
+                    process_record(dbn::RecordRef::from(msg))?;
+                }
+            }
+            dbn::Schema::Cbbo1S | dbn::Schema::Cbbo1M => {
+                while let Ok(Some(msg)) = decoder.decode_record::<dbn::CbboMsg>().await {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
             }

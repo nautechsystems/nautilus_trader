@@ -765,10 +765,6 @@ impl AccountsManager {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
@@ -789,7 +785,7 @@ mod tests {
 
     #[rstest]
     fn test_update_balance_locked_with_base_currency_multiple_orders() {
-        // Arrange - Create account with USD base currency
+        // Create account with USD base currency
         let usd = Currency::USD();
         let account_state = AccountState::new(
             AccountId::new("SIM-001"),
@@ -932,7 +928,6 @@ mod tests {
 
         let orders: Vec<&OrderAny> = vec![&order1, &order2, &order3];
 
-        // Act
         let result = manager.update_orders(
             &AccountAny::Cash(account),
             InstrumentAny::CurrencyPair(instrument),
@@ -940,7 +935,6 @@ mod tests {
             UnixNanos::default(),
         );
 
-        // Assert
         assert!(result.is_some());
         let (updated_account, _state) = result.unwrap();
 

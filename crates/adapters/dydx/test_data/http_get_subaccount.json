@@ -1,0 +1,26 @@
+{
+  "requestId": "http_get_subaccount-req",
+  "status": "success",
+  "isoTimestamp": "2025-12-08T16:12:00.000Z",
+  "result": {
+    "subaccount": {
+      "address": "dydx1n56z5fhmemtffzkt2eqyf9kuc7ycjfs86mvqy7",
+      "subaccountNumber": 0,
+      "equity": "45.201296",
+      "freeCollateral": "45.201296",
+      "openPerpetualPositions": {},
+      "assetPositions": {
+        "USDC": {
+          "size": "45.201296",
+          "symbol": "USDC",
+          "side": "LONG",
+          "assetId": "0",
+          "subaccountNumber": 0
+        }
+      },
+      "marginEnabled": true,
+      "updatedAtHeight": "63049869",
+      "latestProcessedBlockHeight": "66624141"
+    }
+  }
+}

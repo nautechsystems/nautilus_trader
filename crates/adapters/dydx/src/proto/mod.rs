@@ -18,8 +18,6 @@
 //! Re-exports proto definitions from the `dydx_proto` crate which includes both
 //! Cosmos SDK and dYdX protocol-specific messages.
 
-// Re-export commonly used proto types
-// Re-export entire modules for comprehensive access
 pub use dydx_proto::{
     ToAny, cosmos_sdk_proto,
     cosmos_sdk_proto::cosmos::{

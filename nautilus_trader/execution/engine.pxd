@@ -60,6 +60,7 @@ cdef class ExecutionEngine(Component):
     cdef readonly dict[StrategyId, str] _topic_cache_order_events
     cdef readonly dict[StrategyId, str] _topic_cache_position_events
     cdef readonly dict[InstrumentId, str] _topic_cache_fill_events
+    cdef readonly dict[InstrumentId, str] _topic_cache_cancel_events
     cdef readonly dict[ClientId, str] _topic_cache_commands
 
     cdef readonly bint debug
@@ -114,6 +115,7 @@ cdef class ExecutionEngine(Component):
     cdef str _get_order_events_topic(self, StrategyId strategy_id)
     cdef str _get_position_events_topic(self, StrategyId strategy_id)
     cdef str _get_fill_events_topic(self, InstrumentId instrument_id)
+    cdef str _get_cancel_events_topic(self, InstrumentId instrument_id)
     cdef str _get_commands_topic(self, ClientId client_id)
 
     cpdef void _set_position_id_counts(self)

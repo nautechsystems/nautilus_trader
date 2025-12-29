@@ -22,10 +22,9 @@ use std::sync::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
         DataEvent,
         data::{
@@ -40,7 +39,8 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    MUTEX_POISONED,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_data::client::DataClient;
@@ -194,7 +194,7 @@ impl OKXDataClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 tracing::error!("{context}: {e:?}");
             }
@@ -223,9 +223,14 @@ impl OKXDataClient {
             }
             NautilusWsMessage::AccountUpdate(_)
             | NautilusWsMessage::PositionUpdate(_)
+            | NautilusWsMessage::OrderAccepted(_)
+            | NautilusWsMessage::OrderCanceled(_)
+            | NautilusWsMessage::OrderExpired(_)
             | NautilusWsMessage::OrderRejected(_)
             | NautilusWsMessage::OrderCancelRejected(_)
             | NautilusWsMessage::OrderModifyRejected(_)
+            | NautilusWsMessage::OrderTriggered(_)
+            | NautilusWsMessage::OrderUpdated(_)
             | NautilusWsMessage::ExecutionReports(_) => {
                 tracing::debug!("Ignoring trading message on data client");
             }
@@ -266,13 +271,6 @@ fn upsert_instrument(
     guard.insert(instrument.id(), instrument);
 }
 
-fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
-    value
-        .and_then(|dt| dt.timestamp_nanos_opt())
-        .and_then(|nanos| u64::try_from(nanos).ok())
-        .map(UnixNanos::from)
-}
-
 fn contract_filter_with_config(config: &OKXDataClientConfig, instrument: &InstrumentAny) -> bool {
     contract_filter_with_config_types(config.contract_types.as_ref(), instrument)
 }
@@ -310,20 +308,20 @@ impl DataClient for OKXDataClient {
             is_demo = self.config.is_demo,
             http_proxy_url = ?self.config.http_proxy_url,
             ws_proxy_url = ?self.config.ws_proxy_url,
-            "Starting OKX data client"
+            "Started"
         );
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Stopping OKX data client {id}", id = self.client_id);
+        tracing::info!("Stopping {id}", id = self.client_id);
         self.cancellation_token.cancel();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Resetting OKX data client {id}", id = self.client_id);
+        tracing::debug!("Resetting {id}", id = self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
@@ -335,7 +333,7 @@ impl DataClient for OKXDataClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Disposing OKX data client {id}", id = self.client_id);
+        tracing::debug!("Disposing {id}", id = self.client_id);
         self.stop()
     }
 
@@ -350,6 +348,7 @@ impl DataClient for OKXDataClient {
             self.config.instrument_types.clone()
         };
 
+        let mut all_instruments = Vec::new();
         for inst_type in &instrument_types {
             let mut fetched = self
                 .http_client
@@ -361,12 +360,31 @@ impl DataClient for OKXDataClient {
             self.http_client.cache_instruments(fetched.clone());
 
             let mut guard = self.instruments.write().expect(MUTEX_POISONED);
-            for instrument in fetched {
-                guard.insert(instrument.id(), instrument);
+            for instrument in &fetched {
+                guard.insert(instrument.id(), instrument.clone());
+            }
+            drop(guard);
+
+            all_instruments.extend(fetched);
+        }
+
+        for instrument in all_instruments {
+            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                tracing::warn!("Failed to send instrument: {e}");
             }
         }
 
         if let Some(ref mut ws) = self.ws_public {
+            // Cache instruments to websocket before connecting so handler has them
+            let instruments: Vec<_> = self
+                .instruments
+                .read()
+                .expect(MUTEX_POISONED)
+                .values()
+                .cloned()
+                .collect();
+            ws.cache_instruments(instruments);
+
             ws.connect()
                 .await
                 .context("failed to connect OKX public websocket")?;
@@ -378,7 +396,7 @@ impl DataClient for OKXDataClient {
             let sender = self.data_sender.clone();
             let insts = self.instruments.clone();
             let cancel = self.cancellation_token.clone();
-            let handle = tokio::spawn(async move {
+            let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 loop {
                     tokio::select! {
@@ -404,6 +422,16 @@ impl DataClient for OKXDataClient {
         }
 
         if let Some(ref mut ws) = self.ws_business {
+            // Cache instruments to websocket before connecting so handler has them
+            let instruments: Vec<_> = self
+                .instruments
+                .read()
+                .expect(MUTEX_POISONED)
+                .values()
+                .cloned()
+                .collect();
+            ws.cache_instruments(instruments);
+
             ws.connect()
                 .await
                 .context("failed to connect OKX business websocket")?;
@@ -415,7 +443,7 @@ impl DataClient for OKXDataClient {
             let sender = self.data_sender.clone();
             let insts = self.instruments.clone();
             let cancel = self.cancellation_token.clone();
-            let handle = tokio::spawn(async move {
+            let handle = get_runtime().spawn(async move {
                 pin_mut!(stream);
                 loop {
                     tokio::select! {
@@ -863,7 +891,7 @@ impl DataClient for OKXDataClient {
         let contract_types = self.config.contract_types.clone();
         let instrument_families = self.config.instrument_families.clone();
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             let mut all_instruments = Vec::new();
 
             for inst_type in instrument_types {
@@ -973,7 +1001,7 @@ impl DataClient for OKXDataClient {
         };
         let contract_types = self.config.contract_types.clone();
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match http
                 .request_instrument(instrument_id)
                 .await
@@ -1035,7 +1063,7 @@ impl DataClient for OKXDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match http
                 .request_trades(instrument_id, start, end, limit)
                 .await
@@ -1077,7 +1105,7 @@ impl DataClient for OKXDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match http
                 .request_bars(bar_type, start, end, limit)
                 .await

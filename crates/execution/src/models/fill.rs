@@ -22,8 +22,6 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 pub struct FillModel {
     /// The probability of limit order filling if the market rests on its price.
     prob_fill_on_limit: f64,
-    /// The probability of stop orders filling if the market rests on its price.
-    prob_fill_on_stop: f64,
     /// The probability of order fill prices slipping by one tick.
     prob_slippage: f64,
     /// Random number generator
@@ -42,13 +40,10 @@ impl FillModel {
     /// Panics if probability checks fail.
     pub fn new(
         prob_fill_on_limit: f64,
-        prob_fill_on_stop: f64,
         prob_slippage: f64,
         random_seed: Option<u64>,
     ) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
-            .expect(FAILED);
-        check_in_range_inclusive_f64(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop")
             .expect(FAILED);
         check_in_range_inclusive_f64(prob_slippage, 0.0, 1.0, "prob_slippage").expect(FAILED);
         let rng = match random_seed {
@@ -57,7 +52,6 @@ impl FillModel {
         };
         Ok(Self {
             prob_fill_on_limit,
-            prob_fill_on_stop,
             prob_slippage,
             rng,
         })
@@ -66,11 +60,6 @@ impl FillModel {
     /// Returns `true` if a limit order should be filled based on the configured probability.
     pub fn is_limit_filled(&mut self) -> bool {
         self.event_success(self.prob_fill_on_limit)
-    }
-
-    /// Returns `true` if a stop order should be filled based on the configured probability.
-    pub fn is_stop_filled(&mut self) -> bool {
-        self.event_success(self.prob_fill_on_stop)
     }
 
     /// Returns `true` if an order should slip by one tick based on the configured probability.
@@ -110,8 +99,8 @@ impl Display for FillModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "FillModel(prob_fill_on_limit: {}, prob_fill_on_stop: {}, prob_slippage: {})",
-            self.prob_fill_on_limit, self.prob_fill_on_stop, self.prob_slippage
+            "FillModel(prob_fill_on_limit: {}, prob_slippage: {})",
+            self.prob_fill_on_limit, self.prob_slippage
         )
     }
 }
@@ -119,13 +108,10 @@ impl Display for FillModel {
 impl Default for FillModel {
     /// Creates a new default [`FillModel`] instance.
     fn default() -> Self {
-        Self::new(0.5, 0.5, 0.1, None).unwrap()
+        Self::new(1.0, 0.0, None).unwrap()
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::{fixture, rstest};
@@ -135,7 +121,7 @@ mod tests {
     #[fixture]
     fn fill_model() -> FillModel {
         let seed = 42;
-        FillModel::new(0.5, 0.5, 0.1, Some(seed)).unwrap()
+        FillModel::new(0.5, 0.1, Some(seed)).unwrap()
     }
 
     #[rstest]
@@ -143,15 +129,7 @@ mod tests {
         expected = "Condition failed: invalid f64 for 'prob_fill_on_limit' not in range [0, 1], was 1.1"
     )]
     fn test_fill_model_param_prob_fill_on_limit_error() {
-        let _ = super::FillModel::new(1.1, 0.5, 0.1, None).unwrap();
-    }
-
-    #[rstest]
-    #[should_panic(
-        expected = "Condition failed: invalid f64 for 'prob_fill_on_stop' not in range [0, 1], was 1.1"
-    )]
-    fn test_fill_model_param_prob_fill_on_stop_error() {
-        let _ = super::FillModel::new(0.5, 1.1, 0.1, None).unwrap();
+        let _ = super::FillModel::new(1.1, 0.1, None).unwrap();
     }
 
     #[rstest]
@@ -159,26 +137,19 @@ mod tests {
         expected = "Condition failed: invalid f64 for 'prob_slippage' not in range [0, 1], was 1.1"
     )]
     fn test_fill_model_param_prob_slippage_error() {
-        let _ = super::FillModel::new(0.5, 0.5, 1.1, None).unwrap();
+        let _ = super::FillModel::new(0.5, 1.1, None).unwrap();
     }
 
     #[rstest]
     fn test_fill_model_is_limit_filled(mut fill_model: FillModel) {
-        // because of fixed seed this is deterministic
+        // Fixed seed makes this deterministic
         let result = fill_model.is_limit_filled();
         assert!(!result);
     }
 
     #[rstest]
-    fn test_fill_model_is_stop_filled(mut fill_model: FillModel) {
-        // because of fixed seed this is deterministic
-        let result = fill_model.is_stop_filled();
-        assert!(!result);
-    }
-
-    #[rstest]
     fn test_fill_model_is_slipped(mut fill_model: FillModel) {
-        // because of fixed seed this is deterministic
+        // Fixed seed makes this deterministic
         let result = fill_model.is_slipped();
         assert!(!result);
     }

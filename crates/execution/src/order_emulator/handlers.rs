@@ -43,12 +43,11 @@ impl MessageHandler for OrderEmulatorExecuteHandler {
 
     fn handle(&self, msg: &dyn Any) {
         if let Some(emulator) = self.emulator.upgrade() {
-            emulator.borrow_mut().execute(
-                msg.downcast_ref::<&TradingCommand>()
-                    .unwrap()
-                    .to_owned()
-                    .clone(),
-            );
+            if let Some(command) = msg.downcast_ref::<TradingCommand>() {
+                emulator.borrow_mut().execute(command.clone());
+            } else {
+                log::error!("OrderEmulator received unexpected message type");
+            }
         }
     }
 
@@ -78,12 +77,11 @@ impl MessageHandler for OrderEmulatorOnEventHandler {
 
     fn handle(&self, msg: &dyn Any) {
         if let Some(emulator) = self.emulator.upgrade() {
-            emulator.borrow_mut().on_event(
-                msg.downcast_ref::<&OrderEventAny>()
-                    .unwrap()
-                    .to_owned()
-                    .clone(),
-            );
+            if let Some(event) = msg.downcast_ref::<OrderEventAny>() {
+                emulator.borrow_mut().on_event(event.clone());
+            } else {
+                log::error!("OrderEmulator on_event received unexpected message type");
+            }
         }
     }
 

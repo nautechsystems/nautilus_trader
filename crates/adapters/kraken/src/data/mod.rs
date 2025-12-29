@@ -15,4 +15,5 @@
 
 //! Data client integration module.
 //!
-//! This will integrate the HTTP and WebSocket clients for market data streaming.
+//! Provides market data streaming for Kraken Spot and Futures markets via Rust
+//! HTTP and WebSocket clients exposed to Python.

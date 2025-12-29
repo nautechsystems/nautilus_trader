@@ -26,7 +26,7 @@ use std::{
 use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
-    live::runtime::get_runtime,
+    live::get_runtime,
     logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
         BusMessage,
@@ -571,9 +571,6 @@ fn create_heartbeat_msg() -> BusMessage {
     BusMessage::with_str_topic(HEARTBEAT_TOPIC, payload)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use redis::Value;

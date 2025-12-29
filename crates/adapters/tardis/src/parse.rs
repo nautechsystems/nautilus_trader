@@ -135,10 +135,24 @@ pub fn normalize_instrument_id(
 }
 
 /// Normalizes the given amount by truncating it to the specified decimal precision.
+///
+/// Uses rounding to the nearest integer before truncation to avoid floating-point
+/// precision issues (e.g., `0.1 * 10` becoming `0.9999999999`).
 #[must_use]
 pub fn normalize_amount(amount: f64, precision: u8) -> f64 {
     let factor = 10_f64.powi(i32::from(precision));
-    (amount * factor).trunc() / factor
+    // Round to nearest integer first to handle floating-point precision issues,
+    // then truncate toward zero to maintain the original truncation semantics
+    let scaled = amount * factor;
+    let rounded = scaled.round();
+    // If the rounded value is very close to scaled, use it; otherwise use trunc
+    // This handles edge cases like 0.1 * 10 = 0.9999999999... -> 1.0
+    let result = if (rounded - scaled).abs() < 1e-9 {
+        rounded.trunc()
+    } else {
+        scaled.trunc()
+    };
+    result / factor
 }
 
 /// Parses a Nautilus price from the given `value`.
@@ -209,20 +223,23 @@ pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
 ///
 /// The [`PriceType`] is always `LAST` for Tardis trade bars.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the specification format is invalid or if the aggregation suffix is unsupported.
-#[must_use]
-pub fn parse_bar_spec(value: &str) -> BarSpecification {
+/// Returns an error if the specification format is invalid or if the aggregation suffix is unsupported.
+pub fn parse_bar_spec(value: &str) -> anyhow::Result<BarSpecification> {
     let parts: Vec<&str> = value.split('_').collect();
-    let last_part = parts.last().expect("Invalid bar spec");
+    let last_part = parts
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("Invalid bar spec: empty string"))?;
     let split_idx = last_part
         .chars()
         .position(|c| !c.is_ascii_digit())
-        .expect("Invalid bar spec");
+        .ok_or_else(|| anyhow::anyhow!("Invalid bar spec: no aggregation suffix in '{value}'"))?;
 
     let (step_str, suffix) = last_part.split_at(split_idx);
-    let step: usize = step_str.parse().expect("Invalid step");
+    let step: usize = step_str
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid step in bar spec '{value}': {e}"))?;
 
     let aggregation = match suffix {
         "ms" => BarAggregation::Millisecond,
@@ -230,33 +247,29 @@ pub fn parse_bar_spec(value: &str) -> BarSpecification {
         "m" => BarAggregation::Minute,
         "ticks" => BarAggregation::Tick,
         "vol" => BarAggregation::Volume,
-        _ => panic!("Unsupported bar aggregation type"),
+        _ => anyhow::bail!("Unsupported bar aggregation type: '{suffix}'"),
     };
 
-    BarSpecification::new(step, aggregation, PriceType::Last)
+    Ok(BarSpecification::new(step, aggregation, PriceType::Last))
 }
 
 /// Converts a Nautilus `BarSpecification` to the Tardis trade bar string convention.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the bar aggregation kind is unsupported.
-#[must_use]
-pub fn bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> String {
+/// Returns an error if the bar aggregation kind is unsupported.
+pub fn bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> anyhow::Result<String> {
     let suffix = match bar_spec.aggregation {
         BarAggregation::Millisecond => "ms",
         BarAggregation::Second => "s",
         BarAggregation::Minute => "m",
         BarAggregation::Tick => "ticks",
         BarAggregation::Volume => "vol",
-        _ => panic!("Unsupported bar aggregation type {}", bar_spec.aggregation),
+        _ => anyhow::bail!("Unsupported bar aggregation type: {}", bar_spec.aggregation),
     };
-    format!("trade_bar_{}{}", bar_spec.step, suffix)
+    Ok(format!("trade_bar_{}{}", bar_spec.step, suffix))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -349,6 +362,30 @@ mod tests {
     }
 
     #[rstest]
+    fn test_normalize_amount_floating_point_edge_cases() {
+        // Test that floating-point edge cases are handled correctly
+        // 0.1 * 10 can become 0.9999999... due to IEEE 754
+        let result = normalize_amount(0.1, 1);
+        assert_eq!(result, 0.1);
+
+        // Test with values that could have precision issues
+        let result = normalize_amount(0.7, 1);
+        assert_eq!(result, 0.7);
+
+        // Test large precision
+        let result = normalize_amount(1.123456789, 9);
+        assert_eq!(result, 1.123456789);
+
+        // Test zero
+        let result = normalize_amount(0.0, 8);
+        assert_eq!(result, 0.0);
+
+        // Test negative values
+        let result = normalize_amount(-0.1, 1);
+        assert_eq!(result, -0.1);
+    }
+
+    #[rstest]
     #[case("bid", OrderSide::Buy)]
     #[case("ask", OrderSide::Sell)]
     #[case("unknown", OrderSide::NoOrderSide)]
@@ -399,31 +436,23 @@ mod tests {
         #[case] expected_step: usize,
         #[case] expected_aggregation: BarAggregation,
     ) {
-        let spec = parse_bar_spec(value);
+        let spec = parse_bar_spec(value).unwrap();
         assert_eq!(spec.step.get(), expected_step);
         assert_eq!(spec.aggregation, expected_aggregation);
         assert_eq!(spec.price_type, PriceType::Last);
     }
 
     #[rstest]
-    #[case("trade_bar_10unknown")]
-    #[should_panic(expected = "Unsupported bar aggregation type")]
-    fn test_parse_bar_spec_invalid_suffix(#[case] value: &str) {
-        let _ = parse_bar_spec(value);
-    }
-
-    #[rstest]
-    #[case("")]
-    #[should_panic(expected = "Invalid bar spec")]
-    fn test_parse_bar_spec_empty(#[case] value: &str) {
-        let _ = parse_bar_spec(value);
-    }
-
-    #[rstest]
-    #[case("trade_bar_notanumberms")]
-    #[should_panic(expected = "Invalid step")]
-    fn test_parse_bar_spec_invalid_step(#[case] value: &str) {
-        let _ = parse_bar_spec(value);
+    #[case("trade_bar_10unknown", "Unsupported bar aggregation type")]
+    #[case("", "no aggregation suffix")]
+    #[case("trade_bar_notanumberms", "Invalid step")]
+    fn test_parse_bar_spec_errors(#[case] value: &str, #[case] expected_error: &str) {
+        let result = parse_bar_spec(value);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains(expected_error),
+            "Expected error containing '{expected_error}'"
+        );
     }
 
     #[rstest]
@@ -444,6 +473,9 @@ mod tests {
         "trade_bar_100000vol"
     )]
     fn test_to_tardis_string(#[case] bar_spec: BarSpecification, #[case] expected: &str) {
-        assert_eq!(bar_spec_to_tardis_trade_bar_string(&bar_spec), expected);
+        assert_eq!(
+            bar_spec_to_tardis_trade_bar_string(&bar_spec).unwrap(),
+            expected
+        );
     }
 }

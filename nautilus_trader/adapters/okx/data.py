@@ -434,7 +434,7 @@ class OKXDataClient(LiveMarketDataClient):
         try:
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
             pyo3_instrument = await self._http_client.request_instrument(pyo3_instrument_id)
-            self._handle_instrument_update(pyo3_instrument)  # type: ignore[arg-type]
+            self._cache_instrument(pyo3_instrument)  # type: ignore[arg-type]
             instrument = transform_instrument_from_pyo3(pyo3_instrument)
         except Exception as e:
             self._log.error(f"Failed to request instrument {request.instrument_id}: {e}")
@@ -457,7 +457,7 @@ class OKXDataClient(LiveMarketDataClient):
             pyo3_instruments = await self._http_client.request_instruments(inst_type, family)
             instruments = []
             for pyo3_instrument in pyo3_instruments:
-                self._handle_instrument_update(pyo3_instrument)  # type: ignore[arg-type]
+                self._cache_instrument(pyo3_instrument)  # type: ignore[arg-type]
                 instrument = transform_instrument_from_pyo3(pyo3_instrument)
                 instruments.append(instrument)
             return instruments
@@ -595,7 +595,7 @@ class OKXDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.exception("Error handling websocket message", e)
 
-    def _handle_instrument_update(self, pyo3_instrument: OkxInstrument) -> None:
+    def _cache_instrument(self, pyo3_instrument: OkxInstrument) -> None:
         self._http_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
 
         if self._ws_client is not None:
@@ -603,6 +603,9 @@ class OKXDataClient(LiveMarketDataClient):
 
         if self._ws_business_client is not None:
             self._ws_business_client.cache_instrument(pyo3_instrument)  # type: ignore [arg-type]
+
+    def _handle_instrument_update(self, pyo3_instrument: OkxInstrument) -> None:
+        self._cache_instrument(pyo3_instrument)
 
         instrument = transform_instrument_from_pyo3(pyo3_instrument)
 

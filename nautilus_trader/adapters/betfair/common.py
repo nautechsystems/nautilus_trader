@@ -122,6 +122,9 @@ def is_session_error(error: BetfairError) -> bool:
     Session errors (NO_SESSION, INVALID_SESSION_INFORMATION) are expected to occur
     every 12-24 hours and should trigger automatic reconnection.
 
+    This also handles errors from betfair-parser when it can't parse undocumented
+    error codes like -32099 (JSON-RPC server errors).
+
     Parameters
     ----------
     error : BetfairError
@@ -136,4 +139,9 @@ def is_session_error(error: BetfairError) -> bool:
     if not error.args:
         return False
     msg = str(error.args[0])
-    return "NO_SESSION" in msg or "INVALID_SESSION_INFORMATION" in msg
+    return (
+        "NO_SESSION" in msg
+        or "INVALID_SESSION_INFORMATION" in msg
+        or "is not a valid JSONExceptionCode" in msg
+        or "JSON_PARSE_ERROR" in msg
+    )

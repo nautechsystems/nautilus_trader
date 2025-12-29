@@ -58,8 +58,8 @@ use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
 use nautilus_model::defi::{AmmType, Dex, DexType, chain::chains};
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{
-    Block, Blockchain, DefiData, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolProfiler,
-    PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
+    Block, Blockchain, DefiData, Pool, PoolIdentifier, PoolLiquidityUpdate,
+    PoolLiquidityUpdateType, PoolProfiler, PoolSwap, Token, data::PoolFeeCollect, data::PoolFlash,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::identifiers::InstrumentId;
@@ -69,6 +69,7 @@ use nautilus_model::{
         OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
+    defi::tick_map::tick_math::get_tick_at_sqrt_ratio,
     enums::{BookType, PriceType},
     identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
@@ -1935,6 +1936,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -1944,7 +1946,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -1959,7 +1961,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         chain,
         dex,
         instrument_id,
-        pool.address,
+        pool.pool_identifier,
         1000u64,
         "0x123".to_string(),
         0,
@@ -2292,6 +2294,7 @@ fn test_process_pool_liquidity_update(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2301,7 +2304,7 @@ fn test_process_pool_liquidity_update(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2316,7 +2319,7 @@ fn test_process_pool_liquidity_update(
         chain,
         dex,
         instrument_id,
-        pool.address,
+        pool.pool_identifier,
         PoolLiquidityUpdateType::Mint,
         1000u64,
         "0x123".to_string(),
@@ -2397,6 +2400,7 @@ fn test_process_pool_fee_collect(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2406,7 +2410,7 @@ fn test_process_pool_fee_collect(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2421,7 +2425,7 @@ fn test_process_pool_fee_collect(
         chain,
         dex,
         instrument_id,
-        pool.address,
+        pool.pool_identifier,
         1000u64,
         "0x123".to_string(),
         0,
@@ -2496,6 +2500,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2505,7 +2510,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache so setup_pool_updater doesn't request snapshot
@@ -2520,7 +2525,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         chain,
         dex,
         instrument_id,
-        pool.address,
+        pool.pool_identifier,
         1000u64,
         "0x123".to_string(),
         0,
@@ -2602,6 +2607,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2611,7 +2617,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -2625,7 +2631,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         chain.clone(),
         dex.clone(),
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
         999u64,
         "0x122".to_string(),
@@ -2687,7 +2693,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         1000u64,
         "0x123".to_string(),
         0,
@@ -2773,6 +2779,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2782,7 +2789,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -2817,7 +2824,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
         1000u64,
         "0x123".to_string(),
@@ -2892,6 +2899,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -2901,7 +2909,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -2916,7 +2924,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
         chain.clone(),
         dex.clone(),
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
         1000u64,
         "0x123".to_string(),
@@ -2959,7 +2967,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Burn,
         1001u64,
         "0x124".to_string(),
@@ -3034,6 +3042,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
         token0,
         token1,
@@ -3043,7 +3052,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -3071,7 +3080,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         1000u64,
         "0x123".to_string(),
         0,
@@ -3142,6 +3151,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
         chain.clone(),
         dex.clone(),
         Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         0u64,
         token0,
         token1,
@@ -3151,7 +3161,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128);
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to cache and create profiler
@@ -3180,7 +3190,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
         chain,
         dex,
         instrument_id,
-        Address::from([0x12; 20]),
+        PoolIdentifier::from_address(Address::from([0x12; 20])),
         1000u64,
         "0x123".to_string(),
         0,
@@ -3364,6 +3374,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
         chain,
         dex,
         Address::from([0x88; 20]),
+        PoolIdentifier::from_address(Address::from([0x88; 20])),
         0u64,
         token0,
         token1,
@@ -3373,7 +3384,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     );
 
     let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
-    pool.initialize(initial_price);
+    pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
     // Add pool to the data_engine's cache (not the fixture cache!)

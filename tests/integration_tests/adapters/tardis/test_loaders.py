@@ -100,16 +100,20 @@ def test_tardis_load_deltas(
     deltas = loader.load_deltas(filepath, limit=100)
 
     # Assert
-    assert len(deltas) == 15
+    assert len(deltas) == 16  # 15 data deltas + 1 CLEAR for snapshot
+    # First delta is CLEAR (synthetic, prepended for snapshot)
     assert deltas[0].instrument_id == instrument_id
-    assert deltas[0].action == BookAction.ADD
-    assert deltas[0].order.side == OrderSide.SELL
-    assert deltas[0].order.price == Price.from_str("6421.5")
-    assert deltas[0].order.size == Quantity.from_str("18640")
-    assert deltas[0].flags == 0
-    assert deltas[0].sequence == 0
-    assert deltas[0].ts_event == 1585699200245000000
-    assert deltas[0].ts_init == 1585699200355684000
+    assert deltas[0].action == BookAction.CLEAR
+    # Actual data starts at index 1
+    assert deltas[1].instrument_id == instrument_id
+    assert deltas[1].action == BookAction.ADD
+    assert deltas[1].order.side == OrderSide.SELL
+    assert deltas[1].order.price == Price.from_str("6421.5")
+    assert deltas[1].order.size == Quantity.from_str("18640")
+    assert deltas[1].flags == 0
+    assert deltas[1].sequence == 0
+    assert deltas[1].ts_event == 1585699200245000000
+    assert deltas[1].ts_init == 1585699200355684000
 
 
 @pytest.mark.parametrize(
@@ -217,8 +221,8 @@ def test_tardis_load_depth10_from_snapshot5(
     for i in range(5, 10):
         assert deltas[0].ask_counts[i] == 0
 
-    # Verify metadata
-    assert deltas[0].flags == 128
+    # Verify metadata (flags = F_SNAPSHOT | F_LAST = 32 + 128 = 160)
+    assert deltas[0].flags == 160
     assert deltas[0].ts_event == 1598918403696000000
     assert deltas[0].ts_init == 1598918403810979000
     assert deltas[0].sequence == 0
@@ -317,8 +321,8 @@ def test_tardis_load_depth10_from_snapshot25(
         assert deltas[0].bid_counts[i] == 1
         assert deltas[0].ask_counts[i] == 1
 
-    # Verify metadata
-    assert deltas[0].flags == 128
+    # Verify metadata (flags = F_SNAPSHOT | F_LAST = 32 + 128 = 160)
+    assert deltas[0].flags == 160
     assert deltas[0].ts_event == 1598918403696000000
     assert deltas[0].ts_init == 1598918403810979000
     assert deltas[0].sequence == 0
@@ -428,14 +432,16 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         memory_used = current_memory - initial_memory
 
         # Verify basic functionality
-        assert len(deltas) == 5
+        assert len(deltas) == 6  # 1 CLEAR + 5 data deltas
+        assert deltas[0].action == BookAction.CLEAR  # Synthetic CLEAR for snapshot
 
-        # Key test: All deltas should have the same (maximum) precision
+        # Key test: All data deltas should have the same (maximum) precision
         # This verifies that early records were updated when precision increased
         expected_price_precision = 4  # From 50000.1234
         expected_size_precision = 1  # From 1.5, 0.5
 
-        for i, delta in enumerate(deltas):
+        # Skip CLEAR delta (index 0) when checking precision
+        for i, delta in enumerate(deltas[1:], start=1):
             assert (
                 delta.order.price.precision == expected_price_precision
             ), f"Delta {i} price precision should be {expected_price_precision}"
@@ -461,6 +467,7 @@ def test_tardis_stream_deltas():
     Test async streaming functionality for order book deltas.
     """
     # Create synthetic CSV data with varying precision
+    # First record has is_snapshot=true, so a CLEAR delta will be prepended
     csv_data = """exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
 binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50000.0,1.0
 binance-futures,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.5,2.0
@@ -498,30 +505,39 @@ binance-futures,BTCUSDT,1640995205000000,1640995205100000,false,bid,49998.5,1.0"
             # Verify delta properties
             for delta in chunk:
                 assert delta.instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
-                assert delta.action in [BookAction.ADD, BookAction.UPDATE, BookAction.DELETE]
-                assert delta.order.side in [OrderSide.BUY, OrderSide.SELL]
-                assert delta.order.price is not None
-                assert delta.order.size is not None
+                assert delta.action in [
+                    BookAction.ADD,
+                    BookAction.UPDATE,
+                    BookAction.DELETE,
+                    BookAction.CLEAR,
+                ]
+                # CLEAR deltas have NO_ORDER_SIDE, others have BUY/SELL
+                if delta.action != BookAction.CLEAR:
+                    assert delta.order.side in [OrderSide.BUY, OrderSide.SELL]
+                    assert delta.order.price is not None
+                    assert delta.order.size is not None
 
         # Verify chunking worked correctly
-        assert chunk_count == 3  # 6 records / 2 per chunk = 3 chunks
-        assert len(chunks[0]) == 2  # First chunk: 2 records
-        assert len(chunks[1]) == 2  # Second chunk: 2 records
-        assert len(chunks[2]) == 2  # Third chunk: 2 records
+        # 7 total items (1 CLEAR + 6 data) / 2 per chunk = 4 chunks
+        assert chunk_count == 4
+        assert len(chunks[0]) == 2  # First chunk: CLEAR + first data
+        assert len(chunks[1]) == 2  # Second chunk: 2 data records
+        assert len(chunks[2]) == 2  # Third chunk: 2 data records
+        assert len(chunks[3]) == 1  # Fourth chunk: 1 data record
 
         # Verify total records
         total_deltas = sum(len(chunk) for chunk in chunks)
-        assert total_deltas == 6
+        assert total_deltas == 7  # 1 CLEAR + 6 data
 
-        # Test precision inference within chunks
-        # Each chunk should have consistent precision within itself
+        # Test precision inference within chunks (skip CLEAR deltas)
         for _, chunk in enumerate(chunks):
-            if len(chunk) > 1:
-                # All deltas in a chunk should have same precision
-                first_price_precision = chunk[0].order.price.precision
-                first_size_precision = chunk[0].order.size.precision
+            data_deltas = [d for d in chunk if d.action != BookAction.CLEAR]
+            if len(data_deltas) > 1:
+                # All data deltas in a chunk should have same precision
+                first_price_precision = data_deltas[0].order.price.precision
+                first_size_precision = data_deltas[0].order.size.precision
 
-                for delta in chunk[1:]:
+                for delta in data_deltas[1:]:
                     assert delta.order.price.precision == first_price_precision
                     assert delta.order.size.precision == first_size_precision
 
@@ -530,10 +546,10 @@ binance-futures,BTCUSDT,1640995205000000,1640995205100000,false,bid,49998.5,1.0"
         for chunk in loader.stream_deltas(temp_file, chunk_size=4):
             chunks_large.append(chunk)
 
-        # Should have 2 chunks: [4 items, 2 items]
+        # Should have 2 chunks: [4 items, 3 items] (7 total)
         assert len(chunks_large) == 2
         assert len(chunks_large[0]) == 4
-        assert len(chunks_large[1]) == 2
+        assert len(chunks_large[1]) == 3
 
         print(f"Streaming test: {chunk_count} chunks processed, {total_deltas} total deltas")
     finally:
@@ -976,8 +992,11 @@ def _test_memory_efficiency_for_type(data_type, csv_generator):
                 memory_increase < 150
             ), f"Memory usage too high for {data_type}: {memory_increase:.2f} MB"
 
-        assert total_processed == 500
-        assert chunk_count == 10  # 500 / 50 = 10
+        # For deltas, first record has is_snapshot=true so a CLEAR delta is prepended (501 total)
+        expected_count = 501 if data_type == "deltas" else 500
+        expected_chunks = 11 if data_type == "deltas" else 10  # 501/50 = 11 chunks for deltas
+        assert total_processed == expected_count
+        assert chunk_count == expected_chunks
 
         print(
             f"{data_type.capitalize()} memory efficiency: {total_processed} records in {chunk_count} chunks",
@@ -1022,9 +1041,10 @@ def test_tardis_load_deltas_from_stub_data():
     deltas = loader.load_deltas(filepath)
 
     # Assert
-    assert len(deltas) == 2
-    assert deltas[0].order.price == Price.from_str("6421.5")
-    assert deltas[1].order.size == Quantity.from_int(10000)
+    assert len(deltas) == 3  # 1 CLEAR + 2 data deltas (both rows have is_snapshot=true)
+    assert deltas[0].action == BookAction.CLEAR  # Synthetic CLEAR prepended for snapshot
+    assert deltas[1].order.price == Price.from_str("6421.5")
+    assert deltas[2].order.size == Quantity.from_int(10000)
 
 
 def test_tardis_stream_trades_from_stub_data():
@@ -1054,11 +1074,13 @@ def test_tardis_stream_deltas_from_stub_data():
     chunks = list(stream)
 
     # Assert
-    assert len(chunks) == 2
+    assert len(chunks) == 3  # 1 CLEAR + 2 data deltas
     assert len(chunks[0]) == 1
-    assert chunks[0][0].order.price == Price.from_str("6421.5")
+    assert chunks[0][0].action == BookAction.CLEAR  # Synthetic CLEAR prepended for snapshot
     assert len(chunks[1]) == 1
-    assert chunks[1][0].order.size == Quantity.from_int(10000)
+    assert chunks[1][0].order.price == Price.from_str("6421.5")
+    assert len(chunks[2]) == 1
+    assert chunks[2][0].order.size == Quantity.from_int(10000)
 
 
 def test_precision_inference_with_minimal_data():
@@ -1081,9 +1103,11 @@ binance,BTCUSDT,1640995201000000,1640995201100000,false,bid,49999.12,2.00"""
         deltas = loader.load_deltas(temp_file)
 
         # Assert
-        assert len(deltas) == 2
+        assert len(deltas) == 3  # 1 CLEAR + 2 data deltas
+        assert deltas[0].action == BookAction.CLEAR  # Synthetic CLEAR for snapshot
 
-        for delta in deltas:
+        # Check precision on data deltas only (skip CLEAR at index 0)
+        for delta in deltas[1:]:
             assert delta.order.price.precision == 2
             assert delta.order.size.precision == 2
     finally:
@@ -1127,10 +1151,13 @@ def test_deltas_specific_price_size_values_from_stub_data():
     deltas = loader.load_deltas(deltas_path)
 
     # Assert
-    assert deltas[0].order.price == Price.from_str("6421.5")
-    assert deltas[0].order.size == Quantity.from_str("18640")
-    assert deltas[1].order.price == Price.from_str("6421.0")
-    assert deltas[1].order.size == Quantity.from_str("10000")
+    # Index 0 is CLEAR (synthetic, prepended for snapshot)
+    assert deltas[0].action == BookAction.CLEAR
+    # Actual data starts at index 1
+    assert deltas[1].order.price == Price.from_str("6421.5")
+    assert deltas[1].order.size == Quantity.from_str("18640")
+    assert deltas[2].order.price == Price.from_str("6421.0")
+    assert deltas[2].order.size == Quantity.from_str("10000")
 
 
 def test_trades_specific_price_size_values_from_stub_data():

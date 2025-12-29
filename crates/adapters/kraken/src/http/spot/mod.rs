@@ -17,5 +17,7 @@
 
 pub mod client;
 pub mod models;
+pub mod query;
 
 pub use client::KrakenSpotHttpClient;
+pub use query::*;

@@ -15,11 +15,12 @@
 
 //! Configuration structures for the dYdX adapter.
 
+use nautilus_model::identifiers::{AccountId, TraderId};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
-        consts::{DYDX_CHAIN_ID, DYDX_GRPC_URLS, DYDX_TESTNET_CHAIN_ID, DYDX_WS_URL},
+        consts::{DYDX_CHAIN_ID, DYDX_TESTNET_CHAIN_ID},
         enums::DydxNetwork,
         urls,
     },
@@ -69,6 +70,16 @@ pub struct DydxAdapterConfig {
     /// Mnemonic phrase for wallet (optional, loaded from environment if not provided).
     #[serde(default)]
     pub mnemonic: Option<String>,
+    /// Authenticator IDs for permissioned key trading.
+    ///
+    /// When provided, transactions will include a TxExtension to enable trading
+    /// via sub-accounts using delegated signing keys. This is an advanced feature
+    /// for institutional setups with separated hot/cold wallet architectures.
+    ///
+    /// See <https://docs.dydx.xyz/concepts/trading/authenticators> for details on
+    /// permissioned keys and authenticator configuration.
+    #[serde(default)]
+    pub authenticator_ids: Vec<u64>,
     /// Maximum number of retries for failed requests (default: 3).
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
@@ -146,6 +157,7 @@ impl Default for DydxAdapterConfig {
             subaccount: 0,
             is_testnet,
             mnemonic: None,
+            authenticator_ids: Vec::new(),
             max_retries: default_max_retries(),
             retry_delay_initial_ms: default_retry_delay_initial_ms(),
             retry_delay_max_ms: default_retry_delay_max_ms(),
@@ -203,42 +215,90 @@ impl Default for DydxDataClientConfig {
 /// Configuration for the dYdX execution client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DYDXExecClientConfig {
-    /// gRPC endpoint URL.
-    pub grpc_endpoint: String,
-    /// WebSocket endpoint URL.
-    pub ws_endpoint: String,
+    /// The trader ID for the client.
+    pub trader_id: TraderId,
+    /// The account ID for the client.
+    pub account_id: AccountId,
+    /// Network environment (mainnet or testnet).
+    #[serde(default)]
+    pub network: DydxNetwork,
+    /// gRPC endpoint URL (optional, uses default for network if not provided).
+    pub grpc_endpoint: Option<String>,
+    /// Additional gRPC URLs for fallback support.
+    #[serde(default)]
+    pub grpc_urls: Vec<String>,
+    /// WebSocket endpoint URL (optional, uses default for network if not provided).
+    pub ws_endpoint: Option<String>,
+    /// HTTP endpoint URL (optional, uses default for network if not provided).
+    pub http_endpoint: Option<String>,
     /// Wallet mnemonic for signing transactions.
     pub mnemonic: Option<String>,
-    /// Wallet address.
+    /// Wallet address (optional, derived from mnemonic if not provided).
     pub wallet_address: Option<String>,
     /// Subaccount number (default: 0).
+    #[serde(default)]
     pub subaccount_number: u32,
+    /// Authenticator IDs for permissioned key trading.
+    #[serde(default)]
+    pub authenticator_ids: Vec<u64>,
     /// HTTP request timeout in seconds.
     pub http_timeout_secs: Option<u64>,
     /// Maximum number of retry attempts.
-    pub max_retries: Option<u64>,
+    pub max_retries: Option<u32>,
     /// Initial retry delay in milliseconds.
     pub retry_delay_initial_ms: Option<u64>,
     /// Maximum retry delay in milliseconds.
     pub retry_delay_max_ms: Option<u64>,
-    /// Whether this is a testnet configuration.
-    pub is_testnet: bool,
 }
 
-impl Default for DYDXExecClientConfig {
-    fn default() -> Self {
-        Self {
-            grpc_endpoint: DYDX_GRPC_URLS[0].to_string(),
-            ws_endpoint: DYDX_WS_URL.to_string(),
-            mnemonic: None,
-            wallet_address: None,
-            subaccount_number: 0,
-            http_timeout_secs: Some(60),
-            max_retries: Some(3),
-            retry_delay_initial_ms: Some(100),
-            retry_delay_max_ms: Some(5000),
-            is_testnet: false,
+impl DYDXExecClientConfig {
+    /// Returns the gRPC URLs to use, with fallback support.
+    ///
+    /// Returns `grpc_urls` if non-empty, otherwise uses `grpc_endpoint` if provided,
+    /// otherwise uses the default URLs for the configured network.
+    #[must_use]
+    pub fn get_grpc_urls(&self) -> Vec<String> {
+        if !self.grpc_urls.is_empty() {
+            return self.grpc_urls.clone();
         }
+        if let Some(ref endpoint) = self.grpc_endpoint {
+            return vec![endpoint.clone()];
+        }
+        let is_testnet = matches!(self.network, DydxNetwork::Testnet);
+        urls::grpc_urls(is_testnet)
+            .iter()
+            .map(|&s| s.to_string())
+            .collect()
+    }
+
+    /// Returns the WebSocket URL for the configured network.
+    #[must_use]
+    pub fn get_ws_url(&self) -> String {
+        self.ws_endpoint.clone().unwrap_or_else(|| {
+            let is_testnet = matches!(self.network, DydxNetwork::Testnet);
+            urls::ws_url(is_testnet).to_string()
+        })
+    }
+
+    /// Returns the HTTP URL for the configured network.
+    #[must_use]
+    pub fn get_http_url(&self) -> String {
+        self.http_endpoint.clone().unwrap_or_else(|| {
+            let is_testnet = matches!(self.network, DydxNetwork::Testnet);
+            urls::http_base_url(is_testnet).to_string()
+        })
+    }
+
+    /// Returns the chain ID for the configured network.
+    #[must_use]
+    pub const fn get_chain_id(&self) -> ChainId {
+        self.network.chain_id()
+    }
+
+    /// Returns whether this is a testnet configuration.
+    #[must_use]
+    pub const fn is_testnet(&self) -> bool {
+        matches!(self.network, DydxNetwork::Testnet)
     }
 }
 

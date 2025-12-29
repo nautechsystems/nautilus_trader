@@ -26,7 +26,7 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     live::{runner::get_exec_event_sender, runtime::get_runtime},
     messages::{
-        ExecutionEvent,
+        ExecutionEvent, ExecutionReport,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryAccount,
@@ -39,11 +39,14 @@ use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_execution::client::{ExecutionClient, base::ExecutionClientCore};
 use nautilus_live::execution::client::LiveExecutionClient;
 use nautilus_model::{
+    accounts::AccountAny,
+    enums::OmsType,
     events::{AccountState, OrderEventAny, OrderRejected},
-    identifiers::{AccountId, VenueOrderId},
+    identifiers::{AccountId, ClientId, Venue, VenueOrderId},
     instruments::Instrument,
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
+    types::{AccountBalance, MarginBalance},
 };
 use tokio::task::JoinHandle;
 
@@ -180,7 +183,7 @@ impl BitmexExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             if let Err(e) = fut.await {
                 tracing::error!("{label}: {e:?}");
             }
@@ -259,7 +262,7 @@ impl BitmexExecutionClient {
 
         let stream = self.ws_client.stream();
 
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             pin_mut!(stream);
             while let Some(message) = stream.next().await {
                 dispatch_ws_message(message);
@@ -277,7 +280,7 @@ impl ExecutionClient for BitmexExecutionClient {
         self.connected
     }
 
-    fn client_id(&self) -> nautilus_model::identifiers::ClientId {
+    fn client_id(&self) -> ClientId {
         self.core.client_id
     }
 
@@ -285,22 +288,22 @@ impl ExecutionClient for BitmexExecutionClient {
         self.core.account_id
     }
 
-    fn venue(&self) -> nautilus_model::identifiers::Venue {
+    fn venue(&self) -> Venue {
         self.core.venue
     }
 
-    fn oms_type(&self) -> nautilus_model::enums::OmsType {
+    fn oms_type(&self) -> OmsType {
         self.core.oms_type
     }
 
-    fn get_account(&self) -> Option<nautilus_model::accounts::AccountAny> {
+    fn get_account(&self) -> Option<AccountAny> {
         self.core.get_account()
     }
 
     fn generate_account_state(
         &self,
-        balances: Vec<nautilus_model::types::AccountBalance>,
-        margins: Vec<nautilus_model::types::MarginBalance>,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
@@ -762,7 +765,7 @@ fn dispatch_account_state(state: AccountState) {
 
 fn dispatch_order_status_report(report: OrderStatusReport) {
     let sender = get_exec_event_sender();
-    let exec_report = nautilus_common::messages::ExecutionReport::OrderStatus(Box::new(report));
+    let exec_report = ExecutionReport::OrderStatus(Box::new(report));
     if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
         tracing::warn!("Failed to send order status report: {e}");
     }
@@ -770,7 +773,7 @@ fn dispatch_order_status_report(report: OrderStatusReport) {
 
 fn dispatch_fill_report(report: FillReport) {
     let sender = get_exec_event_sender();
-    let exec_report = nautilus_common::messages::ExecutionReport::Fill(Box::new(report));
+    let exec_report = ExecutionReport::Fill(Box::new(report));
     if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
         tracing::warn!("Failed to send fill report: {e}");
     }
@@ -778,7 +781,7 @@ fn dispatch_fill_report(report: FillReport) {
 
 fn dispatch_position_status_report(report: PositionStatusReport) {
     let sender = get_exec_event_sender();
-    let exec_report = nautilus_common::messages::ExecutionReport::Position(Box::new(report));
+    let exec_report = ExecutionReport::Position(Box::new(report));
     if let Err(e) = sender.send(ExecutionEvent::Report(exec_report)) {
         tracing::warn!("Failed to send position status report: {e}");
     }

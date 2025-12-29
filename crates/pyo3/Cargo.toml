@@ -27,6 +27,7 @@ cython-compat = []
 defi = ["dep:nautilus-blockchain", "nautilus-blockchain/python"]
 extension-module = [
   "nautilus-analysis/extension-module",
+  "nautilus-binance/extension-module",
   "nautilus-bitmex/extension-module",
   "nautilus-blockchain?/extension-module",
   "nautilus-bybit/extension-module",
@@ -35,6 +36,7 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-cryptography/extension-module",
   "nautilus-databento/extension-module",
+  "nautilus-deribit/extension-module",
   "nautilus-dydx/extension-module",
   "nautilus-execution/extension-module",
   "nautilus-hyperliquid/extension-module",
@@ -86,6 +88,7 @@ nautilus-testkit = { workspace = true, features = ["python"] }
 nautilus-trading = { workspace = true, features = ["python"] }
 
 # Adapters
+nautilus-binance = { workspace = true, features = ["python"] }
 nautilus-bitmex = { workspace = true, features = ["python"] }
 nautilus-blockchain = { workspace = true, features = [
   "python",
@@ -93,6 +96,7 @@ nautilus-blockchain = { workspace = true, features = [
 nautilus-bybit = { workspace = true, features = ["python"] }
 nautilus-coinbase-intx = { workspace = true, features = ["python"] }
 nautilus-databento = { workspace = true, features = ["python"] }
+nautilus-deribit = { workspace = true, features = ["python"] }
 nautilus-dydx = { workspace = true, features = ["python"] }
 nautilus-hyperliquid = { workspace = true, features = ["python"] }
 nautilus-kraken = { workspace = true, features = ["python"] }

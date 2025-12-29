@@ -82,6 +82,10 @@ use crate::{
 /// frequently - than the required amount.
 pub struct WebSocketClientInner {
     config: WebSocketConfig,
+    /// The function to handle incoming messages (stored separately from config).
+    message_handler: Option<MessageHandler>,
+    /// The handler for incoming pings (stored separately from config).
+    ping_handler: Option<PingHandler>,
     read_task: Option<tokio::task::JoinHandle<()>>,
     write_task: tokio::task::JoinHandle<()>,
     writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
@@ -101,6 +105,8 @@ pub struct WebSocketClientInner {
 
 impl WebSocketClientInner {
     /// Create an inner websocket client with an existing writer.
+    ///
+    /// This is used for stream mode where the reader is owned by the caller.
     ///
     /// # Errors
     ///
@@ -139,17 +145,22 @@ impl WebSocketClientInner {
             None
         };
 
+        let reconnect_max_attempts = config.reconnect_max_attempts;
+        let reconnect_timeout = Duration::from_millis(config.reconnect_timeout_ms.unwrap_or(10000));
+
         Ok(Self {
-            config: config.clone(),
+            config,
+            message_handler: None, // Stream mode has no handler
+            ping_handler: None,
             writer_tx,
             connection_mode,
-            reconnect_timeout: Duration::from_millis(config.reconnect_timeout_ms.unwrap_or(10000)),
+            reconnect_timeout,
             heartbeat_task,
             read_task,
             write_task,
             backoff,
             is_stream_mode: true,
-            reconnect_max_attempts: config.reconnect_max_attempts,
+            reconnect_max_attempts,
             reconnection_attempt_count: 0,
         })
     }
@@ -161,29 +172,19 @@ impl WebSocketClientInner {
     /// Returns an error if:
     /// - The connection to the server fails.
     /// - The exponential backoff configuration is invalid.
-    pub async fn connect_url(config: WebSocketConfig) -> Result<Self, Error> {
+    pub async fn connect_url(
+        config: WebSocketConfig,
+        message_handler: Option<MessageHandler>,
+        ping_handler: Option<PingHandler>,
+    ) -> Result<Self, Error> {
         install_cryptographic_provider();
-
-        let WebSocketConfig {
-            url,
-            message_handler,
-            heartbeat,
-            headers,
-            heartbeat_msg,
-            ping_handler,
-            reconnect_timeout_ms,
-            reconnect_delay_initial_ms,
-            reconnect_delay_max_ms,
-            reconnect_backoff_factor,
-            reconnect_jitter_ms,
-            reconnect_max_attempts,
-        } = &config;
 
         // Capture whether we're in stream mode before moving config
         let is_stream_mode = message_handler.is_none();
-        let reconnect_max_attempts = *reconnect_max_attempts;
+        let reconnect_max_attempts = config.reconnect_max_attempts;
 
-        let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
+        let (writer, reader) =
+            Self::connect_with_server(&config.url, config.headers.clone()).await?;
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
 
@@ -202,27 +203,30 @@ impl WebSocketClientInner {
         let write_task = Self::spawn_write_task(connection_mode.clone(), writer, writer_rx);
 
         // Optionally spawn a heartbeat task to periodically ping server
-        let heartbeat_task = heartbeat.as_ref().map(|heartbeat_secs| {
+        let heartbeat_task = config.heartbeat.map(|heartbeat_secs| {
             Self::spawn_heartbeat_task(
                 connection_mode.clone(),
-                *heartbeat_secs,
-                heartbeat_msg.clone(),
+                heartbeat_secs,
+                config.heartbeat_msg.clone(),
                 writer_tx.clone(),
             )
         });
 
-        let reconnect_timeout = Duration::from_millis(reconnect_timeout_ms.unwrap_or(10_000));
+        let reconnect_timeout =
+            Duration::from_millis(config.reconnect_timeout_ms.unwrap_or(10_000));
         let backoff = ExponentialBackoff::new(
-            Duration::from_millis(reconnect_delay_initial_ms.unwrap_or(2_000)),
-            Duration::from_millis(reconnect_delay_max_ms.unwrap_or(30_000)),
-            reconnect_backoff_factor.unwrap_or(1.5),
-            reconnect_jitter_ms.unwrap_or(100),
+            Duration::from_millis(config.reconnect_delay_initial_ms.unwrap_or(2_000)),
+            Duration::from_millis(config.reconnect_delay_max_ms.unwrap_or(30_000)),
+            config.reconnect_backoff_factor.unwrap_or(1.5),
+            config.reconnect_jitter_ms.unwrap_or(100),
             true, // immediate-first
         )
         .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
 
         Ok(Self {
             config,
+            message_handler,
+            ping_handler,
             read_task,
             write_task,
             writer_tx,
@@ -456,12 +460,12 @@ impl WebSocketClientInner {
                 return Ok(());
             }
 
-            self.read_task = if self.config.message_handler.is_some() {
+            self.read_task = if self.message_handler.is_some() {
                 Some(Self::spawn_message_handler_task(
                     self.connection_mode.clone(),
                     reader,
-                    self.config.message_handler.as_ref(),
-                    self.config.ping_handler.as_ref(),
+                    self.message_handler.as_ref(),
+                    self.ping_handler.as_ref(),
                 ))
             } else {
                 None
@@ -809,8 +813,8 @@ impl CleanDrop for WebSocketClientInner {
         }
 
         // Clear handlers to break potential reference cycles
-        self.config.message_handler = None;
-        self.config.ping_handler = None;
+        self.message_handler = None;
+        self.ping_handler = None;
     }
 }
 
@@ -904,10 +908,10 @@ impl WebSocketClient {
 
     /// Creates a websocket client in **handler mode** with automatic reconnection.
     ///
-    /// Requires `config.message_handler` to be set. The handler is called for each incoming
-    /// message on an internal task. Automatic reconnection is **enabled** with exponential
-    /// backoff. On disconnection, the client automatically attempts to reconnect and replaces
-    /// the internal reader (the handler continues working seamlessly).
+    /// The handler is called for each incoming message on an internal task.
+    /// Automatic reconnection is **enabled** with exponential backoff. On disconnection,
+    /// the client automatically attempts to reconnect and replaces the internal reader
+    /// (the handler continues working seamlessly).
     ///
     /// Use handler mode for simplified connection management, automatic reconnection, Python
     /// bindings, or callback-based message handling.
@@ -916,24 +920,28 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the connection cannot be established or if
-    /// `config.message_handler` is `None` (use `connect_stream` instead).
+    /// Returns an error if:
+    /// - The connection cannot be established.
+    /// - `message_handler` is `None` (use `connect_stream` instead).
     pub async fn connect(
         config: WebSocketConfig,
+        message_handler: Option<MessageHandler>,
+        ping_handler: Option<PingHandler>,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Result<Self, Error> {
         // Validate that handler mode has a message handler
-        if config.message_handler.is_none() {
+        if message_handler.is_none() {
             return Err(Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "Handler mode requires config.message_handler to be set. Use connect_stream() for stream mode without a handler.",
+                "Handler mode requires message_handler to be set. Use connect_stream() for stream mode without a handler.",
             )));
         }
 
         tracing::debug!("Connecting");
-        let inner = WebSocketClientInner::connect_url(config).await?;
+        let inner =
+            WebSocketClientInner::connect_url(config, message_handler, ping_handler).await?;
         let connection_mode = inner.connection_mode.clone();
         let writer_tx = inner.writer_tx.clone();
         let reconnect_timeout = inner.reconnect_timeout;
@@ -1212,6 +1220,11 @@ impl WebSocketClient {
                     break; // Controller finished
                 }
 
+                if mode.is_closed() {
+                    tracing::debug!("Connection closed");
+                    break;
+                }
+
                 if mode.is_active() && !inner.is_alive() {
                     if connection_mode
                         .compare_exchange(
@@ -1256,7 +1269,7 @@ impl WebSocketClient {
 
                             // Only invoke callbacks if not in disconnect state
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
-                                if let Some(ref handler) = inner.config.message_handler {
+                                if let Some(ref handler) = inner.message_handler {
                                     let reconnected_msg =
                                         Message::Text(RECONNECTED.to_string().into());
                                     handler(reconnected_msg);
@@ -1308,10 +1321,6 @@ impl Drop for WebSocketClient {
         }
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
@@ -1435,10 +1444,8 @@ mod tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![("test".into(), "test".into())],
-            message_handler: Some(Arc::new(|_| {})),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
@@ -1446,7 +1453,7 @@ mod tests {
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
         };
-        WebSocketClient::connect(config, None, vec![], None)
+        WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
             .await
             .expect("Failed to connect")
     }
@@ -1480,10 +1487,8 @@ mod tests {
         let config = WebSocketConfig {
             url: "ws://127.0.0.1:9997".into(), // <-- No server
             headers: vec![],
-            message_handler: Some(Arc::new(|_| {})),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
@@ -1491,7 +1496,9 @@ mod tests {
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
         };
-        let res = WebSocketClient::connect(config, None, vec![], None).await;
+        let res =
+            WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
+                .await;
         assert!(res.is_err(), "Should fail quickly with no server");
     }
 
@@ -1525,10 +1532,8 @@ mod tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{}", server.port),
             headers: vec![("test".into(), "test".into())],
-            message_handler: Some(Arc::new(|_| {})),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
@@ -1537,9 +1542,16 @@ mod tests {
             reconnect_max_attempts: None,
         };
 
-        let client = WebSocketClient::connect(config, None, vec![("default".into(), quota)], None)
-            .await
-            .unwrap();
+        let client = WebSocketClient::connect(
+            config,
+            Some(Arc::new(|_| {})),
+            None,
+            None,
+            vec![("default".into(), quota)],
+            None,
+        )
+        .await
+        .unwrap();
 
         // First 2 should succeed
         client.send_text("test1".into(), None).await.unwrap();
@@ -1575,10 +1587,6 @@ mod tests {
         assert!(client.is_disconnected());
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
@@ -1618,10 +1626,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: Some(handler),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -1631,7 +1637,7 @@ mod rust_tests {
         };
 
         // Connect the client
-        let client = WebSocketClient::connect(config, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
             .await
             .unwrap();
 
@@ -1664,10 +1670,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: Some(handler),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -1676,7 +1680,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
         };
 
-        let client = WebSocketClient::connect(config, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
             .await
             .unwrap();
 
@@ -1715,10 +1719,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: None, // Stream mode - no handler
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -1727,7 +1729,6 @@ mod rust_tests {
             reconnect_max_attempts: None,
         };
 
-        // Create stream-based client
         let (_reader, _client) = WebSocketClient::connect_stream(config, vec![], None, None)
             .await
             .unwrap();
@@ -1764,10 +1765,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: Some(handler), // Has message handler
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -1776,7 +1775,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
         };
 
-        let client = WebSocketClient::connect(config, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
             .await
             .unwrap();
 
@@ -1838,10 +1837,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: Some(handler),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(2_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(200),
@@ -1850,7 +1847,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
         };
 
-        let client = WebSocketClient::connect(config, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
             .await
             .unwrap();
 
@@ -1899,10 +1896,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: None, // Stream mode
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -1978,10 +1973,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: Some(handler),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(2_000), // 2s timeout
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -1990,7 +1983,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
         };
 
-        let client = WebSocketClient::connect(config, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
             .await
             .unwrap();
 
@@ -2063,10 +2056,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: Some(handler),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(5_000), // 5s timeout - enough for reconnect
             reconnect_delay_initial_ms: Some(100),
             reconnect_delay_max_ms: Some(200),
@@ -2075,7 +2066,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
         };
 
-        let client = WebSocketClient::connect(config, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
             .await
             .unwrap();
 
@@ -2149,10 +2140,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: Some(handler),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -2166,9 +2155,16 @@ mod rust_tests {
             Quota::per_second(NonZeroU32::new(1).unwrap()).allow_burst(NonZeroU32::new(1).unwrap());
 
         let client = Arc::new(
-            WebSocketClient::connect(config, None, vec![("test_key".to_string(), quota)], None)
-                .await
-                .unwrap(),
+            WebSocketClient::connect(
+                config,
+                Some(handler),
+                None,
+                None,
+                vec![("test_key".to_string(), quota)],
+                None,
+            )
+            .await
+            .unwrap(),
         );
 
         // First send exhausts burst capacity and triggers connection close
@@ -2232,10 +2228,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: Some(handler),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(2_000), // 2s timeout - shorter than disconnect timeout
             reconnect_delay_initial_ms: Some(100),
             reconnect_delay_max_ms: Some(200),
@@ -2244,7 +2238,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
         };
 
-        let client = WebSocketClient::connect(config, None, vec![], None)
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
             .await
             .unwrap();
 
@@ -2298,10 +2292,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: Some(handler),
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
@@ -2317,9 +2309,16 @@ mod rust_tests {
             .allow_burst(NonZeroU32::new(1).unwrap());
 
         let client = Arc::new(
-            WebSocketClient::connect(config, None, vec![("test_key".to_string(), quota)], None)
-                .await
-                .unwrap(),
+            WebSocketClient::connect(
+                config,
+                Some(handler),
+                None,
+                None,
+                vec![("test_key".to_string(), quota)],
+                None,
+            )
+            .await
+            .unwrap(),
         );
 
         // Wait for disconnection
@@ -2361,17 +2360,15 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_connect_rejects_config_without_message_handler() {
-        // Test that connect() properly rejects configs without a message handler
+    async fn test_connect_rejects_none_message_handler() {
+        // Test that connect() properly rejects None message_handler
         // to prevent zombie connections that appear alive but never detect disconnections
 
         let config = WebSocketConfig {
             url: "ws://127.0.0.1:9999".to_string(),
             headers: vec![],
-            message_handler: None, // No handler provided
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(100),
             reconnect_delay_max_ms: Some(500),
@@ -2380,17 +2377,18 @@ mod rust_tests {
             reconnect_max_attempts: None,
         };
 
-        let result = WebSocketClient::connect(config, None, vec![], None).await;
+        // Pass None for message_handler - should be rejected
+        let result = WebSocketClient::connect(config, None, None, None, vec![], None).await;
 
         assert!(
             result.is_err(),
-            "connect() should reject configs without message_handler"
+            "connect() should reject None message_handler"
         );
 
         let err = result.unwrap_err();
         let err_msg = err.to_string();
         assert!(
-            err_msg.contains("Handler mode requires config.message_handler"),
+            err_msg.contains("Handler mode requires message_handler"),
             "Error should mention missing message_handler, was: {err_msg}"
         );
     }
@@ -2398,7 +2396,7 @@ mod rust_tests {
     #[rstest]
     #[tokio::test]
     async fn test_client_without_handler_sets_stream_mode() {
-        // Test that if a client is somehow created without a handler,
+        // Test that if a client is created without a handler via connect_url,
         // it properly sets is_stream_mode=true to prevent zombie connections
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2416,10 +2414,8 @@ mod rust_tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![],
-            message_handler: None, // No handler
             heartbeat: None,
             heartbeat_msg: None,
-            ping_handler: None,
             reconnect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(100),
             reconnect_delay_max_ms: Some(500),
@@ -2428,8 +2424,10 @@ mod rust_tests {
             reconnect_max_attempts: None,
         };
 
-        // Create client directly via connect_url to bypass validation
-        let inner = WebSocketClientInner::connect_url(config).await.unwrap();
+        // Create client directly via connect_url with no handler (stream mode)
+        let inner = WebSocketClientInner::connect_url(config, None, None)
+            .await
+            .unwrap();
 
         // Verify is_stream_mode is true when no handler
         assert!(

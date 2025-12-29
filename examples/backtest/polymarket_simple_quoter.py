@@ -22,10 +22,8 @@ You can find active markets at: https://polymarket.com
 
 Data sources:
 - Markets API: https://gamma-api.polymarket.com/markets
-- Order book history: https://api.domeapi.io/v1/polymarket/orderbooks
+- Order book history: https://clob.polymarket.com/orderbook-history
 - Trades/Prices: https://clob.polymarket.com/prices-history
-
-Note: The DomeAPI orderbook history only has data starting from October 14th, 2025.
 
 """
 
@@ -80,9 +78,9 @@ async def run_backtest(
     print(f"Instrument ID: {instrument.id}")
     print(f"Outcome: {instrument.outcome}\n")
 
-    # Calculate time range for historical data
-    start = pd.Timestamp("2025-10-30", tz="UTC")
-    end = pd.Timestamp("2025-10-31", tz="UTC")
+    # Calculate time range for historical data (last N hours)
+    end = pd.Timestamp.now(tz="UTC")
+    start = end - pd.Timedelta(hours=lookback_hours)
 
     print(f"Fetching data from {start} to {end}")
 

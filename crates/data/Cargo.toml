@@ -22,6 +22,7 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+streaming = ["nautilus-persistence"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -29,12 +30,14 @@ extension-module = [
   "nautilus-persistence/extension-module",
   "python",
   "pyo3/extension-module",
+  "streaming",
 ]
 ffi = [
   "nautilus-common/ffi",
   "nautilus-core/ffi",
   "nautilus-model/ffi",
   "nautilus-persistence/ffi",
+  "streaming",
 ]
 python = [
   "nautilus-common/python",
@@ -42,6 +45,7 @@ python = [
   "nautilus-model/python",
   "nautilus-persistence/python",
   "pyo3",
+  "streaming",
 ]
 high-precision = ["nautilus-model/high-precision"]
 defi = ["nautilus-common/defi", "nautilus-model/defi", "alloy-primitives"]
@@ -54,7 +58,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-persistence = { workspace = true }
+nautilus-persistence = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }

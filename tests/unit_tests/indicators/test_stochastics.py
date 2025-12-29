@@ -28,8 +28,8 @@ class TestStochastics:
 
     def test_str_repr_returns_expected_string(self):
         # Act, Assert
-        assert str(self.stochastics) == "Stochastics(14, 3)"
-        assert repr(self.stochastics) == "Stochastics(14, 3)"
+        assert str(self.stochastics) == "Stochastics(14, 3, 1, EXPONENTIAL, ratio)"
+        assert repr(self.stochastics) == "Stochastics(14, 3, 1, EXPONENTIAL, ratio)"
 
     def test_period_k_returns_expected_value(self):
         # Act, Assert

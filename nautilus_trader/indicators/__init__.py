@@ -47,6 +47,7 @@ from nautilus_trader.indicators.momentum import RateOfChange
 from nautilus_trader.indicators.momentum import RelativeStrengthIndex
 from nautilus_trader.indicators.momentum import RelativeVolatilityIndex
 from nautilus_trader.indicators.momentum import Stochastics
+from nautilus_trader.indicators.momentum import StochasticsDMethod
 from nautilus_trader.indicators.spread_analyzer import SpreadAnalyzer
 from nautilus_trader.indicators.trend import ArcherMovingAveragesTrends
 from nautilus_trader.indicators.trend import AroonOscillator
@@ -107,6 +108,7 @@ __all__ = [
     "SimpleMovingAverage",
     "SpreadAnalyzer",
     "Stochastics",
+    "StochasticsDMethod",
     "Swings",
     "VariableIndexDynamicAverage",
     "VerticalHorizontalFilter",

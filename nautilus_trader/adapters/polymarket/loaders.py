@@ -43,8 +43,7 @@ class PolymarketDataLoader:
 
     This loader fetches data from:
     - Polymarket Gamma API (market information)
-    - Polymarket CLOB API (price/trade history)
-    - DomeAPI (orderbook history, available from October 14th, 2025)
+    - Polymarket CLOB API (price/trade history and orderbook history)
 
     Parameters
     ----------
@@ -255,6 +254,7 @@ class PolymarketDataLoader:
         closed: bool = False,
         archived: bool = False,
         limit: int = 100,
+        offset: int = 0,
         http_client: nautilus_pyo3.HttpClient | None = None,
     ) -> list[dict]:
         """
@@ -270,6 +270,8 @@ class PolymarketDataLoader:
             Include archived markets.
         limit : int, default 100
             Maximum number of markets to return.
+        offset : int, default 0
+            Offset for pagination.
         http_client : nautilus_pyo3.HttpClient, optional
             The HTTP client to use for requests. If not provided, a new client will be created.
 
@@ -285,6 +287,7 @@ class PolymarketDataLoader:
             "closed": str(closed).lower(),
             "archived": str(archived).lower(),
             "limit": str(limit),
+            "offset": str(offset),
         }
         response = await client.get(
             url="https://gamma-api.polymarket.com/markets",
@@ -297,6 +300,63 @@ class PolymarketDataLoader:
             )
 
         return msgspec.json.decode(response.body)
+
+    @staticmethod
+    async def fetch_market_by_slug(
+        slug: str,
+        http_client: nautilus_pyo3.HttpClient | None = None,
+    ) -> dict[str, Any]:
+        """
+        Fetch a single market by slug using the Polymarket Gamma API slug endpoint.
+
+        Parameters
+        ----------
+        slug : str
+            The market slug to fetch.
+        http_client : nautilus_pyo3.HttpClient, optional
+            The HTTP client to use for requests. If not provided, a new client will be created.
+
+        Returns
+        -------
+        dict[str, Any]
+            Market data dictionary.
+
+        Raises
+        ------
+        ValueError
+            If market with the given slug is not found.
+        RuntimeError
+            If HTTP requests fail.
+
+        """
+        client = http_client or nautilus_pyo3.HttpClient()
+        response = await client.get(
+            url=f"https://gamma-api.polymarket.com/markets/slug/{slug}",
+        )
+
+        if response.status == 404:
+            raise ValueError(f"Market with slug '{slug}' not found")
+
+        if response.status != 200:
+            raise RuntimeError(
+                f"HTTP request failed with status {response.status}: {response.body.decode('utf-8')}",
+            )
+
+        data = msgspec.json.decode(response.body)
+
+        if isinstance(data, list):
+            if not data:
+                raise ValueError(f"Market with slug '{slug}' not found")
+            market = data[0]
+        else:
+            market = data
+
+        if not isinstance(market, dict):
+            raise RuntimeError(
+                f"Unexpected response type for slug '{slug}': {type(market).__name__}",
+            )
+
+        return market
 
     @staticmethod
     async def find_market_by_slug(
@@ -324,15 +384,10 @@ class PolymarketDataLoader:
             If market with the given slug is not found.
 
         """
-        markets = await PolymarketDataLoader.fetch_markets(
-            limit=100,
+        return await PolymarketDataLoader.fetch_market_by_slug(
+            slug=slug,
             http_client=http_client,
         )
-        for market in markets:
-            if market.get("slug") == slug:
-                return market
-
-        raise ValueError(f"Market with slug '{slug}' not found in active markets")
 
     @staticmethod
     async def fetch_market_details(
@@ -375,7 +430,7 @@ class PolymarketDataLoader:
         limit: int = 500,
     ) -> list[dict[str, Any]]:
         """
-        Fetch orderbook history from DomeAPI.
+        Fetch orderbook history from Polymarket CLOB API.
 
         Parameters
         ----------
@@ -395,26 +450,23 @@ class PolymarketDataLoader:
 
         Notes
         -----
-        DomeAPI orderbook history only has data starting from October 14th, 2025.
-        This method automatically handles pagination.
+        This method automatically handles pagination using offset-based requests.
 
         """
         all_snapshots = []
-        pagination_key = None
+        offset = 0
 
         while True:
             params = {
-                "token_id": token_id,
-                "start_time": start_time_ms,
-                "end_time": end_time_ms,
+                "asset_id": token_id,
+                "startTs": start_time_ms,
+                "endTs": end_time_ms,
                 "limit": limit,
+                "offset": offset,
             }
 
-            if pagination_key:
-                params["pagination_key"] = pagination_key
-
             response = await self._http_client.get(
-                url="https://api.domeapi.io/v1/polymarket/orderbooks",
+                url="https://clob.polymarket.com/orderbook-history",
                 params=params,
             )
 
@@ -425,15 +477,13 @@ class PolymarketDataLoader:
 
             data = msgspec.json.decode(response.body)
 
-            snapshots = data.get("snapshots", [])
+            snapshots = data.get("data", [])
             all_snapshots.extend(snapshots)
 
-            pagination = data.get("pagination", {})
-            if not pagination.get("has_more", False):
-                break
+            total_count = data.get("count", 0)
+            offset += len(snapshots)
 
-            pagination_key = pagination.get("pagination_key")
-            if not pagination_key:
+            if offset >= total_count or len(snapshots) < limit:
                 break
 
         return all_snapshots
@@ -499,7 +549,7 @@ class PolymarketDataLoader:
         Parameters
         ----------
         snapshots : list[dict]
-            Raw orderbook snapshots from DomeAPI.
+            Raw orderbook snapshots from Polymarket CLOB API.
 
         Returns
         -------
@@ -507,75 +557,72 @@ class PolymarketDataLoader:
             List of OrderBookDeltas for backtesting.
 
         """
-        all_deltas: list[OrderBookDelta] = []
+        all_deltas: list[OrderBookDeltas] = []
+        instrument_id = self.instrument.id
+        make_price = self.instrument.make_price
+        make_qty = self.instrument.make_qty
 
+        # Skip zero-size entries as they represent no liquidity
         for snapshot in snapshots:
-            timestamp_ms = snapshot["timestamp"]
-            ts_event = millis_to_nanos(timestamp_ms)
+            ts_event = millis_to_nanos(int(snapshot["timestamp"]))
 
-            deltas = []
+            deltas = [
+                OrderBookDelta.clear(
+                    instrument_id=instrument_id,
+                    ts_event=ts_event,
+                    ts_init=ts_event,
+                    sequence=0,
+                ),
+            ]
 
-            # Clear the book first
-            clear_delta = OrderBookDelta.clear(
-                instrument_id=self.instrument.id,
-                ts_event=ts_event,
-                ts_init=ts_event,
-                sequence=0,
-            )
-            deltas.append(clear_delta)
-
-            # Add bids
             for bid in snapshot.get("bids", []):
-                price = self.instrument.make_price(bid["price"])
-                size = self.instrument.make_qty(bid["size"])
+                size_val = float(bid["size"])
+                if size_val <= 0:
+                    continue
 
                 order = BookOrder(
                     side=OrderSide.BUY,
-                    price=price,
-                    size=size,
+                    price=make_price(float(bid["price"])),
+                    size=make_qty(size_val),
                     order_id=0,
                 )
-
-                delta = OrderBookDelta(
-                    instrument_id=self.instrument.id,
-                    action=BookAction.ADD,
-                    order=order,
-                    flags=0,
-                    sequence=0,
-                    ts_event=ts_event,
-                    ts_init=ts_event,
+                deltas.append(
+                    OrderBookDelta(
+                        instrument_id=instrument_id,
+                        action=BookAction.ADD,
+                        order=order,
+                        flags=0,
+                        sequence=0,
+                        ts_event=ts_event,
+                        ts_init=ts_event,
+                    ),
                 )
-                deltas.append(delta)
 
-            # Add asks
             for ask in snapshot.get("asks", []):
-                price = self.instrument.make_price(ask["price"])
-                size = self.instrument.make_qty(ask["size"])
+                size_val = float(ask["size"])
+                if size_val <= 0:
+                    continue
 
                 order = BookOrder(
                     side=OrderSide.SELL,
-                    price=price,
-                    size=size,
+                    price=make_price(float(ask["price"])),
+                    size=make_qty(size_val),
                     order_id=0,
                 )
-
-                delta = OrderBookDelta(
-                    instrument_id=self.instrument.id,
-                    action=BookAction.ADD,
-                    order=order,
-                    flags=0,
-                    sequence=0,
-                    ts_event=ts_event,
-                    ts_init=ts_event,
+                deltas.append(
+                    OrderBookDelta(
+                        instrument_id=instrument_id,
+                        action=BookAction.ADD,
+                        order=order,
+                        flags=0,
+                        sequence=0,
+                        ts_event=ts_event,
+                        ts_init=ts_event,
+                    ),
                 )
-                deltas.append(delta)
 
             if deltas:
-                book_deltas = OrderBookDeltas(
-                    instrument_id=self.instrument.id,
-                    deltas=deltas,
-                )
-                all_deltas.append(book_deltas)
+                all_deltas.append(OrderBookDeltas(instrument_id=instrument_id, deltas=deltas))
 
         return all_deltas
 

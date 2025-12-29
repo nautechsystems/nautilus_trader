@@ -15,10 +15,7 @@
 
 use clap::Parser;
 
-/// Main CLI structure for parsing command-line arguments and options.
-///
-/// This is the entry point for the NautilusTrader command-line interface,
-/// providing access to various system management and operational commands.
+/// Command-line interface for NautilusTrader.
 #[derive(Debug, Parser)]
 #[clap(version, about, author)]
 pub struct NautilusCli {

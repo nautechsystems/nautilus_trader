@@ -22,7 +22,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
         DataEvent,
         data::{
@@ -36,12 +36,13 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UnixNanos,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::{
     data::{Bar, BarType, Data, OrderBookDeltas_API},
-    enums::BarAggregation,
+    enums::{BarAggregation, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -197,7 +198,7 @@ impl HyperliquidDataClient {
         let _clock = self.clock;
         let cancellation_token = self.cancellation_token.clone();
 
-        let task = tokio::spawn(async move {
+        let task = get_runtime().spawn(async move {
             tracing::info!("Hyperliquid WebSocket consumption loop started");
 
             loop {
@@ -411,13 +412,6 @@ impl HyperliquidDataClient {
     }
 }
 
-fn datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> Option<UnixNanos> {
-    value
-        .and_then(|dt| dt.timestamp_nanos_opt())
-        .and_then(|nanos| u64::try_from(nanos).ok())
-        .map(UnixNanos::from)
-}
-
 impl HyperliquidDataClient {
     #[allow(dead_code)]
     fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
@@ -596,7 +590,7 @@ impl DataClient for HyperliquidDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
         let instruments = Arc::clone(&self.instruments);
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             match request_bars_from_http(http, bar_type, start, end, limit, instruments).await {
                 Ok(bars) => {
                     let response = DataResponse::Bars(BarsResponse::new(
@@ -658,7 +652,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_trades(instrument_id).await {
                 tracing::error!("Failed to subscribe to trades: {e:?}");
             }
@@ -676,7 +670,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_trades(instrument_id).await {
                 tracing::error!("Failed to unsubscribe from trades: {e:?}");
             }
@@ -693,14 +687,14 @@ impl DataClient for HyperliquidDataClient {
     fn subscribe_book_deltas(&mut self, subscription: &SubscribeBookDeltas) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
 
-        if subscription.book_type != nautilus_model::enums::BookType::L2_MBP {
+        if subscription.book_type != BookType::L2_MBP {
             anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
         }
 
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_book(instrument_id).await {
                 tracing::error!("Failed to subscribe to book deltas: {e:?}");
             }
@@ -721,7 +715,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_book(instrument_id).await {
                 tracing::error!("Failed to unsubscribe from book deltas: {e:?}");
             }
@@ -739,14 +733,14 @@ impl DataClient for HyperliquidDataClient {
             subscription.instrument_id
         );
 
-        if subscription.book_type != nautilus_model::enums::BookType::L2_MBP {
+        if subscription.book_type != BookType::L2_MBP {
             anyhow::bail!("Hyperliquid only supports L2_MBP order book snapshots");
         }
 
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_quotes(instrument_id).await {
                 tracing::error!("Failed to subscribe to book snapshots: {e:?}");
             }
@@ -767,7 +761,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
                 tracing::error!("Failed to unsubscribe from book snapshots: {e:?}");
             }
@@ -782,7 +776,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_quotes(instrument_id).await {
                 tracing::error!("Failed to subscribe to quotes: {e:?}");
             }
@@ -800,7 +794,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
                 tracing::error!("Failed to unsubscribe from quotes: {e:?}");
             }
@@ -828,7 +822,7 @@ impl DataClient for HyperliquidDataClient {
         let bar_type = subscription.bar_type;
         let ws = self.ws_client.clone();
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_bars(bar_type).await {
                 tracing::error!("Failed to subscribe to bars: {e:?}");
             }
@@ -845,7 +839,7 @@ impl DataClient for HyperliquidDataClient {
         let bar_type = unsubscription.bar_type;
         let ws = self.ws_client.clone();
 
-        tokio::spawn(async move {
+        get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_bars(bar_type).await {
                 tracing::error!("Failed to unsubscribe from bars: {e:?}");
             }

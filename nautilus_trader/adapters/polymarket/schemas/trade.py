@@ -22,7 +22,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquidity
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketMakerOrder
-from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
@@ -86,6 +86,16 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
                 return order
 
         raise ValueError(f"Invalid maker order ID {filled_user_order_id}")
+
+    def get_asset_id(self, filled_user_order_id: str) -> str:
+        # - For taker fills, returns the taker's asset_id.
+        # - For maker fills, returns the maker order's asset_id (which may differ
+        # from the taker's asset_id in cross-asset matches).
+        if self.trader_side == PolymarketLiquiditySide.TAKER:
+            return self.asset_id
+        else:
+            order = self.get_maker_order(filled_user_order_id)
+            return order.asset_id
 
     def liquidity_side(self) -> LiquiditySide:
         if self.trader_side == PolymarketLiquiditySide.TAKER:
@@ -159,6 +169,6 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
             commission=Money(commission, USDC_POS),
             liquidity_side=self.liquidity_side(),
             report_id=UUID4(),
-            ts_event=millis_to_nanos(int(self.match_time)),
+            ts_event=secs_to_nanos(int(self.match_time)),
             ts_init=ts_init,
         )

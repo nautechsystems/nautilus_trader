@@ -46,7 +46,7 @@ if product_type == BybitProductType.SPOT:
     order_qty = Decimal("0.01")
     order_params = {"is_leverage": True}
     enable_limit_sells = False
-    use_spot_position_reports = True  # CAUTION: Experimental feature
+    use_spot_position_reports = True
 elif product_type == BybitProductType.LINEAR:
     symbol = f"ETHUSDT-{product_type.value.upper()}"
     order_qty = Decimal("0.01")

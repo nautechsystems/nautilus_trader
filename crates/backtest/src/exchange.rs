@@ -21,7 +21,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{BinaryHeap, HashMap, VecDeque},
+    collections::{BinaryHeap, VecDeque},
     fmt::Debug,
     rc::Rc,
 };
@@ -117,16 +117,18 @@ pub struct SimulatedExchange {
     fee_model: FeeModelAny,
     fill_model: FillModel,
     latency_model: Option<LatencyModel>,
-    instruments: HashMap<InstrumentId, InstrumentAny>,
-    matching_engines: HashMap<InstrumentId, OrderMatchingEngine>,
-    leverages: HashMap<InstrumentId, Decimal>,
+    instruments: AHashMap<InstrumentId, InstrumentAny>,
+    matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
+    leverages: AHashMap<InstrumentId, Decimal>,
     modules: Vec<Box<dyn SimulationModule>>,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     message_queue: VecDeque<TradingCommand>,
     inflight_queue: BinaryHeap<InflightCommand>,
-    inflight_counter: HashMap<UnixNanos, u32>,
+    inflight_counter: AHashMap<UnixNanos, u32>,
     bar_execution: bool,
+    trade_execution: bool,
+    liquidity_consumption: bool,
     reject_stop_orders: bool,
     support_gtd_orders: bool,
     support_contingent_orders: bool,
@@ -164,7 +166,7 @@ impl SimulatedExchange {
         starting_balances: Vec<Money>,
         base_currency: Option<Currency>,
         default_leverage: Decimal,
-        leverages: HashMap<InstrumentId, Decimal>,
+        leverages: AHashMap<InstrumentId, Decimal>,
         modules: Vec<Box<dyn SimulationModule>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
@@ -173,6 +175,8 @@ impl SimulatedExchange {
         book_type: BookType,
         latency_model: Option<LatencyModel>,
         bar_execution: Option<bool>,
+        trade_execution: Option<bool>,
+        liquidity_consumption: Option<bool>,
         reject_stop_orders: Option<bool>,
         support_gtd_orders: Option<bool>,
         support_contingent_orders: Option<bool>,
@@ -203,16 +207,18 @@ impl SimulatedExchange {
             fee_model,
             fill_model,
             latency_model,
-            instruments: HashMap::new(),
-            matching_engines: HashMap::new(),
+            instruments: AHashMap::new(),
+            matching_engines: AHashMap::new(),
             leverages,
             modules,
             clock,
             cache,
             message_queue: VecDeque::new(),
             inflight_queue: BinaryHeap::new(),
-            inflight_counter: HashMap::new(),
+            inflight_counter: AHashMap::new(),
             bar_execution: bar_execution.unwrap_or(true),
+            trade_execution: trade_execution.unwrap_or(true),
+            liquidity_consumption: liquidity_consumption.unwrap_or(true),
             reject_stop_orders: reject_stop_orders.unwrap_or(true),
             support_gtd_orders: support_gtd_orders.unwrap_or(true),
             support_contingent_orders: support_contingent_orders.unwrap_or(true),
@@ -285,6 +291,8 @@ impl SimulatedExchange {
 
         let matching_engine_config = OrderMatchingEngineConfig::new(
             self.bar_execution,
+            self.trade_execution,
+            self.liquidity_consumption,
             self.reject_stop_orders,
             self.support_gtd_orders,
             self.support_contingent_orders,
@@ -341,13 +349,13 @@ impl SimulatedExchange {
     }
 
     #[must_use]
-    pub const fn get_matching_engines(&self) -> &HashMap<InstrumentId, OrderMatchingEngine> {
+    pub const fn get_matching_engines(&self) -> &AHashMap<InstrumentId, OrderMatchingEngine> {
         &self.matching_engines
     }
 
     #[must_use]
-    pub fn get_books(&self) -> HashMap<InstrumentId, OrderBook> {
-        let mut books = HashMap::new();
+    pub fn get_books(&self) -> AHashMap<InstrumentId, OrderBook> {
+        let mut books = AHashMap::new();
         for (instrument_id, matching_engine) in &self.matching_engines {
             books.insert(*instrument_id, matching_engine.get_book().clone());
         }
@@ -795,19 +803,11 @@ impl SimulatedExchange {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
-    use std::{
-        cell::RefCell,
-        collections::{BinaryHeap, HashMap},
-        rc::Rc,
-        sync::LazyLock,
-    };
+    use std::{cell::RefCell, collections::BinaryHeap, rc::Rc, sync::LazyLock};
 
+    use ahash::AHashMap;
     use nautilus_common::{
         cache::Cache,
         clock::TestClock,
@@ -868,25 +868,27 @@ mod tests {
                 vec![Money::new(1000.0, Currency::USD())],
                 None,
                 1.into(),
-                HashMap::new(),
+                AHashMap::new(),
                 vec![],
                 cache.clone(),
                 clock,
                 FillModel::default(),
                 FeeModelAny::MakerTaker(MakerTakerFeeModel),
                 book_type,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
+                None, // latency_model
+                None, // bar_execution
+                None, // trade_execution
+                None, // liquidity_consumption
+                None, // reject_stop_orders
+                None, // support_gtd_orders
+                None, // support_contingent_orders
+                None, // use_position_ids
+                None, // use_random_ids
+                None, // use_reduce_only
+                None, // use_message_queue
+                None, // allow_cash_borrowing
+                None, // frozen_account
+                None, // price_protection_points
             )
             .unwrap(),
         ));
@@ -979,10 +981,10 @@ mod tests {
         // process tick
         let quote_tick = QuoteTick::new(
             crypto_perpetual_ethusdt.id,
-            Price::from("1000"),
-            Price::from("1001"),
-            Quantity::from(1),
-            Quantity::from(1),
+            Price::from("1000.00"),
+            Price::from("1001.00"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -991,11 +993,11 @@ mod tests {
         let best_bid_price = exchange
             .borrow()
             .best_bid_price(crypto_perpetual_ethusdt.id);
-        assert_eq!(best_bid_price, Some(Price::from("1000")));
+        assert_eq!(best_bid_price, Some(Price::from("1000.00")));
         let best_ask_price = exchange
             .borrow()
             .best_ask_price(crypto_perpetual_ethusdt.id);
-        assert_eq!(best_ask_price, Some(Price::from("1001")));
+        assert_eq!(best_ask_price, Some(Price::from("1001.00")));
     }
 
     #[rstest]
@@ -1014,8 +1016,8 @@ mod tests {
         // process tick
         let trade_tick = TradeTick::new(
             crypto_perpetual_ethusdt.id,
-            Price::from("1000"),
-            Quantity::from(1),
+            Price::from("1000.00"),
+            Quantity::from("1.000"),
             AggressorSide::Buyer,
             TradeId::from("1"),
             UnixNanos::default(),
@@ -1026,11 +1028,11 @@ mod tests {
         let best_bid_price = exchange
             .borrow()
             .best_bid_price(crypto_perpetual_ethusdt.id);
-        assert_eq!(best_bid_price, Some(Price::from("1000")));
+        assert_eq!(best_bid_price, Some(Price::from("1000.00")));
         let best_ask = exchange
             .borrow()
             .best_ask_price(crypto_perpetual_ethusdt.id);
-        assert_eq!(best_ask, Some(Price::from("1000")));
+        assert_eq!(best_ask, Some(Price::from("1000.00")));
     }
 
     #[rstest]
@@ -1053,7 +1055,7 @@ mod tests {
             Price::from("1505.00"),
             Price::from("1490.00"),
             Price::from("1502.00"),
-            Quantity::from(100),
+            Quantity::from("100.000"),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -1091,7 +1093,7 @@ mod tests {
             Price::from("1505.00"),
             Price::from("1490.00"),
             Price::from("1502.00"),
-            Quantity::from(100),
+            Quantity::from("100.000"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         );
@@ -1101,7 +1103,7 @@ mod tests {
             Price::from("1506.00"),
             Price::from("1491.00"),
             Price::from("1503.00"),
-            Quantity::from(100),
+            Quantity::from("100.000"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         );
@@ -1138,7 +1140,12 @@ mod tests {
         let delta_buy = OrderBookDelta::new(
             crypto_perpetual_ethusdt.id,
             BookAction::Add,
-            BookOrder::new(OrderSide::Buy, Price::from("1000.00"), Quantity::from(1), 1),
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1000.00"),
+                Quantity::from("1.000"),
+                1,
+            ),
             0,
             0,
             UnixNanos::from(1),
@@ -1150,7 +1157,7 @@ mod tests {
             BookOrder::new(
                 OrderSide::Sell,
                 Price::from("1001.00"),
-                Quantity::from(1),
+                Quantity::from("1.000"),
                 1,
             ),
             0,
@@ -1201,7 +1208,7 @@ mod tests {
             BookOrder::new(
                 OrderSide::Sell,
                 Price::from("1000.00"),
-                Quantity::from(3),
+                Quantity::from("3.000"),
                 1,
             ),
             0,
@@ -1215,7 +1222,7 @@ mod tests {
             BookOrder::new(
                 OrderSide::Sell,
                 Price::from("1001.00"),
-                Quantity::from(1),
+                Quantity::from("1.000"),
                 1,
             ),
             0,

@@ -62,17 +62,23 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    identifiers::InstrumentId,
+    data::{
+        Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick,
+        bar::get_bar_interval_ns,
+    },
+    enums::{AggressorSide, BookAction, OrderSide as NautilusOrderSide, RecordFlag},
+    identifiers::{AccountId, InstrumentId, TradeId},
     instruments::{Instrument, InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::HttpClient,
+    http::{HttpClient, Method, USER_AGENT},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
-use reqwest::{Method, header::USER_AGENT};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -81,6 +87,7 @@ use super::error::DydxHttpError;
 use crate::common::{
     consts::{DYDX_HTTP_URL, DYDX_TESTNET_HTTP_URL},
     enums::DydxCandleResolution,
+    parse::extract_raw_symbol,
 };
 
 /// Default dYdX Indexer REST API rate limit.
@@ -422,25 +429,33 @@ impl DydxRawHttpClient {
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         let mut instruments = Vec::new();
-        let mut skipped = 0;
+        let mut skipped_inactive = 0;
 
         for (ticker, market) in markets_response.markets {
+            if !super::parse::is_market_active(&market.status) {
+                tracing::debug!(
+                    "Skipping inactive market {ticker} (status: {:?})",
+                    market.status
+                );
+                skipped_inactive += 1;
+                continue;
+            }
+
             match super::parse::parse_instrument_any(&market, maker_fee, taker_fee, ts_init) {
                 Ok(instrument) => {
                     instruments.push(instrument);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse instrument {ticker}: {e}");
-                    skipped += 1;
+                    tracing::error!("Failed to parse instrument {ticker}: {e}");
                 }
             }
         }
 
-        if skipped > 0 {
+        if skipped_inactive > 0 {
             tracing::info!(
-                "Parsed {} instruments, skipped {} (inactive or invalid)",
+                "Parsed {} instruments, skipped {} inactive",
                 instruments.len(),
-                skipped
+                skipped_inactive
             );
         } else {
             tracing::info!("Parsed {} instruments", instruments.len());
@@ -649,7 +664,7 @@ impl DydxRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx")
 )]
 pub struct DydxHttpClient {
     /// Raw HTTP client wrapped in Arc for efficient cloning.
@@ -749,7 +764,7 @@ impl DydxHttpClient {
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         let mut instruments = Vec::new();
-        let mut skipped = 0;
+        let mut skipped_inactive = 0;
 
         for (ticker, market) in markets_response.markets {
             // Filter by symbol if specified
@@ -759,23 +774,30 @@ impl DydxHttpClient {
                 continue;
             }
 
-            // Parse using http/parse.rs
+            if !super::parse::is_market_active(&market.status) {
+                tracing::debug!(
+                    "Skipping inactive market {ticker} (status: {:?})",
+                    market.status
+                );
+                skipped_inactive += 1;
+                continue;
+            }
+
             match super::parse::parse_instrument_any(&market, maker_fee, taker_fee, ts_init) {
                 Ok(instrument) => {
                     instruments.push(instrument);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse instrument {ticker}: {e}");
-                    skipped += 1;
+                    tracing::error!("Failed to parse instrument {ticker}: {e}");
                 }
             }
         }
 
-        if skipped > 0 {
+        if skipped_inactive > 0 {
             tracing::info!(
-                "Parsed {} instruments, skipped {} (inactive or invalid)",
+                "Parsed {} instruments, skipped {} inactive",
                 instruments.len(),
-                skipped
+                skipped_inactive
             );
         } else {
             tracing::debug!("Parsed {} instruments", instruments.len());
@@ -789,58 +811,70 @@ impl DydxHttpClient {
     /// This is a convenience method that fetches instruments and populates both
     /// the symbol-based and CLOB pair ID-based caches.
     ///
+    /// On success, existing caches are cleared and repopulated atomically.
+    /// On failure, existing caches are preserved (no partial updates).
+    ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP request or parsing fails.
+    /// Returns an error if the HTTP request fails.
     pub async fn fetch_and_cache_instruments(&self) -> anyhow::Result<()> {
         use nautilus_core::time::get_atomic_clock_realtime;
 
-        self.instruments_cache.clear();
-        self.clob_pair_id_to_instrument.clear();
-        self.market_params_cache.clear();
-
+        // Fetch first - preserve existing cache on network failure
         let markets_response = self.inner.get_markets().await?;
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
-        let mut instruments = Vec::new();
-        let mut skipped = 0;
+        let mut parsed_instruments = Vec::new();
+        let mut parsed_markets = Vec::new();
+        let mut skipped_inactive = 0;
 
         for (ticker, market) in markets_response.markets {
-            // Parse using http/parse.rs
+            if !super::parse::is_market_active(&market.status) {
+                tracing::debug!(
+                    "Skipping inactive market {ticker} (status: {:?})",
+                    market.status
+                );
+                skipped_inactive += 1;
+                continue;
+            }
+
             match super::parse::parse_instrument_any(&market, None, None, ts_init) {
                 Ok(instrument) => {
-                    let instrument_id = instrument.id();
-                    let symbol = instrument_id.symbol.inner();
-                    self.instruments_cache.insert(symbol, instrument.clone());
-
-                    // Also cache by clob_pair_id for efficient WebSocket lookups
-                    self.clob_pair_id_to_instrument
-                        .insert(market.clob_pair_id, instrument_id);
-
-                    // Cache raw market data for market params extraction
-                    self.market_params_cache.insert(instrument_id, market);
-
-                    instruments.push(instrument);
+                    parsed_instruments.push(instrument);
+                    parsed_markets.push(market);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse instrument {ticker}: {e}");
-                    skipped += 1;
+                    tracing::error!("Failed to parse instrument {ticker}: {e}");
                 }
             }
         }
 
-        if !instruments.is_empty() {
+        // Only clear and repopulate caches after successful fetch and parse
+        self.instruments_cache.clear();
+        self.clob_pair_id_to_instrument.clear();
+        self.market_params_cache.clear();
+
+        for (instrument, market) in parsed_instruments.iter().zip(parsed_markets.into_iter()) {
+            let instrument_id = instrument.id();
+            let symbol = instrument_id.symbol.inner();
+            self.instruments_cache.insert(symbol, instrument.clone());
+            self.clob_pair_id_to_instrument
+                .insert(market.clob_pair_id, instrument_id);
+            self.market_params_cache.insert(instrument_id, market);
+        }
+
+        if !parsed_instruments.is_empty() {
             self.cache_initialized.store(true, Ordering::Release);
         }
 
-        if skipped > 0 {
+        if skipped_inactive > 0 {
             tracing::info!(
-                "Cached {} instruments, skipped {} (inactive or invalid)",
-                instruments.len(),
-                skipped
+                "Cached {} instruments, skipped {} inactive",
+                parsed_instruments.len(),
+                skipped_inactive
             );
         } else {
-            tracing::info!("Cached {} instruments", instruments.len());
+            tracing::info!("Cached {} instruments", parsed_instruments.len());
         }
 
         Ok(())
@@ -948,6 +982,197 @@ impl DydxHttpClient {
             .map_err(Into::into)
     }
 
+    /// Requests historical bars for a symbol and converts to Nautilus Bar objects.
+    ///
+    /// Fetches candle data and converts to Nautilus `Bar` objects using the
+    /// provided `BarType`. Results are ordered by timestamp ascending (oldest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
+    pub async fn request_bars(
+        &self,
+        bar_type: BarType,
+        resolution: DydxCandleResolution,
+        limit: Option<u32>,
+        from_iso: Option<DateTime<Utc>>,
+        to_iso: Option<DateTime<Utc>>,
+    ) -> anyhow::Result<Vec<Bar>> {
+        let instrument_id = bar_type.instrument_id();
+        let symbol = instrument_id.symbol;
+
+        // Get instrument for precision info
+        let instrument = self
+            .get_instrument(&symbol.inner())
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
+
+        // dYdX API expects ticker format "BTC-USD", not "BTC-USD-PERP"
+        let ticker = extract_raw_symbol(symbol.as_str());
+        let response = self
+            .request_candles(ticker, resolution, limit, from_iso, to_iso)
+            .await?;
+
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+        let interval_ns = get_bar_interval_ns(&bar_type);
+
+        let mut bars = Vec::with_capacity(response.candles.len());
+
+        for candle in response.candles {
+            // Calculate ts_event: startedAt + interval (end of bar)
+            let started_at_nanos = candle.started_at.timestamp_nanos_opt().ok_or_else(|| {
+                anyhow::anyhow!("Timestamp out of range for candle at {}", candle.started_at)
+            })?;
+            let ts_event = UnixNanos::from(started_at_nanos as u64) + interval_ns;
+
+            let bar = Bar::new(
+                bar_type,
+                Price::from_decimal_dp(candle.open, instrument.price_precision())?,
+                Price::from_decimal_dp(candle.high, instrument.price_precision())?,
+                Price::from_decimal_dp(candle.low, instrument.price_precision())?,
+                Price::from_decimal_dp(candle.close, instrument.price_precision())?,
+                Quantity::from_decimal_dp(candle.base_token_volume, instrument.size_precision())?,
+                ts_event,
+                ts_init,
+            );
+
+            bars.push(bar);
+        }
+
+        Ok(bars)
+    }
+
+    /// Requests historical trade ticks for a symbol.
+    ///
+    /// Fetches trade data from the dYdX Indexer API and converts them to Nautilus
+    /// `TradeTick` objects. Results are ordered by timestamp descending (newest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
+    pub async fn request_trade_ticks(
+        &self,
+        instrument_id: InstrumentId,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        let symbol = instrument_id.symbol;
+
+        let instrument = self
+            .get_instrument(&symbol.inner())
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
+
+        let ticker = extract_raw_symbol(symbol.as_str());
+        let response = self.request_trades(ticker, limit).await?;
+
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        let mut trades = Vec::with_capacity(response.trades.len());
+
+        for trade in response.trades {
+            let ts_event_nanos = trade.created_at.timestamp_nanos_opt().ok_or_else(|| {
+                anyhow::anyhow!("Timestamp out of range for trade at {}", trade.created_at)
+            })?;
+            let ts_event = UnixNanos::from(ts_event_nanos as u64);
+
+            let aggressor_side = match trade.side {
+                NautilusOrderSide::Buy => AggressorSide::Buyer,
+                NautilusOrderSide::Sell => AggressorSide::Seller,
+                NautilusOrderSide::NoOrderSide => AggressorSide::NoAggressor,
+            };
+
+            let trade_tick = TradeTick::new(
+                instrument_id,
+                Price::from_decimal_dp(trade.price, instrument.price_precision())?,
+                Quantity::from_decimal_dp(trade.size, instrument.size_precision())?,
+                aggressor_side,
+                TradeId::new(&trade.id),
+                ts_event,
+                ts_init,
+            );
+
+            trades.push(trade_tick);
+        }
+
+        Ok(trades)
+    }
+
+    /// Requests an order book snapshot for a symbol.
+    ///
+    /// Fetches order book data from the dYdX Indexer API and converts it to Nautilus
+    /// `OrderBookDeltas`. The snapshot is represented as a sequence of deltas starting
+    /// with a CLEAR action followed by ADD actions for each level.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
+    pub async fn request_orderbook_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<OrderBookDeltas> {
+        let symbol = instrument_id.symbol;
+
+        let instrument = self
+            .get_instrument(&symbol.inner())
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
+
+        let ticker = extract_raw_symbol(symbol.as_str());
+        let response = self.inner.get_orderbook(ticker).await?;
+
+        let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+        let mut deltas = Vec::with_capacity(1 + response.bids.len() + response.asks.len());
+
+        deltas.push(OrderBookDelta::clear(instrument_id, 0, ts_init, ts_init));
+
+        for (i, level) in response.bids.iter().enumerate() {
+            let is_last = i == response.bids.len() - 1 && response.asks.is_empty();
+            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+
+            let order = BookOrder::new(
+                NautilusOrderSide::Buy,
+                Price::from_decimal_dp(level.price, instrument.price_precision())?,
+                Quantity::from_decimal_dp(level.size, instrument.size_precision())?,
+                0,
+            );
+
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                order,
+                flags,
+                0,
+                ts_init,
+                ts_init,
+            ));
+        }
+
+        for (i, level) in response.asks.iter().enumerate() {
+            let is_last = i == response.asks.len() - 1;
+            let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
+
+            let order = BookOrder::new(
+                NautilusOrderSide::Sell,
+                Price::from_decimal_dp(level.price, instrument.price_precision())?,
+                Quantity::from_decimal_dp(level.size, instrument.size_precision())?,
+                0,
+            );
+
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                order,
+                flags,
+                0,
+                ts_init,
+                ts_init,
+            ));
+        }
+
+        Ok(OrderBookDeltas::new(instrument_id, deltas))
+    }
+
     /// Exposes raw HTTP client for testing and advanced use cases.
     ///
     /// This provides access to the underlying [`DydxRawHttpClient`] for cases
@@ -996,11 +1221,190 @@ impl DydxHttpClient {
     pub fn clob_pair_id_mapping(&self) -> &Arc<DashMap<u32, InstrumentId>> {
         &self.clob_pair_id_to_instrument
     }
-}
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
+    /// Requests order status reports for a subaccount.
+    ///
+    /// Fetches orders from the dYdX Indexer API and converts them to Nautilus
+    /// `OrderStatusReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_order_status_reports(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+        // Convert instrument_id to market filter
+        let market = instrument_id.map(|id| {
+            let symbol = id.symbol.to_string();
+            // Remove -PERP suffix if present to get the dYdX market format (e.g., ETH-USD)
+            symbol.trim_end_matches("-PERP").to_string()
+        });
+
+        let orders = self
+            .inner
+            .get_orders(address, subaccount_number, market.as_deref(), None)
+            .await?;
+
+        let mut reports = Vec::new();
+
+        for order in orders {
+            // Get instrument by clob_pair_id
+            let instrument = match self.get_instrument_by_clob_id(order.clob_pair_id) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Skipping order {}: no cached instrument for clob_pair_id {}",
+                        order.id,
+                        order.clob_pair_id
+                    );
+                    continue;
+                }
+            };
+
+            // Filter by instrument_id if specified
+            if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
+                continue;
+            }
+
+            match super::parse::parse_order_status_report(&order, &instrument, account_id, ts_init)
+            {
+                Ok(report) => reports.push(report),
+                Err(e) => {
+                    tracing::warn!("Failed to parse order {}: {e}", order.id);
+                }
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Requests fill reports for a subaccount.
+    ///
+    /// Fetches fills from the dYdX Indexer API and converts them to Nautilus
+    /// `FillReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_fill_reports(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+        // Convert instrument_id to market filter
+        let market = instrument_id.map(|id| {
+            let symbol = id.symbol.to_string();
+            symbol.trim_end_matches("-PERP").to_string()
+        });
+
+        let fills_response = self
+            .inner
+            .get_fills(address, subaccount_number, market.as_deref(), None)
+            .await?;
+
+        let mut reports = Vec::new();
+
+        for fill in fills_response.fills {
+            // Get instrument by market ticker
+            let market = &fill.market;
+            let symbol = Ustr::from(&format!("{market}-PERP"));
+            let instrument = match self.get_instrument(&symbol) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Skipping fill {}: no cached instrument for market {}",
+                        fill.id,
+                        fill.market
+                    );
+                    continue;
+                }
+            };
+
+            // Filter by instrument_id if specified
+            if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
+                continue;
+            }
+
+            match super::parse::parse_fill_report(&fill, &instrument, account_id, ts_init) {
+                Ok(report) => reports.push(report),
+                Err(e) => {
+                    tracing::warn!("Failed to parse fill {}: {e}", fill.id);
+                }
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Requests position status reports for a subaccount.
+    ///
+    /// Fetches positions from the dYdX Indexer API and converts them to Nautilus
+    /// `PositionStatusReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_position_status_reports(
+        &self,
+        address: &str,
+        subaccount_number: u32,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let ts_init = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+        let subaccount_response = self
+            .inner
+            .get_subaccount(address, subaccount_number)
+            .await?;
+
+        let mut reports = Vec::new();
+
+        for (market, position) in subaccount_response.subaccount.open_perpetual_positions {
+            // Get instrument by market ticker
+            let symbol = Ustr::from(&format!("{market}-PERP"));
+            let instrument = match self.get_instrument(&symbol) {
+                Some(inst) => inst,
+                None => {
+                    tracing::warn!(
+                        "Skipping position: no cached instrument for market {}",
+                        market
+                    );
+                    continue;
+                }
+            };
+
+            // Filter by instrument_id if specified
+            if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
+                continue;
+            }
+
+            match super::parse::parse_position_status_report(
+                &position,
+                &instrument,
+                account_id,
+                ts_init,
+            ) {
+                Ok(report) => reports.push(report),
+                Err(e) => {
+                    tracing::warn!("Failed to parse position for {}: {e}", market);
+                }
+            }
+        }
+
+        Ok(reports)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1009,10 +1413,6 @@ mod tests {
 
     use super::*;
     use crate::http::error;
-
-    // ========================================================================
-    // Raw Client Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_raw_client_creation() {
@@ -1033,10 +1433,6 @@ mod tests {
         assert!(client.is_testnet());
         assert_eq!(client.base_url(), DYDX_TESTNET_HTTP_URL);
     }
-
-    // ========================================================================
-    // Domain Client Tests
-    // ========================================================================
 
     #[tokio::test]
     async fn test_domain_client_creation() {

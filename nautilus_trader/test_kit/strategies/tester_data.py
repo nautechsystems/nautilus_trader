@@ -65,6 +65,7 @@ class DataTesterConfig(ActorConfig, frozen=True):
     request_quotes: bool = False
     request_trades: bool = False
     request_bars: bool = False
+    request_book_snapshot: bool = False
     request_params: dict[str, Any] | None = None
     requests_start_delta: pd.Timedelta | None = None
     book_type: BookType = BookType.L2_MBP
@@ -214,6 +215,14 @@ class DataTester(Actor):
                 self.request_trade_ticks(
                     instrument_id=instrument_id,
                     start=requests_start,
+                    client_id=client_id,
+                    params=self.config.request_params,
+                )
+
+            if self.config.request_book_snapshot:
+                self.request_order_book_snapshot(
+                    instrument_id=instrument_id,
+                    limit=self.config.book_depth or 0,
                     client_id=client_id,
                     params=self.config.request_params,
                 )

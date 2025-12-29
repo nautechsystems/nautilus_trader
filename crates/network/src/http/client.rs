@@ -18,6 +18,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use nautilus_core::collections::into_ustr_vec;
+use nautilus_cryptography::providers::install_cryptographic_provider;
 use reqwest::{
     Method, Response, Url,
     header::{HeaderMap, HeaderName, HeaderValue},
@@ -63,6 +64,8 @@ impl HttpClient {
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
     ) -> Result<Self, HttpClientError> {
+        install_cryptographic_provider();
+
         // Build default headers
         let mut header_map = HeaderMap::new();
         for (key, value) in headers {
@@ -423,6 +426,7 @@ impl Default for InnerHttpClient {
     ///
     /// The default client is initialized with an empty list of header keys and a new `reqwest::Client`.
     fn default() -> Self {
+        install_cryptographic_provider();
         let client = reqwest::Client::new();
         Self {
             client,
@@ -462,9 +466,6 @@ fn encode_url_params(
     Ok(format!("{url}{separator}{query_string}"))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {

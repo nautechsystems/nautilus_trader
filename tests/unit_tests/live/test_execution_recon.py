@@ -4598,3 +4598,76 @@ def test_get_existing_fill_for_trade_id_ignores_non_fill_events() -> None:
 
     # Assert
     assert result is None
+
+
+class TestFindMatchingCachedOrder:
+    """
+    Tests for _find_matching_cached_order method.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup(self, request):
+        # Fixture Setup
+        self.loop = request.getfixturevalue("event_loop")
+        self.clock = LiveClock()
+        self.trader_id = TestIdStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+        )
+
+        self.cache = TestComponentStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.exec_engine = LiveExecutionEngine(
+            loop=self.loop,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.cache.add_instrument(AUDUSD_SIM)
+
+    @pytest.mark.asyncio
+    async def test_find_matching_cached_order_with_filled_market_order(self):
+        # Arrange: create a filled market order (which has no price attribute)
+        market_order = TestExecStubs.market_order(
+            instrument=AUDUSD_SIM,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+        )
+
+        submitted = TestEventStubs.order_submitted(market_order)
+        accepted = TestEventStubs.order_accepted(market_order)
+        filled = TestEventStubs.order_filled(
+            market_order,
+            AUDUSD_SIM,
+            last_px=Price.from_str("1.00000"),
+        )
+
+        market_order.apply(submitted)
+        market_order.apply(accepted)
+        market_order.apply(filled)
+
+        self.cache.add_order(market_order)
+
+        # Act: search with a price parameter (market orders don't have price)
+        result = self.exec_engine._find_matching_cached_order(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=Price.from_str("1.00000"),
+            avg_px=None,
+        )
+
+        # Assert: should find the market order despite price being provided
+        assert result is not None
+        assert result.client_order_id == market_order.client_order_id
+        assert result.order_type == OrderType.MARKET
+        assert not result.has_price

@@ -23,6 +23,7 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.instruments import Instrument
 
@@ -142,6 +143,12 @@ class MockActor(Actor):
         self.store.append(event)
 
     def on_order_filled(self, event: OrderFilled) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(event)
+
+    def on_order_canceled(self, event: OrderCanceled) -> None:
         current_frame = inspect.currentframe()
         if current_frame:
             self.calls.append(current_frame.f_code.co_name)

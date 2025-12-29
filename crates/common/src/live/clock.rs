@@ -33,7 +33,7 @@ use ustr::Ustr;
 use super::timer::LiveTimer;
 use crate::{
     clock::{CallbackRegistry, Clock, validate_and_prepare_time_alert, validate_and_prepare_timer},
-    runner::{TimeEventSender, get_time_event_sender},
+    runner::{TimeEventSender, try_get_time_event_sender},
     timer::{
         ScheduledTimeEvent, TimeEvent, TimeEventCallback, TimeEventHandlerV2, create_valid_interval,
     },
@@ -85,8 +85,10 @@ impl LiveClock {
 
 impl Default for LiveClock {
     /// Creates a new default [`LiveClock`] instance.
+    ///
+    /// Uses `try_get_time_event_sender()` to allow creation before channels are initialized.
     fn default() -> Self {
-        Self::new(Some(get_time_event_sender()))
+        Self::new(try_get_time_event_sender())
     }
 }
 
@@ -312,10 +314,6 @@ impl Stream for TimeEventStream {
         }
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

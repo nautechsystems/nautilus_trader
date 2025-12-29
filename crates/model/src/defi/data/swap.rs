@@ -20,7 +20,7 @@ use nautilus_core::UnixNanos;
 
 use crate::{
     defi::{
-        SharedChain, SharedDex, Token,
+        PoolIdentifier, SharedChain, SharedDex, Token,
         data::swap_trade_info::{SwapTradeInfo, SwapTradeInfoCalculator},
     },
     identifiers::InstrumentId,
@@ -65,8 +65,8 @@ pub struct PoolSwap {
     pub dex: SharedDex,
     /// The instrument ID for this pool's trading pair.
     pub instrument_id: InstrumentId,
-    /// The blockchain address of the pool smart contract.
-    pub pool_address: Address,
+    /// The unique identifier for this pool (could be an address or other protocol-specific hex string).
+    pub pool_identifier: PoolIdentifier,
     /// The blockchain block number at which the swap was executed.
     pub block: u64,
     /// The unique hash identifier of the blockchain transaction containing the swap.
@@ -106,7 +106,7 @@ impl PoolSwap {
         chain: SharedChain,
         dex: SharedDex,
         instrument_id: InstrumentId,
-        pool_address: Address,
+        pool_identifier: PoolIdentifier,
         block: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -124,7 +124,7 @@ impl PoolSwap {
             chain,
             dex,
             instrument_id,
-            pool_address,
+            pool_identifier,
             block,
             transaction_hash,
             transaction_index,

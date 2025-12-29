@@ -40,6 +40,8 @@ static EXEC_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static EXEC_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static EXEC_RECONCILE_REPORT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static EXEC_RECONCILE_MASS_STATUS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static RISK_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static RISK_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_UPDATE_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 
 macro_rules! define_switchboard {
@@ -125,6 +127,18 @@ macro_rules! define_switchboard {
 
             #[inline]
             #[must_use]
+            pub fn risk_engine_execute() -> MStr<Endpoint> {
+                *RISK_EXECUTE_ENDPOINT.get_or_init(|| "RiskEngine.execute".into())
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn risk_engine_process() -> MStr<Endpoint> {
+                *RISK_PROCESS_ENDPOINT.get_or_init(|| "RiskEngine.process".into())
+            }
+
+            #[inline]
+            #[must_use]
             pub fn portfolio_update_account() -> MStr<Endpoint> {
                 *PORTFOLIO_UPDATE_ACCOUNT_ENDPOINT.get_or_init(|| "Portfolio.update_account".into())
             }
@@ -204,6 +218,10 @@ define_switchboard! {
     get_order_fills_topic(instrument_id: InstrumentId) -> instrument_id,
     "events.fills.{}", instrument_id;
 
+    order_cancels_topics: InstrumentId,
+    get_order_cancels_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.cancels.{}", instrument_id;
+
     order_snapshots_topics: ClientOrderId,
     get_order_snapshots_topic(client_order_id: ClientOrderId) -> client_order_id,
     "order.snapshots.{}", client_order_id;
@@ -257,15 +275,12 @@ define_wrappers! {
     get_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_fills_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_cancels_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_snapshots_topic(client_order_id: ClientOrderId) -> MStr<Topic>,
     get_positions_snapshots_topic(position_id: PositionId) -> MStr<Topic>,
     get_event_orders_topic(strategy_id: StrategyId) -> MStr<Topic>,
     get_event_positions_topic(strategy_id: StrategyId) -> MStr<Topic>,
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

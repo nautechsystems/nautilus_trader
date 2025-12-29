@@ -36,7 +36,7 @@ The following adapter classes are available:
 - `DatabentoDataClient`: Provides a `LiveMarketDataClient` implementation for running a trading node in real time.
 
 :::info
-As with the other integration adapters, most users will simply define a configuration for a live trading node (covered below),
+As with the other integration adapters, most users will define a configuration for a live trading node (covered below),
 and won't need to necessarily work with these lower level components directly.
 :::
 

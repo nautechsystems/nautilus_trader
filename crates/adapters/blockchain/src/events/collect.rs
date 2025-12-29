@@ -16,7 +16,7 @@
 use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    defi::{SharedChain, SharedDex, data::PoolFeeCollect},
+    defi::{PoolIdentifier, SharedChain, SharedDex, data::PoolFeeCollect},
     identifiers::InstrumentId,
 };
 
@@ -25,8 +25,8 @@ use nautilus_model::{
 pub struct CollectEvent {
     /// The decentralized exchange where the event happened.
     pub dex: SharedDex,
-    /// The address of the smart contract which emitted the event.
-    pub pool_address: Address,
+    /// The unique identifier for the pool.
+    pub pool_identifier: PoolIdentifier,
     /// The block number when the collect occurred.
     pub block_number: u64,
     /// The unique hash identifier of the transaction containing this event.
@@ -53,9 +53,9 @@ impl CollectEvent {
     /// Creates a new [`CollectEvent`] instance with the specified parameters.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         dex: SharedDex,
-        pool_address: Address,
+        pool_identifier: PoolIdentifier,
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,
@@ -69,7 +69,7 @@ impl CollectEvent {
     ) -> Self {
         Self {
             dex,
-            pool_address,
+            pool_identifier,
             block_number,
             transaction_hash,
             transaction_index,
@@ -90,14 +90,13 @@ impl CollectEvent {
         chain: SharedChain,
         dex: SharedDex,
         instrument_id: InstrumentId,
-        pool_address: Address,
         timestamp: Option<UnixNanos>,
     ) -> PoolFeeCollect {
         PoolFeeCollect::new(
             chain,
             dex,
             instrument_id,
-            pool_address,
+            self.pool_identifier,
             self.block_number,
             self.transaction_hash.clone(),
             self.transaction_index,

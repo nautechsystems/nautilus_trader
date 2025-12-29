@@ -1,0 +1,20 @@
+{
+  "type": "subscribed",
+  "connection_id": "conn-abc123-def456-ghi789",
+  "message_id": 1,
+  "channel": "v4_trades",
+  "id": "BTC-USD",
+  "contents": {
+    "trades": [
+      {
+        "id": "trade-001",
+        "side": "BUY",
+        "size": "0.5",
+        "price": "43250.0",
+        "type": "LIMIT",
+        "createdAt": "2024-01-01T00:00:00.000Z",
+        "createdAtHeight": "12345678"
+      }
+    ]
+  }
+}

@@ -15,7 +15,7 @@
 
 //! Integration tests for BitMEX HTTP client using a mock server.
 
-use std::{collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
 
 use axum::{
     Router,
@@ -33,7 +33,9 @@ use nautilus_bitmex::{
         },
     },
 };
+use nautilus_common::testing::wait_until_async;
 use nautilus_model::{identifiers::InstrumentId, instruments::Instrument};
+use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -251,7 +253,20 @@ async fn start_test_server()
         axum::serve(listener, router).await.unwrap();
     });
 
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    // Wait for server to be ready
+    let health_url = format!("http://{addr}/instrument/active");
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
     Ok((addr, state))
 }
 
@@ -641,7 +656,19 @@ async fn test_http_500_internal_server_error() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    // Wait for server to be ready
+    let health_url = format!("http://{addr}/instrument");
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     let base_url = format!("http://{addr}");
     let client = BitmexRawHttpClient::new(

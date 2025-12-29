@@ -15,8 +15,7 @@
 
 //! Error structures and enumerations for the BitMEX integration.
 
-use nautilus_network::http::HttpClientError;
-use reqwest::StatusCode;
+use nautilus_network::http::{HttpClientError, StatusCode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

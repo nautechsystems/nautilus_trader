@@ -20,7 +20,7 @@ use nautilus_hyperliquid::{
     http::HyperliquidHttpClient,
     websocket::client::HyperliquidWebSocketClient,
 };
-use nautilus_model::instruments::Instrument;
+use nautilus_model::instruments::{Instrument, InstrumentAny};
 use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
 
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .find(|i| i.raw_symbol().as_str() == "BTC")
         .ok_or("BTC-USD-PERP instrument not found")?;
     let instrument_id = match btc_inst {
-        nautilus_model::instruments::InstrumentAny::CryptoPerpetual(inst) => inst.id,
+        InstrumentAny::CryptoPerpetual(inst) => inst.id,
         _ => return Err("Expected CryptoPerpetual instrument".into()),
     };
     tracing::info!("Using instrument: {}", instrument_id);

@@ -23,7 +23,7 @@ pub mod closed;
 pub mod opened;
 pub mod snapshot;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PositionEvent {
     PositionOpened(PositionOpened),
     PositionChanged(PositionChanged),
@@ -51,9 +51,6 @@ impl PositionEvent {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;

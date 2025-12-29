@@ -15,8 +15,7 @@
 
 use bytes::Bytes;
 use nautilus_common::{
-    cache::database::CacheDatabaseAdapter, custom::CustomData, live::runtime::get_runtime,
-    signal::Signal,
+    cache::database::CacheDatabaseAdapter, custom::CustomData, live::get_runtime, signal::Signal,
 };
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{

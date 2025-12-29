@@ -16,6 +16,7 @@
 use std::fmt::Display;
 
 use derive_builder::Builder;
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::OrderSide,
@@ -35,6 +36,7 @@ pub struct CancelOrder {
     pub venue_order_id: VenueOrderId,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl CancelOrder {
@@ -44,7 +46,7 @@ impl CancelOrder {
     ///
     /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         trader_id: TraderId,
         client_id: ClientId,
         strategy_id: StrategyId,
@@ -53,6 +55,7 @@ impl CancelOrder {
         venue_order_id: VenueOrderId,
         command_id: UUID4,
         ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
@@ -63,6 +66,7 @@ impl CancelOrder {
             venue_order_id,
             command_id,
             ts_init,
+            params,
         })
     }
 }
@@ -88,6 +92,7 @@ pub struct CancelAllOrders {
     pub order_side: OrderSide,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl CancelAllOrders {
@@ -97,7 +102,7 @@ impl CancelAllOrders {
     ///
     /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         trader_id: TraderId,
         client_id: ClientId,
         strategy_id: StrategyId,
@@ -105,6 +110,7 @@ impl CancelAllOrders {
         order_side: OrderSide,
         command_id: UUID4,
         ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
@@ -114,6 +120,7 @@ impl CancelAllOrders {
             order_side,
             command_id,
             ts_init,
+            params,
         })
     }
 }
@@ -139,6 +146,7 @@ pub struct BatchCancelOrders {
     pub cancels: Vec<CancelOrder>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl BatchCancelOrders {
@@ -148,7 +156,7 @@ impl BatchCancelOrders {
     ///
     /// Returns an error if parameters are invalid.
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         trader_id: TraderId,
         client_id: ClientId,
         strategy_id: StrategyId,
@@ -156,6 +164,7 @@ impl BatchCancelOrders {
         cancels: Vec<CancelOrder>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             trader_id,
@@ -165,6 +174,7 @@ impl BatchCancelOrders {
             cancels,
             command_id,
             ts_init,
+            params,
         })
     }
 }
@@ -179,8 +189,5 @@ impl Display for BatchCancelOrders {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {}

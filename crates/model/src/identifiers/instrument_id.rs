@@ -120,7 +120,7 @@ impl From<&str> for InstrumentId {
     ///
     /// Panics if the `value` string is not valid.
     fn from(value: &str) -> Self {
-        Self::from_str(value).unwrap()
+        Self::from_str(value).expect("Invalid InstrumentId string")
     }
 }
 
@@ -161,8 +161,8 @@ impl<'de> Deserialize<'de> for InstrumentId {
     where
         D: Deserializer<'de>,
     {
-        let instrument_id_str = String::deserialize(deserializer)?;
-        Ok(Self::from(instrument_id_str.as_str()))
+        let instrument_id_str: &str = Deserialize::deserialize(deserializer)?;
+        Self::from_str(instrument_id_str).map_err(serde::de::Error::custom)
     }
 }
 
@@ -170,9 +170,6 @@ fn err_message(s: &str, e: String) -> String {
     format!("Error parsing `InstrumentId` from '{s}': {e}")
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

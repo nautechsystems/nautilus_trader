@@ -27,6 +27,9 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookDepth
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -141,6 +144,18 @@ class MockMarketDataClient(MarketDataClient):
             request.end,
             request.params,
         )
+
+    def subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        """Subscribe to quote ticks - mock implementation that just tracks the subscription."""
+        self._add_subscription_quote_ticks(command.instrument_id)
+
+    def subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        """Subscribe to trade ticks - mock implementation that just tracks the subscription."""
+        self._add_subscription_trade_ticks(command.instrument_id)
+
+    def subscribe_bars(self, command: SubscribeBars) -> None:
+        """Subscribe to bars - mock implementation that just tracks the subscription."""
+        self._add_subscription_bars(command.bar_type)
 
 
 _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")

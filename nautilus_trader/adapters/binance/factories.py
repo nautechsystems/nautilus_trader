@@ -67,8 +67,10 @@ def get_cached_binance_http_client(
         The account type for the client.
     api_key : str, optional
         The API key for the client.
+        If ``None``, the client will work for public market data only.
     api_secret : str, optional
         The API secret for the client.
+        If ``None``, the client will work for public market data only.
     key_type : BinanceKeyType, default 'HMAC'
         The private key cryptographic algorithm type.
     base_url : str, optional
@@ -85,8 +87,6 @@ def get_cached_binance_http_client(
     BinanceHttpClient
 
     """
-    api_key = api_key or get_api_key(account_type, is_testnet)
-    api_secret = api_secret or get_api_secret(account_type, is_testnet)
     default_http_base_url = get_http_base_url(account_type, is_testnet, is_us)
 
     match key_type:
@@ -377,12 +377,16 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             If `config.account_type` is not a valid `BinanceAccountType`.
 
         """
+        # Execution client requires authentication
+        api_key = config.api_key or get_api_key(config.account_type, config.testnet)
+        api_secret = config.api_secret or get_api_secret(config.account_type, config.testnet)
+
         # Get HTTP client singleton
         client: BinanceHttpClient = get_cached_binance_http_client(
             clock=clock,
             account_type=config.account_type,
-            api_key=config.api_key,
-            api_secret=config.api_secret,
+            api_key=api_key,
+            api_secret=api_secret,
             key_type=config.key_type,
             base_url=config.base_url_http,
             is_testnet=config.testnet,

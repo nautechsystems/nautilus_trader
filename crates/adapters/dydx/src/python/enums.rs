@@ -17,6 +17,3 @@
 //!
 //! This module provides Python access to dYdX-specific enum types
 //! used throughout the adapter.
-
-// Re-export enums that should be available in Python
-// The #[pyclass] attributes in the enum definitions will make them available

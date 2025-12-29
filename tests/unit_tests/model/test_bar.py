@@ -666,6 +666,36 @@ class TestBarType:
         assert bar_type.spec == bar_spec
         assert bar_type.aggregation_source == AggregationSource.EXTERNAL
 
+    def test_id_spec_key_ignores_aggregation_source(self):
+        # Arrange
+        bar_type_external = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
+        bar_type_internal = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-INTERNAL")
+
+        # Act
+        key_external = bar_type_external.id_spec_key()
+        key_internal = bar_type_internal.id_spec_key()
+
+        # Assert: full equality should differ
+        assert bar_type_external != bar_type_internal
+
+        # Assert: id_spec_key should be the same
+        assert key_external == key_internal
+
+        # Assert: tuple components are correct
+        assert key_external == (bar_type_external.instrument_id, bar_type_external.spec)
+
+    def test_id_spec_key_can_be_used_as_dict_key(self):
+        # Arrange
+        bar_type_external = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
+        bar_type_internal = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-INTERNAL")
+        lookup: dict[tuple, str] = {}
+
+        # Act: register with external bar type
+        lookup[bar_type_external.id_spec_key()] = "registered"
+
+        # Assert: lookup with internal bar type should find it
+        assert lookup.get(bar_type_internal.id_spec_key()) == "registered"
+
 
 class TestBar:
     def test_fully_qualified_name(self):

@@ -16,7 +16,19 @@
 //! Transaction builder for dYdX v4 protocol.
 //!
 //! This module provides utilities for building and signing Cosmos SDK transactions
-//! for the dYdX v4 protocol.
+//! for the dYdX v4 protocol, including support for permissioned key trading via
+//! authenticators.
+//!
+//! # Permissioned Keys
+//!
+//! dYdX supports permissioned keys (authenticators) that allow an account to add
+//! custom logic for verifying and confirming transactions. This enables features like:
+//!
+//! - Delegated signing keys for sub-accounts
+//! - Separated hot/cold wallet architectures
+//! - Trading key separation from withdrawal keys
+//!
+//! See <https://docs.dydx.xyz/concepts/trading/authenticators> for details.
 
 use std::fmt::{Debug, Formatter};
 
@@ -24,6 +36,7 @@ use cosmrs::{
     Any, Coin,
     tx::{self, Fee, SignDoc, SignerInfo},
 };
+use dydx_proto::{ToAny, dydxprotocol::accountplus::TxExtension};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use super::{types::ChainId, wallet::Account};
@@ -108,6 +121,9 @@ impl TxBuilder {
 
     /// Build a transaction for given messages.
     ///
+    /// When `authenticator_ids` is provided, the transaction will include a `TxExtension`
+    /// for permissioned key trading, allowing sub-accounts to trade using delegated keys.
+    ///
     /// # Errors
     ///
     /// Returns an error if transaction building or signing fails.
@@ -116,9 +132,21 @@ impl TxBuilder {
         account: &Account,
         msgs: impl IntoIterator<Item = Any>,
         fee: Option<Fee>,
+        authenticator_ids: Option<&[u64]>,
     ) -> Result<tx::Raw, anyhow::Error> {
         let mut builder = tx::BodyBuilder::new();
         builder.msgs(msgs).memo("");
+
+        // Add authenticators for permissioned key trading if provided
+        if let Some(auth_ids) = authenticator_ids
+            && !auth_ids.is_empty()
+        {
+            let ext = TxExtension {
+                selected_authenticators: auth_ids.to_vec(),
+            };
+            builder.non_critical_extension_option(ext.to_any());
+        }
+
         let tx_body = builder.finish();
 
         let fee = fee.unwrap_or_else(|| {
@@ -148,7 +176,7 @@ impl TxBuilder {
         account: &Account,
         msgs: impl IntoIterator<Item = Any>,
     ) -> Result<Vec<u8>, anyhow::Error> {
-        let tx_raw = self.build_transaction(account, msgs, None)?;
+        let tx_raw = self.build_transaction(account, msgs, None, None)?;
         tx_raw.to_bytes().map_err(|e| anyhow::anyhow!("{e}"))
     }
 }

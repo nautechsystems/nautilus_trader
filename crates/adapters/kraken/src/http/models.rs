@@ -19,8 +19,7 @@
 //! - Spot models: [`super::spot::models`]
 //! - Futures models: [`super::futures::models`]
 
-// Re-export Spot models
-// Re-export Futures models
+// Re-exports
 pub use super::{
     futures::models::{
         CancelledOrder, FuturesBatchOrderResponse, FuturesCancelAllOrdersResponse,

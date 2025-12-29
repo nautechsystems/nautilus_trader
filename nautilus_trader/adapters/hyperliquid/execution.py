@@ -196,8 +196,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 order_type=order.order_type,
                 quantity=order.quantity,
                 time_in_force=order.time_in_force,
-                price=order.price,
-                trigger_price=order.trigger_price,
+                price=order.price if order.has_price else None,
+                trigger_price=order.trigger_price if order.has_trigger_price else None,
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
             )

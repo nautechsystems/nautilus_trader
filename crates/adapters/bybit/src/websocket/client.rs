@@ -29,8 +29,8 @@ use std::{
 use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use nautilus_common::live::runtime::get_runtime;
-use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT};
+use nautilus_common::live::get_runtime;
+use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -83,6 +83,32 @@ const BATCH_PROCESSING_LIMIT: usize = 20;
 /// Type alias for the funding rate cache.
 type FundingCache = Arc<tokio::sync::RwLock<AHashMap<Ustr, (Option<String>, Option<String>)>>>;
 
+/// Resolves credentials from provided values or environment variables.
+///
+/// Priority for environment variables based on environment:
+/// - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+/// - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+/// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
+fn resolve_credential(
+    environment: BybitEnvironment,
+    api_key: Option<String>,
+    api_secret: Option<String>,
+) -> Option<Credential> {
+    let (api_key_env, api_secret_env) = match environment {
+        BybitEnvironment::Demo => ("BYBIT_DEMO_API_KEY", "BYBIT_DEMO_API_SECRET"),
+        BybitEnvironment::Testnet => ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_API_SECRET"),
+        BybitEnvironment::Mainnet => ("BYBIT_API_KEY", "BYBIT_API_SECRET"),
+    };
+
+    let key = get_or_env_var_opt(api_key, api_key_env);
+    let secret = get_or_env_var_opt(api_secret, api_secret_env);
+
+    match (key, secret) {
+        (Some(k), Some(s)) => Some(Credential::new(k, s)),
+        _ => None,
+    }
+}
+
 /// Public/market data WebSocket client for Bybit.
 #[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct BybitWebSocketClient {
@@ -102,6 +128,7 @@ pub struct BybitWebSocketClient {
     is_authenticated: Arc<AtomicBool>,
     account_id: Option<AccountId>,
     mm_level: Arc<AtomicU8>,
+    bars_timestamp_on_close: bool,
     instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
     funding_cache: FundingCache,
     cancellation_token: CancellationToken,
@@ -139,6 +166,7 @@ impl Clone for BybitWebSocketClient {
             is_authenticated: Arc::clone(&self.is_authenticated),
             account_id: self.account_id,
             mm_level: Arc::clone(&self.mm_level),
+            bars_timestamp_on_close: self.bars_timestamp_on_close,
             instruments_cache: Arc::clone(&self.instruments_cache),
             funding_cache: Arc::clone(&self.funding_cache),
             cancellation_token: self.cancellation_token.clone(),
@@ -191,20 +219,30 @@ impl BybitWebSocketClient {
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
+            mm_level: Arc::new(AtomicU8::new(0)),
+            bars_timestamp_on_close: true,
             funding_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
             cancellation_token: CancellationToken::new(),
-            mm_level: Arc::new(AtomicU8::new(0)),
         }
     }
 
     /// Creates a new Bybit private WebSocket client.
+    ///
+    /// If `api_key` or `api_secret` are not provided, they will be loaded from
+    /// environment variables based on the environment:
+    /// - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+    /// - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+    /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
     #[must_use]
     pub fn new_private(
         environment: BybitEnvironment,
-        credential: Credential,
+        api_key: Option<String>,
+        api_secret: Option<String>,
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
+        let credential = resolve_credential(environment, api_key, api_secret);
+
         // We don't have a handler yet; this placeholder keeps cache_instrument() working.
         // connect() swaps in the real channel and replays any queued instruments so the
         // handler sees them once it starts.
@@ -217,7 +255,7 @@ impl BybitWebSocketClient {
             url: url.unwrap_or_else(|| bybit_ws_private_url(environment).to_string()),
             environment,
             product_type: None,
-            credential: Some(credential),
+            credential,
             requires_auth: true,
             auth_tracker: AuthTracker::new(),
             heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
@@ -230,20 +268,30 @@ impl BybitWebSocketClient {
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
+            mm_level: Arc::new(AtomicU8::new(0)),
+            bars_timestamp_on_close: true,
             funding_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
             cancellation_token: CancellationToken::new(),
-            mm_level: Arc::new(AtomicU8::new(0)),
         }
     }
 
     /// Creates a new Bybit trade WebSocket client for order operations.
+    ///
+    /// If `api_key` or `api_secret` are not provided, they will be loaded from
+    /// environment variables based on the environment:
+    /// - Demo: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
+    /// - Testnet: `BYBIT_TESTNET_API_KEY`, `BYBIT_TESTNET_API_SECRET`
+    /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
     #[must_use]
     pub fn new_trade(
         environment: BybitEnvironment,
-        credential: Credential,
+        api_key: Option<String>,
+        api_secret: Option<String>,
         url: Option<String>,
         heartbeat: Option<u64>,
     ) -> Self {
+        let credential = resolve_credential(environment, api_key, api_secret);
+
         // We don't have a handler yet; this placeholder keeps cache_instrument() working.
         // connect() swaps in the real channel and replays any queued instruments so the
         // handler sees them once it starts.
@@ -256,7 +304,7 @@ impl BybitWebSocketClient {
             url: url.unwrap_or_else(|| bybit_ws_trade_url(environment).to_string()),
             environment,
             product_type: None,
-            credential: Some(credential),
+            credential,
             requires_auth: true,
             auth_tracker: AuthTracker::new(),
             heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
@@ -269,9 +317,10 @@ impl BybitWebSocketClient {
             is_authenticated: Arc::new(AtomicBool::new(false)),
             instruments_cache: Arc::new(DashMap::new()),
             account_id: None,
+            mm_level: Arc::new(AtomicU8::new(0)),
+            bars_timestamp_on_close: true,
             funding_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
             cancellation_token: CancellationToken::new(),
-            mm_level: Arc::new(AtomicU8::new(0)),
         }
     }
 
@@ -300,10 +349,8 @@ impl BybitWebSocketClient {
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: Self::default_headers(),
-            message_handler: Some(raw_handler),
             heartbeat: self.heartbeat,
             heartbeat_msg: Some(ping_msg),
-            ping_handler: Some(ping_handler),
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
@@ -334,7 +381,14 @@ impl BybitWebSocketClient {
 
             match tokio::time::timeout(
                 Duration::from_secs(CONNECTION_TIMEOUT_SECS),
-                WebSocketClient::connect(config.clone(), None, vec![], None),
+                WebSocketClient::connect(
+                    config.clone(),
+                    Some(raw_handler.clone()),
+                    Some(ping_handler.clone()),
+                    None,
+                    vec![],
+                    None,
+                ),
             )
             .await
             {
@@ -418,6 +472,7 @@ impl BybitWebSocketClient {
         let funding_cache = Arc::clone(&self.funding_cache);
         let account_id = self.account_id;
         let product_type = self.product_type;
+        let bars_timestamp_on_close = self.bars_timestamp_on_close;
         let mm_level = Arc::clone(&self.mm_level);
         let cmd_tx_for_reconnect = cmd_tx.clone();
         let auth_tracker = self.auth_tracker.clone();
@@ -431,6 +486,7 @@ impl BybitWebSocketClient {
                 out_tx.clone(),
                 account_id,
                 product_type,
+                bars_timestamp_on_close,
                 mm_level.clone(),
                 auth_tracker,
                 subscriptions.clone(),
@@ -843,6 +899,14 @@ impl BybitWebSocketClient {
         self.mm_level.store(mm_level, Ordering::Relaxed);
     }
 
+    /// Sets whether bar timestamps should use the close time.
+    ///
+    /// When `true` (default), bar `ts_event` is set to the bar's close time.
+    /// When `false`, bar `ts_event` is set to the bar's open time.
+    pub fn set_bars_timestamp_on_close(&mut self, value: bool) {
+        self.bars_timestamp_on_close = value;
+    }
+
     /// Returns a reference to the instruments cache.
     #[must_use]
     pub fn instruments(&self) -> &Arc<DashMap<Ustr, InstrumentAny>> {
@@ -1240,7 +1304,6 @@ impl BybitWebSocketClient {
         orders: Vec<BybitWsPlaceOrderParams>,
     ) -> BybitWsResult<()> {
         let category = orders[0].category;
-
         let batch_req_id = UUID4::new().to_string();
 
         // Extract order tracking data before consuming orders to register with handler
@@ -1389,6 +1452,8 @@ impl BybitWebSocketClient {
     /// Returns an error if the batch request fails or if not authenticated.
     pub async fn batch_cancel_orders(
         &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         orders: Vec<BybitWsCancelOrderParams>,
     ) -> BybitWsResult<()> {
         if !self.is_authenticated.load(Ordering::Relaxed) {
@@ -1403,7 +1468,8 @@ impl BybitWebSocketClient {
         }
 
         for chunk in orders.chunks(BATCH_PROCESSING_LIMIT) {
-            self.batch_cancel_orders_chunk(chunk.to_vec()).await?;
+            self.batch_cancel_orders_chunk(trader_id, strategy_id, chunk.to_vec())
+                .await?;
         }
 
         Ok(())
@@ -1411,10 +1477,68 @@ impl BybitWebSocketClient {
 
     async fn batch_cancel_orders_chunk(
         &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
         orders: Vec<BybitWsCancelOrderParams>,
     ) -> BybitWsResult<()> {
-        // Extract category from first order (all orders must have the same category)
+        if orders.is_empty() {
+            return Ok(());
+        }
+
         let category = orders[0].category;
+        let batch_req_id = UUID4::new().to_string();
+
+        let mut validated_data = Vec::new();
+
+        for order in &orders {
+            if let Some(order_link_id_str) = &order.order_link_id {
+                let cache_key = make_bybit_symbol(order.symbol.as_str(), category);
+                let instrument_id = self
+                    .instruments_cache
+                    .get(&cache_key)
+                    .map(|inst| inst.id())
+                    .ok_or_else(|| {
+                        BybitWsError::ClientError(format!(
+                            "Instrument {cache_key} not found in cache"
+                        ))
+                    })?;
+
+                let venue_order_id = order
+                    .order_id
+                    .as_ref()
+                    .map(|id| VenueOrderId::from(id.as_str()));
+
+                validated_data.push((order_link_id_str.clone(), instrument_id, venue_order_id));
+            }
+        }
+
+        let batch_cancel_data: Vec<_> = validated_data
+            .iter()
+            .map(|(order_link_id_str, instrument_id, venue_order_id)| {
+                let client_order_id = ClientOrderId::from(order_link_id_str.as_str());
+                (
+                    client_order_id,
+                    (
+                        client_order_id,
+                        trader_id,
+                        strategy_id,
+                        *instrument_id,
+                        *venue_order_id,
+                    ),
+                )
+            })
+            .collect();
+
+        if !batch_cancel_data.is_empty() {
+            let cmd = HandlerCommand::RegisterBatchCancel {
+                req_id: batch_req_id.clone(),
+                cancels: batch_cancel_data,
+            };
+            let cmd_tx = self.cmd_tx.read().await;
+            if let Err(e) = cmd_tx.send(cmd) {
+                tracing::error!("Failed to send RegisterBatchCancel command: {e}");
+            }
+        }
 
         let request_items: Vec<BybitWsBatchCancelItem> = orders
             .into_iter()
@@ -1431,7 +1555,7 @@ impl BybitWebSocketClient {
         };
 
         let request = BybitWsRequest {
-            req_id: None,
+            req_id: Some(batch_req_id),
             op: BybitWsOrderRequestOp::CancelBatch,
             header: BybitWsHeader::now(),
             args: vec![args],
@@ -1714,132 +1838,6 @@ impl BybitWebSocketClient {
         .await
     }
 
-    /// Batch cancels multiple orders using Nautilus domain objects.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if batch cancellation fails or if not authenticated.
-    pub async fn batch_cancel_orders_by_id(
-        &self,
-        product_type: BybitProductType,
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_ids: Vec<InstrumentId>,
-        venue_order_ids: Vec<Option<VenueOrderId>>,
-        client_order_ids: Vec<Option<ClientOrderId>>,
-    ) -> BybitWsResult<()> {
-        if instrument_ids.len() != venue_order_ids.len()
-            || instrument_ids.len() != client_order_ids.len()
-        {
-            return Err(BybitWsError::ClientError(
-                "instrument_ids, venue_order_ids, and client_order_ids must have the same length"
-                    .to_string(),
-            ));
-        }
-
-        let batch_req_id = UUID4::new().to_string();
-
-        let mut params_vec = Vec::new();
-        let mut batch_cancel_data = Vec::new();
-
-        for ((instrument_id, venue_order_id), client_order_id) in instrument_ids
-            .into_iter()
-            .zip(venue_order_ids.into_iter())
-            .zip(client_order_ids.into_iter())
-        {
-            let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
-                .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
-            let raw_symbol = Ustr::from(bybit_symbol.raw_symbol());
-
-            let params = BybitWsCancelOrderParams {
-                category: product_type,
-                symbol: raw_symbol,
-                order_id: venue_order_id.map(|id| id.to_string()),
-                order_link_id: client_order_id.as_ref().map(|id| id.to_string()),
-            };
-
-            params_vec.push(params);
-
-            if let Some(client_order_id) = client_order_id {
-                batch_cancel_data.push((
-                    client_order_id,
-                    (
-                        client_order_id,
-                        trader_id,
-                        strategy_id,
-                        instrument_id,
-                        venue_order_id,
-                    ),
-                ));
-            }
-        }
-
-        if !batch_cancel_data.is_empty() {
-            let cmd = HandlerCommand::RegisterBatchCancel {
-                req_id: batch_req_id.clone(),
-                cancels: batch_cancel_data,
-            };
-            let cmd_tx = self.cmd_tx.read().await;
-            if let Err(e) = cmd_tx.send(cmd) {
-                tracing::error!("Failed to send RegisterBatchCancel command: {e}");
-            }
-        }
-
-        self.batch_cancel_orders_with_req_id(params_vec, batch_req_id)
-            .await
-    }
-
-    /// Internal method to batch cancel with a specific request ID.
-    async fn batch_cancel_orders_with_req_id(
-        &self,
-        orders: Vec<BybitWsCancelOrderParams>,
-        req_id: String,
-    ) -> BybitWsResult<()> {
-        if !self.is_authenticated.load(Ordering::Relaxed) {
-            return Err(BybitWsError::Authentication(
-                "Must be authenticated to cancel orders".to_string(),
-            ));
-        }
-
-        if orders.is_empty() {
-            return Ok(());
-        }
-
-        if orders.len() > 20 {
-            return Err(BybitWsError::ClientError(
-                "Batch cancel limit is 20 orders per request".to_string(),
-            ));
-        }
-
-        // Extract category from first order (all orders must have the same category)
-        let category = orders[0].category;
-
-        let request_items: Vec<BybitWsBatchCancelItem> = orders
-            .into_iter()
-            .map(|order| BybitWsBatchCancelItem {
-                symbol: order.symbol,
-                order_id: order.order_id,
-                order_link_id: order.order_link_id,
-            })
-            .collect();
-
-        let args = BybitWsBatchCancelOrderArgs {
-            category,
-            request: request_items,
-        };
-
-        let request = BybitWsRequest {
-            req_id: Some(req_id),
-            op: BybitWsOrderRequestOp::CancelBatch,
-            header: BybitWsHeader::now(),
-            args: vec![args],
-        };
-
-        let payload = serde_json::to_string(&request).map_err(BybitWsError::from)?;
-
-        self.send_text(&payload).await
-    }
-
     /// Builds order params for placing an order.
     #[allow(clippy::too_many_arguments)]
     pub fn build_place_order_params(
@@ -2043,6 +2041,37 @@ impl BybitWebSocketClient {
         })
     }
 
+    /// Builds order params for canceling an order via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if symbol parsing fails or if neither venue_order_id
+    /// nor client_order_id is provided.
+    pub fn build_cancel_order_params(
+        &self,
+        product_type: BybitProductType,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        client_order_id: Option<ClientOrderId>,
+    ) -> BybitWsResult<BybitWsCancelOrderParams> {
+        if venue_order_id.is_none() && client_order_id.is_none() {
+            return Err(BybitWsError::ClientError(
+                "Either venue_order_id or client_order_id must be provided".to_string(),
+            ));
+        }
+
+        let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
+            .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
+        let raw_symbol = Ustr::from(bybit_symbol.raw_symbol());
+
+        Ok(BybitWsCancelOrderParams {
+            category: product_type,
+            symbol: raw_symbol,
+            order_id: venue_order_id.map(|v| v.to_string()),
+            order_link_id: client_order_id.map(|c| c.to_string()),
+        })
+    }
+
     fn default_headers() -> Vec<(String, String)> {
         vec![
             ("Content-Type".to_string(), "application/json".to_string()),
@@ -2101,10 +2130,6 @@ impl BybitWebSocketClient {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -2112,15 +2137,14 @@ mod tests {
     use super::*;
     use crate::{
         common::testing::load_test_json,
-        websocket::{handler::FeedHandler, messages::BybitWsMessage},
+        websocket::{classify_bybit_message, messages::BybitWsMessage},
     };
 
     #[rstest]
     fn classify_orderbook_snapshot() {
         let json: Value = serde_json::from_str(&load_test_json("ws_orderbook_snapshot.json"))
             .expect("invalid fixture");
-        let message =
-            FeedHandler::classify_bybit_message(&json).expect("expected orderbook message");
+        let message = classify_bybit_message(json);
         assert!(matches!(message, BybitWsMessage::Orderbook(_)));
     }
 
@@ -2128,7 +2152,7 @@ mod tests {
     fn classify_trade_snapshot() {
         let json: Value =
             serde_json::from_str(&load_test_json("ws_public_trade.json")).expect("invalid fixture");
-        let message = FeedHandler::classify_bybit_message(&json).expect("expected trade message");
+        let message = classify_bybit_message(json);
         assert!(matches!(message, BybitWsMessage::Trade(_)));
     }
 
@@ -2136,7 +2160,7 @@ mod tests {
     fn classify_ticker_linear_snapshot() {
         let json: Value = serde_json::from_str(&load_test_json("ws_ticker_linear.json"))
             .expect("invalid fixture");
-        let message = FeedHandler::classify_bybit_message(&json).expect("expected ticker message");
+        let message = classify_bybit_message(json);
         assert!(matches!(message, BybitWsMessage::TickerLinear(_)));
     }
 
@@ -2144,7 +2168,7 @@ mod tests {
     fn classify_ticker_option_snapshot() {
         let json: Value = serde_json::from_str(&load_test_json("ws_ticker_option.json"))
             .expect("invalid fixture");
-        let message = FeedHandler::classify_bybit_message(&json).expect("expected ticker message");
+        let message = classify_bybit_message(json);
         assert!(matches!(message, BybitWsMessage::TickerOption(_)));
     }
 
@@ -2339,7 +2363,8 @@ mod tests {
 
         let client = BybitWebSocketClient::new_trade(
             BybitEnvironment::Testnet,
-            Credential::new("test-key", "test-secret"),
+            Some("test-key".to_string()),
+            Some("test-secret".to_string()),
             None,
             Some(20),
         );
@@ -2391,7 +2416,8 @@ mod tests {
 
         let client = BybitWebSocketClient::new_trade(
             BybitEnvironment::Testnet,
-            Credential::new("test-key", "test-secret"),
+            Some("test-key".to_string()),
+            Some("test-secret".to_string()),
             None,
             Some(20),
         );

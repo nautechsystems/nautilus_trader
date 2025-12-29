@@ -16,6 +16,10 @@ NautilusTrader relies on **two complementary benchmarking frameworks**:
 
 Most hot code paths benefit from **both** kinds of measurements.
 
+:::note
+iai is deterministic (immune to system noise) but results are machine-specific. Use it for regression detection within CI, not for cross-machine comparisons.
+:::
+
 ---
 
 ## Directory layout
@@ -34,9 +38,14 @@ them:
 
 ```toml
 [[bench]]
-name = "foo_criterion"             # file stem in benches/
+name = "foo_criterion"
 path = "benches/foo_criterion.rs"
-harness = false                    # disable the default libtest harness
+harness = false
+
+[[bench]]
+name = "foo_iai"
+path = "benches/foo_iai.rs"
+harness = false
 ```
 
 ---
@@ -55,7 +64,7 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_my_algo(c: &mut Criterion) {
-    let data = prepare_data(); // heavy set-up done once
+    let data = prepare_data(); // Heavy set-up done once
 
     c.bench_function("my_algo", |b| {
         b.iter(|| my_algo(black_box(&data)));
@@ -140,20 +149,15 @@ the change permanent via `/etc/sysctl.conf` if desired.
 #### macOS
 
 On macOS, `DTrace` requires root permissions, so you must run `cargo flamegraph`
-with `sudo`:
+with `sudo`.
+
+:::warning
+Running with `sudo` creates files in `target/` owned by root, causing permission errors with subsequent `cargo` commands. You may need to remove root-owned files manually or run `sudo cargo clean`.
+:::
 
 ```bash
-# Note the use of sudo
 sudo cargo flamegraph --bench matching -p nautilus-common --profile bench
 ```
-
-> **Warning**
-> Running with `sudo` will create files in your `target/` directory that are
-> owned by the `root` user. This can cause permission errors with subsequent
-> `cargo` commands.
->
-> To fix this, you may need to remove the root-owned files manually, or simply
-> run `sudo cargo clean` to remove the entire `target/` directory.
 
 Because `[profile.bench]` keeps full debug symbols the SVG will show readable
 function names without bloating production binaries (which still use
@@ -168,9 +172,9 @@ function names without bloating production binaries (which still use
 
 ## Templates
 
-Ready-to-copy starter files live in `docs/dev_templates/`.
+Ready-to-copy starter files live in [`docs/dev_templates/`](../dev_templates/):
 
-- **Criterion**: `criterion_template.rs`
-- **iai**: `iai_template.rs`
+- **Criterion**: [`criterion_template.rs`](../dev_templates/criterion_template.rs)
+- **iai**: [`iai_template.rs`](../dev_templates/iai_template.rs)
 
 Copy the template into `benches/`, adjust imports and names, and start measuring!

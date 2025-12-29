@@ -414,10 +414,6 @@ pub fn decode_sqrt_price_x96_to_price_tokens_adjusted(
     Ok(Price::from_raw(price_raw, FIXED_PRECISION))
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     // Most of the tests are based on https://github.com/Uniswap/v3-core/blob/main/test/SqrtPriceMath.spec.ts
