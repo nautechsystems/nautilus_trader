@@ -142,6 +142,20 @@ impl Portfolio {
         }
     }
 
+    /// Creates a shallow clone of the Portfolio that shares the same internal state.
+    ///
+    /// This is useful when multiple components need to reference the same Portfolio
+    /// without creating duplicate msgbus handler registrations.
+    #[must_use]
+    pub fn clone_shallow(&self) -> Self {
+        Self {
+            clock: self.clock.clone(),
+            cache: self.cache.clone(),
+            inner: self.inner.clone(),
+            config: self.config.clone(),
+        }
+    }
+
     fn register_message_handlers(
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,

@@ -144,7 +144,7 @@ impl NautilusKernel {
 
         let risk_engine = RiskEngine::new(
             config.risk_engine().unwrap_or_default(),
-            Portfolio::new(cache.clone(), clock.clone(), config.portfolio()),
+            portfolio.borrow().clone_shallow(),
             clock.clone(),
             cache.clone(),
         );
