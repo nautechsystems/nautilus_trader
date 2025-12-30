@@ -245,13 +245,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_has_api_credentials_none() {
-        let config = DeribitDataClientConfig::default();
-        // Without env vars set, should return false
-        assert!(!config.has_api_credentials());
-    }
-
-    #[rstest]
     fn test_has_api_credentials_in_config() {
         let config = DeribitDataClientConfig {
             api_key: Some("test_key".to_string()),

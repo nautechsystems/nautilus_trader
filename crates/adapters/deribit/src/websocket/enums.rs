@@ -44,11 +44,14 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 pub enum DeribitUpdateInterval {
     /// Raw updates - immediate delivery of each event.
     /// Requires authentication.
+    #[strum(serialize = "raw", serialize = "Raw")]
     Raw,
     /// Aggregated updates every 100 milliseconds (default).
     #[default]
+    #[strum(serialize = "100ms", serialize = "Ms100")]
     Ms100,
     /// Aggregated updates every 2 ticks.
+    #[strum(serialize = "agg2", serialize = "Agg2")]
     Agg2,
 }
 

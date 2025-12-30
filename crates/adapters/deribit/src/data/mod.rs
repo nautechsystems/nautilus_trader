@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use nautilus_common::{
     live::{runner::get_data_event_sender, runtime::get_runtime},
+    log_info,
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -60,7 +61,9 @@ use crate::{
         client::DeribitHttpClient,
         models::{DeribitCurrency, DeribitInstrumentKind},
     },
-    websocket::{client::DeribitWebSocketClient, messages::NautilusWsMessage},
+    websocket::{
+        client::DeribitWebSocketClient, enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+    },
 };
 
 /// Deribit live data client.
@@ -343,12 +346,25 @@ impl DataClient for DeribitDataClient {
             .await
             .context("websocket failed to become active")?;
 
+        // Authenticate if credentials are configured (required for raw streams)
+        if ws.has_credentials() {
+            ws.authenticate_session()
+                .await
+                .context("failed to authenticate Deribit websocket")?;
+            log_info!("Deribit WebSocket authenticated");
+        }
+
         // Get the stream and spawn processing task
         let stream = self.ws_client_mut()?.stream();
         self.spawn_stream_task(stream)?;
 
         self.is_connected.store(true, Ordering::Release);
-        tracing::info!(client_id = %self.client_id, "Connected");
+        let network = if self.config.use_testnet {
+            "testnet"
+        } else {
+            "mainnet"
+        };
+        log_info!("Deribit data client connected ({})", network);
         Ok(())
     }
 
@@ -378,7 +394,7 @@ impl DataClient for DeribitDataClient {
         self.cancellation_token = CancellationToken::new();
         self.is_connected.store(false, Ordering::Relaxed);
 
-        tracing::info!(client_id = %self.client_id, "Disconnected");
+        log_info!("Deribit data client disconnected");
         Ok(())
     }
 

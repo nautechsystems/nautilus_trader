@@ -57,6 +57,42 @@ impl Credential {
         }
     }
 
+    /// Load credentials from environment variables.
+    ///
+    /// For mainnet: Looks for `DERIBIT_API_KEY` and `DERIBIT_API_SECRET`.
+    /// For testnet: Looks for `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET`.
+    ///
+    /// Returns `None` if either key or secret is not set.
+    #[must_use]
+    pub fn from_env(is_testnet: bool) -> Option<Self> {
+        let (key_var, secret_var) = if is_testnet {
+            ("DERIBIT_TESTNET_API_KEY", "DERIBIT_TESTNET_API_SECRET")
+        } else {
+            ("DERIBIT_API_KEY", "DERIBIT_API_SECRET")
+        };
+
+        let key = std::env::var(key_var).ok()?;
+        let secret = std::env::var(secret_var).ok()?;
+
+        Some(Self::new(key, secret))
+    }
+
+    /// Resolves credentials from provided values or environment.
+    ///
+    /// If both `api_key` and `api_secret` are provided, uses those.
+    /// Otherwise falls back to loading from environment variables.
+    #[must_use]
+    pub fn resolve(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        is_testnet: bool,
+    ) -> Option<Self> {
+        match (api_key, api_secret) {
+            (Some(k), Some(s)) => Some(Self::new(k, s)),
+            _ => Self::from_env(is_testnet),
+        }
+    }
+
     /// Returns the API key associated with this credential.
     #[must_use]
     pub fn api_key(&self) -> &Ustr {

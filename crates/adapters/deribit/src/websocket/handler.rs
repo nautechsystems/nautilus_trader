@@ -49,6 +49,21 @@ use super::{
     parse::{parse_book_msg, parse_quote_msg, parse_ticker_to_quote, parse_trades_data},
 };
 
+/// Type of pending request for request ID correlation.
+#[derive(Debug, Clone)]
+pub enum PendingRequestType {
+    /// Authentication request.
+    Authenticate,
+    /// Subscribe request with requested channels.
+    Subscribe { channels: Vec<String> },
+    /// Unsubscribe request with requested channels.
+    Unsubscribe { channels: Vec<String> },
+    /// Set heartbeat request.
+    SetHeartbeat,
+    /// Test/ping request (heartbeat response).
+    Test,
+}
+
 /// Commands sent from the client to the handler.
 #[allow(missing_debug_implementations)]
 pub enum HandlerCommand {
@@ -57,7 +72,10 @@ pub enum HandlerCommand {
     /// Disconnect the WebSocket.
     Disconnect,
     /// Authenticate with credentials.
-    Authenticate { payload: String },
+    Authenticate {
+        /// Serialized auth params (DeribitAuthParams or DeribitRefreshTokenParams).
+        auth_params: serde_json::Value,
+    },
     /// Enable heartbeat with interval.
     SetHeartbeat { interval: u64 },
     /// Initialize the instrument cache.
@@ -87,6 +105,8 @@ pub struct DeribitWsFeedHandler {
     retry_manager: RetryManager<DeribitWsError>,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
     request_id_counter: AtomicU64,
+    /// Pending requests awaiting response, keyed by request ID.
+    pending_requests: AHashMap<u64, PendingRequestType>,
 }
 
 impl DeribitWsFeedHandler {
@@ -112,6 +132,7 @@ impl DeribitWsFeedHandler {
             retry_manager: create_websocket_retry_manager(),
             instruments_cache: AHashMap::new(),
             request_id_counter: AtomicU64::new(1),
+            pending_requests: AHashMap::new(),
         }
     }
 
@@ -151,13 +172,18 @@ impl DeribitWsFeedHandler {
     }
 
     /// Handles a subscribe command.
+    ///
+    /// Note: The client has already called `mark_subscribe` before sending this command.
     async fn handle_subscribe(&mut self, channels: Vec<String>) -> Result<(), DeribitWsError> {
         let request_id = self.next_request_id();
 
-        // Mark channels as pending
-        for channel in &channels {
-            self.subscriptions_state.mark_subscribe(channel);
-        }
+        // Track this request for response correlation
+        self.pending_requests.insert(
+            request_id,
+            PendingRequestType::Subscribe {
+                channels: channels.clone(),
+            },
+        );
 
         let request = DeribitJsonRpcRequest::new(
             request_id,
@@ -170,7 +196,7 @@ impl DeribitWsFeedHandler {
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
 
-        tracing::debug!("Subscribing to channels: {:?}", channels);
+        tracing::debug!(request_id, "Subscribing to channels: {:?}", channels);
         self.send_with_retry(payload, None).await
     }
 
@@ -178,10 +204,13 @@ impl DeribitWsFeedHandler {
     async fn handle_unsubscribe(&mut self, channels: Vec<String>) -> Result<(), DeribitWsError> {
         let request_id = self.next_request_id();
 
-        // Mark channels as pending unsubscribe
-        for channel in &channels {
-            self.subscriptions_state.mark_unsubscribe(channel);
-        }
+        // Track this request for response correlation
+        self.pending_requests.insert(
+            request_id,
+            PendingRequestType::Unsubscribe {
+                channels: channels.clone(),
+            },
+        );
 
         let request = DeribitJsonRpcRequest::new(
             request_id,
@@ -194,13 +223,17 @@ impl DeribitWsFeedHandler {
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
 
-        tracing::debug!("Unsubscribing from channels: {:?}", channels);
+        tracing::debug!(request_id, "Unsubscribing from channels: {:?}", channels);
         self.send_with_retry(payload, None).await
     }
 
     /// Handles enabling heartbeat.
     async fn handle_set_heartbeat(&mut self, interval: u64) -> Result<(), DeribitWsError> {
         let request_id = self.next_request_id();
+
+        // Track this request for response correlation
+        self.pending_requests
+            .insert(request_id, PendingRequestType::SetHeartbeat);
 
         let request = DeribitJsonRpcRequest::new(
             request_id,
@@ -211,20 +244,28 @@ impl DeribitWsFeedHandler {
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
 
-        tracing::debug!("Enabling heartbeat with interval: {} seconds", interval);
+        tracing::debug!(
+            request_id,
+            "Enabling heartbeat with interval: {} seconds",
+            interval
+        );
         self.send_with_retry(payload, None).await
     }
 
     /// Responds to a heartbeat test_request.
-    async fn handle_heartbeat_test_request(&self) -> Result<(), DeribitWsError> {
+    async fn handle_heartbeat_test_request(&mut self) -> Result<(), DeribitWsError> {
         let request_id = self.next_request_id();
+
+        // Track this request for response correlation
+        self.pending_requests
+            .insert(request_id, PendingRequestType::Test);
 
         let request = DeribitJsonRpcRequest::new(request_id, "public/test", serde_json::json!({}));
 
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
 
-        tracing::trace!("Responding to heartbeat test_request");
+        tracing::trace!(request_id, "Responding to heartbeat test_request");
         self.send_with_retry(payload, None).await
     }
 
@@ -241,10 +282,26 @@ impl DeribitWsFeedHandler {
                     client.disconnect().await;
                 }
             }
-            HandlerCommand::Authenticate { payload } => {
-                tracing::debug!("Authenticating...");
-                if let Err(e) = self.send_with_retry(payload, None).await {
-                    tracing::error!("Authentication send failed: {e}");
+            HandlerCommand::Authenticate { auth_params } => {
+                let request_id = self.next_request_id();
+                tracing::debug!(request_id, "Authenticating...");
+
+                // Track this request for response correlation
+                self.pending_requests
+                    .insert(request_id, PendingRequestType::Authenticate);
+
+                let request = DeribitJsonRpcRequest::new(request_id, "public/auth", auth_params);
+                match serde_json::to_string(&request) {
+                    Ok(payload) => {
+                        if let Err(e) = self.send_with_retry(payload, None).await {
+                            tracing::error!("Authentication send failed: {e}");
+                            self.auth_tracker.fail(format!("Send failed: {e}"));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to serialize auth request: {e}");
+                        self.auth_tracker.fail(format!("Serialization failed: {e}"));
+                    }
                 }
             }
             HandlerCommand::SetHeartbeat { interval } => {
@@ -299,37 +356,57 @@ impl DeribitWsFeedHandler {
 
         match ws_msg {
             DeribitWsMessage::Response(response) => {
-                // Handle subscription response
-                if let Some(result) = &response.result
-                    && let Some(channels) = result.as_array()
+                // Look up the request type by ID for explicit correlation
+                if let Some(request_id) = response.id
+                    && let Some(request_type) = self.pending_requests.remove(&request_id)
                 {
-                    for channel in channels {
-                        if let Some(ch) = channel.as_str() {
-                            self.subscriptions_state.confirm_subscribe(ch);
-                            tracing::debug!("Subscription confirmed: {ch}");
+                    match request_type {
+                        PendingRequestType::Authenticate => {
+                            // Parse authentication result
+                            if let Some(result) = &response.result {
+                                match serde_json::from_value::<DeribitAuthResult>(result.clone()) {
+                                    Ok(auth_result) => {
+                                        self.auth_tracker.succeed();
+                                        tracing::info!(
+                                            "WebSocket authenticated successfully (request_id={}, scope={}, expires_in={}s)",
+                                            request_id,
+                                            auth_result.scope,
+                                            auth_result.expires_in
+                                        );
+                                        return Some(NautilusWsMessage::Authenticated(Box::new(
+                                            auth_result,
+                                        )));
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            request_id,
+                                            "Failed to parse auth result: {e}"
+                                        );
+                                        self.auth_tracker
+                                            .fail(format!("Failed to parse auth result: {e}"));
+                                    }
+                                }
+                            }
                         }
-                    }
-                }
-                // Check for authentication response
-                if let Some(result) = &response.result
-                    && result.get("access_token").is_some()
-                {
-                    // Parse the full auth result
-                    match serde_json::from_value::<DeribitAuthResult>(result.clone()) {
-                        Ok(auth_result) => {
-                            self.auth_tracker.succeed();
-                            tracing::info!(
-                                "Authentication successful, scope: {}, expires_in: {}s",
-                                auth_result.scope,
-                                auth_result.expires_in
-                            );
-                            return Some(NautilusWsMessage::Authenticated(Box::new(auth_result)));
+                        PendingRequestType::Subscribe { channels } => {
+                            // Confirm each channel in the subscription
+                            for ch in &channels {
+                                self.subscriptions_state.confirm_subscribe(ch);
+                                tracing::debug!("Subscription confirmed: {ch}");
+                            }
                         }
-                        Err(e) => {
-                            tracing::error!("Failed to parse auth result: {e}");
-                            self.auth_tracker
-                                .fail(format!("Failed to parse auth result: {e}"));
-                            return None;
+                        PendingRequestType::Unsubscribe { channels } => {
+                            // Confirm each channel in the unsubscription
+                            for ch in &channels {
+                                self.subscriptions_state.confirm_unsubscribe(ch);
+                                tracing::debug!("Unsubscription confirmed: {ch}");
+                            }
+                        }
+                        PendingRequestType::SetHeartbeat => {
+                            tracing::debug!("Heartbeat enabled (request_id={})", request_id);
+                        }
+                        PendingRequestType::Test => {
+                            tracing::trace!("Heartbeat test acknowledged (request_id={})", request_id);
                         }
                     }
                 }
