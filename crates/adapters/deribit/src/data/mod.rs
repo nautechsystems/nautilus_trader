@@ -55,7 +55,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::consts::DERIBIT_VENUE,
+    common::{consts::DERIBIT_VENUE, parse::parse_instrument_kind_currency},
     config::DeribitDataClientConfig,
     http::{
         client::DeribitHttpClient,
@@ -398,12 +398,93 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
-        todo!("Implement subscribe_instruments");
+    fn subscribe_instruments(&mut self, cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+        // Extract kind and currency from params, defaulting to "any.any" (all instruments)
+        let kind = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("kind"))
+            .map(|s| s.as_str())
+            .unwrap_or("any")
+            .to_string();
+        let currency = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("currency"))
+            .map(|s| s.as_str())
+            .unwrap_or("any")
+            .to_string();
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        tracing::info!(
+            "Subscribing to instrument state changes for {}.{}",
+            kind,
+            currency
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_instrument_state(&kind, &currency).await {
+                tracing::error!(
+                    "Failed to subscribe to instrument state for {}.{}: {}",
+                    kind,
+                    currency,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
-        todo!("Implement subscribe_instrument");
+    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        // Check if instrument is in cache (should be from connect())
+        let guard = self
+            .instruments
+            .read()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        if !guard.contains_key(&instrument_id) {
+            tracing::warn!(
+                "Instrument {} not in cache - it may have been created after connect()",
+                instrument_id
+            );
+        }
+        drop(guard);
+
+        // Determine kind and currency from instrument_id
+        let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        tracing::info!(
+            "Subscribing to instrument state for {} (channel: {}.{})",
+            instrument_id,
+            kind,
+            currency
+        );
+
+        // Subscribe to broader kind/currency channel (filter in handler)
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_instrument_state(&kind, &currency).await {
+                tracing::error!(
+                    "Failed to subscribe to instrument state for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
     fn subscribe_book_deltas(&mut self, _cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
@@ -482,12 +563,78 @@ impl DataClient for DeribitDataClient {
         todo!("Implement subscribe_bars");
     }
 
-    fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_instruments");
+    fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
+        let kind = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("kind"))
+            .map(|s| s.as_str())
+            .unwrap_or("any")
+            .to_string();
+        let currency = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("currency"))
+            .map(|s| s.as_str())
+            .unwrap_or("any")
+            .to_string();
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        tracing::info!(
+            "Unsubscribing from instrument state changes for {}.{}",
+            kind,
+            currency
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_instrument_state(&kind, &currency).await {
+                tracing::error!(
+                    "Failed to unsubscribe from instrument state for {}.{}: {}",
+                    kind,
+                    currency,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_instrument");
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        // Determine kind and currency from instrument_id
+        let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        tracing::info!(
+            "Unsubscribing from instrument state for {} (channel: {}.{})",
+            instrument_id,
+            kind,
+            currency
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_instrument_state(&kind, &currency).await {
+                tracing::error!(
+                    "Failed to unsubscribe from instrument state for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
     fn unsubscribe_book_deltas(&mut self, _cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {

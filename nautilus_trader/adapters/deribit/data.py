@@ -33,9 +33,13 @@ from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -230,6 +234,107 @@ class DeribitDataClient(LiveMarketDataClient):
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
+
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        """
+        Subscribe to instrument state changes for all instruments.
+
+        Uses the Deribit `instrument.state.{kind}.{currency}` WebSocket channel.
+
+        Parameters in command.params:
+        - kind: Instrument kind ("future", "option", "spot", etc.) - defaults to "any"
+        - currency: Currency ("BTC", "ETH", "USDC", etc.) - defaults to "any"
+
+        """
+        kind = "any"
+        currency = "any"
+
+        if command.params:
+            kind = command.params.get("kind", "any")
+            currency = command.params.get("currency", "any")
+
+        self._log.info(f"Subscribing to instrument state changes: {kind}.{currency}")
+        await self._ws_client.subscribe_instrument_state(kind, currency)
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        """
+        Subscribe to instrument state changes for a specific instrument.
+
+        Determines the kind and currency from the instrument ID and subscribes
+        to the appropriate `instrument.state.{kind}.{currency}` channel.
+
+        """
+        symbol = command.instrument_id.symbol.value
+
+        # Determine kind from instrument name pattern
+        if "PERPETUAL" in symbol:
+            kind = "future"
+        elif symbol.endswith("-C") or symbol.endswith("-P"):
+            kind = "option"
+        elif "_" in symbol and "-" not in symbol:
+            kind = "spot"
+        else:
+            kind = "future"  # Default for futures with expiry dates like "BTC-28MAR25"
+
+        # Extract currency from symbol
+        # For instruments like "BTC-PERPETUAL", "BTC-28MAR25", "BTC_USDC"
+        parts = symbol.replace("_", "-").split("-")
+        currency = parts[0] if parts else "any"
+
+        self._log.info(
+            f"Subscribing to instrument state for {command.instrument_id} "
+            f"(channel: instrument.state.{kind}.{currency})"
+        )
+        await self._ws_client.subscribe_instrument_state(kind, currency)
+
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
+        """
+        Unsubscribe from instrument state changes.
+
+        Parameters in command.params:
+        - kind: Instrument kind ("future", "option", "spot", etc.) - defaults to "any"
+        - currency: Currency ("BTC", "ETH", "USDC", etc.) - defaults to "any"
+
+        """
+        kind = "any"
+        currency = "any"
+
+        if command.params:
+            kind = command.params.get("kind", "any")
+            currency = command.params.get("currency", "any")
+
+        self._log.info(f"Unsubscribing from instrument state changes: {kind}.{currency}")
+        await self._ws_client.unsubscribe_instrument_state(kind, currency)
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        """
+        Unsubscribe from instrument state changes for a specific instrument.
+
+        Determines the kind and currency from the instrument ID and unsubscribes
+        from the appropriate `instrument.state.{kind}.{currency}` channel.
+
+        """
+        symbol = command.instrument_id.symbol.value
+
+        # Determine kind from instrument name pattern
+        if "PERPETUAL" in symbol:
+            kind = "future"
+        elif symbol.endswith("-C") or symbol.endswith("-P"):
+            kind = "option"
+        elif "_" in symbol and "-" not in symbol:
+            kind = "spot"
+        else:
+            kind = "future"
+
+        # Extract currency from symbol
+        parts = symbol.replace("_", "-").split("-")
+        currency = parts[0] if parts else "any"
+
+        self._log.info(
+            f"Unsubscribing from instrument state for {command.instrument_id} "
+            f"(channel: instrument.state.{kind}.{currency})"
+        )
+        await self._ws_client.unsubscribe_instrument_state(kind, currency)
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 

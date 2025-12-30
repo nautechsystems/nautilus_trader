@@ -570,4 +570,50 @@ impl DeribitWebSocketClient {
             client.unsubscribe(channels).await.map_err(to_pyvalue_err)
         })
     }
+
+    /// Subscribes to instrument state changes for a kind/currency pair.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - Instrument kind: "future", "option", "spot", "future_combo", "option_combo", or "any"
+    /// * `currency` - Currency: "BTC", "ETH", "USDC", "USDT", "EURR", or "any"
+    #[pyo3(name = "subscribe_instrument_state")]
+    fn py_subscribe_instrument_state<'py>(
+        &self,
+        py: Python<'py>,
+        kind: String,
+        currency: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_instrument_state(&kind, &currency)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from instrument state changes for a kind/currency pair.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - Instrument kind: "future", "option", "spot", "future_combo", "option_combo", or "any"
+    /// * `currency` - Currency: "BTC", "ETH", "USDC", "USDT", "EURR", or "any"
+    #[pyo3(name = "unsubscribe_instrument_state")]
+    fn py_unsubscribe_instrument_state<'py>(
+        &self,
+        py: Python<'py>,
+        kind: String,
+        currency: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_instrument_state(&kind, &currency)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
 }

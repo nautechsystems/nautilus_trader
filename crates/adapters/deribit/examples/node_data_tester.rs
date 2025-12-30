@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tester_config = DataTesterConfig::new(client_id, instrument_ids)
         .with_subscribe_quotes(true)
-        .with_subscribe_trades(true)
+        // .with_subscribe_trades(true)
         .with_request_instruments(true);
     let tester = DataTester::new(tester_config);
 

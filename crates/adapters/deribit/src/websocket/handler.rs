@@ -42,9 +42,9 @@ use super::{
     enums::{DeribitHeartbeatType, DeribitWsChannel},
     error::DeribitWsError,
     messages::{
-        DeribitAuthResult, DeribitBookMsg, DeribitHeartbeatParams, DeribitJsonRpcRequest,
-        DeribitQuoteMsg, DeribitSubscribeParams, DeribitTickerMsg, DeribitTradeMsg,
-        DeribitWsMessage, NautilusWsMessage, parse_raw_message,
+        DeribitAuthResult, DeribitBookMsg, DeribitHeartbeatParams, DeribitInstrumentStateMsg,
+        DeribitJsonRpcRequest, DeribitQuoteMsg, DeribitSubscribeParams, DeribitTickerMsg,
+        DeribitTradeMsg, DeribitWsMessage, NautilusWsMessage, parse_raw_message,
     },
     parse::{parse_book_msg, parse_quote_msg, parse_ticker_to_quote, parse_trades_data},
 };
@@ -406,7 +406,10 @@ impl DeribitWsFeedHandler {
                             tracing::debug!("Heartbeat enabled (request_id={})", request_id);
                         }
                         PendingRequestType::Test => {
-                            tracing::trace!("Heartbeat test acknowledged (request_id={})", request_id);
+                            tracing::trace!(
+                                "Heartbeat test acknowledged (request_id={})",
+                                request_id
+                            );
                         }
                     }
                 }
@@ -493,6 +496,26 @@ impl DeribitWsFeedHandler {
                                     Err(e) => {
                                         tracing::warn!("Failed to parse quote message: {e}");
                                     }
+                                }
+                            }
+                        }
+                        DeribitWsChannel::InstrumentState => {
+                            // Parse instrument state lifecycle notifications
+                            match serde_json::from_value::<DeribitInstrumentStateMsg>(data.clone())
+                            {
+                                Ok(state_msg) => {
+                                    tracing::info!(
+                                        "Instrument state change: {} -> {} (timestamp: {})",
+                                        state_msg.instrument_name,
+                                        state_msg.state,
+                                        state_msg.timestamp
+                                    );
+                                    // Return raw data for consumers to handle state changes
+                                    // TODO: Optionally emit instrument updates when instrument transitions to 'started'
+                                    return Some(NautilusWsMessage::Raw(data.clone()));
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to parse instrument state message: {e}");
                                 }
                             }
                         }

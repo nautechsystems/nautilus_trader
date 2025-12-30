@@ -264,6 +264,67 @@ pub struct DeribitQuoteMsg {
     pub best_ask_amount: f64,
 }
 
+/// Instrument lifecycle state from Deribit.
+///
+/// Represents the current state of an instrument in its lifecycle.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::AsRefStr,
+    strum::EnumIter,
+    strum::EnumString,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
+)]
+pub enum DeribitInstrumentState {
+    /// Instrument has been created but not yet active.
+    Created,
+    /// Instrument is active and trading.
+    Started,
+    /// Instrument has been settled (options/futures at expiry).
+    Settled,
+    /// Instrument is closed for trading.
+    Closed,
+    /// Instrument has been terminated.
+    Terminated,
+}
+
+impl std::fmt::Display for DeribitInstrumentState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Created => write!(f, "created"),
+            Self::Started => write!(f, "started"),
+            Self::Settled => write!(f, "settled"),
+            Self::Closed => write!(f, "closed"),
+            Self::Terminated => write!(f, "terminated"),
+        }
+    }
+}
+
+/// Instrument state notification from `instrument.state.{kind}.{currency}` channel.
+///
+/// Notifications are sent when an instrument's lifecycle state changes.
+/// Example: `{"instrument_name":"BTC-22MAR19","state":"created","timestamp":1553080940000}`
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitInstrumentStateMsg {
+    /// Name of the instrument.
+    pub instrument_name: Ustr,
+    /// Current state of the instrument.
+    pub state: DeribitInstrumentState,
+    /// Timestamp of the state change in milliseconds.
+    pub timestamp: u64,
+}
+
 /// Raw Deribit WebSocket message variants.
 #[derive(Debug, Clone)]
 pub enum DeribitWsMessage {
