@@ -19,6 +19,7 @@ from nautilus_trader.accounting.error import AccountBalanceNegative
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport MoneyRaw
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -192,19 +193,20 @@ cdef class CashAccount(Account):
             print("Cannot recalculate balance when no current balance")
             return
 
-        total_locked = Decimal(0)
+        cdef MoneyRaw total_raw = current_balance.total.raw_int_c()
+        cdef MoneyRaw locked_raw = 0
 
         cdef Money locked
         for locked in self._balances_locked.values():
             if locked.currency != currency:
                 continue
-            total_locked += locked.as_decimal()
+            locked_raw += locked.raw_int_c()
 
         # Calculate the free balance ensuring that it is never negative.
         #
         # In some edge-cases (for example, when an adapter temporarily reports
         # an inflated locked amount due to latency or rounding differences)
-        # the calculated ``total_locked`` can exceed the ``total`` balance. This
+        # the calculated ``locked_raw`` can exceed the ``total_raw`` balance. This
         # would normally propagate to the ``AccountBalance`` constructor where
         # the internal correctness checks would raise – ultimately causing the
         # entire application to terminate. That fail-fast behaviour is useful
@@ -215,20 +217,19 @@ cdef class CashAccount(Account):
         # Therefore we clamp the locked amount to the total balance whenever it
         # would otherwise exceed it. The resulting free balance is then zero –
         # indicating that no funds are currently available for trading.
-        total = current_balance.total.as_decimal()
-        total_free = total - total_locked
+        cdef MoneyRaw free_raw = total_raw - locked_raw
 
-        if total_free < 0:
+        if free_raw < 0:
             # Clamp the locked balance. We intentionally do not raise as this
             # condition can occur transiently when the venue and client state
             # are out-of-sync.
-            total_locked = total
-            total_free = Decimal(0)
+            locked_raw = total_raw
+            free_raw = 0
 
         cdef AccountBalance new_balance = AccountBalance(
             current_balance.total,
-            Money(total_locked, currency),
-            Money(total_free, currency),
+            Money.from_raw_c(locked_raw, currency),
+            Money.from_raw_c(free_raw, currency),
         )
 
         self._balances[currency] = new_balance

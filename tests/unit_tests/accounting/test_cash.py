@@ -667,6 +667,47 @@ def test_cash_account_eth_usdt_balance_calculation():
     assert usdt_balance.free == Money(3_655.22600905, USDT)
 
 
+def test_cash_account_recalculate_balance_uses_raw_and_clamps():
+    # Arrange
+    raw_total = 5_000_000_000_000  # large raw value to guard against float drift
+    total_money = Money.from_raw(raw_total, USD)
+    event = AccountState(
+        account_id=AccountId("RAW-CASH"),
+        account_type=AccountType.CASH,
+        base_currency=USD,
+        reported=True,
+        balances=[
+            AccountBalance(
+                total_money,
+                Money.from_raw(0, USD),
+                Money.from_raw(raw_total, USD),
+            ),
+        ],
+        margins=[],
+        info={},
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    account = CashAccount(event)
+    instrument_id = InstrumentId.from_str("RAWTEST.USD")
+
+    # Act/Assert: non-clamp path (locked == total)
+    account.update_balance_locked(instrument_id, Money.from_raw(raw_total, USD))
+    balance = account.balance(USD)
+    assert balance.total.raw - balance.locked.raw == balance.free.raw
+    assert balance.locked.raw == raw_total
+    assert balance.free.raw == 0
+
+    # Act/Assert: clamp path (locked > total)
+    account.update_balance_locked(instrument_id, Money.from_raw(raw_total + 12345, USD))
+    balance = account.balance(USD)
+    assert balance.total.raw - balance.locked.raw == balance.free.raw
+    assert balance.locked.raw == raw_total
+    assert balance.free.raw == 0
+
+
 def test_cash_account_update_with_fill_to_zero():
     # Arrange
     clock = TestClock()
