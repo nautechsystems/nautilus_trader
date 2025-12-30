@@ -418,8 +418,23 @@ impl DataClient for DeribitDataClient {
         todo!("Implement subscribe_book_snapshots");
     }
 
-    fn subscribe_quotes(&mut self, _cmd: &SubscribeQuotes) -> anyhow::Result<()> {
-        todo!("Implement subscribe_quotes")
+    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        tracing::info!("Subscribing to quotes for {}", instrument_id);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_quotes(instrument_id).await {
+                tracing::error!("Failed to subscribe to quotes for {}: {}", instrument_id, e);
+            }
+        });
+
+        Ok(())
     }
 
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
@@ -490,8 +505,27 @@ impl DataClient for DeribitDataClient {
         todo!("Implement unsubscribe_book_snapshots");
     }
 
-    fn unsubscribe_quotes(&mut self, _cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_quotes");
+    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        tracing::info!("Unsubscribing from quotes for {}", instrument_id);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
+                tracing::error!(
+                    "Failed to unsubscribe from quotes for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
