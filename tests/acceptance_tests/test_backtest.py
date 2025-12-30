@@ -1954,7 +1954,7 @@ class OptionConfig(StrategyConfig, frozen=True):
     option_id2: InstrumentId
     spread_id: InstrumentId
     spread_id2: InstrumentId
-    start_time: str | None = None
+    start_time: str
 
 
 class OptionStrategy(Strategy):
@@ -1974,12 +1974,13 @@ class OptionStrategy(Strategy):
         self.custom_data_received: list[CustomTestData] = []
 
     def on_start(self):
+        self.default_data_params = {"aggregate_spread_quotes":True}
+
         self.user_log("Strategy on_start called")
         self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
         self.bar_type_2 = BarType.from_str(
             f"{self.config.future_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
         )
-
         self.bar_type_3 = BarType.from_str(f"{self.config.spread_id2}-2-MINUTE-ASK-INTERNAL")
 
         self.user_log(f"Requesting instruments: {self.config.option_id}, {self.config.option_id2}, {self.config.future_id}, {self.config.future_id2}")
@@ -1999,16 +2000,20 @@ class OptionStrategy(Strategy):
             instrument_id=self.config.spread_id2,
         )
 
-        if self.config.start_time:
-            self.user_log(f"Requesting quote ticks for spread {self.config.spread_id2} from {self.config.start_time}")
-            self.request_quote_ticks(self.config.spread_id2, start=time_object_to_dt(self.config.start_time))
+        self.user_log(f"Requesting quote ticks for spread {self.config.spread_id2} from {self.config.start_time}")
+        self.request_quote_ticks(
+            self.config.spread_id2,
+            start=time_object_to_dt(self.config.start_time),
+            params=self.default_data_params,
+        )
 
-            self.user_log(f"Requesting bars for spread {self.bar_type_3} from {self.config.start_time}")
-            self.request_aggregated_bars(
-                [self.bar_type_3],
-                start=time_object_to_dt(self.config.start_time),
-                update_subscriptions=True,
-            )
+        self.user_log(f"Requesting bars for spread {self.bar_type_3} from {self.config.start_time}")
+        self.request_aggregated_bars(
+            [self.bar_type_3],
+            start=time_object_to_dt(self.config.start_time),
+            update_subscriptions=True,
+            params=self.default_data_params,
+        )
 
         # Subscribe to various data
         self.user_log("Subscribing to quote ticks and bars")
@@ -2017,8 +2022,8 @@ class OptionStrategy(Strategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.config.future_id)
         self.subscribe_quote_ticks(self.config.future_id2)
-        self.subscribe_quote_ticks(self.config.spread_id)
-        self.subscribe_quote_ticks(self.config.spread_id2)
+        self.subscribe_quote_ticks(self.config.spread_id, params=self.default_data_params)
+        self.subscribe_quote_ticks(self.config.spread_id2, params=self.default_data_params)
         self.subscribe_bars(self.bar_type_2)
         self.subscribe_bars(self.bar_type_3)
 
@@ -2026,7 +2031,11 @@ class OptionStrategy(Strategy):
         # Any client id can be used when loading custom data from the catalog,
         # but a client id or an instrument id is required
         self.user_log("Subscribing to custom data")
-        self.subscribe_data(DataType(CustomTestData), client_id=ClientId("any_id"))
+        self.subscribe_data(
+            DataType(CustomTestData),
+            client_id=ClientId("any_id"),
+            params={"filter_expr":"field('value') > 99"},
+        )
 
     def on_instrument(self, instrument):
         self.user_log(f"Received instrument: {instrument}")
@@ -2141,14 +2150,18 @@ class OptionStrategy(Strategy):
         self.submit_order(order)
         self.user_log(f"Order submitted: {order}")
 
-    def on_stop(self):
-        self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_quote_ticks(self.config.option_id)
-        self.unsubscribe_quote_ticks(self.config.option_id2)
-        self.unsubscribe_quote_ticks(self.config.spread_id)
-        self.unsubscribe_data(DataType(CustomTestData), client_id=ClientId("any_id"))
-
     def user_log(self, msg, color=LogColor.GREEN):
         self.log.warning(f"{msg}", color=color)
         # Test-specific: publish to message bus for test collection
         self.msgbus.publish(topic="test", msg=str(msg))
+
+    def on_stop(self):
+        self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_bars(self.bar_type_2)
+        self.unsubscribe_bars(self.bar_type_3)
+        self.unsubscribe_quote_ticks(self.config.option_id)
+        self.unsubscribe_quote_ticks(self.config.option_id2)
+        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
+        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
+        self.unsubscribe_quote_ticks(self.config.spread_id, params=self.default_data_params)
+        self.unsubscribe_quote_ticks(self.config.spread_id2, params=self.default_data_params)

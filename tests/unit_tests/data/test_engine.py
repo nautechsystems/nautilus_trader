@@ -4812,6 +4812,7 @@ class TestDataEngine:
             instrument_id=spread_instrument_id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"aggregate_spread_quotes": True},
         )
 
         # Act
@@ -4909,6 +4910,7 @@ class TestDataEngine:
             instrument_id=spread_instrument_id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"aggregate_spread_quotes": True},
         )
         self.data_engine.execute(subscribe)
 
@@ -4923,6 +4925,7 @@ class TestDataEngine:
             instrument_id=spread_instrument_id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"aggregate_spread_quotes": True},
         )
         self.data_engine.execute(unsubscribe)
 
@@ -5022,6 +5025,7 @@ class TestDataEngine:
             instrument_id=spread_instrument_id,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            params={"aggregate_spread_quotes": True},
         )
         self.data_engine.execute(subscribe)
 

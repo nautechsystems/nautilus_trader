@@ -186,6 +186,8 @@ class OptionStrategy(Strategy):
         self.spread_order_submitted2 = False
 
     def on_start(self):
+        self.default_data_params = {"aggregate_spread_quotes":True}
+
         self.user_log("Strategy on_start called")
         self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
 
@@ -216,13 +218,14 @@ class OptionStrategy(Strategy):
         )
 
         self.user_log(f"Requesting quote ticks for spread {self.config.spread_id2} from {start_time}")
-        self.request_quote_ticks(self.config.spread_id2, start=time_object_to_dt(start_time))
+        self.request_quote_ticks(self.config.spread_id2, start=time_object_to_dt(start_time), params=self.default_data_params)
 
         self.user_log(f"Requesting bars for spread {self.bar_type_3} from {start_time}")
         self.request_aggregated_bars(
             [self.bar_type_3],
             start=time_object_to_dt(start_time),
             update_subscriptions=True,
+            params=self.default_data_params,
         )
 
         # Subscribe to various data
@@ -232,8 +235,8 @@ class OptionStrategy(Strategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.config.future_id)
         self.subscribe_quote_ticks(self.config.future_id2)
-        self.subscribe_quote_ticks(self.config.spread_id)
-        self.subscribe_quote_ticks(self.config.spread_id2)
+        self.subscribe_quote_ticks(self.config.spread_id, params=self.default_data_params)
+        self.subscribe_quote_ticks(self.config.spread_id2, params=self.default_data_params)
         self.subscribe_bars(self.bar_type_2)
         self.subscribe_bars(self.bar_type_3)
 
@@ -353,11 +356,14 @@ class OptionStrategy(Strategy):
 
     def on_stop(self):
         self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_bars(self.bar_type_2)
+        self.unsubscribe_bars(self.bar_type_3)
         self.unsubscribe_quote_ticks(self.config.option_id)
         self.unsubscribe_quote_ticks(self.config.option_id2)
         self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
         self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
-        self.unsubscribe_quote_ticks(self.config.spread_id)
+        self.unsubscribe_quote_ticks(self.config.spread_id, params=self.default_data_params)
+        self.unsubscribe_quote_ticks(self.config.spread_id2, params=self.default_data_params)
 
 
 # %% [markdown]

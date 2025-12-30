@@ -13,6 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import re
+
+from pyarrow.dataset import Expression
+from pyarrow.dataset import field
+
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import convert_to_snake_case
 from nautilus_trader.model.data import Bar
@@ -78,36 +83,43 @@ def urisafe_identifier(identifier: InstrumentId | BarType | str) -> str:
 
 def combine_filters(*filters):
     filters = tuple(x for x in filters if x is not None)
-
     if len(filters) == 0:
         return None
     elif len(filters) == 1:
         return filters[0]
     else:
         expr = filters[0]
-
         for f in filters[1:]:
             expr = expr & f
 
         return expr
 
 
-def parse_filters_expr(s: str | None):
+def parse_filters_expr(s: str | None) -> Expression | None:
     """
-    Parse a pyarrow.dataset filter expression from a string.
+    Parse a pyarrow.dataset filter expression from a string safely.
 
     >>> parse_filters_expr('field("Currency") == "CHF"')
     <pyarrow.dataset.Expression (Currency == "CHF")>
 
-    >>> parse_filters_expr("print('hello')")
+    >>> # Supports numeric comparisons and multi-character operators
+    >>> parse_filters_expr('field("Price") >= 150.50')
+    <pyarrow.dataset.Expression (Price >= 150.5)>
 
-    >>> parse_filters_expr("None")
+    >>> # Supports logical AND/OR with parentheses
+    >>> parse_filters_expr('(field("Qty") > 0) & (field("Symbol") != "BTC")')
+    <pyarrow.dataset.Expression ((Qty > 0) & (Symbol != "BTC"))>
+
+    >>> # Returns None for empty input
+    >>> parse_filters_expr(None)
+
+    >>> # Fails on unauthorized Python code
+    >>> parse_filters_expr("print('hello')")
+    Traceback (most recent call last):
+    ...
+    ValueError: Filter expression 'print('hello')' is not allowed...
 
     """
-    import re
-
-    from pyarrow.dataset import field
-
     if not s:
         return None
 
@@ -119,22 +131,24 @@ def parse_filters_expr(s: str | None):
         s = s.replace("'", '"')
 
     # Security: Only allow very specific PyArrow field expressions
-    # Pattern matches: field("name") == "value", field("name") != "value", etc.
-    # Optional opening/closing parentheses are allowed around each comparison so
-    # we can safely compose expressions such as
-    #     (field("Currency") == "CHF") | (field("Symbol") == "USD")
-    # Supported grammar (regex-validated):
-    #     [ '(' ] field("name") <op> "literal" [ ')' ] ( ( '|' | '&' ) ... )*
-    safe_pattern = (
-        r"^(\()?"
-        r'field\("[^"]+"\)\s*[!=<>]+\s*"[^"]*"'
-        r"(\))?"
-        r'(\s*[|&]\s*(\()?field\("[^"]+"\)\s*[!=<>]+\s*"[^"]*"(\))?)*$'
-    )
+    # REGEX COMPONENTS
+    # f_part: matches field("name")
+    f_part = r'field\("[^"]+"\)'
+    # o_part: matches ==, !=, <, <=, >, >=
+    o_part = r"[!=<>]{1,2}"
+    # v_part: matches "string", integers (100), or floats (100.5)
+    v_part = r'("[^"]*"|\d+(\.\d+)?)'
+
+    # Atomic comparison pattern: optional parens + field + op + value
+    comparison = rf"(\()?{f_part}\s*{o_part}\s*{v_part}(\))?"
+
+    # Full pattern: allows recursive chains of & (AND) or | (OR)
+    safe_pattern = rf"^{comparison}(\s*[|&]\s*{comparison})*$"
 
     if not re.match(safe_pattern, s.strip()):
         raise ValueError(
-            f"Filter expression '{s}' is not allowed. Only field() comparisons are permitted.",
+            f"Filter expression '{s}' is not allowed. "
+            "Only field() comparisons with strings or numbers are permitted.",
         )
 
     try:

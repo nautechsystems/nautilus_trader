@@ -175,6 +175,7 @@ cdef class SpreadQuoteAggregator:
     cdef readonly list _legs
     cdef readonly GreeksCalculator _greeks_calculator
     cdef readonly object _update_interval_seconds
+    cdef readonly int _quote_build_delay
     cdef readonly str _timer_name
     cdef readonly list _leg_ids
     cdef readonly int _n_legs

@@ -1370,8 +1370,6 @@ cdef class TimeBarAggregator(BarAggregator):
         The origin time offset.
     bar_build_delay : int, default 0
         The time delay (microseconds) before building and emitting a composite bar type.
-        15 microseconds can be useful in a backtest context, when aggregating internal bars
-        from internal bars several times so all messages are processed before a timer triggers.
 
     Raises
     ------
@@ -1702,6 +1700,8 @@ cdef class SpreadQuoteAggregator:
         The interval in seconds for timer-driven quote building. If None, uses quote-driven mode
         (builds immediately when all legs have quotes). If an integer, uses timer-driven mode
         (reads from internal state at the specified interval).
+    quote_build_delay : int, default 0
+        The time delay (microseconds) before building and emitting a quote.
 
     Raises
     ------
@@ -1717,6 +1717,7 @@ cdef class SpreadQuoteAggregator:
         Clock clock not None,
         bint historical,
         object update_interval_seconds = None,
+        int quote_build_delay = 0,
     ):
         self._handler = handler
         self._clock = clock
@@ -1747,6 +1748,7 @@ cdef class SpreadQuoteAggregator:
         self._is_futures_spread = self._spread_instrument.instrument_class == InstrumentClass.FUTURES_SPREAD
         self.historical_mode = historical
         self._update_interval_seconds = update_interval_seconds
+        self._quote_build_delay = quote_build_delay
         self.is_running = False
         self._historical_events = []
 
@@ -1775,6 +1777,7 @@ cdef class SpreadQuoteAggregator:
 
         cdef datetime now = self._clock.utc_now()
         start_time = find_closest_smaller_time(now, pd.Timedelta(0), pd.Timedelta(seconds=<int>self._update_interval_seconds))
+        start_time += timedelta(microseconds=self._quote_build_delay)
 
         # Determine if we should fire immediately (if start_time equals now)
         cdef bint fire_immediately = (start_time == now)
