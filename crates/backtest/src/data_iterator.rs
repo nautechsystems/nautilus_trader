@@ -20,9 +20,9 @@ use std::collections::BinaryHeap;
 
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
-use nautilus_model::data::{Data, HasTsInit};
+use nautilus_model::data::{Data, HasTsEvent};
 
-/// Internal convenience struct to keep heap entries ordered by `(ts_init, priority)`.
+/// Internal convenience struct to keep heap entries ordered by `(ts_event, priority)`.
 #[derive(Debug, Eq, PartialEq)]
 struct HeapEntry {
     ts: UnixNanos,
@@ -81,8 +81,8 @@ impl BacktestDataIterator {
             return;
         }
 
-        // Ensure sorted by ts_init
-        data.sort_by_key(HasTsInit::ts_init);
+        // Ensure sorted by ts_event (when the event occurred at the exchange)
+        data.sort_by_key(HasTsEvent::ts_event);
 
         let priority = if let Some(p) = self.priorities.get(name) {
             // Replace existing stream – remove previous traces then re-insert below.
@@ -157,7 +157,7 @@ impl BacktestDataIterator {
         self.indices.insert(entry.priority, next_index);
         if next_index < stream_vec.len() {
             self.heap.push(HeapEntry {
-                ts: stream_vec[next_index].ts_init(),
+                ts: stream_vec[next_index].ts_event(),
                 priority: entry.priority,
                 index: next_index,
             });
@@ -194,7 +194,7 @@ impl BacktestDataIterator {
             let idx = *self.indices.get(&priority).unwrap_or(&0);
             if idx < vec.len() {
                 self.heap.push(HeapEntry {
-                    ts: vec[idx].ts_init(),
+                    ts: vec[idx].ts_event(),
                     priority,
                     index: idx,
                 });
@@ -232,8 +232,8 @@ mod tests {
         let mut it = BacktestDataIterator::new();
         let stream = vec![quote("BTC-PERP.BINANCE", 1), quote("BTC-PERP.BINANCE", 3)];
         it.add_data("main", stream, true);
-        assert_eq!(it.next().unwrap().ts_init(), UnixNanos::from(1));
-        assert_eq!(it.next().unwrap().ts_init(), UnixNanos::from(3));
+        assert_eq!(it.next().unwrap().ts_event(), UnixNanos::from(1));
+        assert_eq!(it.next().unwrap().ts_event(), UnixNanos::from(3));
         assert!(it.next().is_none());
     }
 
@@ -245,7 +245,7 @@ mod tests {
 
         let mut ts = Vec::new();
         while let Some(d) = it.next() {
-            ts.push(d.ts_init());
+            ts.push(d.ts_event());
         }
         assert_eq!(
             ts,

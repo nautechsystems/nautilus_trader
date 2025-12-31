@@ -148,6 +148,31 @@ impl Data {
     }
 }
 
+/// Marker trait for types that carry an event timestamp.
+///
+/// `ts_event` is the moment (UNIX nanoseconds) when the event occurred at the venue/exchange.
+/// This is the authoritative timestamp for ordering events chronologically.
+pub trait HasTsEvent {
+    /// Returns the UNIX timestamp (nanoseconds) when the event occurred.
+    fn ts_event(&self) -> UnixNanos;
+}
+
+impl HasTsEvent for Data {
+    fn ts_event(&self) -> UnixNanos {
+        match self {
+            Self::Delta(d) => d.ts_event,
+            Self::Deltas(d) => d.ts_event,
+            Self::Depth10(d) => d.ts_event,
+            Self::Quote(q) => q.ts_event,
+            Self::Trade(t) => t.ts_event,
+            Self::Bar(b) => b.ts_event,
+            Self::MarkPriceUpdate(p) => p.ts_event,
+            Self::IndexPriceUpdate(p) => p.ts_event,
+            Self::InstrumentClose(c) => c.ts_event,
+        }
+    }
+}
+
 /// Marker trait for types that carry a creation timestamp.
 ///
 /// `ts_init` is the moment (UNIX nanoseconds) when this value was first generated or
