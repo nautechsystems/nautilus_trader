@@ -501,20 +501,28 @@ fn filter_orders<'a>(
 ) -> IndexMap<Decimal, Vec<OwnBookOrder>> {
     let accepted_buffer_ns = accepted_buffer_ns.unwrap_or(0);
     let ts_now = ts_now.unwrap_or_else(nanos_since_unix_epoch);
-    levels
-        .map(|level| {
-            let orders = level
-                .orders
-                .values()
-                .filter(|order| status.is_none_or(|f| f.contains(&order.status)))
-                .filter(|order| order.ts_accepted + accepted_buffer_ns <= ts_now)
-                .copied()
-                .collect::<Vec<OwnBookOrder>>();
 
-            (level.price.value.as_decimal(), orders)
-        })
-        .filter(|(_, orders)| !orders.is_empty())
-        .collect::<IndexMap<Decimal, Vec<OwnBookOrder>>>()
+    // Collect into result map, filtering empty levels
+    let mut result = IndexMap::new();
+
+    for level in levels {
+        // Pre-allocate with level's order count as upper bound
+        let mut orders = Vec::with_capacity(level.orders.len());
+
+        for order in level.orders.values() {
+            if status.is_none_or(|f| f.contains(&order.status))
+                && order.ts_accepted + accepted_buffer_ns <= ts_now
+            {
+                orders.push(*order);
+            }
+        }
+
+        if !orders.is_empty() {
+            result.insert(level.price.value.as_decimal(), orders);
+        }
+    }
+
+    result
 }
 
 fn group_quantities(
