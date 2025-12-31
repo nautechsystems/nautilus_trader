@@ -287,17 +287,10 @@ impl BookLadder {
 
                 if level.is_empty() {
                     self.levels.remove(&price);
-                    debug_assert!(
-                        !self.cache.values().any(|p| *p == price),
-                        "Cache should not contain removed price level {price:?}"
-                    );
                 }
 
-                debug_assert_eq!(
-                    self.cache.len(),
-                    self.levels.values().map(|level| level.len()).sum::<usize>(),
-                    "Cache size should equal total orders across all levels"
-                );
+                #[cfg(debug_assertions)]
+                self.debug_validate_cache_consistency();
                 return;
             }
 
@@ -307,10 +300,6 @@ impl BookLadder {
 
             if level.is_empty() {
                 self.levels.remove(&price);
-                debug_assert!(
-                    !self.cache.values().any(|p| *p == price),
-                    "Cache should not contain removed price level {price:?}"
-                );
             }
         }
 
@@ -319,12 +308,8 @@ impl BookLadder {
             self.add(order, flags);
         }
 
-        // Validate cache consistency after update
-        debug_assert_eq!(
-            self.cache.len(),
-            self.levels.values().map(|level| level.len()).sum::<usize>(),
-            "Cache size should equal total orders across all levels"
-        );
+        #[cfg(debug_assertions)]
+        self.debug_validate_cache_consistency();
     }
 
     /// Deletes an order from the ladder.
@@ -339,34 +324,18 @@ impl BookLadder {
         {
             // Check if order exists in level before modifying cache
             if level.orders.contains_key(&order_id) {
-                let level_len_before = level.len();
-
                 // Now safe to remove from cache since we know order exists in level
                 self.cache.remove(&order_id);
                 level.remove_by_id(order_id, sequence, ts_event);
 
-                debug_assert_eq!(
-                    level.len(),
-                    level_len_before - 1,
-                    "Level should have exactly one less order after removal"
-                );
-
                 if level.is_empty() {
                     self.levels.remove(&price);
-                    debug_assert!(
-                        !self.cache.values().any(|p| *p == price),
-                        "Cache should not contain removed price level {price:?}"
-                    );
                 }
             }
         }
 
-        // Validate cache consistency after removal
-        debug_assert_eq!(
-            self.cache.len(),
-            self.levels.values().map(|level| level.len()).sum::<usize>(),
-            "Cache size should equal total orders across all levels"
-        );
+        #[cfg(debug_assertions)]
+        self.debug_validate_cache_consistency();
     }
 
     /// Removes an entire price level from the ladder and returns it.
@@ -377,11 +346,8 @@ impl BookLadder {
                 self.cache.remove(order_id);
             }
 
-            debug_assert_eq!(
-                self.cache.len(),
-                self.levels.values().map(|level| level.len()).sum::<usize>(),
-                "Cache size should equal total orders across all levels"
-            );
+            #[cfg(debug_assertions)]
+            self.debug_validate_cache_consistency();
 
             Some(level)
         } else {
@@ -421,11 +387,9 @@ impl BookLadder {
             self.levels.len() <= 1,
             "L1 ladder should have at most 1 level after retain_best_only"
         );
-        debug_assert_eq!(
-            self.cache.len(),
-            self.levels.values().map(|l| l.len()).sum::<usize>(),
-            "Cache size should equal total orders across all levels"
-        );
+
+        #[cfg(debug_assertions)]
+        self.debug_validate_cache_consistency();
     }
 
     /// Returns the total size of all orders in the ladder.
@@ -485,6 +449,33 @@ impl BookLadder {
         }
 
         fills
+    }
+
+    /// Validates cache consistency in debug builds.
+    ///
+    /// This is an O(N) operation that checks:
+    /// 1. Cache size equals total orders across all levels
+    /// 2. No cache entries point to non-existent levels
+    ///
+    /// Only compiled in debug builds to avoid performance impact in release.
+    #[cfg(debug_assertions)]
+    fn debug_validate_cache_consistency(&self) {
+        let total_orders: usize = self.levels.values().map(|level| level.len()).sum();
+        assert_eq!(
+            self.cache.len(),
+            total_orders,
+            "Cache size ({}) should equal total orders across all levels ({})",
+            self.cache.len(),
+            total_orders
+        );
+
+        // Verify all cache entries point to valid levels
+        for (order_id, price) in &self.cache {
+            assert!(
+                self.levels.contains_key(price),
+                "Cache entry for order {order_id} points to non-existent level {price:?}"
+            );
+        }
     }
 }
 
