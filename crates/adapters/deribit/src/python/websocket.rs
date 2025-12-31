@@ -734,4 +734,46 @@ impl DeribitWebSocketClient {
                 .map_err(to_pyvalue_err)
         })
     }
+
+    /// Subscribes to chart/OHLC bar updates for an instrument.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to subscribe to
+    /// * `resolution` - Bar resolution: "1", "3", "5", "10", "15", "30", "60", "120", "180",
+    ///                  "360", "720", "1D" (minutes or 1D for daily)
+    #[pyo3(name = "subscribe_chart")]
+    fn py_subscribe_chart<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        resolution: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_chart(instrument_id, &resolution)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from chart/OHLC bar updates.
+    #[pyo3(name = "unsubscribe_chart")]
+    fn py_unsubscribe_chart<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        resolution: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_chart(instrument_id, &resolution)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
 }

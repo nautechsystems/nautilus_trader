@@ -6986,6 +6986,16 @@ class DeribitWebSocketClient:
         instrument_id: InstrumentId,
         interval: DeribitUpdateInterval | None = None,
     ) -> None: ...
+    async def subscribe_chart(
+        self,
+        instrument_id: InstrumentId,
+        resolution: str,
+    ) -> None: ...
+    async def unsubscribe_chart(
+        self,
+        instrument_id: InstrumentId,
+        resolution: str,
+    ) -> None: ...
 
 def get_deribit_http_base_url(is_testnet: bool) -> str: ...
 def get_deribit_ws_url(is_testnet: bool) -> str: ...

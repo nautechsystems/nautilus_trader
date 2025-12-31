@@ -686,6 +686,54 @@ pub fn parse_order_book(
     Ok(book)
 }
 
+/// Converts a Nautilus BarType to a Deribit chart resolution.
+///
+/// Deribit resolutions: "1", "3", "5", "10", "15", "30", "60", "120", "180", "360", "720", "1D"
+pub fn bar_spec_to_resolution(bar_type: &BarType) -> String {
+    use nautilus_model::enums::BarAggregation;
+
+    let spec = bar_type.spec();
+    match spec.aggregation {
+        BarAggregation::Minute => {
+            let step = spec.step.get();
+            // Map to nearest Deribit resolution
+            match step {
+                1 => "1".to_string(),
+                2..=3 => "3".to_string(),
+                4..=5 => "5".to_string(),
+                6..=10 => "10".to_string(),
+                11..=15 => "15".to_string(),
+                16..=30 => "30".to_string(),
+                31..=60 => "60".to_string(),
+                61..=120 => "120".to_string(),
+                121..=180 => "180".to_string(),
+                181..=360 => "360".to_string(),
+                361..=720 => "720".to_string(),
+                _ => "1D".to_string(),
+            }
+        }
+        BarAggregation::Hour => {
+            let step = spec.step.get();
+            match step {
+                1 => "60".to_string(),
+                2 => "120".to_string(),
+                3 => "180".to_string(),
+                4..=6 => "360".to_string(),
+                7..=12 => "720".to_string(),
+                _ => "1D".to_string(),
+            }
+        }
+        BarAggregation::Day => "1D".to_string(),
+        _ => {
+            tracing::warn!(
+                "Unsupported bar aggregation {:?}, defaulting to 1 minute",
+                spec.aggregation
+            );
+            "1".to_string()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::instruments::Instrument;

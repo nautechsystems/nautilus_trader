@@ -33,6 +33,7 @@ from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
@@ -41,6 +42,7 @@ from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeFundingRates
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
@@ -60,6 +62,7 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
@@ -67,6 +70,86 @@ from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments import Instrument
+
+
+def _bar_spec_to_deribit_resolution(bar_type) -> str:
+    """
+    Convert a bar type specification to a Deribit resolution string.
+
+    Maps bar specifications to the nearest supported Deribit resolution:
+    - Minutes: 1, 3, 5, 10, 15, 30, 60, 120, 180, 360, 720
+    - Daily: 1D
+
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type to convert.
+
+    Returns
+    -------
+    str
+        The Deribit resolution string (e.g., "1", "60", "1D").
+
+    """
+    spec = bar_type.spec
+    step = spec.step
+    aggregation = spec.aggregation
+
+    # Handle day aggregation
+    if aggregation == BarAggregation.DAY:
+        return "1D"
+
+    # Handle hour aggregation (convert to minutes)
+    if aggregation == BarAggregation.HOUR:
+        return _map_hour_step_to_resolution(step)
+
+    # Handle minute aggregation
+    if aggregation == BarAggregation.MINUTE:
+        return _map_minute_step_to_resolution(step)
+
+    # Unsupported aggregation, default to 1 minute
+    return "1"
+
+
+def _map_minute_step_to_resolution(step: int) -> str:
+    """
+    Map minute step to nearest Deribit resolution.
+    """
+    # Thresholds: (max_step, resolution_string)
+    thresholds = [
+        (1, "1"),
+        (3, "3"),
+        (5, "5"),
+        (10, "10"),
+        (15, "15"),
+        (30, "30"),
+        (60, "60"),
+        (120, "120"),
+        (180, "180"),
+        (360, "360"),
+        (720, "720"),
+    ]
+    for max_step, resolution in thresholds:
+        if step <= max_step:
+            return resolution
+    return "1D"
+
+
+def _map_hour_step_to_resolution(step: int) -> str:
+    """
+    Map hour step to nearest Deribit resolution (in minutes).
+    """
+    if step == 1:
+        return "60"
+    if step == 2:
+        return "120"
+    if step == 3:
+        return "180"
+    if step <= 6:
+        return "360"
+    if step <= 12:
+        return "720"
+    return "1D"
 
 
 class DeribitDataClient(LiveMarketDataClient):
@@ -671,6 +754,33 @@ class DeribitDataClient(LiveMarketDataClient):
             f"(via perpetual channel, interval: {interval_display})",
         )
         await self._ws_client.unsubscribe_perpetual_interest_rates(pyo3_instrument_id, interval)
+
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+            command.bar_type.instrument_id.value,
+        )
+        # Convert bar specification to Deribit resolution
+        resolution = _bar_spec_to_deribit_resolution(command.bar_type)
+
+        self._log.info(
+            f"Subscribing to bars for {command.bar_type.instrument_id} (resolution: {resolution})",
+            LogColor.BLUE,
+        )
+        await self._ws_client.subscribe_chart(pyo3_instrument_id, resolution)
+
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+            command.bar_type.instrument_id.value,
+        )
+        # Convert bar specification to Deribit resolution
+        resolution = _bar_spec_to_deribit_resolution(command.bar_type)
+
+        self._log.info(
+            f"Unsubscribing from bars for {command.bar_type.instrument_id} "
+            f"(resolution: {resolution})",
+            LogColor.BLUE,
+        )
+        await self._ws_client.unsubscribe_chart(pyo3_instrument_id, resolution)
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 

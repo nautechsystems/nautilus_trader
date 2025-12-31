@@ -42,13 +42,15 @@ use super::{
     enums::{DeribitHeartbeatType, DeribitWsChannel},
     error::DeribitWsError,
     messages::{
-        DeribitAuthResult, DeribitBookMsg, DeribitHeartbeatParams, DeribitInstrumentStateMsg,
-        DeribitJsonRpcRequest, DeribitPerpetualMsg, DeribitQuoteMsg, DeribitSubscribeParams,
-        DeribitTickerMsg, DeribitTradeMsg, DeribitWsMessage, NautilusWsMessage, parse_raw_message,
+        DeribitAuthResult, DeribitBookMsg, DeribitChartMsg, DeribitHeartbeatParams,
+        DeribitInstrumentStateMsg, DeribitJsonRpcRequest, DeribitPerpetualMsg, DeribitQuoteMsg,
+        DeribitSubscribeParams, DeribitTickerMsg, DeribitTradeMsg, DeribitWsMessage,
+        NautilusWsMessage, parse_raw_message,
     },
     parse::{
-        parse_book_msg, parse_perpetual_to_funding_rate, parse_quote_msg,
+        parse_book_msg, parse_chart_msg, parse_perpetual_to_funding_rate, parse_quote_msg,
         parse_ticker_to_index_price, parse_ticker_to_mark_price, parse_trades_data,
+        resolution_to_bar_type,
     },
 };
 
@@ -564,6 +566,65 @@ impl DeribitWsFeedHandler {
                                 }
                                 Err(e) => {
                                     tracing::warn!("Failed to parse instrument state message: {e}");
+                                }
+                            }
+                        }
+                        DeribitWsChannel::ChartTrades => {
+                            // Parse chart.trades messages into Bar objects
+                            if let Ok(chart_msg) =
+                                serde_json::from_value::<DeribitChartMsg>(data.clone())
+                            {
+                                // Extract instrument and resolution from channel
+                                // Channel format: chart.trades.{instrument}.{resolution}
+                                let parts: Vec<&str> = channel.split('.').collect();
+                                if parts.len() >= 4 {
+                                    let instrument_name = Ustr::from(parts[2]);
+                                    let resolution = parts[3];
+
+                                    if let Some(instrument) =
+                                        self.instruments_cache.get(&instrument_name)
+                                    {
+                                        let instrument_id = instrument.id();
+
+                                        // Create BarType from resolution and instrument
+                                        match resolution_to_bar_type(instrument_id, resolution) {
+                                            Ok(bar_type) => {
+                                                let price_precision = instrument.price_precision();
+                                                let size_precision = instrument.size_precision();
+
+                                                match parse_chart_msg(
+                                                    &chart_msg,
+                                                    bar_type,
+                                                    price_precision,
+                                                    size_precision,
+                                                    ts_init,
+                                                ) {
+                                                    Ok(bar) => {
+                                                        tracing::debug!("Parsed bar: {:?}", bar);
+                                                        return Some(NautilusWsMessage::Data(
+                                                            vec![Data::Bar(bar)],
+                                                        ));
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!(
+                                                            "Failed to parse chart message to bar: {e}"
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(
+                                                    "Failed to create BarType from resolution {}: {e}",
+                                                    resolution
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!(
+                                            "Instrument {} not found in cache for chart data",
+                                            instrument_name
+                                        );
+                                    }
                                 }
                             }
                         }

@@ -981,6 +981,41 @@ impl DeribitWebSocketClient {
         self.send_unsubscribe(vec![channel]).await
     }
 
+    /// Subscribes to chart/OHLC bar updates for an instrument.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to subscribe to
+    /// * `resolution` - Bar resolution: "1", "3", "5", "10", "15", "30", "60", "120", "180",
+    ///   "360", "720", "1D" (minutes or 1D for daily)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails.
+    pub async fn subscribe_chart(
+        &self,
+        instrument_id: InstrumentId,
+        resolution: &str,
+    ) -> DeribitWsResult<()> {
+        // Chart channel format: chart.trades.{instrument}.{resolution}
+        let channel = format!("chart.trades.{}.{}", instrument_id.symbol, resolution);
+        self.send_subscribe(vec![channel]).await
+    }
+
+    /// Unsubscribes from chart/OHLC bar updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
+    pub async fn unsubscribe_chart(
+        &self,
+        instrument_id: InstrumentId,
+        resolution: &str,
+    ) -> DeribitWsResult<()> {
+        let channel = format!("chart.trades.{}.{}", instrument_id.symbol, resolution);
+        self.send_unsubscribe(vec![channel]).await
+    }
+
     /// Checks if authentication is required for the given interval.
     ///
     /// # Errors

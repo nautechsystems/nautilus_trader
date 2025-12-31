@@ -55,7 +55,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::{consts::DERIBIT_VENUE, parse::parse_instrument_kind_currency},
+    common::{
+        consts::DERIBIT_VENUE,
+        parse::{bar_spec_to_resolution, parse_instrument_kind_currency},
+    },
     config::DeribitDataClientConfig,
     http::{
         client::DeribitHttpClient,
@@ -808,8 +811,23 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, _cmd: &SubscribeBars) -> anyhow::Result<()> {
-        todo!("Implement subscribe_bars");
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.bar_type.instrument_id();
+        // Convert bar spec to Deribit resolution
+        let resolution = bar_spec_to_resolution(&cmd.bar_type);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_chart(instrument_id, &resolution).await {
+                tracing::error!("Failed to subscribe to bars for {}: {}", instrument_id, e);
+            }
+        });
+
+        Ok(())
     }
 
     fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
@@ -1203,8 +1221,26 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, _cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_bars");
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.bar_type.instrument_id();
+        let resolution = bar_spec_to_resolution(&cmd.bar_type);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_chart(instrument_id, &resolution).await {
+                tracing::error!(
+                    "Failed to unsubscribe from bars for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
     fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {

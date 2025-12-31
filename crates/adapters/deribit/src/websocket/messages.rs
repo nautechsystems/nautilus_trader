@@ -340,6 +340,28 @@ pub struct DeribitPerpetualMsg {
     pub timestamp: u64,
 }
 
+/// Chart/OHLC bar data from chart.trades.{instrument}.{resolution} channel.
+///
+/// Sent via the `chart.trades.{instrument_name}.{resolution}` channel.
+/// Example: `{"tick":1767199200000,"open":87699.5,"high":87699.5,"low":87699.5,"close":87699.5,"volume":1.1403e-4,"cost":10.0}`
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitChartMsg {
+    /// Bar timestamp in milliseconds since Unix epoch.
+    pub tick: u64,
+    /// Opening price.
+    pub open: f64,
+    /// Highest price.
+    pub high: f64,
+    /// Lowest price.
+    pub low: f64,
+    /// Closing price.
+    pub close: f64,
+    /// Volume in base currency.
+    pub volume: f64,
+    /// Volume in USD.
+    pub cost: f64,
+}
+
 /// Raw Deribit WebSocket message variants.
 #[derive(Debug, Clone)]
 pub enum DeribitWsMessage {

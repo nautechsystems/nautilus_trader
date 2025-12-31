@@ -154,6 +154,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
     let book_delta_payload = load_json("ws_book_delta.json");
     let ticker_payload = load_json("ws_ticker.json");
     let quote_payload = load_json("ws_quote.json");
+    let chart_payload = load_json("ws_chart.json");
 
     while let Some(message) = socket.recv().await {
         let Ok(message) = message else { break };
@@ -243,6 +244,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                     Some(&ticker_payload)
                                 } else if channel.starts_with("quote.") {
                                     Some(&quote_payload)
+                                } else if channel.starts_with("chart.trades.") {
+                                    Some(&chart_payload)
                                 } else {
                                     None
                                 };
@@ -802,6 +805,62 @@ async fn test_quote_subscription_flow() {
     match message {
         NautilusWsMessage::Data(data) => {
             assert!(!data.is_empty(), "expected quote payload");
+        }
+        other => panic!("unexpected message: {other:?}"),
+    }
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_chart_subscription_flow() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+
+    let instruments = load_test_instruments();
+
+    let mut client = create_test_client(&ws_url);
+    client.cache_instruments(instruments);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+    client
+        .subscribe_chart(instrument_id, "1")
+        .await
+        .expect("subscribe failed");
+
+    // Verify subscription event recorded
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(ch, ok)| ch.starts_with("chart.trades.") && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    // Receive bar data from stream
+    let stream = client.stream();
+    pin_mut!(stream);
+    let message = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("no message received")
+        .expect("stream ended unexpectedly");
+
+    match message {
+        NautilusWsMessage::Data(data) => {
+            assert!(!data.is_empty(), "expected bar payload");
         }
         other => panic!("unexpected message: {other:?}"),
     }

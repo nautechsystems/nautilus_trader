@@ -19,11 +19,14 @@ use ahash::AHashMap;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     data::{
-        BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
-        OrderBookDeltas, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, bar::BarSpecification,
     },
-    enums::{AggressorSide, BookAction, OrderSide, RecordFlag},
-    identifiers::TradeId,
+    enums::{
+        AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType,
+        RecordFlag,
+    },
+    identifiers::{InstrumentId, TradeId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
@@ -33,7 +36,8 @@ use ustr::Ustr;
 use super::{
     enums::{DeribitBookAction, DeribitBookMsgType},
     messages::{
-        DeribitBookMsg, DeribitPerpetualMsg, DeribitQuoteMsg, DeribitTickerMsg, DeribitTradeMsg,
+        DeribitBookMsg, DeribitChartMsg, DeribitPerpetualMsg, DeribitQuoteMsg, DeribitTickerMsg,
+        DeribitTradeMsg,
     },
 };
 
@@ -440,6 +444,75 @@ pub fn parse_perpetual_to_funding_rate(
     ))
 }
 
+/// Converts a Deribit chart resolution and instrument to a Nautilus BarType.
+///
+/// Deribit resolutions: "1", "3", "5", "10", "15", "30", "60", "120", "180", "360", "720", "1D"
+///
+/// # Errors
+///
+/// Returns an error if the resolution string is invalid or BarType construction fails.
+pub fn resolution_to_bar_type(
+    instrument_id: InstrumentId,
+    resolution: &str,
+) -> anyhow::Result<BarType> {
+    let (step, aggregation) = match resolution {
+        "1" => (1, BarAggregation::Minute),
+        "3" => (3, BarAggregation::Minute),
+        "5" => (5, BarAggregation::Minute),
+        "10" => (10, BarAggregation::Minute),
+        "15" => (15, BarAggregation::Minute),
+        "30" => (30, BarAggregation::Minute),
+        "60" => (60, BarAggregation::Minute),
+        "120" => (120, BarAggregation::Minute),
+        "180" => (180, BarAggregation::Minute),
+        "360" => (360, BarAggregation::Minute),
+        "720" => (720, BarAggregation::Minute),
+        "1D" => (1, BarAggregation::Day),
+        _ => anyhow::bail!("Unsupported Deribit resolution: {resolution}"),
+    };
+
+    let spec = BarSpecification::new(step, aggregation, PriceType::Last);
+    Ok(BarType::new(
+        instrument_id,
+        spec,
+        AggregationSource::External,
+    ))
+}
+
+/// Parses a Deribit chart message from a WebSocket subscription into a [`Bar`].
+///
+/// Converts a single OHLCV data point from the `chart.trades.{instrument}.{resolution}` channel
+/// into a Nautilus Bar object.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Price or volume values are invalid
+/// - Bar construction fails validation
+pub fn parse_chart_msg(
+    chart_msg: &DeribitChartMsg,
+    bar_type: BarType,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Bar> {
+    use anyhow::Context;
+
+    let open = Price::new_checked(chart_msg.open, price_precision).context("Invalid open price")?;
+    let high = Price::new_checked(chart_msg.high, price_precision).context("Invalid high price")?;
+    let low = Price::new_checked(chart_msg.low, price_precision).context("Invalid low price")?;
+    let close =
+        Price::new_checked(chart_msg.close, price_precision).context("Invalid close price")?;
+    let volume =
+        Quantity::new_checked(chart_msg.volume, size_precision).context("Invalid volume")?;
+
+    // Convert timestamp from milliseconds to nanoseconds
+    let ts_event = UnixNanos::from(chart_msg.tick * NANOSECONDS_IN_MILLISECOND);
+
+    Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
+        .context("Invalid OHLC bar")
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -825,5 +898,87 @@ mod tests {
             UnixNanos::new(1_765_541_474_086_000_000)
         );
         assert!(funding_rate.next_funding_ns.is_none()); // Not available in ticker
+    }
+
+    #[rstest]
+    fn test_resolution_to_bar_type_1_minute() {
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        let bar_type = resolution_to_bar_type(instrument_id, "1").unwrap();
+
+        assert_eq!(bar_type.instrument_id(), instrument_id);
+        assert_eq!(bar_type.spec().step.get(), 1);
+        assert_eq!(bar_type.spec().aggregation, BarAggregation::Minute);
+        assert_eq!(bar_type.spec().price_type, PriceType::Last);
+        assert_eq!(bar_type.aggregation_source(), AggregationSource::External);
+    }
+
+    #[rstest]
+    fn test_resolution_to_bar_type_60_minute() {
+        let instrument_id = InstrumentId::from("ETH-PERPETUAL.DERIBIT");
+        let bar_type = resolution_to_bar_type(instrument_id, "60").unwrap();
+
+        assert_eq!(bar_type.instrument_id(), instrument_id);
+        assert_eq!(bar_type.spec().step.get(), 60);
+        assert_eq!(bar_type.spec().aggregation, BarAggregation::Minute);
+    }
+
+    #[rstest]
+    fn test_resolution_to_bar_type_daily() {
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        let bar_type = resolution_to_bar_type(instrument_id, "1D").unwrap();
+
+        assert_eq!(bar_type.instrument_id(), instrument_id);
+        assert_eq!(bar_type.spec().step.get(), 1);
+        assert_eq!(bar_type.spec().aggregation, BarAggregation::Day);
+    }
+
+    #[rstest]
+    fn test_resolution_to_bar_type_invalid() {
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        let result = resolution_to_bar_type(instrument_id, "invalid");
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unsupported Deribit resolution")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_chart_msg() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_chart.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let chart_msg: DeribitChartMsg =
+            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+
+        // Verify chart message was deserialized correctly
+        assert_eq!(chart_msg.tick, 1_767_200_040_000);
+        assert_eq!(chart_msg.open, 87490.0);
+        assert_eq!(chart_msg.high, 87500.0);
+        assert_eq!(chart_msg.low, 87465.0);
+        assert_eq!(chart_msg.close, 87474.0);
+        assert_eq!(chart_msg.volume, 0.95978896);
+        assert_eq!(chart_msg.cost, 83970.0);
+
+        let bar_type = resolution_to_bar_type(instrument.id(), "1").unwrap();
+        let bar = parse_chart_msg(
+            &chart_msg,
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(bar.bar_type, bar_type);
+        assert_eq!(bar.open, instrument.make_price(87490.0));
+        assert_eq!(bar.high, instrument.make_price(87500.0));
+        assert_eq!(bar.low, instrument.make_price(87465.0));
+        assert_eq!(bar.close, instrument.make_price(87474.0));
+        assert_eq!(bar.volume, instrument.make_qty(1.0, None)); // Rounded to 1.0 with size_precision=0
+        assert_eq!(bar.ts_event, UnixNanos::new(1_767_200_040_000_000_000));
     }
 }
