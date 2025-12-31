@@ -110,6 +110,8 @@ pub struct OrderMatchingEngine {
     bid_consumption: AHashMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
     ask_consumption: AHashMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
     trade_consumption: QuantityRaw,
+    /// Reusable buffer for order iteration to avoid repeated allocations
+    orders_iteration_buffer: Vec<PassiveOrderAny>,
 }
 
 impl Debug for OrderMatchingEngine {
@@ -182,6 +184,7 @@ impl OrderMatchingEngine {
             bid_consumption: AHashMap::new(),
             ask_consumption: AHashMap::new(),
             trade_consumption: 0,
+            orders_iteration_buffer: Vec::new(),
         }
     }
 
@@ -205,6 +208,7 @@ impl OrderMatchingEngine {
         self.ask_consumption.clear();
         self.trade_consumption = 0;
         self.ids_generator.reset();
+        self.orders_iteration_buffer.clear();
 
         log::info!("Reset {}", self.instrument.id());
     }
@@ -1549,11 +1553,18 @@ impl OrderMatchingEngine {
 
         self.core.iterate();
 
-        let orders_bid = self.core.get_orders_bid().to_vec();
-        let orders_ask = self.core.get_orders_ask().to_vec();
+        // Use reusable buffer to avoid allocating new Vecs each iteration
+        // Process bid orders
+        self.orders_iteration_buffer.clear();
+        self.orders_iteration_buffer
+            .extend_from_slice(self.core.get_orders_bid());
+        self.iterate_orders_from_buffer(timestamp_ns);
 
-        self.iterate_orders(timestamp_ns, &orders_bid);
-        self.iterate_orders(timestamp_ns, &orders_ask);
+        // Process ask orders
+        self.orders_iteration_buffer.clear();
+        self.orders_iteration_buffer
+            .extend_from_slice(self.core.get_orders_ask());
+        self.iterate_orders_from_buffer(timestamp_ns);
 
         // Restore core bid/ask to book values after order iteration
         // (during trade execution, transient override was used for matching)
@@ -1642,6 +1653,75 @@ impl OrderMatchingEngine {
             }
             _ => true,
         }
+    }
+
+    /// Iterates over orders from the internal buffer.
+    /// This method uses the pre-populated `orders_iteration_buffer` to avoid allocations.
+    fn iterate_orders_from_buffer(&mut self, timestamp_ns: UnixNanos) {
+        // Iterate by index since we're borrowing from self
+        for i in 0..self.orders_iteration_buffer.len() {
+            // Get order data we need before any mutable borrows
+            let order = &self.orders_iteration_buffer[i];
+
+            if order.is_closed() {
+                continue;
+            }
+
+            let client_order_id = order.client_order_id();
+            let order_side = order.order_side_specified();
+            let expire_time = order.expire_time();
+
+            if self.config.support_gtd_orders
+                && expire_time.is_some_and(|expire_timestamp_ns| timestamp_ns >= expire_timestamp_ns)
+            {
+                let _ = self.core.delete_order_by_id(client_order_id, order_side);
+                self.cached_filled_qty.remove(&client_order_id);
+                self.expire_order(&self.orders_iteration_buffer[i].clone());
+                continue;
+            }
+
+            // Check if this is a trailing stop order that needs activation
+            let is_trailing_stop = matches!(
+                order,
+                PassiveOrderAny::Stop(
+                    StopOrderAny::TrailingStopMarket(_) | StopOrderAny::TrailingStopLimit(_)
+                )
+            );
+
+            if is_trailing_stop {
+                // Clone only for trailing stop orders that need mutation
+                let mut any = OrderAny::from(self.orders_iteration_buffer[i].clone());
+
+                if !self.maybe_activate_trailing_stop(&mut any, self.core.bid, self.core.ask) {
+                    continue;
+                }
+
+                self.update_trailing_stop_order(&mut any);
+            }
+
+            // Move market back to targets
+            if let Some(target_bid) = self.target_bid {
+                self.core.bid = Some(target_bid);
+                self.target_bid = None;
+            }
+            if let Some(target_bid) = self.target_bid.take() {
+                self.core.bid = Some(target_bid);
+                self.target_bid = None;
+            }
+            if let Some(target_ask) = self.target_ask.take() {
+                self.core.ask = Some(target_ask);
+                self.target_ask = None;
+            }
+            if let Some(target_last) = self.target_last.take() {
+                self.core.last = Some(target_last);
+                self.target_last = None;
+            }
+        }
+
+        // Reset any targets after iteration
+        self.target_bid = None;
+        self.target_ask = None;
+        self.target_last = None;
     }
 
     fn iterate_orders(&mut self, timestamp_ns: UnixNanos, orders: &[PassiveOrderAny]) {
@@ -2199,10 +2279,11 @@ impl OrderMatchingEngine {
 
         if order.is_passive() && order.is_closed() {
             // Check if order exists in OrderMatching core, and delete it if it does
+            // Use delete_order_by_id to avoid cloning the order just for deletion
             if self.core.order_exists(order.client_order_id()) {
-                let _ = self.core.delete_order(
-                    &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
-                );
+                let _ = self
+                    .core
+                    .delete_order_by_id(order.client_order_id(), order.order_side_specified());
             }
             self.cached_filled_qty.remove(&order.client_order_id());
         }
@@ -2674,10 +2755,11 @@ impl OrderMatchingEngine {
         }
 
         // Check if order exists in OrderMatching core, and delete it if it does
+        // Use delete_order_by_id to avoid cloning the order just for deletion
         if self.core.order_exists(order.client_order_id()) {
-            let _ = self.core.delete_order(
-                &PassiveOrderAny::try_from(order.clone()).expect("passive order conversion"),
-            );
+            let _ = self
+                .core
+                .delete_order_by_id(order.client_order_id(), order.order_side_specified());
         }
         self.cached_filled_qty.remove(&order.client_order_id());
 

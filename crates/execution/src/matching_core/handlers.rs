@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub trait FillMarketOrderHandler {
-    fn fill_market_order(&mut self, order: &OrderAny);
+    fn fill_market_order(&mut self, order: &mut OrderAny);
 }
 
 #[derive(Clone, Debug)]
@@ -31,16 +31,16 @@ pub enum FillMarketOrderHandlerAny {
 }
 
 impl FillMarketOrderHandler for FillMarketOrderHandlerAny {
-    fn fill_market_order(&mut self, order: &OrderAny) {
+    fn fill_market_order(&mut self, order: &mut OrderAny) {
         match self {
             Self::OrderMatchingEngine(engine_weak) => {
                 if let Some(engine) = engine_weak.upgrade() {
-                    engine.borrow_mut().fill_market_order(&mut order.clone());
+                    engine.borrow_mut().fill_market_order(order);
                 }
             }
             Self::OrderEmulator(emulator_weak) => {
                 if let Some(emulator) = emulator_weak.upgrade() {
-                    emulator.borrow_mut().fill_market_order(&mut order.clone());
+                    emulator.borrow_mut().fill_market_order(order);
                 }
             }
         }

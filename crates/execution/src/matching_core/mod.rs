@@ -21,6 +21,7 @@
 
 pub mod handlers;
 
+use std::mem::swap;
 use nautilus_model::{
     enums::OrderSideSpecified,
     identifiers::{ClientOrderId, InstrumentId},
@@ -54,6 +55,8 @@ pub struct OrderMatchingCore {
     trigger_stop_order: Option<ShareableTriggerStopOrderHandler>,
     fill_market_order: Option<ShareableFillMarketOrderHandler>,
     fill_limit_order: Option<ShareableFillLimitOrderHandler>,
+    /// Reusable buffer for order iteration to avoid repeated allocations
+    iteration_buffer: Vec<PassiveOrderAny>,
 }
 
 impl OrderMatchingCore {
@@ -80,6 +83,7 @@ impl OrderMatchingCore {
             trigger_stop_order,
             fill_market_order,
             fill_limit_order,
+            iteration_buffer: Vec::new(),
         }
     }
 
@@ -165,6 +169,7 @@ impl OrderMatchingCore {
         self.last = None;
         self.orders_bid.clear();
         self.orders_ask.clear();
+        self.iteration_buffer.clear();
     }
 
     /// Adds a passive order to the matching core.
@@ -185,19 +190,35 @@ impl OrderMatchingCore {
         }
     }
 
-    /// Deletes a passive order from the matching core.
+    /// Deletes a passive order from the matching core by reference.
     ///
     /// # Errors
     ///
     /// Returns an [`OrderError::NotFound`] if the order is not present.
     pub fn delete_order(&mut self, order: &PassiveOrderAny) -> Result<(), OrderError> {
-        match order.order_side_specified() {
+        self.delete_order_by_id(order.client_order_id(), order.order_side_specified())
+    }
+
+    /// Deletes a passive order from the matching core by client order ID and side.
+    ///
+    /// This is more efficient than `delete_order` when you already have the ID and side,
+    /// as it avoids requiring a full `PassiveOrderAny` reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`OrderError::NotFound`] if the order is not present.
+    pub fn delete_order_by_id(
+        &mut self,
+        client_order_id: ClientOrderId,
+        side: OrderSideSpecified,
+    ) -> Result<(), OrderError> {
+        match side {
             OrderSideSpecified::Buy => {
                 let index = self
                     .orders_bid
                     .iter()
-                    .position(|o| o == order)
-                    .ok_or(OrderError::NotFound(order.client_order_id()))?;
+                    .position(|o| o.client_order_id() == client_order_id)
+                    .ok_or(OrderError::NotFound(client_order_id))?;
                 self.orders_bid.remove(index);
                 Ok(())
             }
@@ -205,8 +226,8 @@ impl OrderMatchingCore {
                 let index = self
                     .orders_ask
                     .iter()
-                    .position(|o| o == order)
-                    .ok_or(OrderError::NotFound(order.client_order_id()))?;
+                    .position(|o| o.client_order_id() == client_order_id)
+                    .ok_or(OrderError::NotFound(client_order_id))?;
                 self.orders_ask.remove(index);
                 Ok(())
             }
@@ -219,17 +240,72 @@ impl OrderMatchingCore {
     }
 
     pub fn iterate_bids(&mut self) {
-        let orders: Vec<_> = self.orders_bid.clone();
-        for order in &orders {
-            self.match_order(order, false);
+        // Use reusable buffer to avoid allocating a new Vec each iteration
+        // We swap the orders into the buffer, iterate by index, then swap back
+        self.iteration_buffer.clear();
+        swap(&mut self.iteration_buffer, &mut self.orders_bid);
+
+        // Iterate by index to avoid borrow conflicts with match_order
+        for i in 0..self.iteration_buffer.len() {
+            // Only clone orders that will actually be matched
+            // This avoids cloning orders that don't meet matching criteria
+            let order = &self.iteration_buffer[i];
+            let should_match = match order {
+                PassiveOrderAny::Limit(o) => {
+                    self.is_limit_matched(o.order_side_specified(), o.limit_px())
+                }
+                PassiveOrderAny::Stop(o) => {
+                    let is_activated = match o {
+                        StopOrderAny::TrailingStopMarket(tso) => tso.is_activated,
+                        StopOrderAny::TrailingStopLimit(tso) => tso.is_activated,
+                        _ => true,
+                    };
+                    is_activated && self.is_stop_matched(o.order_side_specified(), o.stop_px())
+                }
+            };
+
+            if should_match {
+                let order = self.iteration_buffer[i].clone();
+                self.match_order(&order, false);
+            }
         }
+
+        // Swap back - orders may have been added during iteration
+        swap(&mut self.iteration_buffer, &mut self.orders_bid);
     }
 
     pub fn iterate_asks(&mut self) {
-        let orders: Vec<_> = self.orders_ask.clone();
-        for order in &orders {
-            self.match_order(order, false);
+        // Use reusable buffer to avoid allocating a new Vec each iteration
+        self.iteration_buffer.clear();
+        swap(&mut self.iteration_buffer, &mut self.orders_ask);
+
+        // Iterate by index to avoid borrow conflicts with match_order
+        for i in 0..self.iteration_buffer.len() {
+            // Only clone orders that will actually be matched
+            // This avoids cloning orders that don't meet matching criteria
+            let order = &self.iteration_buffer[i];
+            let should_match = match order {
+                PassiveOrderAny::Limit(o) => {
+                    self.is_limit_matched(o.order_side_specified(), o.limit_px())
+                }
+                PassiveOrderAny::Stop(o) => {
+                    let is_activated = match o {
+                        StopOrderAny::TrailingStopMarket(tso) => tso.is_activated,
+                        StopOrderAny::TrailingStopLimit(tso) => tso.is_activated,
+                        _ => true,
+                    };
+                    is_activated && self.is_stop_matched(o.order_side_specified(), o.stop_px())
+                }
+            };
+
+            if should_match {
+                let order = self.iteration_buffer[i].clone();
+                self.match_order(&order, false);
+            }
         }
+
+        // Swap back - orders may have been added during iteration
+        swap(&mut self.iteration_buffer, &mut self.orders_ask);
     }
 
     fn iterate_orders(&mut self, orders: &[PassiveOrderAny]) {
