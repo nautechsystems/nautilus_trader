@@ -230,9 +230,167 @@ class DeribitDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_trades(pyo3_instrument_id)
 
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+        """
+        Subscribe to order book snapshots for an instrument.
+
+        Uses the Deribit grouped book channel: `book.{instrument}.{group}.{depth}.{interval}`
+        This provides depth-limited order book data at specified intervals.
+
+        Parameters
+        ----------
+        command : SubscribeOrderBook
+            The subscription command containing instrument_id, depth, and optional params.
+            - depth: Number of levels per side (1, 10, or 20). Defaults to 10.
+            - params.group: Price grouping (e.g., "none", "1", "5", "10"). Defaults to "none".
+            - params.interval: Update interval (e.g., "100ms", "agg2"). Defaults to 100ms.
+
+        """
+        if command.book_type != BookType.L2_MBP:
+            self._log.warning(
+                f"Book type {book_type_to_str(command.book_type)} not supported by Deribit, skipping subscription",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Deribit supports depth of 1, 10, or 20 for grouped book
+        depth = command.depth or 10
+        if depth not in (1, 10, 20):
+            # Adjust to nearest valid depth
+            if depth < 5:
+                depth = 1
+            elif depth < 15:
+                depth = 10
+            else:
+                depth = 20
+            self._log.warning(
+                f"Adjusted book depth to {depth} (Deribit only supports 1, 10, or 20)",
+            )
+
+        # Extract parameters from command params
+        group = "none"
+        interval = None
+        if command.params:
+            group = command.params.get("group", "none")
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        self._log.info(
+            f"Subscribing to order book snapshots for {command.instrument_id} "
+            f"(depth={depth}, group={group}, interval={interval.name if interval else '100ms'})",
+        )
+        await self._ws_client.subscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
+
+    async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
+        """
+        Subscribe to OrderBookDepth10 data for an instrument.
+
+        Uses the Deribit grouped book channel: `book.{instrument}.{group}.{depth}.{interval}`
+        with depth=10 for OrderBookDepth10 compatibility.
+
+        Parameters
+        ----------
+        command : SubscribeOrderBook
+            The subscription command containing instrument_id.
+
+        """
+        if command.book_type != BookType.L2_MBP:
+            self._log.warning(
+                f"Book type {book_type_to_str(command.book_type)} not supported by Deribit, skipping subscription",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # OrderBookDepth10 uses depth=10 by default, but can be overridden
+        depth = command.depth or 10
+        if depth not in (1, 10, 20):
+            if depth < 5:
+                depth = 1
+            elif depth < 15:
+                depth = 10
+            else:
+                depth = 20
+
+        # Use default grouping (no aggregation) and 100ms interval
+        group = "none"
+        interval = None
+
+        self._log.info(
+            f"Subscribing to order book depth for {command.instrument_id} "
+            f"(depth={depth}, group={group}, interval=100ms)",
+        )
+        await self._ws_client.subscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
+
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_book(pyo3_instrument_id)
+
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
+        """
+        Unsubscribe from order book snapshots for an instrument.
+
+        Parameters
+        ----------
+        command : UnsubscribeOrderBook
+            The unsubscription command containing instrument_id and optional params.
+            - params.depth: Number of levels per side (1, 10, or 20). Defaults to 10.
+            - params.group: Price grouping (e.g., "none", "1", "5", "10"). Defaults to "none".
+            - params.interval: Update interval (e.g., "100ms", "agg2"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract parameters from command params
+        depth = 10
+        group = "none"
+        interval = None
+        if command.params:
+            depth = int(command.params.get("depth", 10))
+            group = command.params.get("group", "none")
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        # Ensure valid depth
+        if depth not in (1, 10, 20):
+            if depth < 5:
+                depth = 1
+            elif depth < 15:
+                depth = 10
+            else:
+                depth = 20
+
+        self._log.info(
+            f"Unsubscribing from order book snapshots for {command.instrument_id} "
+            f"(depth={depth}, group={group}, interval={interval.name if interval else '100ms'})",
+        )
+        await self._ws_client.unsubscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
+
+    async def _unsubscribe_order_book_depth(self, command: UnsubscribeOrderBook) -> None:
+        """
+        Unsubscribe from OrderBookDepth10 data for an instrument.
+
+        Parameters
+        ----------
+        command : UnsubscribeOrderBook
+            The unsubscription command containing instrument_id.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Use default depth=10 for OrderBookDepth10
+        depth = 10
+        group = "none"
+        interval = None
+
+        self._log.info(
+            f"Unsubscribing from order book depth for {command.instrument_id} "
+            f"(depth={depth}, group={group}, interval=100ms)",
+        )
+        await self._ws_client.unsubscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)

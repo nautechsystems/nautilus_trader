@@ -457,6 +457,65 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to grouped order book updates for an instrument.
+    ///
+    /// Uses the Deribit `book.{instrument}.{group}.{depth}.{interval}` channel format.
+    /// This provides depth-limited order book data with configurable grouping.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to subscribe to.
+    /// * `group` - Price grouping level (e.g., "none", "1", "2", "5", "10", "25", "100", "250").
+    /// * `depth` - Number of price levels per side (1, 10, or 20).
+    /// * `interval` - Update interval. Defaults to `Ms100` (100ms). `Raw` requires authentication.
+    #[pyo3(name = "subscribe_book_grouped")]
+    #[pyo3(signature = (instrument_id, group, depth, interval=None))]
+    fn py_subscribe_book_grouped<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        group: String,
+        depth: u32,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_book_grouped(instrument_id, &group, depth, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from grouped order book updates for an instrument.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to unsubscribe from.
+    /// * `group` - Price grouping level (e.g., "none", "1", "2", "5", "10", "25", "100", "250").
+    /// * `depth` - Number of price levels per side (1, 10, or 20).
+    /// * `interval` - Update interval. Defaults to `Ms100` (100ms).
+    #[pyo3(name = "unsubscribe_book_grouped")]
+    #[pyo3(signature = (instrument_id, group, depth, interval=None))]
+    fn py_unsubscribe_book_grouped<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        group: String,
+        depth: u32,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_book_grouped(instrument_id, &group, depth, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
     /// Subscribes to ticker updates for an instrument.
     ///
     /// # Arguments

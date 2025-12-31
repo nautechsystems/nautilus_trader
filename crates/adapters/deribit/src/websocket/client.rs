@@ -794,6 +794,55 @@ impl DeribitWebSocketClient {
         self.send_unsubscribe(vec![channel]).await
     }
 
+    /// Subscribes to grouped (depth-limited) order book updates for an instrument.
+    ///
+    /// Uses the Deribit grouped book channel format: `book.{instrument}.{group}.{depth}.{interval}`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails or raw is requested without authentication.
+    pub async fn subscribe_book_grouped(
+        &self,
+        instrument_id: InstrumentId,
+        group: &str,
+        depth: u32,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> DeribitWsResult<()> {
+        let interval = interval.unwrap_or_default();
+        self.check_auth_requirement(interval)?;
+        let channel = format!(
+            "book.{}.{}.{}.{}",
+            instrument_id.symbol,
+            group,
+            depth,
+            interval.as_str()
+        );
+        self.send_subscribe(vec![channel]).await
+    }
+
+    /// Unsubscribes from grouped (depth-limited) order book updates for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
+    pub async fn unsubscribe_book_grouped(
+        &self,
+        instrument_id: InstrumentId,
+        group: &str,
+        depth: u32,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> DeribitWsResult<()> {
+        let interval = interval.unwrap_or_default();
+        let channel = format!(
+            "book.{}.{}.{}.{}",
+            instrument_id.symbol,
+            group,
+            depth,
+            interval.as_str()
+        );
+        self.send_unsubscribe(vec![channel]).await
+    }
+
     /// Subscribes to ticker updates for an instrument.
     ///
     /// # Arguments
