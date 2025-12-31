@@ -899,7 +899,10 @@ impl DeribitWebSocketClient {
     /// Subscribes to perpetual interest rates updates.
     ///
     /// Channel format: `perpetual.{instrument_name}.{interval}`
-    /// Data includes: mark_price, index_price, estimated_delivery_price, funding_8h, current_funding
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails.
     pub async fn subscribe_perpetual_interests_rates_updates(
         &self,
         instrument_id: InstrumentId,

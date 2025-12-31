@@ -43,10 +43,13 @@ use super::{
     error::DeribitWsError,
     messages::{
         DeribitAuthResult, DeribitBookMsg, DeribitHeartbeatParams, DeribitInstrumentStateMsg,
-        DeribitJsonRpcRequest, DeribitQuoteMsg, DeribitSubscribeParams, DeribitTickerMsg,
-        DeribitTradeMsg, DeribitWsMessage, NautilusWsMessage, parse_raw_message,
+        DeribitJsonRpcRequest, DeribitPerpetualMsg, DeribitQuoteMsg, DeribitSubscribeParams,
+        DeribitTickerMsg, DeribitTradeMsg, DeribitWsMessage, NautilusWsMessage, parse_raw_message,
     },
-    parse::{parse_book_msg, parse_quote_msg, parse_ticker_to_quote, parse_trades_data},
+    parse::{
+        parse_book_msg, parse_perpetual_to_funding_rate, parse_quote_msg,
+        parse_ticker_to_index_price, parse_ticker_to_mark_price, parse_trades_data,
+    },
 };
 
 /// Type of pending request for request ID correlation.
@@ -462,21 +465,66 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         DeribitWsChannel::Ticker => {
-                            // Parse ticker to quote
+                            // Parse ticker to emit both MarkPrice and IndexPrice
+                            // When subscribed to either mark_prices or index_prices, we emit both
+                            // as traders typically need both for analysis
                             if let Ok(ticker_msg) =
                                 serde_json::from_value::<DeribitTickerMsg>(data.clone())
                                 && let Some(instrument) =
                                     self.instruments_cache.get(&ticker_msg.instrument_name)
                             {
-                                match parse_ticker_to_quote(&ticker_msg, instrument, ts_init) {
-                                    Ok(quote) => {
-                                        return Some(NautilusWsMessage::Data(vec![Data::Quote(
-                                            quote,
-                                        )]));
+                                let mark_price =
+                                    parse_ticker_to_mark_price(&ticker_msg, instrument, ts_init);
+                                let index_price =
+                                    parse_ticker_to_index_price(&ticker_msg, instrument, ts_init);
+
+                                return Some(NautilusWsMessage::Data(vec![
+                                    Data::MarkPriceUpdate(mark_price),
+                                    Data::IndexPriceUpdate(index_price),
+                                ]));
+                            }
+                        }
+                        DeribitWsChannel::Perpetual => {
+                            // Parse perpetual channel for funding rate updates
+                            // This channel is dedicated to perpetual instruments and provides
+                            // the interest (funding) rate
+                            match serde_json::from_value::<DeribitPerpetualMsg>(data.clone()) {
+                                Ok(perpetual_msg) => {
+                                    // Extract instrument name from channel: perpetual.{instrument}.{interval}
+                                    let parts: Vec<&str> = channel.split('.').collect();
+                                    if parts.len() >= 2 {
+                                        let instrument_name = Ustr::from(parts[1]);
+                                        if let Some(instrument) =
+                                            self.instruments_cache.get(&instrument_name)
+                                        {
+                                            if let Some(funding_rate) =
+                                                parse_perpetual_to_funding_rate(
+                                                    &perpetual_msg,
+                                                    instrument,
+                                                    ts_init,
+                                                )
+                                            {
+                                                return Some(NautilusWsMessage::FundingRates(
+                                                    vec![funding_rate],
+                                                ));
+                                            } else {
+                                                tracing::warn!(
+                                                    "Failed to create funding rate from perpetual msg"
+                                                );
+                                            }
+                                        } else {
+                                            tracing::warn!(
+                                                "Instrument {} not found in cache (cache size: {})",
+                                                instrument_name,
+                                                self.instruments_cache.len()
+                                            );
+                                        }
                                     }
-                                    Err(e) => {
-                                        tracing::warn!("Failed to parse ticker message: {e}");
-                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to deserialize perpetual message: {e}, data: {data}"
+                                    );
                                 }
                             }
                         }
@@ -583,6 +631,13 @@ impl DeribitWsFeedHandler {
                                     | NautilusWsMessage::Raw(_)
                                     | NautilusWsMessage::Error(_) => {
                                         let _ = self.out_tx.send(nautilus_msg);
+                                    }
+                                    NautilusWsMessage::FundingRates(rates) => {
+                                        let msg_to_send =
+                                            NautilusWsMessage::FundingRates(rates.clone());
+                                        if let Err(e) = self.out_tx.send(msg_to_send) {
+                                            tracing::error!("Failed to send funding rates: {e}");
+                                        }
                                     }
                                     // Return messages that need client-side handling
                                     NautilusWsMessage::Reconnected

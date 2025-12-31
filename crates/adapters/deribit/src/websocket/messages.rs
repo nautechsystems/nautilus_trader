@@ -16,7 +16,7 @@
 //! Data structures for Deribit WebSocket JSON-RPC messages.
 
 use nautilus_model::{
-    data::{Data, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, OrderBookDeltas},
     instruments::InstrumentAny,
 };
 use serde::{Deserialize, Serialize};
@@ -325,6 +325,21 @@ pub struct DeribitInstrumentStateMsg {
     pub timestamp: u64,
 }
 
+/// Deribit perpetual interest rate message.
+///
+/// Sent via the `perpetual.{instrument_name}.{interval}` channel.
+/// Only available for perpetual instruments.
+/// Example: `{"index_price":7872.88,"interest":0.004999511380756577,"timestamp":1571386349530}`
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitPerpetualMsg {
+    /// Current index price.
+    pub index_price: f64,
+    /// Current interest rate (funding rate).
+    pub interest: f64,
+    /// Timestamp in milliseconds since Unix epoch.
+    pub timestamp: u64,
+}
+
 /// Raw Deribit WebSocket message variants.
 #[derive(Debug, Clone)]
 pub enum DeribitWsMessage {
@@ -370,6 +385,8 @@ pub enum NautilusWsMessage {
     Deltas(OrderBookDeltas),
     /// Instrument definition update.
     Instrument(Box<InstrumentAny>),
+    /// Funding rate updates (for perpetual instruments).
+    FundingRates(Vec<FundingRateUpdate>),
     /// Error from venue.
     Error(DeribitWsError),
     /// Unhandled/raw message for debugging.

@@ -155,6 +155,10 @@ impl DeribitWsChannel {
     /// * `instrument_or_currency` - The instrument name (e.g., "BTC-PERPETUAL") or currency (e.g., "BTC")
     /// * `interval` - Optional update interval. Defaults to `Ms100` (100ms) if not specified.
     ///
+    /// # Panics
+    ///
+    /// Panics if called on `InstrumentState` variant. Use `format_instrument_state_channel()` instead.
+    ///
     /// # Note
     ///
     /// `Raw` subscriptions require authentication. Use `Ms100` for public/unauthenticated access.

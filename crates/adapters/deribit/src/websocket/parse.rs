@@ -18,17 +18,23 @@
 use ahash::AHashMap;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
-    data::{BookOrder, Data, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
+    data::{
+        BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDeltas, QuoteTick, TradeTick,
+    },
     enums::{AggressorSide, BookAction, OrderSide, RecordFlag},
     identifiers::TradeId,
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
+use rust_decimal::prelude::FromPrimitive;
 use ustr::Ustr;
 
 use super::{
     enums::{DeribitBookAction, DeribitBookMsgType},
-    messages::{DeribitBookMsg, DeribitQuoteMsg, DeribitTickerMsg, DeribitTradeMsg},
+    messages::{
+        DeribitBookMsg, DeribitPerpetualMsg, DeribitQuoteMsg, DeribitTickerMsg, DeribitTradeMsg,
+    },
 };
 
 /// Parses a Deribit trade message into a Nautilus `TradeTick`.
@@ -353,6 +359,85 @@ pub fn parse_quote_msg(
         ts_event,
         ts_init,
     )
+}
+
+/// Parses a Deribit ticker message into a Nautilus `MarkPriceUpdate`.
+#[must_use]
+pub fn parse_ticker_to_mark_price(
+    msg: &DeribitTickerMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> MarkPriceUpdate {
+    let instrument_id = instrument.id();
+    let price_precision = instrument.price_precision();
+    let value = Price::new(msg.mark_price, price_precision);
+    let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    MarkPriceUpdate::new(instrument_id, value, ts_event, ts_init)
+}
+
+/// Parses a Deribit ticker message into a Nautilus `IndexPriceUpdate`.
+#[must_use]
+pub fn parse_ticker_to_index_price(
+    msg: &DeribitTickerMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> IndexPriceUpdate {
+    let instrument_id = instrument.id();
+    let price_precision = instrument.price_precision();
+    let value = Price::new(msg.index_price, price_precision);
+    let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    IndexPriceUpdate::new(instrument_id, value, ts_event, ts_init)
+}
+
+/// Parses a Deribit ticker message into a Nautilus `FundingRateUpdate`.
+///
+/// Returns `None` if the instrument is not a perpetual or the funding rate is not available.
+#[must_use]
+pub fn parse_ticker_to_funding_rate(
+    msg: &DeribitTickerMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> Option<FundingRateUpdate> {
+    // current_funding is only available for perpetual instruments
+    let funding_rate = msg.current_funding?;
+
+    let instrument_id = instrument.id();
+    let rate = rust_decimal::Decimal::from_f64(funding_rate)?;
+    let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    // Deribit ticker doesn't include next_funding_time, set to None
+    Some(FundingRateUpdate::new(
+        instrument_id,
+        rate,
+        None, // next_funding_ns not available in ticker
+        ts_event,
+        ts_init,
+    ))
+}
+
+/// Parses a Deribit perpetual channel message into a Nautilus `FundingRateUpdate`.
+///
+/// The perpetual channel (`perpetual.{instrument}.{interval}`) provides dedicated
+/// funding rate updates with the `interest` field representing the current funding rate.
+#[must_use]
+pub fn parse_perpetual_to_funding_rate(
+    msg: &DeribitPerpetualMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> Option<FundingRateUpdate> {
+    let instrument_id = instrument.id();
+    let rate = rust_decimal::Decimal::from_f64(msg.interest)?;
+    let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
+
+    Some(FundingRateUpdate::new(
+        instrument_id,
+        rate,
+        None, // next_funding_ns not available in perpetual channel
+        ts_event,
+        ts_init,
+    ))
 }
 
 #[cfg(test)]
@@ -681,5 +766,64 @@ mod tests {
         assert_eq!(ask_change.order.side, OrderSide::Sell);
         assert_eq!(ask_change.order.price, instrument.make_price(42501.5));
         assert_eq!(ask_change.order.size, instrument.make_qty(700.0, None));
+    }
+
+    #[rstest]
+    fn test_parse_ticker_to_mark_price() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_ticker.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let msg: DeribitTickerMsg =
+            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+
+        let mark_price = parse_ticker_to_mark_price(&msg, &instrument, UnixNanos::default());
+
+        assert_eq!(mark_price.instrument_id, instrument.id());
+        assert_eq!(mark_price.value, instrument.make_price(92281.78));
+        assert_eq!(
+            mark_price.ts_event,
+            UnixNanos::new(1_765_541_474_086_000_000)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_ticker_to_index_price() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_ticker.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let msg: DeribitTickerMsg =
+            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+
+        let index_price = parse_ticker_to_index_price(&msg, &instrument, UnixNanos::default());
+
+        assert_eq!(index_price.instrument_id, instrument.id());
+        assert_eq!(index_price.value, instrument.make_price(92263.55));
+        assert_eq!(
+            index_price.ts_event,
+            UnixNanos::new(1_765_541_474_086_000_000)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_ticker_to_funding_rate() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_ticker.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let msg: DeribitTickerMsg =
+            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+
+        // Verify current_funding exists in the message
+        assert!(msg.current_funding.is_some());
+
+        let funding_rate =
+            parse_ticker_to_funding_rate(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        assert_eq!(funding_rate.instrument_id, instrument.id());
+        // The test fixture has current_funding value
+        assert_eq!(
+            funding_rate.ts_event,
+            UnixNanos::new(1_765_541_474_086_000_000)
+        );
+        assert!(funding_rate.next_funding_ns.is_none()); // Not available in ticker
     }
 }

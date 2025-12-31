@@ -1116,7 +1116,7 @@ mod tests {
         InstrumentId::new(Symbol::from(symbol), Venue::from("DERIBIT"))
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_futures_and_perpetuals() {
         // Perpetuals are classified as "future" in Deribit API
         let cases = [
@@ -1139,7 +1139,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_options() {
         let cases = [
             // Standard options: {CURRENCY}-{DMMMYY}-{STRIKE}-{C|P}
@@ -1160,7 +1160,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_spot() {
         let cases = [
             ("BTC_USDC", "spot", "BTC"),

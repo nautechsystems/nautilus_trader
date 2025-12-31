@@ -33,13 +33,19 @@ from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeFundingRates
+from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeFundingRates
+from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -49,6 +55,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
@@ -260,8 +267,8 @@ class DeribitDataClient(LiveMarketDataClient):
         """
         Subscribe to instrument state changes for a specific instrument.
 
-        Determines the kind and currency from the instrument ID and subscribes
-        to the appropriate `instrument.state.{kind}.{currency}` channel.
+        Determines the kind and currency from the instrument ID and subscribes to the
+        appropriate `instrument.state.{kind}.{currency}` channel.
 
         """
         symbol = command.instrument_id.symbol.value
@@ -269,7 +276,7 @@ class DeribitDataClient(LiveMarketDataClient):
         # Determine kind from instrument name pattern
         if "PERPETUAL" in symbol:
             kind = "future"
-        elif symbol.endswith("-C") or symbol.endswith("-P"):
+        elif symbol.endswith(("-C", "-P")):
             kind = "option"
         elif "_" in symbol and "-" not in symbol:
             kind = "spot"
@@ -283,7 +290,7 @@ class DeribitDataClient(LiveMarketDataClient):
 
         self._log.info(
             f"Subscribing to instrument state for {command.instrument_id} "
-            f"(channel: instrument.state.{kind}.{currency})"
+            f"(channel: instrument.state.{kind}.{currency})",
         )
         await self._ws_client.subscribe_instrument_state(kind, currency)
 
@@ -310,8 +317,8 @@ class DeribitDataClient(LiveMarketDataClient):
         """
         Unsubscribe from instrument state changes for a specific instrument.
 
-        Determines the kind and currency from the instrument ID and unsubscribes
-        from the appropriate `instrument.state.{kind}.{currency}` channel.
+        Determines the kind and currency from the instrument ID and unsubscribes from
+        the appropriate `instrument.state.{kind}.{currency}` channel.
 
         """
         symbol = command.instrument_id.symbol.value
@@ -319,7 +326,7 @@ class DeribitDataClient(LiveMarketDataClient):
         # Determine kind from instrument name pattern
         if "PERPETUAL" in symbol:
             kind = "future"
-        elif symbol.endswith("-C") or symbol.endswith("-P"):
+        elif symbol.endswith(("-C", "-P")):
             kind = "option"
         elif "_" in symbol and "-" not in symbol:
             kind = "spot"
@@ -332,9 +339,180 @@ class DeribitDataClient(LiveMarketDataClient):
 
         self._log.info(
             f"Unsubscribing from instrument state for {command.instrument_id} "
-            f"(channel: instrument.state.{kind}.{currency})"
+            f"(channel: instrument.state.{kind}.{currency})",
         )
         await self._ws_client.unsubscribe_instrument_state(kind, currency)
+
+    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        """
+        Subscribe to mark price updates for an instrument.
+
+        Uses the Deribit ticker channel which provides mark price information.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Subscribing to mark prices for {command.instrument_id} "
+            f"(via ticker channel, interval: {interval_display})",
+        )
+        await self._ws_client.subscribe_ticker(pyo3_instrument_id, interval)
+
+    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        """
+        Subscribe to index price updates for an instrument.
+
+        Uses the Deribit ticker channel which provides index price information.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Subscribing to index prices for {command.instrument_id} "
+            f"(via ticker channel, interval: {interval_display})",
+        )
+        await self._ws_client.subscribe_ticker(pyo3_instrument_id, interval)
+
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        """
+        Subscribe to funding rate updates for a perpetual instrument.
+
+        Uses the Deribit perpetual channel which provides funding rate information.
+        Only valid for perpetual instruments.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        symbol = command.instrument_id.symbol.value
+
+        # Validate instrument is a perpetual
+        if "PERPETUAL" not in symbol:
+            self._log.warning(
+                f"Funding rates subscription rejected for {command.instrument_id}: "
+                "only available for perpetual instruments",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Subscribing to funding rates for {command.instrument_id} "
+            f"(via perpetual channel, interval: {interval_display})",
+        )
+        await self._ws_client.subscribe_perpetual_interest_rates(pyo3_instrument_id, interval)
+
+    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
+        """
+        Unsubscribe from mark price updates for an instrument.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Unsubscribing from mark prices for {command.instrument_id} "
+            f"(via ticker channel, interval: {interval_display})",
+        )
+        await self._ws_client.unsubscribe_ticker(pyo3_instrument_id, interval)
+
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        """
+        Unsubscribe from index price updates for an instrument.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Unsubscribing from index prices for {command.instrument_id} "
+            f"(via ticker channel, interval: {interval_display})",
+        )
+        await self._ws_client.unsubscribe_ticker(pyo3_instrument_id, interval)
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        """
+        Unsubscribe from funding rate updates for a perpetual instrument.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        symbol = command.instrument_id.symbol.value
+
+        # Validate instrument is a perpetual
+        if "PERPETUAL" not in symbol:
+            self._log.warning(
+                f"Funding rates unsubscription rejected for {command.instrument_id}: "
+                "only available for perpetual instruments",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Unsubscribing from funding rates for {command.instrument_id} "
+            f"(via perpetual channel, interval: {interval_display})",
+        )
+        await self._ws_client.unsubscribe_perpetual_interest_rates(pyo3_instrument_id, interval)
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
@@ -580,6 +758,8 @@ class DeribitDataClient(LiveMarketDataClient):
                 self._handle_data(data)
             elif hasattr(msg, "__class__") and "Instrument" in msg.__class__.__name__:
                 self._handle_instrument_update(msg)
+            elif hasattr(msg, "__class__") and "FundingRateUpdate" in msg.__class__.__name__:
+                self._handle_funding_rate_update(msg)
             else:
                 self._log.error(f"Cannot handle message {msg}, not implemented")
         except Exception as e:
@@ -597,3 +777,7 @@ class DeribitDataClient(LiveMarketDataClient):
         instrument = transform_instrument_from_pyo3(pyo3_instrument)
 
         self._handle_data(instrument)
+
+    def _handle_funding_rate_update(self, pyo3_funding_rate: Any) -> None:
+        data = FundingRateUpdate.from_pyo3(pyo3_funding_rate)
+        self._handle_data(data)

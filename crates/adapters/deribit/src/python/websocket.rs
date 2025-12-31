@@ -250,6 +250,14 @@ impl DeribitWebSocketClient {
                         NautilusWsMessage::Raw(msg) => {
                             tracing::debug!("Received raw message, skipping: {msg}");
                         }
+                        NautilusWsMessage::FundingRates(funding_rates) => Python::attach(|py| {
+                            for funding_rate in funding_rates {
+                                let py_obj = Py::new(py, funding_rate)
+                                    .expect("Failed to create FundingRateUpdate PyObject")
+                                    .into_any();
+                                call_python(py, &callback, py_obj);
+                            }
+                        }),
                     }
                 }
             });
@@ -612,6 +620,57 @@ impl DeribitWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .unsubscribe_instrument_state(&kind, &currency)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Subscribes to perpetual interest rates updates (funding rates).
+    ///
+    /// Uses the Deribit `perpetual.{instrument_name}.{interval}` WebSocket channel.
+    /// This provides mark price, index price, and funding rate information.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The perpetual instrument to subscribe to.
+    /// * `interval` - Update interval. Defaults to 100ms. Use None for 100ms.
+    #[pyo3(name = "subscribe_perpetual_interest_rates")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_subscribe_perpetual_interest_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_perpetual_interests_rates_updates(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from perpetual interest rates updates (funding rates).
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The perpetual instrument to unsubscribe from.
+    /// * `interval` - Update interval. Defaults to 100ms. Use None for 100ms.
+    #[pyo3(name = "unsubscribe_perpetual_interest_rates")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_unsubscribe_perpetual_interest_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_perpetual_interest_rates_updates(instrument_id, interval)
                 .await
                 .map_err(to_pyvalue_err)
         })
