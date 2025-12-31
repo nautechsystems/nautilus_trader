@@ -1913,7 +1913,7 @@ cdef class DataEngine(Component):
                 self._log.error(f"joined_request for {request_id=} not found.")
                 continue
 
-            response = DataResponse(
+            leg_response = DataResponse(
                 client_id=joined_request.client_id,
                 venue=joined_request.venue,
                 data_type=joined_request.data_type,
@@ -1925,9 +1925,9 @@ cdef class DataEngine(Component):
                 ts_init=self._clock.timestamp_ns(),
                 params=joined_request.params,
             )
-            self._handle_response(response)
+            self._handle_response(leg_response)
 
-        response = DataResponse(
+        join_response = DataResponse(
             client_id=parent_request.client_id,
             venue=parent_request.venue,
             data_type=parent_request.data_type,
@@ -1937,9 +1937,9 @@ cdef class DataEngine(Component):
             start=parent_request.start,
             end=parent_request.end,
             ts_init=self._clock.timestamp_ns(),
-            params=parent_request.params,
+            params=response.params,
         )
-        self._handle_response(response)
+        self._handle_response(join_response)
 
     cpdef tuple _bound_dates(self, RequestData request):
         # Capping dates to the now datetime
@@ -2278,8 +2278,10 @@ cdef class DataEngine(Component):
                 if grouped_response.correlation_id in self._bar_types_params:
                     self._finalize_aggregated_bars_request(grouped_response)
 
-                # We store the amount of data received to be used for long requests
-                grouped_response.params["data_count"] = len(grouped_response.data)
+                # We store the amount of data received to be used for long requests or a join request
+                if "data_count" not in grouped_response.params:
+                    grouped_response.params["data_count"] = len(grouped_response.data)
+
                 grouped_response.data = []
 
         self._disable_historical_cache = False
