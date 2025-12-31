@@ -116,7 +116,7 @@ pub struct SimulatedExchange {
     pub base_currency: Option<Currency>,
     fee_model: FeeModelAny,
     fill_model: FillModel,
-    latency_model: Option<LatencyModel>,
+    latency_model: Option<Box<dyn LatencyModel>>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
     leverages: AHashMap<InstrumentId, Decimal>,
@@ -173,7 +173,7 @@ impl SimulatedExchange {
         fill_model: FillModel,
         fee_model: FeeModelAny,
         book_type: BookType,
-        latency_model: Option<LatencyModel>,
+        latency_model: Option<Box<dyn LatencyModel>>,
         bar_execution: Option<bool>,
         trade_execution: Option<bool>,
         liquidity_consumption: Option<bool>,
@@ -248,7 +248,7 @@ impl SimulatedExchange {
         self.fill_model = fill_model;
     }
 
-    pub const fn set_latency_model(&mut self, latency_model: LatencyModel) {
+    pub fn set_latency_model(&mut self, latency_model: Box<dyn LatencyModel>) {
         self.latency_model = Some(latency_model);
     }
 
@@ -487,15 +487,15 @@ impl SimulatedExchange {
         if let Some(latency_model) = &self.latency_model {
             let ts = match command {
                 TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_) => {
-                    command.ts_init() + latency_model.insert_latency_nanos
+                    command.ts_init() + latency_model.get_insert_latency()
                 }
                 TradingCommand::ModifyOrder(_) => {
-                    command.ts_init() + latency_model.update_latency_nanos
+                    command.ts_init() + latency_model.get_update_latency()
                 }
                 TradingCommand::CancelOrder(_)
                 | TradingCommand::CancelAllOrders(_)
                 | TradingCommand::BatchCancelOrders(_) => {
-                    command.ts_init() + latency_model.delete_latency_nanos
+                    command.ts_init() + latency_model.get_delete_latency()
                 }
                 _ => panic!("Cannot handle command: {command:?}"),
             };
@@ -821,7 +821,7 @@ mod tests {
     use nautilus_execution::models::{
         fee::{FeeModelAny, MakerTakerFeeModel},
         fill::FillModel,
-        latency::LatencyModel,
+        latency::StaticLatencyModel,
     };
     use nautilus_model::{
         accounts::{AccountAny, MarginAccount},
@@ -1417,7 +1417,9 @@ mod tests {
 
     #[rstest]
     fn test_process_with_latency_model(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let latency_model = LatencyModel::new(
+        // StaticLatencyModel adds base_latency to each operation latency
+        // base=100, insert=200 -> effective insert latency = 300
+        let latency_model = StaticLatencyModel::new(
             UnixNanos::from(100),
             UnixNanos::from(200),
             UnixNanos::from(300),
@@ -1429,7 +1431,9 @@ mod tests {
             BookType::L2_MBP,
             None,
         );
-        exchange.borrow_mut().set_latency_model(latency_model);
+        exchange
+            .borrow_mut()
+            .set_latency_model(Box::new(latency_model));
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         exchange.borrow_mut().add_instrument(instrument).unwrap();
@@ -1442,7 +1446,7 @@ mod tests {
         // Verify that inflight queue has 2 commands and message queue is empty
         assert_eq!(exchange.borrow().message_queue.len(), 0);
         assert_eq!(exchange.borrow().inflight_queue.len(), 2);
-        // First inflight command should have timestamp at 100 and 200 insert latency
+        // First inflight command: ts_init=100 + effective_insert_latency=300 = 400
         assert_eq!(
             exchange
                 .borrow()
@@ -1451,9 +1455,9 @@ mod tests {
                 .next()
                 .unwrap()
                 .timestamp,
-            UnixNanos::from(300)
+            UnixNanos::from(400)
         );
-        // Second inflight command should have timestamp at 150 and 200 insert latency
+        // Second inflight command: ts_init=150 + effective_insert_latency=300 = 450
         assert_eq!(
             exchange
                 .borrow()
@@ -1462,11 +1466,11 @@ mod tests {
                 .nth(1)
                 .unwrap()
                 .timestamp,
-            UnixNanos::from(350)
+            UnixNanos::from(450)
         );
 
-        // Process at timestamp 350, and test that only first command is processed
-        exchange.borrow_mut().process(UnixNanos::from(320));
+        // Process at timestamp 420, and test that only first command is processed
+        exchange.borrow_mut().process(UnixNanos::from(420));
         assert_eq!(exchange.borrow().message_queue.len(), 0);
         assert_eq!(exchange.borrow().inflight_queue.len(), 1);
         assert_eq!(
@@ -1477,7 +1481,7 @@ mod tests {
                 .next()
                 .unwrap()
                 .timestamp,
-            UnixNanos::from(350)
+            UnixNanos::from(450)
         );
     }
 }

@@ -15,8 +15,16 @@
 
 use std::{collections::HashMap, fmt::Display, str::FromStr};
 
+use crate::{
+    http::{
+        models::{HyperliquidL2Book, HyperliquidLevel},
+        parse::get_currency,
+    },
+    websocket::messages::{WsBookData, WsLevelData},
+};
 use nautilus_core::{UUID4, UnixNanos};
 pub use nautilus_execution::models::latency::LatencyModel;
+use nautilus_execution::models::latency::StaticLatencyModel;
 use nautilus_model::{
     data::{delta::OrderBookDelta, deltas::OrderBookDeltas, order::BookOrder},
     enums::{AccountType, BookAction, OrderSide, PositionSide, RecordFlag},
@@ -27,14 +35,6 @@ use nautilus_model::{
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
-
-use crate::{
-    http::{
-        models::{HyperliquidL2Book, HyperliquidLevel},
-        parse::get_currency,
-    },
-    websocket::messages::{WsBookData, WsLevelData},
-};
 
 /// Configuration for price/size precision.
 #[derive(Debug, Clone)]
@@ -196,8 +196,8 @@ impl HyperliquidDataConverter {
         insert_latency_ns: u64,
         update_latency_ns: u64,
         delete_latency_ns: u64,
-    ) -> LatencyModel {
-        LatencyModel::new(
+    ) -> StaticLatencyModel {
+        StaticLatencyModel::new(
             UnixNanos::from(base_latency_ns),
             UnixNanos::from(insert_latency_ns),
             UnixNanos::from(update_latency_ns),
@@ -206,7 +206,7 @@ impl HyperliquidDataConverter {
     }
 
     /// Create a default latency model for Hyperliquid (typical network latencies)
-    pub fn create_default_latency_model(&self) -> LatencyModel {
+    pub fn create_default_latency_model(&self) -> StaticLatencyModel {
         // Typical latencies for crypto exchanges (in nanoseconds)
         self.create_latency_model(
             50_000_000, // 50ms base latency
@@ -1235,17 +1235,17 @@ mod tests {
             10_000_000,  // 10ms delete
         );
 
-        assert_eq!(latency_model.base_latency_nanos.as_u64(), 100_000_000);
-        assert_eq!(latency_model.insert_latency_nanos.as_u64(), 20_000_000);
-        assert_eq!(latency_model.update_latency_nanos.as_u64(), 10_000_000);
-        assert_eq!(latency_model.delete_latency_nanos.as_u64(), 10_000_000);
+        assert_eq!(latency_model.get_base_latency().as_u64(), 100_000_000);
+        assert_eq!(latency_model.get_insert_latency().as_u64(), 120_000_000);
+        assert_eq!(latency_model.get_update_latency().as_u64(), 110_000_000);
+        assert_eq!(latency_model.get_delete_latency().as_u64(), 110_000_000);
 
         // Test default latency model
         let default_model = converter.create_default_latency_model();
-        assert_eq!(default_model.base_latency_nanos.as_u64(), 50_000_000);
-        assert_eq!(default_model.insert_latency_nanos.as_u64(), 10_000_000);
-        assert_eq!(default_model.update_latency_nanos.as_u64(), 5_000_000);
-        assert_eq!(default_model.delete_latency_nanos.as_u64(), 5_000_000);
+        assert_eq!(default_model.get_base_latency().as_u64(), 50_000_000);
+        assert_eq!(default_model.get_insert_latency().as_u64(), 60_000_000);
+        assert_eq!(default_model.get_update_latency().as_u64(), 55_000_000);
+        assert_eq!(default_model.get_delete_latency().as_u64(), 55_000_000);
 
         // Test that Display trait works
         let display_str = format!("{default_model}");
