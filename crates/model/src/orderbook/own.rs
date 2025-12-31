@@ -528,8 +528,8 @@ fn group_quantities(
         return IndexMap::new();
     }
 
+    // First pass: group all quantities without truncation - O(N)
     let mut grouped = IndexMap::new();
-    let depth = depth.unwrap_or(usize::MAX);
 
     for (price, size) in quantities {
         let grouped_price = if is_bid {
@@ -542,21 +542,21 @@ fn group_quantities(
             .entry(grouped_price)
             .and_modify(|total| *total += size)
             .or_insert(size);
+    }
 
+    // Second pass: sort and truncate to depth if needed - O(N log N)
+    if let Some(depth) = depth {
         if grouped.len() > depth {
-            if is_bid {
-                // For bids, remove the lowest price level
-                if let Some((lowest_price, _)) = grouped.iter().min_by_key(|(price, _)| *price) {
-                    let lowest_price = *lowest_price;
-                    grouped.shift_remove(&lowest_price);
+            // Sort by price: descending for bids (best = highest), ascending for asks (best = lowest)
+            grouped.sort_by(|a, _, b, _| {
+                if is_bid {
+                    b.cmp(a) // Descending for bids
+                } else {
+                    a.cmp(b) // Ascending for asks
                 }
-            } else {
-                // For asks, remove the highest price level
-                if let Some((highest_price, _)) = grouped.iter().max_by_key(|(price, _)| *price) {
-                    let highest_price = *highest_price;
-                    grouped.shift_remove(&highest_price);
-                }
-            }
+            });
+            // Keep only the best `depth` levels
+            grouped.truncate(depth);
         }
     }
 
