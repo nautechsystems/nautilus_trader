@@ -1995,9 +1995,6 @@ cdef class DataEngine(Component):
         bint historical = False,
         dict params = None,
     ):
-        if not (historical and self._disable_historical_cache):
-            self._cache.add_instrument(instrument)
-
         if params is None:
             params = {}
 
@@ -2005,6 +2002,9 @@ cdef class DataEngine(Component):
         update_catalog = params.get("update_catalog", False)
         force_update_catalog = params.get("force_update_catalog", False)
         modified_instrument = self._modify_instrument_properties(instrument, instrument_properties)
+
+        if not (historical and self._disable_historical_cache):
+            self._cache.add_instrument(modified_instrument)
 
         if update_catalog:
             self._update_catalog(

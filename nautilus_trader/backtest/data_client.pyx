@@ -457,7 +457,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
                         instrument = self._create_option_spread_from_components(request.instrument_id, spread_legs)
 
                 if instrument is not None:
-                    self._cache.add_instrument(instrument)
                     self._log.info(f"Created {spread_type} instrument {request.instrument_id} from components")
                 else:
                     self._log.error(f"Failed to create {spread_type} instrument {request.instrument_id} from components")
