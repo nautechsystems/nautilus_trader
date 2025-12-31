@@ -1588,9 +1588,10 @@ class TestBacktestNodeWithBacktestDataIterator:
             "Order filled: ESM4 P5230.XCME, qty=10, price=97.25, trade_id=XCME-1-001",
             "Order filled: ESM4 P5250.XCME, qty=10, price=108.50, trade_id=XCME-2-001",
             "Order filled: ESM4.XCME, qty=1, price=5199.75, trade_id=XCME-3-002",
-            "Order filled: ((1))ESM4 P5230___(1)ESM4 P5250.XCME, qty=5, price=10.63, trade_id=XCME-5-001",
+            "Order filled: ((1))ESM4 P5230___(1)ESM4 P5250.XCME, qty=5, price=10.75, "
+            "trade_id=XCME-5-001",
             "Order filled: ESM4 P5230.XCME, qty=5, price=97.62, trade_id=XCME-5-001-0",
-            "Order filled: ESM4 P5250.XCME, qty=5, price=108.25, trade_id=XCME-5-001-1",
+            "Order filled: ESM4 P5250.XCME, qty=5, price=108.38, trade_id=XCME-5-001-1",
             "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=2, price=12930.50, trade_id=XCME-6-001",
             "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=3, price=12930.75, trade_id=XCME-6-002",
             "Order filled: ESM4.XCME, qty=2, price=5199.62, trade_id=XCME-6-002-0",

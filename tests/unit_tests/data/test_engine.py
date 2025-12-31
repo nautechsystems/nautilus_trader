@@ -2437,6 +2437,63 @@ class TestDataEngine:
         assert handler[0].data == []  # Data is published to message bus, not in response
         assert instruments_received == [BTCUSDT_BINANCE, ETHUSDT_BINANCE]
 
+    def test_request_option_instrument_with_tick_scheme_sets_tick_scheme_on_instrument(self):
+        # Arrange
+        option_instrument = TestInstrumentProvider.aapl_option()
+        assert option_instrument.tick_scheme_name is None
+
+        # Create mock market data client with the instrument
+        client = MockMarketDataClient(
+            client_id=ClientId("MOCK"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        client.instrument = option_instrument
+        self.data_engine.register_client(client)
+
+        handler = []
+        instruments_received = []
+
+        # Subscribe to instrument topic to receive the instrument
+        self.msgbus.subscribe(
+            topic=f"data.instrument.{option_instrument.id.venue}.{option_instrument.id.symbol}",
+            handler=instruments_received.append,
+        )
+
+        # Create request with tick_scheme_name in params
+        tick_scheme_name = "FIXED_PRECISION_2"
+        request = RequestInstrument(
+            instrument_id=option_instrument.id,
+            start=None,
+            end=None,
+            client_id=client.id,
+            venue=None,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"instrument_properties": {"tick_scheme_name": tick_scheme_name}},
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(instruments_received) == 1
+        instrument_from_cache = self.cache.instrument(option_instrument.id)
+        assert instrument_from_cache is not None
+        assert instrument_from_cache.tick_scheme_name == tick_scheme_name
+        # Verify tick scheme is functional - FIXED_PRECISION_2 rounds to 2 decimal places (0.01 increments)
+        # For value 100.123, next_bid_price should round down to 100.12 (nearest tick below)
+        result = instrument_from_cache.next_bid_price(100.123)
+        assert result is not None
+        assert result == Price.from_str("100.12")
+        # Verify it also works for ask prices
+        ask_result = instrument_from_cache.next_ask_price(100.127)
+        assert ask_result is not None
+        assert ask_result == Price.from_str("100.13")  # Rounds up to nearest tick
+
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instrument_when_catalog_registered(self):
         # Arrange

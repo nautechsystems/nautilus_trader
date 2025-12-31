@@ -1900,7 +1900,9 @@ cdef class SpreadQuoteAggregator:
         non_zero_multipliers = vega_multipliers[vega_multipliers != 0]
         if len(non_zero_multipliers) == 0:
             self._log.warning(
-                f"All vegas are zero for spread {self._spread_instrument_id}, cannot generate spread quote"
+                f"No vega information available for the components of {self._spread_instrument_id}. "
+                f"Will generate spread quote using component quotes only. "
+                f"Subscribe to some underlying price information for more precise quotes."
             )
             return self._create_futures_spread_prices()
 
