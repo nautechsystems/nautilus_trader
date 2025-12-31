@@ -31,6 +31,7 @@ use crate::{
 /// Represents a discrete price level in an order book.
 ///
 /// Orders are stored in an [`IndexMap`] which preserves FIFO (insertion) order.
+/// Total size is cached and updated incrementally for O(1) access.
 #[derive(Clone, Debug, Eq)]
 #[cfg_attr(
     feature = "python",
@@ -39,6 +40,8 @@ use crate::{
 pub struct BookLevel {
     pub price: BookPrice,
     pub(crate) orders: IndexMap<OrderId, BookOrder>,
+    /// Cached total size of all orders (raw integer units) for O(1) access.
+    cached_size_raw: QuantityRaw,
 }
 
 impl BookLevel {
@@ -48,6 +51,7 @@ impl BookLevel {
         Self {
             price,
             orders: IndexMap::new(),
+            cached_size_raw: 0,
         }
     }
 
@@ -57,6 +61,7 @@ impl BookLevel {
         let mut level = Self {
             price: order.to_book_price(),
             orders: IndexMap::new(),
+            cached_size_raw: 0,
         };
         level.add(order);
         level
@@ -97,59 +102,56 @@ impl BookLevel {
     }
 
     /// Returns the total size of all orders at this price level as a float.
+    ///
+    /// This is O(1) as it uses the cached size.
+    #[inline]
     #[must_use]
     pub fn size(&self) -> f64 {
-        self.orders.values().map(|o| o.size.as_f64()).sum()
+        self.cached_size_raw as f64 / FIXED_SCALAR
     }
 
     /// Returns the total size of all orders at this price level as raw integer units.
+    ///
+    /// This is O(1) as it uses the cached size.
+    #[inline]
     #[must_use]
     pub fn size_raw(&self) -> QuantityRaw {
-        self.orders.values().map(|o| o.size.raw).sum()
+        self.cached_size_raw
     }
 
     /// Returns the total size of all orders at this price level as a decimal.
+    ///
+    /// This is O(1) as it uses the cached size.
+    #[inline]
     #[must_use]
     pub fn size_decimal(&self) -> Decimal {
-        self.orders.values().map(|o| o.size.as_decimal()).sum()
+        Decimal::from(self.cached_size_raw) / Decimal::from(FIXED_SCALAR as i64)
     }
 
     /// Returns the total exposure (price * size) of all orders at this price level as a float.
+    ///
+    /// This is O(1) as it uses the cached size. Since all orders at a level have the same price,
+    /// exposure = price * total_size.
+    #[inline]
     #[must_use]
     pub fn exposure(&self) -> f64 {
-        self.orders
-            .values()
-            .map(|o| o.price.as_f64() * o.size.as_f64())
-            .sum()
+        self.price.value.as_f64() * self.size()
     }
 
     /// Returns the total exposure (price * size) of all orders at this price level as raw integer units.
     ///
-    /// Saturates at `QuantityRaw::MAX` if the total exposure would overflow.
+    /// This is O(1) as it uses the cached size. Saturates at `QuantityRaw::MAX` if overflow.
     #[must_use]
     pub fn exposure_raw(&self) -> QuantityRaw {
-        self.orders
-            .values()
-            .map(|o| {
-                let exposure_f64 = o.price.as_f64() * o.size.as_f64();
-                debug_assert!(
-                    exposure_f64.is_finite(),
-                    "Exposure calculation resulted in non-finite value for order {}: price={}, size={}",
-                    o.order_id,
-                    o.price,
-                    o.size
-                );
-
-                let scaled = exposure_f64 * FIXED_SCALAR;
-                if scaled >= QuantityRaw::MAX as f64 {
-                    QuantityRaw::MAX
-                } else if scaled < 0.0 {
-                    0
-                } else {
-                    scaled as QuantityRaw
-                }
-            })
-            .fold(0, |acc, val| acc.saturating_add(val))
+        let exposure_f64 = self.price.value.as_f64() * self.size();
+        let scaled = exposure_f64 * FIXED_SCALAR;
+        if scaled >= QuantityRaw::MAX as f64 {
+            QuantityRaw::MAX
+        } else if scaled < 0.0 {
+            0
+        } else {
+            scaled as QuantityRaw
+        }
     }
 
     /// Adds multiple orders to this price level in FIFO order. Orders must match the level's price.
@@ -172,6 +174,12 @@ impl BookLevel {
             return;
         }
 
+        // If order already exists (upsert), subtract old size first
+        if let Some(old_order) = self.orders.get(&order.order_id) {
+            self.cached_size_raw = self.cached_size_raw.saturating_sub(old_order.size.raw);
+        }
+
+        self.cached_size_raw = self.cached_size_raw.saturating_add(order.size.raw);
         self.orders.insert(order.order_id, order);
     }
 
@@ -181,34 +189,52 @@ impl BookLevel {
         debug_assert_eq!(order.price, self.price.value);
 
         if order.size.raw == 0 {
-            // Updating non-existent order to zero size is a no-op, which is valid
-            self.orders.shift_remove(&order.order_id);
+            // Updating non-existent order to zero size is a no-op, which is valid.
+            // NOTE: We use `shift_remove` (O(N)) instead of `swap_remove` (O(1)) to preserve
+            // FIFO insertion order, which is critical for price-time priority in order matching.
+            if let Some(old_order) = self.orders.shift_remove(&order.order_id) {
+                self.cached_size_raw = self.cached_size_raw.saturating_sub(old_order.size.raw);
+            }
         } else {
             debug_assert!(
                 order.size.is_positive(),
                 "Order size must be positive: {}",
                 order.size
             );
+            // Subtract old size if exists, add new size
+            if let Some(old_order) = self.orders.get(&order.order_id) {
+                self.cached_size_raw = self.cached_size_raw.saturating_sub(old_order.size.raw);
+            }
+            self.cached_size_raw = self.cached_size_raw.saturating_add(order.size.raw);
             self.orders.insert(order.order_id, order);
         }
     }
 
     /// Deletes an order from this price level.
+    ///
+    /// NOTE: Uses `shift_remove` (O(N)) to preserve FIFO order for price-time priority.
     pub fn delete(&mut self, order: &BookOrder) {
-        self.orders.shift_remove(&order.order_id);
+        if let Some(old_order) = self.orders.shift_remove(&order.order_id) {
+            self.cached_size_raw = self.cached_size_raw.saturating_sub(old_order.size.raw);
+        }
     }
 
     /// Removes an order by its ID.
+    ///
+    /// NOTE: Uses `shift_remove` (O(N)) to preserve FIFO order for price-time priority.
     ///
     /// # Panics
     ///
     /// Panics if no order with the given `order_id` exists at this level.
     pub fn remove_by_id(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
-        assert!(
-            self.orders.shift_remove(&order_id).is_some(),
-            "{}",
-            &BookIntegrityError::OrderNotFound(order_id, sequence, ts_event)
-        );
+        match self.orders.shift_remove(&order_id) {
+            Some(old_order) => {
+                self.cached_size_raw = self.cached_size_raw.saturating_sub(old_order.size.raw);
+            }
+            None => {
+                panic!("{}", &BookIntegrityError::OrderNotFound(order_id, sequence, ts_event));
+            }
+        }
     }
 }
 
