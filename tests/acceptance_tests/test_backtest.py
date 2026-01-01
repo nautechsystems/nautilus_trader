@@ -1967,15 +1967,6 @@ class OptionStrategy(Strategy):
         self.start_orders_done = False
         self.spread_order_submitted = False
         self.spread_order_submitted2 = False
-        # Test-specific tracking attributes
-        self.spread_quotes_received = 0
-        self.future_spread_quotes_received = 0
-        self.combo_fills: list[str] = []
-        self.leg_fills: list[str] = []
-        self.spread_bars: list[Bar] = []
-        self.historical_spread_bars: list[Bar] = []
-        self.live_spread_bars: list[Bar] = []
-        self.custom_data_received: list[CustomTestData] = []
 
     def on_start(self):
         self.default_data_params = {"aggregate_spread_quotes": True}
@@ -2012,6 +2003,8 @@ class OptionStrategy(Strategy):
         self.request_quote_ticks(
             self.config.spread_id2,
             start=time_object_to_dt(self.config.start_time),
+            # Note: we need to request up to 10:00 so the spread quote at 9:59 is produced
+            end=self.clock.utc_now() - pd.Timedelta(minutes=0),
             params=self.default_data_params,
         )
 
@@ -2019,6 +2012,8 @@ class OptionStrategy(Strategy):
         self.request_aggregated_bars(
             [self.bar_type_3],
             start=time_object_to_dt(self.config.start_time),
+            # Note: we need to request up to 10:00 so the spread quote at 9:59 is produced
+            end=self.clock.utc_now() - pd.Timedelta(minutes=0),
             update_subscriptions=True,
             params=self.default_data_params,
         )
@@ -2069,22 +2064,12 @@ class OptionStrategy(Strategy):
                 f"Historical Bar: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}",
                 color=LogColor.RED,
             )
-            # Test-specific: track historical spread bars
-            if self.bar_type_3 and data.bar_type == self.bar_type_3:
-                self.historical_spread_bars.append(data)
-                self.spread_bars.append(data)
 
     def on_quote_tick(self, tick):
         self.user_log(
             f"QuoteTick: {tick}, ts={unix_nanos_to_iso8601(tick.ts_init)}",
             color=LogColor.BLUE,
         )
-
-        # Test-specific: track quotes
-        if tick.instrument_id == self.config.spread_id:
-            self.spread_quotes_received += 1
-        elif tick.instrument_id == self.config.spread_id2:
-            self.future_spread_quotes_received += 1
 
         # Submit spread order when we have spread quotes available
         if tick.instrument_id == self.config.spread_id and not self.spread_order_submitted:
@@ -2100,14 +2085,6 @@ class OptionStrategy(Strategy):
         self.user_log(
             f"Order filled: {event.instrument_id}, qty={event.last_qty}, price={event.last_px}, trade_id={event.trade_id}",
         )
-        # Test-specific: track fills
-        if event.instrument_id == self.config.spread_id:
-            self.combo_fills.append(event)
-        elif (
-            event.instrument_id == self.config.option_id
-            or event.instrument_id == self.config.option_id2
-        ):
-            self.leg_fills.append(event)
 
     def on_position_opened(self, event):
         self.user_log(
@@ -2122,23 +2099,11 @@ class OptionStrategy(Strategy):
     def on_data(self, data: Data):
         if isinstance(data, CustomTestData):
             self.user_log(
-                f"Received custom data: {data.label}={data.value}, ts={unix_nanos_to_iso8601(data.ts_init)}",
+                f"CustomTestData: {data}, ts={unix_nanos_to_iso8601(data.ts_init)}",
             )
-            self.custom_data_received.append(data)
 
     def on_bar(self, bar):
-        if bar.bar_type == self.bar_type_3:
-            self.user_log(
-                f"Bar: {bar}, ts={unix_nanos_to_iso8601(bar.ts_init)}",
-                color=LogColor.RED,
-            )
-            # Test-specific: track live spread bars
-            self.live_spread_bars.append(bar)
-            self.spread_bars.append(bar)
-        else:
-            self.user_log(
-                f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar}",
-            )
+        self.user_log(f"Bar: {bar}, ts={unix_nanos_to_iso8601(bar.ts_init)}")
 
         if not self.start_orders_done:
             self.user_log("Initializing the portfolio with some trades")
@@ -2180,6 +2145,7 @@ class OptionStrategy(Strategy):
 
     def user_log(self, msg, color=LogColor.GREEN):
         self.log.warning(f"{msg}", color=color)
+
         # Test-specific: publish to message bus for test collection
         self.msgbus.publish(topic="test", msg=str(msg))
 

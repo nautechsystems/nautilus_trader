@@ -335,9 +335,7 @@ class OptionStrategy(Strategy):
                 color=LogColor.RED,
             )
         else:
-            self.user_log(
-                f"bar ts_init = {unix_nanos_to_iso8601(bar.ts_init)}, bar close = {bar}",
-            )
+            self.user_log(f"Bar: {bar}, ts={unix_nanos_to_iso8601(bar.ts_init)}")
 
         if not self.start_orders_done:
             self.user_log("Initializing the portfolio with some trades")
