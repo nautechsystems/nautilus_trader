@@ -4732,7 +4732,7 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4745,7 +4745,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4770,7 +4770,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-binance"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4821,7 +4821,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-bitmex"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4871,7 +4871,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-blockchain"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -4914,7 +4914,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-bybit"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4960,7 +4960,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4979,7 +4979,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-coinbase-intx"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5018,7 +5018,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -5058,7 +5058,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5087,7 +5087,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -5106,7 +5106,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -5128,7 +5128,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5165,7 +5165,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-deribit"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5217,7 +5217,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-dydx"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5268,7 +5268,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5292,7 +5292,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-hyperliquid"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -5351,7 +5351,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "anyhow",
  "arraydeque",
@@ -5364,7 +5364,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5399,7 +5399,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-kraken"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5446,7 +5446,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5476,7 +5476,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -5510,7 +5510,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5552,7 +5552,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-okx"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5602,7 +5602,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5637,7 +5637,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "log",
@@ -5656,7 +5656,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "nautilus-analysis",
  "nautilus-binance",
@@ -5690,7 +5690,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "log",
@@ -5709,7 +5709,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "arrow",
  "capnp",
@@ -5718,7 +5718,6 @@ dependencies = [
  "indexmap 2.12.1",
  "nautilus-core",
  "nautilus-model",
- "nautilus-testkit",
  "pretty_assertions",
  "pyo3",
  "rstest",
@@ -5733,7 +5732,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5755,7 +5754,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5799,7 +5798,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-testkit"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5827,11 +5826,11 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trader"
-version = "0.52.0"
+version = "0.53.0"
 
 [[package]]
 name = "nautilus-trading"
-version = "0.52.0"
+version = "0.53.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -10247,9 +10246,9 @@ checksum = "40990edd51aae2c2b6907af74ffb635029d5788228222c4bb811e9351c0caad3"
 
 [[package]]
 name = "zmij"
-version = "1.0.6"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aac060176f7020d62c3bcc1cdbcec619d54f48b07ad1963a3f80ce7a0c17755f"
+checksum = "de9211a9f64b825911bdf0240f58b7a8dac217fe260fc61f080a07f61372fbd5"
 
 [[package]]
 name = "zstd"

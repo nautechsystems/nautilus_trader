@@ -1,7 +1,6 @@
 [package]
 name = "nautilus-hyperliquid"
 readme = "README.md"
-publish = false # Do not publish to crates.io yet
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +12,7 @@ keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
+publish = false # Do not publish to crates.io yet
 
 [lints]
 workspace = true

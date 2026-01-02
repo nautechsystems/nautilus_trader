@@ -1,6 +1,118 @@
 
 # cargo-vet imports lock
 
+[[unpublished.nautilus-analysis]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-backtest]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-bitmex]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-blockchain]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-bybit]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-cli]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-coinbase-intx]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-common]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-core]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-cryptography]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-data]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-databento]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-execution]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-indicators]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-infrastructure]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-kraken]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-live]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-model]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-network]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-okx]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-persistence]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-portfolio]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-risk]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-serialization]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-system]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-tardis]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-testkit]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
+[[unpublished.nautilus-trading]]
+version = "0.53.0"
+audited_as = "0.52.0"
+
 [[publisher.bumpalo]]
 version = "3.19.1"
 when = "2025-12-16"

@@ -34,6 +34,9 @@ audit-as-crates-io = true
 [policy.nautilus-blockchain]
 audit-as-crates-io = true
 
+[policy.nautilus-bybit]
+audit-as-crates-io = true
+
 [policy.nautilus-cli]
 audit-as-crates-io = true
 
@@ -62,6 +65,9 @@ audit-as-crates-io = true
 audit-as-crates-io = true
 
 [policy.nautilus-infrastructure]
+audit-as-crates-io = true
+
+[policy.nautilus-kraken]
 audit-as-crates-io = true
 
 [policy.nautilus-live]
@@ -1480,6 +1486,10 @@ criteria = "safe-to-deploy"
 version = "0.52.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.nautilus-bybit]]
+version = "0.52.0"
+criteria = "safe-to-deploy"
+
 [[exemptions.nautilus-cli]]
 version = "0.52.0"
 criteria = "safe-to-deploy"
@@ -1517,6 +1527,10 @@ version = "0.52.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.nautilus-infrastructure]]
+version = "0.52.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.nautilus-kraken]]
 version = "0.52.0"
 criteria = "safe-to-deploy"
 
@@ -2921,7 +2935,7 @@ version = "0.5.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.zmij]]
-version = "1.0.6"
+version = "1.0.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.zstd]]
