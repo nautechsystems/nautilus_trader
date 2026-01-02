@@ -1797,6 +1797,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Ensure directory URI ends with / to be treated as a directory by some backends
         # although DataFusion usually handles it.
         file_uri = self._build_file_uri(directory)
+        # Ensure directory URI ends with / so DataFusion recognizes it as a directory
+        if not file_uri.endswith("/"):
+            file_uri = file_uri + "/"
         session.add_file(data_type, table, file_uri, query)
 
     def _build_file_uri(self, file: str) -> str:
