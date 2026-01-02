@@ -146,7 +146,7 @@ pub fn trailing_stop_calculate(
     };
 
     match trigger_type {
-        TriggerType::Default | TriggerType::LastPrice | TriggerType::MarkPrice => {
+        TriggerType::LastPrice | TriggerType::MarkPrice => {
             let last = last.ok_or(OrderError::InvalidStateTransition)?;
             let cand_trigger = compute(trailing_offset, last.as_f64());
             new_trigger_price = maybe_move(&mut trigger_price, cand_trigger, better_trigger);
@@ -156,7 +156,7 @@ pub fn trailing_stop_calculate(
                 new_limit_price = maybe_move(&mut limit_price, cand_limit, better_limit);
             }
         }
-        TriggerType::BidAsk | TriggerType::LastOrBidAsk => {
+        TriggerType::Default | TriggerType::BidAsk | TriggerType::LastOrBidAsk => {
             let (bid, ask) = (
                 bid.ok_or_else(|| anyhow::anyhow!("Bid required"))?,
                 ask.ok_or_else(|| anyhow::anyhow!("Ask required"))?,
