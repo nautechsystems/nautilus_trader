@@ -6945,6 +6945,20 @@ class DeribitWebSocketClient:
         instrument_id: InstrumentId,
         interval: DeribitUpdateInterval | None = None,
     ) -> None: ...
+    async def subscribe_book_grouped(
+        self,
+        instrument_id: InstrumentId,
+        group: str,
+        depth: int,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def unsubscribe_book_grouped(
+        self,
+        instrument_id: InstrumentId,
+        group: str,
+        depth: int,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
     async def subscribe_ticker(
         self,
         instrument_id: InstrumentId,
@@ -6960,6 +6974,28 @@ class DeribitWebSocketClient:
     async def unsubscribe_quotes(self, instrument_id: InstrumentId) -> None: ...
     async def subscribe(self, channels: list[str]) -> None: ...
     async def unsubscribe(self, channels: list[str]) -> None: ...
+    async def subscribe_instrument_state(self, kind: str, currency: str) -> None: ...
+    async def unsubscribe_instrument_state(self, kind: str, currency: str) -> None: ...
+    async def subscribe_perpetual_interest_rates(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def unsubscribe_perpetual_interest_rates(
+        self,
+        instrument_id: InstrumentId,
+        interval: DeribitUpdateInterval | None = None,
+    ) -> None: ...
+    async def subscribe_chart(
+        self,
+        instrument_id: InstrumentId,
+        resolution: str,
+    ) -> None: ...
+    async def unsubscribe_chart(
+        self,
+        instrument_id: InstrumentId,
+        resolution: str,
+    ) -> None: ...
 
 def get_deribit_http_base_url(is_testnet: bool) -> str: ...
 def get_deribit_ws_url(is_testnet: bool) -> str: ...
@@ -6987,6 +7023,9 @@ class DeribitUpdateInterval(Enum):
     RAW = "RAW"
     MS100 = "MS100"
     AGG2 = "AGG2"
+
+    @classmethod
+    def from_str(cls, value: str) -> DeribitUpdateInterval: ...
 
 class DeribitWsChannel(Enum):
     TRADES = "TRADES"

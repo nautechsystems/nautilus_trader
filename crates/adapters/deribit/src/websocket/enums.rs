@@ -44,11 +44,14 @@ use strum::{AsRefStr, Display, EnumIter, EnumString};
 pub enum DeribitUpdateInterval {
     /// Raw updates - immediate delivery of each event.
     /// Requires authentication.
+    #[strum(serialize = "raw", serialize = "Raw")]
     Raw,
     /// Aggregated updates every 100 milliseconds (default).
     #[default]
+    #[strum(serialize = "100ms", serialize = "Ms100")]
     Ms100,
     /// Aggregated updates every 2 ticks.
+    #[strum(serialize = "agg2", serialize = "Agg2")]
     Agg2,
 }
 
@@ -125,6 +128,9 @@ pub enum DeribitWsChannel {
     Announcements,
     /// Chart trades: `chart.trades.{instrument}.{resolution}`
     ChartTrades,
+    /// Instrument state changes: `instrument.state.{kind}.{currency}`
+    /// Used for instrument lifecycle notifications (created, started, settled, closed, terminated)
+    InstrumentState,
 
     // Private User Channels (for future execution support)
     /// User orders: `user.orders.{instrument}.{interval}`
@@ -148,6 +154,10 @@ impl DeribitWsChannel {
     ///
     /// * `instrument_or_currency` - The instrument name (e.g., "BTC-PERPETUAL") or currency (e.g., "BTC")
     /// * `interval` - Optional update interval. Defaults to `Ms100` (100ms) if not specified.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called on `InstrumentState` variant. Use `format_instrument_state_channel()` instead.
     ///
     /// # Note
     ///
@@ -180,7 +190,26 @@ impl DeribitWsChannel {
             Self::UserPortfolio => format!("user.portfolio.{instrument_or_currency}"),
             Self::UserChanges => format!("user.changes.{instrument_or_currency}.{interval_str}"),
             Self::UserAccessLog => "user.access_log".to_string(),
+            Self::InstrumentState => {
+                // InstrumentState requires kind and currency, use format_instrument_state_channel() instead
+                panic!(
+                    "InstrumentState channel requires kind and currency parameters, use format_instrument_state_channel() instead"
+                )
+            }
         }
+    }
+
+    /// Formats the instrument state channel for subscription.
+    ///
+    /// Returns the full channel string: `instrument.state.{kind}.{currency}`
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - Instrument kind: "future", "option", "spot", "future_combo", "option_combo", or "any"
+    /// * `currency` - Currency: "BTC", "ETH", "USDC", "USDT", "EURR", or "any"
+    #[must_use]
+    pub fn format_instrument_state_channel(kind: &str, currency: &str) -> String {
+        format!("instrument.state.{kind}.{currency}")
     }
 
     /// Parses a channel string to extract the channel type.
@@ -224,6 +253,8 @@ impl DeribitWsChannel {
             Some(Self::UserChanges)
         } else if channel == "user.access_log" {
             Some(Self::UserAccessLog)
+        } else if channel.starts_with("instrument.state.") {
+            Some(Self::InstrumentState)
         } else {
             None
         }

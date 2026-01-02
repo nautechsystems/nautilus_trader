@@ -33,9 +33,21 @@ from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestTradeTicks
+from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeFundingRates
+from nautilus_trader.data.messages import SubscribeIndexPrices
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
+from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeFundingRates
+from nautilus_trader.data.messages import UnsubscribeIndexPrices
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -45,10 +57,12 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
@@ -56,6 +70,86 @@ from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments import Instrument
+
+
+def _bar_spec_to_deribit_resolution(bar_type) -> str:
+    """
+    Convert a bar type specification to a Deribit resolution string.
+
+    Maps bar specifications to the nearest supported Deribit resolution:
+    - Minutes: 1, 3, 5, 10, 15, 30, 60, 120, 180, 360, 720
+    - Daily: 1D
+
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type to convert.
+
+    Returns
+    -------
+    str
+        The Deribit resolution string (e.g., "1", "60", "1D").
+
+    """
+    spec = bar_type.spec
+    step = spec.step
+    aggregation = spec.aggregation
+
+    # Handle day aggregation
+    if aggregation == BarAggregation.DAY:
+        return "1D"
+
+    # Handle hour aggregation (convert to minutes)
+    if aggregation == BarAggregation.HOUR:
+        return _map_hour_step_to_resolution(step)
+
+    # Handle minute aggregation
+    if aggregation == BarAggregation.MINUTE:
+        return _map_minute_step_to_resolution(step)
+
+    # Unsupported aggregation, default to 1 minute
+    return "1"
+
+
+def _map_minute_step_to_resolution(step: int) -> str:
+    """
+    Map minute step to nearest Deribit resolution.
+    """
+    # Thresholds: (max_step, resolution_string)
+    thresholds = [
+        (1, "1"),
+        (3, "3"),
+        (5, "5"),
+        (10, "10"),
+        (15, "15"),
+        (30, "30"),
+        (60, "60"),
+        (120, "120"),
+        (180, "180"),
+        (360, "360"),
+        (720, "720"),
+    ]
+    for max_step, resolution in thresholds:
+        if step <= max_step:
+            return resolution
+    return "1D"
+
+
+def _map_hour_step_to_resolution(step: int) -> str:
+    """
+    Map hour step to nearest Deribit resolution (in minutes).
+    """
+    if step == 1:
+        return "60"
+    if step == 2:
+        return "120"
+    if step == 3:
+        return "180"
+    if step <= 6:
+        return "360"
+    if step <= 12:
+        return "720"
+    return "1D"
 
 
 class DeribitDataClient(LiveMarketDataClient):
@@ -219,9 +313,167 @@ class DeribitDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_trades(pyo3_instrument_id)
 
+    async def _subscribe_order_book_snapshots(self, command: SubscribeOrderBook) -> None:
+        """
+        Subscribe to order book snapshots for an instrument.
+
+        Uses the Deribit grouped book channel: `book.{instrument}.{group}.{depth}.{interval}`
+        This provides depth-limited order book data at specified intervals.
+
+        Parameters
+        ----------
+        command : SubscribeOrderBook
+            The subscription command containing instrument_id, depth, and optional params.
+            - depth: Number of levels per side (1, 10, or 20). Defaults to 10.
+            - params.group: Price grouping (e.g., "none", "1", "5", "10"). Defaults to "none".
+            - params.interval: Update interval (e.g., "100ms", "agg2"). Defaults to 100ms.
+
+        """
+        if command.book_type != BookType.L2_MBP:
+            self._log.warning(
+                f"Book type {book_type_to_str(command.book_type)} not supported by Deribit, skipping subscription",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Deribit supports depth of 1, 10, or 20 for grouped book
+        depth = command.depth or 10
+        if depth not in (1, 10, 20):
+            # Adjust to nearest valid depth
+            if depth < 5:
+                depth = 1
+            elif depth < 15:
+                depth = 10
+            else:
+                depth = 20
+            self._log.warning(
+                f"Adjusted book depth to {depth} (Deribit only supports 1, 10, or 20)",
+            )
+
+        # Extract parameters from command params
+        group = "none"
+        interval = None
+        if command.params:
+            group = command.params.get("group", "none")
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        self._log.info(
+            f"Subscribing to order book snapshots for {command.instrument_id} "
+            f"(depth={depth}, group={group}, interval={interval.name if interval else '100ms'})",
+        )
+        await self._ws_client.subscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
+
+    async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
+        """
+        Subscribe to OrderBookDepth10 data for an instrument.
+
+        Uses the Deribit grouped book channel: `book.{instrument}.{group}.{depth}.{interval}`
+        with depth=10 for OrderBookDepth10 compatibility.
+
+        Parameters
+        ----------
+        command : SubscribeOrderBook
+            The subscription command containing instrument_id.
+
+        """
+        if command.book_type != BookType.L2_MBP:
+            self._log.warning(
+                f"Book type {book_type_to_str(command.book_type)} not supported by Deribit, skipping subscription",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # OrderBookDepth10 uses depth=10 by default, but can be overridden
+        depth = command.depth or 10
+        if depth not in (1, 10, 20):
+            if depth < 5:
+                depth = 1
+            elif depth < 15:
+                depth = 10
+            else:
+                depth = 20
+
+        # Use default grouping (no aggregation) and 100ms interval
+        group = "none"
+        interval = None
+
+        self._log.info(
+            f"Subscribing to order book depth for {command.instrument_id} "
+            f"(depth={depth}, group={group}, interval=100ms)",
+        )
+        await self._ws_client.subscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
+
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_book(pyo3_instrument_id)
+
+    async def _unsubscribe_order_book_snapshots(self, command: UnsubscribeOrderBook) -> None:
+        """
+        Unsubscribe from order book snapshots for an instrument.
+
+        Parameters
+        ----------
+        command : UnsubscribeOrderBook
+            The unsubscription command containing instrument_id and optional params.
+            - params.depth: Number of levels per side (1, 10, or 20). Defaults to 10.
+            - params.group: Price grouping (e.g., "none", "1", "5", "10"). Defaults to "none".
+            - params.interval: Update interval (e.g., "100ms", "agg2"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract parameters from command params
+        depth = 10
+        group = "none"
+        interval = None
+        if command.params:
+            depth = int(command.params.get("depth", 10))
+            group = command.params.get("group", "none")
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        # Ensure valid depth
+        if depth not in (1, 10, 20):
+            if depth < 5:
+                depth = 1
+            elif depth < 15:
+                depth = 10
+            else:
+                depth = 20
+
+        self._log.info(
+            f"Unsubscribing from order book snapshots for {command.instrument_id} "
+            f"(depth={depth}, group={group}, interval={interval.name if interval else '100ms'})",
+        )
+        await self._ws_client.unsubscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
+
+    async def _unsubscribe_order_book_depth(self, command: UnsubscribeOrderBook) -> None:
+        """
+        Unsubscribe from OrderBookDepth10 data for an instrument.
+
+        Parameters
+        ----------
+        command : UnsubscribeOrderBook
+            The unsubscription command containing instrument_id.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Use default depth=10 for OrderBookDepth10
+        depth = 10
+        group = "none"
+        interval = None
+
+        self._log.info(
+            f"Unsubscribing from order book depth for {command.instrument_id} "
+            f"(depth={depth}, group={group}, interval=100ms)",
+        )
+        await self._ws_client.unsubscribe_book_grouped(pyo3_instrument_id, group, depth, interval)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -230,6 +482,305 @@ class DeribitDataClient(LiveMarketDataClient):
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
+
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        """
+        Subscribe to instrument state changes for all instruments.
+
+        Uses the Deribit `instrument.state.{kind}.{currency}` WebSocket channel.
+
+        Parameters in command.params:
+        - kind: Instrument kind ("future", "option", "spot", etc.) - defaults to "any"
+        - currency: Currency ("BTC", "ETH", "USDC", etc.) - defaults to "any"
+
+        """
+        kind = "any"
+        currency = "any"
+
+        if command.params:
+            kind = command.params.get("kind", "any")
+            currency = command.params.get("currency", "any")
+
+        self._log.info(f"Subscribing to instrument state changes: {kind}.{currency}")
+        await self._ws_client.subscribe_instrument_state(kind, currency)
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        """
+        Subscribe to instrument state changes for a specific instrument.
+
+        Determines the kind and currency from the instrument ID and subscribes to the
+        appropriate `instrument.state.{kind}.{currency}` channel.
+
+        """
+        symbol = command.instrument_id.symbol.value
+
+        # Determine kind from instrument name pattern
+        if "PERPETUAL" in symbol:
+            kind = "future"
+        elif symbol.endswith(("-C", "-P")):
+            kind = "option"
+        elif "_" in symbol and "-" not in symbol:
+            kind = "spot"
+        else:
+            kind = "future"  # Default for futures with expiry dates like "BTC-28MAR25"
+
+        # Extract currency from symbol
+        # For instruments like "BTC-PERPETUAL", "BTC-28MAR25", "BTC_USDC"
+        parts = symbol.replace("_", "-").split("-")
+        currency = parts[0] if parts else "any"
+
+        self._log.info(
+            f"Subscribing to instrument state for {command.instrument_id} "
+            f"(channel: instrument.state.{kind}.{currency})",
+        )
+        await self._ws_client.subscribe_instrument_state(kind, currency)
+
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
+        """
+        Unsubscribe from instrument state changes.
+
+        Parameters in command.params:
+        - kind: Instrument kind ("future", "option", "spot", etc.) - defaults to "any"
+        - currency: Currency ("BTC", "ETH", "USDC", etc.) - defaults to "any"
+
+        """
+        kind = "any"
+        currency = "any"
+
+        if command.params:
+            kind = command.params.get("kind", "any")
+            currency = command.params.get("currency", "any")
+
+        self._log.info(f"Unsubscribing from instrument state changes: {kind}.{currency}")
+        await self._ws_client.unsubscribe_instrument_state(kind, currency)
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        """
+        Unsubscribe from instrument state changes for a specific instrument.
+
+        Determines the kind and currency from the instrument ID and unsubscribes from
+        the appropriate `instrument.state.{kind}.{currency}` channel.
+
+        """
+        symbol = command.instrument_id.symbol.value
+
+        # Determine kind from instrument name pattern
+        if "PERPETUAL" in symbol:
+            kind = "future"
+        elif symbol.endswith(("-C", "-P")):
+            kind = "option"
+        elif "_" in symbol and "-" not in symbol:
+            kind = "spot"
+        else:
+            kind = "future"
+
+        # Extract currency from symbol
+        parts = symbol.replace("_", "-").split("-")
+        currency = parts[0] if parts else "any"
+
+        self._log.info(
+            f"Unsubscribing from instrument state for {command.instrument_id} "
+            f"(channel: instrument.state.{kind}.{currency})",
+        )
+        await self._ws_client.unsubscribe_instrument_state(kind, currency)
+
+    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        """
+        Subscribe to mark price updates for an instrument.
+
+        Uses the Deribit ticker channel which provides mark price information.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Subscribing to mark prices for {command.instrument_id} "
+            f"(via ticker channel, interval: {interval_display})",
+        )
+        await self._ws_client.subscribe_ticker(pyo3_instrument_id, interval)
+
+    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        """
+        Subscribe to index price updates for an instrument.
+
+        Uses the Deribit ticker channel which provides index price information.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Subscribing to index prices for {command.instrument_id} "
+            f"(via ticker channel, interval: {interval_display})",
+        )
+        await self._ws_client.subscribe_ticker(pyo3_instrument_id, interval)
+
+    async def _subscribe_funding_rates(self, command: SubscribeFundingRates) -> None:
+        """
+        Subscribe to funding rate updates for a perpetual instrument.
+
+        Uses the Deribit perpetual channel which provides funding rate information.
+        Only valid for perpetual instruments.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        symbol = command.instrument_id.symbol.value
+
+        # Validate instrument is a perpetual
+        if "PERPETUAL" not in symbol:
+            self._log.warning(
+                f"Funding rates subscription rejected for {command.instrument_id}: "
+                "only available for perpetual instruments",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Subscribing to funding rates for {command.instrument_id} "
+            f"(via perpetual channel, interval: {interval_display})",
+        )
+        await self._ws_client.subscribe_perpetual_interest_rates(pyo3_instrument_id, interval)
+
+    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
+        """
+        Unsubscribe from mark price updates for an instrument.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Unsubscribing from mark prices for {command.instrument_id} "
+            f"(via ticker channel, interval: {interval_display})",
+        )
+        await self._ws_client.unsubscribe_ticker(pyo3_instrument_id, interval)
+
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        """
+        Unsubscribe from index price updates for an instrument.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Unsubscribing from index prices for {command.instrument_id} "
+            f"(via ticker channel, interval: {interval_display})",
+        )
+        await self._ws_client.unsubscribe_ticker(pyo3_instrument_id, interval)
+
+    async def _unsubscribe_funding_rates(self, command: UnsubscribeFundingRates) -> None:
+        """
+        Unsubscribe from funding rate updates for a perpetual instrument.
+
+        Parameters in command.params:
+        - interval: Update interval (e.g., "100ms", "raw"). Defaults to 100ms.
+
+        """
+        symbol = command.instrument_id.symbol.value
+
+        # Validate instrument is a perpetual
+        if "PERPETUAL" not in symbol:
+            self._log.warning(
+                f"Funding rates unsubscription rejected for {command.instrument_id}: "
+                "only available for perpetual instruments",
+            )
+            return
+
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+
+        # Extract interval from params if provided
+        interval = None
+        if command.params:
+            interval_str = command.params.get("interval")
+            if interval_str:
+                interval = nautilus_pyo3.DeribitUpdateInterval.from_str(interval_str)
+
+        interval_display = interval.name if interval else "100ms (default)"
+        self._log.info(
+            f"Unsubscribing from funding rates for {command.instrument_id} "
+            f"(via perpetual channel, interval: {interval_display})",
+        )
+        await self._ws_client.unsubscribe_perpetual_interest_rates(pyo3_instrument_id, interval)
+
+    async def _subscribe_bars(self, command: SubscribeBars) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+            command.bar_type.instrument_id.value,
+        )
+        # Convert bar specification to Deribit resolution
+        resolution = _bar_spec_to_deribit_resolution(command.bar_type)
+
+        self._log.info(
+            f"Subscribing to bars for {command.bar_type.instrument_id} (resolution: {resolution})",
+            LogColor.BLUE,
+        )
+        await self._ws_client.subscribe_chart(pyo3_instrument_id, resolution)
+
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
+            command.bar_type.instrument_id.value,
+        )
+        # Convert bar specification to Deribit resolution
+        resolution = _bar_spec_to_deribit_resolution(command.bar_type)
+
+        self._log.info(
+            f"Unsubscribing from bars for {command.bar_type.instrument_id} "
+            f"(resolution: {resolution})",
+            LogColor.BLUE,
+        )
+        await self._ws_client.unsubscribe_chart(pyo3_instrument_id, resolution)
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
@@ -475,6 +1026,8 @@ class DeribitDataClient(LiveMarketDataClient):
                 self._handle_data(data)
             elif hasattr(msg, "__class__") and "Instrument" in msg.__class__.__name__:
                 self._handle_instrument_update(msg)
+            elif hasattr(msg, "__class__") and "FundingRateUpdate" in msg.__class__.__name__:
+                self._handle_funding_rate_update(msg)
             else:
                 self._log.error(f"Cannot handle message {msg}, not implemented")
         except Exception as e:
@@ -492,3 +1045,7 @@ class DeribitDataClient(LiveMarketDataClient):
         instrument = transform_instrument_from_pyo3(pyo3_instrument)
 
         self._handle_data(instrument)
+
+    def _handle_funding_rate_update(self, pyo3_funding_rate: Any) -> None:
+        data = FundingRateUpdate.from_pyo3(pyo3_funding_rate)
+        self._handle_data(data)

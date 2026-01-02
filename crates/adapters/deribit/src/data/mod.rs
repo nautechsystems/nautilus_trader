@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use nautilus_common::{
     live::{runner::get_data_event_sender, runtime::get_runtime},
+    log_info,
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -54,13 +55,18 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::consts::DERIBIT_VENUE,
+    common::{
+        consts::DERIBIT_VENUE,
+        parse::{bar_spec_to_resolution, parse_instrument_kind_currency},
+    },
     config::DeribitDataClientConfig,
     http::{
         client::DeribitHttpClient,
         models::{DeribitCurrency, DeribitInstrumentKind},
     },
-    websocket::{client::DeribitWebSocketClient, messages::NautilusWsMessage},
+    websocket::{
+        client::DeribitWebSocketClient, enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+    },
 };
 
 /// Deribit live data client.
@@ -219,6 +225,18 @@ impl DeribitDataClient {
                     auth.expires_in
                 );
             }
+            NautilusWsMessage::FundingRates(funding_rates) => {
+                tracing::info!(
+                    "Received {} funding rate update(s) from WebSocket",
+                    funding_rates.len()
+                );
+                for funding_rate in funding_rates {
+                    tracing::debug!("Sending funding rate: {:?}", funding_rate);
+                    if let Err(e) = sender.send(DataEvent::FundingRate(funding_rate)) {
+                        tracing::error!("Failed to send funding rate: {e}");
+                    }
+                }
+            }
         }
     }
 
@@ -343,12 +361,25 @@ impl DataClient for DeribitDataClient {
             .await
             .context("websocket failed to become active")?;
 
+        // Authenticate if credentials are configured (required for raw streams)
+        if ws.has_credentials() {
+            ws.authenticate_session()
+                .await
+                .context("failed to authenticate Deribit websocket")?;
+            log_info!("Deribit WebSocket authenticated");
+        }
+
         // Get the stream and spawn processing task
         let stream = self.ws_client_mut()?.stream();
         self.spawn_stream_task(stream)?;
 
         self.is_connected.store(true, Ordering::Release);
-        tracing::info!(client_id = %self.client_id, "Connected");
+        let network = if self.config.use_testnet {
+            "testnet"
+        } else {
+            "mainnet"
+        };
+        log_info!("Deribit data client connected ({})", network);
         Ok(())
     }
 
@@ -378,99 +409,838 @@ impl DataClient for DeribitDataClient {
         self.cancellation_token = CancellationToken::new();
         self.is_connected.store(false, Ordering::Relaxed);
 
-        tracing::info!(client_id = %self.client_id, "Disconnected");
+        log_info!("Deribit data client disconnected");
         Ok(())
     }
 
-    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
-        todo!("Implement subscribe_instruments");
+    fn subscribe_instruments(&mut self, cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+        // Extract kind and currency from params, defaulting to "any.any" (all instruments)
+        let kind = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("kind"))
+            .map_or("any", |s| s.as_str())
+            .to_string();
+        let currency = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("currency"))
+            .map_or("any", |s| s.as_str())
+            .to_string();
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        tracing::info!(
+            "Subscribing to instrument state changes for {}.{}",
+            kind,
+            currency
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_instrument_state(&kind, &currency).await {
+                tracing::error!(
+                    "Failed to subscribe to instrument state for {}.{}: {}",
+                    kind,
+                    currency,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
-        todo!("Implement subscribe_instrument");
+    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        // Check if instrument is in cache (should be from connect())
+        let guard = self
+            .instruments
+            .read()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        if !guard.contains_key(&instrument_id) {
+            tracing::warn!(
+                "Instrument {} not in cache - it may have been created after connect()",
+                instrument_id
+            );
+        }
+        drop(guard);
+
+        // Determine kind and currency from instrument_id
+        let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        tracing::info!(
+            "Subscribing to instrument state for {} (channel: {}.{})",
+            instrument_id,
+            kind,
+            currency
+        );
+
+        // Subscribe to broader kind/currency channel (filter in handler)
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_instrument_state(&kind, &currency).await {
+                tracing::error!(
+                    "Failed to subscribe to instrument state for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, _cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
-        todo!("Implement subscribe_book_deltas");
+    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        // Get interval from params, default to 100ms (public)
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        tracing::info!(
+            "Subscribing to book deltas for {} (interval: {}, book_type: {:?})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string()),
+            cmd.book_type
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_book(instrument_id, interval).await {
+                tracing::error!(
+                    "Failed to subscribe to book deltas for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, _cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
-        todo!("Implement subscribe_book_depth10")
+    fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        // Get interval from params, default to 100ms (public)
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        // Get price grouping from params, default to "none" (no grouping)
+        let group = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("group"))
+            .map_or("none", String::as_str)
+            .to_string();
+
+        tracing::info!(
+            "Subscribing to book depth10 for {} (group: {}, interval: {}, book_type: {:?})",
+            instrument_id,
+            group,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string()),
+            cmd.book_type
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws
+                .subscribe_book_grouped(instrument_id, &group, 10, interval)
+                .await
+            {
+                tracing::error!(
+                    "Failed to subscribe to book depth10 for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_book_snapshots(&mut self, _cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
-        todo!("Implement subscribe_book_snapshots");
+    fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        // Get interval from params, default to 100ms (public)
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        // Get price grouping from params, default to "none" (no grouping)
+        let group = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("group"))
+            .map_or("none", String::as_str)
+            .to_string();
+
+        // Deribit supports depth values: 1, 10, or 20
+        // Default to 20 for book snapshots if not specified
+        let depth = cmd.depth.map_or(20, |d| d.get() as u32).clamp(1, 20);
+
+        // Map to valid Deribit depth (1, 10, or 20)
+        let deribit_depth = if depth <= 1 {
+            1
+        } else if depth <= 10 {
+            10
+        } else {
+            20
+        };
+
+        tracing::info!(
+            "Subscribing to book snapshots for {} (depth: {}, group: {}, interval: {}, interval_ms: {:?})",
+            instrument_id,
+            deribit_depth,
+            group,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string()),
+            cmd.interval_ms
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws
+                .subscribe_book_grouped(instrument_id, &group, deribit_depth, interval)
+                .await
+            {
+                tracing::error!(
+                    "Failed to subscribe to book snapshots for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_quotes(&mut self, _cmd: &SubscribeQuotes) -> anyhow::Result<()> {
-        todo!("Implement subscribe_quotes")
+    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        tracing::info!("Subscribing to quotes for {}", instrument_id);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_quotes(instrument_id).await {
+                tracing::error!("Failed to subscribe to quotes for {}: {}", instrument_id, e);
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_trades(&mut self, _cmd: &SubscribeTrades) -> anyhow::Result<()> {
-        todo!("Implement subscribe_trades")
+    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        tracing::info!(
+            "Subscribing to trades for {} (interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_trades(instrument_id, interval).await {
+                tracing::error!("Failed to subscribe to trades for {}: {}", instrument_id, e);
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, _cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
-        todo!("Implement subscribe_mark_prices")
+    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        tracing::info!(
+            "Subscribing to mark prices for {} (via ticker channel, interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_ticker(instrument_id, interval).await {
+                tracing::error!(
+                    "Failed to subscribe to mark prices for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, _cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
-        todo!("Implement subscribe_index_prices")
+    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        tracing::info!(
+            "Subscribing to index prices for {} (via ticker channel, interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_ticker(instrument_id, interval).await {
+                tracing::error!(
+                    "Failed to subscribe to index prices for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, _cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
-        todo!("Implement subscribe_funding_rates")
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        // Validate instrument is a perpetual - funding rates only apply to perpetual contracts
+        let is_perpetual = self
+            .instruments
+            .read()
+            .map_err(|e| anyhow::anyhow!("Instrument cache lock poisoned: {e}"))?
+            .get(&instrument_id)
+            .is_some_and(|inst| matches!(inst, InstrumentAny::CryptoPerpetual(_)));
+
+        if !is_perpetual {
+            tracing::warn!(
+                "Funding rates subscription rejected for {}: only available for perpetual instruments.",
+                instrument_id
+            );
+            return Ok(());
+        }
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        // Funding rates use the dedicated perpetual channel
+        tracing::info!(
+            "Subscribing to funding rates for {} (perpetual channel, interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws
+                .subscribe_perpetual_interests_rates_updates(instrument_id, interval)
+                .await
+            {
+                tracing::error!(
+                    "Failed to subscribe to funding rates for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn subscribe_bars(&mut self, _cmd: &SubscribeBars) -> anyhow::Result<()> {
-        todo!("Implement subscribe_bars");
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.bar_type.instrument_id();
+        // Convert bar spec to Deribit resolution
+        let resolution = bar_spec_to_resolution(&cmd.bar_type);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_chart(instrument_id, &resolution).await {
+                tracing::error!("Failed to subscribe to bars for {}: {}", instrument_id, e);
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_instruments");
+    fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
+        let kind = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("kind"))
+            .map_or("any", |s| s.as_str())
+            .to_string();
+        let currency = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("currency"))
+            .map_or("any", |s| s.as_str())
+            .to_string();
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        tracing::info!(
+            "Unsubscribing from instrument state changes for {}.{}",
+            kind,
+            currency
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_instrument_state(&kind, &currency).await {
+                tracing::error!(
+                    "Failed to unsubscribe from instrument state for {}.{}: {}",
+                    kind,
+                    currency,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_instrument");
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        // Determine kind and currency from instrument_id
+        let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        tracing::info!(
+            "Unsubscribing from instrument state for {} (channel: {}.{})",
+            instrument_id,
+            kind,
+            currency
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_instrument_state(&kind, &currency).await {
+                tracing::error!(
+                    "Failed to unsubscribe from instrument state for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_book_deltas(&mut self, _cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_book_deltas");
+    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        // Get interval from params to match the subscribed channel
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        tracing::info!(
+            "Unsubscribing from book deltas for {} (interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_book(instrument_id, interval).await {
+                tracing::error!(
+                    "Failed to unsubscribe from book deltas for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_book_depth10(&mut self, _cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_book_depth10");
+    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        // Get interval from params to match the subscribed channel
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        // Get price grouping from params to match the subscribed channel
+        let group = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("group"))
+            .map_or("none", String::as_str)
+            .to_string();
+
+        tracing::info!(
+            "Unsubscribing from book depth10 for {} (group: {}, interval: {})",
+            instrument_id,
+            group,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws
+                .unsubscribe_book_grouped(instrument_id, &group, 10, interval)
+                .await
+            {
+                tracing::error!(
+                    "Failed to unsubscribe from book depth10 for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_book_snapshots(
-        &mut self,
-        _cmd: &UnsubscribeBookSnapshots,
-    ) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_book_snapshots");
+    fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        // Get interval from params to match the subscribed channel
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        // Get price grouping from params to match the subscribed channel
+        let group = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("group"))
+            .map_or("none", String::as_str)
+            .to_string();
+
+        // Get depth from params to match the subscribed channel, default to 20
+        let depth = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("depth"))
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(20);
+
+        // Map to valid Deribit depth (1, 10, or 20)
+        let deribit_depth = if depth <= 1 {
+            1
+        } else if depth <= 10 {
+            10
+        } else {
+            20
+        };
+
+        tracing::info!(
+            "Unsubscribing from book snapshots for {} (depth: {}, group: {}, interval: {})",
+            instrument_id,
+            deribit_depth,
+            group,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws
+                .unsubscribe_book_grouped(instrument_id, &group, deribit_depth, interval)
+                .await
+            {
+                tracing::error!(
+                    "Failed to unsubscribe from book snapshots for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_quotes(&mut self, _cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_quotes");
+    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        tracing::info!("Unsubscribing from quotes for {}", instrument_id);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
+                tracing::error!(
+                    "Failed to unsubscribe from quotes for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_trades(&mut self, _cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_trades");
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        tracing::info!(
+            "Unsubscribing from trades for {} (interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_trades(instrument_id, interval).await {
+                tracing::error!(
+                    "Failed to unsubscribe from trades for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_mark_prices(&mut self, _cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_mark_prices");
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        tracing::info!(
+            "Unsubscribing from mark prices for {} (via ticker channel, interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_ticker(instrument_id, interval).await {
+                tracing::error!(
+                    "Failed to unsubscribe from mark prices for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_index_prices(&mut self, _cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_index_prices");
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.instrument_id;
+
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        tracing::info!(
+            "Unsubscribing from index prices for {} (via ticker channel, interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_ticker(instrument_id, interval).await {
+                tracing::error!(
+                    "Failed to unsubscribe from index prices for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_funding_rates(&mut self, _cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_funding_rates")
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        // Validate instrument is a perpetual - funding rates only apply to perpetual contracts
+        let is_perpetual = self
+            .instruments
+            .read()
+            .map_err(|e| anyhow::anyhow!("Instrument cache lock poisoned: {e}"))?
+            .get(&instrument_id)
+            .is_some_and(|inst| matches!(inst, InstrumentAny::CryptoPerpetual(_)));
+
+        if !is_perpetual {
+            tracing::warn!(
+                "Funding rates unsubscription rejected for {}: only available for perpetual instruments.",
+                instrument_id
+            );
+            return Ok(());
+        }
+
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+
+        let interval = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("interval"))
+            .and_then(|v| v.parse::<DeribitUpdateInterval>().ok());
+
+        tracing::info!(
+            "Unsubscribing from funding rates for {} (perpetual channel, interval: {})",
+            instrument_id,
+            interval.map_or("100ms (default)".to_string(), |i| i.to_string())
+        );
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws
+                .unsubscribe_perpetual_interest_rates_updates(instrument_id, interval)
+                .await
+            {
+                tracing::error!(
+                    "Failed to unsubscribe from funding rates for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, _cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        todo!("Implement unsubscribe_bars");
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        let ws = self
+            .ws_client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
+            .clone();
+        let instrument_id = cmd.bar_type.instrument_id();
+        let resolution = bar_spec_to_resolution(&cmd.bar_type);
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_chart(instrument_id, &resolution).await {
+                tracing::error!(
+                    "Failed to unsubscribe from bars for {}: {}",
+                    instrument_id,
+                    e
+                );
+            }
+        });
+
+        Ok(())
     }
 
     fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {

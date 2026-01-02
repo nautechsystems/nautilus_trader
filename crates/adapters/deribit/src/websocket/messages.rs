@@ -16,7 +16,7 @@
 //! Data structures for Deribit WebSocket JSON-RPC messages.
 
 use nautilus_model::{
-    data::{Data, OrderBookDeltas},
+    data::{Data, FundingRateUpdate, OrderBookDeltas},
     instruments::InstrumentAny,
 };
 use serde::{Deserialize, Serialize};
@@ -264,6 +264,104 @@ pub struct DeribitQuoteMsg {
     pub best_ask_amount: f64,
 }
 
+/// Instrument lifecycle state from Deribit.
+///
+/// Represents the current state of an instrument in its lifecycle.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::AsRefStr,
+    strum::EnumIter,
+    strum::EnumString,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.deribit")
+)]
+pub enum DeribitInstrumentState {
+    /// Instrument has been created but not yet active.
+    Created,
+    /// Instrument is active and trading.
+    Started,
+    /// Instrument has been settled (options/futures at expiry).
+    Settled,
+    /// Instrument is closed for trading.
+    Closed,
+    /// Instrument has been terminated.
+    Terminated,
+}
+
+impl std::fmt::Display for DeribitInstrumentState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Created => write!(f, "created"),
+            Self::Started => write!(f, "started"),
+            Self::Settled => write!(f, "settled"),
+            Self::Closed => write!(f, "closed"),
+            Self::Terminated => write!(f, "terminated"),
+        }
+    }
+}
+
+/// Instrument state notification from `instrument.state.{kind}.{currency}` channel.
+///
+/// Notifications are sent when an instrument's lifecycle state changes.
+/// Example: `{"instrument_name":"BTC-22MAR19","state":"created","timestamp":1553080940000}`
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitInstrumentStateMsg {
+    /// Name of the instrument.
+    pub instrument_name: Ustr,
+    /// Current state of the instrument.
+    pub state: DeribitInstrumentState,
+    /// Timestamp of the state change in milliseconds.
+    pub timestamp: u64,
+}
+
+/// Deribit perpetual interest rate message.
+///
+/// Sent via the `perpetual.{instrument_name}.{interval}` channel.
+/// Only available for perpetual instruments.
+/// Example: `{"index_price":7872.88,"interest":0.004999511380756577,"timestamp":1571386349530}`
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitPerpetualMsg {
+    /// Current index price.
+    pub index_price: f64,
+    /// Current interest rate (funding rate).
+    pub interest: f64,
+    /// Timestamp in milliseconds since Unix epoch.
+    pub timestamp: u64,
+}
+
+/// Chart/OHLC bar data from chart.trades.{instrument}.{resolution} channel.
+///
+/// Sent via the `chart.trades.{instrument_name}.{resolution}` channel.
+/// Example: `{"tick":1767199200000,"open":87699.5,"high":87699.5,"low":87699.5,"close":87699.5,"volume":1.1403e-4,"cost":10.0}`
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeribitChartMsg {
+    /// Bar timestamp in milliseconds since Unix epoch.
+    pub tick: u64,
+    /// Opening price.
+    pub open: f64,
+    /// Highest price.
+    pub high: f64,
+    /// Lowest price.
+    pub low: f64,
+    /// Closing price.
+    pub close: f64,
+    /// Volume in base currency.
+    pub volume: f64,
+    /// Volume in USD.
+    pub cost: f64,
+}
+
 /// Raw Deribit WebSocket message variants.
 #[derive(Debug, Clone)]
 pub enum DeribitWsMessage {
@@ -309,6 +407,8 @@ pub enum NautilusWsMessage {
     Deltas(OrderBookDeltas),
     /// Instrument definition update.
     Instrument(Box<InstrumentAny>),
+    /// Funding rate updates (for perpetual instruments).
+    FundingRates(Vec<FundingRateUpdate>),
     /// Error from venue.
     Error(DeribitWsError),
     /// Unhandled/raw message for debugging.

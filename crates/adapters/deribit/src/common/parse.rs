@@ -46,6 +46,60 @@ use crate::{
     },
 };
 
+/// Parses a Deribit instrument ID into kind and currency for WebSocket channel subscription.
+///
+/// Deribit instrument naming conventions (per Deribit docs):
+/// - **Future**: `{CURRENCY}-{DMMMYY}` (e.g., "BTC-25MAR23", "BTC-5AUG23")
+/// - **Perpetual**: `{CURRENCY}-PERPETUAL` (e.g., "BTC-PERPETUAL")
+/// - **Option**: `{CURRENCY}-{DMMMYY}-{STRIKE}-{C|P}` (e.g., "BTC-25MAR23-420-C", "BTC-5AUG23-580-P")
+/// - **Linear Option**: `{BASE}_{QUOTE}-{DMMMYY}-{STRIKE}-{C|P}` (e.g., "XRP_USDC-30JUN23-0d625-C")
+///   - Note: `d` is used as decimal point for decimal strikes (0d625 = 0.625)
+/// - **Spot**: `{BASE}_{QUOTE}` (e.g., "BTC_USDC")
+///
+/// Returns `(kind, currency)` tuple for `instrument.state.{kind}.{currency}` channel.
+///
+/// Valid kinds: `future`, `option`, `spot`, `future_combo`, `option_combo`, `any`
+/// Valid currencies: `BTC`, `ETH`, `USDC`, `USDT`, `EURR`, `any`
+#[must_use]
+pub fn parse_instrument_kind_currency(instrument_id: &InstrumentId) -> (String, String) {
+    let symbol = instrument_id.symbol.as_str();
+
+    // Determine kind from instrument name pattern
+    // Order matters: check most specific patterns first
+    let kind = if symbol.contains("PERPETUAL") {
+        "future" // Perpetuals are treated as futures in Deribit API
+    } else if symbol.ends_with("-C") || symbol.ends_with("-P") {
+        // Options end with -C (call) or -P (put)
+        "option"
+    } else if symbol.contains('_') && !symbol.contains('-') {
+        // Spot pairs have underscore but no dash (e.g., "BTC_USDC")
+        "spot"
+    } else {
+        // Default to future for expiry dates like "BTC-25MAR23"
+        "future"
+    };
+
+    // Extract currency (first part before '-' or '_')
+    // For most instruments, currency is the first segment
+    let currency = if let Some(idx) = symbol.find('-') {
+        // Futures, perpetuals, options: "BTC-..." → "BTC"
+        // Linear options: "XRP_USDC-..." → extract base currency "XRP"
+        let first_part = &symbol[..idx];
+        if let Some(underscore_idx) = first_part.find('_') {
+            first_part[..underscore_idx].to_string()
+        } else {
+            first_part.to_string()
+        }
+    } else if let Some(idx) = symbol.find('_') {
+        // Spot: "BTC_USDC" → "BTC"
+        symbol[..idx].to_string()
+    } else {
+        "any".to_string()
+    };
+
+    (kind.to_string(), currency)
+}
+
 /// Extracts server timestamp from response and converts to UnixNanos.
 ///
 /// # Errors
@@ -632,6 +686,54 @@ pub fn parse_order_book(
     Ok(book)
 }
 
+/// Converts a Nautilus BarType to a Deribit chart resolution.
+///
+/// Deribit resolutions: "1", "3", "5", "10", "15", "30", "60", "120", "180", "360", "720", "1D"
+pub fn bar_spec_to_resolution(bar_type: &BarType) -> String {
+    use nautilus_model::enums::BarAggregation;
+
+    let spec = bar_type.spec();
+    match spec.aggregation {
+        BarAggregation::Minute => {
+            let step = spec.step.get();
+            // Map to nearest Deribit resolution
+            match step {
+                1 => "1".to_string(),
+                2..=3 => "3".to_string(),
+                4..=5 => "5".to_string(),
+                6..=10 => "10".to_string(),
+                11..=15 => "15".to_string(),
+                16..=30 => "30".to_string(),
+                31..=60 => "60".to_string(),
+                61..=120 => "120".to_string(),
+                121..=180 => "180".to_string(),
+                181..=360 => "360".to_string(),
+                361..=720 => "720".to_string(),
+                _ => "1D".to_string(),
+            }
+        }
+        BarAggregation::Hour => {
+            let step = spec.step.get();
+            match step {
+                1 => "60".to_string(),
+                2 => "120".to_string(),
+                3 => "180".to_string(),
+                4..=6 => "360".to_string(),
+                7..=12 => "720".to_string(),
+                _ => "1D".to_string(),
+            }
+        }
+        BarAggregation::Day => "1D".to_string(),
+        _ => {
+            tracing::warn!(
+                "Unsupported bar aggregation {:?}, defaulting to 1 minute",
+                spec.aggregation
+            );
+            "1".to_string()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::instruments::Instrument;
@@ -1056,5 +1158,71 @@ mod tests {
             asks_map.contains_key(&dec!(87031.5)),
             "Asks map should contain worst ask price"
         );
+    }
+
+    fn make_instrument_id(symbol: &str) -> InstrumentId {
+        InstrumentId::new(Symbol::from(symbol), Venue::from("DERIBIT"))
+    }
+
+    #[rstest]
+    fn test_parse_futures_and_perpetuals() {
+        // Perpetuals are classified as "future" in Deribit API
+        let cases = [
+            ("BTC-PERPETUAL", "future", "BTC"),
+            ("ETH-PERPETUAL", "future", "ETH"),
+            ("SOL-PERPETUAL", "future", "SOL"),
+            // Futures with expiry dates
+            ("BTC-25MAR23", "future", "BTC"),
+            ("BTC-5AUG23", "future", "BTC"), // Single digit day
+            ("ETH-28MAR25", "future", "ETH"),
+        ];
+
+        for (symbol, expected_kind, expected_currency) in cases {
+            let (kind, currency) = parse_instrument_kind_currency(&make_instrument_id(symbol));
+            assert_eq!(kind, expected_kind, "kind mismatch for {symbol}");
+            assert_eq!(
+                currency, expected_currency,
+                "currency mismatch for {symbol}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_parse_options() {
+        let cases = [
+            // Standard options: {CURRENCY}-{DMMMYY}-{STRIKE}-{C|P}
+            ("BTC-25MAR23-420-C", "option", "BTC"),
+            ("BTC-5AUG23-580-P", "option", "BTC"),
+            ("ETH-28MAR25-4000-C", "option", "ETH"),
+            // Linear option with decimal strike (d = decimal point)
+            ("XRP_USDC-30JUN23-0d625-C", "option", "XRP"),
+        ];
+
+        for (symbol, expected_kind, expected_currency) in cases {
+            let (kind, currency) = parse_instrument_kind_currency(&make_instrument_id(symbol));
+            assert_eq!(kind, expected_kind, "kind mismatch for {symbol}");
+            assert_eq!(
+                currency, expected_currency,
+                "currency mismatch for {symbol}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_parse_spot() {
+        let cases = [
+            ("BTC_USDC", "spot", "BTC"),
+            ("ETH_USDT", "spot", "ETH"),
+            ("SOL_USDC", "spot", "SOL"),
+        ];
+
+        for (symbol, expected_kind, expected_currency) in cases {
+            let (kind, currency) = parse_instrument_kind_currency(&make_instrument_id(symbol));
+            assert_eq!(kind, expected_kind, "kind mismatch for {symbol}");
+            assert_eq!(
+                currency, expected_currency,
+                "currency mismatch for {symbol}"
+            );
+        }
     }
 }

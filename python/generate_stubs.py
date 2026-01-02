@@ -24,12 +24,12 @@ This script can be used as:
 """
 
 import argparse
-from dataclasses import dataclass
-from pathlib import Path
 import re
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass
+from pathlib import Path
 
 
 def run_command(cmd, cwd=None, check=True):

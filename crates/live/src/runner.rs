@@ -267,6 +267,9 @@ impl AsyncRunner {
             DataEvent::Response(resp) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_response(), &resp);
             }
+            DataEvent::FundingRate(funding_rate) => {
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &funding_rate);
+            }
             #[cfg(feature = "defi")]
             DataEvent::DeFi(data) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_process(), &data);

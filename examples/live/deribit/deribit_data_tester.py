@@ -19,7 +19,8 @@ Deribit data client tester example.
 This example demonstrates how to use the Deribit data adapter to:
 - Connect to Deribit (testnet by default)
 - Load instruments for all currencies
-- Subscribe to market data (trades, quotes, order book)
+- Subscribe to market data (trades, quotes, order book, bars)
+- Subscribe to 1-minute OHLCV bars for BTC and ETH perpetuals
 
 Environment variables (for testnet):
 - DERIBIT_TESTNET_API_KEY: Your Deribit testnet API key
@@ -66,9 +67,10 @@ instrument_kinds: tuple[DeribitInstrumentKind, ...] | None = (
 # BTC-PERPETUAL is a popular perpetual futures contract
 perpetual_id = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
 
-# Define bar types for historical data requests
+# Define bar types for live subscriptions (1-minute bars)
 bar_types = [
     BarType.from_str(f"BTC-PERPETUAL.{DERIBIT}-1-MINUTE-LAST-EXTERNAL"),
+    BarType.from_str(f"ETH-PERPETUAL.{DERIBIT}-1-MINUTE-LAST-EXTERNAL"),
 ]
 
 # Configure the trading node
@@ -104,7 +106,8 @@ node = TradingNode(config=config_node)
 # Configure and initialize the tester
 config_tester = DataTesterConfig(
     instrument_ids=[perpetual_id],
-    request_book_snapshot=True,
+    subscribe_bars=True,
+    bar_types=bar_types,
     log_data=True,
 )
 tester = DataTester(config=config_tester)

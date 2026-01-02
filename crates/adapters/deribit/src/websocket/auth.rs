@@ -15,13 +15,7 @@
 
 //! Authentication state and token refresh for Deribit WebSocket connections.
 
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::Duration,
-};
+use std::time::Duration;
 
 use nautilus_common::live::get_runtime;
 use nautilus_core::{UUID4, time::get_atomic_clock_realtime};
@@ -30,7 +24,7 @@ use super::{
     handler::HandlerCommand,
     messages::{DeribitAuthParams, DeribitAuthResult, DeribitRefreshTokenParams},
 };
-use crate::common::{credential::Credential, rpc::DeribitJsonRpcRequest};
+use crate::common::credential::Credential;
 
 /// Default session name for Deribit WebSocket authentication.
 pub const DEFAULT_SESSION_NAME: &str = "nautilus";
@@ -86,20 +80,18 @@ impl AuthState {
 /// Sends an authentication request using client_signature grant type.
 ///
 /// This is a helper function used by both initial authentication and re-authentication
-/// after reconnection. It generates the signature, creates the JSON-RPC request, and
-/// sends it via the command channel.
+/// after reconnection. It generates the signature and sends auth params via the command channel.
+/// The handler is responsible for generating the request ID.
 ///
 /// # Arguments
 ///
 /// * `credential` - API credentials for signing the request
 /// * `scope` - Optional scope (e.g., "session:nautilus" for session-based auth)
 /// * `cmd_tx` - Command channel to send the authentication request
-/// * `request_id_counter` - Counter for generating unique request IDs
 pub fn send_auth_request(
     credential: &Credential,
     scope: Option<String>,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
-    request_id_counter: &Arc<AtomicU64>,
 ) {
     let timestamp = get_atomic_clock_realtime().get_time_ms();
     let nonce = UUID4::new().to_string();
@@ -115,11 +107,10 @@ pub fn send_auth_request(
         scope,
     };
 
-    let request_id = request_id_counter.fetch_add(1, Ordering::Relaxed);
-    let request = DeribitJsonRpcRequest::new(request_id, "public/auth", auth_params);
-
-    if let Ok(payload) = serde_json::to_string(&request) {
-        let _ = cmd_tx.send(HandlerCommand::Authenticate { payload });
+    if let Ok(auth_params_value) = serde_json::to_value(&auth_params) {
+        let _ = cmd_tx.send(HandlerCommand::Authenticate {
+            auth_params: auth_params_value,
+        });
     }
 }
 
@@ -132,7 +123,6 @@ pub fn spawn_token_refresh_task(
     expires_in: u64,
     refresh_token: String,
     cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
-    request_id_counter: Arc<AtomicU64>,
 ) {
     // Refresh at 80% of token lifetime to ensure we never expire
     let refresh_delay_secs = (expires_in as f64 * 0.8) as u64;
@@ -151,11 +141,10 @@ pub fn spawn_token_refresh_task(
             refresh_token,
         };
 
-        let request_id = request_id_counter.fetch_add(1, Ordering::Relaxed);
-        let request = DeribitJsonRpcRequest::new(request_id, "public/auth", refresh_params);
-
-        if let Ok(payload) = serde_json::to_string(&request) {
-            let _ = cmd_tx.send(HandlerCommand::Authenticate { payload });
+        if let Ok(auth_params_value) = serde_json::to_value(&refresh_params) {
+            let _ = cmd_tx.send(HandlerCommand::Authenticate {
+                auth_params: auth_params_value,
+            });
         }
     });
 }

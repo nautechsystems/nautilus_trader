@@ -250,6 +250,14 @@ impl DeribitWebSocketClient {
                         NautilusWsMessage::Raw(msg) => {
                             tracing::debug!("Received raw message, skipping: {msg}");
                         }
+                        NautilusWsMessage::FundingRates(funding_rates) => Python::attach(|py| {
+                            for funding_rate in funding_rates {
+                                let py_obj = Py::new(py, funding_rate)
+                                    .expect("Failed to create FundingRateUpdate PyObject")
+                                    .into_any();
+                                call_python(py, &callback, py_obj);
+                            }
+                        }),
                     }
                 }
             });
@@ -449,6 +457,65 @@ impl DeribitWebSocketClient {
         })
     }
 
+    /// Subscribes to grouped order book updates for an instrument.
+    ///
+    /// Uses the Deribit `book.{instrument}.{group}.{depth}.{interval}` channel format.
+    /// This provides depth-limited order book data with configurable grouping.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to subscribe to.
+    /// * `group` - Price grouping level (e.g., "none", "1", "2", "5", "10", "25", "100", "250").
+    /// * `depth` - Number of price levels per side (1, 10, or 20).
+    /// * `interval` - Update interval. Defaults to `Ms100` (100ms). `Raw` requires authentication.
+    #[pyo3(name = "subscribe_book_grouped")]
+    #[pyo3(signature = (instrument_id, group, depth, interval=None))]
+    fn py_subscribe_book_grouped<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        group: String,
+        depth: u32,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_book_grouped(instrument_id, &group, depth, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from grouped order book updates for an instrument.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to unsubscribe from.
+    /// * `group` - Price grouping level (e.g., "none", "1", "2", "5", "10", "25", "100", "250").
+    /// * `depth` - Number of price levels per side (1, 10, or 20).
+    /// * `interval` - Update interval. Defaults to `Ms100` (100ms).
+    #[pyo3(name = "unsubscribe_book_grouped")]
+    #[pyo3(signature = (instrument_id, group, depth, interval=None))]
+    fn py_unsubscribe_book_grouped<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        group: String,
+        depth: u32,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_book_grouped(instrument_id, &group, depth, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
     /// Subscribes to ticker updates for an instrument.
     ///
     /// # Arguments
@@ -568,6 +635,145 @@ impl DeribitWebSocketClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client.unsubscribe(channels).await.map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Subscribes to instrument state changes for a kind/currency pair.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - Instrument kind: "future", "option", "spot", "future_combo", "option_combo", or "any"
+    /// * `currency` - Currency: "BTC", "ETH", "USDC", "USDT", "EURR", or "any"
+    #[pyo3(name = "subscribe_instrument_state")]
+    fn py_subscribe_instrument_state<'py>(
+        &self,
+        py: Python<'py>,
+        kind: String,
+        currency: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_instrument_state(&kind, &currency)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from instrument state changes for a kind/currency pair.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - Instrument kind: "future", "option", "spot", "future_combo", "option_combo", or "any"
+    /// * `currency` - Currency: "BTC", "ETH", "USDC", "USDT", "EURR", or "any"
+    #[pyo3(name = "unsubscribe_instrument_state")]
+    fn py_unsubscribe_instrument_state<'py>(
+        &self,
+        py: Python<'py>,
+        kind: String,
+        currency: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_instrument_state(&kind, &currency)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Subscribes to perpetual interest rates updates (funding rates).
+    ///
+    /// Uses the Deribit `perpetual.{instrument_name}.{interval}` WebSocket channel.
+    /// This provides mark price, index price, and funding rate information.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The perpetual instrument to subscribe to.
+    /// * `interval` - Update interval. Defaults to 100ms. Use None for 100ms.
+    #[pyo3(name = "subscribe_perpetual_interest_rates")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_subscribe_perpetual_interest_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_perpetual_interests_rates_updates(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from perpetual interest rates updates (funding rates).
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The perpetual instrument to unsubscribe from.
+    /// * `interval` - Update interval. Defaults to 100ms. Use None for 100ms.
+    #[pyo3(name = "unsubscribe_perpetual_interest_rates")]
+    #[pyo3(signature = (instrument_id, interval=None))]
+    fn py_unsubscribe_perpetual_interest_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        interval: Option<DeribitUpdateInterval>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_perpetual_interest_rates_updates(instrument_id, interval)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Subscribes to chart/OHLC bar updates for an instrument.
+    ///
+    /// # Arguments
+    ///
+    /// * `instrument_id` - The instrument to subscribe to
+    /// * `resolution` - Bar resolution: "1", "3", "5", "10", "15", "30", "60", "120", "180",
+    ///                  "360", "720", "1D" (minutes or 1D for daily)
+    #[pyo3(name = "subscribe_chart")]
+    fn py_subscribe_chart<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        resolution: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_chart(instrument_id, &resolution)
+                .await
+                .map_err(to_pyvalue_err)
+        })
+    }
+
+    /// Unsubscribes from chart/OHLC bar updates.
+    #[pyo3(name = "unsubscribe_chart")]
+    fn py_unsubscribe_chart<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        resolution: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_chart(instrument_id, &resolution)
+                .await
+                .map_err(to_pyvalue_err)
         })
     }
 }
