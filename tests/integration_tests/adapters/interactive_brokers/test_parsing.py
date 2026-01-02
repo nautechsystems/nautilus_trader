@@ -37,9 +37,15 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VEN
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_FUT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_OPT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import _tick_size_to_precision
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import expiry_timestring_to_datetime
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    expiry_timestring_to_datetime,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    ib_contract_to_instrument_id,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    instrument_id_to_ib_contract,
+)
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.identifiers import InstrumentId

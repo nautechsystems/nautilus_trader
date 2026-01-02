@@ -15,7 +15,9 @@
 
 import json
 
-from nautilus_trader.adapters.polymarket.common.gamma_markets import normalize_gamma_market_to_clob_format
+from nautilus_trader.adapters.polymarket.common.gamma_markets import (
+    normalize_gamma_market_to_clob_format,
+)
 
 
 def test_normalize_gamma_market_to_clob_format() -> None:

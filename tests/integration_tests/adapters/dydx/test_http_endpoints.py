@@ -26,13 +26,17 @@ from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.enums import DYDXPerpetualPositionStatus
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
-from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import DYDXListPerpetualMarketsResponse
+from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import (
+    DYDXListPerpetualMarketsResponse,
+)
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXAddressResponse
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXSubaccountResponse
 from nautilus_trader.adapters.dydx.schemas.account.asset_positions import DYDXAssetPositionsResponse
 from nautilus_trader.adapters.dydx.schemas.account.fills import DYDXFillsResponse
 from nautilus_trader.adapters.dydx.schemas.account.orders import DYDXOrderResponse
-from nautilus_trader.adapters.dydx.schemas.account.perpetual_positions import DYDXPerpetualPositionsResponse
+from nautilus_trader.adapters.dydx.schemas.account.perpetual_positions import (
+    DYDXPerpetualPositionsResponse,
+)
 from nautilus_trader.core.nautilus_pyo3 import PositionSide
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport

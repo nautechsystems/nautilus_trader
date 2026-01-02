@@ -7,7 +7,6 @@ import typing
 import nautilus_trader.infrastructure
 import nautilus_trader.model
 
-
 class BlockchainDataClientConfig:
     r"""
     Configuration for blockchain data clients.

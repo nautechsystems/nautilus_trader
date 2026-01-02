@@ -3,7 +3,6 @@
 import builtins
 import typing
 
-
 def convert_to_snake_case(input: builtins.str) -> builtins.str:
     r"""
     Convert the given string from any common case (PascalCase, camelCase, kebab-case, etc.)

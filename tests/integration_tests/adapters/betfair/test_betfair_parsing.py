@@ -60,18 +60,28 @@ from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
 from nautilus_trader.adapters.betfair.parsing.requests import make_customer_order_ref
-from nautilus_trader.adapters.betfair.parsing.requests import nautilus_limit_on_close_to_place_instructions
+from nautilus_trader.adapters.betfair.parsing.requests import (
+    nautilus_limit_on_close_to_place_instructions,
+)
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_limit_to_place_instructions
-from nautilus_trader.adapters.betfair.parsing.requests import nautilus_market_on_close_to_place_instructions
+from nautilus_trader.adapters.betfair.parsing.requests import (
+    nautilus_market_on_close_to_place_instructions,
+)
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_market_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_order_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
-from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_betfair_starting_prices
-from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_closes
-from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_status
+from nautilus_trader.adapters.betfair.parsing.streaming import (
+    market_definition_to_betfair_starting_prices,
+)
+from nautilus_trader.adapters.betfair.parsing.streaming import (
+    market_definition_to_instrument_closes,
+)
+from nautilus_trader.adapters.betfair.parsing.streaming import (
+    market_definition_to_instrument_status,
+)
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4

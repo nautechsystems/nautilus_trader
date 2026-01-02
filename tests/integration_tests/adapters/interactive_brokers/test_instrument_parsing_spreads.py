@@ -23,9 +23,13 @@ import pytest
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_futures_spread
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_futures_spread_instrument_id
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    parse_futures_spread_instrument_id,
+)
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_option_spread
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_option_spread_instrument_id
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    parse_option_spread_instrument_id,
+)
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.model.instruments import FuturesSpread

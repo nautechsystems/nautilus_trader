@@ -4,7 +4,6 @@
 import builtins
 import typing
 
-
 class PostgresConnectOptions:
     def __init__(
         self,
