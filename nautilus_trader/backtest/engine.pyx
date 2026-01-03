@@ -2546,7 +2546,7 @@ cdef class SimulatedExchange:
                 cache=cache,
                 clock=clock,
             )
-            # The OptionExcerciseModule subscribes to position events in the `register_venue` method.
+            # The OptionExerciseModule subscribes to position events in the `register_venue` method.
             # The msgbus needs to be available to subscribe to the events.
             # Thus, `register_base` is called before `register_venue`.
             module.register_venue(self)
