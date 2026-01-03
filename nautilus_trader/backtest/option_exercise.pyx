@@ -104,6 +104,8 @@ cdef class OptionExerciseModule(SimulationModule):
                 topic="events.position.*",
                 handler=self.on_position_event,
             )
+        else:
+            self._log.error("msgbus is not available. Cannot subscribe to position events.")
 
     cpdef void pre_process(self, Data data):
         """
