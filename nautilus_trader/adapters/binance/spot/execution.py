@@ -239,6 +239,9 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     def _handle_user_ws_message(self, raw: bytes) -> None:
         try:
             wrapper = self._decoder_spot_user_msg_wrapper.decode(raw)
+            if not wrapper.stream or not wrapper.data:
+                return  # Control message response
+
             self._spot_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:
             self._log.exception(f"Error on handling {raw!r}", e)

@@ -62,8 +62,8 @@ class BinanceSpotUserMsgWrapper(msgspec.Struct, frozen=True):
     Provides a wrapper for execution WebSocket messages from Binance.
     """
 
-    stream: str
-    data: BinanceSpotUserMsgData
+    data: BinanceSpotUserMsgData | None = None
+    stream: str | None = None
 
 
 class BinanceSpotBalance(msgspec.Struct, frozen=True):
