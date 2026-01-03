@@ -32,7 +32,7 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick, stubs::OrderBookDeltaTestBuilder},
     enums::{
         AccountType, AggressorSide, BookAction, BookType, ContingencyType, LiquiditySide, OmsType,
-        OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         OrderEventAny, OrderEventType, OrderFilled, OrderRejected,
@@ -2610,6 +2610,10 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
         .quantity(Quantity::from("1.000"))
         .client_order_id(client_order_id)
         .trigger_price(Price::from("1505.00"))
+        // Explicitly use LAST_PRICE here because this test drives the trailing update via TradeTicks.
+        // TriggerType::Default is documented to behave like BID_ASK (quote-based) and will not update
+        // from last-trade-only data.
+        .trigger_type(TriggerType::LastPrice)
         .trailing_offset(dec!(1))
         .limit_offset(dec!(1))
         .trailing_offset_type(TrailingOffsetType::Price)

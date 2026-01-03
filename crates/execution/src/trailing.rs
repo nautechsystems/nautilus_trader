@@ -404,6 +404,49 @@ mod tests {
     }
 
     #[rstest]
+    #[case(OrderSide::Buy, 1505.0, 1.0, 1480.0, 1479.0, Some(1481.0))] // BUY uses ask as basis
+    #[case(OrderSide::Sell, 1495.0, 1.0, 1521.0, 1520.0, Some(1519.0))] // SELL uses bid as basis
+    fn test_trailing_stop_market_default_uses_bid_ask(
+        #[case] side: OrderSide,
+        #[case] initial_trigger: f64,
+        #[case] offset: f64,
+        #[case] ask: f64,
+        #[case] bid: f64,
+        #[case] expected_trigger: Option<f64>,
+    ) {
+        // NOTE: TriggerType::Default is documented to behave like BID_ASK (quote-based), so it
+        // should not require a last-trade price and should trail using bid/ask.
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::new(initial_trigger, 2))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .trailing_offset(Decimal::from_f64(offset).unwrap())
+            .trigger_type(TriggerType::Default)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::new(0.01, 2),
+            None,
+            None,
+            &order,
+            Some(Price::new(bid, 2)),
+            Some(Price::new(ask, 2)),
+            None, // no last-trade price available
+        );
+
+        let actual_trigger = result.unwrap().0;
+        match (actual_trigger, expected_trigger) {
+            (Some(actual), Some(expected)) => assert_eq!(actual, Price::new(expected, 2)),
+            (None, None) => {}
+            (actual, expected) => {
+                panic!("Unexpected trigger: actual={actual:?} expected={expected:?}")
+            }
+        }
+    }
+
+    #[rstest]
     #[case(OrderSide::Buy, 100.0, 50.0, 98.0, Some(98.49))] // 50bp = 0.5% of 98 = 0.49
     #[case(OrderSide::Buy, 100.0, 100.0, 97.0, Some(97.97))] // 100bp = 1% of 97 = 0.97
     #[case(OrderSide::Sell, 100.0, 50.0, 102.0, Some(101.49))] // 50bp = 0.5% of 102 = 0.51
