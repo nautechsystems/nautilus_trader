@@ -1664,6 +1664,13 @@ cdef class BacktestEngine:
         bint only_now,
         bint as_of_now = False,
     ):
+        """
+        Process time event handlers in strict chronological order.
+
+        This method ensures monotonic processing even when callbacks schedule new timers.
+        After each callback execution, newly scheduled timers are collected and merged
+        into the processing queue to maintain proper temporal ordering.
+        """
         cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef:
             uint64_t i
@@ -1675,17 +1682,39 @@ cdef class BacktestEngine:
             PyObject *raw_callback
             object callback
             SimulatedExchange exchange
+            CVec new_handlers_vec
+            TimeEventHandler_t* new_handlers
+            uint64_t j
+            uint64_t new_ts
+            list[TestClock] clocks
+            # Use a heap of (ts_event, stability_index, (TimeEvent, callback))
+            list heap = []
+            uint64_t stability_counter = 0
+            object heap_item
+            object event_callback_tuple
+
+        # Add initial handlers to heap as Python objects
         for i in range(raw_handler_vec.len):
+            raw_handler = <TimeEventHandler_t>raw_handlers[i]
+            ts_event_init = raw_handler.event.ts_init
+            if not should_skip_time_event(ts_event_init, ts_now, only_now, as_of_now):
+                event = TimeEvent.from_mem_c(raw_handler.event)
+                callback = <object>(<PyObject *>raw_handler.callback_ptr)
+                heappush(heap, (ts_event_init, stability_counter, (event, callback)))
+                stability_counter += 1
+
+        while len(heap) > 0:
             if FORCE_STOP:
                 # The FORCE_STOP flag has already been set,
                 # no further time events should be processed.
                 return
 
-            raw_handler = <TimeEventHandler_t>raw_handlers[i]
-            ts_event_init = raw_handler.event.ts_init
-
-            if should_skip_time_event(ts_event_init, ts_now, only_now, as_of_now):
-                continue  # Do not process event
+            # Pop the earliest event
+            heap_item = heapq.heappop(heap)
+            ts_event_init = heap_item[0]
+            event_callback_tuple = heap_item[2]
+            event = event_callback_tuple[0]
+            callback = event_callback_tuple[1]
 
             # Set all clocks to event timestamp
             set_logging_clock_static_time(ts_event_init)
@@ -1693,14 +1722,10 @@ cdef class BacktestEngine:
             if LOGGING_PYO3:
                 nautilus_pyo3.logging_clock_set_static_time(ts_event_init)
 
-            for clock in get_component_clocks(self._instance_id):
+            clocks = get_component_clocks(self._instance_id)
+            for clock in clocks:
                 clock.set_time(ts_event_init)
 
-            event = TimeEvent.from_mem_c(raw_handler.event)
-
-            # Cast raw `PyObject *` to a `PyObject`
-            raw_callback = <PyObject *>raw_handler.callback_ptr
-            callback = <object>raw_callback
             callback(event)
 
             if ts_event_init != ts_last_init:
@@ -1709,6 +1734,32 @@ cdef class BacktestEngine:
 
                 for exchange in self._venues.values():
                     exchange.process(ts_event_init)
+
+            # After callback execution, check for newly scheduled timers
+            # Advance clocks to ts_now to collect any new timers that should fire
+            # before the next data point
+            for clock in clocks:
+                time_event_accumulator_advance_clock(
+                    &self._accumulator,
+                    &clock._mem,
+                    ts_now,
+                    False,
+                )
+
+            new_handlers_vec = time_event_accumulator_drain(&self._accumulator)
+            if new_handlers_vec.len > 0:
+                new_handlers = <TimeEventHandler_t*>new_handlers_vec.ptr
+                for j in range(new_handlers_vec.len):
+                    raw_handler = new_handlers[j]
+                    new_ts = raw_handler.event.ts_init
+                    # Only add handlers that should be processed in this batch
+                    if not should_skip_time_event(new_ts, ts_now, only_now, as_of_now):
+                        event = TimeEvent.from_mem_c(raw_handler.event)
+                        callback = <object>(<PyObject *>raw_handler.callback_ptr)
+                        heappush(heap, (new_ts, stability_counter, (event, callback)))
+                        stability_counter += 1
+                # Drop the CVec after extracting handlers
+                vec_time_event_handlers_drop(new_handlers_vec)
 
     def _get_log_color_code(self):
         return "\033[36m" if logging_is_colored() else ""
@@ -2540,16 +2591,13 @@ cdef class SimulatedExchange:
         self.modules = []
         for module in modules:
             Condition.not_in(module, self.modules, "module", "modules")
+            module.register_venue(self)
             module.register_base(
                 portfolio=portfolio,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
             )
-            # The OptionExerciseModule subscribes to position events in the `register_venue` method.
-            # The msgbus needs to be available to subscribe to the events.
-            # Thus, `register_base` is called before `register_venue`.
-            module.register_venue(self)
             self.modules.append(module)
             self._log.info(f"Loaded {module}")
 
