@@ -206,6 +206,18 @@ impl AsyncRunner {
         self.channels
     }
 
+    /// Drains all pending data events from the channel and processes them.
+    pub fn drain_pending_data_events(&mut self) {
+        let mut count = 0;
+        while let Ok(evt) = self.channels.data_evt_rx.try_recv() {
+            Self::handle_data_event(evt);
+            count += 1;
+        }
+        if count > 0 {
+            log::debug!("Drained {count} pending data events");
+        }
+    }
+
     /// Runs the async runner event loop.
     ///
     /// This method processes data events, time events, execution events, and signal events in an async loop.
