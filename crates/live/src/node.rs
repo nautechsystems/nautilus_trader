@@ -271,7 +271,15 @@ impl LiveNode {
         self.kernel.start_async().await;
         self.kernel.connect_clients().await?;
         self.await_engines_connected().await?;
+
+        // Process pending data events before reconciliation and starting trader
+        if let Some(runner) = self.runner.as_mut() {
+            runner.drain_pending_data_events();
+        }
+
         self.perform_startup_reconciliation().await?;
+
+        self.kernel.start_trader();
 
         self.handle.set_state(NodeState::Running);
 
@@ -501,7 +509,6 @@ impl LiveNode {
 
                     result = &mut startup_future => {
                         result?;
-                        // self.state is set to Running by complete_startup()
                         break;
                     }
                     Some(handler) = time_evt_rx.recv() => {
@@ -532,6 +539,10 @@ impl LiveNode {
         }
 
         pending.drain();
+
+        // Now start trader - instruments are in cache after drain()
+        self.kernel.start_trader();
+        self.handle.set_state(NodeState::Running);
 
         // Running phase: runs until shutdown deadline expires
         let mut residual_events = 0usize;
@@ -631,9 +642,6 @@ impl LiveNode {
         self.kernel.connect_clients().await?;
         self.await_engines_connected().await?;
         self.perform_startup_reconciliation().await?;
-
-        self.handle.set_state(NodeState::Running);
-
         Ok(())
     }
 

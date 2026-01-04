@@ -124,6 +124,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             BinanceSpotEventType.executionReport: self._handle_execution_report,
             BinanceSpotEventType.listStatus: self._handle_list_status,
             BinanceSpotEventType.balanceUpdate: self._handle_balance_update,
+            BinanceSpotEventType.listenKeyExpired: self._handle_listen_key_expired,
         }
 
         # Websocket spot schema decoders
@@ -259,3 +260,6 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
     def _handle_balance_update(self, raw: bytes) -> None:
         self.create_task(self._update_account_state())
+
+    def _handle_listen_key_expired(self, raw: bytes) -> None:
+        self._log.warning("Listen key expired")

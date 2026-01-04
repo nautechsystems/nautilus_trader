@@ -580,12 +580,19 @@ impl NautilusKernel {
         }
         log::info!("Clients started");
 
+        self.ts_started = Some(self.clock.borrow().timestamp_ns());
+        log::info!("Started");
+    }
+
+    /// Starts the trader (strategies and actors).
+    ///
+    /// This should be called after clients are connected and instruments are cached.
+    pub fn start_trader(&mut self) {
+        log::info!("Starting trader...");
         if let Err(e) = self.trader.start() {
             log::error!("Error starting trader: {e:?}");
         }
-
-        self.ts_started = Some(self.clock.borrow().timestamp_ns());
-        log::info!("Started");
+        log::info!("Trader started");
     }
 
     /// Stops the trader and its registered components.
