@@ -459,6 +459,18 @@ def _ensure_windows_python_import_lib() -> None:
         print(f"Warning: failed to create *t* suffixed Python import library: {e}")
 
 
+def _write_build_info() -> None:
+    """Write build information to a Python file for runtime inspection."""
+    build_info_path = Path("nautilus_trader/_build_info.py")
+    build_info_content = f'''"""Auto-generated build information. Do not edit manually."""
+BUILD_MODE = "{BUILD_MODE}"
+HIGH_PRECISION = {HIGH_PRECISION}
+BUILD_TIMESTAMP = "{dt.datetime.now(dt.UTC).isoformat()}"
+'''
+    build_info_path.write_text(build_info_content)
+    print(f"Wrote build info to {build_info_path}")
+
+
 def _strip_unneeded_symbols() -> None:
     try:
         print("Stripping unneeded symbols from binaries...")
@@ -531,6 +543,7 @@ def build() -> None:
     """
     _ensure_windows_python_import_lib()
     _build_rust_libs()
+    _write_build_info()
     # Allow skipping Rust dylib copy in constrained environments
     if not os.getenv("SKIP_RUST_DYLIB_COPY"):
         _copy_rust_dylibs_to_project()
