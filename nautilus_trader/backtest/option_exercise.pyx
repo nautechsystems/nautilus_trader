@@ -75,7 +75,6 @@ cdef class OptionExerciseModule(SimulationModule):
         super().__init__(config)
 
         self.config = config
-        self.cache = None
         self.expiry_timers = {}  # expiry_ns -> timer_name
         self.processed_expiries = set()  # Track processed expiry timestamps
 
@@ -124,12 +123,14 @@ cdef class OptionExerciseModule(SimulationModule):
         Handle position events to set up exercise timers for new option positions.
         """
         if not self.config.auto_exercise_enabled or not self.exchange:
+            self._log.warning("Auto exercise disabled or exchange not available")
             return
 
         # Check if this is an option position
         instrument = self.exchange.cache.instrument(event.instrument_id)
 
         if not isinstance(instrument, (OptionContract, CryptoOption)):
+            self._log.warning(f"Instrument {instrument.id} is not an option")
             return
 
         expiry_ns = instrument.expiration_ns
@@ -155,6 +156,7 @@ cdef class OptionExerciseModule(SimulationModule):
         Clean up expiry timer if no option positions remain for the given expiry.
         """
         if expiry_ns not in self.expiry_timers:
+            self._log.warning(f"Expiry {expiry_ns} not found")
             return
 
         # Check if any option positions exist for this expiry
@@ -175,13 +177,12 @@ cdef class OptionExerciseModule(SimulationModule):
 
         # If no positions remain for this expiry, cancel the timer
         if not has_positions:
-            timer_name = self.expiry_timers[expiry_ns]
+            timer_name = self.expiry_timers.pop(expiry_ns)
 
             # Cancel the timer (if the clock supports it)
-            self.clock.cancel_timer(timer_name)
+            if timer_name in self.clock.timer_names:
+                self.clock.cancel_timer(timer_name)
 
-            # Remove from our tracking
-            del self.expiry_timers[expiry_ns]
             self._log.debug(f"Cleaned up expiry timer for {expiry_ns} - no positions remaining")
 
     def _on_expiry_timer(self, event: TimeEvent) -> None:
@@ -189,12 +190,14 @@ cdef class OptionExerciseModule(SimulationModule):
         Handle timer events for option expiry.
         """
         if not self.config.auto_exercise_enabled or not self.exchange:
+            self._log.warning(f"Failed to process expiring options at {event.ts_event}: exchange not available or exercise is disabled")
             return
 
         expiry_ns = event.ts_event
 
         # Skip if already processed
         if expiry_ns in self.processed_expiries:
+            self._log.warning(f"Expiry {expiry_ns} already processed")
             return
 
         # Process all options expiring at this timestamp
@@ -206,6 +209,7 @@ cdef class OptionExerciseModule(SimulationModule):
         Process options expiring at the current timestamp.
         """
         if not self.exchange or not self.exchange.cache:
+            self._log.error(f"Failed to process expiring options at {ts_now}: exchange or cache not available")
             return
 
         # Find options expiring at this timestamp
@@ -217,6 +221,7 @@ cdef class OptionExerciseModule(SimulationModule):
                     expiring_options.append(instrument)
 
         if not expiring_options:
+            self._log.warning("No expiring options found")
             return
 
         # Process each expiring option
@@ -227,26 +232,29 @@ cdef class OptionExerciseModule(SimulationModule):
         """
         Process the expiry of a single option.
         """
-        if not self.cache:
+        if not self.exchange or not self.exchange.cache:
+            self._log.error(f"Failed to process expiring option {option.id}: the cache is not available")
             return
 
         # Get option positions
-        positions = self.cache.positions_open(venue=None, instrument_id=option.id)
+        positions = self.exchange.cache.positions_open(venue=None, instrument_id=option.id)
 
         if not positions:
+            self._log.warning(f"No positions found for {option.id}")
             return
 
         # Get underlying price for exercise decision
         underlying_price = self._get_underlying_price(option)
 
         if underlying_price is None:
-            self._log.debug(f"Skipping exercise of {option.id}: no underlying price available")
+            self._log.error(f"Failed to process expiring option {option.id}: no underlying price available")
             return
 
         # Process each position (both long and short)
         for position in positions:
             # Check if option should be exercised (applies to both long and short positions)
             if self._should_exercise(option, underlying_price):
+                self._log.info(f"Exercising {option.id}: {position.side} {position.quantity} @ strike {option.strike_price}")
                 self._exercise(option, position, underlying_price, ts_now)
             # If not exercised, option expires worthless and position is closed at zero value
             else:
@@ -266,7 +274,7 @@ cdef class OptionExerciseModule(SimulationModule):
         if underlying_instrument is None:
             return None
 
-        return self.cache.price(underlying_instrument.id, PriceType.LAST)
+        return self.exchange.cache.price(underlying_instrument.id, PriceType.LAST)
 
     def _should_exercise(self, option: OptionContract | CryptoOption, underlying_price: Price) -> bool:
         """
@@ -528,7 +536,7 @@ cdef class OptionExerciseModule(SimulationModule):
         """Get the underlying instrument for the option."""
         underlying_instrument_id = InstrumentId.from_str(f"{option.underlying}.{option.id.venue}")
 
-        return self._cache.instrument(underlying_instrument_id)
+        return self.exchange.cache.instrument(underlying_instrument_id)
 
     def _create_option_fill(self, option, position, trade_id_suffix: str, venue_id_suffix: str, ts_now: int, use_avg_price: bool = True) -> OrderFilled:
         """Create OrderFilled event for option position closure."""
