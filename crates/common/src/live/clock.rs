@@ -15,19 +15,17 @@
 
 //! Live clock implementation using Tokio for real-time operations.
 
-use std::{
-    collections::BinaryHeap,
-    ops::Deref,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
-
-use ahash::AHashMap;
 use futures::Stream;
 use nautilus_core::{
     AtomicTime, UnixNanos, consts::NAUTILUS_PREFIX, correctness::check_predicate_true,
     time::get_atomic_clock_realtime,
+};
+use std::{
+    collections::{BTreeMap, BinaryHeap},
+    ops::Deref,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
 };
 use ustr::Ustr;
 
@@ -50,7 +48,7 @@ use crate::{
 #[derive(Debug)]
 pub struct LiveClock {
     time: &'static AtomicTime,
-    timers: AHashMap<Ustr, LiveTimer>,
+    timers: BTreeMap<Ustr, LiveTimer>,
     callbacks: CallbackRegistry,
     sender: Option<Arc<dyn TimeEventSender>>,
 }
@@ -61,14 +59,14 @@ impl LiveClock {
     pub fn new(sender: Option<Arc<dyn TimeEventSender>>) -> Self {
         Self {
             time: get_atomic_clock_realtime(),
-            timers: AHashMap::new(),
+            timers: BTreeMap::new(),
             callbacks: CallbackRegistry::new(),
             sender,
         }
     }
 
     #[must_use]
-    pub const fn get_timers(&self) -> &AHashMap<Ustr, LiveTimer> {
+    pub const fn get_timers(&self) -> &BTreeMap<Ustr, LiveTimer> {
         &self.timers
     }
 

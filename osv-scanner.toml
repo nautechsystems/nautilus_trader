@@ -59,3 +59,8 @@ reason = "ruint unsoundness in reciprocal functions, transitive via alloy, we do
 [[IgnoredVulns]]
 id = "GHSA-wj6h-64fc-37mp"
 reason = "ecdsa Minerva timing attack on P-256, maintainers consider sidechannel attacks out of scope, only affects optional dYdX adapter"
+
+# Rust dependencies
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0001"
+reason = "rkyv vulnerability in transitive dependency via rust_decimal 1.39.0. rust_decimal is at latest version and hasn't updated to rkyv 0.8.x yet. Will be fixed when rust_decimal updates."
