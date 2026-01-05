@@ -13,33 +13,36 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import timedelta
 from decimal import Decimal
 
-import pytest
 import pandas as pd
 
-from datetime import timedelta
-
-from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.component import TimeEvent
-
 from nautilus_trader.config import LoggingConfig
-from nautilus_trader.model import TraderId, DataType
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.datetime import unix_nanos_to_iso8601
+from nautilus_trader.model import DataType
+from nautilus_trader.model import TraderId
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.instruments.equity import Equity
-from nautilus_trader.model.data import BarSpecification, BarType, Bar
-from nautilus_trader.model.enums import AccountType, AggregationSource, BarAggregation, OmsType, PriceType
-
+from nautilus_trader.model.custom import customdataclass
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
-from nautilus_trader.core.data import Data
-from nautilus_trader.model.custom import customdataclass
 
 @customdataclass
 class CustomData(Data):
@@ -47,7 +50,12 @@ class CustomData(Data):
 
 
 class Probe(Actor):
-    def __init__(self, alert_delay: timedelta, bar_type : BarType, cancel_alert_on_data : bool = False) -> None:
+    def __init__(
+        self,
+        alert_delay: timedelta,
+        bar_type: BarType,
+        cancel_alert_on_data: bool = False,
+    ) -> None:
         super().__init__()
         self._alert_delay = alert_delay
         self.bar_type = bar_type
@@ -65,12 +73,14 @@ class Probe(Actor):
 
     def check_monotonic(self, method_name: str, ts_event: int) -> None:
         if ts_event < self.ts_last:
-            self.log.error(f"{method_name}: non-monotonic clock! {unix_nanos_to_iso8601(ts_event)} < {unix_nanos_to_iso8601(self.ts_last)}")
+            self.log.error(
+                f"{method_name}: non-monotonic clock! {unix_nanos_to_iso8601(ts_event)} < {unix_nanos_to_iso8601(self.ts_last)}",
+            )
             raise AssertionError("monotonic clock!")
         self.ts_last = ts_event
 
-    def on_bar(self, bar : Bar) -> None:
-        self.check_monotonic('on_bar', bar.ts_event)
+    def on_bar(self, bar: Bar) -> None:
+        self.check_monotonic("on_bar", bar.ts_event)
         self.log.info(f"received bar at {unix_nanos_to_iso8601(bar.ts_event)}")
         self.set_alert()
 
@@ -78,10 +88,10 @@ class Probe(Actor):
         self.log.info(f"receiving data {unix_nanos_to_iso8601(data.ts_event)}")
         if self.cancel_alert_on_data and self._alert_name in self.clock.timer_names:
             self.clock.cancel_timer(self._alert_name)
-        self.check_monotonic('on_data', data.ts_event)
+        self.check_monotonic("on_data", data.ts_event)
 
-    def on_alert(self, evt : TimeEvent) -> None:
-        self.check_monotonic('alert_trigger', evt.ts_event)
+    def on_alert(self, evt: TimeEvent) -> None:
+        self.check_monotonic("alert_trigger", evt.ts_event)
         self.events_received += 1
         now = self.clock.timestamp_ns()
         self.log.info(f"flush called {evt}")
@@ -91,41 +101,48 @@ class Probe(Actor):
             DataType(CustomData),
             CustomData(value=1.0, ts_event=now, ts_init=now),
         )
-    
+
     def set_alert(self) -> None:
         if self._alert_name in self.clock.timer_names:
-            self.log.info(f"alert {self._alert_name} already set to trigger at {unix_nanos_to_iso8601(self.clock.next_time_ns(self._alert_name))}, skipping set.")
+            self.log.info(
+                f"alert {self._alert_name} already set to trigger at {unix_nanos_to_iso8601(self.clock.next_time_ns(self._alert_name))}, skipping set.",
+            )
         else:
             name = self._alert_name
-            self.log.info(f"setting alert {name} to trigger at {self.clock.utc_now() + self._alert_delay}")
+            self.log.info(
+                f"setting alert {name} to trigger at {self.clock.utc_now() + self._alert_delay}",
+            )
             self.clock.set_time_alert(
                 name=name,
                 alert_time=self.clock.utc_now() + self._alert_delay,
                 override=True,
                 allow_past=False,
-                callback = self.on_alert
+                callback=self.on_alert,
             )
-            
+
+
 class ProbeCancel(Probe):
-    def __init__(self, alert_delay: timedelta, bar_type : BarType) -> None:
+    def __init__(self, alert_delay: timedelta, bar_type: BarType) -> None:
         super().__init__(alert_delay=alert_delay, bar_type=bar_type, cancel_alert_on_data=True)
         self._alert_name = "probe_cancel_alert"
 
-def _make_sparse_bars(bar_type: BarType, instr : Equity, N = 4) -> list:
+
+def _make_sparse_bars(bar_type: BarType, instr: Equity, N=4) -> list:
     t0 = pd.Timestamp("2020-01-01T00:00:00Z")
     df = pd.DataFrame(
         {
-            "timestamp": [t0 + i*pd.Timedelta(minutes=1) for i in range(N)],
-            "open": [100.]*N, 
-            "high": [200.]*N, 
-            "low": [100.]*N, 
-            "close": [200.]*N,
-            "volume":[3.]*N,
-        }
+            "timestamp": [t0 + i * pd.Timedelta(minutes=1) for i in range(N)],
+            "open": [100.0] * N,
+            "high": [200.0] * N,
+            "low": [100.0] * N,
+            "close": [200.0] * N,
+            "volume": [3.0] * N,
+        },
     ).set_index("timestamp")
     instr = TestInstrumentProvider.equity(symbol="NDX", venue="NASDAQ")
     wrangler = BarDataWrangler(bar_type, instr)
     return wrangler.process(df)
+
 
 class TestMonotonicClock:
     def test_clock_is_monotonic_across_alerts(self):
@@ -133,7 +150,7 @@ class TestMonotonicClock:
             config=BacktestEngineConfig(
                 trader_id=TraderId("NT-TST"),
                 logging=LoggingConfig(log_level="INFO"),
-            )
+            ),
         )
         NASDAQ = Venue("NASDAQ")
         engine.add_venue(
@@ -142,7 +159,7 @@ class TestMonotonicClock:
             account_type=AccountType.CASH,
             starting_balances=[Money(1_000_000, USD)],
             base_currency=USD,
-            default_leverage=Decimal("1"),
+            default_leverage=Decimal(1),
         )
 
         instr = TestInstrumentProvider.equity(symbol="NDX", venue="NASDAQ")
@@ -150,7 +167,11 @@ class TestMonotonicClock:
 
         bar_type = BarType(
             instrument_id=instr.id,
-            bar_spec=BarSpecification(step=1, aggregation=BarAggregation.MINUTE, price_type=PriceType.LAST),
+            bar_spec=BarSpecification(
+                step=1,
+                aggregation=BarAggregation.MINUTE,
+                price_type=PriceType.LAST,
+            ),
             aggregation_source=AggregationSource.EXTERNAL,
         )
         engine.add_data(_make_sparse_bars(bar_type, instr))

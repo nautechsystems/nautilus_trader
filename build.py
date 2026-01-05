@@ -460,7 +460,9 @@ def _ensure_windows_python_import_lib() -> None:
 
 
 def _write_build_info() -> None:
-    """Write build information to a Python file for runtime inspection."""
+    """
+    Write build information to a Python file for runtime inspection.
+    """
     build_info_path = Path("nautilus_trader/_build_info.py")
     build_info_content = f'''"""Auto-generated build information. Do not edit manually."""
 BUILD_MODE = "{BUILD_MODE}"
