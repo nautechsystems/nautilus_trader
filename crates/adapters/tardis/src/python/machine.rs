@@ -17,7 +17,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 use ahash::AHashMap;
 use futures_util::{Stream, StreamExt, pin_mut};
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, call_python, to_pyruntime_err};
 use nautilus_model::{
     data::{Bar, Data, funding::FundingRateUpdate},
     identifiers::InstrumentId,
@@ -331,11 +331,5 @@ async fn handle_python_stream<S>(
                 break;
             }
         }
-    }
-}
-
-fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        log::error!("Error calling Python: {e}");
     }
 }

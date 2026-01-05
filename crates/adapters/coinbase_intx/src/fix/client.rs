@@ -37,7 +37,7 @@ use nautilus_common::{
     logging::{log_task_started, log_task_stopped},
 };
 #[cfg(feature = "python")]
-use nautilus_core::python::IntoPyObjectNautilusExt;
+use nautilus_core::python::{IntoPyObjectNautilusExt, call_python};
 use nautilus_core::{env::get_or_env_var, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
@@ -527,13 +527,5 @@ impl CoinbaseIntxFixClient {
         }
 
         Ok(())
-    }
-}
-
-// TODO: Can't be moved to core because we don't want to depend on tracing there (no tracing now)
-#[cfg(feature = "python")]
-pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        log::error!("Error calling Python: {e}");
     }
 }

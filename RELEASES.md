@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 ### Breaking Changes
+- Removed `init_tracing()` function from Python bindings (tracing crate removed from Rust codebase; `RUST_LOG` no longer has any effect)
 - Removed dead `subscribe_order_book_snapshots` and `unsubscribe_order_book_snapshots` methods from `LiveMarketDataClient` (were never called by the data engine)
 - Renamed `subscribed_order_book_snapshots` to `subscribed_order_book_depth` for consistency with data engine routing
 - Adapter implementations should now override `_subscribe_order_book_depth` and `_unsubscribe_order_book_depth` for `OrderBookDepth10` subscriptions
@@ -16,11 +17,15 @@ Released on TBD (UTC).
 - Fixed trailing stops default price type (#3379), thanks @KaulSe
 - Fixed registering msgbus with OptionExerciseModule (#3383), thanks @davidsblom
 - Fixed directory URI handling in ParquetDataCatalog for S3 and cloud storage (#3378), thanks @KaulSe
+- Fixed instrument cache race condition during `LiveNode` (Rust) startup (#3385), thanks @filipmacek
 - Fixed quickstart MACD strategy logic (#3377), thanks for reporting @SisyphusCoin
 - Fixed Binance Spot WebSocket subscription acknowledgment parsing (#3382), thanks @Johnkhk
 
 ### Internal Improvements
+- Added Binance `listenKeyExpired` event handling (#3387), thanks @Johnkhk
 - Added Deribit data client (#3368), thanks @filipmacek
+- Removed `tracing` crate from Rust codebase, migrated to `log` crate for simpler logging
+- Upgraded Cython to v3.2.4
 - Upgraded `tokio` crate to v1.49.0
 
 ### Documentation Updates

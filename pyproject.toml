@@ -47,7 +47,7 @@ requires = [
   "setuptools>=80",
   "poetry-core==2.2.1", # Pinned to 2.2.1 for stability
   "numpy>=1.26.4",
-  "cython==3.2.3", # Pinned to 3.2.3 for stability
+  "cython==3.2.4", # Pinned to 3.2.4 for stability
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -93,7 +93,7 @@ visualization = ["plotly>=6.3.1,<7.0.0"]
 
 [dependency-groups]
 dev = [
-  "cython==3.2.3", # Pinned to 3.2.3 for stability
+  "cython==3.2.4", # Pinned to 3.2.4 for stability
   "setuptools>=80",
   "mypy==1.19.1,<2.0.0", # Pinned to 1.19.1 (keep in line with pre-commit)
   "pandas-stubs>=2.3.3,<3.0.0",

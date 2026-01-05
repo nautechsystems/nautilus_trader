@@ -299,11 +299,11 @@ tokio = { version = "1.49.0", default-features = false, features = [
   "signal",
 ] }
 tokio-rustls = "0.26.4"
-tokio-stream = "0.1.17"
+tokio-stream = "0.1.18"
 tokio-tungstenite = { version = "0.28.0", features = [
   "rustls-tls-webpki-roots",
 ] }
-tokio-util = { version = "0.7.17", default-features = false, features = ["io"] }
+tokio-util = { version = "0.7.18", default-features = false, features = ["io"] }
 # Keep tonic in sync with dydx-proto
 tonic = { version = "0.13.1", default-features = false, features = [
   "channel",

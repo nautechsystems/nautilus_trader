@@ -37,7 +37,7 @@
 
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{call_python, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
     identifiers::InstrumentId,
@@ -70,13 +70,6 @@ where
             }
         }
     });
-}
-
-/// Helper function to call Python callback with a PyObject.
-fn call_python(py: Python<'_>, callback: &Py<PyAny>, obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (obj,)) {
-        log::error!("Error calling Python callback: {e}");
-    }
 }
 
 #[pymethods]

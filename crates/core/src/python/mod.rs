@@ -82,6 +82,13 @@ pub fn clone_py_object(obj: &Py<PyAny>) -> Py<PyAny> {
     Python::attach(|py| obj.clone_ref(py))
 }
 
+/// Calls a Python callback with a single argument, logging any errors.
+pub fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
+    if let Err(e) = callback.call1(py, (py_obj,)) {
+        log::error!("Error calling Python: {e}");
+    }
+}
+
 /// Extend `IntoPyObjectExt` helper trait to unwrap `Py<PyAny>` after conversion.
 pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
     /// Convert `self` into a [`Py<PyAny>`] while *panicking* if the conversion fails.

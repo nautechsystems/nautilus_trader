@@ -2414,12 +2414,16 @@ criteria = "safe-to-deploy"
 version = "0.26.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.tokio-stream]]
+version = "0.1.18"
+criteria = "safe-to-deploy"
+
 [[exemptions.tokio-tungstenite]]
 version = "0.28.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.tokio-util]]
-version = "0.7.17"
+version = "0.7.18"
 criteria = "safe-to-deploy"
 
 [[exemptions.toml]]
@@ -2481,18 +2485,6 @@ criteria = "safe-to-deploy"
 [[exemptions.tracing-core]]
 version = "0.1.36"
 criteria = "safe-to-deploy"
-
-[[exemptions.tracing-subscriber]]
-version = "0.3.22"
-criteria = "safe-to-deploy"
-
-[[exemptions.tracing-test]]
-version = "0.2.5"
-criteria = "safe-to-run"
-
-[[exemptions.tracing-test-macro]]
-version = "0.2.5"
-criteria = "safe-to-run"
 
 [[exemptions.tungstenite]]
 version = "0.28.0"
@@ -2935,7 +2927,7 @@ version = "0.5.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.zmij]]
-version = "1.0.9"
+version = "1.0.10"
 criteria = "safe-to-deploy"
 
 [[exemptions.zstd]]

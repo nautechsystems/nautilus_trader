@@ -18,7 +18,7 @@ use futures::{pin_mut, stream::StreamExt};
 use nautilus_common::msgbus::database::MessageBusDatabaseAdapter;
 use nautilus_core::{
     UUID4,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, call_python, to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::identifiers::TraderId;
 use pyo3::prelude::*;
@@ -64,11 +64,5 @@ impl RedisMessageBusDatabase {
     #[pyo3(name = "close")]
     fn py_close(&mut self) {
         self.close();
-    }
-}
-
-fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
-    if let Err(e) = callback.call1(py, (py_obj,)) {
-        log::error!("Error calling Python: {e}");
     }
 }
