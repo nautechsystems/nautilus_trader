@@ -48,18 +48,12 @@ use ustr::Ustr;
 use super::{
     handler::BinanceSpotWsFeedHandler,
     messages::{HandlerCommand, NautilusWsMessage},
-    streams::MAX_STREAMS_PER_CONNECTION,
+    subscription::MAX_STREAMS_PER_CONNECTION,
 };
 use crate::{
-    common::credential::Ed25519Credential,
+    common::{consts::BINANCE_SPOT_SBE_WS_URL, credential::Ed25519Credential},
     websocket::error::{BinanceWsError, BinanceWsResult},
 };
-
-/// SBE stream endpoint.
-pub const SBE_STREAM_URL: &str = "wss://stream-sbe.binance.com/ws";
-
-/// SBE stream testnet endpoint.
-pub const SBE_STREAM_TESTNET_URL: &str = "wss://testnet.binance.vision/ws-api/v3";
 
 /// Binance Spot WebSocket client for SBE market data streams.
 #[derive(Clone)]
@@ -113,7 +107,7 @@ impl BinanceSpotWebSocketClient {
         api_secret: Option<String>,
         heartbeat: Option<u64>,
     ) -> anyhow::Result<Self> {
-        let url = url.unwrap_or(SBE_STREAM_URL.to_string());
+        let url = url.unwrap_or(BINANCE_SPOT_SBE_WS_URL.to_string());
 
         let credential = match (api_key, api_secret) {
             (Some(key), Some(secret)) => Some(Arc::new(Ed25519Credential::new(key, &secret)?)),
@@ -171,6 +165,7 @@ impl BinanceSpotWebSocketClient {
     /// Panics if the internal output receiver mutex is poisoned.
     pub async fn connect(&mut self) -> BinanceWsResult<()> {
         self.signal.store(false, Ordering::Relaxed);
+        self.cancellation_token = CancellationToken::new();
 
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});

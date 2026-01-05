@@ -268,6 +268,41 @@ pub struct BinanceAccountInfo {
     pub balances: Vec<BinanceBalance>,
 }
 
+/// Price filter from SBE response.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinancePriceFilterSbe {
+    /// Price exponent for mantissa conversion.
+    pub price_exponent: i8,
+    /// Minimum price mantissa.
+    pub min_price: i64,
+    /// Maximum price mantissa.
+    pub max_price: i64,
+    /// Tick size mantissa.
+    pub tick_size: i64,
+}
+
+/// Lot size filter from SBE response.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinanceLotSizeFilterSbe {
+    /// Quantity exponent for mantissa conversion.
+    pub qty_exponent: i8,
+    /// Minimum quantity mantissa.
+    pub min_qty: i64,
+    /// Maximum quantity mantissa.
+    pub max_qty: i64,
+    /// Step size mantissa.
+    pub step_size: i64,
+}
+
+/// Symbol filters from SBE response.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BinanceSymbolFiltersSbe {
+    /// Price filter (required for trading).
+    pub price_filter: Option<BinancePriceFilterSbe>,
+    /// Lot size filter (required for trading).
+    pub lot_size_filter: Option<BinanceLotSizeFilterSbe>,
+}
+
 /// Symbol information from SBE exchange info response.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinanceSymbolSbe {
@@ -303,8 +338,8 @@ pub struct BinanceSymbolSbe {
     pub is_spot_trading_allowed: bool,
     /// Whether margin trading is allowed.
     pub is_margin_trading_allowed: bool,
-    /// Symbol filters (JSON embedded in SBE).
-    pub filters: Vec<serde_json::Value>,
+    /// Symbol filters decoded from SBE.
+    pub filters: BinanceSymbolFiltersSbe,
     /// Permission sets.
     pub permissions: Vec<Vec<String>>,
 }

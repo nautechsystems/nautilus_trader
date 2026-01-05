@@ -22,7 +22,7 @@ Key features:
 - Perpetual contracts that never expire, eliminating rollover costs.
 - Cross-margin trading across multiple assets.
 - Real-time market data, positions, and risk visibility.
-- Licensed under the Bermuda Monetary Authority.
+- Licensed under the [Bermuda Monetary Authority (BMA)](https://www.bma.bm/).
 
 Supported asset classes:
 

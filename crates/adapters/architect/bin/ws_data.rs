@@ -39,7 +39,7 @@ use futures_util::StreamExt;
 use nautilus_architect::{
     common::enums::{ArchitectEnvironment, ArchitectMarketDataLevel},
     http::{client::ArchitectRawHttpClient, error::ArchitectHttpError},
-    websocket::{ArchitectMdWsMessage, data::ArchitectMdWebSocketClient},
+    websocket::{NautilusWsMessage, data::ArchitectMdWebSocketClient},
 };
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -179,65 +179,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             message_count += 1;
 
             match &msg {
-                ArchitectMdWsMessage::Heartbeat(hb) => {
-                    log::debug!("Heartbeat: ts={}", hb.ts);
+                NautilusWsMessage::Heartbeat => {
+                    log::debug!("Heartbeat");
                 }
-                ArchitectMdWsMessage::Ticker(ticker) => {
-                    log::info!("Ticker: {} price={} vol={}", ticker.s, ticker.p, ticker.v);
+                NautilusWsMessage::Data(data) => {
+                    for item in data {
+                        log::info!("Data: {item:?}");
+                    }
                 }
-                ArchitectMdWsMessage::Trade(trade) => {
-                    log::info!("Trade: {} {:?} {} @ {}", trade.s, trade.d, trade.q, trade.p);
-                }
-                ArchitectMdWsMessage::BookL1(book) => {
-                    let bid = book.b.first().map(|l| format!("{}@{}", l.q, l.p));
-                    let ask = book.a.first().map(|l| format!("{}@{}", l.q, l.p));
-                    log::info!(
-                        "BookL1: {} bid={} ask={}",
-                        book.s,
-                        bid.unwrap_or_default(),
-                        ask.unwrap_or_default()
-                    );
-                }
-                ArchitectMdWsMessage::BookL2(book) => {
-                    log::info!(
-                        "BookL2: {} {} bids, {} asks",
-                        book.s,
-                        book.b.len(),
-                        book.a.len()
-                    );
-                }
-                ArchitectMdWsMessage::BookL3(book) => {
-                    log::info!(
-                        "BookL3: {} {} bids, {} asks",
-                        book.s,
-                        book.b.len(),
-                        book.a.len()
-                    );
-                }
-                ArchitectMdWsMessage::Candle(candle) => {
-                    log::info!(
-                        "Candle: {} {} O={} H={} L={} C={}",
-                        candle.symbol,
-                        candle.width,
-                        candle.open,
-                        candle.high,
-                        candle.low,
-                        candle.close
-                    );
-                }
-                ArchitectMdWsMessage::Data(data) => {
-                    log::info!("Data: {} items", data.len());
-                }
-                ArchitectMdWsMessage::Deltas(deltas) => {
+                NautilusWsMessage::Deltas(deltas) => {
                     log::info!("Deltas: {}", deltas.instrument_id);
                 }
-                ArchitectMdWsMessage::Bar(bar) => {
+                NautilusWsMessage::Bar(bar) => {
                     log::info!("Bar: {}", bar.bar_type);
                 }
-                ArchitectMdWsMessage::Error(err) => {
+                NautilusWsMessage::Error(err) => {
                     log::error!("Error: {}", err.message);
                 }
-                ArchitectMdWsMessage::Reconnected => {
+                NautilusWsMessage::Reconnected => {
                     log::warn!("Reconnected");
                 }
             }

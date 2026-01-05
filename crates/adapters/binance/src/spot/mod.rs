@@ -20,23 +20,25 @@
 //!
 //! ## Features
 //!
-//! - **SBE REST API**: All REST responses decoded from SBE format
-//! - **SBE WebSocket Streams**: Market data streams with microsecond timestamps
-//! - **Ed25519 Authentication**: Required for SBE market data streams
+//! - **SBE REST API**: All REST responses decoded from SBE format.
+//! - **SBE WebSocket Streams**: Market data streams with microsecond timestamps.
+//! - **Ed25519 Authentication**: Required for SBE market data streams.
 //!
 //! ## Architecture
 //!
 //! ```text
 //! spot/
-//! ├── http/           # REST API client (SBE encoded)
-//! │   ├── client.rs   # BinanceSpotHttpClient
-//! │   ├── models.rs   # Response types
-//! │   └── query.rs    # Query parameter builders
-//! └── websocket/      # WebSocket client (SBE encoded)
-//!     ├── client.rs   # BinanceSpotWebSocketClient
-//!     ├── handler.rs  # Message parsing and routing
-//!     ├── messages.rs # Internal message types
-//!     └── streams.rs  # Stream subscription management
+//! ├── http/               # REST API client (SBE encoded)
+//! │   ├── client.rs       # BinanceSpotHttpClient
+//! │   ├── models.rs       # Response types
+//! │   └── query.rs        # Query parameter builders
+//! └── websocket/          # WebSocket clients (SBE encoded)
+//!     ├── streams/        # Market data streams (pub/sub)
+//!     │   ├── client.rs   # BinanceSpotWebSocketClient
+//!     │   └── handler.rs  # Message parsing and routing
+//!     └── trading/        # Trading API (request/response)
+//!         ├── client.rs   # BinanceSpotWsTradingClient
+//!         └── handler.rs  # Request/response handling
 //! ```
 
 pub mod enums;
@@ -46,4 +48,4 @@ pub mod websocket;
 // Re-export main client types
 pub use enums::{BinanceCancelReplaceMode, BinanceOrderResponseType, BinanceSpotOrderType};
 pub use http::client::BinanceSpotHttpClient;
-pub use websocket::client::BinanceSpotWebSocketClient;
+pub use websocket::{BinanceSpotWebSocketClient, BinanceSpotWsTradingClient};

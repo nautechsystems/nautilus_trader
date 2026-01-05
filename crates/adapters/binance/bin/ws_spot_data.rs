@@ -34,7 +34,7 @@ use nautilus_binance::{
     common::{enums::BinanceEnvironment, sbe::stream::mantissa_to_f64},
     spot::{
         http::client::BinanceSpotHttpClient,
-        websocket::{
+        websocket::streams::{
             client::BinanceSpotWebSocketClient,
             handler::{MarketDataMessage, decode_market_data},
             messages::NautilusWsMessage,

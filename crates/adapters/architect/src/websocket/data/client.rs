@@ -41,7 +41,7 @@ use ustr::Ustr;
 use super::handler::{FeedHandler, HandlerCommand};
 use crate::{
     common::enums::{ArchitectCandleWidth, ArchitectMarketDataLevel},
-    websocket::messages::ArchitectMdWsMessage,
+    websocket::messages::NautilusWsMessage,
 };
 
 /// Default heartbeat interval in seconds.
@@ -87,7 +87,7 @@ pub struct ArchitectMdWebSocketClient {
     auth_token: Option<String>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
-    out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<ArchitectMdWsMessage>>>,
+    out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     signal: Arc<AtomicBool>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions: SubscriptionState,
@@ -153,6 +153,13 @@ impl ArchitectMdWebSocketClient {
     #[must_use]
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// Sets the authentication token for subsequent connections.
+    ///
+    /// This should be called before `connect()` if authentication is required.
+    pub fn set_auth_token(&mut self, token: String) {
+        self.auth_token = Some(token);
     }
 
     /// Returns whether the client is currently connected and active.
@@ -310,7 +317,7 @@ impl ArchitectMdWebSocketClient {
 
         self.connection_mode.store(client.connection_mode_atomic());
 
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<ArchitectMdWsMessage>();
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -341,7 +348,7 @@ impl ArchitectMdWebSocketClient {
             );
 
             while let Some(msg) = handler.next().await {
-                if matches!(msg, ArchitectMdWsMessage::Reconnected) {
+                if matches!(msg, NautilusWsMessage::Reconnected) {
                     log::info!("WebSocket reconnected, resubscribing...");
                     // TODO: Replay subscriptions on reconnect
                 }
@@ -458,7 +465,7 @@ impl ArchitectMdWebSocketClient {
     /// # Panics
     ///
     /// Panics if called more than once or before connecting.
-    pub fn stream(&mut self) -> impl futures_util::Stream<Item = ArchitectMdWsMessage> + use<'_> {
+    pub fn stream(&mut self) -> impl futures_util::Stream<Item = NautilusWsMessage> + use<'_> {
         let rx = self
             .out_rx
             .take()

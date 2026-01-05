@@ -71,6 +71,10 @@ const ACCOUNT_TRADE_BLOCK_LENGTH: u16 = 70;
 const NEW_ORDER_FULL_BLOCK_LENGTH: u16 = 153;
 const CANCEL_ORDER_BLOCK_LENGTH: u16 = 137;
 
+// Filter template IDs (from Binance SBE schema)
+const PRICE_FILTER_TEMPLATE_ID: u16 = 1;
+const LOT_SIZE_FILTER_TEMPLATE_ID: u16 = 4;
+
 fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
     let mut header = [0u8; 8];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());
@@ -90,6 +94,49 @@ fn create_group_header(block_length: u16, count: u32) -> [u8; 6] {
 fn write_var_string(buf: &mut Vec<u8>, s: &str) {
     buf.push(s.len() as u8);
     buf.extend_from_slice(s.as_bytes());
+}
+
+fn write_var_bytes(buf: &mut Vec<u8>, data: &[u8]) {
+    buf.push(data.len() as u8);
+    buf.extend_from_slice(data);
+}
+
+/// Builds SBE binary data for a PRICE_FILTER.
+fn build_sbe_price_filter(exponent: i8, min_price: i64, max_price: i64, tick_size: i64) -> Vec<u8> {
+    let mut buf = Vec::new();
+
+    // SBE message header (8 bytes)
+    buf.extend_from_slice(&25u16.to_le_bytes()); // block_length (1 + 8 + 8 + 8 = 25)
+    buf.extend_from_slice(&PRICE_FILTER_TEMPLATE_ID.to_le_bytes());
+    buf.extend_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
+    buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
+
+    // Filter body
+    buf.push(exponent as u8);
+    buf.extend_from_slice(&min_price.to_le_bytes());
+    buf.extend_from_slice(&max_price.to_le_bytes());
+    buf.extend_from_slice(&tick_size.to_le_bytes());
+
+    buf
+}
+
+/// Builds SBE binary data for a LOT_SIZE filter.
+fn build_sbe_lot_size_filter(exponent: i8, min_qty: i64, max_qty: i64, step_size: i64) -> Vec<u8> {
+    let mut buf = Vec::new();
+
+    // SBE message header (8 bytes)
+    buf.extend_from_slice(&25u16.to_le_bytes()); // block_length (1 + 8 + 8 + 8 = 25)
+    buf.extend_from_slice(&LOT_SIZE_FILTER_TEMPLATE_ID.to_le_bytes());
+    buf.extend_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
+    buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
+
+    // Filter body
+    buf.push(exponent as u8);
+    buf.extend_from_slice(&min_qty.to_le_bytes());
+    buf.extend_from_slice(&max_qty.to_le_bytes());
+    buf.extend_from_slice(&step_size.to_le_bytes());
+
+    buf
 }
 
 fn build_ping_response() -> Vec<u8> {
@@ -270,13 +317,16 @@ fn build_exchange_info_response(symbols: &[(&str, &str, &str)]) -> Vec<u8> {
         buf.push(0); // allowed_self_trade_prevention_modes
         buf.push(0); // peg_instructions_allowed
 
-        // Filters nested group: 2 filters (PRICE_FILTER and LOT_SIZE required for parsing)
+        // Filters nested group: 2 SBE-encoded filters (PRICE_FILTER and LOT_SIZE)
         buf.extend_from_slice(&create_group_header(0, 2));
-        let price_filter = r#"{"filterType":"PRICE_FILTER","minPrice":"0.01","maxPrice":"100000","tickSize":"0.01"}"#;
-        write_var_string(&mut buf, price_filter);
-        let lot_filter =
-            r#"{"filterType":"LOT_SIZE","minQty":"0.00001","maxQty":"9000","stepSize":"0.00001"}"#;
-        write_var_string(&mut buf, lot_filter);
+
+        // PRICE_FILTER: exponent=-2, min=1 (0.01), max=10_000_000 (100000), tick=1 (0.01)
+        let price_filter = build_sbe_price_filter(-2, 1, 10_000_000, 1);
+        write_var_bytes(&mut buf, &price_filter);
+
+        // LOT_SIZE: exponent=-5, min=1 (0.00001), max=900_000_000 (9000), step=1 (0.00001)
+        let lot_filter = build_sbe_lot_size_filter(-5, 1, 900_000_000, 1);
+        write_var_bytes(&mut buf, &lot_filter);
 
         // Empty permission sets nested group
         buf.extend_from_slice(&create_group_header(0, 0));

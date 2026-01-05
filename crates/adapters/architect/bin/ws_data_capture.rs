@@ -31,7 +31,7 @@ use futures_util::StreamExt;
 use nautilus_architect::{
     common::enums::{ArchitectEnvironment, ArchitectMarketDataLevel},
     http::{client::ArchitectRawHttpClient, error::ArchitectHttpError},
-    websocket::{ArchitectMdWsMessage, data::ArchitectMdWebSocketClient},
+    websocket::{NautilusWsMessage, data::ArchitectMdWebSocketClient},
 };
 use totp_rs::{Algorithm, Secret, TOTP};
 
@@ -171,24 +171,10 @@ async fn capture_level(
 
         while let Some(msg) = stream.next().await {
             let (msg_type, json) = match &msg {
-                ArchitectMdWsMessage::Heartbeat(hb) => {
-                    ("h".to_string(), serde_json::to_string_pretty(hb).unwrap())
-                }
-                ArchitectMdWsMessage::Ticker(t) => {
-                    ("t".to_string(), serde_json::to_string_pretty(t).unwrap())
-                }
-                ArchitectMdWsMessage::Trade(t) => {
-                    ("s".to_string(), serde_json::to_string_pretty(t).unwrap())
-                }
-                ArchitectMdWsMessage::BookL1(b) => {
-                    ("1".to_string(), serde_json::to_string_pretty(b).unwrap())
-                }
-                ArchitectMdWsMessage::BookL2(b) => {
-                    ("2".to_string(), serde_json::to_string_pretty(b).unwrap())
-                }
-                ArchitectMdWsMessage::BookL3(b) => {
-                    ("3".to_string(), serde_json::to_string_pretty(b).unwrap())
-                }
+                NautilusWsMessage::Heartbeat => ("h".to_string(), "{}".to_string()),
+                NautilusWsMessage::Data(data) => ("data".to_string(), format!("{data:?}")),
+                NautilusWsMessage::Deltas(deltas) => ("deltas".to_string(), format!("{deltas:?}")),
+                NautilusWsMessage::Bar(bar) => ("bar".to_string(), format!("{bar:?}")),
                 _ => continue,
             };
 

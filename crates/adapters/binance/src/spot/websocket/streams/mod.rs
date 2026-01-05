@@ -13,26 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Binance Spot WebSocket clients with SBE (Simple Binary Encoding) support.
+//! Binance Spot WebSocket market data streams with SBE encoding.
 //!
-//! This module provides two WebSocket clients for Binance Spot:
+//! This module provides WebSocket connectivity to Binance's SBE market data streams
+//! at `stream-sbe.binance.com`. These streams provide lower latency and smaller
+//! payloads compared to JSON streams.
 //!
-//! ## Market Data Streams (`streams`)
+//! ## Available Streams
 //!
-//! Pub/sub pattern for real-time market data via `stream-sbe.binance.com`:
-//! - Trade streams
-//! - Best bid/offer updates
-//! - Order book depth updates
+//! - `<symbol>@trade` - Real-time trade data
+//! - `<symbol>@bestBidAsk` - Best bid/offer updates
+//! - `<symbol>@depth` - Order book diff updates
+//! - `<symbol>@depth20` - Top 20 order book levels
 //!
-//! ## Trading API (`trading`)
+//! ## Authentication
 //!
-//! Request/response pattern for order management via `ws-api.binance.com`:
-//! - Order placement
-//! - Order cancellation
-//! - Cancel-replace operations
+//! SBE market data streams require Ed25519 API key authentication via the
+//! `X-MBX-APIKEY` header.
 
-pub mod streams;
-pub mod trading;
+pub mod client;
+pub mod handler;
+pub mod messages;
+pub mod subscription;
 
-pub use streams::BinanceSpotWebSocketClient;
-pub use trading::BinanceSpotWsTradingClient;
+pub use client::BinanceSpotWebSocketClient;

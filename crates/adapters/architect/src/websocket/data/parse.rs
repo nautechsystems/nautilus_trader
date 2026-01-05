@@ -18,17 +18,20 @@
 use anyhow::Context;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    data::{BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{AggressorSide, BookAction, OrderSide, RecordFlag},
+    data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
+    enums::{AggregationSource, AggressorSide, BookAction, OrderSide, RecordFlag},
     identifiers::TradeId,
     instruments::{Instrument, any::InstrumentAny},
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
 
-use crate::websocket::messages::{
-    ArchitectBookLevel, ArchitectBookLevelL3, ArchitectMdBookL1, ArchitectMdBookL2,
-    ArchitectMdBookL3, ArchitectMdTrade,
+use crate::{
+    http::parse::candle_width_to_bar_spec,
+    websocket::messages::{
+        ArchitectBookLevel, ArchitectBookLevelL3, ArchitectMdBookL1, ArchitectMdBookL2,
+        ArchitectMdBookL3, ArchitectMdCandle, ArchitectMdTrade,
+    },
 };
 
 const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
@@ -348,6 +351,34 @@ pub fn parse_trade_tick(
     .context("Failed to construct TradeTick from Architect trade message")
 }
 
+/// Parses an Architect candle message into a [`Bar`].
+///
+/// # Errors
+///
+/// Returns an error if price or quantity parsing fails.
+pub fn parse_candle_bar(
+    candle: &ArchitectMdCandle,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Bar> {
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    let open = decimal_to_price_dp(candle.open, price_precision, "candle.open")?;
+    let high = decimal_to_price_dp(candle.high, price_precision, "candle.high")?;
+    let low = decimal_to_price_dp(candle.low, price_precision, "candle.low")?;
+    let close = decimal_to_price_dp(candle.close, price_precision, "candle.close")?;
+    let volume = Quantity::new(candle.volume as f64, size_precision);
+
+    let ts_event = UnixNanos::from((candle.ts as u64) * NANOSECONDS_IN_SECOND);
+
+    let bar_spec = candle_width_to_bar_spec(candle.width);
+    let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
+
+    Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
+        .context("Failed to construct Bar from Architect candle message")
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -364,7 +395,8 @@ mod tests {
     use crate::{
         common::{consts::ARCHITECT_VENUE, enums::ArchitectOrderSide},
         websocket::messages::{
-            ArchitectMdBookL1, ArchitectMdBookL2, ArchitectMdBookL3, ArchitectMdTrade,
+            ArchitectMdBookL1, ArchitectMdBookL2, ArchitectMdBookL3, ArchitectMdCandle,
+            ArchitectMdTrade,
         },
     };
 
@@ -689,5 +721,58 @@ mod tests {
         assert_eq!(deltas.deltas.len(), 1);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
         assert!(deltas.deltas[0].flags & RecordFlag::F_LAST as u8 != 0);
+    }
+
+    #[rstest]
+    fn test_parse_candle_bar() {
+        use crate::common::enums::ArchitectCandleWidth;
+
+        let candle = ArchitectMdCandle {
+            t: "c".to_string(),
+            symbol: Ustr::from("BTC-PERP"),
+            ts: 1700000000,
+            open: dec!(50000.00),
+            high: dec!(51000.00),
+            low: dec!(49500.00),
+            close: dec!(50500.00),
+            volume: 1000,
+            buy_volume: 600,
+            sell_volume: 400,
+            width: ArchitectCandleWidth::Minutes1,
+        };
+
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        let bar = parse_candle_bar(&candle, &instrument, ts_init).unwrap();
+
+        assert_eq!(bar.open.as_f64(), 50000.00);
+        assert_eq!(bar.high.as_f64(), 51000.00);
+        assert_eq!(bar.low.as_f64(), 49500.00);
+        assert_eq!(bar.close.as_f64(), 50500.00);
+        assert_eq!(bar.volume.as_f64(), 1000.0);
+        assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "BTC-PERP");
+    }
+
+    #[rstest]
+    fn test_parse_candle_from_test_data() {
+        let json = include_str!("../../../test_data/ws_md_candle.json");
+        let candle: ArchitectMdCandle = serde_json::from_str(json).unwrap();
+
+        assert_eq!(candle.symbol.as_str(), "BTCUSD-PERP");
+        assert_eq!(candle.open, dec!(49500.00));
+        assert_eq!(candle.close, dec!(50000.00));
+
+        let instrument = create_instrument_with_precision("BTCUSD-PERP", 2, 3);
+        let ts_init = UnixNanos::default();
+
+        let bar = parse_candle_bar(&candle, &instrument, ts_init).unwrap();
+
+        assert_eq!(bar.open.as_f64(), 49500.00);
+        assert_eq!(bar.high.as_f64(), 50500.00);
+        assert_eq!(bar.low.as_f64(), 49000.00);
+        assert_eq!(bar.close.as_f64(), 50000.00);
+        assert_eq!(bar.volume.as_f64(), 5000.0);
+        assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "BTCUSD-PERP");
     }
 }

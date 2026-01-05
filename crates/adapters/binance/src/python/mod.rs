@@ -26,7 +26,9 @@ use crate::{
     futures::{
         http::client::BinanceFuturesHttpClient, websocket::client::BinanceFuturesWebSocketClient,
     },
-    spot::{http::client::BinanceSpotHttpClient, websocket::client::BinanceSpotWebSocketClient},
+    spot::{
+        http::client::BinanceSpotHttpClient, websocket::streams::client::BinanceSpotWebSocketClient,
+    },
 };
 
 /// Binance adapter Python module.

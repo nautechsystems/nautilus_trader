@@ -29,7 +29,7 @@ use crate::{
     futures::websocket::{
         client::BinanceFuturesWebSocketClient, messages::NautilusFuturesWsMessage,
     },
-    spot::websocket::{client::BinanceSpotWebSocketClient, messages::NautilusWsMessage},
+    spot::websocket::streams::{client::BinanceSpotWebSocketClient, messages::NautilusWsMessage},
 };
 
 #[pymethods]

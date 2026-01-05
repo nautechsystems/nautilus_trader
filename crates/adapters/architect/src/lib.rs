@@ -13,11 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) adapter for [Architect](https://architect.exchange/)
-//! perpetual futures exchange and multi-asset brokerage.
+//! [NautilusTrader](http://nautilustrader.io) adapter for [Architect](https://architect.co/)
+//! perpetual futures exchange and multi-asset brokerage (equities, futures, and options).
 //!
-//! [Architect](https://architect.exchange) builds modern infrastructure for professional and
-//! institutional trading. This crate provides connectivity to two Architect products:
+//! [Architect](https://architect.co) provides institutional financial technology for 21st-century
+//! capital markets. This crate provides connectivity to two Architect products:
 //!
 //! - **AX Exchange** (`AX`): A regulated perpetual futures exchange for traditional asset classes.
 //! - **Architect Brokerage** (`ARCHITECT`): A US-regulated multi-asset brokerage for equities,
@@ -78,6 +78,7 @@
 
 pub mod common;
 pub mod config;
+pub mod data;
 pub mod error;
 pub mod http;
 pub mod websocket;

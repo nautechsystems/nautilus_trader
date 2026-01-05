@@ -645,13 +645,12 @@ pub struct ArchitectWsCancelRejected {
     pub txt: Option<String>,
 }
 
-/// Nautilus domain message for Architect market data WebSocket.
+/// Nautilus domain message emitted after parsing Architect WebSocket events.
 ///
-/// This enum contains parsed messages from the WebSocket stream.
-/// Raw variants contain Architect-specific types for further processing.
-/// Nautilus variants contain fully-parsed domain objects.
+/// This enum contains fully-parsed Nautilus domain objects ready for consumption
+/// by the DataClient without additional processing.
 #[derive(Debug, Clone)]
-pub enum ArchitectMdWsMessage {
+pub enum NautilusWsMessage {
     /// Market data (trades, quotes).
     Data(Vec<Data>),
     /// Order book deltas.
@@ -659,19 +658,7 @@ pub enum ArchitectMdWsMessage {
     /// Bar/candle data.
     Bar(Bar),
     /// Heartbeat message.
-    Heartbeat(ArchitectMdHeartbeat),
-    /// Ticker/statistics update.
-    Ticker(ArchitectMdTicker),
-    /// Trade execution.
-    Trade(ArchitectMdTrade),
-    /// Candle/OHLCV data.
-    Candle(ArchitectMdCandle),
-    /// Level 1 order book (best bid/ask).
-    BookL1(ArchitectMdBookL1),
-    /// Level 2 order book (aggregated levels).
-    BookL2(ArchitectMdBookL2),
-    /// Level 3 order book (individual orders).
-    BookL3(ArchitectMdBookL3),
+    Heartbeat,
     /// Error from venue or client.
     Error(ArchitectWsError),
     /// WebSocket reconnected notification.

@@ -51,8 +51,8 @@ use crate::{
     },
     futures::http::models::{BinanceFuturesCoinSymbol, BinanceFuturesUsdSymbol},
     spot::http::models::{
-        BinanceAccountTrade, BinanceKlines, BinanceNewOrderResponse, BinanceOrderResponse,
-        BinanceSymbolSbe, BinanceTrades,
+        BinanceAccountTrade, BinanceKlines, BinanceLotSizeFilterSbe, BinanceNewOrderResponse,
+        BinanceOrderResponse, BinancePriceFilterSbe, BinanceSymbolSbe, BinanceTrades,
     },
 };
 
@@ -273,6 +273,68 @@ pub fn parse_coinm_instrument(
 /// SBE status value for Trading.
 const SBE_STATUS_TRADING: u8 = 0;
 
+/// Parses an SBE price filter into tick_size, max_price, min_price.
+fn parse_sbe_price_filter(
+    filter: &BinancePriceFilterSbe,
+) -> anyhow::Result<(Price, Option<Price>, Option<Price>)> {
+    let precision = (-filter.price_exponent).max(0) as u8;
+
+    let tick_size = mantissa_to_price(filter.tick_size, filter.price_exponent, precision);
+
+    let max_price = if filter.max_price != 0 {
+        Some(mantissa_to_price(
+            filter.max_price,
+            filter.price_exponent,
+            precision,
+        ))
+    } else {
+        None
+    };
+
+    let min_price = if filter.min_price != 0 {
+        Some(mantissa_to_price(
+            filter.min_price,
+            filter.price_exponent,
+            precision,
+        ))
+    } else {
+        None
+    };
+
+    Ok((tick_size, max_price, min_price))
+}
+
+/// Parses an SBE lot size filter into step_size, max_qty, min_qty.
+fn parse_sbe_lot_size_filter(
+    filter: &BinanceLotSizeFilterSbe,
+) -> anyhow::Result<(Quantity, Option<Quantity>, Option<Quantity>)> {
+    let precision = (-filter.qty_exponent).max(0) as u8;
+
+    let step_size = mantissa_to_quantity(filter.step_size, filter.qty_exponent, precision);
+
+    let max_qty = if filter.max_qty != 0 {
+        Some(mantissa_to_quantity(
+            filter.max_qty,
+            filter.qty_exponent,
+            precision,
+        ))
+    } else {
+        None
+    };
+
+    let min_qty = if filter.min_qty != 0 {
+        Some(mantissa_to_quantity(
+            filter.min_qty,
+            filter.qty_exponent,
+            precision,
+        ))
+    } else {
+        None
+    };
+
+    Ok((step_size, max_qty, min_qty))
+}
+
 /// Parses a Binance Spot SBE symbol into a Nautilus CurrencyPair instrument.
 ///
 /// # Errors
@@ -303,19 +365,21 @@ pub fn parse_spot_instrument_sbe(
     );
     let raw_symbol = Symbol::new(&symbol.symbol);
 
-    let price_filter = get_filter(&symbol.filters, "PRICE_FILTER")
+    let price_filter = symbol
+        .filters
+        .price_filter
+        .as_ref()
         .context("Missing PRICE_FILTER in symbol filters")?;
 
-    let tick_size = parse_filter_price(price_filter, "tickSize")?;
-    let max_price = parse_filter_price(price_filter, "maxPrice").ok();
-    let min_price = parse_filter_price(price_filter, "minPrice").ok();
+    let (tick_size, max_price, min_price) = parse_sbe_price_filter(price_filter)?;
 
-    let lot_filter =
-        get_filter(&symbol.filters, "LOT_SIZE").context("Missing LOT_SIZE in symbol filters")?;
+    let lot_filter = symbol
+        .filters
+        .lot_size_filter
+        .as_ref()
+        .context("Missing LOT_SIZE in symbol filters")?;
 
-    let step_size = parse_filter_quantity(lot_filter, "stepSize")?;
-    let max_quantity = parse_filter_quantity(lot_filter, "maxQty").ok();
-    let min_quantity = parse_filter_quantity(lot_filter, "minQty").ok();
+    let (step_size, max_quantity, min_quantity) = parse_sbe_lot_size_filter(lot_filter)?;
 
     // Spot has no leverage, use 1.0 margin
     let default_margin = Decimal::new(1, 0);

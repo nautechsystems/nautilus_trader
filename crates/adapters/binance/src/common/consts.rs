@@ -27,10 +27,6 @@ pub const BINANCE: &str = "BINANCE";
 /// Static venue instance for Binance.
 pub static BINANCE_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(BINANCE));
 
-// ------------------------------------------------------------------------------------------------
-// HTTP Base URLs - Mainnet
-// ------------------------------------------------------------------------------------------------
-
 /// Binance Spot API base URL (mainnet).
 pub const BINANCE_SPOT_HTTP_URL: &str = "https://api.binance.com";
 
@@ -43,10 +39,6 @@ pub const BINANCE_FUTURES_COIN_HTTP_URL: &str = "https://dapi.binance.com";
 /// Binance European Options API base URL (mainnet).
 pub const BINANCE_OPTIONS_HTTP_URL: &str = "https://eapi.binance.com";
 
-// ------------------------------------------------------------------------------------------------
-// HTTP Base URLs - Testnet
-// ------------------------------------------------------------------------------------------------
-
 /// Binance Spot API base URL (testnet).
 pub const BINANCE_SPOT_TESTNET_HTTP_URL: &str = "https://testnet.binance.vision";
 
@@ -55,12 +47,6 @@ pub const BINANCE_FUTURES_USD_TESTNET_HTTP_URL: &str = "https://testnet.binancef
 
 /// Binance COIN-M Futures API base URL (testnet).
 pub const BINANCE_FUTURES_COIN_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";
-
-// Note: Binance Options testnet is not publicly available
-
-// ------------------------------------------------------------------------------------------------
-// WebSocket URLs - Mainnet
-// ------------------------------------------------------------------------------------------------
 
 /// Binance Spot WebSocket base URL (mainnet).
 pub const BINANCE_SPOT_WS_URL: &str = "wss://stream.binance.com:9443/ws";
@@ -74,9 +60,16 @@ pub const BINANCE_FUTURES_COIN_WS_URL: &str = "wss://dstream.binance.com/ws";
 /// Binance European Options WebSocket base URL (mainnet).
 pub const BINANCE_OPTIONS_WS_URL: &str = "wss://nbstream.binance.com/eoptions";
 
-// ------------------------------------------------------------------------------------------------
-// WebSocket URLs - Testnet
-// ------------------------------------------------------------------------------------------------
+/// Binance Spot SBE WebSocket stream URL (mainnet).
+pub const BINANCE_SPOT_SBE_WS_URL: &str = "wss://stream-sbe.binance.com/ws";
+
+/// Binance Spot SBE WebSocket API URL (mainnet).
+pub const BINANCE_SPOT_SBE_WS_API_URL: &str =
+    "wss://ws-api.binance.com:443/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
+
+/// Binance Spot SBE WebSocket API URL (testnet).
+pub const BINANCE_SPOT_SBE_WS_API_TESTNET_URL: &str =
+    "wss://testnet.binance.vision/ws-api/v3?responseFormat=sbe&sbeSchemaId=3&sbeSchemaVersion=2";
 
 /// Binance Spot WebSocket base URL (testnet).
 pub const BINANCE_SPOT_TESTNET_WS_URL: &str = "wss://testnet.binance.vision/ws";
@@ -86,10 +79,6 @@ pub const BINANCE_FUTURES_USD_TESTNET_WS_URL: &str = "wss://stream.binancefuture
 
 /// Binance COIN-M Futures WebSocket base URL (testnet).
 pub const BINANCE_FUTURES_COIN_TESTNET_WS_URL: &str = "wss://dstream.binancefuture.com/ws";
-
-// ------------------------------------------------------------------------------------------------
-// API Paths
-// ------------------------------------------------------------------------------------------------
 
 /// Binance Spot API version path.
 pub const BINANCE_SPOT_API_PATH: &str = "/api/v3";
@@ -102,10 +91,6 @@ pub const BINANCE_DAPI_PATH: &str = "/dapi/v1";
 
 /// Binance European Options API version path.
 pub const BINANCE_EAPI_PATH: &str = "/eapi/v1";
-
-// ------------------------------------------------------------------------------------------------
-// Rate Limiting
-// ------------------------------------------------------------------------------------------------
 
 /// Describes a static rate limit quota for a product type.
 #[derive(Clone, Copy, Debug)]
