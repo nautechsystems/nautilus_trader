@@ -310,18 +310,27 @@ impl DeribitWebSocketClient {
         })
     }
 
-    /// Authenticates with session scope using default session name.
+    /// Authenticates with session scope using the provided session name.
     ///
-    /// Convenience method equivalent to `authenticate(Some("nautilus"))`.
+    /// Use `DERIBIT_DATA_SESSION_NAME` for data clients and
+    /// `DERIBIT_EXECUTION_SESSION_NAME` for execution clients.
     #[pyo3(name = "authenticate_session")]
-    fn py_authenticate_session<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn py_authenticate_session<'py>(
+        &self,
+        py: Python<'py>,
+        session_name: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .authenticate_session()
+                .authenticate_session(&session_name)
                 .await
-                .map_err(to_pyruntime_err)?;
+                .map_err(|e| {
+                    to_pyruntime_err(format!(
+                        "Failed to authenticate Deribit websocket session '{session_name}': {e}"
+                    ))
+                })?;
             Ok(())
         })
     }

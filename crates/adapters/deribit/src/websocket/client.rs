@@ -53,7 +53,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    auth::{AuthState, DEFAULT_SESSION_NAME, send_auth_request, spawn_token_refresh_task},
+    auth::{AuthState, send_auth_request, spawn_token_refresh_task},
     enums::{DeribitUpdateInterval, DeribitWsChannel},
     error::{DeribitWsError, DeribitWsResult},
     handler::{DeribitWsFeedHandler, HandlerCommand},
@@ -599,17 +599,16 @@ impl DeribitWebSocketClient {
         }
     }
 
-    /// Authenticates with session scope using default session name.
+    /// Authenticates with session scope using the provided session name.
     ///
-    /// Convenience method equivalent to `authenticate(Some("nautilus"))`.
-    /// Session-scoped authentication is recommended for order execution as it
-    /// allows skipping `access_token` in private method payloads.
+    /// Use `DERIBIT_DATA_SESSION_NAME` for data clients and
+    /// `DERIBIT_EXECUTION_SESSION_NAME` for execution clients.
     ///
     /// # Errors
     ///
     /// Returns an error if authentication fails.
-    pub async fn authenticate_session(&self) -> DeribitWsResult<()> {
-        self.authenticate(Some(DEFAULT_SESSION_NAME)).await
+    pub async fn authenticate_session(&self, session_name: &str) -> DeribitWsResult<()> {
+        self.authenticate(Some(session_name)).await
     }
 
     /// Returns the current authentication state containing tokens.

@@ -65,7 +65,8 @@ use crate::{
         models::{DeribitCurrency, DeribitInstrumentKind},
     },
     websocket::{
-        client::DeribitWebSocketClient, enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+        auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
+        enums::DeribitUpdateInterval, messages::NautilusWsMessage,
     },
 };
 
@@ -363,7 +364,7 @@ impl DataClient for DeribitDataClient {
 
         // Authenticate if credentials are configured (required for raw streams)
         if ws.has_credentials() {
-            ws.authenticate_session()
+            ws.authenticate_session(DERIBIT_DATA_SESSION_NAME)
                 .await
                 .context("failed to authenticate Deribit websocket")?;
             log_info!("Deribit WebSocket authenticated");

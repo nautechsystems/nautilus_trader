@@ -17,6 +17,7 @@ import asyncio
 from typing import Any
 
 from nautilus_trader.adapters.deribit.config import DeribitDataClientConfig
+from nautilus_trader.adapters.deribit.constants import DERIBIT_DATA_SESSION_NAME
 from nautilus_trader.adapters.deribit.constants import DERIBIT_VENUE
 from nautilus_trader.adapters.deribit.providers import DeribitInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -250,6 +251,12 @@ class DeribitDataClient(LiveMarketDataClient):
         # Wait for connection to be established
         await self._ws_client.wait_until_active(timeout_secs=30.0)
         self._log.info(f"Connected to websocket {self._ws_client.url}", LogColor.BLUE)
+
+        # Authenticate if credentials are configured (required for raw streams)
+        if self._ws_client.has_credentials():
+            self._log.info("Authenticating WebSocket session for raw streams...")
+            await self._ws_client.authenticate_session(DERIBIT_DATA_SESSION_NAME)
+            self._log.info("WebSocket authenticated", LogColor.GREEN)
 
     async def _disconnect(self) -> None:
         # Delay to allow websocket to send any unsubscribe messages

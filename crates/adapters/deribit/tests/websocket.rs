@@ -38,7 +38,8 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::testing::wait_until_async;
 use nautilus_core::UnixNanos;
 use nautilus_deribit::websocket::{
-    client::DeribitWebSocketClient, enums::DeribitUpdateInterval, messages::NautilusWsMessage,
+    auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient, enums::DeribitUpdateInterval,
+    messages::NautilusWsMessage,
 };
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
@@ -1324,7 +1325,7 @@ async fn test_authentication_session_scope() {
 
     // Authenticate with session scope
     client
-        .authenticate_session()
+        .authenticate_session(DERIBIT_DATA_SESSION_NAME)
         .await
         .expect("session authentication failed");
 
@@ -1418,7 +1419,7 @@ async fn test_raw_subscription_after_authentication() {
 
     // Authenticate first
     client
-        .authenticate_session()
+        .authenticate_session(DERIBIT_DATA_SESSION_NAME)
         .await
         .expect("authentication failed");
     assert!(client.is_authenticated());
@@ -1514,7 +1515,7 @@ async fn test_reconnection_with_reauthentication() {
 
     // Authenticate with session scope
     client
-        .authenticate_session()
+        .authenticate_session(DERIBIT_DATA_SESSION_NAME)
         .await
         .expect("authentication failed");
     assert!(client.is_authenticated());

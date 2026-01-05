@@ -26,8 +26,11 @@ use super::{
 };
 use crate::common::credential::Credential;
 
-/// Default session name for Deribit WebSocket authentication.
-pub const DEFAULT_SESSION_NAME: &str = "nautilus";
+/// Session name for Deribit WebSocket data client authentication.
+pub const DERIBIT_DATA_SESSION_NAME: &str = "nautilus-data";
+
+/// Session name for Deribit WebSocket execution client authentication.
+pub const DERIBIT_EXECUTION_SESSION_NAME: &str = "nautilus-execution";
 
 /// Authentication state storing OAuth tokens.
 #[derive(Debug, Clone)]
@@ -133,7 +136,7 @@ pub fn spawn_token_refresh_task(
         );
         tokio::time::sleep(Duration::from_secs(refresh_delay_secs)).await;
 
-        log::info!("Refreshing authentication token...");
+        log::debug!("Refreshing authentication token...");
         let refresh_params = DeribitRefreshTokenParams {
             grant_type: "refresh_token".to_string(),
             refresh_token,

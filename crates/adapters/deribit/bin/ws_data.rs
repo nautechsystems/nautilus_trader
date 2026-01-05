@@ -43,7 +43,10 @@ use std::env;
 use futures_util::StreamExt;
 use nautilus_deribit::{
     http::{client::DeribitHttpClient, models::DeribitCurrency},
-    websocket::{client::DeribitWebSocketClient, enums::DeribitUpdateInterval},
+    websocket::{
+        auth::DERIBIT_DATA_SESSION_NAME, client::DeribitWebSocketClient,
+        enums::DeribitUpdateInterval,
+    },
 };
 use nautilus_model::identifiers::InstrumentId;
 use tokio::{pin, signal};
@@ -94,7 +97,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Authenticate if using raw streams
     if use_raw {
         log::info!("Authenticating WebSocket connection for raw streams...");
-        ws_client.authenticate_session().await?;
+        ws_client
+            .authenticate_session(DERIBIT_DATA_SESSION_NAME)
+            .await?;
         log::info!("Authentication successful");
     }
 
