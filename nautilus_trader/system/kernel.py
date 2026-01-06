@@ -1438,4 +1438,4 @@ class NautilusKernel:
 
     def _flush_writer(self) -> None:
         if self._writer is not None:
-            self._writer.flush()
+            self._writer.close()
