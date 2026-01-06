@@ -31,10 +31,11 @@ from typing import Any
 import pandas as pd
 
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import format_optional_iso8601
+from nautilus_trader.core.nautilus_pyo3 import NAUTILUS_VERSION
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
-from nautilus_trader.core.nautilus_pyo3 import NAUTILUS_VERSION
-from nautilus_trader.core.datetime import format_optional_iso8601
+
 
 if TYPE_CHECKING:
     from nautilus_trader.backtest.engine import BacktestEngine
