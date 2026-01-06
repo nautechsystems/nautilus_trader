@@ -386,6 +386,40 @@ class TestExecutionReports:
             == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{}}, report_id={report_id}, ts_init=0)"
         )
 
+    def test_instantiate_execution_mass_status_with_venue_none(self):
+        """
+        Test ExecutionMassStatus with venue=None for multi-venue brokers like IB.
+        """
+        # Arrange
+        client_id = ClientId("IB")
+        account_id = AccountId("IB-U123456789")  # Account ID contains venue prefix "IB"
+
+        # Act
+        report_id = UUID4()
+        report = ExecutionMassStatus(
+            client_id=client_id,
+            account_id=account_id,
+            venue=None,  # Multi-venue broker, venue derived from account_id
+            report_id=report_id,
+            ts_init=0,
+        )
+
+        # Assert
+        assert report.client_id == client_id
+        assert report.account_id == account_id
+        assert report.venue is None
+        assert report.ts_init == 0
+        assert report.order_reports == {}
+        assert report.position_reports == {}
+
+        # Test that venue is derived from account_id in to_dict()
+        report_dict = report.to_dict()
+        assert report_dict["venue"] == "IB"  # Derived from account_id.get_issuer()
+
+        # Test that venue is derived from account_id in to_pyo3()
+        pyo3_report = report.to_pyo3()
+        assert pyo3_report.venue.value == "IB"  # Derived from account_id.get_issuer()
+
     def test_add_order_status_reports(self):
         # Arrange
         report_id1 = UUID4()

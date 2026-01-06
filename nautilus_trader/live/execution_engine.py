@@ -1698,7 +1698,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
                 mass_status = cast("ExecutionMassStatus", mass_status_or_exception)
                 client_id = mass_status.client_id
-                venue = mass_status.venue
+                # venue = mass_status.venue
                 result = self._reconcile_execution_mass_status(mass_status)
 
                 if not result and self.filter_position_reports:
@@ -1714,7 +1714,12 @@ class LiveExecutionEngine(ExecutionEngine):
                 # Check internal and external position reconciliation
                 report_tasks: list[asyncio.Task] = []
 
-                for position in self._cache.positions_open(venue):
+                # For routing brokers, venue may differ from instrument venue (e.g., IB client venue
+                # vs NYSE instrument venue), so filter by account_id instead of venue
+                for position in self._cache.positions_open(
+                    venue=None,
+                    account_id=client.account_id,
+                ):
                     instrument_id = position.instrument_id
                     if instrument_id in mass_status.position_reports:
                         self._log.debug(
@@ -2069,7 +2074,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 del mass_status._fill_reports[venue_order_id]
 
         if orders_to_remove:
-            self._log.info(
+            self._log.debug(
                 f"Removed {len(orders_to_remove)} duplicate/skipped order(s) from reconciliation "
                 f"({len(duplicate_venue_order_ids)} duplicates, {len(orders_to_skip)} already in cache)",
                 LogColor.YELLOW,
@@ -2973,7 +2978,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 ):
                     return True
 
-                self._log.warning(  # TODO: Reduce level to debug after initial development phase
+                self._log.debug(  # TODO: Reduce level to debug after initial development phase
                     f"{order.instrument_id} {order.client_order_id!r} already {order.status_string()} but "
                     f"reported difference in filled_qty: "
                     f"report={report.filled_qty}, cached={order.filled_qty}, "
@@ -3130,10 +3135,10 @@ class LiveExecutionEngine(ExecutionEngine):
 
         # Final check: ensure trade_id doesn't already exist before generating fill
         # This prevents KeyError from being raised in _apply_event_to_order
-        if report.trade_id in order.trade_ids:
+        existing_fill = get_existing_fill_for_trade_id(order, report.trade_id)
+        if report.trade_id in order.trade_ids or existing_fill is not None:
             self._log.debug(
-                f"Fill with trade_id {report.trade_id} already exists for order {order.client_order_id}, "
-                f"skipping duplicate fill application",
+                f"Fill with trade_id {report.trade_id} already exists for order {order.client_order_id}, skipping duplicate",
             )
             return True  # Fill already exists, treat as successful
 
@@ -3192,8 +3197,7 @@ class LiveExecutionEngine(ExecutionEngine):
         # Check for duplicate fill by trade_id - check both trade_ids collection and events
         # This handles cases where order is loaded from cache and trade_ids might not be fully populated
         existing_fill = get_existing_fill_for_trade_id(order, report.trade_id)
-        is_duplicate = report.trade_id in order.trade_ids or existing_fill is not None
-        if is_duplicate:
+        if report.trade_id in order.trade_ids or existing_fill is not None:
             # Fill already applied; check if data is consistent.
             # An existing fill may be sourced from the cache on start,
             # or may exist in-memory when a reconciliation is triggered.

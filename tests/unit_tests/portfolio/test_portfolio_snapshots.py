@@ -591,8 +591,11 @@ def test_incremental_caching_avoids_redundant_unpickling(
     pnl2 = portfolio.realized_pnl(AUDUSD_SIM.id)
 
     # Assert the actual values for incremental caching
-    assert pnl1 == Money(6.00, USD)  # First snapshot processed
-    assert pnl2 == Money(6.00, USD)  # Cached result (incremental caching working)
+    assert pnl1 == Money(6.00, USD)  # First snapshot processed (10 pips - 4 commission = 6)
+    assert pnl2 == Money(
+        7.00,
+        USD,
+    )  # Both snapshots included (6 + 1 = 7, incremental caching processed new snapshot)
 
     # Third call should return same result (using cache)
     pnl3 = portfolio.realized_pnl(AUDUSD_SIM.id)
@@ -689,8 +692,8 @@ def test_cache_rebuild_on_purge(
 
     # After purge, check what the actual PnL is
     pnl_after_purge = portfolio.realized_pnl(AUDUSD_SIM.id)
-    # After purge, portfolio recalculates from remaining positions
-    assert pnl_after_purge == Money(3.00, USD)
+    # After purge, all snapshots are gone, so PnL should be 0
+    assert pnl_after_purge == Money(0.00, USD)
 
     # Add one new snapshot for the same position_id
     order_new = TestExecStubs.market_order(
@@ -728,9 +731,10 @@ def test_cache_rebuild_on_purge(
     pnl_after_new = portfolio.realized_pnl(AUDUSD_SIM.id)
     new_snapshots = cache.position_snapshots(position_id)
     assert len(new_snapshots) == 1
-    # After adding new snapshot, PnL remains 3.00
+    # After adding new snapshot, PnL should include the new snapshot's PnL
+    # New snapshot: buy at 1.00100, sell at 1.00110 = 10 pips profit - 4 commission = 6 USD
     # This demonstrates that rebuild logic is working correctly
-    assert pnl_after_new == Money(3.00, USD)
+    assert pnl_after_new == Money(6.00, USD)
 
 
 def test_multiple_instruments_cached_independently(
@@ -879,8 +883,9 @@ def test_multiple_instruments_cached_independently(
     aud_pnl_after = portfolio.realized_pnl(AUDUSD_SIM.id)
     gbp_pnl_after = portfolio.realized_pnl(GBPUSD_SIM.id)
 
-    # Assert PnLs are cached independently (both should be consistent)
-    assert aud_pnl_after == aud_pnl_before  # AUD cached correctly
+    # Assert PnLs are cached independently
+    # AUD should include the new snapshot, so it should be different from before
+    assert aud_pnl_after.as_decimal() > aud_pnl_before.as_decimal()  # AUD includes new snapshot
     assert gbp_pnl_after == gbp_pnl_before  # GBP should remain unchanged
 
     # Verify they maintain different values demonstrating independence
@@ -1058,8 +1063,10 @@ def test_incremental_processing_with_active_position(
     # Assert
     # The actual values depend on the commission and PnL calculation
     assert pnl1.as_decimal() > 0  # Should have positive PnL
-    # Second calculation should be the same (active positions don't affect realized PnL)
-    assert pnl2 == pnl1  # Cached result, no change in realized PnL
+    # Second calculation includes the new snapshot that was added
+    # Active positions don't affect realized PnL, but new snapshots do
+    # pnl1 is 6.50, pnl2 should be 6.50 + new snapshot (0.75) = 7.25
+    assert pnl2.as_decimal() > pnl1.as_decimal()  # Should include new snapshot
 
     # Additional call should return same value (cached)
     pnl3 = portfolio.realized_pnl(AUDUSD_SIM.id)
@@ -1499,18 +1506,12 @@ def test_incremental_snapshot_processing(
     # Second calculation - should process both snapshots
     pnl2 = portfolio.realized_pnl(AUDUSD_SIM.id)
 
-    # After the second snapshot, PnL2 should only show the first snapshot
-    # because the second position is still active (not in cache as closed)
-    # The test setup has the second position closed, so it should include both
-
-    # Actually both positions are closed and snapshotted
-    # pnl1 only includes first snapshot (6.80)
-    # pnl2 should still be 6.80 since cache wasn't cleared
-    # The incremental processing is internal - we can't directly verify it from Python
-
-    # Both calculations should give consistent results
+    # Both positions are closed and snapshotted
+    # pnl1 includes first snapshot (6.80)
+    # pnl2 includes both snapshots: first (6.80) + second (16.80) = 23.60
+    # The refactored code correctly calculates the total including all snapshots
     assert pnl1 == Money(6.80, USD)  # First snapshot
-    assert pnl2 == Money(6.80, USD)  # Still same (cached or recalculated)
+    assert pnl2 == Money(23.60, USD)  # Both snapshots (6.80 + 16.80)
 
     # The test verifies that calculations are consistent
     # Incremental processing is an internal optimization
@@ -2047,15 +2048,12 @@ def test_realized_pnl_cache_invalidated_on_update(
     # Assert - Values should differ after position update
     assert pnl1 == Money(6.80, USD)  # First cycle only (snapshot)
 
-    # The second calculation still returns 6.80 because:
+    # The second calculation includes both the snapshot and the new closed position:
     # - The snapshot has 6.80
-    # - The new position (position2) is closed and has 16.80
-    # - But we're testing cache behavior, not the full calculation
-    # - cache.update_position doesn't trigger portfolio events in test
-
-    # In production, position events would invalidate the cache
-    # For this test, we verify consistency of calculations
-    assert pnl2 == pnl1  # Returns same value (snapshot only)
+    # - The new position (position2) is closed and has 16.80 (20 pips profit - 4 commission)
+    # - Total should be 6.80 + 16.80 = 23.60
+    # The refactored code correctly calculates the total PnL including both
+    assert pnl2 == Money(23.60, USD)  # Snapshot (6.80) + new closed position (16.80)
 
 
 def test_last_snapshot_equals_current_with_precision_tolerance(

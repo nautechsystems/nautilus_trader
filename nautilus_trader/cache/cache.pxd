@@ -97,6 +97,8 @@ cdef class Cache(CacheFacade):
     cdef dict _index_instrument_position_snapshots
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
+    cdef dict _index_account_orders
+    cdef dict _index_account_positions
     cdef dict _index_exec_algorithm_orders
     cdef dict _index_exec_spawn_orders
     cdef set _index_orders
@@ -113,7 +115,6 @@ cdef class Cache(CacheFacade):
     cdef set _index_strategies
     cdef set _index_exec_algorithms
     cdef bint _drop_instruments_on_reset
-    cdef Venue _specific_venue
 
     cdef readonly bint has_backing
     """If the cache has a database backing.\n\n:returns: `bool`"""
@@ -124,7 +125,6 @@ cdef class Cache(CacheFacade):
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
 
-    cpdef void set_specific_venue(self, Venue venue)
     cpdef void cache_all(self)
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)
@@ -152,8 +152,8 @@ cdef class Cache(CacheFacade):
     cdef void _cache_venue_account_id(self, AccountId account_id)
     cdef void _build_indexes_from_orders(self)
     cdef void _build_indexes_from_positions(self)
-    cdef set _build_order_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
-    cdef set _build_position_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef set _build_order_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id, AccountId account_id)
+    cdef set _build_position_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id, AccountId account_id)
     cdef list _get_orders_for_ids(self, set client_order_ids, OrderSide side)
     cdef list _get_positions_for_ids(self, set position_ids, PositionSide side)
     cdef void _assign_position_id_to_contingencies(self, Order order)

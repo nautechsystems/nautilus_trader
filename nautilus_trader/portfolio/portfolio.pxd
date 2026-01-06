@@ -53,21 +53,21 @@ cdef class Portfolio(PortfolioFacade):
     cdef str _log_price
     cdef str _log_xrate
 
-    cdef dict[InstrumentId, Money] _unrealized_pnls
-    cdef dict[InstrumentId, Money] _realized_pnls
+    cdef dict[tuple[InstrumentId, AccountId], Money] _unrealized_pnls
+    cdef dict[tuple[InstrumentId, AccountId], Money] _realized_pnls
     cdef dict[PositionId, Money] _snapshot_sum_per_position
     cdef dict[PositionId, Money] _snapshot_last_per_position
     cdef dict[PositionId, int] _snapshot_processed_counts
-    cdef dict[InstrumentId, Decimal] _net_positions
+    cdef dict[PositionId, AccountId] _snapshot_account_ids
+    cdef dict[tuple[InstrumentId, AccountId], Decimal] _net_positions
     cdef dict[PositionId, object] _bet_positions
     cdef object _index_bet_positions
     cdef set[InstrumentId] _pending_calcs
     cdef dict[InstrumentId, Price] _bar_close_prices
     cdef dict[AccountId, uint64_t] _last_account_state_log_ts
 
-# -- COMMANDS -------------------------------------------------------------------------------------
+    # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void set_specific_venue(self, Venue venue)
     cpdef void set_use_mark_prices(self, bint value)
     cpdef void set_use_mark_xrates(self, bint value)
     cpdef void initialize_orders(self)
@@ -81,14 +81,19 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void on_order_event(self, OrderEvent event)
     cpdef void on_position_event(self, PositionEvent event)
 
-# -- INTERNAL -------------------------------------------------------------------------------------
+    # -- INTERNAL -------------------------------------------------------------------------------------
 
     cdef void _update_account(self, AccountState event)
     cdef void _update_instrument_id(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open)
-    cdef object _net_position(self, InstrumentId instrument_id)
+    cdef object _net_position(self, InstrumentId instrument_id, AccountId account_id=*)
     cdef void _ensure_snapshot_pnls_cached_for(self, InstrumentId instrument_id)
-    cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id)
-    cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id, Price price=*)
     cdef Price _get_price(self, Position position)
     cdef _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
+    cdef dict _group_by_account_id(self, list items)
+    cdef Money _add_pnl_to_total(self, Money total_pnl, Money pnl, str pnl_type)
+    cdef Money _aggregate_pnl_from_cache(self, InstrumentId instrument_id, bint is_realized)
+    cdef Money _get_or_calculate_pnl(self, InstrumentId instrument_id, AccountId account_id, bint is_realized)
+    cdef Money _aggregate_pnl_by_calculation(self, InstrumentId instrument_id, Price price, bint is_realized)
+    cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id, AccountId account_id=*)
+    cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id, Price price=*, AccountId account_id=*)

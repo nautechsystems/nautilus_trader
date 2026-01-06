@@ -28,6 +28,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.account cimport AccountState
@@ -129,6 +130,9 @@ cdef class AccountsManager:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
                 instrument_id=fill.instrument_id,
+                strategy_id=None,
+                side=PositionSide.NO_POSITION_SIDE,
+                account_id=fill.account_id,
             )
             if positions_open:
                 position_id = positions_open[0].id
@@ -213,6 +217,7 @@ cdef class AccountsManager:
     ):
         if not orders_open:
             account.clear_balance_locked(instrument.id)
+            return True
 
         cdef dict[Currency, Money] total_locked = {}
         base_xrate = Decimal(0)

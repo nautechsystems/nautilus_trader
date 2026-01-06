@@ -1048,7 +1048,7 @@ class ExecutionMassStatus(Document):
         self,
         client_id: ClientId,
         account_id: AccountId,
-        venue: Venue,
+        venue: Venue | None,
         report_id: UUID4,
         ts_init: int,
     ) -> None:
@@ -1187,7 +1187,7 @@ class ExecutionMassStatus(Document):
             "type": type(self).__name__,
             "client_id": self.client_id.value,
             "account_id": self.account_id.value,
-            "venue": self.venue.value,
+            "venue": self._get_venue_value(),
             "report_id": self.id.value,
             "ts_init": self.ts_init,
             "order_reports": {
@@ -1208,7 +1208,7 @@ class ExecutionMassStatus(Document):
         pyo3_mass_status = nautilus_pyo3.ExecutionMassStatus(
             client_id=nautilus_pyo3.ClientId(self.client_id.value),
             account_id=nautilus_pyo3.AccountId(self.account_id.value),
-            venue=nautilus_pyo3.Venue(self.venue.value),
+            venue=nautilus_pyo3.Venue(self._get_venue_value()),
             ts_init=self.ts_init,
             report_id=nautilus_pyo3.UUID4.from_str(self.id.value),
         )
@@ -1233,6 +1233,13 @@ class ExecutionMassStatus(Document):
             pyo3_mass_status.add_position_reports(all_position_reports)
 
         return pyo3_mass_status
+
+    def _get_venue_value(self) -> str:
+        # Derive venue value from account_id if venue is None (for multi-venue brokers like IB).
+        if self.venue is None:
+            return self.account_id.get_issuer()
+
+        return self.venue.value
 
     @classmethod
     def from_dict(cls, values: dict[str, Any]) -> ExecutionMassStatus:
