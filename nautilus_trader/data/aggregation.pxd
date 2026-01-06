@@ -149,6 +149,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef readonly uint64_t interval_ns
     cdef readonly uint64_t next_close_ns
     cdef readonly uint64_t stored_open_ns
+    cdef readonly uint64_t first_close_ns
 
     cdef str _timer_name
     cdef bint _is_left_open

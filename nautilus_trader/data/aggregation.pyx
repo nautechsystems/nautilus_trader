@@ -189,6 +189,7 @@ cdef class BarBuilder:
         self._open = None
         self._high = None
         self._low = None
+        self._close = None
 
         self.volume = Quantity.zero_c(precision=self.size_precision)
         self.count = 0
@@ -1406,6 +1407,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self.interval_ns = self._get_interval_ns()
         self.stored_open_ns = 0
         self.next_close_ns = 0
+        self.first_close_ns = 0
         self.historical_mode = False
         self._historical_events = []
 
@@ -1436,9 +1438,40 @@ cdef class TimeBarAggregator(BarAggregator):
         # Closing a partial bar at the transition from historical to backtest data
         cdef bint fire_immediately = (start_time == now)
 
-        self._skip_first_non_full_bar = self._skip_first_non_full_bar and now > start_time
+        # Calculate the next close time based on aggregation type
+        cdef datetime close_time
+        if fire_immediately:
+            close_time = start_time
+        elif self.bar_type.spec.aggregation == BarAggregation.MONTH:
+            close_time = start_time + pd.DateOffset(months=self.bar_type.spec.step)
+        elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+            close_time = start_time + pd.DateOffset(years=self.bar_type.spec.step)
+        else:
+            close_time = start_time + self.interval
 
-        if self.bar_type.spec.aggregation not in (BarAggregation.MONTH, BarAggregation.YEAR):
+        self.next_close_ns = dt_to_unix_nanos(close_time)
+
+        # The stored open time needs to be defined as a subtraction with respect to the first closing time
+        if self.bar_type.spec.aggregation == BarAggregation.MONTH:
+            self.stored_open_ns = dt_to_unix_nanos(close_time - pd.DateOffset(months=self.bar_type.spec.step))
+        elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
+            self.stored_open_ns = dt_to_unix_nanos(close_time - pd.DateOffset(years=self.bar_type.spec.step))
+        else:
+            self.stored_open_ns = self.next_close_ns - self.interval_ns
+
+        if self._skip_first_non_full_bar:
+            self.first_close_ns = self.next_close_ns
+
+        if self.bar_type.spec.aggregation in (BarAggregation.MONTH, BarAggregation.YEAR):
+            # The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=close_time,
+                callback=self._build_bar,
+                override=True,
+                allow_past=True,
+            )
+        else:
             self._clock.set_timer(
                 name=self._timer_name,
                 interval=self.interval,
@@ -1449,33 +1482,11 @@ cdef class TimeBarAggregator(BarAggregator):
                 fire_immediately=fire_immediately,
             )
 
-            if fire_immediately:
-                self.next_close_ns = dt_to_unix_nanos(start_time)
-            else:
-                self.next_close_ns = dt_to_unix_nanos(start_time + self.interval)
-
-            self.stored_open_ns = self.next_close_ns - self.interval_ns
-        else:
-            # The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
-            if self.bar_type.spec.aggregation == BarAggregation.MONTH:
-                alert_time = start_time + (pd.DateOffset(months=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
-            elif self.bar_type.spec.aggregation == BarAggregation.YEAR:
-                alert_time = start_time + (pd.DateOffset(years=self.bar_type.spec.step) if not fire_immediately else pd.Timedelta(0))
-            else:
-                alert_time = start_time
-
-            self._clock.set_time_alert(
-                name=self._timer_name,
-                alert_time=alert_time,
-                callback=self._build_bar,
-                override=True,
-                allow_past=True,
-            )
-            self.next_close_ns = alert_time.value
-            self.stored_open_ns = start_time.value
-
-        self._log.debug(f"Started timer {self._timer_name}, {start_time=}, {self.historical_mode=}, "
-                        f"{fire_immediately=}, {start_time=}, {now=}, {self._bar_build_delay=}")
+        self._log.debug(f"[start_timer] fire_immediately={fire_immediately}, "
+                        f"_skip_first_non_full_bar={self._skip_first_non_full_bar}, "
+                        f"now={now}, start_time={start_time}, "
+                        f"first_close_ns={unix_nanos_to_dt(self.first_close_ns)}, "
+                        f"next_close_ns={unix_nanos_to_dt(self.next_close_ns)}")
 
     cpdef void stop_timer(self):
         cdef str timer_name = str(self.bar_type)
@@ -1631,10 +1642,11 @@ cdef class TimeBarAggregator(BarAggregator):
             self.next_close_ns = self._clock.next_time_ns(self._timer_name)
 
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
-        if self._skip_first_non_full_bar:
+        if self._skip_first_non_full_bar and ts_init <= self.first_close_ns:
             self._builder.reset()
-            self._skip_first_non_full_bar = False
         else:
+            # We set set _skip_first_non_full_bar to False for the transition from historical to live data
+            self._skip_first_non_full_bar = False
             BarAggregator._build_and_send(self, ts_event, ts_init)
 
 
