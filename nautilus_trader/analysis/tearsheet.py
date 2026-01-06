@@ -343,12 +343,16 @@ def create_tearsheet(  # noqa: C901
         title += f"<br><sub>Strategies: {strategy_names} | Run Started: {run_started}</sub>"
 
     # Extract run information
-    total_positions = 0
+    total_positions = "N/A"
+    total_events = "N/A"
+    total_orders = "N/A"
     if hasattr(engine, "kernel"):
+        total_events = f"{engine.kernel.exec_engine.event_count:_}"
+        total_orders = f"{engine.kernel.cache.orders_total_count():_}"
         positions = list(engine.kernel.cache.positions()) + list(
             engine.kernel.cache.position_snapshots(),
         )
-        total_positions = len(positions)
+        total_positions = f"{len(positions):_}"
 
     elapsed_time = "N/A"
     if hasattr(engine, "run_finished") and hasattr(engine, "run_started"):
@@ -368,14 +372,10 @@ def create_tearsheet(  # noqa: C901
         else "N/A",
         "Backtest end": str(engine.backtest_end) if hasattr(engine, "backtest_end") else "N/A",
         "Backtest range": backtest_range,
-        "Iterations": f"{engine.iteration:,}" if hasattr(engine, "iteration") else "N/A",
-        "Total events": f"{engine.kernel.exec_engine.event_count:,}"
-        if hasattr(engine, "kernel")
-        else "N/A",
-        "Total orders": f"{engine.kernel.cache.orders_total_count():,}"
-        if hasattr(engine, "kernel")
-        else "N/A",
-        "Total positions": f"{total_positions:,}",
+        "Iterations": f"{engine.iteration:_}" if hasattr(engine, "iteration") else "N/A",
+        "Total events": total_events,
+        "Total orders": total_orders,
+        "Total positions": total_positions,
     }
 
     # Determine which currencies to display
