@@ -33,7 +33,8 @@ import pandas as pd
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
-
+from nautilus_trader.core.nautilus_pyo3 import NAUTILUS_VERSION
+from nautilus_trader.core.datetime import format_optional_iso8601
 
 if TYPE_CHECKING:
     from nautilus_trader.backtest.engine import BacktestEngine
@@ -321,27 +322,24 @@ def create_tearsheet(  # noqa: C901
     # Build title with strategy name(s) and run time
     if title == "NautilusTrader Backtest Results":
         # Extract strategy names
-        strategy_names = []
+        strategy_names = "N/A"
         if hasattr(engine, "trader") and hasattr(engine.trader, "strategies"):
-            strategies = engine.trader.strategies()
-            strategy_names = [str(s.id) for s in strategies]
+            strategies = engine.trader.strategy_ids()
+            if len(strategies) == 0:
+                # If no strategies are available to display, the engine was likely disposed prematurely.
+                # We could log a warning here.
+                strategy_names = "empty"
+            else:
+                strategy_names = ", ".join([str(s) for s in strategies])
 
         # Format run time
-        run_time = "N/A"
+        run_started = "N/A"
         if hasattr(engine, "run_started") and engine.run_started:
-            run_time = str(engine.run_started)
+            run_started = format_optional_iso8601(engine.run_started)
 
-        # Build title: "NautilusTrader - Backtest Results<br>Strategy | Run Time"
-        subtitle_parts = []
-        if strategy_names:
-            subtitle_parts.append(", ".join(strategy_names))
-        if run_time != "N/A":
-            subtitle_parts.append(run_time)
-
-        if subtitle_parts:
-            title = f"<b>NautilusTrader</b> v1.222.0 - Backtest Results<br><sub>{' | '.join(subtitle_parts)}</sub>"
-        else:
-            title = "<b>NautilusTrader</b> v1.222.0 - Backtest Results"
+        # Build title: "NautilusTrader - Backtest Results<br>Strategies: Strategy1 | Run Started: 2026-01-01 00:00:00"
+        title = f"<b>NautilusTrader</b> v{NAUTILUS_VERSION} - Backtest Results"
+        title += f"<br><sub>Strategies: {strategy_names} | Run Started: {run_started}</sub>"
 
     # Extract run information
     total_positions = 0
@@ -351,22 +349,32 @@ def create_tearsheet(  # noqa: C901
         )
         total_positions = len(positions)
 
+    elapsed_time = "N/A"
+    if hasattr(engine, "run_finished") and hasattr(engine, "run_started"):
+        elapsed_time = str(engine.run_finished - engine.run_started)
+
+    backtest_range = "N/A"
+    if hasattr(engine, "backtest_start") and hasattr(engine, "backtest_end"):
+        backtest_range = str(engine.backtest_end - engine.backtest_start)
+
     run_info = {
         "Run ID": str(engine.run_id) if hasattr(engine, "run_id") else "N/A",
-        "Run Started": str(engine.run_started) if hasattr(engine, "run_started") else "N/A",
-        "Run Finished": str(engine.run_finished) if hasattr(engine, "run_finished") else "N/A",
-        "Backtest Start": str(engine.backtest_start)
+        "Run started": str(engine.run_started) if hasattr(engine, "run_started") else "N/A",
+        "Run finished": str(engine.run_finished) if hasattr(engine, "run_finished") else "N/A",
+        "Elapsed time": elapsed_time,
+        "Backtest start": str(engine.backtest_start)
         if hasattr(engine, "backtest_start")
         else "N/A",
-        "Backtest End": str(engine.backtest_end) if hasattr(engine, "backtest_end") else "N/A",
+        "Backtest end": str(engine.backtest_end) if hasattr(engine, "backtest_end") else "N/A",
+        "Backtest range": backtest_range,
         "Iterations": f"{engine.iteration:,}" if hasattr(engine, "iteration") else "N/A",
-        "Total Events": f"{engine.kernel.exec_engine.event_count:,}"
+        "Total events": f"{engine.kernel.exec_engine.event_count:,}"
         if hasattr(engine, "kernel")
         else "N/A",
-        "Total Orders": f"{engine.kernel.cache.orders_total_count():,}"
+        "Total orders": f"{engine.kernel.cache.orders_total_count():,}"
         if hasattr(engine, "kernel")
         else "N/A",
-        "Total Positions": f"{total_positions:,}",
+        "Total positions": f"{total_positions:,}",
     }
 
     # Determine which currencies to display
@@ -385,8 +393,8 @@ def create_tearsheet(  # noqa: C901
             starting = analyzer._account_balances_starting.get(curr)
             ending = analyzer._account_balances.get(curr)
             if starting and ending:
-                account_info[f"Starting Balance ({curr})"] = f"{starting.as_double():.8f} {curr}"
-                account_info[f"Ending Balance ({curr})"] = f"{ending.as_double():.8f} {curr}"
+                account_info[f"Starting balance ({curr})"] = starting.to_formatted_str()
+                account_info[f"Ending balance ({curr})"] = ending.to_formatted_str()
 
     # Get PnL stats for selected currencies
     all_stats_pnls = {}
