@@ -1528,6 +1528,9 @@ impl Cache {
     ///
     /// Returns an error if persisting the currency to the backing database fails.
     pub fn add_currency(&mut self, currency: Currency) -> anyhow::Result<()> {
+        if self.currencies.contains_key(&currency.code) {
+            return Ok(());
+        }
         log::debug!("Adding `Currency` {}", currency.code);
 
         if let Some(database) = &mut self.database {
@@ -1545,6 +1548,13 @@ impl Cache {
     /// Returns an error if persisting the instrument to the backing database fails.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         log::debug!("Adding `Instrument` {}", instrument.id());
+
+        // Ensure currencies exist in cache - safe to call repeatedly as add_currency is idempotent
+        if let Some(base_currency) = instrument.base_currency() {
+            self.add_currency(base_currency)?;
+        }
+        self.add_currency(instrument.quote_currency())?;
+        self.add_currency(instrument.settlement_currency())?;
 
         if let Some(database) = &mut self.database {
             database.add_instrument(&instrument)?;
