@@ -36,6 +36,7 @@ class TearsheetChart(msgspec.Struct, frozen=True, kw_only=True):
 
     Concrete chart classes define which chart to render (via `name`) and can expose
     additional arguments (via `kwargs`) that are passed into the chart renderer.
+
     """
 
     title: str | None = None
@@ -117,6 +118,7 @@ class TearsheetCustomChart(TearsheetChart, frozen=True, kw_only=True):
 
     This is intended for charts registered for tearsheet integration (i.e. present in
     the tearsheet chart spec registry).
+
     """
 
     chart: str
@@ -194,6 +196,7 @@ class TearsheetConfig(NautilusConfig, frozen=True, kw_only=True):
         Total height of the tearsheet in pixels.
     show_logo : bool, default True
         Whether to display NautilusTrader logo in the tearsheet.
+
     """
 
     charts: list[TearsheetChart] = msgspec.field(default_factory=_default_charts)
