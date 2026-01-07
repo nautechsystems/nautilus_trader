@@ -1940,7 +1940,7 @@ def _calculate_grid_layout(
     Parameters
     ----------
     charts : list[TearsheetChart]
-        Charts to include (in order).
+        List of chart objects to include (in order).
     custom_layout : GridLayout, optional
         Custom layout specification.
 

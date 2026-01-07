@@ -19,13 +19,13 @@ import plotly.graph_objects as go
 import pytest
 
 from nautilus_trader.analysis.config import GridLayout
+from nautilus_trader.analysis.config import TearsheetConfig
 from nautilus_trader.analysis.config import TearsheetDistributionChart
 from nautilus_trader.analysis.config import TearsheetDrawdownChart
 from nautilus_trader.analysis.config import TearsheetEquityChart
 from nautilus_trader.analysis.config import TearsheetMonthlyReturnsChart
 from nautilus_trader.analysis.config import TearsheetRunInfoChart
 from nautilus_trader.analysis.config import TearsheetStatsTableChart
-from nautilus_trader.analysis.config import TearsheetConfig
 from nautilus_trader.analysis.tearsheet import PLOTLY_AVAILABLE
 from nautilus_trader.analysis.tearsheet import _create_stats_table
 from nautilus_trader.analysis.tearsheet import _create_tearsheet_figure

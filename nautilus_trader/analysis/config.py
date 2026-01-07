@@ -18,7 +18,6 @@ Configuration for tearsheet generation and visualization.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 import msgspec
@@ -45,7 +44,7 @@ class TearsheetChart(msgspec.Struct, frozen=True, kw_only=True):
     def name(self) -> str:  # pragma: no cover (implemented by subclasses)
         raise NotImplementedError
 
-    def kwargs(self) -> Mapping[str, Any]:
+    def kwargs(self) -> dict[str, Any]:
         return {}
 
 
@@ -108,7 +107,7 @@ class TearsheetBarsWithFillsChart(TearsheetChart, frozen=True, kw_only=True):
     def name(self) -> str:
         return "bars_with_fills"
 
-    def kwargs(self) -> Mapping[str, Any]:
+    def kwargs(self) -> dict[str, Any]:
         return {"bar_type": self.bar_type}
 
 
@@ -127,7 +126,7 @@ class TearsheetCustomChart(TearsheetChart, frozen=True, kw_only=True):
     def name(self) -> str:
         return self.chart
 
-    def kwargs(self) -> Mapping[str, Any]:
+    def kwargs(self) -> dict[str, Any]:
         return self.args
 
 
