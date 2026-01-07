@@ -24,6 +24,7 @@ use std::{
 
 use nautilus_common::{
     actor::{Actor, DataActor},
+    cache::database::CacheDatabaseAdapter,
     component::Component,
     enums::{Environment, LogColor},
     log_info,
@@ -740,6 +741,29 @@ impl LiveNode {
     #[must_use]
     pub fn is_running(&self) -> bool {
         self.state().is_running()
+    }
+
+    /// Sets the cache database adapter for persistence.
+    ///
+    /// This allows setting a database adapter (e.g., PostgreSQL, Redis) after the node
+    /// is built but before it starts running. The database adapter is used to persist
+    /// cache data for recovery and state management.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node is already running.
+    pub fn set_cache_database(
+        &mut self,
+        database: Box<dyn CacheDatabaseAdapter>,
+    ) -> anyhow::Result<()> {
+        if self.state() != NodeState::Idle {
+            anyhow::bail!(
+                "Cannot set cache database while node is running, set it before calling start()"
+            );
+        }
+
+        self.kernel.cache().borrow_mut().set_database(database);
+        Ok(())
     }
 
     /// Gets a reference to the execution manager.

@@ -183,6 +183,15 @@ impl Cache {
         format!("{:?}", std::ptr::from_ref(self))
     }
 
+    /// Sets the cache database adapter for persistence.
+    ///
+    /// This allows setting or replacing the database adapter after cache construction.
+    pub fn set_database(&mut self, database: Box<dyn CacheDatabaseAdapter>) {
+        let type_name = std::any::type_name_of_val(&*database);
+        log::info!("Cache database adapter set: {type_name}");
+        self.database = Some(database);
+    }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Clears and reloads general entries from the database into the cache.
