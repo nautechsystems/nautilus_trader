@@ -45,7 +45,10 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType},
-    events::{AccountState, OrderEventAny, OrderRejected, OrderSubmitted},
+    events::{
+        AccountState, OrderCancelRejected, OrderEventAny, OrderModifyRejected, OrderRejected,
+        OrderSubmitted,
+    },
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -202,26 +205,73 @@ impl OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let trade_mode = self.trade_mode;
 
+        let exec_event_sender = self.exec_event_sender.clone();
+        let trader_id = self.core.trader_id;
+        let account_id = self.core.account_id;
+        let ts_init = cmd.ts_init;
+        let client_order_id = order.client_order_id();
+        let strategy_id = order.strategy_id();
+        let instrument_id = order.instrument_id();
+        let order_side = order.order_side();
+        let order_type = order.order_type();
+        let quantity = order.quantity();
+        let time_in_force = order.time_in_force();
+        let price = order.price();
+        let trigger_price = order.trigger_price();
+        let is_post_only = order.is_post_only();
+        let is_reduce_only = order.is_reduce_only();
+        let is_quote_quantity = order.is_quote_quantity();
+
         self.spawn_task("submit_order", async move {
-            ws_private
+            let result = ws_private
                 .submit_order(
-                    order.trader_id(),
-                    order.strategy_id(),
-                    order.instrument_id(),
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
                     trade_mode,
-                    order.client_order_id(),
-                    order.order_side(),
-                    order.order_type(),
-                    order.quantity(),
-                    Some(order.time_in_force()),
-                    order.price(),
-                    order.trigger_price(),
-                    Some(order.is_post_only()),
-                    Some(order.is_reduce_only()),
-                    Some(order.is_quote_quantity()),
+                    client_order_id,
+                    order_side,
+                    order_type,
+                    quantity,
+                    Some(time_in_force),
+                    price,
+                    trigger_price,
+                    Some(is_post_only),
+                    Some(is_reduce_only),
+                    Some(is_quote_quantity),
                     None,
                 )
-                .await?;
+                .await
+                .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
+
+            if let Err(e) = result {
+                let rejected_event = OrderRejected::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    account_id,
+                    format!("submit-order-error: {e}").into(),
+                    UUID4::new(),
+                    ts_init,
+                    get_atomic_clock_realtime().get_time_ns(),
+                    false,
+                    false,
+                );
+
+                if let Some(sender) = &exec_event_sender {
+                    if let Err(send_err) = sender.send(ExecutionEvent::Order(
+                        OrderEventAny::Rejected(rejected_event),
+                    )) {
+                        log::warn!("Failed to send OrderRejected event: {send_err}");
+                    }
+                } else {
+                    log::warn!("Cannot send OrderRejected: exec_event_sender not initialized");
+                }
+
+                return Err(e);
+            }
+
             Ok(())
         });
 
@@ -236,21 +286,65 @@ impl OKXExecutionClient {
         let http_client = self.http_client.clone();
         let trade_mode = self.trade_mode;
 
+        let exec_event_sender = self.exec_event_sender.clone();
+        let trader_id = self.core.trader_id;
+        let account_id = self.core.account_id;
+        let ts_init = cmd.ts_init;
+        let client_order_id = order.client_order_id();
+        let strategy_id = order.strategy_id();
+        let instrument_id = order.instrument_id();
+        let order_side = order.order_side();
+        let order_type = order.order_type();
+        let quantity = order.quantity();
+        let trigger_type = order.trigger_type();
+        let price = order.price();
+        let is_reduce_only = order.is_reduce_only();
+
         self.spawn_task("submit_algo_order", async move {
-            http_client
+            let result = http_client
                 .place_algo_order_with_domain_types(
-                    order.instrument_id(),
+                    instrument_id,
                     trade_mode,
-                    order.client_order_id(),
-                    order.order_side(),
-                    order.order_type(),
-                    order.quantity(),
+                    client_order_id,
+                    order_side,
+                    order_type,
+                    quantity,
                     trigger_price,
-                    order.trigger_type(),
-                    order.price(),
-                    Some(order.is_reduce_only()),
+                    trigger_type,
+                    price,
+                    Some(is_reduce_only),
                 )
-                .await?;
+                .await
+                .map_err(|e| anyhow::anyhow!("Submit algo order failed: {e}"));
+
+            if let Err(e) = result {
+                let rejected_event = OrderRejected::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    account_id,
+                    format!("submit-order-error: {e}").into(),
+                    UUID4::new(),
+                    ts_init,
+                    get_atomic_clock_realtime().get_time_ns(),
+                    false,
+                    false,
+                );
+
+                if let Some(sender) = &exec_event_sender {
+                    if let Err(send_err) = sender.send(ExecutionEvent::Order(
+                        OrderEventAny::Rejected(rejected_event),
+                    )) {
+                        log::warn!("Failed to send OrderRejected event: {send_err}");
+                    }
+                } else {
+                    log::warn!("Cannot send OrderRejected: exec_event_sender not initialized");
+                }
+
+                return Err(e);
+            }
+
             Ok(())
         });
 
@@ -261,8 +355,13 @@ impl OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
+        let exec_event_sender = self.exec_event_sender.clone();
+        let trader_id = self.core.trader_id;
+        let account_id = self.core.account_id;
+        let ts_init = cmd.ts_init;
+
         self.spawn_task("cancel_order", async move {
-            ws_private
+            let result = ws_private
                 .cancel_order(
                     command.trader_id,
                     command.strategy_id,
@@ -270,7 +369,39 @@ impl OKXExecutionClient {
                     Some(command.client_order_id),
                     command.venue_order_id,
                 )
-                .await?;
+                .await
+                .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
+
+            if let Err(e) = result {
+                let rejected_event = OrderCancelRejected::new(
+                    trader_id,
+                    command.strategy_id,
+                    command.instrument_id,
+                    command.client_order_id,
+                    format!("cancel-order-error: {e}").into(),
+                    UUID4::new(),
+                    get_atomic_clock_realtime().get_time_ns(),
+                    ts_init,
+                    false,
+                    command.venue_order_id,
+                    Some(account_id),
+                );
+
+                if let Some(sender) = &exec_event_sender {
+                    if let Err(send_err) = sender.send(ExecutionEvent::Order(
+                        OrderEventAny::CancelRejected(rejected_event),
+                    )) {
+                        log::warn!("Failed to send OrderCancelRejected event: {send_err}");
+                    }
+                } else {
+                    log::warn!(
+                        "Cannot send OrderCancelRejected: exec_event_sender not initialized"
+                    );
+                }
+
+                return Err(e);
+            }
+
             Ok(())
         });
 
@@ -648,39 +779,11 @@ impl ExecutionClient for OKXExecutionClient {
             log::warn!("Cannot send OrderSubmitted: exec_event_sender not initialized");
         }
 
-        let result = if self.is_conditional_order(order.order_type()) {
+        if self.is_conditional_order(order.order_type()) {
             self.submit_conditional_order(cmd)
         } else {
             self.submit_regular_order(cmd)
-        };
-
-        if let Err(e) = result {
-            let rejected_event = OrderRejected::new(
-                self.core.trader_id,
-                order.strategy_id(),
-                order.instrument_id(),
-                order.client_order_id(),
-                self.core.account_id,
-                format!("submit-order-error: {e}").into(),
-                UUID4::new(),
-                cmd.ts_init,
-                get_atomic_clock_realtime().get_time_ns(),
-                false,
-                false,
-            );
-            if let Some(sender) = &self.exec_event_sender {
-                if let Err(e) = sender.send(ExecutionEvent::Order(OrderEventAny::Rejected(
-                    rejected_event,
-                ))) {
-                    log::warn!("Failed to send OrderRejected event: {e}");
-                }
-            } else {
-                log::warn!("Cannot send OrderRejected: exec_event_sender not initialized");
-            }
-            return Err(e);
         }
-
-        Ok(())
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
@@ -695,8 +798,14 @@ impl ExecutionClient for OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
+        // Capture for error handling
+        let exec_event_sender = self.exec_event_sender.clone();
+        let trader_id = self.core.trader_id;
+        let account_id = self.core.account_id;
+        let ts_init = cmd.ts_init;
+
         self.spawn_task("modify_order", async move {
-            ws_private
+            let result = ws_private
                 .modify_order(
                     command.trader_id,
                     command.strategy_id,
@@ -706,7 +815,39 @@ impl ExecutionClient for OKXExecutionClient {
                     command.quantity,
                     command.venue_order_id,
                 )
-                .await?;
+                .await
+                .map_err(|e| anyhow::anyhow!("Modify order failed: {e}"));
+
+            if let Err(e) = result {
+                let rejected_event = OrderModifyRejected::new(
+                    trader_id,
+                    command.strategy_id,
+                    command.instrument_id,
+                    command.client_order_id,
+                    format!("modify-order-error: {e}").into(),
+                    UUID4::new(),
+                    get_atomic_clock_realtime().get_time_ns(),
+                    ts_init,
+                    false,
+                    command.venue_order_id,
+                    Some(account_id),
+                );
+
+                if let Some(sender) = &exec_event_sender {
+                    if let Err(send_err) = sender.send(ExecutionEvent::Order(
+                        OrderEventAny::ModifyRejected(rejected_event),
+                    )) {
+                        log::warn!("Failed to send OrderModifyRejected event: {send_err}");
+                    }
+                } else {
+                    log::warn!(
+                        "Cannot send OrderModifyRejected: exec_event_sender not initialized"
+                    );
+                }
+
+                return Err(e);
+            }
+
             Ok(())
         });
 

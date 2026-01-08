@@ -30,6 +30,7 @@ from typing import Any
 
 import pandas as pd
 
+from nautilus_trader.analysis import TearsheetChart
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import format_optional_iso8601
 from nautilus_trader.core.nautilus_pyo3 import NAUTILUS_VERSION
@@ -490,14 +491,14 @@ def create_tearsheet_from_stats(
 
         config = TearsheetConfig()
 
-    # Filter out run_info chart if no metadata is available
-    # This prevents an empty subplot from wasting grid space
-    if not run_info and not account_info and "run_info" in config.charts:
+    # Filter out run_info chart if no metadata is available.
+    # This prevents an empty subplot from wasting grid space.
+    if not run_info and not account_info and "run_info" in config.chart_names:
         from nautilus_trader.analysis import TearsheetConfig
 
         # Create new config without run_info chart
         config = TearsheetConfig(
-            charts=[c for c in config.charts if c != "run_info"],
+            charts=[c for c in config.charts if c.name != "run_info"],
             theme=config.theme,
             layout=config.layout,
             title=config.title,
@@ -1099,8 +1100,10 @@ def _create_tearsheet_figure(
             if chart_idx >= len(config.charts):
                 break
 
-            chart_name = config.charts[chart_idx]
+            chart = config.charts[chart_idx]
             chart_idx += 1
+
+            chart_name = chart.name
 
             # Get chart spec
             if chart_name not in _TEARSHEET_CHART_SPECS:
@@ -1110,10 +1113,8 @@ def _create_tearsheet_figure(
             # Get renderer function
             renderer = _TEARSHEET_CHART_SPECS[chart_name]["renderer"]
 
-            # Get chart-specific arguments if provided
-            chart_kwargs = {}
-            if config.chart_args and chart_name in config.chart_args:
-                chart_kwargs = config.chart_args[chart_name]
+            # Get chart-specific arguments
+            chart_kwargs = chart.kwargs()
 
             # Call renderer with all available data
             renderer(
@@ -1930,7 +1931,7 @@ def _register_tearsheet_chart(
 
 
 def _calculate_grid_layout(
-    charts: list[str],
+    charts: list[TearsheetChart],
     custom_layout: Any = None,
 ) -> tuple[int, int, list, list[str], list[float], float, float]:
     """
@@ -1938,8 +1939,8 @@ def _calculate_grid_layout(
 
     Parameters
     ----------
-    charts : list[str]
-        List of chart names to include.
+    charts : list[TearsheetChart]
+        List of chart objects to include (in order).
     custom_layout : GridLayout, optional
         Custom layout specification.
 
@@ -1987,10 +1988,12 @@ def _calculate_grid_layout(
 
         for _ in range(cols):
             if chart_idx < len(charts):
-                chart_name = charts[chart_idx]
+                chart = charts[chart_idx]
+                chart_name = chart.name
                 spec = _TEARSHEET_CHART_SPECS.get(chart_name, {})
                 subplot_type = spec.get("type", "scatter")
-                title = spec.get("title", chart_name.replace("_", " ").title())
+                default_title = spec.get("title", chart_name.replace("_", " ").title())
+                title = chart.title or default_title
 
                 row_specs.append({"type": subplot_type})
                 titles.append(title)

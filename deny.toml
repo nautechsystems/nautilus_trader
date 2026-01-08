@@ -37,6 +37,16 @@ ignore = [
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0100", reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
 
+  # bincode is unmaintained, pulled in via hypersync-client (blockchain adapter)
+  # The team considers 1.3.3 a complete version, not a security vulnerability
+  # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for migration to alternative serialization
+  { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)" },
+
+  # lru has an unsound IterMut implementation, pulled in via alloy-provider
+  # Fix available in 0.16.3 but alloy pins to 0.13.x - awaiting alloy update
+  # TODO: Monitor https://github.com/alloy-rs/alloy for lru update
+  { id = "RUSTSEC-2026-0002", reason = "lru unsound IterMut, transitive via alloy-provider, awaiting alloy update to 0.16.3" },
+
 ]
 
 # =============================================================================

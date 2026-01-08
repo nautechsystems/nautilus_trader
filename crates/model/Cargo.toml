@@ -88,3 +88,13 @@ harness = false
 name = "fixed_precision_iai"
 path = "benches/fixed_precision_iai.rs"
 harness = false
+
+[[bench]]
+name = "greeks_criterion"
+path = "benches/greeks_criterion.rs"
+harness = false
+
+[[bench]]
+name = "black_scholes_simd_criterion"
+path = "benches/black_scholes_simd_criterion.rs"
+harness = false

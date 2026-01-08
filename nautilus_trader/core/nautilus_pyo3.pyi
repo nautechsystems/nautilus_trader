@@ -8493,19 +8493,11 @@ class BlackScholesGreeksResult:
     vega: float
     theta: float
 
-class ImplyVolAndGreeksResult:
-    vol: float
-    price: float
-    delta: float
-    gamma: float
-    vega: float
-    theta: float
-
 def black_scholes_greeks(
     s: float,
     r: float,
     b: float,
-    sigma: float,
+    vol: float,
     is_call: bool,
     k: float,
     t: float,
@@ -8522,7 +8514,7 @@ def black_scholes_greeks(
         The risk-free interest rate.
     b : float
         The cost of carry of the underlying asset.
-    sigma : float
+    vol : float
         The volatility of the underlying asset.
     is_call : bool
         Whether the option is a call (True) or a put (False).
@@ -8585,7 +8577,7 @@ def imply_vol_and_greeks(
     t: float,
     price: float,
     multiplier: float,
-) -> ImplyVolAndGreeksResult:
+) -> BlackScholesGreeksResult:
     """
     Calculate the implied volatility and Greeks for an option contract.
 
@@ -8610,8 +8602,52 @@ def imply_vol_and_greeks(
 
     Returns
     -------
-    ImplyVolAndGreeksResult
-        A named tuple containing the calculated implied volatility, option price, delta, gamma, vega, and theta
+    BlackScholesGreeksResult
+        A result containing the calculated implied volatility, option price, delta, gamma, vega, and theta
+    """
+
+def refine_vol_and_greeks(
+    s: float,
+    r: float,
+    b: float,
+    is_call: bool,
+    k: float,
+    t: float,
+    target_price: float,
+    initial_vol: float,
+    multiplier: float,
+) -> BlackScholesGreeksResult:
+    """
+    Refine implied volatility using an initial guess and compute greeks.
+
+    This function uses compute_iv_and_greeks which performs a Halley iteration
+    to refine the volatility estimate from an initial guess.
+
+    Parameters
+    ----------
+    s : float
+        The current price of the underlying asset.
+    r : float
+        The risk-free interest rate.
+    b : float
+        The cost of carry of the underlying asset.
+    is_call : bool
+        Whether the option is a call (True) or a put (False).
+    k : float
+        The strike price of the option.
+    t : float
+        The time to expiration of the option in years.
+    target_price : float
+        The target market price of the option.
+    initial_vol : float
+        The initial guess for the volatility.
+    multiplier : float
+        The multiplier for the option contract.
+
+    Returns
+    -------
+    BlackScholesGreeksResult
+        A result containing the calculated implied volatility, option price, delta, gamma, vega, and theta
     """
 
 class GreeksData(Data):

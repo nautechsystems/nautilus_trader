@@ -64,3 +64,15 @@ reason = "ecdsa Minerva timing attack on P-256, maintainers consider sidechannel
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0001"
 reason = "rkyv vulnerability in transitive dependency via rust_decimal 1.39.0. rust_decimal is at latest version and hasn't updated to rkyv 0.8.x yet. Will be fixed when rust_decimal updates."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0141"
+reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0002"
+reason = "lru unsound IterMut, transitive via alloy-provider, awaiting alloy update to 0.16.3"
+
+[[IgnoredVulns]]
+id = "GHSA-rhfx-m35p-ff5j"
+reason = "lru unsound IterMut (alias of RUSTSEC-2026-0002), transitive via alloy-provider"

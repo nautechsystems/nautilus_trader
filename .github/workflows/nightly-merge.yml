@@ -9,6 +9,7 @@ on:
     branches: [nightly-merge-test]
   schedule:
     - cron: '0 14 * * *' # At 14:00 UTC daily
+  workflow_dispatch: # Allow manual trigger
 
 jobs:
   check-develop-status:
