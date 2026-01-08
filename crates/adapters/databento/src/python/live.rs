@@ -40,8 +40,6 @@ use crate::{
     types::DatabentoPublisher,
 };
 
-use super::types::DatabentoSubscriptionAck;
-
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")

@@ -297,7 +297,7 @@ impl DatabentoHistoricalClient {
         };
 
         match dbn_schema {
-            dbn::Schema::Mbp1 | dbn::Schema::Cmbp1 => {
+            dbn::Schema::Mbp1 => {
                 while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
                     process_record(dbn::RecordRef::from(msg))?;
                 }
