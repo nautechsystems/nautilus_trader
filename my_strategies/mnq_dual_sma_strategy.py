@@ -76,10 +76,10 @@ class MNQDualSMAConfig(StrategyConfig, frozen=True):
     qqq_instrument_id: InstrumentId
     long_instrument_id: InstrumentId
     hedge_instrument_id: InstrumentId
-    forex_instrument_id: InstrumentId | None = None  # USD/KRW 환율 (없으면 고정 환율 사용)
     qqq_bar_type: BarType
     long_bar_type: BarType
     hedge_bar_type: BarType
+    forex_instrument_id: InstrumentId | None = None  # USD/KRW 환율 (없으면 고정 환율 사용)
     sma_long_period: PositiveInt = 200
     sma_short_period: PositiveInt = 50
     target_leverage: PositiveFloat = 3.0
@@ -159,6 +159,7 @@ class MNQDualSMAStrategy(Strategy):
         self._had_state_file: bool = self.state_file.exists()  # 시작 시 상태파일 존재 여부
         self._strategy_start_time: pd.Timestamp | None = None  # 전략 시작 시간
         self._received_position_event: bool = False  # 포지션 이벤트 수신 여부 (리컨실리에이션 활성화 증거)
+        self._dual_position_detected: bool = False  # LONG+HEDGE 동시 보유 감지 (Slack 중복 알림 방지)
 
         # 리컨실리에이션 대기 설정
         # 주의: 계좌가 완전 FLAT인 경우 포지션 이벤트가 오지 않으므로 타임아웃 폴백 사용
@@ -168,6 +169,10 @@ class MNQDualSMAStrategy(Strategy):
         # Pending switch timeout tracking
         self._pending_switch_start_time: pd.Timestamp | None = None
         self._pending_switch_timeout_seconds: int = 120  # 청산 대기 타임아웃 (2분)
+
+        # 주기적 포지션 재검증 (외부 수동청산/강제청산 감지)
+        self._last_position_validation: pd.Timestamp | None = None
+        self._position_validation_interval_seconds: int = 60  # 60초마다 재검증
 
         # Slack notifier
         self.slack = SlackNotifier()
@@ -179,11 +184,17 @@ class MNQDualSMAStrategy(Strategy):
         """Load last position state from file (for hysteresis)."""
         try:
             if self.state_file.exists():
-                self.current_position = self.state_file.read_text().strip()
-                if self.current_position not in ("LONG", "HEDGE"):
+                content = self.state_file.read_text().strip()
+                if content in ("LONG", "HEDGE"):
+                    self.current_position = content
+                else:
+                    # 상태파일 내용이 유효하지 않음 - 파일 삭제하고 FLAT 처리
                     self.current_position = None
+                    self._had_state_file = False  # 리컨실리에이션 대기 로직 활성화
+                    self.state_file.unlink()
         except Exception:
             self.current_position = None
+            self._had_state_file = False  # 파일 읽기 실패 시에도 리셋
 
     def _save_position_state(self, position: str) -> None:
         """Save current position state to file."""
@@ -247,47 +258,32 @@ class MNQDualSMAStrategy(Strategy):
         elif has_hedge and not has_long:
             actual_state = "HEDGE"
         elif has_long and has_hedge:
-            # 비정상 상태: 양쪽 다 포지션 있음
-            self.log.warning(
-                "Both LONG and HEDGE positions detected! Manual intervention may be needed.",
-                LogColor.RED,
-            )
-            # Low 수정: 가치(USD) 기준으로 더 큰 포지션 선택
-            # MNQ: 수량 × 가격 × 승수($2), GDX: 수량 × 가격 × 1
+            # HIGH 수정: LONG+HEDGE 동시 보유는 비정상 상태
+            # 자동 해결하지 않고 거래 차단 + 수동 대응 요청
             long_qty = abs(float(self.portfolio.net_position(self._actual_long_id)))
             hedge_qty = abs(float(self.portfolio.net_position(self._actual_hedge_id)))
 
-            # MEDIUM 수정: 실제 bar type 사용 (venue mismatch 대응)
-            long_bar_type = self._actual_long_bar_type or self.config.long_bar_type
-            hedge_bar_type = self._actual_hedge_bar_type or self.config.hedge_bar_type
-            long_bar = self.cache.bar(long_bar_type)
-            hedge_bar = self.cache.bar(hedge_bar_type)
+            self.log.error(
+                f"CRITICAL: Both LONG and HEDGE positions detected! "
+                f"LONG: {long_qty:.0f}, HEDGE: {hedge_qty:.0f}. "
+                f"Trading BLOCKED until manual resolution.",
+                LogColor.RED,
+            )
 
-            # LOW 수정: 바 데이터 없으면 포지션 판정 불가 - 동기화 거부
-            # 고정 비율 사용 시 가격 괴리에 따른 오판 위험이 있으므로 바 데이터 대기
-            if long_bar is None or hedge_bar is None:
-                self.log.warning(
-                    f"Cannot determine position: missing bar data for value comparison. "
-                    f"Long bar: {'OK' if long_bar else 'MISSING'}, "
-                    f"Hedge bar: {'OK' if hedge_bar else 'MISSING'}. "
-                    f"Waiting for bar data...",
-                    LogColor.RED,
+            # 최초 감지 시에만 Slack 알림 (중복 알림 방지)
+            if not self._dual_position_detected:
+                self._dual_position_detected = True
+                self.slack.send(
+                    f":rotating_light: *긴급: LONG+HEDGE 동시 보유 감지!*\n"
+                    f"LONG (MNQ): {long_qty:.0f} 계약\n"
+                    f"HEDGE (GDX): {hedge_qty:.0f} 주\n"
+                    f"*거래가 차단되었습니다.*\n"
+                    f"수동으로 한쪽 포지션을 청산한 후 봇을 재시작하세요.",
+                    ":warning:",
                 )
-                return False  # 바 데이터 도착까지 동기화 보류
 
-            else:
-                long_price = float(long_bar.close)
-                hedge_price = float(hedge_bar.close)
-
-                # MNQ는 승수 적용, GDX(ETF)는 1배
-                long_value_usd = long_qty * long_price * self.config.contract_multiplier
-                hedge_value_usd = hedge_qty * hedge_price * 1.0  # ETF는 승수 없음
-
-                self.log.warning(
-                    f"Position values - LONG: ${long_value_usd:,.0f}, HEDGE: ${hedge_value_usd:,.0f}",
-                    LogColor.YELLOW,
-                )
-                actual_state = "LONG" if long_value_usd > hedge_value_usd else "HEDGE"
+            # 동기화 완료하지 않음 → 거래 차단 상태 유지
+            return False
         else:
             actual_state = None  # FLAT
 
@@ -359,6 +355,120 @@ class MNQDualSMAStrategy(Strategy):
                 LogColor.GREEN,
             )
             return True
+
+    def _validate_position_state(self) -> None:
+        """
+        주기적 포지션 재검증 (외부 수동청산/강제청산 감지).
+
+        초기 동기화 완료 후에도 주기적으로 포트폴리오와 상태 파일 일치 확인.
+        외부에서 포지션이 변경된 경우 (수동청산, 마진콜 강제청산 등)
+        상태 파일을 업데이트하고 Slack 알림.
+        """
+        if self._actual_long_id is None or self._actual_hedge_id is None:
+            return
+
+        # 현재 상태 확인
+        has_long = not self.portfolio.is_flat(self._actual_long_id)
+        has_hedge = not self.portfolio.is_flat(self._actual_hedge_id)
+
+        actual_state: str | None = None
+        if has_long and not has_hedge:
+            actual_state = "LONG"
+        elif has_hedge and not has_long:
+            actual_state = "HEDGE"
+        elif has_long and has_hedge:
+            # HIGH 수정: LONG+HEDGE 동시 보유는 비정상 상태 - 거래 차단
+            long_qty = abs(float(self.portfolio.net_position(self._actual_long_id)))
+            hedge_qty = abs(float(self.portfolio.net_position(self._actual_hedge_id)))
+
+            self.log.error(
+                f"CRITICAL: Both LONG and HEDGE positions detected during validation! "
+                f"LONG: {long_qty:.0f}, HEDGE: {hedge_qty:.0f}. "
+                f"Trading BLOCKED.",
+                LogColor.RED,
+            )
+
+            # 거래 차단
+            self._position_synced = False
+
+            # 최초 감지 시에만 Slack 알림
+            if not self._dual_position_detected:
+                self._dual_position_detected = True
+                self.slack.send(
+                    f":rotating_light: *긴급: LONG+HEDGE 동시 보유 감지!*\n"
+                    f"LONG (MNQ): {long_qty:.0f} 계약\n"
+                    f"HEDGE (GDX): {hedge_qty:.0f} 주\n"
+                    f"*거래가 차단되었습니다.*\n"
+                    f"수동으로 한쪽 포지션을 청산한 후 봇을 재시작하세요.",
+                    ":warning:",
+                )
+            return
+        else:
+            actual_state = None  # FLAT
+
+        # 불일치 감지
+        if self.current_position != actual_state:
+            old_state = self.current_position
+            self.log.warning(
+                f"External position change detected! "
+                f"Expected: {old_state or 'FLAT'}, Actual: {actual_state or 'FLAT'}",
+                LogColor.RED,
+            )
+
+            # 상태 업데이트
+            self.current_position = actual_state
+            if actual_state:
+                self._save_position_state(actual_state)
+            elif self.state_file.exists():
+                self.state_file.unlink()
+                self._had_state_file = False
+
+            # Slack 알림 (외부 청산/변경 감지)
+            self.slack.send(
+                f":rotating_light: *외부 포지션 변경 감지*\n"
+                f"이전: {old_state or 'FLAT'} → 현재: {actual_state or 'FLAT'}\n"
+                f"수동 청산 또는 강제 청산 가능성. 확인 필요.",
+                ":warning:",
+            )
+
+    def _check_pending_switch_timeout(self) -> bool:
+        """
+        청산 대기 타임아웃 체크.
+
+        Returns
+        -------
+        bool
+            True if timeout occurred and was handled, False otherwise.
+        """
+        if self._pending_switch_target is None:
+            return False
+
+        if self._pending_switch_start_time is None:
+            return False
+
+        elapsed = (self._clock.utc_now() - self._pending_switch_start_time).total_seconds()
+        if elapsed <= self._pending_switch_timeout_seconds:
+            return False
+
+        # 타임아웃 발생
+        self.log.error(
+            f"Position close TIMEOUT after {elapsed:.0f}s! "
+            f"Cancelling pending switch to {self._pending_switch_target}. "
+            f"Manual intervention may be required.",
+            LogColor.RED,
+        )
+        self.slack.send(
+            f":rotating_light: *청산 타임아웃!*\n"
+            f"{self._closing_instrument_id} 청산이 {elapsed:.0f}초 후에도 완료되지 않음.\n"
+            f"수동 확인 필요.",
+            ":warning:",
+        )
+
+        # 대기 상태 리셋
+        self._pending_switch_target = None
+        self._closing_instrument_id = None
+        self._pending_switch_start_time = None
+        return True
 
     def _get_dynamic_leverage(self, balance: float) -> float:
         """
@@ -569,10 +679,20 @@ class MNQDualSMAStrategy(Strategy):
         self.register_indicator_for_bars(self._actual_qqq_bar_type, self.sma_long)
         self.register_indicator_for_bars(self._actual_qqq_bar_type, self.sma_short)
 
-        # Request historical bars for warmup - 실제 QQQ bar type 사용
+        # Request historical bars for warmup - 실제 bar type 사용
+        # QQQ: SMA 계산용 (200일 필요)
         self.request_bars(
             self._actual_qqq_bar_type,
             start=self._clock.utc_now() - pd.Timedelta(days=250),
+        )
+        # MNQ/GDX: 가격 조회용 (주문/리밸런싱에 필요)
+        self.request_bars(
+            self._actual_long_bar_type,
+            start=self._clock.utc_now() - pd.Timedelta(days=5),
+        )
+        self.request_bars(
+            self._actual_hedge_bar_type,
+            start=self._clock.utc_now() - pd.Timedelta(days=5),
         )
 
         # Subscribe to bars - 실제 ID 기반 BarType 사용
@@ -617,6 +737,10 @@ class MNQDualSMAStrategy(Strategy):
 
     def on_bar(self, bar: Bar) -> None:
         """Actions to be performed when receiving a bar."""
+        # MEDIUM 수정: 청산 타임아웃 체크는 모든 바에서 실행 (일봉 대기 X)
+        # MNQ/GDX 바도 수신하므로 더 자주 체크 가능
+        self._check_pending_switch_timeout()
+
         # Only process QQQ bars for signal - 실제 QQQ bar type 사용
         qqq_bar_type = self._actual_qqq_bar_type or self.config.qqq_bar_type
         if bar.bar_type != qqq_bar_type:
@@ -662,30 +786,21 @@ class MNQDualSMAStrategy(Strategy):
             )
             return
 
-        # 포지션 전환 대기 중이면 타임아웃 체크 후 신호 처리 스킵
-        if self._pending_switch_target is not None:
-            # MEDIUM 수정: 청산 대기 타임아웃 처리
-            if self._pending_switch_start_time is not None:
-                elapsed = (self._clock.utc_now() - self._pending_switch_start_time).total_seconds()
-                if elapsed > self._pending_switch_timeout_seconds:
-                    self.log.error(
-                        f"Position close TIMEOUT after {elapsed:.0f}s! "
-                        f"Cancelling pending switch to {self._pending_switch_target}. "
-                        f"Manual intervention may be required.",
-                        LogColor.RED,
-                    )
-                    self.slack.send(
-                        f":warning: 청산 타임아웃! {self._closing_instrument_id} 청산이 {elapsed:.0f}초 후에도 완료되지 않음. "
-                        f"수동 확인 필요.",
-                        ":rotating_light:",
-                    )
-                    # 대기 상태 리셋
-                    self._pending_switch_target = None
-                    self._closing_instrument_id = None
-                    self._pending_switch_start_time = None
-                    # 다음 바에서 신호 재처리 가능
-                    return
+        # MEDIUM 수정: 주기적 포지션 재검증 (외부 수동청산/강제청산 감지)
+        # 초기 동기화 완료 후에도 주기적으로 포트폴리오와 상태 일치 확인
+        now = self._clock.utc_now()
+        should_validate = (
+            self._last_position_validation is None
+            or (now - self._last_position_validation).total_seconds()
+            >= self._position_validation_interval_seconds
+        )
+        if should_validate:
+            self._last_position_validation = now
+            self._validate_position_state()
 
+        # 포지션 전환 대기 중이면 신호 처리 스킵
+        # (타임아웃 체크는 on_bar 시작 시 모든 바에서 실행됨)
+        if self._pending_switch_target is not None:
             self.log.info(
                 f"Waiting for position close to complete before switching to {self._pending_switch_target}",
                 LogColor.BLUE,
