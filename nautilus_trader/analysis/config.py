@@ -30,16 +30,118 @@ def _default_heights() -> list[float]:
     return [0.50, 0.22, 0.16, 0.12]
 
 
-def _default_charts() -> list[str]:
+class TearsheetChart(msgspec.Struct, frozen=True, kw_only=True):
+    """
+    Base class for tearsheet chart configuration.
+
+    Concrete chart classes define which chart to render (via `name`) and can expose
+    additional arguments (via `kwargs`) that are passed into the chart renderer.
+
+    """
+
+    title: str | None = None
+
+    @property
+    def name(self) -> str:  # pragma: no cover (implemented by subclasses)
+        raise NotImplementedError
+
+    def kwargs(self) -> dict[str, Any]:
+        return {}
+
+
+class TearsheetRunInfoChart(TearsheetChart, frozen=True, kw_only=True):
+    @property
+    def name(self) -> str:
+        return "run_info"
+
+
+class TearsheetStatsTableChart(TearsheetChart, frozen=True, kw_only=True):
+    @property
+    def name(self) -> str:
+        return "stats_table"
+
+
+class TearsheetEquityChart(TearsheetChart, frozen=True, kw_only=True):
+    @property
+    def name(self) -> str:
+        return "equity"
+
+
+class TearsheetDrawdownChart(TearsheetChart, frozen=True, kw_only=True):
+    @property
+    def name(self) -> str:
+        return "drawdown"
+
+
+class TearsheetMonthlyReturnsChart(TearsheetChart, frozen=True, kw_only=True):
+    @property
+    def name(self) -> str:
+        return "monthly_returns"
+
+
+class TearsheetDistributionChart(TearsheetChart, frozen=True, kw_only=True):
+    @property
+    def name(self) -> str:
+        return "distribution"
+
+
+class TearsheetRollingSharpeChart(TearsheetChart, frozen=True, kw_only=True):
+    @property
+    def name(self) -> str:
+        return "rolling_sharpe"
+
+
+class TearsheetYearlyReturnsChart(TearsheetChart, frozen=True, kw_only=True):
+    @property
+    def name(self) -> str:
+        return "yearly_returns"
+
+
+class TearsheetBarsWithFillsChart(TearsheetChart, frozen=True, kw_only=True):
+    """
+    Render `bars_with_fills` for a specific bar type (string form accepted).
+    """
+
+    bar_type: str
+
+    @property
+    def name(self) -> str:
+        return "bars_with_fills"
+
+    def kwargs(self) -> dict[str, Any]:
+        return {"bar_type": self.bar_type}
+
+
+class TearsheetCustomChart(TearsheetChart, frozen=True, kw_only=True):
+    """
+    Configure a tearsheet chart by its registered name.
+
+    This is intended for charts registered for tearsheet integration (i.e. present in
+    the tearsheet chart spec registry).
+
+    """
+
+    chart: str
+    args: dict[str, Any] = msgspec.field(default_factory=dict)
+
+    @property
+    def name(self) -> str:
+        return self.chart
+
+    def kwargs(self) -> dict[str, Any]:
+        return self.args
+
+
+def _default_charts() -> list[TearsheetChart]:
     return [
-        "run_info",
-        "stats_table",
-        "equity",
-        "drawdown",
-        "monthly_returns",
-        "distribution",
-        "rolling_sharpe",
-        "yearly_returns",
+        TearsheetRunInfoChart(),
+        TearsheetStatsTableChart(),
+        TearsheetEquityChart(),
+        TearsheetDrawdownChart(),
+        TearsheetMonthlyReturnsChart(),
+        TearsheetDistributionChart(),
+        TearsheetRollingSharpeChart(),
+        TearsheetYearlyReturnsChart(),
     ]
 
 
@@ -75,10 +177,9 @@ class TearsheetConfig(NautilusConfig, frozen=True, kw_only=True):
 
     Parameters
     ----------
-    charts : list[str], default ["stats_table", "equity", "drawdown", "monthly_returns", "distribution", "rolling_sharpe", "yearly_returns"]
-        List of chart names to include in the tearsheet.
-        Available charts: "stats_table", "equity", "drawdown", "monthly_returns",
-        "distribution", "rolling_sharpe", "yearly_returns", "bars_with_fills".
+    charts : list[TearsheetChart], default built-ins
+        Charts to include in the tearsheet, in order. Example:
+        `charts=[TearsheetRunInfoChart(title="Run Info")]`.
     theme : str, default "plotly_white"
         Theme name for visualization styling.
         Built-in themes: "plotly_white", "plotly_dark", "nautilus".
@@ -95,14 +196,10 @@ class TearsheetConfig(NautilusConfig, frozen=True, kw_only=True):
         Total height of the tearsheet in pixels.
     show_logo : bool, default True
         Whether to display NautilusTrader logo in the tearsheet.
-    chart_args : dict[str, dict[str, Any]] | None, default None
-        Optional arguments to pass to specific charts.
-        Keys are chart names, values are dictionaries of arguments for that chart.
-        Example: {"bars_with_fills": {"bar_type": "ESM4.XCME-1-MINUTE-LAST-EXTERNAL"}}
 
     """
 
-    charts: list[str] = msgspec.field(default_factory=_default_charts)
+    charts: list[TearsheetChart] = msgspec.field(default_factory=_default_charts)
     theme: str = "plotly_white"
     layout: GridLayout | None = None
     title: str = "NautilusTrader Backtest Results"
@@ -110,4 +207,7 @@ class TearsheetConfig(NautilusConfig, frozen=True, kw_only=True):
     benchmark_name: str = "Benchmark"
     height: PositiveInt = 1500
     show_logo: bool = True
-    chart_args: dict[str, dict[str, Any]] | None = None
+
+    @property
+    def chart_names(self) -> list[str]:
+        return [c.name for c in self.charts]

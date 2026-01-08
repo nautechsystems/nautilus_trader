@@ -16,116 +16,45 @@
 use pyo3::prelude::*;
 
 use crate::data::greeks::{
-    BlackScholesGreeksResult, ImplyVolAndGreeksResult, black_scholes_greeks, imply_vol,
-    imply_vol_and_greeks,
+    BlackScholesGreeksResult, black_scholes_greeks, imply_vol, imply_vol_and_greeks,
+    refine_vol_and_greeks,
 };
 
+#[cfg(feature = "python")]
 #[pymethods]
-impl ImplyVolAndGreeksResult {
-    /// Creates a new [`ImplyVolAndGreeksResult`] instance.
-    #[new]
-    fn py_new(vol: f64, price: f64, delta: f64, gamma: f64, theta: f64, vega: f64) -> Self {
-        Self {
-            vol,
-            price,
-            delta,
-            gamma,
-            theta,
-            vega,
-        }
+impl BlackScholesGreeksResult {
+    #[getter]
+    fn price(&self) -> f64 {
+        self.price
     }
 
     #[getter]
-    #[pyo3(name = "vol")]
-    fn py_vol(&self) -> f64 {
+    fn vol(&self) -> f64 {
         self.vol
     }
 
     #[getter]
-    #[pyo3(name = "price")]
-    fn py_price(&self) -> f64 {
-        self.price
-    }
-
-    #[getter]
-    #[pyo3(name = "delta")]
-    fn py_delta(&self) -> f64 {
+    fn delta(&self) -> f64 {
         self.delta
     }
 
     #[getter]
-    #[pyo3(name = "gamma")]
-    fn py_gamma(&self) -> f64 {
+    fn gamma(&self) -> f64 {
         self.gamma
     }
 
     #[getter]
-    #[pyo3(name = "vega")]
-    fn py_vega(&self) -> f64 {
+    fn vega(&self) -> f64 {
         self.vega
     }
 
     #[getter]
-    #[pyo3(name = "theta")]
-    fn py_theta(&self) -> f64 {
+    fn theta(&self) -> f64 {
         self.theta
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
     }
 }
 
-#[pymethods]
-impl BlackScholesGreeksResult {
-    /// Creates a new [`BlackScholesGreeksResult`] instance.
-    #[new]
-    fn py_new(price: f64, delta: f64, gamma: f64, theta: f64, vega: f64) -> Self {
-        Self {
-            price,
-            delta,
-            gamma,
-            theta,
-            vega,
-        }
-    }
-
-    #[getter]
-    #[pyo3(name = "price")]
-    fn py_price(&self) -> f64 {
-        self.price
-    }
-
-    #[getter]
-    #[pyo3(name = "delta")]
-    fn py_delta(&self) -> f64 {
-        self.delta
-    }
-
-    #[getter]
-    #[pyo3(name = "gamma")]
-    fn py_gamma(&self) -> f64 {
-        self.gamma
-    }
-
-    #[getter]
-    #[pyo3(name = "vega")]
-    fn py_vega(&self) -> f64 {
-        self.vega
-    }
-
-    #[getter]
-    #[pyo3(name = "theta")]
-    fn py_theta(&self) -> f64 {
-        self.theta
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
-    }
-}
-
-/// Computes Black-Scholes greeks for given parameters.
+/// Computes Black-Scholes greeks for given parameters using the fast compute_greeks implementation.
 ///
 /// # Errors
 ///
@@ -137,14 +66,15 @@ pub fn py_black_scholes_greeks(
     s: f64,
     r: f64,
     b: f64,
-    sigma: f64,
+    vol: f64,
     is_call: bool,
     k: f64,
     t: f64,
     multiplier: f64,
 ) -> PyResult<BlackScholesGreeksResult> {
-    let result = black_scholes_greeks(s, r, b, sigma, is_call, k, t, multiplier);
-    Ok(result)
+    Ok(black_scholes_greeks(
+        s, r, b, vol, is_call, k, t, multiplier,
+    ))
 }
 
 /// Computes the implied volatility for an option given its parameters and market price.
@@ -168,6 +98,7 @@ pub fn py_imply_vol(
 }
 
 /// Computes implied volatility and option greeks for given parameters and market price.
+/// This function uses compute_greeks after implying volatility.
 ///
 /// # Errors
 ///
@@ -184,7 +115,42 @@ pub fn py_imply_vol_and_greeks(
     t: f64,
     price: f64,
     multiplier: f64,
-) -> PyResult<ImplyVolAndGreeksResult> {
-    let result = imply_vol_and_greeks(s, r, b, is_call, k, t, price, multiplier);
-    Ok(result)
+) -> PyResult<BlackScholesGreeksResult> {
+    Ok(imply_vol_and_greeks(
+        s, r, b, is_call, k, t, price, multiplier,
+    ))
+}
+
+/// Refines implied volatility using an initial guess and computes greeks.
+/// This function uses compute_iv_and_greeks which performs a Halley iteration
+/// to refine the volatility estimate from an initial guess.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if calculation fails.
+#[pyfunction]
+#[pyo3(name = "refine_vol_and_greeks")]
+#[allow(clippy::too_many_arguments)]
+pub fn py_refine_vol_and_greeks(
+    s: f64,
+    r: f64,
+    b: f64,
+    is_call: bool,
+    k: f64,
+    t: f64,
+    target_price: f64,
+    initial_vol: f64,
+    multiplier: f64,
+) -> PyResult<BlackScholesGreeksResult> {
+    Ok(refine_vol_and_greeks(
+        s,
+        r,
+        b,
+        is_call,
+        k,
+        t,
+        target_price,
+        initial_vol,
+        multiplier,
+    ))
 }

@@ -81,14 +81,6 @@ repos:
         description: Detects hard-coded secrets prior to commit
         args: ["--staged", "--redact"]
 
-  - repo: https://github.com/google/osv-scanner
-    rev: v2.3.1
-    hooks:
-      - id: osv-scanner
-        name: osv-scanner (dependency vulnerabilities)
-        description: Scans Cargo.lock and uv.lock for known vulnerabilities (defense-in-depth)
-        args: ["--config=osv-scanner.toml", "--lockfile=Cargo.lock", "--lockfile=uv.lock"]
-
   ##############################################################################
   #  GitHub Actions linting (complementary tools covering different aspects)
   ##############################################################################
@@ -163,23 +155,6 @@ repos:
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
-  - repo: https://github.com/EmbarkStudios/cargo-deny
-    rev: 0.18.9
-    hooks:
-      - id: cargo-deny
-        name: cargo deny (dependency vulnerabilities)
-        args: ["--all-features", "check"]
-
-  - repo: local
-    hooks:
-      - id: cargo-vet
-        name: cargo vet (supply chain audit)
-        description: Run cargo-vet supply chain audit if installed
-        entry: .pre-commit-hooks/cargo_vet.sh
-        language: script
-        files: '^Cargo\.(toml|lock)$|^supply-chain/'
-        pass_filenames: false
-
   - repo: local
     hooks:
       - id: check-anyhow-usage

@@ -1960,14 +1960,14 @@ class TestOrderMatchingEngine:
         )
         matching_engine.process_trade_tick(trade)
 
-        # Assert
+        # Assert - fills at limit price (conservative), not trade price
         filled_events = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(filled_events) == 1, (
             f"{order_side.name} LIMIT at {order_price} should fill on "
             f"{aggressor_side.name} trade at {trade_price} with L2_MBP + liquidity_consumption"
         )
         assert filled_events[0].last_qty == Quantity.from_str("50.000")
-        assert filled_events[0].last_px == Price.from_str(trade_price)
+        assert filled_events[0].last_px == Price.from_str(order_price)
 
     @pytest.mark.parametrize(
         ("order_side", "aggressor_side", "order_price", "trade_price", "book_bid", "book_ask"),
@@ -2058,8 +2058,10 @@ class TestOrderMatchingEngine:
         )
         assert filled_events[0].last_qty == Quantity.from_str("30.000")
         assert filled_events[1].last_qty == Quantity.from_str("20.000")
-        assert filled_events[0].last_px == Price.from_str(trade_price)
-        assert filled_events[1].last_px == Price.from_str(trade_price)
+
+        # Fills occur at limit price (conservative), not trade price
+        assert filled_events[0].last_px == Price.from_str(order_price)
+        assert filled_events[1].last_px == Price.from_str(order_price)
 
 
 def _create_bar_execution_matching_engine() -> OrderMatchingEngine:
