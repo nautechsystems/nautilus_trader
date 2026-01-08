@@ -680,10 +680,10 @@ class MNQDualSMAStrategy(Strategy):
         self.register_indicator_for_bars(self._actual_qqq_bar_type, self.sma_short)
 
         # Request historical bars for warmup - 실제 bar type 사용
-        # QQQ: SMA 계산용 (200일 필요)
+        # QQQ: SMA 계산용 (200 거래일 필요 → 365 캘린더일 요청)
         self.request_bars(
             self._actual_qqq_bar_type,
-            start=self._clock.utc_now() - pd.Timedelta(days=250),
+            start=self._clock.utc_now() - pd.Timedelta(days=365),
         )
         # MNQ/GDX: 가격 조회용 (주문/리밸런싱에 필요)
         self.request_bars(
