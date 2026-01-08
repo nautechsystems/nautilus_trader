@@ -59,7 +59,11 @@ class MNQDualSMAConfig(StrategyConfig, frozen=True):
     sma_short_period : int, default 50
         Short SMA period.
     target_leverage : float, default 3.0
-        Target leverage for MNQ.
+        Base target leverage for MNQ.
+    target_leverage_high : float, default 4.0
+        High target leverage when capital is sufficient.
+    leverage_4x_threshold : float, default 84000
+        Capital threshold for 4x leverage ($84k).
     rebalance_band_pct : float, default 0.15
         Rebalancing band percentage (±15%).
     close_positions_on_stop : bool, default True
@@ -75,13 +79,19 @@ class MNQDualSMAConfig(StrategyConfig, frozen=True):
     sma_long_period: PositiveInt = 200
     sma_short_period: PositiveInt = 50
     target_leverage: PositiveFloat = 3.0
+    target_leverage_high: PositiveFloat = 4.0
+    leverage_4x_threshold: PositiveFloat = 84_000
     rebalance_band_pct: PositiveFloat = 0.15
     close_positions_on_stop: bool = True
 
 
 class MNQDualSMAStrategy(Strategy):
     """
-    MNQ 3x + 이중SMA + GDX 전략.
+    MNQ 3x/4x + 이중SMA + GDX 전략.
+
+    동적 레버리지:
+    - 자본 < $84k: 3x 레버리지
+    - 자본 >= $84k: 4x 레버리지 (밴드 관리 가능)
 
     검증된 NautilusTrader 패턴 기반:
     - indicators_initialized() 사용
@@ -110,6 +120,9 @@ class MNQDualSMAStrategy(Strategy):
         self.current_position: str | None = None
         self.state_file = Path(__file__).parent / ".nautilus_position_state"
 
+        # Current leverage (dynamically updated based on balance)
+        self._current_target_leverage: float = config.target_leverage
+
         # Slack notifier
         self.slack = SlackNotifier()
 
@@ -133,6 +146,35 @@ class MNQDualSMAStrategy(Strategy):
             self.current_position = position
         except Exception:
             pass
+
+    def _get_dynamic_leverage(self, balance: float) -> float:
+        """
+        예수금에 따른 동적 레버리지 계산.
+
+        - 자본 < threshold: 3x (기본)
+        - 자본 >= threshold: 4x (밴드 관리 가능)
+
+        4x 전환 조건:
+        - 충분한 계약 수로 ±15% 밴드 관리 가능
+        - 1계약 변화가 레버리지에 미치는 영향이 15% 미만
+        """
+        threshold = self.config.leverage_4x_threshold
+
+        if balance >= threshold:
+            new_leverage = self.config.target_leverage_high
+        else:
+            new_leverage = self.config.target_leverage
+
+        # 레버리지 변경 시 로깅
+        if new_leverage != self._current_target_leverage:
+            self.log.info(
+                f"레버리지 변경: {self._current_target_leverage}x → {new_leverage}x "
+                f"(잔고: ${balance:,.0f})",
+                LogColor.MAGENTA,
+            )
+            self._current_target_leverage = new_leverage
+
+        return new_leverage
 
     # =========================================================================
     # Strategy Lifecycle (검증된 패턴)
@@ -302,8 +344,9 @@ class MNQDualSMAStrategy(Strategy):
         if price <= 0:
             return
 
-        # Calculate quantity with target leverage
-        target_value = balance * self.config.target_leverage
+        # 동적 레버리지 계산 (예수금에 따라 3x 또는 4x)
+        target_leverage = self._get_dynamic_leverage(balance)
+        target_value = balance * target_leverage
         quantity = int(target_value / price)
 
         if quantity <= 0:
@@ -423,8 +466,8 @@ class MNQDualSMAStrategy(Strategy):
         position_value = net_position * price
         current_leverage = position_value / balance
 
-        # Calculate band
-        target = self.config.target_leverage
+        # 동적 레버리지 계산 (예수금에 따라 3x 또는 4x)
+        target = self._get_dynamic_leverage(balance)
         band = self.config.rebalance_band_pct
         lower_bound = target * (1 - band)
         upper_bound = target * (1 + band)

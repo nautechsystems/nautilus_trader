@@ -58,13 +58,19 @@ class TradingConfig:
     # ============== 리밸런싱 설정 ==============
     # 밴드 리밸런싱: 레버리지가 밴드 벗어날 때만 조정
     REBALANCE_MODE: str = "band"                 # "daily", "band", "weekly", "monthly"
-    REBALANCE_BAND_PCT: float = 0.15             # ±15% 밴드 (2.55x~3.45x)
+    REBALANCE_BAND_PCT: float = 0.15             # ±15% 밴드
     REBALANCE_MIN_THRESHOLD: float = 0.01        # 최소 1% 차이 있어야 리밸런싱
 
+    # ============== 레버리지 설정 ==============
+    # 예수금에 따른 동적 레버리지
+    TARGET_LEVERAGE_DEFAULT: float = 3.0         # 기본 3x
+    TARGET_LEVERAGE_HIGH: float = 4.0            # 자본 충분시 4x
+    LEVERAGE_4X_THRESHOLD: float = 84_000        # 4x 전환 기준 ($84k 이상)
+
     # ============== 최소 자본 권장 ==============
-    # MNQ 3x 전략 최소 권장 자본
-    MIN_CAPITAL_RECOMMENDED: float = 52_500      # 최소 $52.5k (~7천만원, 4계약)
-    MIN_CAPITAL_IDEAL: float = 84_000            # 권장 $84k (~1.1억원, 6계약)
+    # MNQ 전략 자본 기준
+    MIN_CAPITAL_3X: float = 52_500               # 3x 최소: $52.5k (~7천만원, 4계약)
+    MIN_CAPITAL_4X: float = 84_000               # 4x 최소: $84k (~1.1억원, 6계약)
 
     # ============== Slack 알림 ==============
     SLACK_WEBHOOK_URL: str = os.getenv(

@@ -205,7 +205,9 @@ def add_strategy(node: TradingNode) -> None:
         hedge_bar_type=hedge_bar,
         sma_long_period=config.SMA_LONG_PERIOD,
         sma_short_period=config.SMA_SHORT_PERIOD,
-        target_leverage=config.TARGET_LEVERAGE,
+        target_leverage=config.TARGET_LEVERAGE_DEFAULT,
+        target_leverage_high=config.TARGET_LEVERAGE_HIGH,
+        leverage_4x_threshold=config.LEVERAGE_4X_THRESHOLD,
         rebalance_band_pct=config.REBALANCE_BAND_PCT,
         close_positions_on_stop=False,
     )
@@ -217,7 +219,7 @@ def add_strategy(node: TradingNode) -> None:
     print(f"  시그널: {qqq_id} 이중 SMA ({config.SMA_LONG_PERIOD}+{config.SMA_SHORT_PERIOD})")
     print(f"  롱: {long_id} (CONTFUT - 자동 롤오버)")
     print(f"  헤지: {hedge_id}")
-    print(f"  목표 레버리지: {config.TARGET_LEVERAGE}x")
+    print(f"  레버리지: {config.TARGET_LEVERAGE_DEFAULT}x (기본) / {config.TARGET_LEVERAGE_HIGH}x (자본 ${config.LEVERAGE_4X_THRESHOLD:,.0f} 이상)")
     print(f"  리밸런싱 밴드: ±{config.REBALANCE_BAND_PCT*100:.0f}%")
     print()
 

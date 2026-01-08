@@ -163,18 +163,22 @@ def run_backtest():
     engine.add_data(gdx_bars)
 
     # Configure strategy
-    # QQQ를 long instrument로 사용, 3x 레버리지 적용 = MNQ 3x 시뮬레이션
+    # QQQ를 long instrument로 사용, 동적 레버리지 적용 = MNQ 시뮬레이션
+    # - 자본 < $84k: 3x
+    # - 자본 >= $84k: 4x
     strategy_config = MNQDualSMAConfig(
         strategy_id="MNQ_DUAL_SMA-001",
         qqq_instrument_id=qqq_instrument.id,
-        long_instrument_id=qqq_instrument.id,  # QQQ with 3x leverage = MNQ 3x
+        long_instrument_id=qqq_instrument.id,  # QQQ with leverage = MNQ
         hedge_instrument_id=gdx_instrument.id,
         qqq_bar_type=qqq_bar_type,
         long_bar_type=qqq_bar_type,
         hedge_bar_type=gdx_bar_type,
         sma_long_period=200,
         sma_short_period=50,
-        target_leverage=TARGET_LEVERAGE,  # 3x leverage on QQQ = MNQ 3x
+        target_leverage=3.0,           # 기본 3x
+        target_leverage_high=4.0,      # 자본 충분시 4x
+        leverage_4x_threshold=84_000,  # $84k 이상시 4x
         rebalance_band_pct=REBALANCE_BAND_PCT,
         close_positions_on_stop=True,
     )
