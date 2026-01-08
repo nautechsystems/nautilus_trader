@@ -1,0 +1,10 @@
+{
+  "position": "LONG",
+  "symbol": "MNQ",
+  "quantity": 2,
+  "balance_usd": 48276,
+  "balance_krw": 70000000,
+  "leverage": 2.13,
+  "target_leverage": 3.0,
+  "updated_at": "2026-01-09T03:20:00"
+}

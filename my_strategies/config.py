@@ -76,22 +76,22 @@ class TradingConfig:
     USD_KRW_RATE: float = float(os.getenv("USD_KRW_RATE", "1450"))  # 달러/원 환율
 
     # ============== Slack 알림 ==============
-    SLACK_WEBHOOK_URL: str = os.getenv(
-        "SLACK_WEBHOOK_URL",
-        "https://hooks.slack.com/services/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"
-    )
-    SLACK_BOT_TOKEN: str = os.getenv(
-        "SLACK_BOT_TOKEN",
-        "xoxb-10240578360913-10212219290167-g8aQUdmdgBkyfwz2qAwfvqqU"
-    )
-    # Socket Mode용 App Token (https://api.slack.com/apps > Settings > Socket Mode)
-    SLACK_APP_TOKEN: str = os.getenv(
-        "SLACK_APP_TOKEN",
-        "xapp-1-A0A6PK8SNBU-10260008484356-a107e622180ddcd9f6dafcf42e4fbfbe8f396cd7616b4e8abe70c5ad54d544e0"
-    )
+    # Set these via environment variables:
+    # export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+    # export SLACK_BOT_TOKEN="xoxb-..."
+    # export SLACK_APP_TOKEN="xapp-..."
+    SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
+    SLACK_BOT_TOKEN: str = os.getenv("SLACK_BOT_TOKEN", "")
+    SLACK_APP_TOKEN: str = os.getenv("SLACK_APP_TOKEN", "")
 
     # ============== 운영 모드 ==============
     PAPER_TRADING: bool = True     # True: 모의투자, False: 실거래
+
+    # ============== 테스트 설정 ==============
+    # Paper Trading에서 특정 잔고로 테스트할 때 사용
+    # 0 이상이면 실제 계좌 잔고 대신 이 금액 사용
+    TEST_BALANCE_KRW: float = 70_000_000  # 7천만원으로 테스트
+    TEST_BALANCE_USD: float = TEST_BALANCE_KRW / 1450  # 약 $48,276
 
     @property
     def ibkr_port(self) -> int:

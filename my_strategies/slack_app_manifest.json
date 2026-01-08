@@ -1,0 +1,61 @@
+{
+  "display_information": {
+    "name": "MNQ Trader",
+    "description": "MNQ 3x + 이중SMA + GDX 트레이딩 봇",
+    "background_color": "#1e3a5f",
+    "long_description": "NautilusTrader 기반 자동매매 시스템. QQQ의 SMA200/SMA50 이중 신호를 사용하여 MNQ 선물 롱 또는 GDX 헤지 포지션을 관리합니다."
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": {
+      "display_name": "MNQ Trader",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/ibkr",
+        "url": "",
+        "description": "IBKR 트레이딩 명령어",
+        "usage_hint": "[status|position|signal|balance|rate|sma|config|risk|help]",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "channels:history",
+        "channels:read",
+        "chat:write",
+        "commands",
+        "groups:history",
+        "groups:read",
+        "im:history",
+        "im:read",
+        "im:write",
+        "mpim:history",
+        "mpim:read",
+        "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_mention",
+        "message.im"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": false
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

@@ -23,13 +23,33 @@ from pathlib import Path
 
 import pandas as pd
 
+# MEDIUM 수정: yfinance import fallback (설치되지 않은 환경 대응)
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    yf = None
+    YFINANCE_AVAILABLE = False
+
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.events import TimeEvent
 from nautilus_trader.config import PositiveFloat, PositiveInt, StrategyConfig
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators import SimpleMovingAverage
 from nautilus_trader.model.data import Bar, BarType, QuoteTick
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide, TimeInForce
-from nautilus_trader.model.events import OrderFilled, PositionChanged, PositionClosed, PositionOpened
+from nautilus_trader.model.events import (
+    OrderCanceled,
+    OrderCancelRejected,
+    OrderDenied,
+    OrderExpired,
+    OrderFilled,
+    OrderRejected,
+    PositionChanged,
+    PositionClosed,
+    PositionOpened,
+)
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orders import MarketOrder
@@ -131,6 +151,7 @@ class MNQDualSMAStrategy(Strategy):
         # Position state for hysteresis: 'LONG', 'HEDGE', or None
         self.current_position: str | None = None
         self.state_file = Path(__file__).parent / ".nautilus_position_state"
+        self.detailed_state_file = Path(__file__).parent / ".nautilus_detailed_state.json"
 
         # Current leverage (dynamically updated based on balance)
         self._current_target_leverage: float = config.target_leverage
@@ -163,8 +184,8 @@ class MNQDualSMAStrategy(Strategy):
 
         # 리컨실리에이션 대기 설정
         # 주의: 계좌가 완전 FLAT인 경우 포지션 이벤트가 오지 않으므로 타임아웃 폴백 사용
-        # 이 값은 IBKR Gateway 연결 및 리컨실리에이션 완료에 충분한 시간이어야 함
-        self._min_reconciliation_wait_seconds: int = 300  # FLAT 확정 최소 대기 시간 (5분)
+        # sync_check 타이머가 10초마다 체크하므로 60초면 충분
+        self._min_reconciliation_wait_seconds: int = 60  # FLAT 확정 최소 대기 시간 (60초)
 
         # Pending switch timeout tracking
         self._pending_switch_start_time: pd.Timestamp | None = None
@@ -173,6 +194,15 @@ class MNQDualSMAStrategy(Strategy):
         # 주기적 포지션 재검증 (외부 수동청산/강제청산 감지)
         self._last_position_validation: pd.Timestamp | None = None
         self._position_validation_interval_seconds: int = 60  # 60초마다 재검증
+
+        # HIGH 수정: In-flight 주문 가드 (미체결 상태에서 중복 주문 방지)
+        self._has_in_flight_order: bool = False
+
+        # 동기화 완료 후 즉시 신호 처리 플래그 (일봉 대기 X)
+        self._initial_signal_processed: bool = False
+
+        # 타이머 생성 여부 추적 (on_stop에서 안전한 cancel을 위해)
+        self._timers_created: bool = False
 
         # Slack notifier
         self.slack = SlackNotifier()
@@ -187,6 +217,8 @@ class MNQDualSMAStrategy(Strategy):
                 content = self.state_file.read_text().strip()
                 if content in ("LONG", "HEDGE"):
                     self.current_position = content
+                    # 기본 상세 상태 파일 생성 (챗봇용)
+                    self._save_basic_detailed_state(content)
                 else:
                     # 상태파일 내용이 유효하지 않음 - 파일 삭제하고 FLAT 처리
                     self.current_position = None
@@ -196,36 +228,169 @@ class MNQDualSMAStrategy(Strategy):
             self.current_position = None
             self._had_state_file = False  # 파일 읽기 실패 시에도 리셋
 
+    def _save_basic_detailed_state(self, position: str) -> None:
+        """Save basic detailed state at startup (before full initialization)."""
+        import json
+        from datetime import datetime
+
+        try:
+            state = {
+                "position": position,
+                "symbol": "MNQ" if position == "LONG" else "GDX",
+                "quantity": 0,  # Will be updated after sync
+                "balance_usd": self.config.test_balance_usd if self.config.test_balance_usd > 0 else 0,
+                "balance_krw": (self.config.test_balance_usd * self.config.usd_krw_rate) if self.config.test_balance_usd > 0 else 0,
+                "leverage": 0,  # Will be updated after sync
+                "target_leverage": self._current_target_leverage,
+                "updated_at": datetime.now().isoformat(),
+                "note": "Awaiting position sync",
+            }
+            self.detailed_state_file.write_text(json.dumps(state, indent=2))
+        except Exception:
+            pass
+
     def _save_position_state(self, position: str) -> None:
         """Save current position state to file."""
         try:
             self.state_file.write_text(position)
             self.current_position = position
+            # Also save detailed state
+            self._save_detailed_state(position)
         except Exception:
             pass
+
+    def _save_detailed_state(self, position: str | None = None) -> None:
+        """Save detailed position state as JSON for chatbot."""
+        import json
+        from datetime import datetime
+
+        try:
+            # Get balance
+            balance_usd = 0.0
+            account = self._get_account()
+            if account:
+                for bal in account.balances():
+                    if bal.currency.code == "USD":
+                        balance_usd = float(bal.total)
+                        break
+
+            # Apply test balance if configured
+            if self.config.test_balance_usd > 0:
+                balance_usd = self.config.test_balance_usd
+
+            # Get position quantity
+            quantity = 0
+            symbol = ""
+            if position == "LONG" and self._actual_long_id:
+                pos = self.cache.position(self._actual_long_id)
+                if pos:
+                    quantity = int(abs(pos.quantity))
+                symbol = "MNQ"
+            elif position == "HEDGE" and self._actual_hedge_id:
+                pos = self.cache.position(self._actual_hedge_id)
+                if pos:
+                    quantity = int(abs(pos.quantity))
+                symbol = "GDX"
+
+            # Calculate leverage
+            leverage = 0.0
+            if position == "LONG" and balance_usd > 0 and quantity > 0:
+                mnq_price = self._get_current_price(self._actual_long_id)
+                if mnq_price > 0:
+                    exposure = quantity * mnq_price * self.config.mnq_multiplier
+                    leverage = exposure / balance_usd
+
+            state = {
+                "position": position or "FLAT",
+                "symbol": symbol,
+                "quantity": quantity,
+                "balance_usd": balance_usd,
+                "balance_krw": balance_usd * self.config.usd_krw_rate,
+                "leverage": leverage,
+                "target_leverage": self._current_target_leverage,
+                "updated_at": datetime.now().isoformat(),
+            }
+
+            self.detailed_state_file.write_text(json.dumps(state, indent=2))
+        except Exception as e:
+            self.log.warning(f"Failed to save detailed state: {e}")
+
+    def _get_account(self):
+        """
+        IBKR 통합 계좌 조회.
+
+        IBKR은 venue와 관계없이 단일 계좌를 사용.
+        cache.accounts()에서 첫 번째 계좌 반환.
+
+        Returns
+        -------
+        Account or None
+        """
+        accounts = self.cache.accounts()
+        if accounts:
+            return accounts[0]
+        return None
 
     def _get_account_balance(self) -> float:
         """
         계좌 총 잔고 조회.
+
+        Paper Trading에서 테스트 잔고가 설정되어 있으면 해당 값 사용.
+        (config.TEST_BALANCE_USD > 0)
 
         Returns
         -------
         float
             USD 총 잔고 (조회 실패 시 0.0)
         """
-        # Long instrument의 venue에서 계좌 조회 시도
-        if self.long_instrument is not None:
-            account = self.portfolio.account(self.long_instrument.id.venue)
-            if account is not None:
-                return float(account.balance_total())
+        # 테스트 잔고 설정이 있으면 사용 (Paper Trading 테스트용)
+        if trading_config.TEST_BALANCE_USD > 0:
+            return trading_config.TEST_BALANCE_USD
 
-        # Hedge instrument의 venue에서 계좌 조회 시도
-        if self.hedge_instrument is not None:
-            account = self.portfolio.account(self.hedge_instrument.id.venue)
-            if account is not None:
-                return float(account.balance_total())
-
+        account = self._get_account()
+        if account is not None:
+            return float(account.balance_total(USD))
         return 0.0
+
+    def _update_usd_krw_rate(self) -> None:
+        """
+        yfinance를 사용하여 USD/KRW 환율 업데이트.
+
+        IBKR forex 구독은 NautilusTrader 어댑터 버그로 사용 불가.
+        yfinance로 실시간 환율 조회 후 실패 시 고정 환율 사용.
+        """
+        # MEDIUM 수정: yfinance 미설치 시 고정 환율 사용
+        if not YFINANCE_AVAILABLE:
+            self.log.warning(
+                f"yfinance 미설치. 고정 환율 사용: {self._usd_krw_rate:,.0f}",
+                LogColor.YELLOW,
+            )
+            return
+
+        try:
+            ticker = yf.Ticker("USDKRW=X")
+            data = ticker.history(period="1d")
+            if len(data) > 0:
+                rate = float(data["Close"].iloc[-1])
+                if rate > 0:
+                    self._usd_krw_rate = rate
+                    self._forex_rate_initialized = True
+                    self.log.info(
+                        f"USD/KRW 환율 조회 성공 (yfinance): {rate:,.2f}",
+                        LogColor.GREEN,
+                    )
+                    return
+        except Exception as e:
+            self.log.warning(
+                f"USD/KRW 환율 조회 실패: {e}. 고정 환율 사용: {self._usd_krw_rate:,.0f}",
+                LogColor.YELLOW,
+            )
+
+        # 실패 시 고정 환율 유지
+        self.log.info(
+            f"USD/KRW 고정 환율 사용: {self._usd_krw_rate:,.0f}",
+            LogColor.CYAN,
+        )
 
     def _sync_position_with_portfolio(self) -> bool:
         """
@@ -356,16 +521,21 @@ class MNQDualSMAStrategy(Strategy):
             )
             return True
 
-    def _validate_position_state(self) -> None:
+    def _validate_position_state(self) -> bool:
         """
         주기적 포지션 재검증 (외부 수동청산/강제청산 감지).
 
         초기 동기화 완료 후에도 주기적으로 포트폴리오와 상태 파일 일치 확인.
         외부에서 포지션이 변경된 경우 (수동청산, 마진콜 강제청산 등)
         상태 파일을 업데이트하고 Slack 알림.
+
+        Returns
+        -------
+        bool
+            True if dual position detected (trading blocked), False otherwise.
         """
         if self._actual_long_id is None or self._actual_hedge_id is None:
-            return
+            return False
 
         # 현재 상태 확인
         has_long = not self.portfolio.is_flat(self._actual_long_id)
@@ -402,7 +572,7 @@ class MNQDualSMAStrategy(Strategy):
                     f"수동으로 한쪽 포지션을 청산한 후 봇을 재시작하세요.",
                     ":warning:",
                 )
-            return
+            return True  # 이중 포지션 감지 - 즉시 거래 중단
         else:
             actual_state = None  # FLAT
 
@@ -430,6 +600,8 @@ class MNQDualSMAStrategy(Strategy):
                 f"수동 청산 또는 강제 청산 가능성. 확인 필요.",
                 ":warning:",
             )
+
+        return False  # 정상 - 거래 계속 가능
 
     def _check_pending_switch_timeout(self) -> bool:
         """
@@ -700,23 +872,8 @@ class MNQDualSMAStrategy(Strategy):
         self.subscribe_bars(self._actual_long_bar_type)
         self.subscribe_bars(self._actual_hedge_bar_type)
 
-        # USD/KRW 환율 구독 (설정된 경우)
-        if self.config.forex_instrument_id is not None:
-            self.forex_instrument = self._find_instrument_by_symbol(
-                self.config.forex_instrument_id
-            )
-            if self.forex_instrument is not None:
-                self.subscribe_quote_ticks(self.forex_instrument.id)
-                self.log.info(
-                    f"USD/KRW 환율 구독: {self.forex_instrument.id}",
-                    LogColor.CYAN,
-                )
-            else:
-                self.log.warning(
-                    f"USD/KRW instrument not found: {self.config.forex_instrument_id}. "
-                    f"Using fixed rate: {self._usd_krw_rate:,.0f}",
-                    LogColor.YELLOW,
-                )
+        # USD/KRW 환율 조회 (yfinance 사용 - IBKR forex 구독은 버그로 비활성화)
+        self._update_usd_krw_rate()
 
         self.log.info("=" * 60, LogColor.GREEN)
         self.log.info("MNQ 3x + 이중SMA + GDX 전략 시작", LogColor.GREEN)
@@ -734,6 +891,161 @@ class MNQDualSMAStrategy(Strategy):
             LogColor.CYAN,
         )
         self.log.info(f"현재 포지션: {self.current_position or 'N/A'}", LogColor.CYAN)
+
+        # MEDIUM 수정: 타이머 기반 검증 설정 (일봉 대기 X)
+        # 포지션 검증: 60초마다 (외부 청산/강제청산 감지)
+        self.clock.set_timer(
+            name="position_validation",
+            interval=pd.Timedelta(seconds=self._position_validation_interval_seconds),
+            callback=self._on_validation_timer,
+        )
+        # 청산 타임아웃 체크: 10초마다
+        self.clock.set_timer(
+            name="pending_timeout",
+            interval=pd.Timedelta(seconds=10),
+            callback=self._on_timeout_timer,
+        )
+        # 동기화 체크 및 초기 신호 처리: 10초마다 (일봉 대기 X)
+        self.clock.set_timer(
+            name="sync_check",
+            interval=pd.Timedelta(seconds=10),
+            callback=self._on_sync_check_timer,
+        )
+        self._timers_created = True
+        self.log.info(
+            f"Timer-based validation enabled: position check every {self._position_validation_interval_seconds}s, "
+            f"timeout check every 10s",
+            LogColor.CYAN,
+        )
+
+    def _on_validation_timer(self, event: TimeEvent) -> None:
+        """
+        타이머 기반 포지션 재검증 콜백.
+
+        일봉 바 수신에 의존하지 않고 분 단위로 실행되어
+        외부 수동청산/강제청산을 빠르게 감지.
+        """
+        # 동기화 완료 전에는 스킵
+        if not self._position_synced:
+            return
+
+        # 실제 ID 확인
+        if self._actual_long_id is None or self._actual_hedge_id is None:
+            return
+
+        # 포지션 검증 실행
+        self._last_position_validation = self._clock.utc_now()
+        if self._validate_position_state():
+            # 이중 포지션 감지 시 로그 (거래 차단은 _validate_position_state에서 처리)
+            self.log.error(
+                "Dual position detected in timer callback - trading blocked",
+                LogColor.RED,
+            )
+
+    def _on_timeout_timer(self, event: TimeEvent) -> None:
+        """
+        타이머 기반 청산 타임아웃 체크 콜백.
+
+        일봉 바 수신에 의존하지 않고 10초마다 실행되어
+        청산 대기 타임아웃을 분 단위로 실제 보장.
+        """
+        self._check_pending_switch_timeout()
+
+    def _on_sync_check_timer(self, event: TimeEvent) -> None:
+        """
+        동기화 체크 및 초기 신호 처리 타이머.
+
+        일봉을 사용하므로 on_bar가 하루에 한 번만 호출됨.
+        동기화 완료 후 즉시 신호를 처리하기 위해 타이머 사용.
+        """
+        # 이미 초기 신호 처리 완료
+        if self._initial_signal_processed:
+            return
+
+        # 인디케이터 초기화 확인
+        if not self.indicators_initialized():
+            return
+
+        # 동기화 시도 (on_bar와 동일한 로직)
+        if not self._position_synced:
+            self._sync_retry_count += 1
+            sync_complete = self._sync_position_with_portfolio()
+
+            if sync_complete:
+                self._position_synced = True
+                self.log.info(
+                    f"[Timer] Position sync completed after {self._sync_retry_count} attempts: "
+                    f"{self.current_position or 'FLAT'}",
+                    LogColor.GREEN,
+                )
+                # 챗봇용 상세 상태 저장
+                self._save_detailed_state(self.current_position)
+            elif self._sync_retry_count % 6 == 0:  # 60초마다 로그
+                self.log.info(
+                    f"[Timer] Waiting for position sync (attempt {self._sync_retry_count})...",
+                    LogColor.BLUE,
+                )
+            return
+
+        # 이중 포지션 체크
+        if self._validate_position_state():
+            return
+
+        # 포지션 전환 대기 중이면 스킵
+        if self._pending_switch_target is not None:
+            return
+
+        # in-flight 주문 있으면 스킵
+        if self._has_in_flight_order:
+            return
+
+        # 캐시된 QQQ 바에서 신호 계산
+        qqq_bar_type = self._actual_qqq_bar_type or self.config.qqq_bar_type
+        last_bar = self.cache.bar(qqq_bar_type)
+        if last_bar is None:
+            return
+
+        qqq_price = float(last_bar.close)
+        sma_long_value = self.sma_long.value
+        sma_short_value = self.sma_short.value
+
+        above_sma_long = qqq_price > sma_long_value
+        above_sma_short = qqq_price > sma_short_value
+
+        dist_long = (qqq_price - sma_long_value) / sma_long_value * 100
+        dist_short = (qqq_price - sma_short_value) / sma_short_value * 100
+
+        target_position = self._get_target_position(above_sma_long, above_sma_short)
+
+        self.log.info(
+            f"[Timer] Initial signal check - QQQ ${qqq_price:.2f} | "
+            f"SMA200 {dist_long:+.1f}% | SMA50 {dist_short:+.1f}% | "
+            f"Signal: {target_position} | Current: {self.current_position or 'FLAT'}",
+            LogColor.CYAN,
+        )
+
+        # 포지션 전환 필요 시 실행
+        if target_position != self.current_position:
+            self.log.info(
+                f"[Timer] Executing initial position switch to {target_position}",
+                LogColor.MAGENTA,
+            )
+            self._switch_position(
+                target_position,
+                qqq_price,
+                sma_long_value,
+                sma_short_value,
+            )
+        else:
+            # 리밸런싱 체크
+            self._rebalance_if_needed()
+
+        # 초기 신호 처리 완료
+        self._initial_signal_processed = True
+        self.log.info(
+            f"[Timer] Initial signal processed. Further signals from on_bar only.",
+            LogColor.GREEN,
+        )
 
     def on_bar(self, bar: Bar) -> None:
         """Actions to be performed when receiving a bar."""
@@ -770,6 +1082,8 @@ class MNQDualSMAStrategy(Strategy):
                     f"{self.current_position or 'FLAT'}",
                     LogColor.GREEN,
                 )
+                # 챗봇용 상세 상태 저장
+                self._save_detailed_state(self.current_position)
             elif self._sync_retry_count == self._sync_warn_threshold:
                 # 경고 임계값 도달 시 경고 로그
                 self.log.warning(
@@ -796,7 +1110,9 @@ class MNQDualSMAStrategy(Strategy):
         )
         if should_validate:
             self._last_position_validation = now
-            self._validate_position_state()
+            # HIGH 수정: 이중 포지션 감지 시 즉시 return (같은 바에서 주문 방지)
+            if self._validate_position_state():
+                return
 
         # 포지션 전환 대기 중이면 신호 처리 스킵
         # (타임아웃 체크는 on_bar 시작 시 모든 바에서 실행됨)
@@ -868,7 +1184,16 @@ class MNQDualSMAStrategy(Strategy):
         High #1 수정: close_all_positions()는 비동기이므로
         청산 완료를 on_event()에서 감지한 후 새 포지션 진입.
         High #2 수정: 실제 로딩된 Instrument ID 사용.
+        HIGH 수정: in-flight 주문 가드 추가.
         """
+        # HIGH 수정: in-flight 주문이 있으면 중복 주문 방지
+        if self._has_in_flight_order:
+            self.log.warning(
+                f"In-flight order exists, skipping position switch to {target}",
+                LogColor.YELLOW,
+            )
+            return
+
         self.log.info(
             f"Position switch: {self.current_position} → {target}",
             LogColor.MAGENTA,
@@ -955,16 +1280,98 @@ class MNQDualSMAStrategy(Strategy):
         MEDIUM 수정: 포지션 이벤트 수신 추적 (리컨실리에이션 활성화 증거).
         체결 이벤트 기반 상태 저장: 주문 실패 시 상태 불일치 방지.
         """
+        # MEDIUM 수정: 주문 거절/취소 이벤트 추적 (실패 감지)
+        if isinstance(event, OrderRejected):
+            self.log.error(
+                f"ORDER REJECTED: {event.instrument_id} - reason: {event.reason}",
+                LogColor.RED,
+            )
+            self.slack.send(
+                f":x: *주문 거절됨*\n"
+                f"종목: {event.instrument_id}\n"
+                f"사유: {event.reason}\n"
+                f"수동 확인 필요",
+                ":rotating_light:",
+            )
+            # HIGH 수정: in-flight 주문 플래그 리셋
+            self._has_in_flight_order = False
+            # 청산 대기 중 거절 시 대기 상태 리셋
+            if self._pending_switch_target is not None and self._closing_instrument_id == event.instrument_id:
+                self.log.error(
+                    f"Close order rejected! Resetting pending switch to {self._pending_switch_target}",
+                    LogColor.RED,
+                )
+                self._pending_switch_target = None
+                self._closing_instrument_id = None
+                self._pending_switch_start_time = None
+
+        if isinstance(event, OrderCanceled):
+            self.log.warning(
+                f"ORDER CANCELED: {event.instrument_id}",
+                LogColor.YELLOW,
+            )
+            # HIGH 수정: in-flight 주문 플래그 리셋
+            self._has_in_flight_order = False
+            # 청산 대기 중 취소 시 대기 상태 리셋
+            if self._pending_switch_target is not None and self._closing_instrument_id == event.instrument_id:
+                self.log.warning(
+                    f"Close order canceled! Resetting pending switch to {self._pending_switch_target}",
+                    LogColor.YELLOW,
+                )
+                self._pending_switch_target = None
+                self._closing_instrument_id = None
+                self._pending_switch_start_time = None
+
+        # MEDIUM 수정: OrderDenied/OrderExpired/OrderCancelRejected 처리
+        # 이 이벤트들에서도 in-flight 플래그 리셋 (거래 영구 차단 방지)
+        if isinstance(event, OrderDenied):
+            self.log.error(
+                f"ORDER DENIED: {event.instrument_id} - reason: {event.reason}",
+                LogColor.RED,
+            )
+            self.slack.send(
+                f":no_entry: *주문 거부됨*\n"
+                f"종목: {event.instrument_id}\n"
+                f"사유: {event.reason}",
+                ":warning:",
+            )
+            self._has_in_flight_order = False
+
+        if isinstance(event, OrderExpired):
+            self.log.warning(
+                f"ORDER EXPIRED: {event.instrument_id}",
+                LogColor.YELLOW,
+            )
+            self.slack.send(
+                f":hourglass: *주문 만료됨*\n종목: {event.instrument_id}",
+                ":warning:",
+            )
+            self._has_in_flight_order = False
+
+        if isinstance(event, OrderCancelRejected):
+            self.log.warning(
+                f"ORDER CANCEL REJECTED: {event.instrument_id} - reason: {event.reason}",
+                LogColor.YELLOW,
+            )
+            # 취소 거절은 주문이 이미 체결되었거나 없는 경우
+            # 안전하게 플래그 리셋 (실제 상태는 다른 이벤트로 확인됨)
+            self._has_in_flight_order = False
+
         # 체결 이벤트 기반 포지션 상태 저장
-        # 주문 제출이 아닌 실제 체결 시에만 상태 파일 업데이트
+        # HIGH 수정: 부분 체결 대응 - 주문이 완전히 종료되었을 때만 플래그 해제
         if isinstance(event, OrderFilled):
             filled_id = event.instrument_id
+
+            # 주문 종료 여부 확인 (부분 체결 vs 완전 체결)
+            order = self.cache.order(event.client_order_id)
+            order_is_closed = order is not None and order.is_closed
+
             if self._actual_long_id and filled_id == self._actual_long_id:
                 # LONG 포지션 체결
                 if event.order_side == OrderSide.BUY:
                     self._save_position_state("LONG")
                     self.log.info(
-                        f"Position state saved: LONG (filled {event.quantity} @ {event.last_px})",
+                        f"Position state saved: LONG (filled {event.last_qty} @ {event.last_px})",
                         LogColor.GREEN,
                     )
             elif self._actual_hedge_id and filled_id == self._actual_hedge_id:
@@ -972,9 +1379,20 @@ class MNQDualSMAStrategy(Strategy):
                 if event.order_side == OrderSide.BUY:
                     self._save_position_state("HEDGE")
                     self.log.info(
-                        f"Position state saved: HEDGE (filled {event.quantity} @ {event.last_px})",
+                        f"Position state saved: HEDGE (filled {event.last_qty} @ {event.last_px})",
                         LogColor.GREEN,
                     )
+
+            # HIGH 수정: 주문이 완전히 종료되었을 때만 in-flight 플래그 리셋
+            # 부분 체결 시에는 잔량이 남아있으므로 플래그 유지
+            if order_is_closed:
+                self._has_in_flight_order = False
+                self.log.debug(f"Order {event.client_order_id} fully closed, in-flight flag reset")
+            else:
+                self.log.info(
+                    f"Partial fill detected for {event.client_order_id}, keeping in-flight guard",
+                    LogColor.BLUE,
+                )
 
         # MEDIUM 수정: 포지션 이벤트 수신 추적
         # 리컨실리에이션이 활성화되었다는 증거로 사용
@@ -986,6 +1404,8 @@ class MNQDualSMAStrategy(Strategy):
                     f"reconciliation is active",
                     LogColor.CYAN,
                 )
+            # 포지션 변경 시 상세 상태 업데이트 (챗봇용)
+            self._save_detailed_state(self.current_position)
 
         # 포지션 전환 대기 중이 아니면 종료
         if self._pending_switch_target is None:
@@ -1004,12 +1424,10 @@ class MNQDualSMAStrategy(Strategy):
 
     def _open_long_position(self) -> None:
         """Open long position (MNQ CONTFUT)."""
-        account = self.portfolio.account(self.long_instrument.id.venue)
-        if account is None:
-            self.log.error("No account found for long instrument")
+        balance = self._get_account_balance()
+        if balance <= 0:
+            self.log.error("No account balance available for long position")
             return
-
-        balance = float(account.balance_total())
         # MEDIUM 수정: 실제 bar type 사용
         long_bar_type = self._actual_long_bar_type or self.config.long_bar_type
         last_bar = self.cache.bar(long_bar_type)
@@ -1041,7 +1459,7 @@ class MNQDualSMAStrategy(Strategy):
             LogColor.GREEN,
         )
 
-        # Slack notification (잔고 및 환율 포함)
+        # Slack notification (잔고, 환율, 레버리지 포함)
         self.slack.notify_position_change(
             action="BUY",
             symbol=str(self._actual_long_id),
@@ -1052,6 +1470,8 @@ class MNQDualSMAStrategy(Strategy):
             balance_usd=balance,
             usd_krw_rate=self._usd_krw_rate,
             rate_is_realtime=self._forex_rate_initialized,
+            leverage=actual_leverage,
+            target_leverage=target_leverage,
         )
 
         # High #2 수정: 실제 ID로 주문 제출
@@ -1061,16 +1481,16 @@ class MNQDualSMAStrategy(Strategy):
             quantity=self.long_instrument.make_qty(Decimal(quantity)),
             time_in_force=TimeInForce.DAY,
         )
+        # HIGH 수정: in-flight 주문 플래그 설정
+        self._has_in_flight_order = True
         self.submit_order(order)
 
     def _open_hedge_position(self) -> None:
         """Open hedge position (GDX)."""
-        account = self.portfolio.account(self.hedge_instrument.id.venue)
-        if account is None:
-            self.log.error("No account found for hedge instrument")
+        balance = self._get_account_balance()
+        if balance <= 0:
+            self.log.error("No account balance available for hedge position")
             return
-
-        balance = float(account.balance_total())
         # MEDIUM 수정: 실제 bar type 사용
         hedge_bar_type = self._actual_hedge_bar_type or self.config.hedge_bar_type
         last_bar = self.cache.bar(hedge_bar_type)
@@ -1094,7 +1514,8 @@ class MNQDualSMAStrategy(Strategy):
             LogColor.YELLOW,
         )
 
-        # Slack notification (잔고 및 환율 포함)
+        # Slack notification (잔고, 환율, 레버리지 포함)
+        # GDX는 ETF이므로 1x 레버리지
         self.slack.notify_position_change(
             action="BUY",
             symbol=str(self._actual_hedge_id),
@@ -1105,6 +1526,8 @@ class MNQDualSMAStrategy(Strategy):
             balance_usd=balance,
             usd_krw_rate=self._usd_krw_rate,
             rate_is_realtime=self._forex_rate_initialized,
+            leverage=1.0,
+            target_leverage=1.0,
         )
 
         # High #2 수정: 실제 ID로 주문 제출
@@ -1114,6 +1537,8 @@ class MNQDualSMAStrategy(Strategy):
             quantity=self.hedge_instrument.make_qty(Decimal(quantity)),
             time_in_force=TimeInForce.DAY,
         )
+        # HIGH 수정: in-flight 주문 플래그 설정
+        self._has_in_flight_order = True
         self.submit_order(order)
 
     # =========================================================================
@@ -1128,7 +1553,12 @@ class MNQDualSMAStrategy(Strategy):
         HEDGE (GDX) is always 1x, no rebalancing needed.
 
         High #2 수정: 실제 로딩된 Instrument ID 사용.
+        HIGH 수정: in-flight 주문 가드 추가.
         """
+        # HIGH 수정: in-flight 주문이 있으면 리밸런싱 스킵
+        if self._has_in_flight_order:
+            return
+
         if self.current_position != "LONG":
             return
 
@@ -1139,11 +1569,7 @@ class MNQDualSMAStrategy(Strategy):
         if self.portfolio.is_flat(self._actual_long_id):
             return
 
-        account = self.portfolio.account(self.long_instrument.id.venue)
-        if account is None:
-            return
-
-        balance = float(account.balance_total())
+        balance = self._get_account_balance()
         if balance <= 0:
             return
 
@@ -1206,6 +1632,8 @@ class MNQDualSMAStrategy(Strategy):
         )
 
         # High #2 수정: 실제 ID로 주문 제출
+        # HIGH 수정: in-flight 주문 플래그 설정
+        self._has_in_flight_order = True
         if diff > 0:
             order = self.order_factory.market(
                 instrument_id=self._actual_long_id,
@@ -1229,6 +1657,12 @@ class MNQDualSMAStrategy(Strategy):
 
     def on_stop(self) -> None:
         """Actions to be performed when the strategy is stopped."""
+        # MEDIUM 수정: 타이머 취소 (클린업) - 생성된 경우에만
+        if self._timers_created:
+            self.clock.cancel_timer("position_validation")
+            self.clock.cancel_timer("pending_timeout")
+            self.clock.cancel_timer("sync_check")
+
         # High #2 수정: 실제 ID 사용 (없으면 config ID로 폴백)
         long_id = self._actual_long_id or self.config.long_instrument_id
         hedge_id = self._actual_hedge_id or self.config.hedge_instrument_id

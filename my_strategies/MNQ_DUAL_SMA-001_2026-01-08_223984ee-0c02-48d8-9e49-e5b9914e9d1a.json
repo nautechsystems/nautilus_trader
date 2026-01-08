@@ -1,0 +1,119 @@
+{"timestamp":"2026-01-08T18:09:43.165877000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.165885000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":" NAUTILUS TRADER - Automated Algorithmic Trading Platform"}
+{"timestamp":"2026-01-08T18:09:43.165886000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":" by Nautech Systems Pty Ltd."}
+{"timestamp":"2026-01-08T18:09:43.165886001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":" Copyright (C) 2015-2025. All rights reserved."}
+{"timestamp":"2026-01-08T18:09:43.165886002Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.165887000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":""}
+{"timestamp":"2026-01-08T18:09:43.165887001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165887002Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165887003Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⠀⠀⠀⢀⣴⡇⢀⣾⣿⣿⣿⣿⣿⠀⣾⣿⣿⣿⣿⣿⣿⣿⠿⠓⠀⠀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165887004Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⠀⠀⣰⣿⣿⡀⢸⣿⣿⣿⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⠟⠁⣠⣄⠀⠀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165887005Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⠀⢠⣿⣿⣿⣇⠀⢿⣿⣿⣿⣿⣿⠀⢻⣿⣿⣿⡿⢃⣠⣾⣿⣿⣧⡀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165888000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⠠⣾⣿⣿⣿⣿⣿⣧⠈⠋⢀⣴⣧⠀⣿⡏⢠⡀⢸⣿⣿⣿⣿⣿⣿⣿⡇⠀"}
+{"timestamp":"2026-01-08T18:09:43.165888001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⣀⠙⢿⣿⣿⣿⣿⣿⠇⢠⣿⣿⣿⡄⠹⠃⠼⠃⠈⠉⠛⠛⠛⠛⠛⠻⠇⠀"}
+{"timestamp":"2026-01-08T18:09:43.165888002Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⢸⡟⢠⣤⠉⠛⠿⢿⣿⠀⢸⣿⡿⠋⣠⣤⣄⠀⣾⣿⣿⣶⣶⣶⣦⡄⠀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165888003Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠸⠀⣾⠏⣸⣷⠂⣠⣤⠀⠘⢁⣴⣾⣿⣿⣿⡆⠘⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165888004Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⠀⠛⠀⣿⡟⠀⢻⣿⡄⠸⣿⣿⣿⣿⣿⣿⣿⡀⠘⣿⣿⣿⣿⠟⠀⠀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165888005Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165889000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀"}
+{"timestamp":"2026-01-08T18:09:43.165890000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":""}
+{"timestamp":"2026-01-08T18:09:43.165890001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.165890002Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":" SYSTEM SPECIFICATION"}
+{"timestamp":"2026-01-08T18:09:43.165890003Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.165890004Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"CPU architecture: Apple M1"}
+{"timestamp":"2026-01-08T18:09:43.165891000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"CPU(s): 8 @ 3204 Mhz"}
+{"timestamp":"2026-01-08T18:09:43.165893000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"OS: kernel-25.3.0 macOS 26.3"}
+{"timestamp":"2026-01-08T18:09:43.186084000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.186092000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":" MEMORY USAGE"}
+{"timestamp":"2026-01-08T18:09:43.186093000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.186101000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"RAM-Total: 16.00 GiB"}
+{"timestamp":"2026-01-08T18:09:43.186102000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"RAM-Used: 9.78 GiB (61.13%)"}
+{"timestamp":"2026-01-08T18:09:43.186103000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"RAM-Avail: 6.22 GiB (38.87%)"}
+{"timestamp":"2026-01-08T18:09:43.186108000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"Swap-Total: 4.00 GiB"}
+{"timestamp":"2026-01-08T18:09:43.186108001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"Swap-Used: 2.32 GiB (57.91%)"}
+{"timestamp":"2026-01-08T18:09:43.186108002Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"Swap-Avail: 1.68 GiB (42.09%)"}
+{"timestamp":"2026-01-08T18:09:43.186296000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.186299000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":" IDENTIFIERS"}
+{"timestamp":"2026-01-08T18:09:43.186299001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.186300000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"trader_id: MNQ_DUAL_SMA-001"}
+{"timestamp":"2026-01-08T18:09:43.186300001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"machine_id: songmunseogs-MacBook-Pro.local"}
+{"timestamp":"2026-01-08T18:09:43.186301000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"instance_id: 223984ee-0c02-48d8-9e49-e5b9914e9d1a"}
+{"timestamp":"2026-01-08T18:09:43.186302000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"PID: 49047"}
+{"timestamp":"2026-01-08T18:09:43.186302001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.186302002Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":" VERSIONING"}
+{"timestamp":"2026-01-08T18:09:43.186302003Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.186332000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"nautilus_trader: 1.221.0"}
+{"timestamp":"2026-01-08T18:09:43.186341000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"python: 3.11.8"}
+{"timestamp":"2026-01-08T18:09:43.186344000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"numpy: 2.2.6"}
+{"timestamp":"2026-01-08T18:09:43.186346000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"pandas: 2.3.1"}
+{"timestamp":"2026-01-08T18:09:43.186348000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"msgspec: 0.20.0"}
+{"timestamp":"2026-01-08T18:09:43.186350000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"pyarrow: 22.0.0"}
+{"timestamp":"2026-01-08T18:09:43.186352000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"pytz: 2025.2"}
+{"timestamp":"2026-01-08T18:09:43.186353000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"uvloop: 0.22.1"}
+{"timestamp":"2026-01-08T18:09:43.186354000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"CYAN","component":"TradingNode","message":"================================================================="}
+{"timestamp":"2026-01-08T18:09:43.186562000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"TradingNode","message":"Building system kernel"}
+{"timestamp":"2026-01-08T18:09:43.186713000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"TradingNode","message":"Event loop signal handling setup for (<Signals.SIGTERM: 15>, <Signals.SIGINT: 2>, <Signals.SIGABRT: 6>)"}
+{"timestamp":"2026-01-08T18:09:43.186742000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.database=None"}
+{"timestamp":"2026-01-08T18:09:43.186744000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.encoding='msgpack'"}
+{"timestamp":"2026-01-08T18:09:43.186744001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.timestamps_as_iso8601=False"}
+{"timestamp":"2026-01-08T18:09:43.186745000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.buffer_interval_ms=None"}
+{"timestamp":"2026-01-08T18:09:43.186745001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.autotrim_mins=None"}
+{"timestamp":"2026-01-08T18:09:43.186745002Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.use_trader_prefix=True"}
+{"timestamp":"2026-01-08T18:09:43.186746000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.use_trader_id=True"}
+{"timestamp":"2026-01-08T18:09:43.186747000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.use_instance_id=False"}
+{"timestamp":"2026-01-08T18:09:43.186747001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.streams_prefix='stream'"}
+{"timestamp":"2026-01-08T18:09:43.186748000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"MessageBus","message":"config.types_filter=None"}
+{"timestamp":"2026-01-08T18:09:43.186771000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added Subscription(topic=commands.system.shutdown, handler=<bound method NautilusKernel._on_shutdown_system of <nautilus_trader.system.kernel.NautilusKernel object at 0x11d193010>>, priority=0)"}
+{"timestamp":"2026-01-08T18:09:43.186790000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"Cache","message":"READY"}
+{"timestamp":"2026-01-08T18:09:43.187100000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'Portfolio.update_account' <bound method Portfolio.update_account of <nautilus_trader.portfolio.portfolio.Portfolio object at 0x11d0ea980>>"}
+{"timestamp":"2026-01-08T18:09:43.187102000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'Portfolio.update_order' <bound method Portfolio.update_order of <nautilus_trader.portfolio.portfolio.Portfolio object at 0x11d0ea980>>"}
+{"timestamp":"2026-01-08T18:09:43.187103000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'Portfolio.update_position' <bound method Portfolio.update_position of <nautilus_trader.portfolio.portfolio.Portfolio object at 0x11d0ea980>>"}
+{"timestamp":"2026-01-08T18:09:43.187107000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added Subscription(topic=events.order.*, handler=<bound method Portfolio.on_order_event of <nautilus_trader.portfolio.portfolio.Portfolio object at 0x11d0ea980>>, priority=10)"}
+{"timestamp":"2026-01-08T18:09:43.187110000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added Subscription(topic=events.position.*, handler=<bound method Portfolio.on_position_event of <nautilus_trader.portfolio.portfolio.Portfolio object at 0x11d0ea980>>, priority=10)"}
+{"timestamp":"2026-01-08T18:09:43.187113000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added Subscription(topic=data.quotes.*, handler=<bound method Portfolio.update_quote_tick of <nautilus_trader.portfolio.portfolio.Portfolio object at 0x11d0ea980>>, priority=10)"}
+{"timestamp":"2026-01-08T18:09:43.187116000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added Subscription(topic=data.bars.*EXTERNAL, handler=<bound method Portfolio.update_bar of <nautilus_trader.portfolio.portfolio.Portfolio object at 0x11d0ea980>>, priority=10)"}
+{"timestamp":"2026-01-08T18:09:43.187176000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"DataEngine","message":"READY"}
+{"timestamp":"2026-01-08T18:09:43.187220000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'DataEngine.execute' <bound method LiveDataEngine.execute of LiveDataEngine(DataEngine)>"}
+{"timestamp":"2026-01-08T18:09:43.187223000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'DataEngine.process' <bound method LiveDataEngine.process of LiveDataEngine(DataEngine)>"}
+{"timestamp":"2026-01-08T18:09:43.187224000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'DataEngine.request' <bound method LiveDataEngine.request of LiveDataEngine(DataEngine)>"}
+{"timestamp":"2026-01-08T18:09:43.187224001Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'DataEngine.response' <bound method LiveDataEngine.response of LiveDataEngine(DataEngine)>"}
+{"timestamp":"2026-01-08T18:09:43.187251000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"DataEngine","message":"config.graceful_shutdown_on_exception=False"}
+{"timestamp":"2026-01-08T18:09:43.187276000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"RiskEngine","message":"READY"}
+{"timestamp":"2026-01-08T18:09:43.187294000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"RiskEngine","message":"TradingState is ACTIVE"}
+{"timestamp":"2026-01-08T18:09:43.187336000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"Throttler-ORDER_SUBMIT_THROTTLER","message":"READY"}
+{"timestamp":"2026-01-08T18:09:43.187350000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"RiskEngine","message":"Set MAX_ORDER_SUBMIT_RATE: 100/00:00:01"}
+{"timestamp":"2026-01-08T18:09:43.187362000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"Throttler-ORDER_MODIFY_THROTTLER","message":"READY"}
+{"timestamp":"2026-01-08T18:09:43.187365000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"RiskEngine","message":"Set MAX_ORDER_MODIFY_RATE: 100/00:00:01"}
+{"timestamp":"2026-01-08T18:09:43.187368000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'RiskEngine.execute' <bound method LiveRiskEngine.execute of LiveRiskEngine(RiskEngine)>"}
+{"timestamp":"2026-01-08T18:09:43.187368001Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'RiskEngine.process' <bound method LiveRiskEngine.process of LiveRiskEngine(RiskEngine)>"}
+{"timestamp":"2026-01-08T18:09:43.187371000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added Subscription(topic=events.order.*, handler=<bound method RiskEngine._handle_event of LiveRiskEngine(RiskEngine)>, priority=10)"}
+{"timestamp":"2026-01-08T18:09:43.187373000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added Subscription(topic=events.position.*, handler=<bound method RiskEngine._handle_event of LiveRiskEngine(RiskEngine)>, priority=10)"}
+{"timestamp":"2026-01-08T18:09:43.187382000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"RiskEngine","message":"config.graceful_shutdown_on_exception=False"}
+{"timestamp":"2026-01-08T18:09:43.187416000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"NORMAL","component":"ExecEngine","message":"READY"}
+{"timestamp":"2026-01-08T18:09:43.187433000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.snapshot_orders=False"}
+{"timestamp":"2026-01-08T18:09:43.187434000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.snapshot_positions=False"}
+{"timestamp":"2026-01-08T18:09:43.187435000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.snapshot_positions_interval_secs=None"}
+{"timestamp":"2026-01-08T18:09:43.187437000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'ExecEngine.execute' <bound method LiveExecutionEngine.execute of LiveExecutionEngine(ExecEngine)>"}
+{"timestamp":"2026-01-08T18:09:43.187438000Z","trader_id":"MNQ_DUAL_SMA-001","level":"DEBUG","color":"NORMAL","component":"MessageBus","message":"Added endpoint 'ExecEngine.process' <bound method LiveExecutionEngine.process of LiveExecutionEngine(ExecEngine)>"}
+{"timestamp":"2026-01-08T18:09:43.187461000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.reconciliation=True"}
+{"timestamp":"2026-01-08T18:09:43.187461001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.reconciliation_lookback_mins=1440"}
+{"timestamp":"2026-01-08T18:09:43.187462000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.reconciliation_instrument_ids=None"}
+{"timestamp":"2026-01-08T18:09:43.187462001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.filter_unclaimed_external_orders=False"}
+{"timestamp":"2026-01-08T18:09:43.187463000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.filter_position_reports=False"}
+{"timestamp":"2026-01-08T18:09:43.187463001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.filtered_client_order_ids=None"}
+{"timestamp":"2026-01-08T18:09:43.187464000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.inflight_check_interval_ms=2000"}
+{"timestamp":"2026-01-08T18:09:43.187464001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.inflight_check_threshold_ms=5000"}
+{"timestamp":"2026-01-08T18:09:43.187465000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.inflight_check_retries=5"}
+{"timestamp":"2026-01-08T18:09:43.187465001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.own_books_audit_interval_secs=None"}
+{"timestamp":"2026-01-08T18:09:43.187466000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.open_check_interval_secs=None"}
+{"timestamp":"2026-01-08T18:09:43.187466001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.open_check_open_only=True"}
+{"timestamp":"2026-01-08T18:09:43.187467000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.open_check_lookback_mins=60"}
+{"timestamp":"2026-01-08T18:09:43.187467001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.open_check_threshold_ms=5000"}
+{"timestamp":"2026-01-08T18:09:43.187468000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.open_check_missing_retries=5"}
+{"timestamp":"2026-01-08T18:09:43.187468001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.max_single_order_queries_per_cycle=10"}
+{"timestamp":"2026-01-08T18:09:43.187469000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.single_order_query_delay_ms=100"}
+{"timestamp":"2026-01-08T18:09:43.187470000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.reconciliation_startup_delay_secs=10.0"}
+{"timestamp":"2026-01-08T18:09:43.187471000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.purge_closed_orders_interval_mins=None"}
+{"timestamp":"2026-01-08T18:09:43.187471001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.purge_closed_orders_buffer_mins=None"}
+{"timestamp":"2026-01-08T18:09:43.187472000Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.purge_closed_positions_interval_mins=None"}
+{"timestamp":"2026-01-08T18:09:43.187472001Z","trader_id":"MNQ_DUAL_SMA-001","level":"INFO","color":"BLUE","component":"ExecEngine","message":"config.purge_closed_positions_buffer_mins=None"}

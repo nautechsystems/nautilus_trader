@@ -145,23 +145,73 @@ class TradingChatbot:
             say(self.get_help())
 
     def get_status(self) -> str:
-        """Get current market status."""
-        status = self.notifier.get_current_status()
+        """Get comprehensive status including market, position, and balance."""
+        import json
 
-        if "error" in status:
-            return f":warning: 오류: {status['error']}"
+        # 1. Market status
+        market = self.notifier.get_current_status()
+        if "error" in market:
+            market_section = f":warning: 시장 데이터 오류: {market['error']}"
+        else:
+            signal_emoji = ":chart_with_upwards_trend:" if market["signal"] == "LONG" else ":shield:"
+            market_section = (
+                f"*시장 현황*\n"
+                f"• QQQ: ${market['qqq_price']:.2f}\n"
+                f"• SMA200: ${market['sma200']:.2f} ({market['dist_200']:+.1f}%)\n"
+                f"• SMA50: ${market['sma50']:.2f} ({market['dist_50']:+.1f}%)\n"
+                f"• 신호: {signal_emoji} {market['signal']}"
+            )
 
-        signal_emoji = ":chart_with_upwards_trend:" if status["signal"] == "LONG" else ":shield:"
+        # 2. Position & Balance from detailed state
+        detailed_state_file = Path(__file__).parent / ".nautilus_detailed_state.json"
+        position_section = ""
+        balance_section = ""
 
-        return (
-            f"*현재 시장 상태*\n\n"
-            f"*QQQ:* ${status['qqq_price']:.2f}\n"
-            f"*SMA200:* ${status['sma200']:.2f} ({status['dist_200']:+.1f}%)\n"
-            f"*SMA50:* ${status['sma50']:.2f} ({status['dist_50']:+.1f}%)\n\n"
-            f"*신호:* {signal_emoji} {status['signal']}\n"
-            f"{'• QQQ > SMA200' if status['above_200'] else '• QQQ < SMA200'}\n"
-            f"{'• QQQ > SMA50' if status['above_50'] else '• QQQ < SMA50'}"
-        )
+        try:
+            if detailed_state_file.exists():
+                state = json.loads(detailed_state_file.read_text())
+                position = state.get("position", "FLAT")
+                symbol = state.get("symbol", "")
+                quantity = state.get("quantity", 0)
+                balance_usd = state.get("balance_usd", 0)
+                balance_krw = state.get("balance_krw", 0)
+                leverage = state.get("leverage", 0)
+                target_leverage = state.get("target_leverage", 3.0)
+
+                # Position section with futures explanation
+                if position == "LONG" and quantity > 0:
+                    # MNQ contract value calculation
+                    mnq_price = market.get("qqq_price", 500) * 20  # NQ ≈ QQQ * 20
+                    contract_value = quantity * mnq_price * 2  # $2/point
+                    contract_value_krw = contract_value * config.USD_KRW_RATE
+
+                    position_section = (
+                        f"\n\n*포지션 (MNQ 선물)*\n"
+                        f"• 수량: {quantity}계약\n"
+                        f"• 1계약 = 나스닥100 × $2\n"
+                        f"• 총 노출: ${contract_value:,.0f} (₩{contract_value_krw:,.0f})\n"
+                        f"• 레버리지: {leverage:.2f}x / {target_leverage:.1f}x 목표"
+                    )
+                elif position == "HEDGE" and quantity > 0:
+                    position_section = (
+                        f"\n\n*포지션 (GDX 헤지)*\n"
+                        f"• 수량: {quantity:,}주\n"
+                        f"• 금광주 ETF로 헤지 중"
+                    )
+                else:
+                    position_section = f"\n\n*포지션*\n• 없음 (FLAT)"
+
+                # Balance section
+                balance_section = (
+                    f"\n\n*잔고*\n"
+                    f"• ${balance_usd:,.0f} (₩{balance_krw:,.0f})"
+                )
+            else:
+                position_section = "\n\n*포지션*\n• 데이터 없음 (봇 재시작 필요)"
+        except Exception as e:
+            position_section = f"\n\n*포지션*\n• 조회 오류: {e}"
+
+        return market_section + position_section + balance_section
 
     def get_position(self) -> str:
         """Get current position."""

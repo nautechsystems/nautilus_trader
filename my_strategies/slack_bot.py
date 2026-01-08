@@ -150,6 +150,8 @@ class SlackNotifier:
         balance_usd: Optional[float] = None,
         usd_krw_rate: Optional[float] = None,
         rate_is_realtime: bool = False,
+        leverage: Optional[float] = None,
+        target_leverage: Optional[float] = None,
     ) -> bool:
         """Notify position change with balance and KRW conversion."""
         if action == "BUY":
@@ -192,6 +194,16 @@ class SlackNotifier:
                 ]
             }
         ]
+
+        # 레버리지 정보 추가
+        if leverage is not None:
+            target_str = f"/{target_leverage:.1f}x" if target_leverage else ""
+            blocks.append({
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*레버리지:*\n{leverage:.2f}x{target_str}"},
+                ]
+            })
 
         # 잔고 및 환율 정보 추가
         if balance_usd is not None and usd_krw_rate is not None:
