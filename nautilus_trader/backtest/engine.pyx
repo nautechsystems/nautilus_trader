@@ -5572,14 +5572,15 @@ cdef class OrderMatchingEngine:
                 fill_qty = self.determine_trade_fill_qty(order)
                 if fill_qty is not None:
                     self._log.debug(
-                        f"Trade execution fill: {fill_qty} @ {trade_price} "
-                        f"(trade_size: {self._last_trade_size}, book had {len(fills)} fills)",
+                        f"Trade execution fill: {fill_qty} @ {order.price} "
+                        f"(trade_price={trade_price}, trade_size={self._last_trade_size})",
                     )
 
-                    # Trade execution fills already account for consumption via _trade_consumption.
-                    # Return early to bypass _apply_liquidity_consumption which would incorrectly
+                    # Fill at the limit price (conservative) rather than the trade price.
+                    # Trade execution fills already account for consumption via _trade_consumption,
+                    # return early to bypass _apply_liquidity_consumption which would incorrectly
                     # discard these fills when the trade price isn't in the order book.
-                    return [(trade_price, fill_qty)]
+                    return [(order.price, fill_qty)]
 
         if (
             fills

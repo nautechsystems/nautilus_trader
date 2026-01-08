@@ -40,9 +40,10 @@ jobs:
       - name: Verify capnp schemas are up-to-date
         run: make check-capnp-schemas
 
-  # Dependency license, advisory, and ban checks
+  # Dependency license, advisory, and ban checks (master only - gates releases)
   # https://embarkstudios.github.io/cargo-deny/
   cargo-deny:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
@@ -64,9 +65,10 @@ jobs:
       - name: Run cargo-deny (advisories, licenses, sources, bans)
         run: cargo deny --all-features check advisories licenses sources bans
 
-  # Supply chain security auditing
+  # Supply chain security auditing (master only - gates releases)
   # https://mozilla.github.io/cargo-vet/configuring-ci.html
   cargo-vet:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
@@ -105,8 +107,6 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - cargo-deny
-      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
@@ -209,8 +209,6 @@ jobs:
           github.base_ref == 'develop')
       )
     needs:
-      - cargo-deny
-      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
@@ -305,8 +303,6 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - cargo-deny
-      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
@@ -364,8 +360,6 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
-      - cargo-deny
-      - cargo-vet
       - pre-commit
     env:
       BUILD_MODE: release
@@ -653,6 +647,8 @@ jobs:
       - build-linux-arm
       - build-macos
       - build-windows
+      - cargo-deny
+      - cargo-vet
     permissions:
       contents: write # Required for pushing tags and upload release assets
       actions: write  # Required for creating releases

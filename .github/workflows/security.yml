@@ -1,0 +1,78 @@
+name: security
+
+# Supply chain security checks - runs nightly for visibility
+# and on master push to gate releases.
+#
+# This workflow is separate from the main build to avoid random failures on develop
+# and nightly branches from new advisories that may not be actionable.
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  schedule:
+    - cron: '0 12 * * *' # Daily at 12:00 UTC (2hrs prior to nightly-merge)
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  cargo-deny:
+    name: cargo-deny
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-deny
+        uses: ./.github/actions/cargo-tool-install
+        with:
+          tool-name: cargo-deny
+
+      - name: Run cargo-deny (advisories, licenses, sources, bans)
+        run: cargo deny --all-features check advisories licenses sources bans
+
+  cargo-vet:
+    name: cargo-vet
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-vet
+        uses: ./.github/actions/cargo-tool-install
+        with:
+          tool-name: cargo-vet
+
+      - name: Run cargo-vet
+        run: cargo vet --locked
+
+  osv-scanner:
+    name: osv-scanner
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run osv-scanner
+        uses: google/osv-scanner-action@f1ba5d7df1b88f11c49ed2bd742d13636ca1352c # v2.0.2
+        with:
+          config: osv-scanner.toml
+          scan-args: --lockfile=Cargo.lock --lockfile=uv.lock

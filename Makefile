@@ -241,7 +241,7 @@ check-code:  #-- Run clippy, and ruff --fix (use HYPERSYNC=true to include hyper
 
 .PHONY: pre-flight
 pre-flight: export CARGO_TARGET_DIR=$(TARGET_DIR)
-pre-flight:  #-- Run comprehensive pre-flight checks (format, check-code, cargo-test, build-debug, pytest)
+pre-flight:  #-- Run comprehensive pre-flight checks (format, check-code, cargo-test, build-debug, pytest, security-audit)
 	$(info $(M) Running pre-flight checks...)
 	@if ! git diff --quiet; then \
 		printf "$(RED)ERROR: You have unstaged changes$(RESET)\n"; \
@@ -253,6 +253,7 @@ pre-flight:  #-- Run comprehensive pre-flight checks (format, check-code, cargo-
 	@$(MAKE) --no-print-directory cargo-test-extras
 	@$(MAKE) --no-print-directory build-debug
 	@$(MAKE) --no-print-directory pytest
+	@$(MAKE) --no-print-directory security-audit
 	@printf "$(GREEN)All pre-flight checks passed$(RESET)\n"
 
 .PHONY: ruff
@@ -315,11 +316,16 @@ install-tools:  #-- Install required development tools (Rust tools from Cargo.to
 #== Security
 
 .PHONY: security-audit
-security-audit: check-audit-installed  #-- Run security audit for Rust dependencies (osv-scanner runs via pre-commit)
-	$(info $(M) Running security audit for Rust dependencies...)
-	@printf "$(CYAN)Checking Rust dependencies for known vulnerabilities...$(RESET)\n"
+security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, osv-scanner)
+	$(info $(M) Running security audit...)
+	@printf "$(CYAN)Running cargo audit...$(RESET)\n"
 	cargo audit --color never || true
-	@printf "\n$(CYAN)Note: Python dependency scanning (osv-scanner) runs via pre-commit hooks$(RESET)\n"
+	@printf "\n$(CYAN)Running cargo deny (advisories check)...$(RESET)\n"
+	cargo deny --all-features check advisories
+	@printf "\n$(CYAN)Running cargo vet (supply chain audit)...$(RESET)\n"
+	cargo vet
+	@printf "\n$(CYAN)Running osv-scanner (Cargo.lock + uv.lock)...$(RESET)\n"
+	osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=uv.lock
 
 .PHONY: cargo-deny
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
@@ -379,6 +385,7 @@ cargo-update:  #-- Update Rust dependencies (versions from Cargo.toml)
 cargo-check:  #-- Check Rust code without building
 	cargo check --workspace --all-features
 
+# Security tool checks
 .PHONY: check-audit-installed
 check-audit-installed:  #-- Verify cargo-audit is installed
 	@if ! cargo audit --version >/dev/null 2>&1; then \
@@ -393,6 +400,21 @@ check-deny-installed:  #-- Verify cargo-deny is installed
 		exit 1; \
 	fi
 
+.PHONY: check-vet-installed
+check-vet-installed:  #-- Verify cargo-vet is installed
+	@if ! cargo vet --version >/dev/null 2>&1; then \
+		echo "cargo-vet is not installed. You can install it using 'cargo install cargo-vet'"; \
+		exit 1; \
+	fi
+
+.PHONY: check-osv-scanner-installed
+check-osv-scanner-installed:  #-- Verify osv-scanner is installed
+	@if ! osv-scanner --version >/dev/null 2>&1; then \
+		echo "osv-scanner is not installed. See https://google.github.io/osv-scanner/installation/"; \
+		exit 1; \
+	fi
+
+# Testing tool checks
 .PHONY: check-nextest-installed
 check-nextest-installed:  #-- Verify cargo-nextest is installed
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
@@ -407,17 +429,11 @@ check-llvm-cov-installed:  #-- Verify cargo-llvm-cov is installed
 		exit 1; \
 	fi
 
+# Cargo utility checks
 .PHONY: check-hack-installed
 check-hack-installed:  #-- Verify cargo-hack is installed
 	@if ! cargo hack --version >/dev/null 2>&1; then \
 		echo "cargo-hack is not installed. You can install it using 'cargo install cargo-hack'"; \
-		exit 1; \
-	fi
-
-.PHONY: check-vet-installed
-check-vet-installed:  #-- Verify cargo-vet is installed
-	@if ! cargo vet --version >/dev/null 2>&1; then \
-		echo "cargo-vet is not installed. You can install it using 'cargo install cargo-vet'"; \
 		exit 1; \
 	fi
 

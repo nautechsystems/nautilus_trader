@@ -182,7 +182,7 @@ http = "1.4.0"
 hypersync-client = { version = "0.23.0" }
 hypersync-schema = { version = "0.4.0" }
 implied-vol = { version = "2.0.0" }
-indexmap = { version = "2.12.1", features = ["serde"] }
+indexmap = { version = "2.13.0", features = ["serde"] }
 itertools = "0.14.0"
 itoa = "1.0.17"
 log = { version = "0.4.29", features = [
