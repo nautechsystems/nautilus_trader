@@ -55,17 +55,18 @@ class TradingConfig:
     ETF_COMMISSION_PER_SHARE: float = 0.005      # 주당 커미션 (IBKR Pro)
     ETF_MIN_COMMISSION: float = 1.00             # 최소 커미션
 
-    # ============== 리밸런싱 설정 ==============
-    # 밴드 리밸런싱: 레버리지가 밴드 벗어날 때만 조정
-    REBALANCE_MODE: str = "band"                 # "daily", "band", "weekly", "monthly"
+    # ============== 밴드 리밸런싱 설정 ==============
+    # 설계 결정: 밴드 리밸런싱 채택 (일일 리밸런싱 대비 거래비용 ~97% 절감)
+    # - 레버리지가 밴드(target ± 15%) 벗어날 때만 조정
+    # - 일일/주간/월간 강제 리밸런싱 없음 (의도적 설계)
     REBALANCE_BAND_PCT: float = 0.15             # ±15% 밴드
     REBALANCE_MIN_THRESHOLD: float = 0.01        # 최소 1% 차이 있어야 리밸런싱
 
     # ============== 레버리지 설정 ==============
-    # 예수금에 따른 동적 레버리지
     TARGET_LEVERAGE_DEFAULT: float = 3.0         # 기본 3x
     TARGET_LEVERAGE_HIGH: float = 4.0            # 자본 충분시 4x
     LEVERAGE_4X_THRESHOLD: float = 84_000        # 4x 전환 기준 ($84k 이상)
+    ENABLE_DYNAMIC_LEVERAGE: bool = False        # True면 자본 증가시 4x 자동 전환
 
     # ============== 최소 자본 권장 ==============
     # MNQ 전략 자본 기준

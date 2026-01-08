@@ -47,7 +47,8 @@ def create_ib_contracts():
     """
     IBKR 계약 생성.
 
-    CONTFUT (연속 선물) 사용으로 자동 롤오버.
+    USE_FUTURES=True: CONTFUT (연속 선물) 사용으로 자동 롤오버.
+    USE_FUTURES=False: TQQQ ETF (레버리지 내장) 사용.
     """
     contracts = [
         # QQQ ETF - 시그널용
@@ -57,20 +58,38 @@ def create_ib_contracts():
             exchange="SMART",
             primaryExchange="NASDAQ",
         ),
+    ]
+
+    if config.USE_FUTURES:
         # MNQ 연속 선물 - IBKR이 자동 롤오버
-        IBContract(
-            secType="CONTFUT",
-            symbol="MNQ",
-            exchange="CME",
-        ),
-        # GDX ETF - 헤지용
+        contracts.append(
+            IBContract(
+                secType="CONTFUT",
+                symbol="MNQ",
+                exchange="CME",
+            )
+        )
+    else:
+        # TQQQ ETF - 3x 레버리지 내장
+        contracts.append(
+            IBContract(
+                secType="STK",
+                symbol="TQQQ",
+                exchange="SMART",
+                primaryExchange="NASDAQ",
+            )
+        )
+
+    # GDX ETF - 헤지용
+    contracts.append(
         IBContract(
             secType="STK",
             symbol="GDX",
             exchange="SMART",
             primaryExchange="ARCA",
-        ),
-    ]
+        )
+    )
+
     return contracts
 
 
@@ -208,7 +227,10 @@ def add_strategy(node: TradingNode) -> None:
         target_leverage=config.TARGET_LEVERAGE_DEFAULT,
         target_leverage_high=config.TARGET_LEVERAGE_HIGH,
         leverage_4x_threshold=config.LEVERAGE_4X_THRESHOLD,
+        enable_dynamic_leverage=config.ENABLE_DYNAMIC_LEVERAGE,
         rebalance_band_pct=config.REBALANCE_BAND_PCT,
+        rebalance_min_threshold=config.REBALANCE_MIN_THRESHOLD,
+        contract_multiplier=2.0 if config.USE_FUTURES else 1.0,  # MNQ: $2/point, ETF: 1:1
         close_positions_on_stop=False,
     )
 
@@ -217,9 +239,15 @@ def add_strategy(node: TradingNode) -> None:
 
     print(f"\n[전략 설정]")
     print(f"  시그널: {qqq_id} 이중 SMA ({config.SMA_LONG_PERIOD}+{config.SMA_SHORT_PERIOD})")
-    print(f"  롱: {long_id} (CONTFUT - 자동 롤오버)")
+    if config.USE_FUTURES:
+        print(f"  롱: {long_id} (CONTFUT - 자동 롤오버)")
+    else:
+        print(f"  롱: {long_id} (ETF - 레버리지 내장)")
     print(f"  헤지: {hedge_id}")
-    print(f"  레버리지: {config.TARGET_LEVERAGE_DEFAULT}x (기본) / {config.TARGET_LEVERAGE_HIGH}x (자본 ${config.LEVERAGE_4X_THRESHOLD:,.0f} 이상)")
+    if config.ENABLE_DYNAMIC_LEVERAGE:
+        print(f"  레버리지: {config.TARGET_LEVERAGE_DEFAULT}x → {config.TARGET_LEVERAGE_HIGH}x (자본 ${config.LEVERAGE_4X_THRESHOLD:,.0f} 이상시 자동 전환)")
+    else:
+        print(f"  레버리지: {config.TARGET_LEVERAGE_DEFAULT}x (고정)")
     print(f"  리밸런싱 밴드: ±{config.REBALANCE_BAND_PCT*100:.0f}%")
     print()
 

@@ -9,8 +9,9 @@ MNQ 3x + 이중SMA + GDX 전략 for NautilusTrader
 - QQQ < SMA200 AND QQQ < SMA50 → HEDGE (GDX)
 - 그 외 → 이전 포지션 유지 (히스테리시스)
 
-밴드 리밸런싱:
-- 레버리지가 밴드(target ± band%) 벗어날 때만 조정
+리밸런싱 방식 (의도적 설계):
+- 밴드 리밸런싱: 레버리지가 밴드(target ± 15%) 벗어날 때만 조정
+- 일일/주간/월간 강제 리밸런싱 없음 (거래비용 ~97% 절감)
 - 기본: 3x ± 15% → 2.55x~3.45x 범위 내 유지
 
 자동 롤오버:
@@ -81,7 +82,10 @@ class MNQDualSMAConfig(StrategyConfig, frozen=True):
     target_leverage: PositiveFloat = 3.0
     target_leverage_high: PositiveFloat = 4.0
     leverage_4x_threshold: PositiveFloat = 84_000
+    enable_dynamic_leverage: bool = False  # True면 자본 증가시 4x 자동 전환
     rebalance_band_pct: PositiveFloat = 0.15
+    rebalance_min_threshold: PositiveFloat = 0.01  # 최소 1% 차이 있어야 리밸런싱
+    contract_multiplier: PositiveFloat = 2.0  # MNQ: $2/point, QQQ(ETF): 1.0
     close_positions_on_stop: bool = True
 
 
@@ -123,6 +127,22 @@ class MNQDualSMAStrategy(Strategy):
         # Current leverage (dynamically updated based on balance)
         self._current_target_leverage: float = config.target_leverage
 
+        # Actual instrument IDs (may differ from config due to venue mismatch)
+        # High #2 수정: 포트폴리오 작업에 실제 로딩된 ID 사용
+        self._actual_long_id: InstrumentId | None = None
+        self._actual_hedge_id: InstrumentId | None = None
+
+        # Pending position switch tracking
+        # High #1 수정: close_all_positions() 비동기 완료 대기
+        self._pending_switch_target: str | None = None
+        self._closing_instrument_id: InstrumentId | None = None
+
+        # Position sync state
+        # 리컨실리에이션 완료까지 무제한 재시도 (포지션 발견 시 완료)
+        self._position_synced: bool = False
+        self._sync_retry_count: int = 0
+        self._sync_warn_threshold: int = 10  # 10회 이상 시 경고 로그
+
         # Slack notifier
         self.slack = SlackNotifier()
 
@@ -147,17 +167,115 @@ class MNQDualSMAStrategy(Strategy):
         except Exception:
             pass
 
+    def _sync_position_with_portfolio(self) -> bool:
+        """
+        실제 포지션과 상태 파일 동기화.
+
+        Returns
+        -------
+        bool
+            동기화 완료 여부 (True=완료, False=재시도 필요)
+
+        재시작 시 상태 파일이 실제 포지션과 다를 수 있음:
+        - 파일=LONG, 실제=FLAT → 신규 진입 불가 버그
+        - 파일=HEDGE, 실제=LONG → 잘못된 청산 대상
+
+        High #2 수정: 실제 로딩된 Instrument ID 사용 (config ID 아님)
+        """
+        if self._actual_long_id is None or self._actual_hedge_id is None:
+            self.log.warning("Cannot sync - actual instrument IDs not set yet")
+            return False
+
+        file_state = self.current_position
+        actual_state = None
+
+        # 실제 포지션 확인 (실제 로딩된 ID 사용)
+        has_long = not self.portfolio.is_flat(self._actual_long_id)
+        has_hedge = not self.portfolio.is_flat(self._actual_hedge_id)
+
+        if has_long and not has_hedge:
+            actual_state = "LONG"
+        elif has_hedge and not has_long:
+            actual_state = "HEDGE"
+        elif has_long and has_hedge:
+            # 비정상 상태: 양쪽 다 포지션 있음
+            self.log.warning(
+                "Both LONG and HEDGE positions detected! Manual intervention may be needed.",
+                LogColor.RED,
+            )
+            # Low 수정: 가치(USD) 기준으로 더 큰 포지션 선택
+            # MNQ: 수량 × 가격 × 승수($2), GDX: 수량 × 가격 × 1
+            long_qty = abs(float(self.portfolio.net_position(self._actual_long_id)))
+            hedge_qty = abs(float(self.portfolio.net_position(self._actual_hedge_id)))
+
+            long_bar = self.cache.bar(self.config.long_bar_type)
+            hedge_bar = self.cache.bar(self.config.hedge_bar_type)
+
+            # LOW 수정: 바 데이터 없으면 비교 불가 - 수량 기반 폴백 (경고 포함)
+            if long_bar is None or hedge_bar is None:
+                self.log.warning(
+                    f"Missing bar data for value comparison. Using quantity fallback. "
+                    f"Long: {long_qty}, Hedge: {hedge_qty}",
+                    LogColor.RED,
+                )
+                # 바 없으면 수량 기반으로 판단 (부정확하지만 차선책)
+                # MNQ 1계약 ≈ $42k, GDX 1주 ≈ $35 → MNQ 계약당 ~1200배 가치
+                # 대략적 환산: long_qty * 1000 vs hedge_qty
+                actual_state = "LONG" if long_qty * 1000 > hedge_qty else "HEDGE"
+            else:
+                long_price = float(long_bar.close)
+                hedge_price = float(hedge_bar.close)
+
+                # MNQ는 승수 적용, GDX(ETF)는 1배
+                long_value_usd = long_qty * long_price * self.config.contract_multiplier
+                hedge_value_usd = hedge_qty * hedge_price * 1.0  # ETF는 승수 없음
+
+                self.log.warning(
+                    f"Position values - LONG: ${long_value_usd:,.0f}, HEDGE: ${hedge_value_usd:,.0f}",
+                    LogColor.YELLOW,
+                )
+                actual_state = "LONG" if long_value_usd > hedge_value_usd else "HEDGE"
+        else:
+            actual_state = None  # FLAT
+
+        # 불일치 감지 및 보정
+        if file_state != actual_state:
+            self.log.warning(
+                f"Position state mismatch! File: {file_state}, Actual: {actual_state}. "
+                f"Using actual portfolio state.",
+                LogColor.YELLOW,
+            )
+            self.current_position = actual_state
+            if actual_state:
+                self._save_position_state(actual_state)
+            elif self.state_file.exists():
+                self.state_file.unlink()  # FLAT이면 상태 파일 삭제
+            # 포트폴리오에서 포지션을 찾았으면 동기화 완료
+            # FLAT으로 불일치 보정된 경우는 재시도 필요 (리컨실리에이션 미완료 가능성)
+            return actual_state is not None
+        else:
+            self.log.info(
+                f"Position state verified: {actual_state or 'FLAT'}",
+                LogColor.GREEN,
+            )
+            # 상태 파일과 포트폴리오가 일치하면 동기화 완료
+            return True
+
     def _get_dynamic_leverage(self, balance: float) -> float:
         """
         예수금에 따른 동적 레버리지 계산.
 
-        - 자본 < threshold: 3x (기본)
-        - 자본 >= threshold: 4x (밴드 관리 가능)
+        Medium #4 수정: enable_dynamic_leverage=False면 항상 target_leverage 사용.
+        True일 때만 자본 충분시 4x로 자동 전환.
 
-        4x 전환 조건:
+        4x 전환 조건 (enable_dynamic_leverage=True일 때):
+        - 자본 >= threshold
         - 충분한 계약 수로 ±15% 밴드 관리 가능
-        - 1계약 변화가 레버리지에 미치는 영향이 15% 미만
         """
+        # 동적 레버리지 비활성화 시 항상 기본 레버리지 사용
+        if not self.config.enable_dynamic_leverage:
+            return self.config.target_leverage
+
         threshold = self.config.leverage_4x_threshold
 
         if balance >= threshold:
@@ -180,12 +298,71 @@ class MNQDualSMAStrategy(Strategy):
     # Strategy Lifecycle (검증된 패턴)
     # =========================================================================
 
+    def _find_instrument_by_symbol(self, instrument_id: InstrumentId) -> Instrument | None:
+        """
+        High #2 수정: Venue ID 불일치 대응 + CONTFUT 우선.
+
+        IBKR 환경에서 MNQ가 CONTFUT와 월물(MNQH6 등) 모두 존재할 수 있음.
+        연속선물(CONTFUT)을 우선 매칭하여 자동 롤오버 보장.
+        """
+        import re
+
+        # 1. 정확한 ID 매치 시도
+        instrument = self.cache.instrument(instrument_id)
+        if instrument is not None:
+            return instrument
+
+        # 2. 심볼로 폴백 검색 (CONTFUT 우선)
+        symbol = instrument_id.symbol.value
+        self.log.warning(
+            f"Instrument {instrument_id} not found, searching by symbol '{symbol}'",
+            LogColor.YELLOW,
+        )
+
+        # 심볼 매칭 후보 수집
+        candidates = []
+        for inst in self.cache.instruments():
+            inst_symbol = inst.id.symbol.value
+            # 정확한 심볼 매치 (MNQ == MNQ)
+            if inst_symbol == symbol:
+                candidates.append(inst)
+            # 월물 패턴 매치 (MNQH6, MNQM6 등 - 심볼 + 월코드 + 연도)
+            elif inst_symbol.startswith(symbol) and re.match(rf"^{symbol}[FGHJKMNQUVXZ]\d+$", inst_symbol):
+                candidates.append(inst)
+
+        if not candidates:
+            all_ids = [str(i.id) for i in self.cache.instruments()]
+            self.log.error(
+                f"No instruments found for symbol '{symbol}'. Available: {all_ids}"
+            )
+            return None
+
+        # CONTFUT(연속선물) 우선: 심볼이 정확히 일치하는 것 = CONTFUT
+        # 월물은 MNQH6 형태로 더 긴 심볼
+        contfut_candidates = [c for c in candidates if c.id.symbol.value == symbol]
+        if contfut_candidates:
+            result = contfut_candidates[0]
+            self.log.info(
+                f"Found CONTFUT: {result.id} (preferred over monthly contracts)",
+                LogColor.GREEN,
+            )
+            return result
+
+        # CONTFUT가 없으면 경고 후 첫 번째 월물 반환
+        result = candidates[0]
+        self.log.warning(
+            f"CONTFUT not found for '{symbol}', using monthly contract: {result.id}. "
+            f"Auto-rollover may not work!",
+            LogColor.RED,
+        )
+        return result
+
     def on_start(self) -> None:
         """Actions to be performed on strategy start."""
-        # Load instruments from cache
-        self.qqq_instrument = self.cache.instrument(self.config.qqq_instrument_id)
-        self.long_instrument = self.cache.instrument(self.config.long_instrument_id)
-        self.hedge_instrument = self.cache.instrument(self.config.hedge_instrument_id)
+        # Load instruments from cache (High #2: CONTFUT 우선 매칭)
+        self.qqq_instrument = self._find_instrument_by_symbol(self.config.qqq_instrument_id)
+        self.long_instrument = self._find_instrument_by_symbol(self.config.long_instrument_id)
+        self.hedge_instrument = self._find_instrument_by_symbol(self.config.hedge_instrument_id)
 
         if self.qqq_instrument is None:
             self.log.error(f"Could not find instrument: {self.config.qqq_instrument_id}")
@@ -201,6 +378,19 @@ class MNQDualSMAStrategy(Strategy):
             self.log.error(f"Could not find instrument: {self.config.hedge_instrument_id}")
             self.stop()
             return
+
+        # High #2 수정: 실제 로딩된 Instrument ID 저장
+        # 이후 모든 포트폴리오 작업에 이 ID 사용 (config ID 아닌 실제 ID)
+        self._actual_long_id = self.long_instrument.id
+        self._actual_hedge_id = self.hedge_instrument.id
+
+        self.log.info(
+            f"Actual instrument IDs - Long: {self._actual_long_id}, Hedge: {self._actual_hedge_id}",
+            LogColor.CYAN,
+        )
+
+        # Medium #1 수정: 포지션 동기화는 on_bar에서 수행 (리컨실리에이션 완료 후)
+        # on_start 시점에는 포트폴리오가 비어있을 수 있음
 
         # Register indicators (검증된 패턴)
         self.register_indicator_for_bars(self.config.qqq_bar_type, self.sma_long)
@@ -246,6 +436,45 @@ class MNQDualSMAStrategy(Strategy):
                 f"Waiting for indicators to warm up "
                 f"[{self.cache.bar_count(self.config.qqq_bar_type)}/{self.config.sma_long_period}]",
                 color=LogColor.BLUE,
+            )
+            return
+
+        # 리컨실리에이션 완료까지 동기화 재시도
+        # - 포지션 발견 시 완료
+        # - 상태 파일과 포트폴리오 모두 FLAT이면 완료 (일치)
+        # - 불일치로 FLAT 보정된 경우 계속 재시도 (리컨실리에이션 미완료 가능성)
+        if not self._position_synced:
+            self._sync_retry_count += 1
+            sync_complete = self._sync_position_with_portfolio()
+
+            if sync_complete:
+                self._position_synced = True
+                self.log.info(
+                    f"Position sync completed after {self._sync_retry_count} attempts: "
+                    f"{self.current_position or 'FLAT'}",
+                    LogColor.GREEN,
+                )
+            elif self._sync_retry_count == self._sync_warn_threshold:
+                # 경고 임계값 도달 시 경고 로그
+                self.log.warning(
+                    f"Position sync: {self._sync_retry_count} attempts, still waiting. "
+                    f"State file had position but portfolio is FLAT - reconciliation may be pending.",
+                    LogColor.YELLOW,
+                )
+
+        # HIGH 수정: 동기화 완료 전 거래 차단 (중복 포지션 방지)
+        if not self._position_synced:
+            self.log.info(
+                f"Waiting for position sync (attempt {self._sync_retry_count})...",
+                LogColor.BLUE,
+            )
+            return
+
+        # 포지션 전환 대기 중이면 신호 처리 스킵
+        if self._pending_switch_target is not None:
+            self.log.info(
+                f"Waiting for position close to complete before switching to {self._pending_switch_target}",
+                LogColor.BLUE,
             )
             return
 
@@ -304,7 +533,13 @@ class MNQDualSMAStrategy(Strategy):
         sma_long: float,
         sma_short: float,
     ) -> None:
-        """Switch from current position to target position."""
+        """
+        Switch from current position to target position.
+
+        High #1 수정: close_all_positions()는 비동기이므로
+        청산 완료를 on_event()에서 감지한 후 새 포지션 진입.
+        High #2 수정: 실제 로딩된 Instrument ID 사용.
+        """
         self.log.info(
             f"Position switch: {self.current_position} → {target}",
             LogColor.MAGENTA,
@@ -313,19 +548,63 @@ class MNQDualSMAStrategy(Strategy):
         # Slack notification
         self.slack.notify_signal(target, qqq_price, sma_long, sma_short)
 
-        # 검증된 패턴: close_all_positions() 후 새 포지션 진입
-        if self.current_position == "LONG":
-            self.close_all_positions(self.config.long_instrument_id)
-        elif self.current_position == "HEDGE":
-            self.close_all_positions(self.config.hedge_instrument_id)
+        # 기존 포지션이 있으면 청산 후 새 포지션 진입 대기
+        if self.current_position == "LONG" and self._actual_long_id:
+            if not self.portfolio.is_flat(self._actual_long_id):
+                self._pending_switch_target = target
+                self._closing_instrument_id = self._actual_long_id
+                self.log.info(
+                    f"Closing LONG position, will open {target} after close completes",
+                    LogColor.BLUE,
+                )
+                self.close_all_positions(self._actual_long_id)
+                return  # on_event()에서 청산 완료 감지 후 진입
 
-        # Open new position
+        elif self.current_position == "HEDGE" and self._actual_hedge_id:
+            if not self.portfolio.is_flat(self._actual_hedge_id):
+                self._pending_switch_target = target
+                self._closing_instrument_id = self._actual_hedge_id
+                self.log.info(
+                    f"Closing HEDGE position, will open {target} after close completes",
+                    LogColor.BLUE,
+                )
+                self.close_all_positions(self._actual_hedge_id)
+                return  # on_event()에서 청산 완료 감지 후 진입
+
+        # 기존 포지션 없거나 이미 FLAT이면 바로 새 포지션 진입
+        self._open_new_position(target)
+
+    def _open_new_position(self, target: str) -> None:
+        """Open new position after confirming previous position is closed."""
         if target == "LONG":
             self._open_long_position()
         elif target == "HEDGE":
             self._open_hedge_position()
 
         self._save_position_state(target)
+        self._pending_switch_target = None
+        self._closing_instrument_id = None
+
+    def on_event(self, event: Event) -> None:
+        """
+        Handle events - detect position close completion.
+
+        High #1 수정: 청산 완료 감지 후 새 포지션 진입.
+        """
+        # 포지션 전환 대기 중이 아니면 무시
+        if self._pending_switch_target is None:
+            return
+        if self._closing_instrument_id is None:
+            return
+
+        # 청산 대상이 FLAT이 되었는지 확인
+        if self.portfolio.is_flat(self._closing_instrument_id):
+            self.log.info(
+                f"Position close completed, opening {self._pending_switch_target}",
+                LogColor.GREEN,
+            )
+            target = self._pending_switch_target
+            self._open_new_position(target)
 
     def _open_long_position(self) -> None:
         """Open long position (MNQ CONTFUT)."""
@@ -344,32 +623,39 @@ class MNQDualSMAStrategy(Strategy):
         if price <= 0:
             return
 
+        # 계약 가치 계산: 지수가격 × 승수
+        # MNQ: $2/point (21,000 → $42,000), QQQ(ETF): 1.0
+        contract_value = price * self.config.contract_multiplier
+
         # 동적 레버리지 계산 (예수금에 따라 3x 또는 4x)
         target_leverage = self._get_dynamic_leverage(balance)
         target_value = balance * target_leverage
-        quantity = int(target_value / price)
+        quantity = int(target_value / contract_value)
 
         if quantity <= 0:
             self.log.warning("Insufficient funds for long position")
             return
 
+        actual_leverage = (quantity * contract_value) / balance
         self.log.info(
-            f"LONG: {self.config.long_instrument_id} {quantity} contracts @ ${price:.2f}",
+            f"LONG: {self._actual_long_id} {quantity} contracts @ ${price:.2f} "
+            f"(계약가치: ${contract_value:,.0f}, 실제 레버리지: {actual_leverage:.2f}x)",
             LogColor.GREEN,
         )
 
         # Slack notification
         self.slack.notify_position_change(
             action="BUY",
-            symbol=str(self.config.long_instrument_id),
+            symbol=str(self._actual_long_id),
             quantity=quantity,
             price=price,
             from_position=self.current_position,
             to_position="LONG",
         )
 
+        # High #2 수정: 실제 ID로 주문 제출
         order: MarketOrder = self.order_factory.market(
-            instrument_id=self.config.long_instrument_id,
+            instrument_id=self._actual_long_id,
             order_side=OrderSide.BUY,
             quantity=self.long_instrument.make_qty(Decimal(quantity)),
             time_in_force=TimeInForce.DAY,
@@ -401,22 +687,23 @@ class MNQDualSMAStrategy(Strategy):
             return
 
         self.log.info(
-            f"HEDGE: {self.config.hedge_instrument_id} {quantity} shares @ ${price:.2f}",
+            f"HEDGE: {self._actual_hedge_id} {quantity} shares @ ${price:.2f}",
             LogColor.YELLOW,
         )
 
         # Slack notification
         self.slack.notify_position_change(
             action="BUY",
-            symbol=str(self.config.hedge_instrument_id),
+            symbol=str(self._actual_hedge_id),
             quantity=quantity,
             price=price,
             from_position=self.current_position,
             to_position="HEDGE",
         )
 
+        # High #2 수정: 실제 ID로 주문 제출
         order: MarketOrder = self.order_factory.market(
-            instrument_id=self.config.hedge_instrument_id,
+            instrument_id=self._actual_hedge_id,
             order_side=OrderSide.BUY,
             quantity=self.hedge_instrument.make_qty(Decimal(quantity)),
             time_in_force=TimeInForce.DAY,
@@ -433,12 +720,17 @@ class MNQDualSMAStrategy(Strategy):
 
         Only applies to LONG position (MNQ).
         HEDGE (GDX) is always 1x, no rebalancing needed.
+
+        High #2 수정: 실제 로딩된 Instrument ID 사용.
         """
         if self.current_position != "LONG":
             return
 
-        # Check if we have a position
-        if self.portfolio.is_flat(self.config.long_instrument_id):
+        if self._actual_long_id is None:
+            return
+
+        # Check if we have a position (실제 ID 사용)
+        if self.portfolio.is_flat(self._actual_long_id):
             return
 
         account = self.portfolio.account(self.long_instrument.id.venue)
@@ -457,13 +749,16 @@ class MNQDualSMAStrategy(Strategy):
         if price <= 0:
             return
 
-        # Get current position
-        net_position = float(self.portfolio.net_position(self.config.long_instrument_id))
+        # 계약 가치 계산: 지수가격 × 승수
+        contract_value = price * self.config.contract_multiplier
+
+        # Get current position (실제 ID 사용)
+        net_position = float(self.portfolio.net_position(self._actual_long_id))
         if net_position <= 0:
             return
 
-        # Calculate current leverage
-        position_value = net_position * price
+        # Calculate current leverage (계약 가치 × 계약 수 / 예수금)
+        position_value = net_position * contract_value
         current_leverage = position_value / balance
 
         # 동적 레버리지 계산 (예수금에 따라 3x 또는 4x)
@@ -478,10 +773,14 @@ class MNQDualSMAStrategy(Strategy):
 
         # Outside band → rebalance to target
         target_value = balance * target
-        target_qty = int(target_value / price)
+        target_qty = int(target_value / contract_value)
         diff = target_qty - int(net_position)
 
+        # Low #5: 최소 리밸런싱 임계값 적용
+        # 1계약 미만이거나, 포지션 대비 변화율이 임계값 미만이면 스킵
         if abs(diff) < 1:
+            return
+        if net_position > 0 and abs(diff) / net_position < self.config.rebalance_min_threshold:
             return
 
         self.log.info(
@@ -492,14 +791,15 @@ class MNQDualSMAStrategy(Strategy):
 
         # Slack notification
         self.slack.notify_rebalance(
-            str(self.config.long_instrument_id),
+            str(self._actual_long_id),
             int(diff),
             price,
         )
 
+        # High #2 수정: 실제 ID로 주문 제출
         if diff > 0:
             order = self.order_factory.market(
-                instrument_id=self.config.long_instrument_id,
+                instrument_id=self._actual_long_id,
                 order_side=OrderSide.BUY,
                 quantity=self.long_instrument.make_qty(Decimal(int(diff))),
                 time_in_force=TimeInForce.DAY,
@@ -507,7 +807,7 @@ class MNQDualSMAStrategy(Strategy):
             self.submit_order(order)
         else:
             order = self.order_factory.market(
-                instrument_id=self.config.long_instrument_id,
+                instrument_id=self._actual_long_id,
                 order_side=OrderSide.SELL,
                 quantity=self.long_instrument.make_qty(Decimal(abs(int(diff)))),
                 time_in_force=TimeInForce.DAY,
@@ -520,12 +820,16 @@ class MNQDualSMAStrategy(Strategy):
 
     def on_stop(self) -> None:
         """Actions to be performed when the strategy is stopped."""
-        self.cancel_all_orders(self.config.long_instrument_id)
-        self.cancel_all_orders(self.config.hedge_instrument_id)
+        # High #2 수정: 실제 ID 사용 (없으면 config ID로 폴백)
+        long_id = self._actual_long_id or self.config.long_instrument_id
+        hedge_id = self._actual_hedge_id or self.config.hedge_instrument_id
+
+        self.cancel_all_orders(long_id)
+        self.cancel_all_orders(hedge_id)
 
         if self.config.close_positions_on_stop:
-            self.close_all_positions(self.config.long_instrument_id)
-            self.close_all_positions(self.config.hedge_instrument_id)
+            self.close_all_positions(long_id)
+            self.close_all_positions(hedge_id)
 
         self.unsubscribe_bars(self.config.qqq_bar_type)
         self.unsubscribe_bars(self.config.long_bar_type)

@@ -180,6 +180,7 @@ def run_backtest():
         target_leverage_high=4.0,      # 자본 충분시 4x
         leverage_4x_threshold=84_000,  # $84k 이상시 4x
         rebalance_band_pct=REBALANCE_BAND_PCT,
+        contract_multiplier=1.0,       # QQQ는 ETF (1:1), MNQ는 2.0
         close_positions_on_stop=True,
     )
 
