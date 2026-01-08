@@ -146,9 +146,12 @@ class SlackNotifier:
         quantity: int,
         price: float,
         from_position: Optional[str] = None,
-        to_position: Optional[str] = None
+        to_position: Optional[str] = None,
+        balance_usd: Optional[float] = None,
+        usd_krw_rate: Optional[float] = None,
+        rate_is_realtime: bool = False,
     ) -> bool:
-        """Notify position change."""
+        """Notify position change with balance and KRW conversion."""
         if action == "BUY":
             emoji = ":green_circle:"
             action_text = "매수"
@@ -157,6 +160,8 @@ class SlackNotifier:
             action_text = "매도"
 
         value = quantity * price
+        rate = usd_krw_rate or config.USD_KRW_RATE
+        value_krw = value * rate
 
         blocks = [
             {
@@ -177,16 +182,28 @@ class SlackNotifier:
                 "type": "section",
                 "fields": [
                     {"type": "mrkdwn", "text": f"*수량:*\n{quantity:,}"},
-                    {"type": "mrkdwn", "text": f"*가격:*\n${price:.2f}"},
+                    {"type": "mrkdwn", "text": f"*가격:*\n${price:,.2f}"},
                 ]
             },
             {
                 "type": "section",
                 "fields": [
-                    {"type": "mrkdwn", "text": f"*금액:*\n${value:,.0f}"},
+                    {"type": "mrkdwn", "text": f"*금액:*\n${value:,.0f} (₩{value_krw:,.0f})"},
                 ]
             }
         ]
+
+        # 잔고 및 환율 정보 추가
+        if balance_usd is not None and usd_krw_rate is not None:
+            balance_krw = balance_usd * usd_krw_rate
+            rate_source = "실시간" if rate_is_realtime else "고정"
+            blocks.append({
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*잔고:*\n${balance_usd:,.0f} (₩{balance_krw:,.0f})"},
+                    {"type": "mrkdwn", "text": f"*환율:*\n{rate:,.0f} ({rate_source})"},
+                ]
+            })
 
         if from_position and to_position:
             from_kr = {"LONG": "롱", "HEDGE": "헤지"}.get(from_position, from_position)
@@ -200,8 +217,14 @@ class SlackNotifier:
 
         return self.send_block(blocks, f"{action_text} {symbol}")
 
-    def notify_rebalance(self, symbol: str, diff: int, price: float) -> bool:
-        """Notify rebalancing."""
+    def notify_rebalance(
+        self,
+        symbol: str,
+        diff: int,
+        price: float,
+        usd_krw_rate: Optional[float] = None,
+    ) -> bool:
+        """Notify rebalancing with KRW conversion."""
         if diff > 0:
             emoji = ":arrow_up:"
             action = "추가 매수"
@@ -209,8 +232,13 @@ class SlackNotifier:
             emoji = ":arrow_down:"
             action = "일부 매도"
 
+        rate = usd_krw_rate or config.USD_KRW_RATE
+        value = abs(diff) * price
+        value_krw = value * rate
+
         return self.send(
-            f"{emoji} *리밸런싱* {symbol}: {action} {abs(diff)}주 @ ${price:.2f}",
+            f"{emoji} *리밸런싱* {symbol}: {action} {abs(diff)}주 @ ${price:,.2f}\n"
+            f"금액: ${value:,.0f} (₩{value_krw:,.0f})",
             emoji=""
         )
 
@@ -223,15 +251,21 @@ class SlackNotifier:
         position: str,
         account_value: float,
         daily_pnl: float,
-        daily_pnl_pct: float
+        daily_pnl_pct: float,
+        usd_krw_rate: Optional[float] = None,
+        rate_is_realtime: bool = False,
     ) -> bool:
-        """Send daily report."""
+        """Send daily report with KRW conversion."""
         if daily_pnl >= 0:
             pnl_emoji = ":chart_with_upwards_trend:"
         else:
             pnl_emoji = ":chart_with_downwards_trend:"
 
         position_kr = {"LONG": "롱", "HEDGE": "헤지"}.get(position, position)
+        rate = usd_krw_rate or config.USD_KRW_RATE
+        account_value_krw = account_value * rate
+        daily_pnl_krw = daily_pnl * rate
+        rate_source = "실시간" if rate_is_realtime else "고정"
 
         blocks = [
             {
@@ -245,13 +279,20 @@ class SlackNotifier:
                 "type": "section",
                 "fields": [
                     {"type": "mrkdwn", "text": f"*포지션:*\n{position_kr}"},
-                    {"type": "mrkdwn", "text": f"*계좌:*\n${account_value:,.0f}"},
+                    {"type": "mrkdwn", "text": f"*계좌:*\n${account_value:,.0f} (₩{account_value_krw:,.0f})"},
                 ]
             },
             {
                 "type": "section",
                 "fields": [
-                    {"type": "mrkdwn", "text": f"*일일 손익:*\n{pnl_emoji} ${daily_pnl:+,.0f} ({daily_pnl_pct:+.2f}%)"},
+                    {"type": "mrkdwn", "text": f"*일일 손익:*\n{pnl_emoji} ${daily_pnl:+,.0f} (₩{daily_pnl_krw:+,.0f})"},
+                    {"type": "mrkdwn", "text": f"*수익률:*\n{daily_pnl_pct:+.2f}%"},
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*환율:*\n{rate:,.0f} ({rate_source})"},
                 ]
             },
             {

@@ -70,6 +70,13 @@ def create_ib_contracts():
             exchange="SMART",
             primaryExchange="ARCA",
         ),
+        # USD/KRW 환율 - 원화 환산용
+        IBContract(
+            secType="CASH",
+            symbol="USD",
+            currency="KRW",
+            exchange="IDEALPRO",
+        ),
     ]
     return contracts
 
@@ -81,8 +88,10 @@ def create_instrument_ids():
     # CONTFUT은 심볼.거래소 형태로 표현
     long_id = InstrumentId.from_str(f"{config.MNQ_SYMBOL}.{config.MNQ_EXCHANGE}")
     hedge_id = InstrumentId.from_str(f"{config.HEDGE_SYMBOL}.ARCA")
+    # USD/KRW forex (IDEALPRO venue)
+    forex_id = InstrumentId.from_str("USD/KRW.IDEALPRO")
 
-    return qqq_id, long_id, hedge_id
+    return qqq_id, long_id, hedge_id, forex_id
 
 
 def create_bar_types(qqq_id, long_id, hedge_id):
@@ -187,7 +196,7 @@ def build_trading_node(paper: bool = True) -> TradingNode:
 
 def add_strategy(node: TradingNode) -> None:
     """Add the MNQ Dual SMA strategy to the node."""
-    qqq_id, long_id, hedge_id = create_instrument_ids()
+    qqq_id, long_id, hedge_id, forex_id = create_instrument_ids()
     qqq_bar, long_bar, hedge_bar = create_bar_types(qqq_id, long_id, hedge_id)
 
     strategy_config = MNQDualSMAConfig(
@@ -195,6 +204,7 @@ def add_strategy(node: TradingNode) -> None:
         qqq_instrument_id=qqq_id,
         long_instrument_id=long_id,
         hedge_instrument_id=hedge_id,
+        forex_instrument_id=forex_id,  # USD/KRW 환율
         qqq_bar_type=qqq_bar,
         long_bar_type=long_bar,
         hedge_bar_type=hedge_bar,

@@ -5,10 +5,16 @@ Slack Chatbot for MNQ Trading System
 Socket Mode를 사용한 실시간 명령어 처리
 
 명령어:
-- /status 또는 "상태" - 현재 시장 상태 확인
-- /position 또는 "포지션" - 현재 포지션 확인
-- /signal 또는 "신호" - 현재 신호 확인
-- /help 또는 "도움말" - 명령어 목록
+- /ibkr status - 시장 상태
+- /ibkr position - 현재 포지션
+- /ibkr signal - 매매 신호
+- /ibkr balance - 계좌 잔고
+- /ibkr rate - 환율 정보
+- /ibkr sma - SMA 상세
+- /ibkr help - 도움말
+
+또는 DM/멘션으로 한글 명령어 사용:
+- 상태, 포지션, 신호, 잔고, 환율, 도움말
 
 사용법:
     python slack_chatbot.py
@@ -79,27 +85,39 @@ class TradingChatbot:
                 text = event.get("text", "").lower()
                 self._handle_command(text, say)
 
-        # Slash commands (if configured in Slack App)
-        @self.app.command("/status")
-        def handle_status_command(ack, respond):
+        # /ibkr 통합 명령어
+        @self.app.command("/ibkr")
+        def handle_ibkr_command(ack, respond, command):
             ack()
-            status = self.get_status()
-            respond(status)
+            subcommand = command.get("text", "").strip().lower()
+            response = self._handle_subcommand(subcommand)
+            respond(response)
 
-        @self.app.command("/position")
-        def handle_position_command(ack, respond):
-            ack()
-            position = self.get_position()
-            respond(position)
-
-        @self.app.command("/signal")
-        def handle_signal_command(ack, respond):
-            ack()
-            signal = self.get_signal()
-            respond(signal)
+    def _handle_subcommand(self, subcommand: str) -> str:
+        """Handle /ibkr subcommands."""
+        if subcommand in ["status", "상태", "현황", ""]:
+            return self.get_status()
+        elif subcommand in ["position", "pos", "포지션", "보유"]:
+            return self.get_position()
+        elif subcommand in ["signal", "sig", "신호", "시그널"]:
+            return self.get_signal()
+        elif subcommand in ["balance", "bal", "잔고", "계좌"]:
+            return self.get_balance()
+        elif subcommand in ["rate", "fx", "환율"]:
+            return self.get_rate()
+        elif subcommand in ["sma", "이평", "이동평균"]:
+            return self.get_sma_detail()
+        elif subcommand in ["config", "설정", "세팅"]:
+            return self.get_config()
+        elif subcommand in ["risk", "위험", "리스크"]:
+            return self.get_risk()
+        elif subcommand in ["help", "도움", "도움말", "명령어", "?"]:
+            return self.get_help()
+        else:
+            return f":warning: 알 수 없는 명령어: `{subcommand}`\n\n{self.get_help()}"
 
     def _handle_command(self, text: str, say):
-        """Handle text commands."""
+        """Handle text commands (DM/mention)."""
         text = text.lower().strip()
 
         # Remove bot mention
@@ -107,11 +125,21 @@ class TradingChatbot:
 
         if any(cmd in text for cmd in ["status", "상태", "현황"]):
             say(self.get_status())
-        elif any(cmd in text for cmd in ["position", "포지션", "보유"]):
+        elif any(cmd in text for cmd in ["position", "pos", "포지션", "보유"]):
             say(self.get_position())
-        elif any(cmd in text for cmd in ["signal", "신호", "시그널"]):
+        elif any(cmd in text for cmd in ["signal", "sig", "신호", "시그널"]):
             say(self.get_signal())
-        elif any(cmd in text for cmd in ["help", "도움", "도움말", "명령어"]):
+        elif any(cmd in text for cmd in ["balance", "bal", "잔고", "계좌"]):
+            say(self.get_balance())
+        elif any(cmd in text for cmd in ["rate", "fx", "환율"]):
+            say(self.get_rate())
+        elif any(cmd in text for cmd in ["sma", "이평", "이동평균"]):
+            say(self.get_sma_detail())
+        elif any(cmd in text for cmd in ["config", "설정", "세팅"]):
+            say(self.get_config())
+        elif any(cmd in text for cmd in ["risk", "위험", "리스크"]):
+            say(self.get_risk())
+        elif any(cmd in text for cmd in ["help", "도움", "도움말", "명령어", "?"]):
             say(self.get_help())
         else:
             say(self.get_help())
@@ -194,15 +222,174 @@ class TradingChatbot:
             f"SMA50 {status['dist_50']:+.1f}%_"
         )
 
+    def get_balance(self) -> str:
+        """Get account balance with KRW conversion."""
+        # Note: 실제 잔고는 전략에서만 조회 가능. 여기서는 설정 기반 예상치 표시
+        rate = config.USD_KRW_RATE
+        min_capital = config.MIN_CAPITAL_3X
+        min_capital_krw = min_capital * rate
+
+        try:
+            if self.state_file.exists():
+                position = self.state_file.read_text().strip()
+            else:
+                position = "N/A"
+        except Exception:
+            position = "N/A"
+
+        return (
+            f"*계좌 정보*\n\n"
+            f":bank: *최소 권장 자본:*\n"
+            f"• 3x: ${config.MIN_CAPITAL_3X:,.0f} (₩{config.MIN_CAPITAL_3X * rate:,.0f})\n"
+            f"• 4x: ${config.MIN_CAPITAL_4X:,.0f} (₩{config.MIN_CAPITAL_4X * rate:,.0f})\n\n"
+            f":briefcase: *현재 포지션:* {position}\n"
+            f":currency_exchange: *환율:* {rate:,.0f} KRW/USD\n\n"
+            f"_실제 잔고는 IBKR에서 확인하세요_"
+        )
+
+    def get_rate(self) -> str:
+        """Get exchange rate info."""
+        rate = config.USD_KRW_RATE
+
+        # 예시 금액 환산
+        examples = [1000, 10000, 50000, 100000]
+
+        lines = [f"*USD/KRW 환율*\n\n:currency_exchange: *{rate:,.0f}* KRW/USD\n"]
+        lines.append("\n*환산 예시:*")
+        for usd in examples:
+            krw = usd * rate
+            lines.append(f"• ${usd:,} = ₩{krw:,.0f}")
+
+        lines.append(f"\n_설정값 기준. 실시간 환율은 봇 실행 중에만 적용_")
+
+        return "\n".join(lines)
+
+    def get_sma_detail(self) -> str:
+        """Get detailed SMA information."""
+        status = self.notifier.get_current_status()
+
+        if "error" in status:
+            return f":warning: 오류: {status['error']}"
+
+        price = status['qqq_price']
+        sma200 = status['sma200']
+        sma50 = status['sma50']
+
+        # 각 SMA까지의 거리
+        dist_200 = status['dist_200']
+        dist_50 = status['dist_50']
+
+        # SMA 간 거리
+        sma_spread = (sma50 - sma200) / sma200 * 100
+
+        # 골든크로스/데드크로스 상태
+        if sma50 > sma200:
+            cross_status = ":chart_with_upwards_trend: 골든크로스 (SMA50 > SMA200)"
+        else:
+            cross_status = ":chart_with_downwards_trend: 데드크로스 (SMA50 < SMA200)"
+
+        return (
+            f"*SMA 상세 분석*\n\n"
+            f"*QQQ:* ${price:.2f}\n\n"
+            f"*SMA200:* ${sma200:.2f}\n"
+            f"• 거리: {dist_200:+.2f}%\n"
+            f"• {'위' if dist_200 > 0 else '아래'} {abs(dist_200):.2f}%\n\n"
+            f"*SMA50:* ${sma50:.2f}\n"
+            f"• 거리: {dist_50:+.2f}%\n"
+            f"• {'위' if dist_50 > 0 else '아래'} {abs(dist_50):.2f}%\n\n"
+            f"*SMA50-200 스프레드:* {sma_spread:+.2f}%\n"
+            f"{cross_status}"
+        )
+
+    def get_config(self) -> str:
+        """Get current configuration."""
+        return (
+            f"*전략 설정*\n\n"
+            f":dart: *전략:* MNQ 3x + 이중SMA + GDX\n\n"
+            f"*레버리지:*\n"
+            f"• 기본: {config.TARGET_LEVERAGE_DEFAULT}x\n"
+            f"• 고레버: {config.TARGET_LEVERAGE_HIGH}x (자본 ${config.LEVERAGE_4X_THRESHOLD:,.0f} 이상)\n"
+            f"• 동적 전환: {'활성화' if config.ENABLE_DYNAMIC_LEVERAGE else '비활성화'}\n\n"
+            f"*리밸런싱:*\n"
+            f"• 밴드: ±{config.REBALANCE_BAND_PCT * 100:.0f}%\n"
+            f"• 최소 임계값: {config.REBALANCE_MIN_THRESHOLD * 100:.1f}%\n\n"
+            f"*SMA 기간:*\n"
+            f"• 장기: {config.SMA_LONG_PERIOD}일\n"
+            f"• 단기: {config.SMA_SHORT_PERIOD}일\n\n"
+            f"*자산:*\n"
+            f"• 롱: {config.MNQ_SYMBOL} (CME)\n"
+            f"• 헤지: {config.HEDGE_SYMBOL}\n"
+            f"• 시그널: {config.SIGNAL_SYMBOL}"
+        )
+
+    def get_risk(self) -> str:
+        """Get risk assessment."""
+        status = self.notifier.get_current_status()
+
+        if "error" in status:
+            return f":warning: 오류: {status['error']}"
+
+        # 리스크 평가
+        dist_200 = abs(status['dist_200'])
+        dist_50 = abs(status['dist_50'])
+
+        # 리스크 레벨 결정
+        if status['above_200'] and status['above_50']:
+            if dist_200 < 3:
+                risk_level = ":warning: 중간"
+                risk_desc = "SMA200 근처 - 하락 시 헤지 전환 가능성"
+            elif dist_200 < 1:
+                risk_level = ":rotating_light: 높음"
+                risk_desc = "SMA200 매우 근접 - 변동성 주의"
+            else:
+                risk_level = ":white_check_mark: 낮음"
+                risk_desc = "상승 추세 안정적"
+        elif not status['above_200'] and not status['above_50']:
+            risk_level = ":shield: 헤지 모드"
+            risk_desc = "GDX 보유 중 - 하락장 보호"
+        else:
+            risk_level = ":hourglass: 전환 대기"
+            risk_desc = "히스테리시스 구간 - 포지션 유지"
+
+        # 변동성 기반 경고
+        warnings = []
+        if dist_200 < 2:
+            warnings.append("• SMA200 근접: 추세 전환 가능성 주시")
+        if dist_50 < 1:
+            warnings.append("• SMA50 근접: 단기 변동성 주의")
+
+        warning_text = "\n".join(warnings) if warnings else "• 특별한 경고 없음"
+
+        return (
+            f"*리스크 평가*\n\n"
+            f"*리스크 레벨:* {risk_level}\n"
+            f"*상태:* {risk_desc}\n\n"
+            f"*SMA 거리:*\n"
+            f"• SMA200: {status['dist_200']:+.2f}%\n"
+            f"• SMA50: {status['dist_50']:+.2f}%\n\n"
+            f"*경고:*\n{warning_text}"
+        )
+
     def get_help(self) -> str:
         """Get help message."""
         return (
             "*MNQ Trader 명령어*\n\n"
-            ":chart_with_upwards_trend: `상태` 또는 `status` - 현재 시장 상태\n"
-            ":briefcase: `포지션` 또는 `position` - 현재 보유 포지션\n"
-            ":traffic_light: `신호` 또는 `signal` - 현재 매매 신호\n"
-            ":question: `도움말` 또는 `help` - 이 메시지\n\n"
-            "_DM으로 명령어를 보내거나, 채널에서 @멘션하세요_"
+            "*Slash 명령어:* `/ibkr [명령어]`\n\n"
+            ":chart_with_upwards_trend: `status` - 시장 상태\n"
+            ":briefcase: `position` - 현재 포지션\n"
+            ":traffic_light: `signal` - 매매 신호\n"
+            ":bank: `balance` - 계좌/잔고 정보\n"
+            ":currency_exchange: `rate` - 환율 정보\n"
+            ":bar_chart: `sma` - SMA 상세 분석\n"
+            ":gear: `config` - 전략 설정\n"
+            ":warning: `risk` - 리스크 평가\n"
+            ":question: `help` - 이 메시지\n\n"
+            "*예시:*\n"
+            "• `/ibkr status`\n"
+            "• `/ibkr balance`\n"
+            "• `/ibkr risk`\n\n"
+            "*한글 명령어 (DM/멘션):*\n"
+            "상태, 포지션, 신호, 잔고, 환율, 이평, 설정, 위험, 도움말"
         )
 
     def run(self):

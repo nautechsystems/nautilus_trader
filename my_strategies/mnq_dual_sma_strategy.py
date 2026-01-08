@@ -27,9 +27,9 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import PositiveFloat, PositiveInt, StrategyConfig
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators import SimpleMovingAverage
-from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.model.data import Bar, BarType, QuoteTick
 from nautilus_trader.model.enums import OrderSide, TimeInForce
-from nautilus_trader.model.events import PositionChanged, PositionClosed, PositionOpened
+from nautilus_trader.model.events import OrderFilled, PositionChanged, PositionClosed, PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orders import MarketOrder
@@ -76,6 +76,7 @@ class MNQDualSMAConfig(StrategyConfig, frozen=True):
     qqq_instrument_id: InstrumentId
     long_instrument_id: InstrumentId
     hedge_instrument_id: InstrumentId
+    forex_instrument_id: InstrumentId | None = None  # USD/KRW 환율 (없으면 고정 환율 사용)
     qqq_bar_type: BarType
     long_bar_type: BarType
     hedge_bar_type: BarType
@@ -117,6 +118,11 @@ class MNQDualSMAStrategy(Strategy):
         self.qqq_instrument: Instrument | None = None
         self.long_instrument: Instrument | None = None
         self.hedge_instrument: Instrument | None = None
+        self.forex_instrument: Instrument | None = None  # USD/KRW
+
+        # USD/KRW 환율 (실시간 업데이트, 초기값은 config에서)
+        self._usd_krw_rate: float = trading_config.USD_KRW_RATE
+        self._forex_rate_initialized: bool = False  # 실시간 환율 수신 여부
 
         # SMA indicators for QQQ
         self.sma_long = SimpleMovingAverage(config.sma_long_period)
@@ -337,12 +343,14 @@ class MNQDualSMAStrategy(Strategy):
                             f"If positions exist but reconciliation is slow, duplicate orders may occur!",
                             LogColor.YELLOW,
                         )
-                        # 잔고 정보 조회
+                        # 잔고 정보 조회 (실시간 환율 사용)
                         balance_usd = self._get_account_balance()
-                        balance_krw = balance_usd * trading_config.USD_KRW_RATE
+                        balance_krw = balance_usd * self._usd_krw_rate
+                        rate_source = "실시간" if self._forex_rate_initialized else "고정"
                         self.slack.send(
                             f":warning: 상태파일 없이 {elapsed:.0f}초 후 FLAT 확정.\n"
                             f":bank: 잔고: ${balance_usd:,.0f} (₩{balance_krw:,.0f})\n"
+                            f":currency_exchange: 환율: {self._usd_krw_rate:,.0f} ({rate_source})\n"
                             f"실제 포지션이 있다면 IBKR 리컨실리에이션 확인 필요.",
                             ":hourglass:",
                         )
@@ -572,6 +580,24 @@ class MNQDualSMAStrategy(Strategy):
         self.subscribe_bars(self._actual_long_bar_type)
         self.subscribe_bars(self._actual_hedge_bar_type)
 
+        # USD/KRW 환율 구독 (설정된 경우)
+        if self.config.forex_instrument_id is not None:
+            self.forex_instrument = self._find_instrument_by_symbol(
+                self.config.forex_instrument_id
+            )
+            if self.forex_instrument is not None:
+                self.subscribe_quote_ticks(self.forex_instrument.id)
+                self.log.info(
+                    f"USD/KRW 환율 구독: {self.forex_instrument.id}",
+                    LogColor.CYAN,
+                )
+            else:
+                self.log.warning(
+                    f"USD/KRW instrument not found: {self.config.forex_instrument_id}. "
+                    f"Using fixed rate: {self._usd_krw_rate:,.0f}",
+                    LogColor.YELLOW,
+                )
+
         self.log.info("=" * 60, LogColor.GREEN)
         self.log.info("MNQ 3x + 이중SMA + GDX 전략 시작", LogColor.GREEN)
         self.log.info("=" * 60, LogColor.GREEN)
@@ -771,10 +797,40 @@ class MNQDualSMAStrategy(Strategy):
         elif target == "HEDGE":
             self._open_hedge_position()
 
-        self._save_position_state(target)
+        # 상태 저장은 on_event()의 OrderFilled 이벤트에서 처리
+        # 주문 실패 시 상태 불일치 방지
         self._pending_switch_target = None
         self._closing_instrument_id = None
         self._pending_switch_start_time = None  # 타임아웃 리셋
+
+    def on_quote_tick(self, tick: QuoteTick) -> None:
+        """
+        Handle quote tick updates for USD/KRW exchange rate.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The received quote tick.
+        """
+        if self.forex_instrument is None:
+            return
+
+        if tick.instrument_id != self.forex_instrument.id:
+            return
+
+        # USD/KRW mid price 계산 (bid + ask / 2)
+        bid = float(tick.bid_price)
+        ask = float(tick.ask_price)
+        mid = (bid + ask) / 2.0
+
+        if mid > 0:
+            self._usd_krw_rate = mid
+            if not self._forex_rate_initialized:
+                self._forex_rate_initialized = True
+                self.log.info(
+                    f"USD/KRW 실시간 환율 수신: {mid:,.2f}",
+                    LogColor.GREEN,
+                )
 
     def on_event(self, event: Event) -> None:
         """
@@ -782,7 +838,29 @@ class MNQDualSMAStrategy(Strategy):
 
         High #1 수정: 청산 완료 감지 후 새 포지션 진입.
         MEDIUM 수정: 포지션 이벤트 수신 추적 (리컨실리에이션 활성화 증거).
+        체결 이벤트 기반 상태 저장: 주문 실패 시 상태 불일치 방지.
         """
+        # 체결 이벤트 기반 포지션 상태 저장
+        # 주문 제출이 아닌 실제 체결 시에만 상태 파일 업데이트
+        if isinstance(event, OrderFilled):
+            filled_id = event.instrument_id
+            if self._actual_long_id and filled_id == self._actual_long_id:
+                # LONG 포지션 체결
+                if event.order_side == OrderSide.BUY:
+                    self._save_position_state("LONG")
+                    self.log.info(
+                        f"Position state saved: LONG (filled {event.quantity} @ {event.last_px})",
+                        LogColor.GREEN,
+                    )
+            elif self._actual_hedge_id and filled_id == self._actual_hedge_id:
+                # HEDGE 포지션 체결
+                if event.order_side == OrderSide.BUY:
+                    self._save_position_state("HEDGE")
+                    self.log.info(
+                        f"Position state saved: HEDGE (filled {event.quantity} @ {event.last_px})",
+                        LogColor.GREEN,
+                    )
+
         # MEDIUM 수정: 포지션 이벤트 수신 추적
         # 리컨실리에이션이 활성화되었다는 증거로 사용
         if isinstance(event, (PositionOpened, PositionChanged, PositionClosed)):
@@ -848,7 +926,7 @@ class MNQDualSMAStrategy(Strategy):
             LogColor.GREEN,
         )
 
-        # Slack notification
+        # Slack notification (잔고 및 환율 포함)
         self.slack.notify_position_change(
             action="BUY",
             symbol=str(self._actual_long_id),
@@ -856,6 +934,9 @@ class MNQDualSMAStrategy(Strategy):
             price=price,
             from_position=self.current_position,
             to_position="LONG",
+            balance_usd=balance,
+            usd_krw_rate=self._usd_krw_rate,
+            rate_is_realtime=self._forex_rate_initialized,
         )
 
         # High #2 수정: 실제 ID로 주문 제출
@@ -898,7 +979,7 @@ class MNQDualSMAStrategy(Strategy):
             LogColor.YELLOW,
         )
 
-        # Slack notification
+        # Slack notification (잔고 및 환율 포함)
         self.slack.notify_position_change(
             action="BUY",
             symbol=str(self._actual_hedge_id),
@@ -906,6 +987,9 @@ class MNQDualSMAStrategy(Strategy):
             price=price,
             from_position=self.current_position,
             to_position="HEDGE",
+            balance_usd=balance,
+            usd_krw_rate=self._usd_krw_rate,
+            rate_is_realtime=self._forex_rate_initialized,
         )
 
         # High #2 수정: 실제 ID로 주문 제출
@@ -998,11 +1082,12 @@ class MNQDualSMAStrategy(Strategy):
             LogColor.BLUE,
         )
 
-        # Slack notification
+        # Slack notification (환율 포함)
         self.slack.notify_rebalance(
             str(self._actual_long_id),
             int(diff),
             price,
+            usd_krw_rate=self._usd_krw_rate,
         )
 
         # High #2 수정: 실제 ID로 주문 제출
